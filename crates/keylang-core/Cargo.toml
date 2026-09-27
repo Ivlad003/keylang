@@ -1,0 +1,8 @@
+[package]
+name = "keylang-core"
+description = "keylang: IR, Markdown parser, resolver, formatter"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true

@@ -1,0 +1,160 @@
+// Intermediate representation of keylang Markdown files.
+//
+// The IR is a faithful tree of what was written: it keeps the raw tokens of
+// every item (for `keylang fmt`) plus the interpreted parts (declared name and
+// ID, code link, references, free text) with spans (for diagnostics and LSP).
+
+import type { Diagnostic } from "./diag.ts";
+import type { Span, Spanned } from "./span.ts";
+
+export interface Document {
+  path: string;
+  /** The `<!-- keylang:generated … -->` line, if the file is a generated map. */
+  generated: string | null;
+  sections: Section[];
+  /** Parse-time diagnostics (K003–K006). Resolution diagnostics come from `check`. */
+  diagnostics: Diagnostic[];
+}
+
+export type SectionKind = "map" | "rules" | "flow" | "wiring";
+
+/** Content under one `# …` heading (or before the first heading). */
+export interface Section {
+  kind: SectionKind;
+  /** Canonical heading text without `# `, e.g. `flow checkout`. */
+  heading: Spanned<string> | null;
+  /** Second heading word, e.g. the flow name. */
+  name: Spanned<string> | null;
+  items: Item[];
+}
+
+export type Item =
+  | ({ type: "node" } & Node)
+  /** A paragraph of free Markdown (lines verbatim). */
+  | { type: "prose"; lines: string[] }
+  /** A fenced code block (lines verbatim, fences included). */
+  | { type: "code"; lines: string[] };
+
+export type NodeKind =
+  // map
+  | "layer"
+  | "module"
+  | "fn"
+  | "type"
+  | "event"
+  /** `alias path` under a module. */
+  | "dep"
+  | "calls"
+  // rules
+  | "layers"
+  | "allow"
+  | "deny"
+  | "entry"
+  /** `module <id>` at top level: rules about an existing module. */
+  | "rule-module"
+  | "exports"
+  | "no-cycles"
+  /** A bare ID under `entry` or `layers`. */
+  | "ref"
+  // flows
+  | "kind"
+  | "trigger"
+  | "step"
+  | "reads"
+  | "emits"
+  | "invariant"
+  | "when"
+  | "then"
+  | "test"
+  // wiring
+  | "wire"
+  /** `alias path` under `wire`. */
+  | "wire-dep"
+  | "compose"
+  /** Item that could not be interpreted (a diagnostic was reported). */
+  | "unknown";
+
+/** Kinds that declare an ID in the global namespace. */
+export function isDecl(kind: NodeKind): boolean {
+  return (
+    kind === "layer" ||
+    kind === "module" ||
+    kind === "fn" ||
+    kind === "type" ||
+    kind === "event" ||
+    kind === "dep"
+  );
+}
+
+/** The keyword as written in the language (`rule-module` is spelled `module`). */
+export function kindLabel(kind: NodeKind): string {
+  return kind === "rule-module" ? "module" : kind;
+}
+
+/** One list item `- <kind>? <name> <args…>` and everything nested under it. */
+export interface Node {
+  kind: NodeKind;
+  /** Span of the explicit keyword, `null` when implied by position. */
+  keyword: Span | null;
+  /** Declared name (layer, module, fn, type, event, dependency alias). */
+  name: Spanned<string> | null;
+  /** Full dotted ID for declarations, e.g. `application.purchase.buy`. */
+  id: string | null;
+  /** Code anchor `[name](path#Lnn)`. */
+  link: Link | null;
+  /** IDs this item refers to (checked by the resolver). */
+  refs: Ref[];
+  /** Free text: fn signature, condition, invariant, `kind` value, test file. */
+  text: Spanned<string> | null;
+  /** Quoted test name of `test <file> "name"`. */
+  label: Spanned<string> | null;
+  /** Raw head tokens after the bullet (used by the formatter). */
+  tokens: Token[];
+  /** Trailing `<!-- … -->` on the item line. */
+  comment: Spanned<string> | null;
+  /** Text lines under the item (not list items) — its description. */
+  description: Spanned<string>[];
+  children: Node[];
+  /** The item line from the bullet to the end of the line. */
+  span: Span;
+}
+
+export interface Link {
+  text: string;
+  /** Everything inside `(…)`. */
+  target: string;
+  /** Target without the `#…` fragment. */
+  path: string;
+  /** `nn` from a `#Lnn` fragment. */
+  line: number | null;
+  span: Span;
+}
+
+export interface Ref {
+  /** As written. */
+  text: string;
+  /**
+   * Absolute ID to resolve (differs from `text` for relative names such as
+   * `exports buy` under `module application.purchase`).
+   */
+  target: string;
+  span: Span;
+}
+
+export type TokenKind = "word" | "link" | "quoted" | "comma";
+
+export interface Token {
+  kind: TokenKind;
+  text: string;
+  span: Span;
+}
+
+/** Pre-order walk over a node and its descendants. */
+export function walk(node: Node, f: (n: Node) => void): void {
+  f(node);
+  for (const c of node.children) walk(c, f);
+}
+
+export function sectionNodes(section: Section): Node[] {
+  return section.items.filter((i): i is { type: "node" } & Node => i.type === "node");
+}

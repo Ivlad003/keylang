@@ -1,0 +1,40 @@
+const s1=Get(n=>n.name==="TUI · агент — співавторство, контекст, голос"?n.id:undefined)[0]
+Get(s1,n=>{if(n.type==="text"){if(n.content==="ти · 🎙 голос")Update(n.id,{content:"ти · голос"});if(n.content==="local ⇄ openrouter")Update(n.id,{content:"рушій"})}})
+let r=TuiFrame("TUI · читання спеки (v) — рендер Markdown",0,7200,[["flows/checkout.md",1,"✗"],["docs/specs/checkout.md",0]],"READ","$l-pres",[["  flows/checkout.md ",C.sig],["  tui-markdown",C.cm]],[["v","редагувати"],["Enter","перейти за ID"],["]]","наступний розділ"],["/","пошук"],["q","назад"]])
+const rd=Box(r.mn,"flows/checkout.md · читання",{width:"fill_container",height:"fill_container",pad:[18,40,10,40],gap:8})
+Sp(rd,"flow checkout",C.h,{fontWeight:"700",fontSize:18});Sp(rd,"═".repeat(60),"$accent")
+Insert(rd,{type:"text",name:"p",content:"Покупець оформлює кошик у терміналі: створюється замовлення, зберігається, публікується подія. Тип: business.",fontFamily:"$font-code",fontSize:FS,lineHeight:1.55,fill:C.tx,textGrowth:"fixed-width",width:"fill_container"})
+Sp(rd,"Кроки",C.h,{fontWeight:"700"});Sp(rd,"─────","$accent")
+const st=F(rd,{name:"steps",layout:"vertical",gap:2})
+for(const [n,id,ok,d] of [["1","presentation.terminal.checkout","ok","вхід"],["2","application.purchase.buy","ok",""],["3","infrastructure.products.find","ok","читає"],["4","domain.orderAggregate.create","ok",""],["5","infrastructure.orderStore.save","ok",""],["6","event order.created","unv","trace не підтвердив"]]){const x=F(st,{name:"s",alignItems:"center"});Sp(x,"  "+n+". ",C.cm);Sp(x,ok==="ok"?"✓ ":"◌ ",ok==="ok"?"$ok":"$warn");Sp(x,id,id.startsWith("event")?C.tx:idCol(id),{underline:!id.startsWith("event")});if(d)Sp(x,"  — "+d,C.cm)}
+Sp(rd,"Поведінка",C.h,{fontWeight:"700"});Sp(rd,"─────────","$accent")
+const T1=["┌──────────────────────────────┬──────────────────────────┬────────┐","│ Коли                         │ Тоді                     │ e2e    │","├──────────────────────────────┼──────────────────────────┼────────┤","│ total = сума(price × qty)    │ інваріант                │ ✓      │","│ товару немає на складі       │ purchase.OutOfStock      │ ✗      │","└──────────────────────────────┴──────────────────────────┴────────┘"]
+for(const l of T1){const x=F(rd,{name:"tbl",alignItems:"center"});if(l.includes("✗")){const [a,b]=l.split("✗");Sp(x,a,C.tx);Sp(x,"✗","$fail");Sp(x,b,C.tx)}else if(l.includes("✓")&&!l.startsWith("┌")){const [a,b]=l.split("✓");Sp(x,a,C.tx);Sp(x,"✓","$ok");Sp(x,b,C.tx)}else Sp(x,l,l.includes("Коли")?C.h:"#3A4452",l.includes("Коли")?{fontWeight:"700"}:undefined)}
+Sp(rd,"Приклад e2e",C.h,{fontWeight:"700"});Sp(rd,"───────────","$accent")
+const cb=F(rd,{name:"code block",width:"fill_container",layout:"vertical",padding:[8,12],fill:"$code-bg",stroke:{type:"color",color:"#3A4452"},strokeWidth:{left:2}})
+for(const l of [[Kw("test"),["(\"rejects out of stock\", ",C.tx],Kw("async"),[" () => {",C.tx]],[["  ",C.tx],Kw("const "),["res = ",C.tx],Kw("await "),["run(",C.tx],["\"checkout\"","#A5D6A7"],[", { stock: 0 });",C.tx]],[["  expect(res.error).toBe(",C.tx],["\"OutOfStock\"","#A5D6A7"],[");",C.tx]],[["});",C.tx]]]){const x=F(cb,{name:"cl",alignItems:"center"});for(const s2 of l)Sp(x,s2[0],s2[1],s2[2])}
+const bq=F(rd,{name:"quote",padding:[0,0,0,0],alignItems:"center"});Sp(bq,"▌ ","$warn");Sp(bq,"Примітка: перевірка складу має йти до create — див. ",C.sig,{fontStyle:"italic"});Sp(bq,"explain application.purchase.buy",C.path,{underline:true})
+const ol=Box(r.mn,"Зміст",{width:300,height:"fill_container",pad:[12,8,8,8]})
+Rows(ol,[{s:[["flow checkout",C.h,{fontWeight:"700"}]],sel:1},[["  Кроки        ",C.sig],["5/6","$warn"]],[["  Поведінка    ",C.sig],["✗ 1","$fail"]],[["  Приклад e2e",C.sig]],[[" ",C.cm]],[["рендер: tui-markdown",C.cm]],[["ID лишаються клікабельні",C.cm]]])
+Update(r.tui,{placeholder:false})
+const e3=r.tui
+r=TuiFrame("TUI · spec-to-code — з рядка спеки в код + e2e",1380,7200,[["flows/refund.md",1,"◌"],["src/ui/api.ts +12",0],["tests/e2e/refund.e2e.ts new",0]],"SPEC→CODE","$warn",[["  presentation.api.refund ",C.sig],["  hybrid · 2 файли",C.cm]],[["a","прийняти шматок"],["r","відхилити"],["Tab","файл"],["e","правити"],["u","відкотити"]])
+const left=Box(r.mn,"flows/refund.md",{width:560,height:"fill_container",pad:[12,8,8,4]})
+Ln(left,"1",null,[["# flow refund",C.h,{fontWeight:"700"}]])
+Ln(left,"4",null,[Bl(),Kw("kind "),["business","$l-domain"]])
+Ln(left,"5","unv",[Bl(),Kw("trigger "),["presentation.api.refund","$l-pres",{underline:true}]],{cur:1})
+Banner(left,"$warn","#D2992214",[[["◌ K001 ","$warn",{fontWeight:"700"}],["немає в коді",C.sig]]])
+Ln(left,"6","ok",[Bl(),Kw("step "),Id("application.purchase.cancel")])
+Ln(left,"9","unv",["  ",Bl(),Kw("step "),["infrastructure.payments.refund","$l-infra"]])
+Ln(left,"12","ok",[Bl(),Kw("when "),["повернення пізніше 14 днів",C.tx]])
+Ln(left,"14",null,["  ",Bl(),Kw("test "),["tests/e2e/refund.e2e.ts",C.path]])
+Menu(left,"дії · presentation.api.refund",60,150,440,[{s:[["▸ ",C.h],["spec-to-code",C.h,{fontWeight:"700"}],["   створити в presentation",C.cm]]},{s:[["  ",C.h],["найближчий ID",C.tx],["   presentation.api.purchase",C.cm]]},{s:[["  ",C.h],["code-to-spec",C.tx],["   з виділеного коду",C.cm]]},{s:[["  ",C.h],["explain",C.tx]]}],0)
+const rt=Box(r.mn,"src/ui/api.ts · diff · hybrid",{width:"fill_container",height:"fill_container",pad:[12,8,8,4],tc:"$warn",gap:6})
+const ck=F(rt,{name:"checks",gap:16,padding:[0,0,4,12]});for(const t of ["✓ шар presentation","✓ allow","✓ сигнатура з спеки","✓ K001 зникне"]){Sp(ck,t,"$ok")}
+const hk=F(rt,{name:"hunk",width:"fill_container",layout:"vertical",fill:"#3FB95012",stroke:"$ok",strokeWidth:{left:2}})
+for(const [n,sp] of [["41",[Kw("export async function "),["refund",C.h],["(req: Request) {",C.tx]]],["42",[["  ",C.tx],Kw("const "),["order = ",C.tx],Kw("await "),["purchase.cancel(req.params.id);",C.tx]]],["43",[["  ",C.tx],Kw("if "),["(daysSince(order.paidAt) > 14)",C.tx]]],["44",[["    ",C.tx],Kw("throw new "),["RefundExpired(order.id);",C.tx]]],["45",[["  ",C.tx],Kw("await "),["payments.refund(order);",C.tx],["   // todo!: немає в коді","#56606C"]]],["46",[["  ",C.tx],Kw("return "),["{ status: ",C.tx],["\"refunded\"","#A5D6A7"],[" };",C.tx]]],["47",[["}",C.tx]]]])Ln(hk,n,"add",sp)
+const kk=F(hk,{name:"kk",padding:[4,0,4,62]});Keys(kk,[["a","прийняти"],["r","відхилити"],["e","правити"]])
+Banner(rt,"$accent","#8AA4FF12",[[["наступне ",C.sig,{fontWeight:"700"}],["tests/e2e/refund.e2e.ts",C.path,{underline:true}],["  +18 рядків · сценарій «expired refund»",C.cm]],[["після прийняття ",C.cm],["keylang map",C.h],[" → крок 5 стане ",C.cm],["= agree","$ok"]]])
+Update(r.tui,{placeholder:false})
+for(const t of [e3,r.tui])Get(t,(n,c)=>c.problems&&n.name!=="title"&&Print(n.name,"|",c.parentCtx&&c.parentCtx.node.name,"|",c.problems))
+Export([s1,e3,r.tui],"png","/tmp/claude-1000/-home-kosmodev-pet-project-kosmo-lang-ai/4723d380-7591-4195-864a-ac659da5eac8/scratchpad/pen/exp",{scale:1})

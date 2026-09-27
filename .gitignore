@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.keylang/
+# джерельне відео (22 МБ) не в репозиторії
+clip_*.mp4

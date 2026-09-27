@@ -1,0 +1,25 @@
+{
+  "name": "keylang",
+  "version": "0.1.0",
+  "description": "keylang: architecture description bound to a repository",
+  "type": "module",
+  "bin": {
+    "keylang": "./bin/keylang.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "keylang": "node bin/keylang.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
