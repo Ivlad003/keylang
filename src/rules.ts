@@ -16,7 +16,7 @@ interface SnapshotView {
   nodes: Record<string, { kind: string; file: string | null; line: number | null }>;
   edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
-  exports: { module: string; name: string; kind: string }[];
+  exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
 
 interface Rule {
@@ -52,7 +52,7 @@ export function checkRules(docs: readonly Document[], index: Index, snapshot: Sn
 export function blocksDependency(docs: readonly Document[], from: string, to: string): boolean {
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const edge: UseEdge = { from, to, kind: "import", file: "", line: 1, col: 1, resolution: "resolved" };
-  return specific(collectRules(docs), edge, within) === "deny";
+  return specific(collectRules(docs), edge, within)?.kind === "deny";
 }
 
 export function evaluateRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null): RuleReport {
@@ -121,6 +121,18 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     const holes = holesIn(moduleId);
     return holes.find((item) => item.startsWith("unresolved import")) ?? holes[0] ?? null;
   };
+  // A module reaches another module's code only through an import, so a call
+  // through a local value cannot hide a dependency; an unknown import can.
+  const dependencyHoleIn = (moduleId: string): string | null => {
+    const file = snapshot.nodes[moduleId]?.file;
+    const hole = snapshot.coverage.find(
+      (item) =>
+        DEPENDENCY_HOLES.has(item.kind) &&
+        item.reason !== "unsupported construct `computed call`" &&
+        (item.source === moduleId || item.source?.startsWith(`${moduleId}.`) || (file !== null && file !== undefined && item.file === file)),
+    );
+    return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
+  };
 
   const pushFail = (code: Diagnostic["code"], file: string, line: number, col: number, message: string, criterion: string, area: string): void => {
     const span: Span = { start: { offset: 0, line, col }, end: { offset: 0, line, col: col + 1 } };
@@ -132,15 +144,16 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   };
 
   const reported = new Set<string>();
-  let sawDenyFail = false;
+  const failedDenies = new Set<Rule>();
   for (const edge of edges) {
     if (edge.resolution !== "resolved") continue;
     const key = `${edge.from}\0${edge.to}`;
     if (reported.has(key)) continue;
-    const verdict = specific(rules, edge, within);
-    if (verdict === "deny") {
+    const match = specific(rules, edge, within);
+    const verdict = match?.kind ?? null;
+    if (match?.kind === "deny") {
       reported.add(key);
-      sawDenyFail = true;
+      failedDenies.add(match.rule);
       pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`deny\``, `deny ${edge.from} ${edge.to}`, edge.from);
       continue;
     }
@@ -165,9 +178,9 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   }
 
   for (const deny of rules.denies) {
-    if (sawDenyFail) continue;
+    if (failedDenies.has(deny)) continue;
     const area = modules.size === 0 ? deny.a : [...modules].filter((id) => within(id, deny.a)).join(",");
-    const hole = [...modules].filter((id) => within(id, deny.a)).map(holeIn).find((item) => item !== null) ?? null;
+    const hole = [...modules].filter((id) => within(id, deny.a)).map(dependencyHoleIn).find((item) => item !== null) ?? null;
     if (hole) pushUnverified(deny.file, deny.span.start.line, deny.span.start.col, deny.text, area || deny.a, hole);
     else verdicts.push(base(snapshot, deny.text, area || deny.a, "ok", deny.file, deny.span.start.line, deny.span.start.col, null, "ok"));
   }
@@ -209,20 +222,25 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   for (const rule of rules.exportsRules) {
     const actual = snapshot.exports.filter((row) => row.module === rule.module || row.module.startsWith(`${rule.module}.`));
     const names = new Set(actual.map((row) => row.name));
+    // An `export *` from an unknown module may supply any listed name.
+    const unknown = actual.find((row) => row.name === "*");
     let failed = false;
     for (const row of actual) {
       if (row.name === "*" || rule.names.has(row.name)) continue;
       failed = true;
-      pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `divergence: \`${rule.module}\` exports \`${row.name}\` (${row.kind}), which is not listed in \`exports\``, `exports ${rule.module}`, rule.module);
+      const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
+      pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, `exports ${rule.module}`, rule.module);
     }
-    for (const name of [...rule.names].sort()) {
-      if (names.has(name)) continue;
-      failed = true;
-      pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `absence: \`${rule.module}\` does not export \`${name}\``, `exports ${rule.module}`, rule.module);
+    const missing = [...rule.names].sort().filter((name) => !names.has(name));
+    if (!unknown) {
+      for (const name of missing) {
+        failed = true;
+        pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `absence: \`${rule.module}\` does not export \`${name}\``, `exports ${rule.module}`, rule.module);
+      }
     }
-    const opaque = (holeIn(rule.module) ?? "").includes("opaque");
-    if (!failed && opaque) pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, `exports ${rule.module}`, rule.module, "reexport from an opaque module");
-    else if (!failed) verdicts.push(base(snapshot, `exports ${rule.module}`, rule.module, "ok", rule.file, rule.span.start.line, rule.span.start.col, null, "ok"));
+    if (failed) continue;
+    if (unknown) pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, `exports ${rule.module}`, rule.module, unknown.reason ?? "re-export from an opaque module");
+    else verdicts.push(base(snapshot, `exports ${rule.module}`, rule.module, "ok", rule.file, rule.span.start.line, rule.span.start.col, null, "ok"));
   }
 
   if (rules.noCycles.length > 0) {
@@ -251,8 +269,10 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   return { diagnostics, verdicts };
 }
 
-function specific(rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean): "allow" | "deny" | null {
-  const box: { best: { kind: "allow" | "deny"; score: number } | null } = { best: null };
+const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file"]);
+
+function specific(rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean): { kind: "allow" | "deny"; rule: Rule } | null {
+  const box: { best: { kind: "allow" | "deny"; score: number; rule: Rule } | null } = { best: null };
   const consider = (list: Rule[], kind: "allow" | "deny"): void => {
     for (const rule of list) {
       if (!within(edge.from, rule.a)) continue;
@@ -260,13 +280,13 @@ function specific(rules: Collected, edge: UseEdge, within: (id: string, scope: s
         if (!within(edge.to, target)) continue;
         const score = rule.a.length + target.length;
         const current = box.best;
-        if (!current || score > current.score || (score === current.score && kind === "deny")) box.best = { kind, score };
+        if (!current || score > current.score || (score === current.score && kind === "deny")) box.best = { kind, score, rule };
       }
     }
   };
   consider(rules.denies, "deny");
   consider(rules.allows, "allow");
-  return box.best === null ? null : box.best.kind;
+  return box.best === null ? null : { kind: box.best.kind, rule: box.best.rule };
 }
 
 interface Collected {

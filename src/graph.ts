@@ -74,6 +74,8 @@ export interface Module {
   children: Module[];
   /** `complete` may list no members. `opaque` does not confirm that an arbitrary name exists. */
   members: "complete" | "opaque";
+  /** `export * from` sources: an indexed module, or null with the reason its names are unknown. */
+  starSources: { target: string | null; reason: string }[];
 }
 
 export interface Dep {
@@ -182,7 +184,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     }
     const dot = id.lastIndexOf(".");
     const name = id.slice(dot + 1);
-    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete" };
+    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
     modules.set(id, m);
     const parentId = id.slice(0, dot);
     if (parentId === layer) getLayer(layer).modules.push(m);
@@ -237,12 +239,17 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const aliases = new Map<string, string>();
     for (const imp of facts.imports) {
       const r = resolver.resolve(facts.path, imp.source);
+      const star = imp.reexport && imp.bindings.length === 0;
       let target: Module | null = null;
       if (r.kind === "internal") {
         target = byFile.get(r.file)?.module ?? null;
-        if (!target) continue; // excluded file (tests, d.ts)
+        if (!target) {
+          if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
+          continue; // excluded file (tests, d.ts)
+        }
         if (target === module) continue;
       } else if (r.kind === "generated") {
+        if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
       } else if (r.kind === "external" || r.kind === "builtin") {
         const pkg = r.kind === "builtin" ? "node" : r.pkg;
@@ -255,8 +262,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const reason = `unresolved import \`${imp.source}\``;
         warnings.push(`${facts.path}:${imp.line}: ${reason}`);
         gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
+        if (star) module.starSources.push({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
         continue;
       }
+      if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
       for (const b of imp.bindings) {
         const list = locals.get(b.local) ?? [];
         list.push({ module: target, imported: b.kind === "named" ? b.imported : null });
@@ -455,7 +464,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   if (names.has(name)) return; // overloads / duplicate declarations
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: module.path, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete" };
+    const cls: Module = { id, layer: module.layer, name, path: module.path, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
     module.children.push(cls);
     names.set(name, id);
     const members = new Map<string, string>();

@@ -34,8 +34,8 @@ test("check shop-fixed is clean", () => {
 });
 
 // M0 criterion: the Markdown from the slides, verbatim, parses; both slide
-// mistakes are reported (misplaced `options`, `domain.aggregate`); since M1
-// the broken link also leaves `domain.orderAggregate` unreachable (K103).
+// mistakes are reported (misplaced `options`, `domain.aggregate`). Without
+// code there is no snapshot, so rules are unverified and K103 is not reported.
 test("check verbatim slide", () => {
   const o = keylang(root, ["check", "tests/fixtures/slide"]);
   assert.equal(o.status, 1);
@@ -136,7 +136,7 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 3);
+  assert.equal(index.schema, 4);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
@@ -435,7 +435,7 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
   assert.equal(o.status, 0, out);
   assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 3);
+  assert.equal(index.schema, 4);
   assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
 });
 
@@ -596,6 +596,121 @@ test("exports lists extra public names and a missing one", (t) => {
     assert.match(checked.stdout, new RegExp(`exports \`${name}\``));
   }
   assert.match(checked.stdout, /does not export `notAName`/);
+});
+
+test("exports compares aliases, default, and export * names, not map ids", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "src/domain/parts.ts"), "export function fromX(): number { return 1; }\nexport const valX = 1;\nexport default 3;\n");
+  writeFileSync(
+    join(dir, "src/domain/order.ts"),
+    'export * from "./parts.ts";\nconst a = 1;\nexport { a as b };\nfunction extra(): number { return a; }\nexport { extra };\nexport default function main(): void {}\n',
+  );
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module domain.order\n  - exports fromX, valX, b, extra, default\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  assert.doesNotMatch(checked.stdout, /K001|K104/);
+  assert.match(checked.stderr, /0 fail, 0 unverified, 1 ok/);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const map = readFileSync(join(dir, "keylang/map/domain.md"), "utf8");
+  assert.match(map, /- fn \[extra\]\([^)]*\)(?! <!-- internal -->)/);
+  assert.doesNotMatch(map, /extra\]\([^)]*\).*internal/);
+});
+
+test("export * from an opaque module leaves exports unverified", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), 'export * from "node:path";\n');
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module domain.order\n  - exports Order, total, createOrder, join\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 0, checked.stdout);
+  assert.match(checked.stdout, /keylang\/rules\.md:4:3: unverified re-export from external `node:path`/);
+  assert.doesNotMatch(checked.stdout, /K104|K001/);
+});
+
+test("one failing deny does not hide the verdicts of other denies", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nimport { gone } from "./missing.ts";\nexport function keep(o: Order): void { save(o); gone(); }\n');
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n- deny domain app\n- deny app domain\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
+  assert.match(checked.stdout, /keylang\/rules\.md:4:1: unverified unresolved import `\.\/missing\.ts` \(src\/domain\/order\.ts:\d+:\d+\)/);
+  assert.match(checked.stdout, /keylang\/rules\.md:5:1: K102|src\/app\/checkout\.ts:\d+:\d+: K102 divergence: `app\.checkout` depends on `domain\.order`/);
+});
+
+test("calls through local values do not make deny unverified", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), "export function each(xs: number[], f: (n: number) => void): void { xs.forEach(f); f(1); }\n");
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n");
+  const checked = keylang(dir, ["check", "--strict"]);
+  assert.equal(checked.status, 0, checked.stdout);
+  assert.match(checked.stderr, /0 fail, 0 unverified, 1 ok/);
+});
+
+test("check finds the snapshot for any spelling of the spec path", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+  for (const [cwd, args] of [
+    [dir, ["check", "keylang"]],
+    [dir, ["check", "./keylang"]],
+    [dir, ["check", join(dir, "keylang")]],
+    [join(dir, "keylang"), ["check", "."]],
+    [join(dir, "src"), ["check"]],
+  ] as const) {
+    const checked = keylang(cwd, [...args]);
+    assert.equal(checked.status, 1, `${cwd} ${args.join(" ")}\n${checked.stdout}`);
+    assert.match(checked.stdout, /K102/);
+  }
+});
+
+test("check sees a layer moved in keylang.json without map", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const before = readFileSync(join(dir, "keylang/map/app.md"), "utf8");
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  config.layers = { domain: ["src/domain/**", "src/app/**"], infra: "src/infra/**" };
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /src\/app\/checkout\.ts:\d+:\d+: K102 divergence: `domain\.checkout` depends on `infra\.db`/);
+  assert.equal(readFileSync(join(dir, "keylang/map/app.md"), "utf8"), before);
+});
+
+test("a flow id resolves against current code, not the committed map", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/use.md"), "# flow use\n\n- step domain.order.createOrder\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  writeFileSync(join(dir, "src/domain/order.ts"), "export function createOrders(): void {}\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /keylang\/flows\/use\.md:3:8: K001 dangling reference `domain\.order\.createOrder` \(did you mean `domain\.order\.createOrders`\?\); declare `planned` if this is an intention/);
+});
+
+test("a member of an explicitly excluded file is unverified, not K001", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/use.md"), "# flow use\n\n- step domain.order.createOrder\n");
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  config.exclude = ["src/domain/order.ts"];
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 0, checked.stdout);
+  assert.doesNotMatch(checked.stdout, /K001/);
+  assert.match(checked.stdout, /keylang\/flows\/use\.md:3:1: ID unverified domain\.order\.createOrder: opaque module/);
+  assert.equal(checked.stdout.match(/opaque module/g)?.length, 1, checked.stdout);
+  assert.match(checked.stdout, /keylang\/rules\.md:3:1: unverified excluded by keylang\.json/);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.match(readFileSync(join(dir, "keylang/map/domain.md"), "utf8"), /module \[order\]\([^)]*\) <!-- excluded -->/);
 });
 
 test("no-cycles reports the component that contains d", (t) => {

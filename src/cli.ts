@@ -2,15 +2,15 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, configToJson, loadConfig, toPosix } from "./config.ts";
-import { assess, sameFinding } from "./assess.ts";
+import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, type Document, type Node } from "./ir.ts";
-import { analyze } from "./analyze.ts";
+import { analyze, findRoot, within } from "./analyze.ts";
 import { diffMap, generateMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { serveLsp } from "./lsp.ts";
@@ -184,27 +184,26 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     throw new Error(`unknown --format \`${opts.format}\`; expected ${FORMATS.join(", ")}`);
   }
   const cwd = process.cwd();
-  const config = loadConfig(cwd);
-  const explicit = paths.length > 0;
-  if (!explicit) {
-    if (!existsSync(join(cwd, config.dir))) throw new Error(`no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
-    paths = [config.dir];
+  if (opts.explain) {
+    const analyzed = await analyze({ root: findRoot(cwd), specs: [] });
+    return explainEdge(paths, analyzed.snapshot);
   }
-  const specsAreRepo = paths.every((p) => p === config.dir || p.startsWith(`${config.dir}/`));
-  let snapshot: AnalysisSnapshot | null = null;
-  if ((opts.explain || specsAreRepo) && config.languages.length > 0) snapshot = (await analyze(config.root)).index;
-  if (opts.explain) return explainEdge(explicit ? paths : [], snapshot);
-  const files = collectMdFiles(paths);
-  const docs = load(files);
-  if (config.check.tests && !existsSync(join(config.root, config.check.tests))) throw new Error(`check.tests: no such file \`${config.check.tests}\``);
-  if (config.check.trace && !existsSync(join(config.root, config.check.trace))) throw new Error(`check.trace: no such file \`${config.check.trace}\``);
-  const assessed = assess(docs, snapshot, {
-    root: config.root,
-    ...(config.check.tests ? { testsPath: config.check.tests } : {}),
-    ...(config.check.trace ? { tracePath: config.check.trace } : {}),
+  const root = findRoot(cwd);
+  const config = loadConfig(root);
+  if (paths.length === 0 && !existsSync(join(root, config.dir))) throw new Error(`no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
+  const specs = paths.length > 0 ? paths.map((p) => resolve(cwd, p)) : [join(root, config.dir)];
+  for (const spec of specs) if (!existsSync(spec)) throw new Error(`${relative(cwd, spec) || spec}: not found`);
+  // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
+  const inRepo = specs.every((spec) => within(spec, join(root, config.dir)));
+  const analyzed = await analyze({
+    root,
+    specs,
+    display: (abs) => toPosix(relative(cwd, abs)),
+    ...(inRepo ? {} : { withoutCode: true }),
   });
-  const diags = assessed.diagnostics;
-  const channel = assessed.verdicts;
+  const diags = analyzed.diagnostics;
+  const snapshot = analyzed.snapshot;
+  const channel = analyzed.verdicts;
   const unverified = channel.filter((verdict) => verdict.verdict === "unverified");
   const oks = channel.filter((verdict) => verdict.verdict === "ok").length;
   const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameFinding(verdict, diags)).length;

@@ -117,6 +117,16 @@ export function configToJson(c: Config): string {
 
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
+  return walkSources(c, (rel) => !isExcluded(rel, c.exclude));
+}
+
+/** Source files left out only by the `exclude` of `keylang.json`: their modules are opaque. */
+export function excludedSourceFiles(c: Config): string[] {
+  if (c.exclude.length === 0) return [];
+  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude));
+}
+
+function walkSources(c: Config, keep: (rel: string) => boolean): string[] {
   const out: string[] = [];
   const specDir = c.dir.replace(/\/$/, "");
   const walk = (dir: string): void => {
@@ -130,7 +140,7 @@ export function sourceFiles(c: Config): string[] {
       } else if (e.isFile()) {
         const lang = languageOf(e.name);
         if (!lang || !c.languages.includes(lang)) continue;
-        if (isExcluded(rel, c.exclude)) continue;
+        if (!keep(rel)) continue;
         out.push(rel);
       }
     }

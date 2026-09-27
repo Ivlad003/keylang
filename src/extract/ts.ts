@@ -128,6 +128,8 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
     }
   };
 
+  // Declarations exported later by name: `function a() {}; export { a }`.
+  const localExports = new Set<string>();
   for (const node of root.namedChildren) {
     switch (node.type) {
       case "import_statement":
@@ -168,8 +170,19 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
           break;
         }
         const declaration = node.childForFieldName("declaration");
+        const isDefault = node.children.some((c) => c.type === "default");
         if (declaration) {
+          const before = facts.exportRows.length;
           visitDecl(declaration, true);
+          // `export default function main() {}` is imported as `default`, not `main`.
+          if (isDefault) {
+            for (const row of facts.exportRows.slice(before)) {
+              facts.exports.delete(row.name);
+              facts.exports.add("default");
+              row.local = row.name;
+              row.name = "default";
+            }
+          }
         } else {
           // `export { a, b as c }` and `export default x`
           const clause = node.namedChildren.find((c) => c.type === "export_clause");
@@ -177,8 +190,10 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
             if (s.type !== "export_specifier") continue;
             const alias = s.childForFieldName("alias")?.text ?? s.childForFieldName("name")?.text;
             if (alias) {
+              const local = s.childForFieldName("name")?.text ?? alias;
               facts.exports.add(alias);
-              facts.exportRows.push({ name: alias, kind: "alias", local: s.childForFieldName("name")?.text ?? alias });
+              facts.exportRows.push({ name: alias, kind: "alias", local });
+              localExports.add(local);
             }
           }
           const value = node.childForFieldName("value");
@@ -186,6 +201,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
             if (value.type === "identifier") {
               facts.exports.add(value.text);
               facts.exportRows.push({ name: "default", kind: "default", local: value.text });
+              localExports.add(value.text);
             } else if (value.type === "arrow_function" || value.type === "function_expression" || value.type === "function") {
               facts.decls.push(decl("fn", "default", value, signature(value), true, declCalls(value), collectTypeRefs(value), collectShadows(value), []));
               facts.exports.add("default");
@@ -206,6 +222,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
         visitDecl(node, false);
     }
   }
+  for (const d of facts.decls) if (localExports.has(d.name)) d.exported = true;
   collectDynamicImports(root, facts);
   collectUnsupported(root, facts);
   const end = located(root);

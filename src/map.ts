@@ -2,7 +2,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { sourceFiles, type Config } from "./config.ts";
+import { excludedSourceFiles, sourceFiles, type Config } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { extractTs } from "./extract/ts.ts";
 import { isGeneratedMap, renderMap } from "./emit.ts";
@@ -40,10 +40,24 @@ export async function generateMap(config: Config): Promise<MapResult> {
     const hash = sha256(src);
     facts.push(await cachedFacts(`${config.root}\0${p}`, hash, () => extractTs(p, src)));
   }
+  // An explicitly excluded file inside a layer is a module with unknown contents.
+  const excluded = excludedSourceFiles(config).filter((p) => placeFile(config, p) !== null);
+  for (const p of excluded) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
+  for (const p of excluded) {
+    const module = graph.byPath.get(p);
+    if (module) module.comment = "excluded";
+  }
   const mapDir = `${config.dir}/map`;
-  const index = buildSnapshot(graph, config, facts, indexed, skipped);
+  const index = buildSnapshot(graph, config, facts, indexed, [
+    ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
+    ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
+  ]);
   return { graph, files: renderMap(index, mapDir), index, skipped: skipped.length };
+}
+
+function opaqueFacts(path: string): FileFacts {
+  return { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], completeness: "opaque", parseError: null };
 }
 
 export interface MapDiff {

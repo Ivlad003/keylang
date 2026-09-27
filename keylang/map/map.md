@@ -4,11 +4,21 @@
 
 - map
   - module [analyze](../../src/analyze.ts#L1)
+    - node external.node
+    - assess check.assess
     - config base.config
+    - files lang.files
+    - ir lang.ir
     - map map.map
+    - parser lang.parser
+    - snapshot map.snapshot
     - fact-cache map.fact-cache
-    - fn [analyze](../../src/analyze.ts#L9) (root: string) → Promise<MapResult & { config: Config }>
-      - calls base.config.loadConfig, map.map.generateMap
+    - type [AnalysisRequest](../../src/analyze.ts#L18)
+    - type [Analysis](../../src/analyze.ts#L31) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L38) (request: AnalysisRequest) → Promise<Analysis>
+      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, check.assess.assess
+    - fn [findRoot](../../src/analyze.ts#L79) (start: string) → string
+    - fn [within](../../src/analyze.ts#L89) (abs: string, dir: string) → boolean
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - snapshot map.snapshot
@@ -44,18 +54,18 @@
     - type [OpenEdge](../../src/graph.ts#L37)
     - type [Layer](../../src/graph.ts#L51)
     - type [Module](../../src/graph.ts#L57)
-    - type [Dep](../../src/graph.ts#L79)
-    - type [Fn](../../src/graph.ts#L90)
-    - type [Call](../../src/graph.ts#L102)
-    - type [TypeNode](../../src/graph.ts#L111)
-    - type [Stats](../../src/graph.ts#L122)
-    - type [FileEntry](../../src/graph.ts#L149) <!-- internal -->
-    - fn [buildGraph](../../src/graph.ts#L154) (config: Config, files: FileFacts[]) → Graph
+    - type [Dep](../../src/graph.ts#L81)
+    - type [Fn](../../src/graph.ts#L92)
+    - type [Call](../../src/graph.ts#L104)
+    - type [TypeNode](../../src/graph.ts#L113)
+    - type [Stats](../../src/graph.ts#L124)
+    - type [FileEntry](../../src/graph.ts#L151) <!-- internal -->
+    - fn [buildGraph](../../src/graph.ts#L156) (config: Config, files: FileFacts[]) → Graph
       - calls map.imports.ImportResolver, map.graph.placeFile, map.graph.addDecl, map.graph.markOpaque, base.config.layerName
-    - fn [markOpaque](../../src/graph.ts#L448) (m: Module) → void <!-- internal -->
-    - fn [addDecl](../../src/graph.ts#L453) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L457) (m: Module) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L462) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
       - calls base.config.layerName
-    - fn [placeFile](../../src/graph.ts#L478) (config: Config, file: string) → { layer: string; segments: string[] } | null
+    - fn [placeFile](../../src/graph.ts#L487) (config: Config, file: string) → { layer: string; segments: string[] } | null
       - calls base.glob.matchesGlob, base.glob.globPrefix
   - module [imports](../../src/imports.ts#L1)
     - node external.node
@@ -91,13 +101,14 @@
     - snapshot map.snapshot
     - type [MapResult](../../src/map.ts#L13)
     - fn [generateMap](../../src/map.ts#L22) (config: Config) → Promise<MapResult>
-      - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.cachedFacts, extract.ts.extractTs, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
-    - type [MapDiff](../../src/map.ts#L49)
-    - fn [mapConflicts](../../src/map.ts#L57) (config: Config, r: MapResult) → string[]
+      - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.cachedFacts, extract.ts.extractTs, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
+    - fn [opaqueFacts](../../src/map.ts#L59) (path: string) → FileFacts <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L63)
+    - fn [mapConflicts](../../src/map.ts#L71) (config: Config, r: MapResult) → string[]
       - calls map.emit.isGeneratedMap
-    - fn [writeMap](../../src/map.ts#L71) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
+    - fn [writeMap](../../src/map.ts#L85) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
-    - fn [diffMap](../../src/map.ts#L101) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L115) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node
@@ -109,17 +120,18 @@
     - type [EdgeKind](../../src/snapshot.ts#L18) = "import" | "call" | "type" | "reexport"
     - type [SnapshotEdge](../../src/snapshot.ts#L20)
     - type [SnapshotExport](../../src/snapshot.ts#L42)
-    - type [CoverageItem](../../src/snapshot.ts#L49)
-    - type [SnapshotNode](../../src/snapshot.ts#L61)
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L81)
-    - fn [sha256](../../src/snapshot.ts#L105) (text: string) → string
-    - fn [buildSnapshot](../../src/snapshot.ts#L109) ( graph: Graph, config: Config, facts: readonly FileFacts[], files: readonly { path: string; sha256: string }[], skipped: readonly string[], ) → AnalysisSnapshot
+    - type [CoverageItem](../../src/snapshot.ts#L55)
+    - type [SnapshotNode](../../src/snapshot.ts#L67)
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L87)
+    - fn [sha256](../../src/snapshot.ts#L111) (text: string) → string
+    - fn [buildSnapshot](../../src/snapshot.ts#L115) ( graph: Graph, config: Config, facts: readonly FileFacts[], files: readonly { path: string; sha256: string }[], skipped: readonly { file: string; reason: string }[], ) → AnalysisSnapshot
       - calls map.snapshot.grammarVersions, map.snapshot.sha256, map.snapshot.exportTable
-    - fn [exportTable](../../src/snapshot.ts#L296) (graph: Graph, facts: readonly FileFacts[]) → SnapshotExport[] <!-- internal -->
-      - calls map.snapshot.findSymbol
-    - fn [findSymbol](../../src/snapshot.ts#L317) (m: Module, name: string) → { id: string; kind: "fn" | "class" | "type" } | null <!-- internal -->
+    - fn [exportTable](../../src/snapshot.ts#L302) (graph: Graph, facts: readonly FileFacts[]) → SnapshotExport[] <!-- internal -->
+      - calls map.snapshot.isForeign, map.snapshot.findSymbol
+    - fn [isForeign](../../src/snapshot.ts#L351) (file: FileFacts, row: { name: string }) → boolean <!-- internal -->
+    - fn [findSymbol](../../src/snapshot.ts#L355) (m: Module, name: string) → { id: string; kind: "fn" | "class" | "type" } | null <!-- internal -->
       - calls base.config.layerName
-    - fn [compareCoverage](../../src/snapshot.ts#L328) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L366) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       - calls map.snapshot.cmp
-    - fn [cmp](../../src/snapshot.ts#L332) (a: string, b: string) → number <!-- internal -->
-    - fn [grammarVersions](../../src/snapshot.ts#L336) () → Record<string, string> <!-- internal -->
+    - fn [cmp](../../src/snapshot.ts#L370) (a: string, b: string) → number <!-- internal -->
+    - fn [grammarVersions](../../src/snapshot.ts#L374) () → Record<string, string> <!-- internal -->

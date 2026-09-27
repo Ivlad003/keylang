@@ -3,6 +3,20 @@
 # map
 
 - check
+  - module [assess](../../src/assess.ts#L1)
+    - diag base.diag
+    - flows check.flows
+    - ir lang.ir
+    - resolve check.resolve
+    - rules check.rules
+    - verdict check.verdict
+    - type [SnapshotInput](../../src/assess.ts#L11)
+    - type [Assessment](../../src/assess.ts#L13)
+    - fn [assess](../../src/assess.ts#L19) ( docs: readonly Document[], snapshot: SnapshotInput | null, flow: { root: string; testsPath?: string; tracePath?: string } | null, ) → Assessment
+      - calls check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, check.assess.plannedIds
+    - fn [sameFinding](../../src/assess.ts#L60) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [plannedIds](../../src/assess.ts#L68) (docs: readonly Document[]) → Set<string> <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
   - module [flows](../../src/flows.ts#L1)
     - node external.node
     - diag base.diag
@@ -44,11 +58,11 @@
       - calls check.resolve.Index, check.resolve.insert, lang.ir.sectionNodes, lang.ir.walk, lang.ir.isDecl, check.resolve.checkRefs
     - fn [refineOpacity](../../src/resolve.ts#L120) ( docs: readonly Document[], index: Index, nodes: Record<string, { kind: string; members?: string }> | null, ) → { added: Diagnostic[]; unverified: { file: string; line: number; col: number; message: string }[] }
       - calls lang.ir.sectionNodes, lang.ir.walk, base.diag.diagnostic
-    - fn [insert](../../src/resolve.ts#L152) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [insert](../../src/resolve.ts#L154) (map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]) → void <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [checkRefs](../../src/resolve.ts#L170) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [checkRefs](../../src/resolve.ts#L172) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [levenshtein](../../src/resolve.ts#L188) (a: string, b: string) → number <!-- internal -->
+    - fn [levenshtein](../../src/resolve.ts#L193) (a: string, b: string) → number <!-- internal -->
   - module [rules](../../src/rules.ts#L1)
     - node external.node
     - diag base.diag
@@ -69,14 +83,14 @@
       - calls check.rules.collectRules, check.rules.hashText, check.rules.evaluateOnSnapshot
     - fn [evaluateOnSnapshot](../../src/rules.ts#L80) (rules: Collected, index: Index, snapshot: SnapshotView) → RuleReport <!-- internal -->
       - calls base.diag.diagnostic, check.rules.base, check.rules.specific, check.scc.stronglyConnected, check.scc.cycleThrough
-    - fn [specific](../../src/rules.ts#L254) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → "allow" | "deny" | null <!-- internal -->
-    - type [Collected](../../src/rules.ts#L272) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L284) (docs: readonly Document[]) → Collected <!-- internal -->
+    - fn [specific](../../src/rules.ts#L274) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - type [Collected](../../src/rules.ts#L292) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L304) (docs: readonly Document[]) → Collected <!-- internal -->
       - calls lang.ir.sectionNodes, check.rules.isRuleNode
-    - fn [base](../../src/rules.ts#L337) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L357) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L341) (text: string) → string <!-- internal -->
-    - fn [isRuleNode](../../src/rules.ts#L345) (n: Node) → boolean
+    - fn [hashText](../../src/rules.ts#L361) (text: string) → string <!-- internal -->
+    - fn [isRuleNode](../../src/rules.ts#L365) (n: Node) → boolean
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
     - fn [cycleThrough](../../src/scc.ts#L46) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]

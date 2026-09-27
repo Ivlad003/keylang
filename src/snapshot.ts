@@ -9,7 +9,7 @@ import { layerName } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
 
-export const SNAPSHOT_SCHEMA = 3;
+export const SNAPSHOT_SCHEMA = 4;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
 export const EXTRACTOR_VERSION = "m1.2";
 
@@ -41,9 +41,15 @@ export interface SnapshotEdge {
 
 export interface SnapshotExport {
   module: string;
+  /** Public name. `*` marks an `export * from` whose names are unknown (`reason`). */
   name: string;
   symbol: string | null;
-  kind: "fn" | "class" | "type" | "value";
+  kind: "fn" | "class" | "type" | "value" | "reexport";
+  /** How the name is exported when it is not a plain declaration. */
+  form?: "alias" | "default" | "reexport";
+  /** Module an `export *` row comes from. */
+  from?: string;
+  reason?: string;
 }
 
 export interface CoverageItem {
@@ -111,7 +117,7 @@ export function buildSnapshot(
   config: Config,
   facts: readonly FileFacts[],
   files: readonly { path: string; sha256: string }[],
-  skipped: readonly string[],
+  skipped: readonly { file: string; reason: string }[],
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -275,8 +281,8 @@ export function buildSnapshot(
       });
     }
   }
-  for (const file of skipped) {
-    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason: "outside guessed layers", source: null });
+  for (const { file, reason } of skipped) {
+    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: graph.byPath.get(file)?.id ?? null });
   }
   coverage.sort(compareCoverage);
 
@@ -294,24 +300,56 @@ export function buildSnapshot(
 }
 
 function exportTable(graph: Graph, facts: readonly FileFacts[]): SnapshotExport[] {
-  const out: SnapshotExport[] = [];
-  const seen = new Set<string>();
+  const own = new Map<string, SnapshotExport[]>();
+  const stars = new Map<string, Module>();
   for (const file of facts) {
     const module = graph.byPath.get(file.path);
     if (!module) continue;
-    const rows = file.exportRows.length > 0 ? file.exportRows : [...file.exports].sort().map((name) => ({ name, kind: "value" as const, local: name }));
-    for (const row of rows) {
+    const rows = own.get(module.id) ?? [];
+    own.set(module.id, rows);
+    stars.set(module.id, module);
+    const listed = file.exportRows.length > 0 ? file.exportRows : [...file.exports].sort().map((name) => ({ name, kind: "value" as const, local: name }));
+    for (const row of listed) {
       if (row.name === "*" && row.kind === "reexport") continue;
-      const key = `${module.id}\0${row.name}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const symbol = findSymbol(module, row.local ?? row.name);
+      if (rows.some((item) => item.name === row.name)) continue;
+      const symbol = row.kind === "alias" && isForeign(file, row) ? null : findSymbol(module, row.local ?? row.name);
       const kind = symbol?.kind ?? (row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value");
-      out.push({ module: module.id, name: row.name, symbol: symbol?.id ?? null, kind });
+      const form = row.kind === "alias" || row.kind === "default" ? row.kind : row.name === "default" ? "default" : undefined;
+      rows.push({ module: module.id, name: row.name, symbol: symbol?.id ?? null, kind, ...(form ? { form } : {}) });
     }
   }
+  // `export * from "./x"` re-exports every name of x except `default`, transitively.
+  const expanded = new Map<string, SnapshotExport[]>();
+  const expand = (id: string, visiting: Set<string>): SnapshotExport[] => {
+    const done = expanded.get(id);
+    if (done) return done;
+    const rows = [...(own.get(id) ?? [])];
+    const module = stars.get(id);
+    if (module && !visiting.has(id)) {
+      visiting.add(id);
+      for (const star of module.starSources) {
+        if (star.target === null || !own.has(star.target)) {
+          rows.push({ module: id, name: "*", symbol: null, kind: "reexport", form: "reexport", reason: star.reason || `re-export from \`${star.target}\`` });
+          continue;
+        }
+        for (const row of expand(star.target, visiting)) {
+          if (row.name === "default" || rows.some((item) => item.name === row.name)) continue;
+          rows.push({ ...row, module: id, form: "reexport", from: row.from ?? star.target });
+        }
+      }
+      visiting.delete(id);
+    }
+    expanded.set(id, rows);
+    return rows;
+  };
+  const out = [...own.keys()].flatMap((id) => expand(id, new Set()));
   out.sort((a, b) => (a.module < b.module ? -1 : a.module > b.module ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return out;
+}
+
+/** `export { a as b } from "./x"` names a symbol of x, not a local declaration. */
+function isForeign(file: FileFacts, row: { name: string }): boolean {
+  return file.imports.some((imp) => imp.reexport && imp.bindings.some((binding) => binding.local === row.name));
 }
 
 function findSymbol(m: Module, name: string): { id: string; kind: "fn" | "class" | "type" } | null {

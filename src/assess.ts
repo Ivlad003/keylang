@@ -1,12 +1,14 @@
 // One assessment for `keylang check` and `keylang lsp`: the same diagnostics and verdicts.
 
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
-import { evaluateFlows } from "./flows.ts";
+import { evaluateFlows, type FlowInput } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { check, refineOpacity, type Index } from "./resolve.ts";
 import { evaluateRules } from "./rules.ts";
-import type { AnalysisSnapshot } from "./snapshot.ts";
 import type { Verdict } from "./verdict.ts";
+
+/** The slice of the analysis snapshot that checks read; `check` does not import `map`. */
+export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & { nodes: FlowInput["nodes"]; edges: FlowInput["edges"] };
 
 export interface Assessment {
   index: Index;
@@ -16,7 +18,7 @@ export interface Assessment {
 
 export function assess(
   docs: readonly Document[],
-  snapshot: AnalysisSnapshot | null,
+  snapshot: SnapshotInput | null,
   flow: { root: string; testsPath?: string; tracePath?: string } | null,
 ): Assessment {
   const { index, diagnostics: resolveDiags } = check(docs);
@@ -38,7 +40,9 @@ export function assess(
     (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),
   );
   diagnostics.sort(compareDiagnostics);
-  const refinedVerdicts: Verdict[] = refined.unverified.map((item) => ({
+  // A flow step reports its own ID verdict for the same reference.
+  const flowIds = new Set(flows.verdicts.filter((verdict) => verdict.criterion === "ID").map((verdict) => `${verdict.file}:${verdict.line}`));
+  const refinedVerdicts: Verdict[] = refined.unverified.filter((item) => !flowIds.has(`${item.file}:${item.line}`)).map((item) => ({
     verdict: "unverified",
     criterion: "ID",
     area: item.message,

@@ -15,19 +15,23 @@
       - calls base.config.detectLanguages, base.config.guessLayers
     - fn [configToJson](../../src/config.ts#L106) (c: Config) → string
     - fn [sourceFiles](../../src/config.ts#L119) (c: Config) → string[]
-      - calls base.config.toPosix, base.config.skipDir, base.config.languageOf, base.config.isExcluded
-    - fn [isExcluded](../../src/config.ts#L142) (rel: string, extra: readonly string[]) → boolean
+      - calls base.config.walkSources, base.config.isExcluded
+    - fn [excludedSourceFiles](../../src/config.ts#L124) (c: Config) → string[]
+      - calls base.config.walkSources, base.config.isExcluded
+    - fn [walkSources](../../src/config.ts#L129) (c: Config, keep: (rel: string) => boolean) → string[] <!-- internal -->
+      - calls base.config.toPosix, base.config.skipDir, base.config.languageOf
+    - fn [isExcluded](../../src/config.ts#L152) (rel: string, extra: readonly string[]) → boolean
       - calls base.glob.matchesGlob
-    - fn [toPosix](../../src/config.ts#L146) (p: string) → string
-    - fn [detectLanguages](../../src/config.ts#L150) (root: string) → Language[] <!-- internal -->
+    - fn [toPosix](../../src/config.ts#L156) (p: string) → string
+    - fn [detectLanguages](../../src/config.ts#L160) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf
-    - fn [guessLayers](../../src/config.ts#L174) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L184) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.hasRootFiles, base.config.hasSource, base.config.skipDir, base.glob.matchesGlob, base.config.layerName
-    - fn [hasRootFiles](../../src/config.ts#L194) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L204) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.languageOf, base.config.isExcluded
-    - fn [hasSource](../../src/config.ts#L198) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L208) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf, base.config.isExcluded
-    - fn [layerName](../../src/config.ts#L211) (name: string) → string
+    - fn [layerName](../../src/config.ts#L221) (name: string) → string
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)

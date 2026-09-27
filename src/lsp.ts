@@ -154,37 +154,15 @@ interface Finding {
 }
 
 async function view(root: string, textDocument: TextDoc | undefined): Promise<View> {
-  let snapshot: AnalysisSnapshot | null = null;
-  let specDir = "keylang";
-  let testsPath: string | undefined;
-  let tracePath: string | undefined;
-  try {
-    const analyzed = await analyze(root);
-    snapshot = analyzed.index;
-    specDir = analyzed.config.dir;
-    testsPath = analyzed.config.check.tests;
-    tracePath = analyzed.config.check.trace;
-  } catch {
-    snapshot = null;
-  }
-  const specRoot = join(root, specDir);
-  const docs: Document[] = existsSync(specRoot)
-    ? collectMdFiles([specRoot]).map((file) => parse(file.startsWith(`${root}/`) ? file.slice(root.length + 1) : file, readFileSync(file, "utf8")))
-    : [];
-  const bufferPath = textDocument?.uri ? relativeTo(root, filePath(textDocument.uri)) : null;
-  const text = textDocument?.text ?? (textDocument?.uri && existsSync(filePath(textDocument.uri)) ? readFileSync(filePath(textDocument.uri), "utf8") : "");
-  if (textDocument?.text !== undefined && bufferPath) {
-    const parsed = parse(bufferPath, textDocument.text);
-    const at = docs.findIndex((doc) => doc.path === bufferPath);
-    if (at >= 0) docs[at] = parsed;
-    else docs.push(parsed);
-  }
-  const flow = {
-    root,
-    ...(testsPath && existsSync(join(root, testsPath)) ? { testsPath } : {}),
-    ...(tracePath && existsSync(join(root, tracePath)) ? { tracePath } : {}),
-  };
-  const assessed: Assessment = assess(docs, snapshot, flow);
+  const bufferAbs = textDocument?.uri ? filePath(textDocument.uri) : null;
+  const bufferPath = bufferAbs ? relativeTo(root, bufferAbs) : null;
+  const text = textDocument?.text ?? (bufferAbs && existsSync(bufferAbs) ? readFileSync(bufferAbs, "utf8") : "");
+  const overlay = new Map<string, string>();
+  if (textDocument?.text !== undefined && bufferAbs) overlay.set(bufferAbs, textDocument.text);
+  const analyzed = await analyze({ root, overlay });
+  const snapshot = analyzed.snapshot;
+  const docs = analyzed.docs;
+  const assessed: Assessment = analyzed;
   return { snapshot, docs, index: assessed.index, diagnostics: assessed.diagnostics, verdicts: assessed.verdicts, text, bufferPath };
 }
 

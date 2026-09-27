@@ -31,38 +31,38 @@
     - treesitter extract.treesitter
     - fn [extractTs](../../src/extract/ts.ts#L19) (path: string, src: string) → Promise<FileFacts>
       - calls extract.treesitter.grammarFor, extract.treesitter.parseSource, extract.treesitter.query, extract.ts.callFact, extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs, extract.ts.collectShadows, extract.ts.requireSource, extract.ts.importAt, extract.ts.classDecl, extract.ts.moduleSource, extract.ts.typeSignature, extract.ts.importStatement, extract.ts.stringValue, extract.ts.commonJsExports, extract.ts.collectDynamicImports, extract.ts.collectUnsupported, extract.ts.located, extract.ts.errorLine
-    - fn [errorLine](../../src/extract/ts.ts#L222) (node: Node) → number <!-- internal -->
-    - fn [decl](../../src/extract/ts.ts#L231) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], shadows: { name: string; kind: "parameter" | "local" }[], members: DeclFact[]) → DeclFact <!-- internal -->
+    - fn [errorLine](../../src/extract/ts.ts#L239) (node: Node) → number <!-- internal -->
+    - fn [decl](../../src/extract/ts.ts#L248) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], shadows: { name: string; kind: "parameter" | "local" }[], members: DeclFact[]) → DeclFact <!-- internal -->
       - calls extract.ts.located
-    - fn [callFact](../../src/extract/ts.ts#L236) (callee: string, node: Node) → CallFact <!-- internal -->
+    - fn [callFact](../../src/extract/ts.ts#L253) (callee: string, node: Node) → CallFact <!-- internal -->
       - calls extract.ts.located
-    - fn [located](../../src/extract/ts.ts#L241) (node: Node) → { line: number; col: number; endLine: number; endCol: number; text: string } <!-- internal -->
-    - fn [importAt](../../src/extract/ts.ts#L251) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [located](../../src/extract/ts.ts#L258) (node: Node) → { line: number; col: number; endLine: number; endCol: number; text: string } <!-- internal -->
+    - fn [importAt](../../src/extract/ts.ts#L268) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
       - calls extract.ts.located
-    - fn [collectTypeRefs](../../src/extract/ts.ts#L259) (node: Node) → TypeRefFact[] <!-- internal -->
+    - fn [collectTypeRefs](../../src/extract/ts.ts#L276) (node: Node) → TypeRefFact[] <!-- internal -->
       - calls extract.ts.located
-    - fn [classDecl](../../src/extract/ts.ts#L279) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node) => CallFact[]) → DeclFact <!-- internal -->
+    - fn [classDecl](../../src/extract/ts.ts#L296) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node) => CallFact[]) → DeclFact <!-- internal -->
       - calls extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs, extract.ts.collectShadows, extract.ts.heritage
-    - fn [importStatement](../../src/extract/ts.ts#L294) (node: Node) → ImportFact[] <!-- internal -->
+    - fn [importStatement](../../src/extract/ts.ts#L311) (node: Node) → ImportFact[] <!-- internal -->
       - calls extract.ts.stringValue, extract.ts.importAt
-    - fn [collectDynamicImports](../../src/extract/ts.ts#L318) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectDynamicImports](../../src/extract/ts.ts#L335) (root: Node, facts: FileFacts) → void <!-- internal -->
       - calls extract.ts.stringValue, extract.ts.importAt, extract.ts.unsupported
-    - fn [collectUnsupported](../../src/extract/ts.ts#L342) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectUnsupported](../../src/extract/ts.ts#L359) (root: Node, facts: FileFacts) → void <!-- internal -->
       - calls extract.ts.unsupported
-    - fn [unsupported](../../src/extract/ts.ts#L359) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/ts.ts#L376) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.ts.located
-    - fn [collectShadows](../../src/extract/ts.ts#L365) (fn: Node) → { name: string; kind: "parameter" | "local" }[] <!-- internal -->
+    - fn [collectShadows](../../src/extract/ts.ts#L382) (fn: Node) → { name: string; kind: "parameter" | "local" }[] <!-- internal -->
       - calls extract.ts.parameterName
-    - fn [parameterName](../../src/extract/ts.ts#L386) (node: Node) → string | null <!-- internal -->
-    - fn [moduleSource](../../src/extract/ts.ts#L396) (facts: FileFacts, local: string) → string | null <!-- internal -->
-    - fn [requireSource](../../src/extract/ts.ts#L400) (value: Node, requires: ReturnType<typeof query>) → string | null <!-- internal -->
-    - fn [commonJsExports](../../src/extract/ts.ts#L411) (stmt: Node, facts: FileFacts) → void <!-- internal -->
-    - fn [stringValue](../../src/extract/ts.ts#L434) (n: Node) → string | null <!-- internal -->
-    - fn [signature](../../src/extract/ts.ts#L439) (fn: Node) → string <!-- internal -->
+    - fn [parameterName](../../src/extract/ts.ts#L403) (node: Node) → string | null <!-- internal -->
+    - fn [moduleSource](../../src/extract/ts.ts#L413) (facts: FileFacts, local: string) → string | null <!-- internal -->
+    - fn [requireSource](../../src/extract/ts.ts#L417) (value: Node, requires: ReturnType<typeof query>) → string | null <!-- internal -->
+    - fn [commonJsExports](../../src/extract/ts.ts#L428) (stmt: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [stringValue](../../src/extract/ts.ts#L451) (n: Node) → string | null <!-- internal -->
+    - fn [signature](../../src/extract/ts.ts#L456) (fn: Node) → string <!-- internal -->
       - calls extract.ts.collapse
-    - fn [typeSignature](../../src/extract/ts.ts#L448) (n: Node) → string | null <!-- internal -->
+    - fn [typeSignature](../../src/extract/ts.ts#L465) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse, extract.ts.heritage
-    - fn [heritage](../../src/extract/ts.ts#L457) (n: Node) → string | null <!-- internal -->
+    - fn [heritage](../../src/extract/ts.ts#L474) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse
-    - fn [collapse](../../src/extract/ts.ts#L462) (s: string) → string <!-- internal -->
-    - fn [isNodeBuiltin](../../src/extract/ts.ts#L467) (spec: string) → boolean
+    - fn [collapse](../../src/extract/ts.ts#L479) (s: string) → string <!-- internal -->
+    - fn [isNodeBuiltin](../../src/extract/ts.ts#L484) (spec: string) → boolean

@@ -129,6 +129,7 @@ export function refineOpacity(
     for (const section of doc.sections) {
       for (const node of sectionNodes(section)) {
         walk(node, (item) => {
+          if (item.kind === "exports") return;
           for (const ref of item.refs) {
             const hit = index.lookup(ref.target);
             if (hit.kind !== "opaque") continue;
@@ -139,6 +140,7 @@ export function refineOpacity(
               let msg = `dangling reference \`${ref.target}\``;
               const suggestion = index.suggest(ref.target);
               if (suggestion !== undefined) msg += ` (did you mean \`${suggestion}\`?)`;
+              msg += "; declare `planned` if this is an intention";
               added.push(diagnostic("K001", doc.path, ref.span, msg));
             }
           }
@@ -169,7 +171,10 @@ function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnos
 
 function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[]): void {
   let ok = true;
-  for (const r of node.refs) {
+  // `exports` lists public names (values, aliases, `default`), compared with the
+  // snapshot's export table by the rule, not declarations of the map.
+  const refs = node.kind === "exports" ? [] : node.refs;
+  for (const r of refs) {
     if (index.lookup(r.target).kind === "missing") {
       ok = false;
       let msg = `dangling reference \`${r.target}\``;
