@@ -1,0 +1,13 @@
+{
+  "languages": ["typescript", "javascript"],
+  "module": "file",
+  "layers": {
+    "cli": ["bin/**", "src/cli.ts", "src/index.ts"],
+    "map": ["src/map.ts", "src/emit.ts", "src/graph.ts", "src/imports.ts"],
+    "check": ["src/rules.ts", "src/resolve.ts"],
+    "lang": ["src/parser.ts", "src/fmt.ts", "src/files.ts", "src/ir.ts"],
+    "extract": ["src/extract/**"],
+    "base": ["src/span.ts", "src/diag.ts", "src/config.ts", "src/glob.ts"]
+  },
+  "exclude": ["bench/**", "examples/**", "design/**", "slides/**"]
+}

@@ -14,12 +14,23 @@ export type Code =
   /** Wrong or malformed arguments of a known keyword. */
   | "K005"
   /** Unknown section heading (warning). */
-  | "K006";
+  | "K006"
+  // rules (M1)
+  /** Dependency against the layer order (divergence). */
+  | "K101"
+  /** Dependency forbidden by `deny` (divergence). */
+  | "K102"
+  /** Module unreachable from any `entry` (warning). */
+  | "K103"
+  /** Module exports a name missing from its `exports` list. */
+  | "K104"
+  /** Dependency cycle where `no-cycles` is declared. */
+  | "K105";
 
 export type Severity = "error" | "warning";
 
 export function severityOf(code: Code): Severity {
-  return code === "K006" ? "warning" : "error";
+  return code === "K006" || code === "K103" ? "warning" : "error";
 }
 
 export interface Diagnostic {

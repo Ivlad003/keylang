@@ -580,7 +580,8 @@ class Parser {
       name = link.text;
     }
     if (!isSegment(name)) {
-      this.err("K005", t.span, `invalid name \`${t.text}\``);
+      const msg = t.text.startsWith("[") ? "malformed link, expected `[name](path#Lnn)`" : `invalid name \`${t.text}\``;
+      this.err("K005", t.span, msg);
       return;
     }
     // For a link, point at the link text, i.e. just after `[`.
@@ -708,7 +709,8 @@ function parseLink(t: Token): Link {
 
 /**
  * Split an item head into tokens. Words end at whitespace or `,`;
- * `[text](target)` and `"quoted"` are single tokens; `<!-- … -->` ends the
+ * `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link
+ * is an ordinary word); `<!-- … -->` ends the
  * head and is returned separately.
  */
 function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[]; comment: Spanned<string> | null } {
@@ -745,7 +747,8 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
         kind = "link";
         e = end;
       } else {
-        errs.push([l.span(i, wordEnd(i)), "malformed link, expected `[name](path#Lnn)`"]);
+        // Plain text such as `[Span, string][]` in a signature; a name that
+        // should have been a link is reported by `decl`.
         kind = "word";
         e = wordEnd(i);
       }

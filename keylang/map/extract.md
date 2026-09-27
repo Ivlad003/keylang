@@ -1,0 +1,46 @@
+<!-- keylang:generated — не редагувати, `keylang map` -->
+
+# map
+
+- extract
+  - module [facts](src/extract/facts.ts#L1)
+    - type [FileFacts](src/extract/facts.ts#L4)
+    - type [ImportFact](src/extract/facts.ts#L15)
+    - type [ImportBinding](src/extract/facts.ts#L26)
+    - type [DeclKind](src/extract/facts.ts#L32) = "fn" | "class" | "type"
+    - type [DeclFact](src/extract/facts.ts#L34)
+    - type [CallFact](src/extract/facts.ts#L48)
+  - module [treesitter](src/extract/treesitter.ts#L1)
+    - node external.node
+    - web-tree-sitter external.web-tree-sitter
+    - type [Grammar](src/extract/treesitter.ts#L11) = "typescript" | "tsx" | "javascript"
+    - fn [wasmDir](src/extract/treesitter.ts#L17) () → string <!-- internal -->
+    - fn [loadLanguage](src/extract/treesitter.ts#L21) (g: Grammar) → Promise<Language>
+      - calls extract.treesitter.wasmDir
+    - fn [parseSource](src/extract/treesitter.ts#L31) (g: Grammar, src: string) → Promise<{ tree: Tree; language: Language }>
+      - calls extract.treesitter.loadLanguage
+    - fn [query](src/extract/treesitter.ts#L41) (language: Language, g: Grammar, name: string, source: string) → Query
+    - fn [grammarFor](src/extract/treesitter.ts#L51) (path: string) → Grammar
+  - module [ts](src/extract/ts.ts#L1)
+    - node external.node
+    - facts extract.facts
+    - treesitter extract.treesitter
+    - fn [extractTs](src/extract/ts.ts#L19) (path: string, src: string) → Promise<FileFacts>
+      - calls extract.treesitter.grammarFor, extract.treesitter.parseSource, extract.treesitter.query, extract.ts.decl, extract.ts.signature, extract.ts.requireSource, extract.ts.classDecl, extract.ts.moduleSource, extract.ts.typeSignature, extract.ts.importStatement, extract.ts.stringValue, extract.ts.commonJsExports
+    - fn [decl](src/extract/ts.ts#L194) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], members: DeclFact[]) → DeclFact <!-- internal -->
+    - fn [classDecl](src/extract/ts.ts#L198) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node) => CallFact[]) → DeclFact <!-- internal -->
+      - calls extract.ts.decl, extract.ts.signature, extract.ts.heritage
+    - fn [importStatement](src/extract/ts.ts#L212) (node: Node) → ImportFact[] <!-- internal -->
+      - calls extract.ts.stringValue
+    - fn [moduleSource](src/extract/ts.ts#L236) (facts: FileFacts, local: string) → string | null <!-- internal -->
+    - fn [requireSource](src/extract/ts.ts#L240) (value: Node, requires: ReturnType<typeof query>) → string | null <!-- internal -->
+    - fn [commonJsExports](src/extract/ts.ts#L251) (stmt: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [stringValue](src/extract/ts.ts#L274) (n: Node) → string | null <!-- internal -->
+    - fn [signature](src/extract/ts.ts#L279) (fn: Node) → string <!-- internal -->
+      - calls extract.ts.collapse
+    - fn [typeSignature](src/extract/ts.ts#L288) (n: Node) → string | null <!-- internal -->
+      - calls extract.ts.collapse, extract.ts.heritage
+    - fn [heritage](src/extract/ts.ts#L297) (n: Node) → string | null <!-- internal -->
+      - calls extract.ts.collapse
+    - fn [collapse](src/extract/ts.ts#L302) (s: string) → string <!-- internal -->
+    - fn [isNodeBuiltin](src/extract/ts.ts#L307) (spec: string) → boolean

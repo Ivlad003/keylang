@@ -1,0 +1,8 @@
+{
+  "languages": ["typescript"],
+  "layers": {
+    "domain": "src/domain/**",
+    "app": "src/app/**",
+    "infra": "src/infra/**"
+  }
+}

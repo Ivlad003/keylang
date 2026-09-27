@@ -1,0 +1,72 @@
+<!-- keylang:generated — не редагувати, `keylang map` -->
+
+# map
+
+- map
+  - module [emit](src/emit.ts#L1)
+    - graph map.graph
+    - fn [renderMap](src/emit.ts#L8) (graph: Graph) → Map<string, string>
+      - calls map.emit.sortModules, map.emit.renderModule
+    - fn [sortModules](src/emit.ts#L18) (ms: Module[]) → Module[] <!-- internal -->
+    - fn [renderModule](src/emit.ts#L22) (m: Module, depth: number) → string <!-- internal -->
+      - calls map.emit.renderFn
+    - fn [renderFn](src/emit.ts#L42) (m: Module, f: Fn, depth: number) → string <!-- internal -->
+    - type [IndexJson](src/emit.ts#L52)
+    - type [IndexNode](src/emit.ts#L61)
+    - fn [buildIndex](src/emit.ts#L76) (graph: Graph, languages: string[]) → IndexJson
+  - module [graph](src/graph.ts#L1)
+    - node external.node
+    - config base.config
+    - facts extract.facts
+    - glob base.glob
+    - imports map.imports
+    - type [Graph](src/graph.ts#L11)
+    - type [Layer](src/graph.ts#L18)
+    - type [Module](src/graph.ts#L24)
+    - type [Dep](src/graph.ts#L41)
+    - type [Fn](src/graph.ts#L48)
+    - type [Call](src/graph.ts#L58)
+    - type [TypeNode](src/graph.ts#L63)
+    - type [Stats](src/graph.ts#L71)
+    - type [FileEntry](src/graph.ts#L95) <!-- internal -->
+    - fn [buildGraph](src/graph.ts#L100) (config: Config, files: FileFacts[]) → Graph
+      - calls map.imports.ImportResolver, map.graph.placeFile, map.graph.addDecl, base.config.layerName
+    - fn [addDecl](src/graph.ts#L287) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
+      - calls base.config.layerName
+    - fn [placeFile](src/graph.ts#L312) (config: Config, file: string) → { layer: string; segments: string[] } | null
+      - calls base.glob.matchesGlob, base.glob.globPrefix
+  - module [imports](src/imports.ts#L1)
+    - node external.node
+    - config base.config
+    - ts extract.ts
+    - type [Resolution](src/imports.ts#L11)
+    - type [PathRule](src/imports.ts#L20) <!-- internal -->
+    - module [ImportResolver](src/imports.ts#L26)
+      - fn [constructor](src/imports.ts#L33) (root: string)
+        - calls map.imports.loadTsconfig, map.imports.readJsonc, map.imports.flattenTarget
+      - fn [resolve](src/imports.ts#L42) (fromFile: string, spec: string) → Resolution
+        - calls map.imports.ImportResolver.resolveUncached
+      - fn [resolveUncached](src/imports.ts#L52) (fromFile: string, spec: string) → Resolution <!-- internal -->
+        - calls map.imports.ImportResolver.probe, map.imports.matchPattern, base.config.toPosix, extract.ts.isNodeBuiltin, map.imports.packageName
+      - fn [probe](src/imports.ts#L87) (candidate: string) → string | null <!-- internal -->
+    - fn [matchPattern](src/imports.ts#L114) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](src/imports.ts#L125) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](src/imports.ts#L132) (spec: string) → string
+    - fn [readJsonc](src/imports.ts#L138) (path: string) → unknown
+      - calls map.imports.stripJsonc
+    - fn [stripJsonc](src/imports.ts#L148) (text: string) → string <!-- internal -->
+    - type [Tsconfig](src/imports.ts#L169) <!-- internal -->
+    - fn [loadTsconfig](src/imports.ts#L179) (root: string, file: string, depth: number) → Tsconfig <!-- internal -->
+      - calls map.imports.readJsonc, base.config.toPosix
+  - module [map](src/map.ts#L1)
+    - node external.node
+    - config base.config
+    - facts extract.facts
+    - ts extract.ts
+    - emit map.emit
+    - graph map.graph
+    - type [MapResult](src/map.ts#L11)
+    - fn [generateMap](src/map.ts#L20) (config: Config) → Promise<MapResult>
+      - calls base.config.sourceFiles, map.graph.placeFile, extract.ts.extractTs, map.graph.buildGraph, map.emit.renderMap, map.emit.buildIndex
+    - fn [writeMap](src/map.ts#L35) (config: Config, r: MapResult) → { written: string[]; removed: string[] }
+    - fn [diffMap](src/map.ts#L63) (config: Config, r: MapResult) → string[]

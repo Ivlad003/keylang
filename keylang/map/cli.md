@@ -1,0 +1,44 @@
+<!-- keylang:generated — не редагувати, `keylang map` -->
+
+# map
+
+- cli
+  - module [keylang](bin/keylang.js#L1)
+    - cli cli.cli
+  - module [cli](src/cli.ts#L1)
+    - node external.node
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - fmt lang.fmt
+    - ir lang.ir
+    - map map.map
+    - resolve check.resolve
+    - rules check.rules
+    - fn [main](src/cli.ts#L34) (argv: readonly string[]) → Promise<number>
+      - calls cli.cli.run
+    - fn [run](src/cli.ts#L43) (argv: readonly string[]) → Promise<number> <!-- internal -->
+      - calls cli.cli.cmdInit, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
+    - fn [needPaths](src/cli.ts#L87) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](src/cli.ts#L91) (dir: string) → Promise<number> <!-- internal -->
+      - calls base.config.loadConfig, base.config.configToJson, cli.cli.cmdMap
+    - fn [cmdMap](src/cli.ts#L108) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls base.config.loadConfig, map.map.generateMap, map.map.diffMap, base.config.toPosix, map.map.writeMap
+    - fn [cmdParse](src/cli.ts#L134) (paths: string[], json: boolean) → number <!-- internal -->
+      - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
+    - fn [cmdCheck](src/cli.ts#L143) (paths: string[]) → number <!-- internal -->
+      - calls base.config.loadConfig, lang.files.collectMdFiles, lang.files.load, check.resolve.check, check.rules.checkRules, base.diag.formatDiagnostic
+    - fn [cmdFmt](src/cli.ts#L161) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+      - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
+    - fn [printTree](src/cli.ts#L182) (doc: Document) → void <!-- internal -->
+      - calls cli.cli.printNode
+    - fn [printNode](src/cli.ts#L190) (n: Node, depth: number) → void <!-- internal -->
+      - calls lang.ir.kindLabel
+  - module [index](src/index.ts#L1)
+    - diag base.diag
+    - files lang.files
+    - fmt lang.fmt
+    - ir lang.ir
+    - parser lang.parser
+    - resolve check.resolve
+    - span base.span

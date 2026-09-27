@@ -13,10 +13,27 @@
 - `docs/format.md` — специфікація формату з рішеннями Р1–Р14.
 - `examples/shop` — приклад зі слайдів з навмисною помилкою `domain.aggregate`; `examples/shop-fixed` — виправлений.
 
+## M1: що зроблено
+
+Карта з коду й перевірка правил для TypeScript і JavaScript (ESM і CommonJS).
+
+- `src/extract/` — факти з коду через `web-tree-sitter` (wasm-граматики з `@vscode/tree-sitter-wasm`): імпорти (`import`, `require`, `const { a } = mod`), оголошення (fn, класи з методами, типи), експорти, виклики.
+- `src/imports.ts` — резолвінг імпортів: відносні шляхи, `tsconfig` `paths`/`baseUrl` з `extends`, `package.json` `imports`, пакети й вбудовані модулі.
+- `src/graph.ts`, `src/emit.ts`, `src/map.ts` — граф модулів → `keylang/map/<шар>.md` (згенеровані, один файл на шар) і `.keylang/index.json` (не комітиться).
+- `src/config.ts` — `keylang.json`; без нього шари вгадуються з дерева каталогів.
+- `src/rules.ts` — `layers`, `allow`/`deny`, `entry`, `exports`, `no-cycles` → K101–K105 (divergence / absence).
+- `keylang.json` + `keylang/` — keylang описує сам себе; `keylang check` у корені проходить чисто.
+- `bench/` — бенчмарк на 8 репозиторіях, результати в [`bench/results.md`](bench/results.md).
+
 ## Запуск
 
 ```sh
-npm install                      # лише devDependencies: typescript, @types/node
+npm install                      # web-tree-sitter, @vscode/tree-sitter-wasm (+ dev: typescript, @types/node)
+
+node bin/keylang.js init path/to/repo    # вгадати шари, записати keylang.json, згенерувати карту
+node bin/keylang.js map                  # оновити keylang/map/*.md і .keylang/index.json
+node bin/keylang.js map --check          # CI: код виходу 1, якщо карта застаріла
+node bin/keylang.js check                # ID + правила по keylang/
 
 node bin/keylang.js parse examples/shop
 node bin/keylang.js parse --json examples/shop/map.md
@@ -38,4 +55,6 @@ npm test            # node --test, наскрізні тести CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-Тести наскрізні (`tests/cli.test.ts`): запускають `keylang` на прикладах і фікстурах у `tests/fixtures/` (дослівний Markdown зі слайдів, по одній помилці кожного коду, «брудний» файл для `fmt`).
+Тести наскрізні (`tests/cli.test.ts`): запускають `keylang` на прикладах і фікстурах у `tests/fixtures/` (дослівний Markdown зі слайдів, по одній помилці кожного коду, «брудний» файл для `fmt`, маленький TS-репозиторій `repo/` з очікуваною картою в `repo.expected/` і пробою забороненого імпорту).
+
+Бенчмарк: `bench/clone.sh && bench/run.sh`.

@@ -1,21 +1,28 @@
-// `keylang` command line: parse, check, fmt.
+// `keylang` command line: init, map, check, parse, fmt.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
+import { CONFIG_FILE, configToJson, loadConfig, toPosix } from "./config.ts";
 import { compareDiagnostics, formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, type Document, type Node } from "./ir.ts";
+import { diffMap, generateMap, writeMap } from "./map.ts";
 import { check } from "./resolve.ts";
+import { checkRules } from "./rules.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
-Usage: keylang <command> [options] <paths…>
+Usage: keylang <command> [options] [paths…]
 
 Commands:
+  init [dir]                Detect languages and layers, write keylang.json, build the map
+  map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json
+                            (--check: fail if the committed map is stale)
+  check [paths…]            Resolve IDs and check rules over all *.md (default: ./keylang)
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
-  check <paths…>            Resolve IDs across all *.md files and report diagnostics
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only)
 
 Options:
@@ -26,14 +33,14 @@ Options:
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
 export async function main(argv: readonly string[]): Promise<number> {
   try {
-    return run(argv);
+    return await run(argv);
   } catch (e) {
     process.stderr.write(`keylang: ${e instanceof Error ? e.message : String(e)}\n`);
     return 2;
   }
 }
 
-function run(argv: readonly string[]): number {
+async function run(argv: readonly string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
@@ -59,18 +66,69 @@ function run(argv: readonly string[]): number {
     process.stderr.write(USAGE);
     return 2;
   }
-  if (paths.length === 0) throw new Error(`${cmd}: at least one path is required`);
-
   switch (cmd) {
-    case "parse":
-      return cmdParse(paths, values.json === true);
+    case "init":
+      return cmdInit(paths[0] ?? ".");
+    case "map":
+      return cmdMap(paths[0] ?? ".", values.check === true);
     case "check":
       return cmdCheck(paths);
+    case "parse":
+      needPaths(cmd, paths);
+      return cmdParse(paths, values.json === true);
     case "fmt":
+      needPaths(cmd, paths);
       return cmdFmt(paths, values.check === true);
     default:
       throw new Error(`unknown command \`${cmd}\`; see --help`);
   }
+}
+
+function needPaths(cmd: string, paths: string[]): void {
+  if (paths.length === 0) throw new Error(`${cmd}: at least one path is required`);
+}
+
+async function cmdInit(dir: string): Promise<number> {
+  const root = join(process.cwd(), dir);
+  const file = join(root, CONFIG_FILE);
+  const config = loadConfig(root);
+  if (config.languages.length === 0) {
+    process.stderr.write(`keylang: no supported source files found under ${dir} (TypeScript, JavaScript)\n`);
+    return 1;
+  }
+  if (existsSync(file)) {
+    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
+  } else {
+    writeFileSync(file, configToJson(config));
+    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${[...config.layers.keys()].join(", ")})\n`);
+  }
+  return cmdMap(dir, false);
+}
+
+async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
+  const root = join(process.cwd(), dir);
+  const config = loadConfig(root);
+  if (config.languages.length === 0) throw new Error(`no supported source files under ${dir}; run \`keylang init\``);
+  const r = await generateMap(config);
+  const s = r.graph.stats;
+  for (const w of r.graph.warnings) process.stderr.write(`warning: ${w}\n`);
+  if (checkOnly) {
+    const stale = diffMap(config, r);
+    for (const p of stale) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: stale, run \`keylang map\`\n`);
+    return stale.length === 0 ? 0 : 1;
+  }
+  const { written, removed } = writeMap(config, r);
+  for (const p of written) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: written\n`);
+  for (const p of removed) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: removed\n`);
+  process.stderr.write(
+    `${s.files} file(s), ${s.modules} module(s), ${s.fns} fn, ${s.types} type(s), ${s.deps} dep(s); calls ${s.callsResolved} resolved, ${s.callsExternal} external, ${s.callsDynamic} dynamic, ${s.callsUnresolved} unresolved` +
+      (s.importsUnresolved ? `; ${s.importsUnresolved} unresolved import(s)` : "") +
+      (s.unassignedFiles ? `; ${s.unassignedFiles} file(s) outside any layer` : "") +
+      (r.skipped ? `; ${r.skipped} file(s) outside guessed layers skipped` : "") +
+      (config.guessed ? " (layers guessed; run `keylang init` to write keylang.json)" : "") +
+      "\n",
+  );
+  return 0;
 }
 
 function cmdParse(paths: string[], json: boolean): number {
@@ -83,9 +141,15 @@ function cmdParse(paths: string[], json: boolean): number {
 }
 
 function cmdCheck(paths: string[]): number {
+  if (paths.length === 0) {
+    const cfg = loadConfig(process.cwd());
+    if (!existsSync(join(process.cwd(), cfg.dir))) throw new Error(`no \`${cfg.dir}/\` directory here; run \`keylang init\` or pass paths`);
+    paths = [cfg.dir];
+  }
   const files = collectMdFiles(paths);
   const docs = load(files);
-  const diags: Diagnostic[] = [...docs.flatMap((d) => d.diagnostics), ...check(docs).diagnostics];
+  const { index, diagnostics: resolveDiags } = check(docs);
+  const diags: Diagnostic[] = [...docs.flatMap((d) => d.diagnostics), ...resolveDiags, ...checkRules(docs, index)];
   diags.sort(compareDiagnostics);
   for (const d of diags) process.stdout.write(`${formatDiagnostic(d)}\n`);
   const errors = diags.filter(isError).length;
