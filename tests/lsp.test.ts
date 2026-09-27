@@ -35,7 +35,8 @@ class Session {
   readonly exited: Promise<number | null>;
 
   constructor(cwd: string) {
-    this.child = spawn(process.execPath, [bin, "lsp"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+    // Language clients add `--stdio`; the server accepts it.
+    this.child = spawn(process.execPath, [bin, "lsp", "--stdio"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     this.exited = new Promise((done) => this.child.on("exit", (code) => done(code)));
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
@@ -98,10 +99,10 @@ class Session {
   }
 }
 
-async function open(t: { after: (f: () => void) => void }, dir: string): Promise<Session> {
+async function open(t: { after: (f: () => void) => void }, dir: string, capabilities: object = {}): Promise<Session> {
   const session = new Session(dir);
   t.after(() => session.close());
-  await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities });
   session.notify("initialized", {});
   return session;
 }
@@ -179,6 +180,17 @@ test("lsp: open buffers are checked without writing, a new generation replaces t
   s.notify("textDocument/didClose", { textDocument: { uri: sourceUri } });
   const after = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: sourceUri } })).items;
   assert.equal(after.some((d) => d.code === "K102"), false);
+});
+
+test("lsp: a client that pulls diagnostics gets no pushed copy, only a refresh", async (t) => {
+  const dir = fixture(t);
+  const s = await open(t, dir, { textDocument: { diagnostic: {} }, workspace: { diagnostics: { refreshSupport: true } } });
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: "# flow draft\n\n- step domain.order.missingFn\n" } });
+  await s.until(() => s.messages.find((m) => m.method === "workspace/diagnostic/refresh"));
+  assert.equal(s.messages.some((m) => m.method === "textDocument/publishDiagnostics"), false);
+  const pulled = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: flowUri } })).items;
+  assert.ok(pulled.some((d) => d.code === "K001"));
 });
 
 test("lsp: hover on a flow step shows the signature and each kind of evidence; planned says so", async (t) => {
@@ -320,6 +332,7 @@ test("lsp: references find the flow and rules lines; code lens names the flows; 
   assert.ok(where.some((w) => w.startsWith("keylang/map/app.md:")), where.join("\n"));
   const lenses = await s.request<{ range: { start: { line: number } }; command: { title: string } }[]>("textDocument/codeLens", { textDocument: { uri: uri(dir, "src/domain/order.ts") } });
   assert.deepEqual(lenses.map((lens) => [lens.range.start.line, lens.command.title]), [[9, "flows: buy"]]);
+  assert.deepEqual((lenses[0] as unknown as { command: { command: string; arguments: string[][] } }).command, { title: "flows: buy", command: "keylang.flows", arguments: [["buy"]] });
   const text = "# flow sig\n\n- step domain.order.createOrder ";
   const sigUri = uri(dir, "keylang/flows/sig.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: sigUri, languageId: "markdown", version: 1, text } });

@@ -21,21 +21,34 @@ the opened repository:
 }
 ```
 
-## Manual check
+## Automated check in a real VS Code
 
-On this repository (`code --extensionDevelopmentPath="$PWD/editors/vscode" .`):
+```sh
+cd editors/vscode && npm install && cd ../..
+node editors/vscode/test/run.mjs            # or: … run.mjs /path/to/code
+```
 
-1. Open `keylang/rules.md`. The Problems panel lists the rule verdicts (`ok`
-   as hints); `deny lang map` shows no error.
-2. Add `- deny cli check` and do not save. Within a second the line shows
-   K102 errors pointing at imports in `src/cli.ts` — the buffer is checked
-   without writing the file. Undo the line: the errors disappear.
-3. Open `keylang/flows/check.md`, hover `cli.cli.cmdCheck`: the signature,
-   `src/cli.ts:<line>`, and one line per kind of evidence (ID, static, tests,
-   trace). F12 on the id opens `src/cli.ts` at the function.
-4. Type `      - step ` on a new line under a step: completion offers only
-   functions and `planned fn` ids.
-5. Open `src/cli.ts`: a code lens `flows: check` stands above `cmdCheck`.
+`test/run.mjs` copies `tests/fixtures/repo` to a temp workspace whose
+settings run this checkout's `keylang lsp`, starts VS Code with a throwaway
+profile, this extension, and `test/smoke.js`, and prints one line per step
+(exit 0 when all pass). It needs a display. The steps:
 
-Last automated check of the server behind these steps: `tests/lsp.test.ts`.
-The steps above need a desktop VS Code and were not run in CI.
+1. `keylang/rules.md` shows the rule verdicts, each once.
+2. An unsaved edit adding `- step domain.order.missingFn` to a flow shows
+   K001; the file on disk is unchanged.
+3. Hover on a step shows the signature, `file:line`, and one line per kind of
+   evidence.
+4. Go to Definition on the step opens `src/domain/order.ts` at the function.
+5. Completion after `- step ` offers functions, not modules.
+6. `src/domain/order.ts` has the code lens `flows: use`.
+
+Last run: 2026-09-27, VS Code 1.139.0 on Linux — all six steps ok.
+
+## By hand
+
+On this repository (`code --extensionDevelopmentPath="$PWD/editors/vscode" .`,
+after `npm test` so that tests and trace evidence exist): open
+`keylang/rules.md`, add `- deny cli check` without saving — K102 appears on
+imports in `src/cli.ts` once that file is open; hover `cli.cli.cmdCheck` in
+`keylang/flows/check.md` for the four kinds of evidence; the code lens above
+`cmdCheck` in `src/cli.ts` reads `flows: check`, and clicking it lists them.

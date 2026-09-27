@@ -279,7 +279,7 @@ Alias залежності не збігається з контекстним �
 
 ### Дорожня карта, не поточна поведінка
 
-Цього в CLI і LSP ще немає, навіть якщо design.md це описує як ціль: baseline стейлнесу прози, `check --stale`, `--accept`, стан `stale` у hover і сценарій «тіло змінилося, сигнатура ні» (тікет 21); assertions у trace і явні паралельні групи; публікація VS Code-розширення (є лише тонкий клієнт `editors/vscode`, що не входить у npm-пакет); DX-команди `doctor`, `hook install`, `check --changed`, `new`, `completions` (тікет 27); TUI, web, wiring, Rust, Python, LLM, MCP, ghost і голос. Hover показує вид, сигнатуру, `planned` / `opaque`, файл:рядок, рядки доказів і потоки, а не чотири рядки вихідного коду.
+Цього в CLI і LSP ще немає, навіть якщо design.md це описує як ціль: baseline стейлнесу прози, `check --stale`, `--accept`, стан `stale` у hover і сценарій «тіло змінилося, сигнатура ні» (тікет 21); assertions у trace і явні паралельні групи; публікація VS Code-розширення в Marketplace (є тонкий клієнт `editors/vscode`, що не входить у npm-пакет); DX-команди `doctor`, `hook install`, `check --changed`, `new`, `completions` (тікет 27); TUI, web, wiring, Rust, Python, LLM, MCP, ghost і голос. Hover показує вид, сигнатуру, `planned` / `opaque`, файл:рядок, рядки доказів і потоки, а не чотири рядки вихідного коду.
 
 ## 8. Канонічна форма (`keylang fmt`)
 
@@ -302,15 +302,15 @@ Alias залежності не збігається з контекстним �
 
 ### `keylang lsp`
 
-Сервер говорить LSP через stdio (JSON-RPC без `vscode-languageserver`: підмножина протоколу мала, а пакет лишається з двома runtime-залежностями без native-коду). Позиції — UTF-16 (`positionEncoding: "utf-16"`); IR-колонки в кодових точках перераховуються через текст рядка.
+Сервер (`keylang lsp`, прапорець `--stdio`, який додають клієнти, приймається) говорить LSP через stdio (JSON-RPC без `vscode-languageserver`: підмножина протоколу мала, а пакет лишається з двома runtime-залежностями без native-коду). Позиції — UTF-16 (`positionEncoding: "utf-16"`); IR-колонки в кодових точках перераховуються через текст рядка.
 
 - **Синхронізація:** `didOpen` / `didChange` (повний текст) / `didClose` / `didSave`, `workspace/didChangeWatchedFiles`. Відкриті буфери — і специфікації, і `.ts`/`.js` — ідуть в `analyze()` як overlay; нічого не записується.
-- **Свіжість:** кожна зміна — нове покоління; зміни, що прийшли разом (~60 мс), аналізуються раз. Запит чекає аналізу поточного покоління, а результати заміненого покоління не публікуються. Діагностики: push (`textDocument/publishDiagnostics` для відкритих буферів) і pull (`textDocument/diagnostic`); вони збігаються з `check --format json` для файла: коди, повідомлення, позиції, `data.verdict` (`ok` — severity Hint).
+- **Свіжість:** кожна зміна — нове покоління; зміни, що прийшли разом (~60 мс), аналізуються раз. Запит чекає аналізу поточного покоління, а результати заміненого покоління не публікуються. Діагностики: pull (`textDocument/diagnostic`), а клієнтам без pull — push (`textDocument/publishDiagnostics` для відкритих буферів); pull-клієнт після нового аналізу отримує `workspace/diagnostic/refresh`, тож кожна знахідка показується раз. Вони збігаються з `check --format json` для файла: коди, повідомлення, позиції, `data.verdict` (`ok` — severity Hint).
 - **hover:** вид, ID, сигнатура, файл:рядок, стан (`planned, not implemented`, `opaque`), рядки доказів (`ID`, `static`, `tests`, `trace`) і потоки, що використовують ID. **definition:** ID → код (рядок і колонка оголошення) або оголошення в специфікації; посилання карти `[name](path#Lnn)` → декодований файл і рядок. **references:** оголошення й посилання на ID у всіх специфікаціях (включно з відносними іменами `exports`). **documentSymbol:** дерево документа — шари → модулі → fn/type, потоки з кроками, правила; `detail` — найгірший вердикт вузла та його дітей.
-- **completion:** на початку елемента — ключові слова, дозволені в цій позиції; після `step` / `trigger` — лише функції знімка й `planned fn`; після `calls`, `reads`, `emits`, `allow`, `deny`, `then` — ID, на які охопний модуль може залежати (заборонене `deny` не пропонується). Намір має `labelDetails.description: "planned"`. **signatureHelp:** сигнатура останнього ID перед курсором. **codeLens:** над функцією коду — `flows: <імена>`, якщо потоки її називають.
+- **completion:** на початку елемента — ключові слова, дозволені в цій позиції; після `step` / `trigger` — лише функції знімка й `planned fn`; після `calls`, `reads`, `emits`, `allow`, `deny`, `then` — ID, на які охопний модуль може залежати (заборонене `deny` не пропонується). Намір має `labelDetails.description: "planned"`. **signatureHelp:** сигнатура останнього ID перед курсором. **codeLens:** над функцією коду — `flows: <імена>`, якщо потоки її називають; команда `keylang.flows` з іменами потоків (її реєструє клієнт).
 - **Життєвий цикл:** `shutdown` + `exit` — код 0, `exit` без `shutdown` — 1; `$/cancelRequest` одразу відповідає `-32800` на незавершений запит; невідомий метод — `-32601`.
 
-Тонкий клієнт VS Code — `editors/vscode/` (лише запускає `keylang lsp`; ручна перевірка — його README).
+Тонкий клієнт VS Code — `editors/vscode/` (лише запускає `keylang lsp`); `node editors/vscode/test/run.mjs` перевіряє його в справжньому VS Code (README клієнта).
 
 ## 10. Повний приклад
 

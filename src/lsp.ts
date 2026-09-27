@@ -71,12 +71,17 @@ class Server {
   private running: { generation: number; result: Promise<Analysis> } | null = null;
   private timer: NodeJS.Timeout | null = null;
   private shutdown = false;
+  /** The client pulls diagnostics (`textDocument/diagnostic`), so pushing them too would show each twice. */
+  private pulls = false;
+  private refreshes = false;
+  private serverRequests = 0;
 
   constructor(send: (message: Rpc) => void) {
     this.send = send;
   }
 
   receive(message: Rpc): void {
+    // A response to one of our requests (`workspace/diagnostic/refresh`) needs nothing.
     if (!message.method) return;
     if (message.id === undefined || message.id === null) {
       this.notify(message.method, message.params ?? {});
@@ -181,6 +186,11 @@ class Server {
       return;
     }
     if (generation !== this.generation) return;
+    if (this.pulls) {
+      // Ask the client to pull again: a change in one file can change another's findings.
+      if (this.refreshes) this.send({ jsonrpc: "2.0", id: `keylang-${++this.serverRequests}`, method: "workspace/diagnostic/refresh", params: null as unknown as Record<string, unknown> });
+      return;
+    }
     const open = new Set<string>();
     for (const [abs, buffer] of this.buffers) {
       open.add(buffer.uri);
@@ -235,6 +245,9 @@ class Server {
   }
 
   private initialize(params: Record<string, unknown>): unknown {
+    const capabilities = (params.capabilities ?? {}) as { textDocument?: { diagnostic?: unknown }; workspace?: { diagnostics?: { refreshSupport?: boolean } } };
+    this.pulls = capabilities.textDocument?.diagnostic !== undefined;
+    this.refreshes = capabilities.workspace?.diagnostics?.refreshSupport === true;
     const folders = params.workspaceFolders as { uri?: string }[] | null | undefined;
     const hinted = typeof params.rootUri === "string" ? params.rootUri : (folders?.[0]?.uri ?? (typeof params.rootPath === "string" ? pathToFileURL(params.rootPath).href : null));
     if (hinted) {

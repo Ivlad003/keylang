@@ -498,15 +498,20 @@ function moduleAround(ws: Workspace, doc: Document, parent: Node | undefined): s
 
 // ---------- code lenses ----------
 
-/** `flows: checkout, pay` above each function of a source file that a flow names. */
-export function codeLenses(ws: Workspace, path: string): { range: LspRange; command: { title: string; command: string } }[] {
-  const out: { range: LspRange; command: { title: string; command: string } }[] = [];
+type CodeLens = { range: LspRange; command: { title: string; command: string; arguments: string[][] } };
+
+/**
+ * `flows: checkout, pay` above each function of a source file that a flow names.
+ * The command `keylang.flows` (registered by the editor client) gets the flow names.
+ */
+export function codeLenses(ws: Workspace, path: string): CodeLens[] {
+  const out: CodeLens[] = [];
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (node.kind !== "fn" || node.file !== path || node.line === null) continue;
     const flows = flowsUsing(ws.analysis.docs, id);
     if (flows.length === 0) continue;
     const start = { line: node.line - 1, character: (node.col ?? 1) - 1 };
-    out.push({ range: { start, end: start }, command: { title: `flows: ${flows.join(", ")}`, command: "" } });
+    out.push({ range: { start, end: start }, command: { title: `flows: ${flows.join(", ")}`, command: "keylang.flows", arguments: [flows] } });
   }
   return out.sort((a, b) => a.range.start.line - b.range.start.line);
 }

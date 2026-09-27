@@ -23,6 +23,8 @@ function activate(context) {
       synchronize: { fileEvents: vscode.workspace.createFileSystemWatcher("**/{keylang.json,*.ts,*.js,keylang/**/*.md}") },
     },
   );
+  // Code lenses `flows: …` carry the flow names; clicking one lists them.
+  context.subscriptions.push(vscode.commands.registerCommand("keylang.flows", (flows) => vscode.window.showInformationMessage(`keylang flows: ${(flows ?? []).join(", ")}`)));
   context.subscriptions.push(client);
   return client.start();
 }

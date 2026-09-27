@@ -27,7 +27,7 @@ Commands:
   map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json
                             (--check: fail if the committed map is stale)
   explain <code>            Print why a diagnostic code happens and how to fix it
-  lsp                       Speak LSP over stdio
+  lsp [--stdio]             Speak LSP over stdio (--stdio is accepted for clients)
   check [paths…]            Resolve IDs and check rules (default: ./keylang)
                             Rebuilds the analysis in memory; does not write the map
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
@@ -69,6 +69,8 @@ async function run(argv: readonly string[]): Promise<number> {
       strict: { type: "boolean" },
       format: { type: "string" },
       "explain-edge": { type: "boolean" },
+      // Language clients pass `--stdio` to name the transport; stdio is the only one.
+      stdio: { type: "boolean" },
     },
   });
   if (values.help) {
