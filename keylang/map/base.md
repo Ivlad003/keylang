@@ -3,51 +3,51 @@
 # map
 
 - base
-  - module [config](src/config.ts#L1)
+  - module [config](../../src/config.ts#L1)
     - node external.node
     - glob base.glob
-    - type [Language](src/config.ts#L9) = "typescript" | "javascript"
-    - type [Config](src/config.ts#L11)
-    - fn [skipDir](src/config.ts#L61) (abs: string, name: string) → boolean <!-- internal -->
-    - fn [languageOf](src/config.ts#L65) (path: string) → Language | undefined
-    - type [RawConfig](src/config.ts#L70) <!-- internal -->
-    - fn [loadConfig](src/config.ts#L80) (root: string) → Config
+    - type [Language](../../src/config.ts#L9) = "typescript" | "javascript"
+    - type [Config](../../src/config.ts#L11)
+    - fn [skipDir](../../src/config.ts#L61) (abs: string, name: string) → boolean <!-- internal -->
+    - fn [languageOf](../../src/config.ts#L65) (path: string) → Language | undefined
+    - type [RawConfig](../../src/config.ts#L70) <!-- internal -->
+    - fn [loadConfig](../../src/config.ts#L80) (root: string) → Config
       - calls base.config.detectLanguages, base.config.guessLayers
-    - fn [configToJson](src/config.ts#L106) (c: Config) → string
-    - fn [sourceFiles](src/config.ts#L119) (c: Config) → string[]
+    - fn [configToJson](../../src/config.ts#L106) (c: Config) → string
+    - fn [sourceFiles](../../src/config.ts#L119) (c: Config) → string[]
       - calls base.config.toPosix, base.config.skipDir, base.config.languageOf, base.config.isExcluded
-    - fn [isExcluded](src/config.ts#L142) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L142) (rel: string, extra: readonly string[]) → boolean
       - calls base.glob.matchesGlob
-    - fn [toPosix](src/config.ts#L146) (p: string) → string
-    - fn [detectLanguages](src/config.ts#L150) (root: string) → Language[] <!-- internal -->
+    - fn [toPosix](../../src/config.ts#L146) (p: string) → string
+    - fn [detectLanguages](../../src/config.ts#L150) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf
-    - fn [guessLayers](src/config.ts#L174) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L174) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.hasRootFiles, base.config.hasSource, base.config.skipDir, base.glob.matchesGlob, base.config.layerName
-    - fn [hasRootFiles](src/config.ts#L194) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L194) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.languageOf, base.config.isExcluded
-    - fn [hasSource](src/config.ts#L198) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L198) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf, base.config.isExcluded
-    - fn [layerName](src/config.ts#L211) (name: string) → string
-  - module [diag](src/diag.ts#L1)
+    - fn [layerName](../../src/config.ts#L211) (name: string) → string
+  - module [diag](../../src/diag.ts#L1)
     - span base.span
-    - type [Code](src/diag.ts#L5)
-    - type [Severity](src/diag.ts#L30) = "error" | "warning"
-    - fn [severityOf](src/diag.ts#L32) (code: Code) → Severity
-    - type [Diagnostic](src/diag.ts#L36)
-    - fn [diagnostic](src/diag.ts#L44) (code: Code, file: string, span: Span, message: string) → Diagnostic
+    - type [Code](../../src/diag.ts#L5)
+    - type [Severity](../../src/diag.ts#L30) = "error" | "warning"
+    - fn [severityOf](../../src/diag.ts#L32) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L36)
+    - fn [diagnostic](../../src/diag.ts#L44) (code: Code, file: string, span: Span, message: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](src/diag.ts#L48) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](src/diag.ts#L53) (d: Diagnostic) → string
-    - fn [compareDiagnostics](src/diag.ts#L58) (a: Diagnostic, b: Diagnostic) → number
-  - module [glob](src/glob.ts#L1)
-    - fn [globToRegExp](src/glob.ts#L4) (glob: string) → RegExp
+    - fn [isError](../../src/diag.ts#L48) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L53) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L58) (a: Diagnostic, b: Diagnostic) → number
+  - module [glob](../../src/glob.ts#L1)
+    - fn [globToRegExp](../../src/glob.ts#L4) (glob: string) → RegExp
       - calls base.glob.escape
-    - fn [escape](src/glob.ts#L38) (s: string) → string <!-- internal -->
-    - fn [matchesGlob](src/glob.ts#L42) (path: string, glob: string) → boolean
+    - fn [escape](../../src/glob.ts#L38) (s: string) → string <!-- internal -->
+    - fn [matchesGlob](../../src/glob.ts#L42) (path: string, glob: string) → boolean
       - calls base.glob.globToRegExp
-    - fn [globPrefix](src/glob.ts#L47) (glob: string) → string
-  - module [span](src/span.ts#L1)
-    - type [Pos](src/span.ts#L9)
-    - type [Span](src/span.ts#L16)
-    - type [Spanned](src/span.ts#L22)
-    - fn [spanContains](src/span.ts#L27) (span: Span, offset: number) → boolean
+    - fn [globPrefix](../../src/glob.ts#L47) (glob: string) → string
+  - module [span](../../src/span.ts#L1)
+    - type [Pos](../../src/span.ts#L9)
+    - type [Span](../../src/span.ts#L16)
+    - type [Spanned](../../src/span.ts#L22)
+    - fn [spanContains](../../src/span.ts#L27) (span: Span, offset: number) → boolean

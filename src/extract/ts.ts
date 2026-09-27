@@ -20,7 +20,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
   const { tree, language } = await parseSource(g, src);
   const root = tree.rootNode;
-  const facts: FileFacts = { path, imports: [], decls: [], exports: new Set(), reexportsAll: [] };
+  const facts: FileFacts = { path, imports: [], decls: [], exports: new Set(), reexportsAll: [], completeness: "complete", parseError: null };
   const calls = query(language, g, "calls", CALLS_QUERY);
   const requires = query(language, g, "require", REQUIRE_QUERY);
 
@@ -188,7 +188,21 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
         visitDecl(node, false);
     }
   }
+  if (root.hasError) {
+    facts.completeness = "opaque";
+    facts.parseError = { line: errorLine(root), reason: "syntax error" };
+  }
   return facts;
+}
+
+/** First syntax-error line, or the start of the tree when the grammar only sets `hasError`. */
+function errorLine(node: Node): number {
+  if (node.type === "ERROR" || node.isMissing) return node.startPosition.row + 1;
+  for (const child of node.children) {
+    if (!child.hasError) continue;
+    return errorLine(child);
+  }
+  return node.startPosition.row + 1;
 }
 
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], members: DeclFact[]): DeclFact {

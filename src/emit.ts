@@ -1,118 +1,114 @@
-// Graph → generated `map/<layer>.md` files and `.keylang/index.json`.
+// Snapshot → generated `map/<layer>.md` files.
 
-import type { Fn, Graph, Module } from "./graph.ts";
+import { posix } from "node:path";
+import type { AnalysisSnapshot, SnapshotEdge, SnapshotNode } from "./snapshot.ts";
 
 export const GENERATED_MARK = "<!-- keylang:generated — не редагувати, `keylang map` -->";
 
-/** One Markdown document per layer, keyed by file name (`domain.md`). */
-export function renderMap(graph: Graph): Map<string, string> {
+/** True when the first non-empty line is a generator marker. The text after `keylang:generated` may vary. */
+export function isGeneratedMap(text: string): boolean {
+  const line = text.split(/\r?\n/).find((l) => l.trim() !== "");
+  return line !== undefined && line.startsWith("<!--") && line.includes("keylang:generated");
+}
+
+/**
+ * Markdown link target relative to a map file. `mapDir` and `filePath` are
+ * POSIX paths from the repository root (`keylang/map`, `src/a.ts`).
+ * Each segment except `.` and `..` is percent-encoded so `(`, `)`, spaces and `#` survive round-trip.
+ * `encodeURIComponent` leaves parentheses; they still terminate a Markdown link, so they are encoded too.
+ */
+export function codeHref(mapDir: string, filePath: string, line: number): string {
+  const rel = posix.relative(mapDir, filePath);
+  const encoded = rel
+    .split("/")
+    .map((seg) => (seg === "." || seg === ".." ? seg : encodeSegment(seg)))
+    .join("/");
+  return `${encoded}#L${line}`;
+}
+
+function encodeSegment(seg: string): string {
+  return encodeURIComponent(seg).replaceAll("(", "%28").replaceAll(")", "%29");
+}
+
+/** One Markdown document per layer, keyed by file name (`domain.md`). `mapDir` is where those files are written, relative to the repo root. */
+export function renderMap(snapshot: AnalysisSnapshot, mapDir: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const layer of graph.layers) {
-    let s = `${GENERATED_MARK}\n\n# map\n\n- ${layer.name}\n`;
-    for (const m of sortModules(layer.modules)) s += renderModule(m, 1);
-    out.set(`${layer.name}.md`, s);
+  const children = childrenByParent(snapshot);
+  for (const layerId of Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.kind === "layer").sort()) {
+    let s = `${GENERATED_MARK}\n\n# map\n\n- ${layerId}\n`;
+    for (const id of sortIds(snapshot, children.get(layerId) ?? [])) s += renderModule(snapshot, children, mapDir, id, 1);
+    out.set(`${layerId}.md`, s);
   }
   return out;
 }
 
-function sortModules(ms: Module[]): Module[] {
-  return [...ms].sort((a, b) => (a.path ?? a.name).localeCompare(b.path ?? b.name, "en") || a.line! - b.line!);
+function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
+  const children = new Map<string, string[]>();
+  for (const id of Object.keys(snapshot.nodes)) {
+    const dot = id.lastIndexOf(".");
+    if (dot === -1) continue;
+    const parent = id.slice(0, dot);
+    const list = children.get(parent);
+    if (list) list.push(id);
+    else children.set(parent, [id]);
+  }
+  return children;
 }
 
-function renderModule(m: Module, depth: number): string {
+function sortIds(snapshot: AnalysisSnapshot, ids: readonly string[]): string[] {
+  return [...ids].sort((a, b) => {
+    const na = snapshot.nodes[a];
+    const nb = snapshot.nodes[b];
+    const ka = na?.file ?? nameOf(a);
+    const kb = nb?.file ?? nameOf(b);
+    return ka.localeCompare(kb, "en") || (na?.line ?? 0) - (nb?.line ?? 0);
+  });
+}
+
+function nameOf(id: string): string {
+  return id.slice(id.lastIndexOf(".") + 1);
+}
+
+function linkedName(mapDir: string, node: SnapshotNode, name: string): string {
+  if (!node.file || node.line === null) return name;
+  return `[${name}](${codeHref(mapDir, node.file, node.line)})`;
+}
+
+function renderModule(snapshot: AnalysisSnapshot, children: Map<string, string[]>, mapDir: string, id: string, depth: number): string {
+  const node = snapshot.nodes[id];
+  if (!node) return "";
   const pad = "  ".repeat(depth);
-  let head = m.path && m.line !== null ? `[${m.name}](${m.path}#L${m.line})` : m.name;
-  if (m.comment) head += ` <!-- ${m.comment} -->`;
+  let head = linkedName(mapDir, node, nameOf(id));
+  if (node.comment) head += ` <!-- ${node.comment} -->`;
   let s = `${pad}- module ${head}\n`;
-  for (const d of m.deps) s += `${pad}  - ${d.alias} ${d.target}\n`;
-  const items: { line: number; text: string }[] = [];
-  for (const f of m.fns) items.push({ line: f.line, text: renderFn(m, f, depth + 1) });
-  for (const t of m.types) {
-    let head = `[${t.name}](${m.path}#L${t.line})`;
-    if (t.signature) head += ` ${t.signature}`;
-    if (!t.exported) head += " <!-- internal -->";
-    items.push({ line: t.line, text: `${pad}  - type ${head}\n` });
+  for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${edge.target}\n`;
+  const nested = children.get(id) ?? [];
+  const body = sortIds(snapshot, nested);
+  for (const childId of body) {
+    const child = snapshot.nodes[childId];
+    if (!child) continue;
+    if (child.kind === "module") s += renderModule(snapshot, children, mapDir, childId, depth + 1);
+    else s += renderDecl(snapshot, mapDir, childId, child, depth + 1);
   }
-  for (const c of m.children) items.push({ line: c.line ?? 0, text: renderModule(c, depth + 1) });
-  items.sort((a, b) => a.line - b.line);
-  for (const i of items) s += i.text;
   return s;
 }
 
-function renderFn(m: Module, f: Fn, depth: number): string {
+function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
+  return snapshot.edges
+    .filter((e) => e.source === id && (e.kind === "import" || e.kind === "reexport") && e.resolution === "resolved" && e.alias && e.target)
+    .sort((a, b) => a.line - b.line);
+}
+
+function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node: SnapshotNode, depth: number): string {
   const pad = "  ".repeat(depth);
-  let head = `[${f.name}](${m.path}#L${f.line})`;
-  if (f.signature) head += ` ${f.signature}`;
-  if (!f.exported) head += " <!-- internal -->";
-  let s = `${pad}- fn ${head}\n`;
-  if (f.calls.length > 0) s += `${pad}  - calls ${f.calls.map((c) => c.target).join(", ")}\n`;
+  const keyword = node.kind === "type" ? "type" : "fn";
+  let head = linkedName(mapDir, node, nameOf(id));
+  if (node.signature) head += ` ${node.signature}`;
+  if (node.exported === false) head += " <!-- internal -->";
+  let s = `${pad}- ${keyword} ${head}\n`;
+  const calls = snapshot.edges
+    .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target)
+    .sort((a, b) => a.line - b.line);
+  if (calls.length > 0) s += `${pad}  - calls ${calls.map((c) => c.target).join(", ")}\n`;
   return s;
-}
-
-export interface IndexJson {
-  version: 1;
-  generated: string;
-  languages: string[];
-  stats: Graph["stats"];
-  files: Record<string, { layer: string; module: string }>;
-  nodes: Record<string, IndexNode>;
-}
-
-export interface IndexNode {
-  kind: "layer" | "module" | "fn" | "type";
-  layer: string;
-  file: string | null;
-  line: number | null;
-  endLine?: number;
-  signature?: string | null;
-  exported?: boolean;
-  deps?: string[];
-  dependents?: string[];
-  calls?: string[];
-  callers?: string[];
-  precision: "syntactic";
-}
-
-export function buildIndex(graph: Graph, languages: string[]): IndexJson {
-  const nodes: Record<string, IndexNode> = {};
-  const files: Record<string, { layer: string; module: string }> = {};
-  const visit = (m: Module): void => {
-    nodes[m.id] = {
-      kind: "module",
-      layer: m.layer,
-      file: m.path,
-      line: m.line,
-      deps: m.deps.map((d) => d.target),
-      dependents: [],
-      precision: "syntactic",
-    };
-    if (m.path && !m.synthetic && !files[m.path]) files[m.path] = { layer: m.layer, module: m.id };
-    for (const f of m.fns) {
-      nodes[f.id] = {
-        kind: "fn",
-        layer: m.layer,
-        file: m.path,
-        line: f.line,
-        endLine: f.endLine,
-        signature: f.signature,
-        exported: f.exported,
-        calls: f.calls.map((c) => c.target),
-        callers: [],
-        precision: "syntactic",
-      };
-    }
-    for (const t of m.types) {
-      nodes[t.id] = { kind: "type", layer: m.layer, file: m.path, line: t.line, signature: t.signature, exported: t.exported, precision: "syntactic" };
-    }
-    for (const c of m.children) visit(c);
-  };
-  for (const l of graph.layers) {
-    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, precision: "syntactic" };
-    for (const m of l.modules) visit(m);
-  }
-  for (const [id, n] of Object.entries(nodes)) {
-    for (const d of n.deps ?? []) nodes[d]?.dependents?.push(id);
-    for (const c of n.calls ?? []) nodes[c]?.callers?.push(id);
-  }
-  return { version: 1, generated: new Date().toISOString(), languages, stats: graph.stats, files, nodes };
 }

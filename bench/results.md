@@ -26,7 +26,7 @@ Node v24.20.0, keylang 0.1.0. Коміти репозиторіїв: circlecam f
 
 ### Виклики
 
-`precision: syntactic`: tree-sitter, без типів. Виклики розбито на чотири групи, які не змішуються між собою (дослідження §4: `unverified` ≠ `ok`).
+Ребра знімка мають `provenance: syntactic` і власний `resolution` (tree-sitter, без типів; на вузлі більше немає `precision`). Виклики розбито на чотири групи, які не змішуються між собою (дослідження §4: `unverified` ≠ `ok`).
 
 | Репозиторій | resolved | external | dynamic | unresolved |
 |---|---:|---:|---:|---:|

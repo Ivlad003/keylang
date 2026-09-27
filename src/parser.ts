@@ -697,14 +697,25 @@ function parseLink(t: Token): Link {
   const text = t.text.slice(1, closeAt);
   const target = t.text.slice(closeAt + 2, t.text.length - 1);
   const hash = target.indexOf("#");
-  const path = hash === -1 ? target : target.slice(0, hash);
+  const rawPath = hash === -1 ? target : target.slice(0, hash);
+  const path = decodeLinkPath(rawPath);
   const frag = hash === -1 ? "" : target.slice(hash + 1);
   let line: number | null = null;
   if (frag.startsWith("L")) {
     const first = frag.slice(1).split("-")[0] ?? "";
     if (/^\d+$/.test(first)) line = Number(first);
   }
-  return { text, path, target, line, span: t.span };
+  const decoded = frag === "" ? path : `${path}#${frag}`;
+  return { text, path, target: decoded, line, span: t.span };
+}
+
+/** Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source. */
+function decodeLinkPath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }
 
 /**

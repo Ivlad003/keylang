@@ -3,70 +3,111 @@
 # map
 
 - map
-  - module [emit](src/emit.ts#L1)
-    - graph map.graph
-    - fn [renderMap](src/emit.ts#L8) (graph: Graph) → Map<string, string>
-      - calls map.emit.sortModules, map.emit.renderModule
-    - fn [sortModules](src/emit.ts#L18) (ms: Module[]) → Module[] <!-- internal -->
-    - fn [renderModule](src/emit.ts#L22) (m: Module, depth: number) → string <!-- internal -->
-      - calls map.emit.renderFn
-    - fn [renderFn](src/emit.ts#L42) (m: Module, f: Fn, depth: number) → string <!-- internal -->
-    - type [IndexJson](src/emit.ts#L52)
-    - type [IndexNode](src/emit.ts#L61)
-    - fn [buildIndex](src/emit.ts#L76) (graph: Graph, languages: string[]) → IndexJson
-  - module [graph](src/graph.ts#L1)
+  - module [emit](../../src/emit.ts#L1)
+    - node external.node
+    - snapshot map.snapshot
+    - fn [isGeneratedMap](../../src/emit.ts#L9) (text: string) → boolean
+    - fn [codeHref](../../src/emit.ts#L20) (mapDir: string, filePath: string, line: number) → string
+      - calls map.emit.encodeSegment
+    - fn [encodeSegment](../../src/emit.ts#L29) (seg: string) → string <!-- internal -->
+    - fn [renderMap](../../src/emit.ts#L34) (snapshot: AnalysisSnapshot, mapDir: string) → Map<string, string>
+      - calls map.emit.childrenByParent, map.emit.sortIds, map.emit.renderModule
+    - fn [childrenByParent](../../src/emit.ts#L45) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L58) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+      - calls map.emit.nameOf
+    - fn [nameOf](../../src/emit.ts#L68) (id: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L72) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+      - calls map.emit.codeHref
+    - fn [renderModule](../../src/emit.ts#L77) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, mapDir: string, id: string, depth: number) → string <!-- internal -->
+      - calls map.emit.linkedName, map.emit.nameOf, map.emit.depsOf, map.emit.sortIds, map.emit.renderDecl
+    - fn [depsOf](../../src/emit.ts#L96) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L102) (snapshot: AnalysisSnapshot, mapDir: string, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+      - calls map.emit.linkedName, map.emit.nameOf
+  - module [graph](../../src/graph.ts#L1)
     - node external.node
     - config base.config
     - facts extract.facts
     - glob base.glob
     - imports map.imports
-    - type [Graph](src/graph.ts#L11)
-    - type [Layer](src/graph.ts#L18)
-    - type [Module](src/graph.ts#L24)
-    - type [Dep](src/graph.ts#L41)
-    - type [Fn](src/graph.ts#L48)
-    - type [Call](src/graph.ts#L58)
-    - type [TypeNode](src/graph.ts#L63)
-    - type [Stats](src/graph.ts#L71)
-    - type [FileEntry](src/graph.ts#L95) <!-- internal -->
-    - fn [buildGraph](src/graph.ts#L100) (config: Config, files: FileFacts[]) → Graph
-      - calls map.imports.ImportResolver, map.graph.placeFile, map.graph.addDecl, base.config.layerName
-    - fn [addDecl](src/graph.ts#L287) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
+    - type [Graph](../../src/graph.ts#L11)
+    - type [Gap](../../src/graph.ts#L22)
+    - type [Layer](../../src/graph.ts#L31)
+    - type [Module](../../src/graph.ts#L37)
+    - type [Dep](../../src/graph.ts#L56)
+    - type [Fn](../../src/graph.ts#L63)
+    - type [Call](../../src/graph.ts#L73)
+    - type [TypeNode](../../src/graph.ts#L78)
+    - type [Stats](../../src/graph.ts#L86)
+    - type [FileEntry](../../src/graph.ts#L113) <!-- internal -->
+    - fn [buildGraph](../../src/graph.ts#L118) (config: Config, files: FileFacts[]) → Graph
+      - calls map.imports.ImportResolver, map.graph.placeFile, map.graph.addDecl, map.graph.markOpaque, base.config.layerName
+    - fn [markOpaque](../../src/graph.ts#L324) (m: Module) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L329) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
       - calls base.config.layerName
-    - fn [placeFile](src/graph.ts#L312) (config: Config, file: string) → { layer: string; segments: string[] } | null
+    - fn [placeFile](../../src/graph.ts#L354) (config: Config, file: string) → { layer: string; segments: string[] } | null
       - calls base.glob.matchesGlob, base.glob.globPrefix
-  - module [imports](src/imports.ts#L1)
+  - module [imports](../../src/imports.ts#L1)
     - node external.node
     - config base.config
     - ts extract.ts
-    - type [Resolution](src/imports.ts#L11)
-    - type [PathRule](src/imports.ts#L20) <!-- internal -->
-    - module [ImportResolver](src/imports.ts#L26)
-      - fn [constructor](src/imports.ts#L33) (root: string)
+    - type [Resolution](../../src/imports.ts#L11)
+    - type [PathRule](../../src/imports.ts#L20) <!-- internal -->
+    - module [ImportResolver](../../src/imports.ts#L26)
+      - fn [constructor](../../src/imports.ts#L33) (root: string)
         - calls map.imports.loadTsconfig, map.imports.readJsonc, map.imports.flattenTarget
-      - fn [resolve](src/imports.ts#L42) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L42) (fromFile: string, spec: string) → Resolution
         - calls map.imports.ImportResolver.resolveUncached
-      - fn [resolveUncached](src/imports.ts#L52) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L52) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.probe, map.imports.matchPattern, base.config.toPosix, extract.ts.isNodeBuiltin, map.imports.packageName
-      - fn [probe](src/imports.ts#L87) (candidate: string) → string | null <!-- internal -->
-    - fn [matchPattern](src/imports.ts#L114) (pattern: string, spec: string) → string | null <!-- internal -->
-    - fn [flattenTarget](src/imports.ts#L125) (t: unknown) → string[] <!-- internal -->
-    - fn [packageName](src/imports.ts#L132) (spec: string) → string
-    - fn [readJsonc](src/imports.ts#L138) (path: string) → unknown
+      - fn [probe](../../src/imports.ts#L87) (candidate: string) → string | null <!-- internal -->
+    - fn [matchPattern](../../src/imports.ts#L114) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L125) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](../../src/imports.ts#L132) (spec: string) → string
+    - fn [readJsonc](../../src/imports.ts#L138) (path: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [stripJsonc](src/imports.ts#L148) (text: string) → string <!-- internal -->
-    - type [Tsconfig](src/imports.ts#L169) <!-- internal -->
-    - fn [loadTsconfig](src/imports.ts#L179) (root: string, file: string, depth: number) → Tsconfig <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L148) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L169) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L179) (root: string, file: string, depth: number) → Tsconfig <!-- internal -->
       - calls map.imports.readJsonc, base.config.toPosix
-  - module [map](src/map.ts#L1)
+  - module [map](../../src/map.ts#L1)
     - node external.node
     - config base.config
     - facts extract.facts
     - ts extract.ts
     - emit map.emit
     - graph map.graph
-    - type [MapResult](src/map.ts#L11)
-    - fn [generateMap](src/map.ts#L20) (config: Config) → Promise<MapResult>
-      - calls base.config.sourceFiles, map.graph.placeFile, extract.ts.extractTs, map.graph.buildGraph, map.emit.renderMap, map.emit.buildIndex
-    - fn [writeMap](src/map.ts#L35) (config: Config, r: MapResult) → { written: string[]; removed: string[] }
-    - fn [diffMap](src/map.ts#L63) (config: Config, r: MapResult) → string[]
+    - snapshot map.snapshot
+    - type [MapResult](../../src/map.ts#L12)
+    - fn [generateMap](../../src/map.ts#L21) (config: Config) → Promise<MapResult>
+      - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, extract.ts.extractTs, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
+    - type [MapDiff](../../src/map.ts#L47)
+    - fn [mapConflicts](../../src/map.ts#L55) (config: Config, r: MapResult) → string[]
+      - calls map.emit.isGeneratedMap
+    - fn [writeMap](../../src/map.ts#L69) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
+      - calls map.map.mapConflicts, map.emit.isGeneratedMap
+    - fn [diffMap](../../src/map.ts#L99) (config: Config, r: MapResult) → MapDiff
+      - calls map.map.mapConflicts, map.emit.isGeneratedMap
+  - module [snapshot](../../src/snapshot.ts#L1)
+    - node external.node
+    - config base.config
+    - facts extract.facts
+    - graph map.graph
+    - type [Resolution](../../src/snapshot.ts#L16) = "resolved" | "ambiguous" | "unresolved"
+    - type [Provenance](../../src/snapshot.ts#L17) = "syntactic"
+    - type [EdgeKind](../../src/snapshot.ts#L18) = "import" | "call" | "reexport"
+    - type [SnapshotEdge](../../src/snapshot.ts#L20)
+    - type [SnapshotExport](../../src/snapshot.ts#L33)
+    - type [CoverageItem](../../src/snapshot.ts#L40)
+    - type [SnapshotNode](../../src/snapshot.ts#L48)
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L65)
+    - fn [sha256](../../src/snapshot.ts#L89) (text: string) → string
+    - fn [buildSnapshot](../../src/snapshot.ts#L93) ( graph: Graph, config: Config, facts: readonly FileFacts[], files: readonly { path: string; sha256: string }[], skipped: readonly string[], ) → AnalysisSnapshot
+      - calls map.snapshot.grammarVersions, map.snapshot.sha256, map.snapshot.exportTable
+    - fn [exportTable](../../src/snapshot.ts#L243) (graph: Graph, facts: readonly FileFacts[]) → SnapshotExport[] <!-- internal -->
+      - calls map.snapshot.findSymbol
+    - fn [findSymbol](../../src/snapshot.ts#L257) (m: Module, name: string) → { id: string; kind: "fn" | "class" | "type" } | null <!-- internal -->
+      - calls base.config.layerName
+    - fn [compareCoverage](../../src/snapshot.ts#L268) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+      - calls map.snapshot.cmp
+    - fn [cmp](../../src/snapshot.ts#L272) (a: string, b: string) → number <!-- internal -->
+    - fn [grammarVersions](../../src/snapshot.ts#L276) () → Record<string, string> <!-- internal -->

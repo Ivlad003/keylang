@@ -2,14 +2,14 @@
 
 Мова опису застосунку, прив'язана до репозиторію: карта шарів і модулів, правила залежностей і потоки логіки у звичайному Markdown. Повний дизайн — [`docs/design.md`](docs/design.md), точна граматика — [`docs/format.md`](docs/format.md), огляд наукових статей і порівняння стеків — [`docs/research.md`](docs/research.md).
 
-Стек: Node.js ≥ 22.18 + TypeScript, без кроку збірки (Node виконує `.ts` напряму). Дистрибуція через npm/npx.
+Стек: Node.js ≥ 22.18 + TypeScript. У репозиторії Node виконує `.ts` напряму (`node bin/keylang.js`). Перед публікацією `prepack` компілює `src/` у `dist/` і переписує відносні імпорти `.ts` → `.js`; встановлений пакет завантажує цей JavaScript і не компілює нічого в користувача. Дистрибуція через npm/npx.
 
 ## M0: що зроблено
 
 Перший етап дорожньої карти (design.md §9): специфікація формату, парсер Markdown → IR і `keylang fmt`.
 
 - `src/` — ядро без залежностей: IR (`ir.ts`), парсер з позиціями для кожного вузла й посилання (`parser.ts`), резолвінг ID між файлами (`resolve.ts`), діагностики K001–K006 (`diag.ts`), форматер (`fmt.ts`); `index.ts` — публічний API.
-- `src/cli.ts`, `bin/keylang.js` — CLI `keylang`.
+- `src/cli.ts`, `bin/keylang.js` — CLI `keylang`. У чекауті точка входу вантажить TypeScript; з `node_modules` — зібраний `dist/cli.js`.
 - `docs/format.md` — специфікація формату з рішеннями Р1–Р14.
 - `examples/shop` — приклад зі слайдів з навмисною помилкою `domain.aggregate`; `examples/shop-fixed` — виправлений.
 

@@ -8,13 +8,16 @@
   },
   "files": [
     "bin",
-    "src"
+    "dist",
+    "dist/wasm"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test tests/*.test.ts",
+    "prepack": "tsc -p tsconfig.build.json && node scripts/copy-wasm.mjs && node scripts/pack-entry.mjs publish",
+    "postpack": "node scripts/pack-entry.mjs restore",
+    "test": "node --test --test-concurrency=1 tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "keylang": "node bin/keylang.js"
   },

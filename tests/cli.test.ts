@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, copyFileSync, cpSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -135,10 +135,287 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.version, 1);
+  assert.equal(index.schema, 2);
+  assert.equal(index.nodes["domain.order"].members, "complete");
+  assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
+  assert.ok(index.exports.some((e: { module: string; name: string; kind: string }) => e.module === "domain.order" && e.name === "createOrder" && e.kind === "fn"));
+  for (const node of Object.values(index.nodes) as { precision?: unknown }[]) assert.equal("precision" in node, false);
+  for (const edge of index.edges as { resolution: string; provenance: string }[]) {
+    assert.ok(edge.resolution === "resolved" || edge.resolution === "ambiguous" || edge.resolution === "unresolved");
+    assert.equal(edge.provenance, "syntactic");
+  }
   assert.equal(keylang(dir, ["map", "--check"]).status, 0);
   assert.equal(keylang(dir, ["check"]).status, 0);
+});
+
+test("map links are relative, encoded, and round-trip", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-links-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src/app/(shop)"), { recursive: true });
+  writeFileSync(
+    join(dir, "keylang.json"),
+    `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`,
+  );
+  writeFileSync(join(dir, "src/type.ts"), "export function create() {\n  return 1;\n}\n");
+  writeFileSync(
+    join(dir, "src/app/(shop)/page.ts"),
+    'import { create } from "../../type.ts";\n\nexport function page() {\n  return create();\n}\n',
+  );
+  writeFileSync(join(dir, "src/my file.ts"), "export function spaced() {\n  return 1;\n}\n");
+  writeFileSync(join(dir, "src/c#d.ts"), "export function hashName() {\n  return 1;\n}\n");
+  writeFileSync(join(dir, "src/foo bar.ts"), "export const a = 1;\n");
+  writeFileSync(join(dir, "src/foo_bar.ts"), "export const b = 2;\n");
+
+  const first = keylang(dir, ["map"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stderr, /same module ID/);
+  const mapPath = join(dir, "keylang/map/main.md");
+  const text = readFileSync(mapPath, "utf8");
+  assert.match(text, /\]\(\.\.\/\.\.\/src\/type\.ts#L1\)/);
+  assert.match(text, /\]\(\.\.\/\.\.\/src\/app\/%28shop%29\/page\.ts#L1\)/);
+  assert.match(text, /\]\(\.\.\/\.\.\/src\/my%20file\.ts#L1\)/);
+  assert.match(text, /\]\(\.\.\/\.\.\/src\/c%23d\.ts#L1\)/);
+  assert.match(text, /- type2 main\.type\n/);
+  assert.doesNotMatch(text, /- type main\.type\n/);
+  for (const href of hrefs(text)) {
+    const path = href.split("#")[0] ?? "";
+    assert.equal(/[ ()#]/.test(path), false, href);
+    assert.ok(path.startsWith("../"), href);
+  }
+
+  const again = keylang(dir, ["map"]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(readFileSync(mapPath, "utf8"), text);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+
+  const parsed = keylang(dir, ["parse", "--json", "keylang/map/main.md"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  const page = findNode(JSON.parse(parsed.stdout)[0], "main.app._shop_.page");
+  assert.equal(page.link.path, "../../src/app/(shop)/page.ts");
+  assert.equal(page.link.target, "../../src/app/(shop)/page.ts#L1");
+  const spaced = findNode(JSON.parse(parsed.stdout)[0], "main.my_file");
+  assert.equal(spaced.link.path, "../../src/my file.ts");
+
+  const checked = keylang(dir, ["check"]);
+  assert.doesNotMatch(checked.stdout, /K005/);
+  assert.doesNotMatch(checked.stdout, /K002/);
+  assert.equal(checked.status, 0, checked.stdout);
+});
+
+test("generated maps of the repo and the fixture parse", () => {
+  const fixture = repoCopy();
+  try {
+    assert.equal(keylang(fixture, ["map"]).status, 0);
+    assert.equal(keylang(root, ["map", "--check"]).status, 0, "committed keylang map is stale");
+    for (const cwd of [fixture, root]) {
+      for (const name of readdirSync(join(cwd, "keylang/map"))) {
+        if (!name.endsWith(".md")) continue;
+        const parsed = keylang(cwd, ["parse", join("keylang/map", name)]);
+        assert.equal(parsed.status, 0, `${name}: ${parsed.stderr}`);
+      }
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+function hrefs(markdown: string): string[] {
+  return [...markdown.matchAll(/\]\(([^)]*)\)/g)].map((m) => m[1] ?? "");
+}
+
+function findNode(doc: { sections: { items: unknown[] }[] }, id: string): { link: { path: string; target: string } } {
+  const walk = (node: { id?: string; children?: unknown[]; link?: { path: string; target: string } }): { link: { path: string; target: string } } | null => {
+    if (node.id === id) return node as { link: { path: string; target: string } };
+    for (const child of node.children ?? []) {
+      const found = walk(child as { id?: string; children?: unknown[] });
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const section of doc.sections) {
+    for (const item of section.items) {
+      if (item && typeof item === "object" && "id" in item) {
+        const found = walk(item as { id?: string; children?: unknown[] });
+        if (found) return found;
+      }
+    }
+  }
+  throw new Error(`missing node ${id}`);
+}
+
+test("snapshot id tracks sources and config, not the clock", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const first = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const second = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.equal(second.snapshotId, first.snapshotId);
+  assert.equal(second.manifest.files.length > 0, true);
+
+  appendFileSync(join(dir, "src/domain/order.ts"), "\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const edited = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.notEqual(edited.snapshotId, first.snapshotId);
+
+  const cfg = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  cfg.layers.extra = ["src/extra/**"];
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(cfg, null, 2)}\n`);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const reconfigured = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.notEqual(reconfigured.snapshotId, edited.snapshotId);
+});
+
+test("snapshot keeps unresolved imports, local calls, and completeness", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "src/domain/empty.ts"), "export {}\n");
+  writeFileSync(join(dir, "src/domain/bad.ts"), "export function (\n");
+  appendFileSync(
+    join(dir, "src/app/checkout.ts"),
+    'import { missing } from "./missing.ts";\n\nexport function run(save: (n: number) => void): void {\n  save(1);\n}\n',
+  );
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  const coverage = index.coverage as { kind: string; file: string; line: number; reason: string }[];
+  const missing = coverage.find((c) => c.kind === "unresolved-import" && c.file === "src/app/checkout.ts");
+  assert.ok(missing, JSON.stringify(coverage));
+  assert.equal(missing.line > 0, true);
+  assert.match(missing.reason, /missing\.ts/);
+  const local = coverage.find((c) => c.kind === "dynamic-call" && c.file === "src/app/checkout.ts" && c.reason.includes("`save`"));
+  assert.ok(local, JSON.stringify(coverage.filter((c) => c.file === "src/app/checkout.ts")));
+  assert.match(local.reason, /local value/);
+  assert.equal(index.nodes["domain.empty"].members, "complete");
+  assert.equal(index.nodes["domain.bad"].members, "opaque");
+  const parseError = coverage.find((c) => c.kind === "parse-error" && c.file === "src/domain/bad.ts");
+  assert.ok(parseError);
+  assert.equal(parseError.line > 0, true);
+  const edge = (index.edges as { resolution: string; provenance: string; reason?: string; file: string | null; line: number }[]).find(
+    (e) => e.resolution === "unresolved" && e.reason?.includes("missing.ts"),
+  );
+  assert.ok(edge);
+  assert.equal(edge.provenance, "syntactic");
+  assert.equal(edge.file, "src/app/checkout.ts");
+  assert.equal("precision" in index.nodes["domain.order"], false);
+});
+
+test("packed tarball runs the CLI from node_modules", (t) => {
+  const pack = spawnSync("npm", ["pack", "--json"], { cwd: root, encoding: "utf8" });
+  assert.equal(pack.status, 0, pack.stderr);
+  const packed = JSON.parse(pack.stdout) as { filename: string }[];
+  const tarball = join(root, packed[0]!.filename);
+  const tmp = mkdtempSync(join(tmpdir(), "keylang-pack-"));
+  const localRepo = repoCopy();
+  const packedRepo = repoCopy();
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(localRepo, { recursive: true, force: true });
+    rmSync(packedRepo, { recursive: true, force: true });
+    rmSync(tarball, { force: true });
+  });
+
+  const listing = spawnSync("tar", ["-tzf", tarball], { encoding: "utf8" });
+  assert.equal(listing.status, 0, listing.stderr);
+  const names = listing.stdout.split("\n");
+  assert.ok(names.some((n) => n.endsWith("/dist/cli.js")));
+  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-typescript.wasm")));
+  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-tsx.wasm")));
+  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-javascript.wasm")));
+  assert.ok(names.some((n) => n.endsWith("/bin/keylang.js")));
+  assert.equal(names.some((n) => n.includes("/src/")), false);
+  const published = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string; files: string[] };
+  assert.ok(published.files.includes("bin"));
+  assert.ok(published.files.includes("dist"));
+  assert.ok(published.files.includes("dist/wasm"));
+
+  writeFileSync(join(tmp, "package.json"), '{"name":"keylang-pack-test","private":true}\n');
+  const install = spawnSync("npm", ["install", "--omit=dev", "--offline", "--ignore-scripts", tarball], {
+    cwd: tmp,
+    encoding: "utf8",
+  });
+  assert.equal(install.status, 0, install.stderr);
+  const installedBin = join(tmp, "node_modules/keylang/bin/keylang.js");
+  const version = spawnSync(process.execPath, [installedBin, "--version"], { cwd: tmp, encoding: "utf8" });
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout, `keylang ${published.version}\n`);
+  const help = spawnSync(process.execPath, [installedBin, "--help"], { cwd: tmp, encoding: "utf8" });
+  assert.equal(help.stdout, keylang(root, ["--help"]).stdout);
+
+  const localParse = keylang(localRepo, ["parse", "--json", "keylang/rules.md"]);
+  const packedParse = spawnSync(process.execPath, [installedBin, "parse", "--json", "keylang/rules.md"], {
+    cwd: packedRepo,
+    encoding: "utf8",
+  });
+  assert.equal(packedParse.status, 0, packedParse.stderr);
+  assert.equal(packedParse.stdout, localParse.stdout);
+
+  assert.equal(keylang(localRepo, ["map"]).status, 0);
+  const packedMap = spawnSync(process.execPath, [installedBin, "map"], { cwd: packedRepo, encoding: "utf8" });
+  assert.equal(packedMap.status, 0, packedMap.stderr);
+  for (const name of readdirSync(join(localRepo, "keylang/map"))) {
+    assert.equal(
+      readFileSync(join(packedRepo, "keylang/map", name), "utf8"),
+      readFileSync(join(localRepo, "keylang/map", name), "utf8"),
+      name,
+    );
+  }
+  const localIndex = JSON.parse(readFileSync(join(localRepo, ".keylang/index.json"), "utf8"));
+  const packedIndex = JSON.parse(readFileSync(join(packedRepo, ".keylang/index.json"), "utf8"));
+  assert.equal(packedIndex.snapshotId, localIndex.snapshotId);
+  assert.equal(packedIndex.schema, localIndex.schema);
+});
+
+test("an incompatible index is rebuilt without a diagnostic", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".keylang"));
+  writeFileSync(join(dir, ".keylang/index.json"), '{ "schema": 0, "version": 1 }\n');
+  const o = keylang(dir, ["map"]);
+  const out = `${o.stdout}${o.stderr}`;
+  assert.equal(o.status, 0, out);
+  assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  assert.equal(index.schema, 2);
+  assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
+});
+
+// RV04: a hand-written map file has no generator marker. `map` must refuse
+// before writing or deleting anything, and `--check` must not call that "stale".
+test("map refuses to overwrite a manual map file", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const mapDir = join(dir, "keylang/map");
+  mkdirSync(mapDir, { recursive: true });
+  const manual = "manual rules stay\n";
+  const domain = join(mapDir, "domain.md");
+  writeFileSync(domain, manual);
+  const gone = join(mapDir, "gone.md");
+  writeFileSync(gone, "<!-- keylang:generated — не редагувати, `keylang map` -->\n\n# map\n\n- gone\n");
+  const mtime = statSync(domain).mtimeMs;
+
+  const o = keylang(dir, ["map"]);
+  const out = `${o.stdout}${o.stderr}`;
+  assert.equal(o.status, 1, out);
+  assert.match(out, /keylang\/map\/domain\.md/);
+  assert.match(out, /keylang:generated/);
+  assert.doesNotMatch(out, /stale/);
+  assert.doesNotMatch(o.stdout, /written/);
+  assert.equal(readFileSync(domain, "utf8"), manual);
+  assert.equal(statSync(domain).mtimeMs, mtime);
+  assert.equal(existsSync(join(mapDir, "app.md")), false);
+  assert.equal(existsSync(join(mapDir, "infra.md")), false);
+  assert.equal(existsSync(join(dir, ".keylang/index.json")), false);
+  assert.equal(readFileSync(gone, "utf8").includes("- gone"), true);
+
+  const check = keylang(dir, ["map", "--check"]);
+  const checkOut = `${check.stdout}${check.stderr}`;
+  assert.equal(check.status, 1, checkOut);
+  assert.match(checkOut, /keylang\/map\/domain\.md/);
+  assert.match(checkOut, /manual file/);
+  assert.doesNotMatch(checkOut, /stale/);
+  assert.equal(readFileSync(domain, "utf8"), manual);
+  assert.equal(existsSync(join(mapDir, "app.md")), false);
 });
 
 // A forbidden import in the domain: deny, layer order and a cycle are all

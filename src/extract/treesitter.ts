@@ -1,9 +1,10 @@
 // web-tree-sitter runtime with the grammar WASM files from @vscode/tree-sitter-wasm.
 // Languages are loaded lazily and cached for the process.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Language, Parser, Query, type Node, type Tree } from "web-tree-sitter";
 
 const require = createRequire(import.meta.url);
@@ -15,6 +16,9 @@ const languages = new Map<Grammar, Promise<Language>>();
 const queries = new Map<string, Query>();
 
 function wasmDir(): string {
+  // prepack copies grammars next to the compiled extractor (`dist/wasm`).
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "../wasm");
+  if (existsSync(join(bundled, "tree-sitter-typescript.wasm"))) return bundled;
   return join(dirname(require.resolve("@vscode/tree-sitter-wasm/package.json")), "wasm");
 }
 

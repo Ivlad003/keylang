@@ -112,12 +112,23 @@ async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   const r = await generateMap(config);
   const s = r.graph.stats;
   for (const w of r.graph.warnings) process.stderr.write(`warning: ${w}\n`);
+  const reportConflict = (p: string): void => {
+    process.stdout.write(`${toPosix(relative(process.cwd(), p))}: manual file without keylang:generated marker\n`);
+  };
   if (checkOnly) {
-    const stale = diffMap(config, r);
-    for (const p of stale) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: stale, run \`keylang map\`\n`);
-    return stale.length === 0 ? 0 : 1;
+    const diff = diffMap(config, r);
+    for (const p of diff.conflicts) reportConflict(p);
+    // A manual file blocks `map` itself, so "run keylang map" would not refresh the rest.
+    if (diff.conflicts.length === 0) {
+      for (const p of diff.stale) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: stale, run \`keylang map\`\n`);
+    }
+    return diff.conflicts.length === 0 && diff.stale.length === 0 ? 0 : 1;
   }
-  const { written, removed } = writeMap(config, r);
+  const { written, removed, conflicts } = writeMap(config, r);
+  if (conflicts.length > 0) {
+    for (const p of conflicts) reportConflict(p);
+    return 1;
+  }
   for (const p of written) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: written\n`);
   for (const p of removed) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: removed\n`);
   process.stderr.write(

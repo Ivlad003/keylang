@@ -10,6 +10,12 @@ export interface FileFacts {
   exports: Set<string>;
   /** `export * from "./x"` — the file re-exports everything from these sources. */
   reexportsAll: string[];
+  /**
+   * `complete`: the declaration list is exhaustive and may be empty.
+   * `opaque`: a syntax error or an unparsed file; a missing name is not evidence it does not exist.
+   */
+  completeness: "complete" | "opaque";
+  parseError: { line: number; reason: string } | null;
 }
 
 export interface ImportFact {
