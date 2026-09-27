@@ -136,7 +136,7 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 2);
+  assert.equal(index.schema, 3);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
@@ -301,6 +301,64 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   assert.equal("precision" in index.nodes["domain.order"], false);
 });
 
+test("snapshot edges name type targets, ambiguity, and unsupported constructs", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "src/domain/again.ts"), "export function total(items: number[]): number {\n  return items.length;\n}\n");
+  writeFileSync(
+    join(dir, "src/app/use.ts"),
+    [
+      'import { total } from "../domain/order.ts";',
+      'import { total } from "../domain/again.ts";',
+      'import { Order } from "../domain/order.ts";',
+      "export function checkout(o: Order): Order {",
+      "  return o;",
+      "}",
+      "export function run(): number {",
+      "  return total([]);",
+      "}",
+      "namespace Hidden { export function pay(): void {} }",
+      "export function dyn(xs: Array<() => void>, i: number): void {",
+      "  xs[i]();",
+      '  eval("1");',
+      "}",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(keylang(dir, ["map"]).status, 0, "map");
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
+    nodes: Record<string, { kind: string; line: number | null; col: number | null; endLine?: number; endCol?: number }>;
+    edges: { kind: string; source: string; target: string | null; candidates?: string[]; resolution: string; provenance: string; text: string; line: number; col: number; endLine: number; endCol: number }[];
+    coverage: { kind: string; file: string; line: number; col: number; endLine: number; endCol: number; reason: string }[];
+  };
+  const order = index.nodes["domain.order"];
+  assert.equal(order?.line, 1);
+  assert.equal(order?.col, 1);
+  assert.ok((order?.endLine ?? 0) >= 1 && (order?.endCol ?? 0) >= 1);
+  const orderType = index.nodes["domain.order.Order"];
+  assert.equal(orderType?.kind, "type");
+  assert.ok((orderType?.col ?? 0) >= 1);
+  assert.ok((orderType?.endLine ?? 0) >= (orderType?.line ?? 0));
+  assert.ok((orderType?.endCol ?? 0) >= 1);
+  const created = index.nodes["domain.order.createOrder"];
+  assert.ok((created?.col ?? 0) >= 1 && (created?.endLine ?? 0) >= (created?.line ?? 0) && (created?.endCol ?? 0) >= 1);
+  const typeEdge = index.edges.find((edge) => edge.kind === "type" && edge.source === "app.use.checkout" && edge.target === "domain.order.Order");
+  assert.ok(typeEdge, JSON.stringify(index.edges.filter((edge) => edge.kind === "type" && edge.source.startsWith("app.use"))));
+  assert.equal(typeEdge.resolution, "resolved");
+  assert.equal(typeEdge.provenance, "syntactic");
+  assert.equal(typeEdge.text, "Order");
+  assert.ok(typeEdge.endLine > typeEdge.line || typeEdge.endCol > typeEdge.col);
+  const ambiguous = index.edges.find((edge) => edge.kind === "call" && edge.source === "app.use.run" && edge.resolution === "ambiguous");
+  assert.ok(ambiguous, JSON.stringify(index.edges.filter((edge) => edge.source === "app.use.run")));
+  assert.equal(ambiguous.target, null);
+  assert.deepEqual([...(ambiguous.candidates ?? [])].sort(), ["domain.again.total", "domain.order.total"]);
+  const holes = index.coverage.filter((item) => item.kind === "unsupported" && item.file === "src/app/use.ts" && item.reason.startsWith("unsupported construct"));
+  assert.ok(holes.some((item) => item.reason.includes("namespace")));
+  assert.ok(holes.some((item) => item.reason.includes("computed call")));
+  assert.ok(holes.some((item) => item.reason.includes("eval")));
+  for (const item of holes) assert.ok(item.line >= 1 && item.col >= 1 && item.endLine >= item.line && item.endCol >= 1);
+});
+
 test("packed tarball runs the CLI from node_modules", (t) => {
   const pack = spawnSync("npm", ["pack", "--json"], { cwd: root, encoding: "utf8" });
   assert.equal(pack.status, 0, pack.stderr);
@@ -377,7 +435,7 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
   assert.equal(o.status, 0, out);
   assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 2);
+  assert.equal(index.schema, 3);
   assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
 });
 

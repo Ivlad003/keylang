@@ -9,9 +9,9 @@ import { layerName } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
 
-export const SNAPSHOT_SCHEMA = 2;
+export const SNAPSHOT_SCHEMA = 3;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.1";
+export const EXTRACTOR_VERSION = "m1.2";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -20,12 +20,20 @@ export type EdgeKind = "import" | "call" | "type" | "reexport";
 export interface SnapshotEdge {
   kind: EdgeKind;
   source: string;
+  /** One symbol, or null when the reference is ambiguous or unresolved. */
   target: string | null;
+  /** Every symbol this reference might name. Present when `resolution` is `ambiguous`. */
+  candidates?: string[];
   /** Dependency alias, only for import and reexport edges. The map prints `- <alias> <target>`. */
   alias?: string;
   file: string | null;
+  /** 1-based start. `endCol` is the column after the fragment. */
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  /** Source text of the reference. */
+  text: string;
   resolution: Resolution;
   provenance: Provenance;
   reason?: string;
@@ -43,6 +51,9 @@ export interface CoverageItem {
   file: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
   reason: string;
   source: string | null;
 }
@@ -52,7 +63,10 @@ export interface SnapshotNode {
   layer: string;
   file: string | null;
   line: number | null;
+  col: number | null;
+  /** End of the declaration. `endCol` is the column after the fragment. */
   endLine?: number;
+  endCol?: number;
   signature?: string | null;
   exported?: boolean;
   members?: "complete" | "opaque";
@@ -126,10 +140,13 @@ export function buildSnapshot(
       layer: m.layer,
       file: m.path,
       line: m.line,
+      col: m.col,
       members: m.members,
       deps: m.deps.map((d) => d.target),
       dependents: [],
     };
+    if (m.endLine !== null) moduleNode.endLine = m.endLine;
+    if (m.endCol !== null) moduleNode.endCol = m.endCol;
     if (m.comment) moduleNode.comment = m.comment;
     nodes[m.id] = moduleNode;
     for (const f of m.fns) {
@@ -138,7 +155,9 @@ export function buildSnapshot(
         layer: m.layer,
         file: m.path,
         line: f.line,
+        col: f.col,
         endLine: f.endLine,
+        endCol: f.endCol,
         signature: f.signature,
         exported: f.exported,
         calls: f.calls.map((c) => c.target),
@@ -152,6 +171,9 @@ export function buildSnapshot(
         layer: m.layer,
         file: m.path,
         line: t.line,
+        col: t.col,
+        endLine: t.endLine,
+        endCol: t.endCol,
         signature: t.signature,
         exported: t.exported,
       };
@@ -159,7 +181,7 @@ export function buildSnapshot(
     for (const c of m.children) visit(c);
   };
   for (const l of graph.layers) {
-    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null };
+    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null };
     for (const m of l.modules) visit(m);
   }
   for (const [id, n] of Object.entries(nodes)) {
@@ -188,6 +210,9 @@ export function buildSnapshot(
         file: m.path,
         line: d.line,
         col: d.col,
+        endLine: d.endLine,
+        endCol: d.endCol,
+        text: d.text,
         resolution: "resolved",
         provenance: "syntactic",
       });
@@ -201,6 +226,9 @@ export function buildSnapshot(
           file: m.path,
           line: c.line,
           col: c.col,
+          endLine: c.endLine,
+          endCol: c.endCol,
+          text: c.text,
           resolution: "resolved",
           provenance: "syntactic",
         });
@@ -209,10 +237,27 @@ export function buildSnapshot(
     for (const c of m.children) visitEdges(c);
   };
   for (const l of graph.layers) for (const m of l.modules) visitEdges(m);
+  for (const open of graph.openEdges) {
+    const edge: SnapshotEdge = {
+      kind: open.kind,
+      source: open.source,
+      target: open.target,
+      file: open.file,
+      line: open.line,
+      col: open.col,
+      endLine: open.endLine,
+      endCol: open.endCol,
+      text: open.text,
+      resolution: open.resolution,
+      provenance: "syntactic",
+    };
+    if (open.candidates.length > 0) edge.candidates = open.candidates;
+    edges.push(edge);
+  }
 
   const coverage: CoverageItem[] = [];
   for (const gap of graph.gaps) {
-    coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, reason: gap.reason, source: gap.source });
+    coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: gap.reason, source: gap.source });
     if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call") {
       edges.push({
         kind: gap.kind === "unresolved-import" ? "import" : "call",
@@ -221,6 +266,9 @@ export function buildSnapshot(
         file: gap.file,
         line: gap.line,
         col: gap.col,
+        endLine: gap.endLine,
+        endCol: gap.endCol,
+        text: gap.text,
         resolution: "unresolved",
         provenance: "syntactic",
         reason: gap.reason,
@@ -228,7 +276,7 @@ export function buildSnapshot(
     }
   }
   for (const file of skipped) {
-    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, reason: "outside guessed layers", source: null });
+    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason: "outside guessed layers", source: null });
   }
   coverage.sort(compareCoverage);
 

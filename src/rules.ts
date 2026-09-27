@@ -30,7 +30,7 @@ interface Rule {
 interface UseEdge {
   from: string;
   to: string;
-  kind: "import" | "call" | "reexport";
+  kind: "import" | "call" | "type" | "reexport";
   file: string;
   line: number;
   col: number;
@@ -93,7 +93,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const edges: UseEdge[] = [];
   for (const edge of snapshot.edges) {
-    if (edge.kind !== "import" && edge.kind !== "reexport" && edge.kind !== "call") continue;
+    if (edge.kind !== "import" && edge.kind !== "reexport" && edge.kind !== "call" && edge.kind !== "type") continue;
     if (!edge.target || !edge.file) continue;
     const from = moduleOf(edge.source);
     const to = moduleOf(edge.target);

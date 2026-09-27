@@ -237,7 +237,9 @@ function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number
     return 0;
   }
   for (const edge of hits) {
-    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col} ${edge.source} → ${edge.target ?? "unresolved"}${edge.reason ? ` (${edge.reason})` : ""}\n`);
+    const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
+    const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
+    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "unresolved"}${via}${edge.reason ? ` (${edge.reason})` : ""}\n`);
   }
   return 0;
 }

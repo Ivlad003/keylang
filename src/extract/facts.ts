@@ -4,6 +4,9 @@
 export interface FileFacts {
   /** POSIX path relative to the repository root. */
   path: string;
+  /** End of the file, 1-based; `endCol` is the column after the last character. */
+  endLine: number;
+  endCol: number;
   imports: ImportFact[];
   decls: DeclFact[];
   /** Names exported by the file (ESM `export`, CommonJS `module.exports`/`exports.x`). */
@@ -12,7 +15,7 @@ export interface FileFacts {
   reexportsAll: string[];
   /** Public names with their kinds. Empty only when the file exports nothing. */
   exportRows: ExportRow[];
-  /** Literal dynamic imports that are not a static specifier, plus other holes. */
+  /** Constructs the extractor does not turn into edges, each with the source fragment. */
   unsupported: UnsupportedFact[];
   /**
    * `complete`: the declaration list is exhaustive and may be empty.
@@ -25,10 +28,13 @@ export interface FileFacts {
 export interface ImportFact {
   /** Module specifier as written: `./order`, `node:fs`, `@scope/pkg`. */
   source: string;
-  /** Line (1-based) of the import. */
+  /** 1-based start. `endCol` is the column after the fragment. */
   line: number;
-  /** Column (1-based) of the import. */
   col: number;
+  endLine: number;
+  endCol: number;
+  /** Source text of the import or require. */
+  text: string;
   /** How the import binds names in this file. */
   bindings: ImportBinding[];
   /** `export … from`: the import is re-exported. */
@@ -47,12 +53,16 @@ export interface DeclFact {
   kind: DeclKind;
   name: string;
   line: number;
+  col: number;
   endLine: number;
+  endCol: number;
   /** `(a: A) → B` for functions and methods; `extends X` etc. for types. */
   signature: string | null;
   exported: boolean;
   /** Calls made from the body (functions, methods, and class-level for constructors). */
   calls: CallFact[];
+  /** Type names mentioned by this declaration, not including its own name. */
+  types: TypeRefFact[];
   /** Parameters and locals that hide an outer name inside this function. */
   shadows: ShadowBinding[];
   /** Methods for classes. */
@@ -64,6 +74,18 @@ export interface CallFact {
   callee: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+}
+
+/** A type name in type position. `text` is the source fragment. */
+export interface TypeRefFact {
+  name: string;
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
 }
 
 export interface ShadowBinding {
@@ -83,5 +105,8 @@ export interface ExportRow {
 export interface UnsupportedFact {
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
   reason: string;
 }

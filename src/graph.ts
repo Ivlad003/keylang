@@ -4,7 +4,7 @@
 
 import { posix } from "node:path";
 import { layerName, type Config } from "./config.ts";
-import type { DeclFact, FileFacts } from "./extract/facts.ts";
+import type { DeclFact, FileFacts, TypeRefFact } from "./extract/facts.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { ImportResolver } from "./imports.ts";
 
@@ -17,6 +17,8 @@ export interface Graph {
   warnings: string[];
   /** Analysis holes kept beside the graph so a clean edge list is not a claim of full coverage. */
   gaps: Gap[];
+  /** Type edges and calls with more than one target. Confirmed calls stay on functions. */
+  openEdges: OpenEdge[];
 }
 
 export interface Gap {
@@ -24,9 +26,26 @@ export interface Gap {
   file: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
   reason: string;
   /** Module or function that contains the gap, when there is one. */
   source: string | null;
+}
+
+export interface OpenEdge {
+  kind: "call" | "type";
+  source: string;
+  target: string | null;
+  candidates: string[];
+  file: string;
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
+  resolution: "resolved" | "ambiguous" | "unresolved";
 }
 
 export interface Layer {
@@ -42,6 +61,9 @@ export interface Module {
   /** Source file (or directory) relative to root; null for the external layer. */
   path: string | null;
   line: number | null;
+  col: number | null;
+  endLine: number | null;
+  endCol: number | null;
   /** True for a directory node created only to nest file modules. */
   synthetic: boolean;
   /** Original package name for external modules. */
@@ -59,6 +81,9 @@ export interface Dep {
   target: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
   reexport: boolean;
 }
 
@@ -66,7 +91,9 @@ export interface Fn {
   id: string;
   name: string;
   line: number;
+  col: number;
   endLine: number;
+  endCol: number;
   signature: string | null;
   exported: boolean;
   calls: Call[];
@@ -76,12 +103,18 @@ export interface Call {
   target: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  text: string;
 }
 
 export interface TypeNode {
   id: string;
   name: string;
   line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
   signature: string | null;
   exported: boolean;
 }
@@ -125,6 +158,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const stats: Stats = { files: files.length, modules: 0, fns: 0, types: 0, deps: 0, callsResolved: 0, callsUnresolved: 0, callsExternal: 0, callsDynamic: 0, importsUnresolved: 0, unassignedFiles: 0 };
   const warnings: string[] = [];
   const gaps: Gap[] = [];
+  const openEdges: OpenEdge[] = [];
   for (const name of config.layers.keys()) layers.set(name, { name, modules: [] });
 
   const getLayer = (name: string): Layer => {
@@ -148,7 +182,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     }
     const dot = id.lastIndexOf(".");
     const name = id.slice(dot + 1);
-    m = { id, layer, name, path, line, synthetic, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete" };
+    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete" };
     modules.set(id, m);
     const parentId = id.slice(0, dot);
     if (parentId === layer) getLayer(layer).modules.push(m);
@@ -165,14 +199,18 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const segments = placed?.segments ?? f.path.replace(/\.[^.]+$/, "").split("/").map(layerName);
     const id = [layer, ...segments].join(".");
     const m = ensureModule(id, layer, f.path, 1, false);
+    m.line = 1;
+    m.col = 1;
+    m.endLine = f.endLine;
+    m.endCol = f.endCol;
     if (m.path !== f.path) {
       // Two files map to one module (e.g. `x.ts` and `x/index.ts`).
       warnings.push(`${f.path}: same module ID as ${m.path} (${id}); merged`);
     }
     byFile.set(f.path, { facts: f, module: m });
-    if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, reason: "outside any layer", source: m.id });
+    if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason: "outside any layer", source: m.id });
     for (const hole of f.unsupported) {
-      gaps.push({ kind: "unsupported", file: f.path, line: hole.line, col: hole.col, reason: hole.reason, source: m.id });
+      gaps.push({ kind: "unsupported", file: f.path, line: hole.line, col: hole.col, endLine: hole.endLine, endCol: hole.endCol, text: hole.text, reason: hole.reason, source: m.id });
     }
   }
 
@@ -185,16 +223,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     if (facts.completeness === "opaque") {
       markOpaque(module);
       if (facts.parseError) {
-        gaps.push({ kind: "parse-error", file: facts.path, line: facts.parseError.line, col: 1, reason: facts.parseError.reason, source: module.id });
+        gaps.push({ kind: "parse-error", file: facts.path, line: facts.parseError.line, col: 1, endLine: facts.parseError.line, endCol: 2, text: "", reason: facts.parseError.reason, source: module.id });
       }
     }
   }
 
   // 3. Imports → dependencies.
   const externalLayer = getLayer(EXTERNAL);
-  const importTargets = new Map<string, Map<string, { module: Module | null; imported: string | null }>>(); // file → local → target
+  const importTargets = new Map<string, Map<string, { module: Module | null; imported: string | null }[]>>(); // file → local → targets
   for (const { facts, module } of byFile.values()) {
-    const locals = new Map<string, { module: Module | null; imported: string | null }>();
+    const locals = new Map<string, { module: Module | null; imported: string | null }[]>();
     importTargets.set(facts.path, locals);
     const aliases = new Map<string, string>();
     for (const imp of facts.imports) {
@@ -216,11 +254,13 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         stats.importsUnresolved++;
         const reason = `unresolved import \`${imp.source}\``;
         warnings.push(`${facts.path}:${imp.line}: ${reason}`);
-        gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, reason, source: module.id });
+        gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
         continue;
       }
       for (const b of imp.bindings) {
-        locals.set(b.local, { module: target, imported: b.kind === "named" ? b.imported : null });
+        const list = locals.get(b.local) ?? [];
+        list.push({ module: target, imported: b.kind === "named" ? b.imported : null });
+        locals.set(b.local, list);
       }
       const wanted = imp.bindings.find((b) => b.kind === "module")?.local ?? target.name;
       let alias = layerName(wanted);
@@ -239,7 +279,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
       if (module.deps.some((d) => d.target === target.id)) continue;
       aliases.set(alias, target.id);
-      module.deps.push({ alias, target: target.id, line: imp.line, col: imp.col, reexport: imp.reexport });
+      module.deps.push({ alias, target: target.id, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
       stats.deps++;
     }
   }
@@ -248,41 +288,49 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   for (const { facts, module } of byFile.values()) {
     const locals = importTargets.get(facts.path)!;
     const localDecls = declModule.get(module.id)!;
-    const resolveCallee = (callee: string, cls: Module | null): string | null => {
+    const resolveCallees = (callee: string, cls: Module | null): string[] => {
       const [head, ...rest] = callee.split(".");
-      if (!head) return null;
+      if (!head) return [];
+      const found = new Set<string>();
       if (head === "this") {
-        const m = rest[0];
-        if (!cls || !m || rest.length !== 1) return null;
-        return declModule.get(cls.id)?.get(m) ?? null;
+        const member = rest[0];
+        if (!cls || !member || rest.length !== 1) return [];
+        const id = declModule.get(cls.id)?.get(member);
+        return id ? [id] : [];
       }
       if (rest.length === 0) {
         const local = localDecls.get(head);
-        if (local) return local;
-        const imp = locals.get(head);
-        if (imp?.module) {
+        if (local) found.add(local);
+        for (const imp of locals.get(head) ?? []) {
+          if (!imp.module) continue;
           const names = declModule.get(imp.module.id);
-          if (imp.imported) return names?.get(imp.imported) ?? null;
-          return names?.get("default") ?? null;
+          const id = imp.imported ? names?.get(imp.imported) : names?.get("default");
+          if (id) found.add(id);
         }
-        return null;
+        return [...found];
       }
       if (rest.length === 1) {
         const member = rest[0]!;
-        const imp = locals.get(head);
-        if (imp?.module) {
+        for (const imp of locals.get(head) ?? []) {
+          if (!imp.module) continue;
           const names = declModule.get(imp.module.id);
           if (imp.imported) {
-            // `Cls.method` where `Cls` is an imported class.
             const clsId = names?.get(imp.imported);
-            return clsId ? (declModule.get(clsId)?.get(member) ?? null) : null;
+            const id = clsId ? declModule.get(clsId)?.get(member) : undefined;
+            if (id) found.add(id);
+          } else {
+            const id = names?.get(member);
+            if (id) found.add(id);
           }
-          return names?.get(member) ?? null;
         }
         const localCls = localDecls.get(head);
-        if (localCls) return declModule.get(localCls)?.get(member) ?? null;
+        if (localCls) {
+          const id = declModule.get(localCls)?.get(member);
+          if (id) found.add(id);
+        }
+        return [...found];
       }
-      return null;
+      return [];
     };
     const attach = (fns: Fn[], factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
@@ -302,37 +350,100 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (shadow && head !== "this") {
             stats.callsUnresolved++;
             const why = shadow.kind === "parameter" ? "shadowed by parameter" : "shadowed by local";
-            gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, reason: `${why} \`${c.callee}\``, source: fn.id });
+            gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `${why} \`${c.callee}\``, source: fn.id });
             continue;
           }
-          const target = resolveCallee(c.callee, cls);
+          if (head === "eval") continue;
+          const targets = resolveCallees(c.callee, cls);
+          if (targets.length > 1) {
+            openEdges.push({ kind: "call", source: fn.id, target: null, candidates: targets.sort(), file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, resolution: "ambiguous" });
+            continue;
+          }
+          const target = targets[0] ?? null;
           if (!target) {
-            if (locals.get(head)?.module?.layer === EXTERNAL || JS_GLOBALS.has(head)) stats.callsExternal++;
+            const imported = (locals.get(head) ?? []).find((imp) => imp.module);
+            if (imported?.module?.layer === EXTERNAL || JS_GLOBALS.has(head)) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
               stats.callsDynamic++;
-              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, reason: `call through a local value \`${c.callee}\``, source: fn.id });
+              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `call through a local value \`${c.callee}\``, source: fn.id });
             } else {
               stats.callsUnresolved++;
-              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, reason: `unresolved call \`${c.callee}\``, source: fn.id });
+              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `unresolved call \`${c.callee}\``, source: fn.id });
             }
             continue;
           }
           if (target === fn.id || seen.has(target)) continue;
           seen.add(target);
-          fn.calls.push({ target, line: c.line, col: c.col });
+          fn.calls.push({ target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee });
           stats.callsResolved++;
         }
       }
     };
     attach(module.fns, facts.decls, null);
+    const resolveType = (ref: TypeRefFact): string[] => {
+      const head = ref.name.split(".")[0] ?? "";
+      if (!head) return [];
+      const found = new Set<string>();
+      const local = localDecls.get(layerName(head));
+      if (local) found.add(local);
+      for (const imp of locals.get(head) ?? []) {
+        if (!imp.module) continue;
+        const names = declModule.get(imp.module.id);
+        const id = imp.imported ? names?.get(layerName(imp.imported)) : names?.get("default");
+        if (id) found.add(id);
+      }
+      const member = ref.name.includes(".") ? ref.name.slice(ref.name.lastIndexOf(".") + 1) : "";
+      if (!member) return [...found];
+      const narrowed = new Set<string>();
+      for (const id of found) {
+        const child = declModule.get(id)?.get(layerName(member));
+        if (child) narrowed.add(child);
+      }
+      return [...narrowed];
+    };
+    const noteTypes = (decls: DeclFact[], owner: Module): void => {
+      for (const d of decls) {
+        const source = owner.id === module.id ? (declModule.get(module.id)?.get(layerName(d.name)) ?? module.id) : (declModule.get(owner.id)?.get(layerName(d.name)) ?? owner.id);
+        for (const ref of d.types) {
+          const targets = resolveType(ref).filter((id) => id !== source);
+          if (targets.length === 0) {
+            if (TYPE_GLOBALS.has(ref.name.split(".")[0] ?? ref.name)) continue;
+            openEdges.push({ kind: "type", source, target: null, candidates: [], file: facts.path, line: ref.line, col: ref.col, endLine: ref.endLine, endCol: ref.endCol, text: ref.text, resolution: "unresolved" });
+            continue;
+          }
+          openEdges.push({
+            kind: "type",
+            source,
+            target: targets.length === 1 ? (targets[0] ?? null) : null,
+            candidates: targets.length > 1 ? targets.sort() : [],
+            file: facts.path,
+            line: ref.line,
+            col: ref.col,
+            endLine: ref.endLine,
+            endCol: ref.endCol,
+            text: ref.text,
+            resolution: targets.length > 1 ? "ambiguous" : "resolved",
+          });
+        }
+        if (d.kind === "class") {
+          const cls = owner.children.find((child) => child.name === layerName(d.name));
+          if (cls) noteTypes(d.members, cls);
+        }
+      }
+    };
+    noteTypes(facts.decls, module);
   }
 
   stats.modules = [...modules.values()].filter((m) => m.layer !== EXTERNAL).length;
   const orderedLayers = [...layers.values()].filter((l) => l.modules.length > 0);
   const byPath = new Map<string, Module>();
   for (const [path, entry] of byFile) byPath.set(path, entry.module);
-  return { layers: orderedLayers, modules, byPath, stats, warnings, gaps };
+  return { layers: orderedLayers, modules, byPath, stats, warnings, gaps, openEdges };
 }
+
+const TYPE_GLOBALS = new Set(
+  "Promise Array ReadonlyArray Record Partial Required Readonly Pick Omit Exclude Extract NonNullable ReturnType Parameters ConstructorParameters InstanceType Map Set WeakMap WeakSet Date RegExp Error Iterable Iterator AsyncIterable AsyncIterator Generator IterableIterator Buffer Function Object Boolean Number String".split(" "),
+);
 
 function markOpaque(m: Module): void {
   m.members = "opaque";
@@ -344,7 +455,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   if (names.has(name)) return; // overloads / duplicate declarations
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: module.path, line: d.line, synthetic: false, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete" };
+    const cls: Module = { id, layer: module.layer, name, path: module.path, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete" };
     module.children.push(cls);
     names.set(name, id);
     const members = new Map<string, string>();
@@ -355,10 +466,10 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   const id = `${module.id}.${name}`;
   names.set(name, id);
   if (d.kind === "fn") {
-    module.fns.push({ id, name, line: d.line, endLine: d.endLine, signature: d.signature, exported: d.exported, calls: [] });
+    module.fns.push({ id, name, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, calls: [] });
     stats.fns++;
   } else {
-    module.types.push({ id, name, line: d.line, signature: d.signature, exported: d.exported });
+    module.types.push({ id, name, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported });
     stats.types++;
   }
 }

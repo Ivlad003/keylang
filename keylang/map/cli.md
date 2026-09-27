@@ -49,13 +49,13 @@
     - fn [cmdCheck](../../src/cli.ts#L182) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, map.analyze.analyze, cli.cli.explainEdge, lang.files.collectMdFiles, lang.files.load, cli.assess.assess, cli.assess.sameFinding, cli.cli.writeCheck
     - fn [explainEdge](../../src/cli.ts#L223) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
-    - fn [writeCheck](../../src/cli.ts#L245) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L247) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls base.diag.isError, cli.assess.sameFinding
-    - fn [cmdFmt](../../src/cli.ts#L310) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L312) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L331) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L333) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L339) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L341) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
