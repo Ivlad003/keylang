@@ -3,6 +3,11 @@
 # map
 
 - extract
+  - module [bodies](../../src/extract/bodies.ts#L1)
+    - treesitter extract.treesitter
+    - type [FunctionBody](../../src/extract/bodies.ts#L7)
+    - fn [functionBodies](../../src/extract/bodies.ts#L21) (path: string, src: string) → Promise<Map<string, FunctionBody>>
+      - calls extract.treesitter.parseSource, extract.treesitter.grammarFor
   - module [facts](../../src/extract/facts.ts#L1)
     - type [FileFacts](../../src/extract/facts.ts#L4)
     - type [ImportFact](../../src/extract/facts.ts#L28)

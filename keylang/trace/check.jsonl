@@ -1,5 +1,0 @@
-{"schemaVersion":1,"runId":"check","testId":"check","flow":"check","symbolId":"cli.cli.main","event":"start","spanId":"s1","seq":1,"clockId":"c","ts":1}
-{"schemaVersion":1,"runId":"check","testId":"check","flow":"check","symbolId":"cli.cli.run","event":"start","spanId":"s2","parentSpanId":"s1","seq":2,"clockId":"c","ts":2}
-{"schemaVersion":1,"runId":"check","testId":"check","flow":"check","symbolId":"cli.cli.cmdCheck","event":"start","spanId":"s3","parentSpanId":"s2","seq":3,"clockId":"c","ts":3}
-{"schemaVersion":1,"runId":"check","testId":"check","flow":"check","symbolId":"check.rules.evaluateRules","event":"start","spanId":"s4","parentSpanId":"s3","seq":4,"clockId":"c","ts":4}
-{"schemaVersion":1,"runId":"check","testId":"check","flow":"check","event":"meta","complete":true,"dropped":0}

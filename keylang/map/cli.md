@@ -5,6 +5,46 @@
 - cli
   - module [keylang](../../bin/keylang.js#L1)
     - cli cli.cli
+  - module [node-test](../../src/adapters/node-test.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - map map.map
+    - test-report check.test-report
+    - type [TestEvent](../../src/adapters/node-test.ts#L15) <!-- internal -->
+    - fn [keylangReporter](../../src/adapters/node-test.ts#L20) (source: AsyncIterable<TestEvent>) → AsyncGenerator<string>
+      - calls map.analyze.findRoot, base.config.toPosix, map.map.generateMap, base.config.loadConfig
+  - module [trace-hooks](../../src/adapters/trace-hooks.ts#L1)
+    - node external.node
+    - config base.config
+    - bodies extract.bodies
+    - files lang.files
+    - ir lang.ir
+    - map map.map
+    - parser lang.parser
+    - snapshot map.snapshot
+    - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L18)
+    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L24)
+    - type [FilePlan](../../src/adapters/trace-hooks.ts#L30) <!-- internal -->
+    - fn [initialize](../../src/adapters/trace-hooks.ts#L37) (data: TraceHooksData) → Promise<void>
+      - calls base.config.loadConfig, map.map.generateMap, cli.trace-hooks.flowSymbols, extract.bodies.functionBodies, cli.trace-hooks.wrap, map.snapshot.sha256
+    - fn [wrap](../../src/adapters/trace-hooks.ts#L70) (id: string, body: FunctionBody) → { at: number; text: string }[] <!-- internal -->
+    - fn [flowSymbols](../../src/adapters/trace-hooks.ts#L83) (root: string, dir: string, flow: string) → Set<string> <!-- internal -->
+      - calls lang.files.collectMdFiles, lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - type [LoadResult](../../src/adapters/trace-hooks.ts#L99) <!-- internal -->
+    - fn [load](../../src/adapters/trace-hooks.ts#L101) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
+      - calls map.snapshot.sha256
+  - module [trace](../../src/adapters/trace.ts#L1)
+    - node external.node
+    - trace-hooks cli.trace-hooks
+    - type [Span](../../src/adapters/trace.ts#L19) <!-- internal -->
+    - fn [planned](../../src/adapters/trace.ts#L35) () → TracePlanMessage | null <!-- internal -->
+    - fn [write](../../src/adapters/trace.ts#L48) (event: Record<string, unknown>) → void <!-- internal -->
+      - calls cli.trace.planned
+    - fn [start](../../src/adapters/trace.ts#L52) (symbolId: string) → Span <!-- internal -->
+      - calls cli.trace.write
+    - fn [finish](../../src/adapters/trace.ts#L60) (span: Span, outcome: "ok" | "error") → void <!-- internal -->
+      - calls cli.trace.write
   - module [cli](../../src/cli.ts#L1)
     - node external.node
     - config base.config
@@ -38,24 +78,24 @@
       - calls cli.cli.cmpText
     - fn [cmpText](../../src/cli.ts#L259) (a: string, b: string) → number <!-- internal -->
     - type [CheckResult](../../src/cli.ts#L263) <!-- internal -->
-    - fn [checkResults](../../src/cli.ts#L277) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[] <!-- internal -->
+    - fn [checkResults](../../src/cli.ts#L280) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[] <!-- internal -->
       - calls check.assess.sameFinding, base.diag.isError
-    - fn [writeCheck](../../src/cli.ts#L308) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L312) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls cli.cli.checkResults, cli.cli.githubProperty, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleText](../../src/cli.ts#L351) (id: string) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L355) (id: string) → string <!-- internal -->
       - calls cli.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L357) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L361) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L361) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L365) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L365) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L369) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L386) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L390) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L394) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L398) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L63) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L73) (code: string) → string | null
   - module [index](../../src/index.ts#L1)
     - diag base.diag
     - files lang.files

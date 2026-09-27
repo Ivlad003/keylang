@@ -4,7 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { matchesGlob } from "./glob.ts";
+import { globPrefix, matchesGlob } from "./glob.ts";
 
 export type Language = "typescript" | "javascript";
 
@@ -203,6 +203,32 @@ function walkSources(c: Config, keep: (rel: string) => boolean): string[] {
   };
   walk(c.root);
   return out;
+}
+
+/**
+ * Files named by `check.tests` / `check.trace`: a plain path (which must
+ * exist) or a glob (which may match nothing yet, before the first test run).
+ */
+export function evidenceFiles(c: Config, field: "tests" | "trace"): string[] | null {
+  const pattern = c.check[field];
+  if (pattern === undefined) return null;
+  if (!/[*?{[]/.test(pattern)) {
+    if (!existsSync(join(c.root, pattern))) throw new Error(`${join(c.root, CONFIG_FILE)}: check.${field}: no such file \`${pattern}\``);
+    return [pattern];
+  }
+  const base = globPrefix(pattern);
+  const start = join(c.root, base);
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, e.name);
+      const rel = toPosix(relative(c.root, abs));
+      if (e.isDirectory()) walk(abs);
+      else if (matchesGlob(rel, pattern)) out.push(rel);
+    }
+  };
+  if (existsSync(start) && statSync(start).isDirectory()) walk(start);
+  return out.sort();
 }
 
 export function isExcluded(rel: string, extra: readonly string[]): boolean {

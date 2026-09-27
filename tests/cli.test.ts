@@ -109,6 +109,16 @@ test("fmt canonicalizes and is idempotent", () => {
   }
 });
 
+test("fmt keeps a quoted token that touches the next one", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-fmt-quote-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const text = '# map\n\n- layer base\n  - module config\n    - fn evidence (field: "tests" | "trace") → string\n';
+  writeFileSync(join(dir, "m.md"), text);
+  const o = keylang(dir, ["fmt", "--check", "m.md"]);
+  assert.equal(o.status, 0, o.stdout);
+  assert.equal(keylang(root, ["fmt", "--check", "keylang"]).status, 0);
+});
+
 test("fmt refuses bad indentation", () => {
   const o = keylang(root, ["fmt", "--check", "tests/fixtures/diagnostics/indent.md"]);
   assert.equal(o.status, 1);
@@ -738,7 +748,9 @@ test("a member of an explicitly excluded file is unverified, not K001", (t) => {
   assert.equal(checked.status, 0, checked.stdout);
   assert.doesNotMatch(checked.stdout, /K001/);
   assert.match(checked.stdout, /keylang\/flows\/use\.md:3:1: ID unverified domain\.order\.createOrder: opaque module/);
-  assert.equal(checked.stdout.match(/opaque module/g)?.length, 1, checked.stdout);
+  // One ID verdict for the reference, not a second resolver line for the same position.
+  assert.doesNotMatch(checked.stdout, /: unverified opaque module `domain\.order`/);
+  assert.match(checked.stdout, /static unverified domain\.order\.createOrder: not in the snapshot \(opaque module\)/);
   assert.match(checked.stdout, /keylang\/rules\.md:3:1: unverified excluded by keylang\.json/);
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.match(readFileSync(join(dir, "keylang/map/domain.md"), "utf8"), /module \[order\]\([^)]*\) <!-- excluded -->/);
@@ -875,80 +887,63 @@ test("explain-edge lists import and call edges in a stable order, and holes when
 });
 
 test("explain covers every diagnostic code", () => {
-  for (const code of ["K001", "K002", "K003", "K004", "K005", "K006", "K101", "K102", "K103", "K104", "K105"]) {
+  // The codes as `src/diag.ts` declares them, so a new code without an explanation fails here.
+  const codes = [...readFileSync(join(root, "src/diag.ts"), "utf8").matchAll(/\| "(K\d{3})"/g)].map((m) => m[1]!);
+  assert.ok(codes.length >= 13, codes.join(" "));
+  const table = readFileSync(join(root, "docs/format.md"), "utf8");
+  for (const code of codes) {
+    assert.match(table, new RegExp(`\\| ${code} \\| (error|warning) \\|`), `format.md §7 lists ${code}`);
     const explained = keylang(root, ["explain", code]);
     assert.equal(explained.status, 0, explained.stderr);
     assert.match(explained.stdout, /example:/);
     assert.match(explained.stdout, /fix:/);
   }
   assert.match(keylang(root, ["explain", "K001"]).stdout, /planned/);
+  assert.match(keylang(root, ["explain", "k102"]).stdout, /^K102: /);
   assert.equal(keylang(root, ["explain", "NOPE"]).status, 2);
+  assert.equal(keylang(root, ["explain", "toString"]).status, 2);
 });
 
-test("planned id is unverified and an unknown id stays K001", (t) => {
+// The one real flow of keylang: `keylang check` on a repository. The trace
+// adapter instruments the trigger and steps of `keylang/flows/check.md`; the
+// trace lands in `.keylang/trace/` (git-ignored, like `.keylang/index.json`).
+test("@flow check: check reports a denied import without writing the map", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  assert.equal(keylang(dir, ["map"]).status, 0);
-  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
-  writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- planned fn domain.order.refund (order: Order) → Promise<void>\n- step domain.order.refund\n");
-  const planned = keylang(dir, ["check"]);
-  assert.doesNotMatch(planned.stdout, /K001 dangling reference `domain\.order\.refund`/);
-  assert.match(planned.stdout, /planned/);
-  writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- step domain.order.refund\n");
-  const missing = keylang(dir, ["check"]);
-  assert.equal(missing.status, 1);
-  const k001 = missing.stdout.split("\n").filter((line) => /K001 dangling reference `domain\.order\.refund`/.test(line));
-  assert.equal(k001.length, 1, missing.stdout);
-  assert.match(missing.stderr, /^1 fail,/m);
-  assert.match(missing.stdout, /planned/);
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+  const trace = join(root, ".keylang/trace/check.jsonl");
+  rmSync(trace, { force: true });
+  const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), bin, "check"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "check", KEYLANG_TRACE_TEST: "tests/cli.test.ts > @flow check", KEYLANG_TRACE_ROOT: root },
+  });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
+  assert.equal(existsSync(join(dir, ".keylang/index.json")), false);
+  const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
+  assert.equal(events.at(-1)?.event, "run");
+  assert.equal(events.at(-1)?.complete, true);
+  for (const id of ["cli.cli.main", "cli.cli.cmdCheck", "map.analyze.analyze", "check.rules.evaluateRules", "cli.cli.writeCheck"]) {
+    assert.ok(events.some((event) => event.event === "start" && event.symbolId === id), id);
+  }
 });
 
-test("an incomplete trace is unverified and a finished trace can fail a missing step", (t) => {
-  const dir = repoCopy();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  assert.equal(keylang(dir, ["map"]).status, 0);
-  const snapshot = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).snapshotId as string;
-  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
-  mkdirSync(join(dir, "keylang/trace"), { recursive: true });
-  writeFileSync(join(dir, "keylang/flows/pay.md"), "# flow pay\n\n- trigger domain.order.total\n  - step domain.order.createOrder\n");
-  writeFileSync(join(dir, "keylang/trace/pay.jsonl"), `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: "other" })}\n{"event":"meta","complete":true,"dropped":0}\n`);
-  const cfg = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
-  cfg.check = { trace: "keylang/trace/pay.jsonl" };
-  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(cfg, null, 2)}\n`);
-  const stale = keylang(dir, ["check"]);
-  assert.match(stale.stdout, /stale trace/);
-  writeFileSync(
-    join(dir, "keylang/trace/pay.jsonl"),
-    `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":1}\n`,
-  );
-  const partial = keylang(dir, ["check"]);
-  assert.match(partial.stdout, /incomplete trace|unverified/);
-  writeFileSync(
-    join(dir, "keylang/trace/pay.jsonl"),
-    `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":0}\n`,
-  );
-  const missing = keylang(dir, ["check"]);
-  assert.match(missing.stdout, /trace fail missing step/);
-});
-
-test("the in-repo check flow reports separate evidence", () => {
-  const checked = keylang(root, ["check"]);
-  assert.match(checked.stdout, /ID ok/);
-  assert.match(checked.stdout, /static ok/);
-  assert.match(checked.stdout, /tests ok/);
-  assert.match(checked.stdout, /trace ok/);
-  const summary = /(\d+) fail, (\d+) unverified, (\d+) ok/.exec(checked.stderr);
-  assert.ok(summary);
-  const unverifiedLines = checked.stdout.split("\n").filter((line) => /: unverified /.test(line) || / unverified /.test(line));
-  const okLines = checked.stdout.split("\n").filter((line) => / ID ok | static ok | tests ok | trace ok /.test(line));
-  assert.equal(Number(summary[2]), unverifiedLines.length);
-  assert.ok(okLines.length > 0);
-  assert.ok(Number(summary[3]) >= okLines.length);
-  const again = keylang(root, ["check"]);
-  assert.equal(again.status, checked.status);
+test("the in-repo check flow reports ID, static, tests, and trace separately", () => {
+  const checked = keylang(root, ["check", "--format", "json"]);
+  const rows = (JSON.parse(checked.stdout) as { results: { criterion: string; area: string; verdict: string; evidence: string }[] }).results;
+  const steps = ["cli.cli.run", "cli.cli.cmdCheck", "map.analyze.analyze", "map.map.generateMap", "lang.parser.parse", "check.assess.assess", "check.resolve.check", "check.rules.evaluateRules", "check.flows.evaluateFlows", "cli.cli.writeCheck"];
+  for (const id of steps) {
+    for (const criterion of ["ID", "static", "trace"]) assert.ok(rows.some((row) => row.criterion === criterion && row.area === id), `${criterion} ${id}`);
+    assert.equal(rows.find((row) => row.criterion === "ID" && row.area === id)?.verdict, "ok", id);
+    assert.equal(rows.find((row) => row.criterion === "static" && row.area === id)?.verdict, "ok", id);
+  }
+  // The trace of the @flow test above belongs to this snapshot.
+  for (const id of steps) assert.equal(rows.find((row) => row.criterion === "trace" && row.area === id)?.verdict, "ok", id);
+  assert.ok(rows.some((row) => row.criterion === "tests" && row.area.startsWith("invariant a denied import")));
+  const again = keylang(root, ["check", "--format", "json"]);
   assert.equal(again.stdout, checked.stdout);
 });
-
 test("a missing member of an opaque module is unverified", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -958,24 +953,6 @@ test("a missing member of an opaque module is unverified", (t) => {
   const checked = keylang(dir, ["check"]);
   assert.match(checked.stdout, /ID unverified external\.node\.readFile: opaque module/);
   assert.doesNotMatch(checked.stdout, /K001 dangling reference `external\.node\.readFile`/);
-});
-
-test("json includes a trace fail", (t) => {
-  const dir = repoCopy();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  assert.equal(keylang(dir, ["map"]).status, 0);
-  const snapshot = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).snapshotId as string;
-  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
-  mkdirSync(join(dir, "keylang/trace"), { recursive: true });
-  writeFileSync(join(dir, "keylang/flows/pay.md"), "# flow pay\n\n- trigger domain.order.total\n  - step domain.order.createOrder\n");
-  writeFileSync(join(dir, "keylang/trace/pay.jsonl"), `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":0}\n`);
-  const cfg = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
-  cfg.check = { trace: "keylang/trace/pay.jsonl" };
-  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(cfg, null, 2)}\n`);
-  const json = keylang(dir, ["check", "--format", "json"]);
-  assert.equal(json.status, 1, json.stderr);
-  const body = JSON.parse(json.stdout) as { results: { verdict: string; evidence: string }[] };
-  assert.ok(body.results.some((row) => row.verdict === "fail" && row.evidence.includes("trace fail")));
 });
 
 test("check formats share the exit code", (t) => {

@@ -6,12 +6,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
-import { loadConfig, toPosix, type Config } from "./config.ts";
+import { evidenceFiles, loadConfig, toPosix, type Config } from "./config.ts";
 import { collectMdFiles } from "./files.ts";
 import type { Document } from "./ir.ts";
 import { generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
+import { loadReports } from "./test-report.ts";
+import { loadTraces } from "./trace-evidence.ts";
 
 export { filesToReextract } from "./fact-cache.ts";
 
@@ -63,14 +65,12 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     }
   }
   docs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  for (const field of ["tests", "trace"] as const) {
-    const path = config.check[field];
-    if (path !== undefined && !existsSync(join(root, path))) throw new Error(`${join(root, "keylang.json")}: check.${field}: no such file \`${path}\``);
-  }
+  // Reports and traces are evidence about code; specs checked on their own have none.
+  const testFiles = snapshot ? evidenceFiles(config, "tests") : null;
+  const traceFiles = snapshot ? evidenceFiles(config, "trace") : null;
   const assessment = assess(docs, snapshot, {
-    root,
-    ...(config.check.tests ? { testsPath: config.check.tests } : {}),
-    ...(config.check.trace ? { tracePath: config.check.trace } : {}),
+    tests: testFiles === null ? null : loadReports(root, testFiles),
+    traces: traceFiles === null ? null : loadTraces(root, traceFiles),
   });
   return { ...assessment, config, map, snapshot, docs };
 }

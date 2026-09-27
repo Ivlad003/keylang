@@ -6,6 +6,44 @@
 2. `keylang check` на згенерованій карті;
 3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
 
+## M2 — 2026-09-27
+
+Реальний потік keylang — `keylang/flows/check.md`: `main → run → cmdCheck → analyze → (generateMap, parse, assess → (check, evaluateRules, evaluateFlows)) → writeCheck`, два `invariant` із `test`. Порядок перевірки: `npm test` (репортер `node:test` пише `.keylang/reports/node-test.json`, тест `@flow check` пише `.keylang/trace/check.jsonl`), потім `node bin/keylang.js check --strict`:
+
+| Доказ | Результат |
+|---|---|
+| `ID` | 11/11 ok (trigger і 10 кроків) |
+| `static` | 10/10 ok (сусідні кроки шляху між собою не потребують) |
+| `tests` | 2/2 ok (звіт поточного знімка) |
+| `trace` | 11/11 ok (вкладення й порядок в одному тесті, один годинник) |
+| правила | 3 × `deny` ok, `no-cycles` ok |
+| усього | `0 fail, 0 unverified, 38 ok`, код 0 |
+
+Після будь-якої зміни джерел без перезапуску `npm test` ті самі рядки `tests` і `trace` стають `unverified` «stale report» / «stale trace», а `--strict` дає 1 — звіт іншого знімка не підтверджує поточний код.
+
+### Негативні сценарії M2 (CLI-тести `tests/flows.test.ts`)
+
+| Сценарій | Результат |
+|---|---|
+| крок видалено з коду | K001 на кроці, без другого `static fail` |
+| крок досяжний лише через колбек | `static unverified` з позицією виклику `cb` |
+| шляху немає в повністю розв'язаному графі; крок-модуль | `unverified`, не `fail`; «not a callable» |
+| крок видалено, trace завершений і інструментований | `trace fail missing step` |
+| той самий trace з `dropped: 1` / відкритим span | `unverified incomplete trace` |
+| зайвий виклик між кроками | `ok` не змінюється |
+| повтор кроку в специфікації при одному виклику | перший `ok`, другий `fail` (одна подія — один крок) |
+| повтор і рекурсія в коді (адаптер) | окремі `spanId` на кожен виклик |
+| sibling-и на різних годинниках без `links` / з `links` | `order unverified` / `ok` |
+| sibling-и перекриваються | `unverified … (parallel)` |
+| асинхронний крок без `link` / з `link` (адаптер: `setTimeout`) | `unverified` / `ok` |
+| гілка `when` не виконувалась | `branch not exercised`, її кроки не обов'язкові |
+| trace і звіт іншого знімка або без `snapshotId` | `stale trace` / `stale report` / «not bound to a snapshot» |
+| тест провалився / пропущений / дві suite з однією назвою | `tests fail` (код 1) / `skipped` / `ambiguous` з кандидатами |
+| `planned` без коду → код з'явився → інший вид чи сигнатура; дублікат | `unverified planned` → K202 і перевірка як код → K201; K002 |
+| «не більше 3 retry» без тесту | «needs a separate predicate or test» |
+
+Не відтворено: зміна тіла без зміни сигнатури — це стейлнес прози, тікет 21 чекає рішень людини щодо формату й місця baseline.
+
 ## M1.1 — 2026-09-27
 
 Node v24.20.0, keylang 0.1.0, ті самі коміти репозиторіїв, що й для M1. Лог: `KEYLANG_BENCH_WORK=<dir> bench/run.sh`, по пробах — `<dir>/<repo>.probes`.

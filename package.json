@@ -17,7 +17,7 @@
   "scripts": {
     "prepack": "tsc -p tsconfig.build.json && node scripts/copy-wasm.mjs && node scripts/pack-entry.mjs publish",
     "postpack": "node scripts/pack-entry.mjs restore",
-    "test": "node --test --test-concurrency=1 tests/*.test.ts",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./src/adapters/node-test.ts --test-reporter-destination=stdout tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "keylang": "node bin/keylang.js"
   },
@@ -28,5 +28,10 @@
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "web-tree-sitter": "^0.27.0"
+  },
+  "exports": {
+    "./node-test-reporter": "./dist/adapters/node-test.js",
+    "./trace": "./dist/adapters/trace.js",
+    "./package.json": "./package.json"
   }
 }

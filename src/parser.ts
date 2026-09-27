@@ -813,9 +813,13 @@ function linkEnd(s: string, i: number): number | null {
 /** Canonical rendering of head tokens: single spaces, `a, b` for commas. */
 export function renderTokens(tokens: readonly Token[]): string {
   let out = "";
+  let previous: Token | undefined;
   for (const t of tokens) {
-    if (out !== "" && t.kind !== "comma") out += " ";
+    // Tokens that touch in the source (`"a")`) stay touching; others, and a comma, get one space after.
+    const touching = previous !== undefined && previous.kind !== "comma" && previous.span.end.offset === t.span.start.offset && previous.span.end.line === t.span.start.line;
+    if (out !== "" && t.kind !== "comma" && !touching) out += " ";
     out += t.text;
+    previous = t;
   }
   return out;
 }

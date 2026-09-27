@@ -1,135 +1,260 @@
-// Static, test, and trace verdicts for one flow. Sibling steps are checked
-// from their parent, never from each other.
+// Evidence for flows: ID, static, tests, and trace are separate verdicts.
+// A step is checked from its parent (the trigger for a top-level step), never
+// from its siblings. Reports and traces are loaded by the caller; this module
+// only compares them with the specs and the snapshot.
 
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import type { Index } from "./resolve.ts";
+import type { Span } from "./span.ts";
+import { matchTest, type TestCase } from "./test-report.ts";
+import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
 
-interface CallEdge {
+interface SnapshotEdge {
+  kind: string;
   source: string;
   target: string | null;
+  candidates?: string[];
   resolution: string;
   file: string | null;
   line: number;
   col: number;
   reason?: string;
+  text?: string;
 }
 
 export interface FlowInput {
-  root: string;
   snapshotId: string | null;
   nodes: Record<string, { kind: string; members?: string; signature?: string | null; file: string | null; line: number | null }>;
-  edges: CallEdge[];
-  testsPath?: string;
-  tracePath?: string;
+  edges: SnapshotEdge[];
+  /** Test cases from `check.tests`; null when it is not configured. */
+  tests: TestCase[] | null;
+  /** Trace runs from `check.trace`; null when it is not configured. */
+  traces: TraceRun[] | null;
 }
 
-interface ReportCase {
+interface Planned {
+  kind: string;
+  signature: string | null;
   file: string;
-  name: string;
-  suite?: string;
-  status: "pass" | "fail";
-  snapshotId?: string;
+  span: Span;
+  /** The code now has a matching symbol: the step is checked as implemented. */
+  implemented: boolean;
 }
+
+type Channel = "ID" | "static" | "tests" | "trace";
 
 export function evaluateFlows(docs: readonly Document[], index: Index, input: FlowInput): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
-  const calls = new Map<string, string[]>();
-  for (const edge of input.edges) {
-    if (edge.resolution !== "resolved" || !edge.target) continue;
-    const list = calls.get(edge.source) ?? [];
-    list.push(edge.target);
-    calls.set(edge.source, list);
-  }
-  const planned = new Map<string, { kind: string; signature: string | null; file: string; line: number; col: number }>();
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const node of sectionNodes(section)) {
-        walk(node, (item) => {
-          if (item.kind === "planned" && item.id) {
-            planned.set(item.id, { kind: item.label?.value ?? "fn", signature: item.text?.value ?? null, file: doc.path, line: item.span.start.line, col: item.span.start.col });
-          }
-        });
-      }
-    }
-  }
-  const tests = loadTests(input);
-  const trace = loadTrace(input);
+  const planned = collectPlanned(docs, input, diagnostics);
+  const graph = callGraph(input.edges);
+  const verdict = (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string, evidence?: Verdict["evidence"]): void => {
+    verdicts.push({
+      verdict: value,
+      criterion: channel,
+      area,
+      snapshotId: input.snapshotId,
+      specHash: "",
+      file,
+      line: span.start.line,
+      col: span.start.col,
+      code: channel,
+      message: `${value} ${area}: ${message}`,
+      ...(evidence ? { evidence } : {}),
+    });
+  };
+
   for (const doc of docs) {
     for (const section of doc.sections) {
       if (section.kind !== "flow" || !section.name) continue;
       const flow = section.name.value;
-      for (const top of sectionNodes(section)) noteNode(top, null, flow, doc.path, index, input, calls, planned, tests, trace, diagnostics, verdicts);
+      const top = sectionNodes(section);
+      const triggerNode = top.find((node) => node.kind === "trigger");
+      const trigger = triggerNode ? refOf(triggerNode) : null;
+      let key = 0;
+      const keys = new Map<Node, number>();
+      const shape = (nodes: readonly Node[]): ShapeNode[] =>
+        nodes.flatMap((node): ShapeNode[] => {
+          if (node.kind === "when") {
+            keys.set(node, key);
+            return [{ kind: "when", key: key++, children: shape(node.children) }];
+          }
+          const id = node.kind === "step" ? refOf(node) : null;
+          if (!id) return [];
+          // A planned step is not expected in a trace; its children cannot be matched under it.
+          if (planned.get(id)?.implemented === false) return [];
+          keys.set(node, key);
+          return [{ kind: "step", key: key++, id, children: shape(node.children) }];
+        });
+      // Steps may sit under the trigger or beside it; either way the trigger is their parent.
+      const tree = shape([...(triggerNode?.children ?? []), ...top.filter((node) => node.kind !== "trigger")]);
+      const triggerKey = triggerNode && trigger ? key++ : null;
+      if (triggerNode && triggerKey !== null) keys.set(triggerNode, triggerKey);
+      const traced: Map<number, TraceEvidence> | null =
+        input.traces === null ? null : traceFlow(input.traces, flow, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
+
+      const visit = (node: Node, parent: string | null, claim: Node | null): void => {
+        const nodeKey = keys.get(node);
+        const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
+        if (node.kind === "step" || node.kind === "trigger") {
+          const id = refOf(node);
+          if (id) {
+            const plan = planned.get(id);
+            const pending = plan !== undefined && !plan.implemented;
+            const known = idVerdict(id, pending ? plan : undefined, node, doc.path, index, input, verdict);
+            // A dangling id is K001 already; a static line would count it twice.
+            if (node.kind === "step" && known !== "fail") {
+              if (pending) verdict("static", id, "unverified", doc.path, node.span, `planned ${plan.kind}, not implemented`);
+              else if (input.nodes[id] !== undefined) {
+                const reach = reachability(graph, input, parent, id);
+                verdict("static", id, reach.verdict, doc.path, node.span, reach.message, { provenance: "syntactic" });
+              } else verdict("static", id, "unverified", doc.path, node.span, "not in the snapshot (opaque module)");
+            }
+            if (traced !== null) {
+              if (pending) verdict("trace", id, "unverified", doc.path, node.span, `planned ${plan.kind}`);
+              else {
+                const evidence = traceOf();
+                if (evidence) verdict("trace", id, evidence.verdict, doc.path, node.span, evidence.message, traceProvenance(evidence));
+              }
+            }
+          }
+          const next = node.kind === "step" || node.kind === "trigger" ? (id ?? parent) : parent;
+          for (const child of node.children) visit(child, next, claim);
+          return;
+        }
+        if (node.kind === "when") {
+          const evidence = traceOf();
+          if (evidence) verdict("trace", `when ${node.text?.value ?? ""}`, evidence.verdict, doc.path, node.span, evidence.message, traceProvenance(evidence));
+        }
+        if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
+          const area = claimArea(node);
+          const proofs = node.children.filter((child) => child.kind === "test");
+          if (proofs.length === 0 && node.kind !== "when") {
+            verdict("tests", area, "unverified", doc.path, node.span, quantitative(node.text?.value ?? "") ? "needs a separate predicate or test (quantitative or negative property)" : "no test evidence");
+          }
+          for (const child of node.children) visit(child, parent, node);
+          return;
+        }
+        if (node.kind === "test") {
+          const name = node.label?.value ?? "";
+          const file = node.text?.value ?? "";
+          const matched = matchTest(input.tests, file, name, input.snapshotId);
+          const area = claim ? claimArea(claim) : `test ${file} "${name}"`;
+          verdict("tests", area, matched.verdict, doc.path, node.span, `${matched.message} (${file} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
+          return;
+        }
+        for (const child of node.children) visit(child, parent, claim);
+      };
+      for (const node of top) visit(node, trigger, null);
     }
   }
   return { diagnostics, verdicts };
 }
 
-function noteNode(
+function refOf(node: Node): string | null {
+  return node.refs[0]?.target ?? node.id ?? null;
+}
+
+function claimArea(node: Node): string {
+  const text = node.text?.value ?? node.refs[0]?.target ?? "";
+  return `${node.kind} ${text}`.trim();
+}
+
+function traceProvenance(evidence: TraceEvidence): Verdict["evidence"] {
+  return { provenance: "trace", ...(evidence.runId ? { runId: evidence.runId } : {}), ...(evidence.testId ? { testId: evidence.testId } : {}) };
+}
+
+/** A count, a bound, or a negation: a subsequence of calls cannot prove it. */
+function quantitative(text: string): boolean {
+  return /(\bno more than\b|\bat most\b|\bat least\b|\bnever\b|\bexactly\b|\bonly once\b|\bnot more\b|≤|≥|<=|>=|не більше|не менше|жодного|ніколи|рівно|лише раз)/i.test(text);
+}
+
+function idVerdict(
+  id: string,
+  plan: Planned | undefined,
   node: Node,
-  parent: string | null,
-  flow: string,
   file: string,
   index: Index,
   input: FlowInput,
-  calls: Map<string, string[]>,
-  planned: Map<string, { kind: string; signature: string | null }>,
-  tests: ReportCase[] | "missing" | "stale" | null,
-  trace: TraceFile | null,
-  diagnostics: Diagnostic[],
-  verdicts: Verdict[],
-): void {
-  if (node.kind === "step" || node.kind === "trigger") {
-    const id = node.refs[0]?.target ?? node.id;
-    if (id) {
-      const line = node.span.start.line;
-      const col = node.span.start.col;
-      const lookup = index.lookup(id);
-      const plan = planned.get(id);
-      const members = moduleMembers(input.nodes, id);
-      if (plan) {
-        verdicts.push(lineVerdict(input, "ID", id, "unverified", file, line, col, `planned ${plan.kind}`));
-      } else if (lookup.kind === "exact") {
-        verdicts.push(lineVerdict(input, "ID", id, "ok", file, line, col, lookup.kind));
-      } else if (members === "opaque") {
-        verdicts.push(lineVerdict(input, "ID", id, "unverified", file, line, col, `opaque module`));
-      } else {
-        verdicts.push(lineVerdict(input, "ID", id, "fail", file, line, col, "K001 dangling reference"));
+  verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void,
+): Verdict["verdict"] {
+  const say = (value: Verdict["verdict"], message: string): Verdict["verdict"] => {
+    verdict("ID", id, value, file, node.span, message);
+    return value;
+  };
+  if (plan) return say("unverified", `planned ${plan.kind}`);
+  if (input.nodes[id] !== undefined || index.lookup(id).kind === "exact") return say("ok", "exact");
+  if (moduleMembers(input.nodes, id) === "opaque") return say("unverified", "opaque module");
+  return say("fail", "K001 dangling reference");
+}
+
+interface CallGraph {
+  resolved: Map<string, string[]>;
+  /** Unresolved and ambiguous call edges by source function. */
+  open: Map<string, SnapshotEdge[]>;
+}
+
+function callGraph(edges: readonly SnapshotEdge[]): CallGraph {
+  const resolved = new Map<string, string[]>();
+  const open = new Map<string, SnapshotEdge[]>();
+  for (const edge of edges) {
+    if (edge.kind !== "call") continue;
+    if (edge.resolution === "resolved" && edge.target) {
+      const list = resolved.get(edge.source) ?? [];
+      list.push(edge.target);
+      resolved.set(edge.source, list);
+    } else {
+      const list = open.get(edge.source) ?? [];
+      list.push(edge);
+      open.set(edge.source, list);
+    }
+  }
+  return { resolved, open };
+}
+
+/**
+ * Possible reachability of `target` from `parent` over resolved calls. A route
+ * through an unresolved call, an ambiguous call, or an opaque module is
+ * unverified with that construct as the reason; so is plain absence of a path.
+ */
+function reachability(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
+  if (parent === null) return { verdict: "unverified", message: "no trigger to reach it from" };
+  const from = input.nodes[parent];
+  if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
+  if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
+  const to = input.nodes[target];
+  if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
+  const previous = new Map<string, string>();
+  const seen = new Set<string>([parent]);
+  const queue = [parent];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const next of graph.resolved.get(id) ?? []) {
+      if (next === target) {
+        previous.set(next, id);
+        const route = [next];
+        for (let at = id; at !== parent; at = previous.get(at)!) route.unshift(at);
+        route.unshift(parent);
+        return { verdict: "ok", message: route.length === 2 ? `called from ${parent}` : `reachable from ${parent} via ${route.slice(1, -1).join(" → ")}` };
       }
-      if (node.kind === "step" && parent) {
-        if (plan) verdicts.push(lineVerdict(input, "static", id, "unverified", file, line, col, "planned"));
-        else if (reaches(calls, parent, id)) verdicts.push(lineVerdict(input, "static", id, "ok", file, line, col, `reachable from ${parent}`));
-        else if (unresolvedNear(input, parent)) verdicts.push(lineVerdict(input, "static", id, "unverified", file, line, col, "unresolved call on the way"));
-        else verdicts.push(lineVerdict(input, "static", id, "fail", file, line, col, `no path from ${parent}`));
-      }
-      const traced = traceStep(trace, input.snapshotId, flow, id);
-      verdicts.push(lineVerdict(input, "trace", id, traced.verdict, file, line, col, traced.message));
-      if (traced.diagnostic) diagnostics.push(diagnostic("K001", file, node.span, traced.message));
+      if (seen.has(next)) continue;
+      seen.add(next);
+      previous.set(next, id);
+      queue.push(next);
     }
   }
-  if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
-    const proof = node.children.find((child) => child.kind === "test");
-    if (!proof && node.kind !== "when") {
-      verdicts.push(lineVerdict(input, "tests", node.kind, "unverified", file, node.span.start.line, node.span.start.col, "no evidence"));
-    }
-    if (node.kind === "when") {
-      const exercised = trace?.events.some((event) => event.flow === flow && event.symbolId === node.text?.value) ?? false;
-      verdicts.push(lineVerdict(input, "trace", node.text?.value ?? "when", exercised ? "ok" : "unverified", file, node.span.start.line, node.span.start.col, exercised ? "branch exercised" : "branch not exercised"));
-    }
+  const holes = [...seen]
+    .sort()
+    .flatMap((id) => graph.open.get(id) ?? [])
+    .sort((a, b) => ((a.file ?? "") < (b.file ?? "") ? -1 : (a.file ?? "") > (b.file ?? "") ? 1 : a.line - b.line || a.col - b.col));
+  const hole = holes.find((edge) => edge.resolution === "ambiguous" && edge.candidates?.includes(target)) ?? holes[0];
+  if (hole) {
+    const what = hole.resolution === "ambiguous" ? `ambiguous call \`${hole.text ?? hole.source}\` [${(hole.candidates ?? []).join(", ")}]` : (hole.reason ?? `unresolved call \`${hole.text ?? ""}\``);
+    return { verdict: "unverified", message: `no resolved path from ${parent}; ${what} at ${hole.file}:${hole.line}:${hole.col} may reach it` };
   }
-  if (node.kind === "test") {
-    const name = node.label?.value ?? "";
-    const specFile = node.text?.value ?? "";
-    const matched = matchTest(tests, specFile, name, input.snapshotId);
-    verdicts.push(lineVerdict(input, "tests", name || specFile, matched.verdict, file, node.span.start.line, node.span.start.col, matched.message));
-    if (matched.verdict === "fail") diagnostics.push(diagnostic("K001", file, node.span, matched.message));
-  }
-  const nextParent = node.kind === "step" || node.kind === "trigger" ? (node.refs[0]?.target ?? parent) : parent;
-  for (const child of node.children) noteNode(child, nextParent, flow, file, index, input, calls, planned, tests, trace, diagnostics, verdicts);
+  return { verdict: "unverified", message: `no call path from ${parent} in the static graph` };
 }
 
 function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {
@@ -143,111 +268,45 @@ function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opa
   }
 }
 
-function reaches(calls: Map<string, string[]>, from: string, to: string): boolean {
-  const seen = new Set<string>();
-  const stack = [from];
-  while (stack.length > 0) {
-    const id = stack.pop();
-    if (id === undefined || seen.has(id)) continue;
-    seen.add(id);
-    for (const next of calls.get(id) ?? []) {
-      if (next === to) return true;
-      stack.push(next);
-    }
-  }
-  return false;
-}
-
-function unresolvedNear(input: FlowInput, parent: string): boolean {
-  return input.edges.some((edge) => edge.resolution !== "resolved" && (edge.source === parent || edge.source.startsWith(`${parent}.`)));
-}
-
-function lineVerdict(input: FlowInput, criterion: "ID" | "static" | "tests" | "trace", area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, message: string): Verdict {
-  return { verdict, criterion, area, snapshotId: input.snapshotId, specHash: "", file, line, col, code: criterion, message: `${verdict} ${area}: ${message}` };
-}
-
-function matchTest(tests: ReportCase[] | "missing" | "stale" | null, file: string, name: string, snapshotId: string | null): { verdict: Verdict["verdict"]; message: string } {
-  if (tests === null) return { verdict: "unverified", message: "tests unverified no report" };
-  if (tests === "missing") return { verdict: "unverified", message: "tests unverified no report" };
-  if (tests === "stale") return { verdict: "unverified", message: "tests unverified stale report" };
-  const hits = tests.filter((item) => item.file === file && item.name === name);
-  if (hits.length === 0) return { verdict: "unverified", message: "tests unverified no report" };
-  if (hits.length > 1) return { verdict: "unverified", message: `tests unverified ambiguous ${hits.map((hit) => hit.suite ?? hit.file).join(", ")}` };
-  const hit = hits[0];
-  if (!hit) return { verdict: "unverified", message: "tests unverified no report" };
-  if (hit.snapshotId && snapshotId && hit.snapshotId !== snapshotId) return { verdict: "unverified", message: "tests unverified stale report" };
-  if (hit.status === "fail") return { verdict: "fail", message: "tests fail" };
-  return { verdict: "ok", message: "tests ok" };
-}
-
-function loadTests(input: FlowInput): ReportCase[] | "missing" | "stale" | null {
-  if (!input.testsPath) return null;
-  const path = join(input.root, input.testsPath);
-  if (!existsSync(path)) return "missing";
-  const body = JSON.parse(readFileSync(path, "utf8")) as { snapshotId?: string; tests?: ReportCase[] };
-  if (body.snapshotId && input.snapshotId && body.snapshotId !== input.snapshotId) return "stale";
-  return body.tests ?? [];
-}
-
-interface TraceEvent {
-  snapshotId?: string;
-  flow?: string;
-  symbolId?: string;
-  event?: string;
-  spanId?: string;
-  parentSpanId?: string;
-  seq?: number;
-  ts?: number;
-  clockId?: string;
-  links?: string[];
-  dropped?: number;
-  complete?: boolean;
-}
-
-interface TraceFile {
-  events: TraceEvent[];
-  complete: boolean;
-  dropped: number;
-  stale: boolean;
-}
-
-function loadTrace(input: FlowInput): TraceFile | null {
-  if (!input.tracePath) return null;
-  const path = join(input.root, input.tracePath);
-  if (!existsSync(path)) return { events: [], complete: false, dropped: 0, stale: false };
-  const events = readFileSync(path, "utf8")
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as TraceEvent);
-  const meta = events.find((event) => event.event === "meta");
-  const stale = events.some((event) => event.snapshotId && input.snapshotId && event.snapshotId !== input.snapshotId);
-  return { events, complete: meta?.complete === true, dropped: meta?.dropped ?? 0, stale };
-}
-
-function traceStep(trace: TraceFile | null, snapshotId: string | null, flow: string, id: string): { verdict: Verdict["verdict"]; message: string; diagnostic: boolean } {
-  if (!trace) return { verdict: "unverified", message: "trace unverified no trace", diagnostic: false };
-  if (trace.stale || trace.events.some((event) => event.snapshotId && snapshotId && event.snapshotId !== snapshotId)) {
-    return { verdict: "unverified", message: "trace unverified stale trace", diagnostic: false };
-  }
-  const starts = trace.events.filter((event) => event.event === "start" && event.flow === flow && event.symbolId === id);
-  if (starts.length === 0) {
-    if (!trace.complete || trace.dropped > 0) return { verdict: "unverified", message: "trace unverified incomplete trace", diagnostic: false };
-    return { verdict: "fail", message: "trace fail missing step", diagnostic: false };
-  }
-  return { verdict: "ok", message: "trace ok", diagnostic: false };
-}
-
-export function traceOrderProblem(events: TraceEvent[]): string | null {
-  const starts = events.filter((event) => event.event === "start" && event.ts !== undefined);
-  for (let i = 0; i < starts.length; i++) {
-    for (let j = i + 1; j < starts.length; j++) {
-      const a = starts[i];
-      const b = starts[j];
-      if (!a || !b) continue;
-      if (a.ts === b.ts && a.clockId && b.clockId && a.clockId !== b.clockId && !(a.links ?? []).length && !(b.links ?? []).length) {
-        return "order unverified";
+/**
+ * `planned` declarations. A duplicate is K002. When the code has the symbol,
+ * a different kind or signature is K201, a match is the K202 hint to remove
+ * the declaration, and the step is checked as implemented.
+ */
+function collectPlanned(docs: readonly Document[], input: FlowInput, diagnostics: Diagnostic[]): Map<string, Planned> {
+  const planned = new Map<string, Planned>();
+  for (const doc of docs) {
+    for (const section of doc.sections) {
+      for (const top of sectionNodes(section)) {
+        walk(top, (node) => {
+          if (node.kind !== "planned" || !node.id) return;
+          const span = node.name?.span ?? node.span;
+          const first = planned.get(node.id);
+          if (first) {
+            diagnostics.push(diagnostic("K002", doc.path, node.span, `duplicate planned \`${node.id}\` (first declared at ${first.file}:${first.span.start.line}:${first.span.start.col})`));
+            return;
+          }
+          const kind = node.label?.value ?? "fn";
+          const signature = node.text?.value ?? null;
+          const code = input.nodes[node.id];
+          const entry: Planned = { kind, signature, file: doc.path, span, implemented: false };
+          planned.set(node.id, entry);
+          if (!code) return;
+          entry.implemented = true;
+          if (kind !== "event" && code.kind !== kind) {
+            diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` is implemented as a ${code.kind} (${code.file ?? "?"}:${code.line ?? 1})`));
+          } else if (signature !== null && code.signature && normalizeSignature(signature) !== normalizeSignature(code.signature)) {
+            diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${code.file ?? "?"}:${code.line ?? 1})`));
+          } else {
+            diagnostics.push(diagnostic("K202", doc.path, node.span, `planned ${kind} \`${node.id}\` is implemented (${code.file ?? "?"}:${code.line ?? 1}); remove the declaration`));
+          }
+        });
       }
     }
   }
-  return null;
+  return planned;
+}
+
+function normalizeSignature(text: string): string {
+  return text.replace(/->/g, "→").replace(/\s+/g, "").replace(/;$/, "");
 }

@@ -5,6 +5,8 @@ import { evaluateFlows, type FlowInput } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { check, refineOpacity, type Index } from "./resolve.ts";
 import { evaluateRules } from "./rules.ts";
+import type { TestCase } from "./test-report.ts";
+import type { TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
 
 /** The slice of the analysis snapshot that checks read; `check` does not import `map`. */
@@ -16,25 +18,14 @@ export interface Assessment {
   verdicts: Verdict[];
 }
 
-export function assess(
-  docs: readonly Document[],
-  snapshot: SnapshotInput | null,
-  flow: { root: string; testsPath?: string; tracePath?: string } | null,
-): Assessment {
+export function assess(docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null } = { tests: null, traces: null }): Assessment {
   const { index, diagnostics: resolveDiags } = check(docs);
   const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
   const rules = evaluateRules(docs, index, snapshot);
   const flows =
     snapshot === null
       ? { diagnostics: [] as Diagnostic[], verdicts: [] as Verdict[] }
-      : evaluateFlows(docs, index, {
-          root: flow?.root ?? "",
-          snapshotId: snapshot.snapshotId,
-          nodes: snapshot.nodes,
-          edges: snapshot.edges,
-          ...(flow?.testsPath ? { testsPath: flow.testsPath } : {}),
-          ...(flow?.tracePath ? { tracePath: flow.tracePath } : {}),
-        });
+      : evaluateFlows(docs, index, { snapshotId: snapshot.snapshotId, nodes: snapshot.nodes, edges: snapshot.edges, tests: evidence.tests, traces: evidence.traces });
   const planned = plannedIds(docs);
   const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics].filter(
     (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),

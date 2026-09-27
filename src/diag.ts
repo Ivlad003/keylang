@@ -25,12 +25,17 @@ export type Code =
   /** Module exports a name missing from its `exports` list. */
   | "K104"
   /** Dependency cycle where `no-cycles` is declared. */
-  | "K105";
+  | "K105"
+  // flows (M2)
+  /** A `planned` declaration disagrees with the implemented symbol (kind or signature). */
+  | "K201"
+  /** A `planned` declaration is implemented and can be removed (warning). */
+  | "K202";
 
 export type Severity = "error" | "warning";
 
 export function severityOf(code: Code): Severity {
-  return code === "K006" || code === "K103" ? "warning" : "error";
+  return code === "K006" || code === "K103" || code === "K202" ? "warning" : "error";
 }
 
 export interface Diagnostic {

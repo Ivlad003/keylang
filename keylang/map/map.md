@@ -12,11 +12,13 @@
     - map map.map
     - parser lang.parser
     - snapshot map.snapshot
+    - test-report check.test-report
+    - trace-evidence check.trace-evidence
     - fact-cache map.fact-cache
-    - type [AnalysisRequest](../../src/analyze.ts#L18)
-    - type [Analysis](../../src/analyze.ts#L31) extends Assessment
-    - fn [analyze](../../src/analyze.ts#L38) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, check.assess.assess
+    - type [AnalysisRequest](../../src/analyze.ts#L20)
+    - type [Analysis](../../src/analyze.ts#L33) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L40) (request: AnalysisRequest) → Promise<Analysis>
+      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, base.config.evidenceFiles, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
     - fn [findRoot](../../src/analyze.ts#L79) (start: string) → string
     - fn [within](../../src/analyze.ts#L89) (abs: string, dir: string) → boolean
   - module [emit](../../src/emit.ts#L1)

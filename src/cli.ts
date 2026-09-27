@@ -271,6 +271,9 @@ interface CheckResult {
   line: number;
   col: number;
   code: string | null;
+  provenance?: string;
+  runId?: string;
+  testId?: string;
 }
 
 /** Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion. */
@@ -301,6 +304,7 @@ function checkResults(verdicts: Verdict[], snapshotId: string | null, diags: Dia
       line: verdict.line,
       col: verdict.col,
       code: verdict.code,
+      ...(verdict.evidence ?? {}),
     }));
   return [...fromDiags, ...fromVerdicts];
 }

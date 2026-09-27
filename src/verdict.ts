@@ -16,6 +16,8 @@ export interface Verdict {
   /** Diagnostic code when the verdict is also a K-line. Unverified often has none. */
   code: string | null;
   message: string;
+  /** Where the evidence comes from: the static graph, a test report, or a trace run. */
+  evidence?: { provenance: "syntactic" | "test-report" | "trace"; runId?: string; testId?: string };
 }
 
 export function formatVerdict(v: Verdict): string {

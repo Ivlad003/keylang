@@ -58,10 +58,21 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`a → b → c → a` and `d → c` makes `d` part of the same component.",
     fix: "Break the cycle. `no-cycles` under a module reports a route through that module.",
   },
+  K201: {
+    cause: "A `planned` declaration names a symbol that now exists with another kind or signature.",
+    example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id.",
+    fix: "Change the code or the declaration so kind and signature agree, then remove the `planned` line.",
+  },
+  K202: {
+    cause: "A `planned` declaration is implemented: the code has the symbol with the same kind and signature.",
+    example: "`planned fn app.refund (order: Order) → Refund` after `export function refund(order: Order): Refund` was added.",
+    fix: "Remove the `planned` line; the step is already checked as implemented code.",
+  },
 };
 
 export function explainCode(code: string): string | null {
-  const text = EXPLANATIONS[code as Code];
+  const upper = code.toUpperCase();
+  const text = Object.hasOwn(EXPLANATIONS, upper) ? EXPLANATIONS[upper as Code] : undefined;
   if (!text) return null;
-  return [`${code}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`].join("\n");
+  return [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`].join("\n");
 }

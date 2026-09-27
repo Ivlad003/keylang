@@ -210,6 +210,8 @@ Alias залежності не збігається з контекстним �
 | K103 | warning | absence: модуль недосяжний з жодного `entry` |
 | K104 | error | divergence: зайвий публічний експорт або absence — заявлене ім'я, якого модуль не експортує |
 | K105 | error | divergence: цикл залежностей там, де оголошено `no-cycles` |
+| K201 | error | `planned` розходиться з реалізованим символом: інший вид або сигнатура |
+| K202 | warning | `planned` реалізовано з тим самим видом і сигнатурою — декларацію можна прибрати |
 
 **Правила (K101–K105)** рахуються на ребрах актуального знімка. `keylang check` перебудовує аналіз у пам'яті і не записує карту чи `.keylang/index.json`. Згенеровані файли `map/` замінюються картою, відрендереною з цього знімка, тож ID у flows і rules резолвляться за поточним кодом, навіть якщо закомічена карта застаріла. Корінь репозиторію — найближчий вгору каталог із `keylang.json`; шлях до специфікацій можна записати як завгодно (`keylang`, `./keylang`, абсолютний, `.` зсередини). Діагностика вказує на файл і рядок коду, де є ребро. Якщо в каталозі немає коду (examples, слайд), правила дають `unverified` з причиною `no snapshot`, а резолвінг ID лишається. Підсумок у stderr: `N fail, M unverified, K ok`. Коди виходу: `0` — блокувальних знахідок немає; `1` — порушення, а з `--strict` також будь-який `unverified`; `2` — некоректний виклик або I/O. `--format` не змінює вердикт і код виходу:
 
@@ -227,12 +229,53 @@ Alias залежності не збігається з контекстним �
 - `entry`: досяжність іде лише ребрами `import` / `call` / `type` / `re-export` знімка, зокрема через `index.ts`, що реекспортує сусідів. Ієрархія ID не робить сусідів досяжними, а тека-модуль без власного коду не звітується. K103 вказує на файл модуля. Прогалина рівня залежностей у досяжному модулі (нерозв'язаний імпорт тощо) перетворює недосяжність на `unverified` із назвою цієї прогалини, а не на K103. Модулі шарів без порядку не перевіряються.
 - `exports` порівнюється з таблицею публічних експортів знімка, не з fn без `<!-- internal -->`. Імена в `exports` — публічні імена модуля, а не ID карти, тож K001 вони не дають. `export { a as b }` порівнюється за `b`, `export default …` (включно з `export default function main`) — за `default`, `export * from "./x"` розкривається до імен `x` без `default`. Зайве ім'я — K104 із видом і формою (`alias`, `default`, звідки re-export); заявлене відсутнє ім'я — absence. `export *` із модуля з невідомим вмістом (зовнішній пакет, нерозв'язаний або виключений файл) робить правило `unverified`, а не absence.
 - Цикли — це SCC графа `import` / `re-export`. `no-cycles` під модулем спрацьовує, якщо модуль або його підмодуль входить у SCC; маршрут проходить через нього. Файл, що імпортує сам себе, — self-loop і теж цикл. Одна K105 на кожну SCC.
-- `planned fn|module|type|event <id> [signature]` — намір. Посилання на нього не є K001; критерії лишаються `unverified`, ребер у знімок він не додає. Точна граматика — кандидат до v1, не заморожений формат.
-- Крок flow досяжний від батьківського `step` або `trigger`. Сусідні кроки не потребують ребра між собою. Докази `ID`, `static`, `tests`, `trace` друкуються окремо. `keylang lsp` віддає ті самі коди, позиції й вердикти, що й `check`.
+- `planned fn|module|type|event <id> [signature]` — намір (кандидат до v1): рядок верхнього рівня секції flow, сигнатура — довільний текст до кінця рядка. Посилання на нього не є K001: `ID` і `static` — `unverified` «planned», trace його не вимагає, ребер у знімок він не додає. Повторна декларація того самого ID — K002. Коли в коді з'являється символ із цим ID, крок перевіряється як звичайний код, а декларація дає K202 (вид і сигнатура збігаються; сигнатури порівнюються без пробілів, `->` = `→`) або K201 (інший вид чи сигнатура).
+
+`keylang lsp` віддає ті самі коди, позиції й вердикти, що й `check`.
+
+### Flows: докази кроку
+
+`step` задає **вкладеність** щодо батьківського кроку; сусідні кроки — **послідовність**. Для кроку верхнього рівня (поруч із `trigger` чи під ним) батьком є `trigger`. Кожен вид доказу друкується окремим рядком `file:line:col: <доказ> <verdict> <id>: <причина>`, а в `--format json` — окремим результатом із `criterion` (`ID` / `static` / `tests` / `trace`), `area` (ID кроку або текст твердження), `verdict`, `evidence` і `provenance` (`syntactic`, `test-report`, `trace`; для trace також `runId`, `testId`).
+
+| Доказ | ok | unverified | fail |
+|---|---|---|---|
+| `ID` | символ є у свіжому знімку | `planned`, член `opaque`-модуля | K001 — відсутній у `complete`-модулі (`static` тоді не друкується) |
+| `static` | шлях resolved-викликів від батька (сусідні кроки шляху не потребують; рекурсія — шлях) | шляху немає: з позицією першого нерозв'язаного чи неоднозначного виклику на маршруті або «no call path … in the static graph»; батько чи крок — не функція; `planned` | — (відсутність шляху — не порушення) |
+| `tests` | однозначний тест пройшов у звіті поточного знімка | звіту немає, тест не знайдено, неоднозначний (перелік кандидатів), пропущений, звіт іншого знімка або без `snapshotId`; твердження без `test` («no test evidence»; для кількісних чи заперечних — «needs a separate predicate or test») | тест провалився |
+| `trace` | крок спостережено в тесті з вкладенням і підтвердженим порядком | trace іншого знімка чи без нього, неповний запуск (`complete: false`, `dropped > 0`, відкриті spans, символ не інструментовано), різні годинники без `links`, паралельні sibling-и, асинхронний крок без `link`, гілка `when` не виконувалась | обов'язковий крок відсутній у завершеному й інструментованому запуску; крок почався раніше за попереднього сусіда |
+
+`tests` друкується на твердженні (`invariant`, `when`, `then`, `reads`, `emits`), до якого прив'язаний `test`. `trace` для `when` — «branch exercised» або «branch not exercised»; кроки невиконаної гілки в цьому тесті не обов'язкові. Вердикт кроку за кількома тестами: `fail`, якщо хоч один тест його порушив; інакше `ok`, якщо хоч один підтвердив. Без `check.tests` / `check.trace` відповідні докази не друкуються: непотрібний вид доказу не входить до агрегації.
+
+### Звіт тестів (`check.tests`)
+
+`check.tests` у `keylang.json` — шлях (має існувати, інакше код 2) або глоб (може ще нічого не знаходити: тоді «no report»). Формат визначається за вмістом:
+
+- **JSON keylang, схема 1** — `{"schemaVersion": 1, "snapshotId", "runId", "tests": [{"file", "suite"?, "name", "status": "pass"|"fail"|"skip"}]}`. Пише репортер `node:test` з пакета: `node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=keylang/node-test-reporter --test-reporter-destination=stdout` (у цьому репозиторії — `./src/adapters/node-test.ts`, див. `npm test`). Він рахує `snapshotId` поточного коду і пише `.keylang/reports/node-test.json` (або `KEYLANG_TEST_REPORT`); suite — вкладені `describe`/`test`, через ` > `.
+- **JUnit XML** — `<testcase file classname name>` з `<failure>` / `<error>` / `<skipped>`; зв'язок зі знімком — `<property name="keylang.snapshotId" value="…"/>`, без нього звіт не підтверджує поточний код.
+
+`test <file> "<name>"` зіставляється за файлом і назвою; `"Suite > name"` уточнює suite. Некоректний звіт — код 2 з назвою файла й поля.
+
+### Trace (`check.trace`), JSONL схеми 1
+
+`check.trace` — шлях або глоб до файлів JSONL. Кожен рядок — подія одного запуску тесту `(runId, testId)`:
+
+```jsonl
+{"schemaVersion":1,"snapshotId":"…","runId":"r1","testId":"tests/cli.test.ts > @flow check","flow":"check","traceId":"r1:t","event":"start","spanId":"s1","parentSpanId":null,"symbolId":"cli.cli.main","clockId":"pid-7","seq":1,"ts":12.5}
+{"schemaVersion":1,"snapshotId":"…","runId":"r1","testId":"tests/cli.test.ts > @flow check","flow":"check","traceId":"r1:t","event":"start","spanId":"s2","parentSpanId":"s1","symbolId":"cli.cli.run","clockId":"pid-7","seq":2,"ts":12.6}
+{"schemaVersion":1,"snapshotId":"…","runId":"r1","testId":"tests/cli.test.ts > @flow check","flow":"check","traceId":"r1:t","event":"end","spanId":"s2","outcome":"ok","clockId":"pid-7","seq":3,"ts":40.1}
+{"schemaVersion":1,"snapshotId":"…","runId":"r1","testId":"tests/cli.test.ts > @flow check","flow":"check","traceId":"r1:t","event":"end","spanId":"s1","outcome":"ok","clockId":"pid-7","seq":4,"ts":40.2}
+{"schemaVersion":1,"snapshotId":"…","runId":"r1","testId":"tests/cli.test.ts > @flow check","flow":"check","traceId":"r1:t","event":"run","complete":true,"dropped":0,"instrumented":["cli.cli.main","cli.cli.run"],"open":[]}
+```
+
+- `start`: `spanId` (унікальний на виклик — повтори й рекурсія мають різні), `parentSpanId`, `symbolId` (ID знімка), `clockId` + `seq` (порядок подій одного годинника), `ts`, необов'язкові `links` (каузальні зв'язки з іншими spans); `end`: `spanId`, `outcome`; `run` — метадані завершення: `complete`, `dropped`, `instrumented`, `open`.
+- Кроки зіставляються як підпослідовність із вкладенням у межах одного тесту: зайві виклики дозволені, одна подія задовольняє один крок. Порядок сусідів підтверджує `end` попереднього раніше за `start` наступного на тому самому `clockId` або `links` на попереднього; сортування `ts` порядок не доводить. Дочірній span, що почався після завершення батька, підтверджує вкладення лише з `link` на батька.
+- Невідома версія, некоректний рядок чи поле — код 2 з `file:line` і назвою поля.
+
+**Адаптер TS/JS.** `node --import keylang/trace <script>` (у репозиторії — `./src/adapters/trace.ts`) з `KEYLANG_TRACE` (файл), `KEYLANG_TRACE_FLOW` (потік), `KEYLANG_TRACE_TEST` (ID тесту), необов'язково `KEYLANG_TRACE_RUN` і `KEYLANG_TRACE_ROOT`. Hooks модулів будують знімок в окремому потоці, знаходять `trigger` і `step` потоку й обгортають тіла цих функцій (генератори не інструментуються); вкладення — через `AsyncLocalStorage`, асинхронне продовження отримує `link` на батька. Файл, що не збігається з копією знімка, не інструментується. E2E-тест позначається `@flow <name>` у назві й запускає код з адаптером; у keylang це тест `@flow check` у `tests/cli.test.ts`, що пише `.keylang/trace/check.jsonl`. Assertions у trace і граматика паралельних груп — ще не частина схеми 1.
 
 ### Дорожня карта, не поточна поведінка
 
-Цього в CLI і LSP ще немає, навіть якщо design.md це описує як ціль: пакет розширення VS Code і залежність `vscode-languageserver`; CodeLens; signature help; доповнення ключових слів за позицією; baseline стейлнесу прози, `--accept` і сценарій «тіло змінилося, сигнатура ні» (тікет 21); упорядкування trace за годинником (`traceOrderProblem`); TUI, web, wiring, Rust, Python, LLM, MCP, ghost і голос. Hover зараз показує вид, сигнатуру, `planned` або `opaque`, файл:рядок і рядки доказів, а не чотири рядки вихідного коду.
+Цього в CLI і LSP ще немає, навіть якщо design.md це описує як ціль: пакет розширення VS Code і залежність `vscode-languageserver`; CodeLens; signature help; доповнення ключових слів за позицією; baseline стейлнесу прози, `--accept` і сценарій «тіло змінилося, сигнатура ні» (тікет 21); assertions у trace і явні паралельні групи; TUI, web, wiring, Rust, Python, LLM, MCP, ghost і голос. Hover зараз показує вид, сигнатуру, `planned` або `opaque`, файл:рядок і рядки доказів, а не чотири рядки вихідного коду.
 
 ## 8. Канонічна форма (`keylang fmt`)
 
