@@ -48,6 +48,13 @@ export function checkRules(docs: readonly Document[], index: Index, snapshot: Sn
   return evaluateRules(docs, index, snapshot).diagnostics;
 }
 
+/** Whether `from` depending on `to` is forbidden by the most specific deny rule. */
+export function blocksDependency(docs: readonly Document[], from: string, to: string): boolean {
+  const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
+  const edge: UseEdge = { from, to, kind: "import", file: "", line: 1, col: 1, resolution: "resolved" };
+  return specific(collectRules(docs), edge, within) === "deny";
+}
+
 export function evaluateRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null): RuleReport {
   const rules = collectRules(docs);
   if (!snapshot) {

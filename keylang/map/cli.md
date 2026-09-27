@@ -36,15 +36,16 @@
       - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
     - fn [cmdCheck](../../src/cli.ts#L184) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, map.analyze.analyze, cli.cli.explainEdge, lang.files.collectMdFiles, lang.files.load, check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, cli.cli.plannedIds, cli.cli.writeCheck
-    - fn [plannedIds](../../src/cli.ts#L236) (docs: ReturnType<typeof load>) → Set<string> <!-- internal -->
-    - fn [explainEdge](../../src/cli.ts#L252) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
-    - fn [writeCheck](../../src/cli.ts#L274) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
-      - calls base.diag.isError
-    - fn [cmdFmt](../../src/cli.ts#L335) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [plannedIds](../../src/cli.ts#L251) (docs: ReturnType<typeof load>) → Set<string> <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L267) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [sameDiag](../../src/cli.ts#L289) (verdict: Verdict, diags: Diagnostic[]) → boolean <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L293) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
+      - calls base.diag.isError, cli.cli.sameDiag
+    - fn [cmdFmt](../../src/cli.ts#L358) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L356) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L379) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L364) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L387) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
@@ -59,20 +60,33 @@
     - span base.span
   - module [lsp](../../src/lsp.ts#L1)
     - node external.node
+    - analyze map.analyze
     - diag base.diag
     - files lang.files
+    - ir lang.ir
     - parser lang.parser
     - resolve check.resolve
     - rules check.rules
-    - type [Rpc](../../src/lsp.ts#L12) <!-- internal -->
-    - fn [serveLsp](../../src/lsp.ts#L20) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<void>
-      - calls cli.lsp.handle, cli.lsp.send
-    - fn [handle](../../src/lsp.ts#L42) (message: Rpc) → Rpc | null <!-- internal -->
-      - calls cli.lsp.readUri, lang.parser.parse, check.resolve.check, check.rules.evaluateRules, cli.lsp.rangeOf, cli.lsp.wordAt, cli.lsp.emptyResult
-    - fn [emptyResult](../../src/lsp.ts#L85) (method: string, params: Record<string, unknown> | undefined) → unknown <!-- internal -->
-      - calls cli.lsp.completionItems
-    - fn [completionItems](../../src/lsp.ts#L92) (params: Record<string, unknown> | undefined) → { label: string; kind: number }[] <!-- internal -->
-    - fn [rangeOf](../../src/lsp.ts#L103) (line: number, col: number) → { start: { line: number; character: number }; end: { line: number; character: number } } <!-- internal -->
-    - fn [wordAt](../../src/lsp.ts#L107) (text: string, position: { line?: number; character?: number } | undefined) → string | null <!-- internal -->
-    - fn [readUri](../../src/lsp.ts#L120) (uri: string) → string <!-- internal -->
-    - fn [send](../../src/lsp.ts#L129) (write: NodeJS.WritableStream, message: Rpc) → void <!-- internal -->
+    - snapshot map.snapshot
+    - type [Rpc](../../src/lsp.ts#L16) <!-- internal -->
+    - type [TextDoc](../../src/lsp.ts#L25) <!-- internal -->
+    - fn [serveLsp](../../src/lsp.ts#L30) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<void>
+      - calls cli.lsp.filePath, cli.lsp.handle, cli.lsp.send
+    - fn [handle](../../src/lsp.ts#L62) (message: Rpc, root: string) → Promise<Rpc | null> <!-- internal -->
+      - calls cli.lsp.view, cli.lsp.uriMatches, cli.lsp.rangeOf, cli.lsp.symbols, cli.lsp.wordAt, cli.lsp.completions, lang.ir.sectionNodes, lang.ir.walk
+    - type [View](../../src/lsp.ts#L144) <!-- internal -->
+    - fn [view](../../src/lsp.ts#L153) (root: string, textDocument: TextDoc | undefined) → Promise<View> <!-- internal -->
+      - calls map.analyze.analyze, lang.files.load, lang.files.collectMdFiles, cli.lsp.relativeTo, cli.lsp.filePath, lang.parser.parse, check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules
+    - fn [completions](../../src/lsp.ts#L180) (viewed: View, position: { line?: number } | undefined) → { label: string; kind: number; detail?: string }[] <!-- internal -->
+      - calls cli.lsp.enclosingId, check.rules.blocksDependency, lang.ir.sectionNodes, lang.ir.walk
+    - fn [enclosingId](../../src/lsp.ts#L202) (docs: readonly Document[], bufferPath: string | null, line: number) → string | null <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
+    - fn [symbols](../../src/lsp.ts#L219) (docs: readonly Document[], index: Index) → { name: string; kind: number; range: ReturnType<typeof rangeOf>; selectionRange: ReturnType<typeof rangeOf> }[] <!-- internal -->
+      - calls cli.lsp.rangeOf, lang.ir.sectionNodes, lang.ir.walk
+    - fn [uriMatches](../../src/lsp.ts#L241) (uri: string | undefined, file: string, root: string) → boolean <!-- internal -->
+      - calls cli.lsp.filePath
+    - fn [filePath](../../src/lsp.ts#L248) (uri: string) → string <!-- internal -->
+    - fn [relativeTo](../../src/lsp.ts#L253) (root: string, path: string) → string <!-- internal -->
+    - fn [rangeOf](../../src/lsp.ts#L258) (line: number, col: number) → { start: { line: number; character: number }; end: { line: number; character: number } } <!-- internal -->
+    - fn [wordAt](../../src/lsp.ts#L262) (text: string, position: { line?: number; character?: number } | undefined) → string | null <!-- internal -->
+    - fn [send](../../src/lsp.ts#L273) (write: NodeJS.WritableStream, message: Rpc) → void <!-- internal -->

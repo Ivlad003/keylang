@@ -218,15 +218,30 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),
   );
   diags.sort(compareDiagnostics);
-  const unverified = [
-    ...rules.verdicts.filter((v) => v.verdict === "unverified"),
-    ...refined.unverified.map((item) => ({ verdict: "unverified" as const, criterion: "ID", area: item.message, snapshotId: snapshot?.snapshotId ?? null, specHash: "", file: item.file, line: item.line, col: item.col, code: null, message: item.message })),
-    ...flows.verdicts,
+  const refinedVerdicts: Verdict[] = refined.unverified.map((item) => ({
+    verdict: "unverified",
+    criterion: "ID",
+    area: item.message,
+    snapshotId: snapshot?.snapshotId ?? null,
+    specHash: "",
+    file: item.file,
+    line: item.line,
+    col: item.col,
+    code: null,
+    message: item.message,
+  }));
+  const channel = [...rules.verdicts, ...refinedVerdicts, ...flows.verdicts];
+  const sameAsDiag = (verdict: Verdict): boolean =>
+    diags.some((diag) => diag.file === verdict.file && diag.span.start.line === verdict.line && (diag.message === verdict.message || verdict.message.includes(diag.message)));
+  const unverified = channel.filter((verdict) => verdict.verdict === "unverified");
+  const oks = channel.filter((verdict) => verdict.verdict === "ok").length;
+  const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameAsDiag(verdict)).length;
+  const channels = new Set(["ID", "static", "tests", "trace"]);
+  const rendered = [
+    ...diags.map(formatDiagnostic),
+    ...channel.filter((verdict) => !sameAsDiag(verdict) && (verdict.verdict !== "ok" || channels.has(verdict.criterion))).map(formatVerdict),
   ];
-  const oks = rules.verdicts.filter((v) => v.verdict === "ok").length;
-  const fails = diags.filter(isError).length + flows.verdicts.filter((verdict) => verdict.verdict === "fail" && verdict.criterion !== "ID").length;
-  const rendered = [...diags.map(formatDiagnostic), ...unverified.map(formatVerdict)];
-  writeCheck(opts.format, rendered, rules.verdicts, snapshot?.snapshotId ?? null, diags);
+  writeCheck(opts.format, rendered, channel, snapshot?.snapshotId ?? null, diags);
   process.stderr.write(`${fails} fail, ${unverified.length} unverified, ${oks} ok\n`);
   if (fails > 0) return 1;
   if (opts.strict && unverified.length > 0) return 1;
@@ -271,6 +286,10 @@ function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number
   return 0;
 }
 
+function sameDiag(verdict: Verdict, diags: Diagnostic[]): boolean {
+  return diags.some((diag) => diag.file === verdict.file && diag.span.start.line === verdict.line && (diag.message === verdict.message || verdict.message.includes(diag.message)));
+}
+
 function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): void {
   if (format === "human") {
     for (const line of lines) process.stdout.write(`${line}\n`);
@@ -281,7 +300,11 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
       const level = isError(diag) ? "error" : "warning";
       process.stdout.write(`::${level} file=${diag.file},line=${diag.span.start.line},col=${diag.span.start.col}::${diag.code} ${diag.message}\n`);
     }
-    for (const verdict of verdicts) if (verdict.verdict === "unverified") process.stdout.write(`::warning file=${verdict.file},line=${verdict.line},col=${verdict.col}::${verdict.message}\n`);
+    for (const verdict of verdicts) {
+      if (verdict.verdict === "ok" || sameDiag(verdict, diags)) continue;
+      const level = verdict.verdict === "fail" ? "error" : "warning";
+      process.stdout.write(`::${level} file=${verdict.file},line=${verdict.line},col=${verdict.col}::${verdict.message}\n`);
+    }
     return;
   }
   const results = [
@@ -296,7 +319,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
       col: diag.span.start.col,
       code: diag.code,
     })),
-    ...verdicts.filter((verdict) => verdict.verdict !== "fail").map((verdict) => ({
+    ...verdicts.filter((verdict) => !sameDiag(verdict, diags)).map((verdict) => ({
       criterion: verdict.criterion,
       area: verdict.area,
       verdict: verdict.verdict,

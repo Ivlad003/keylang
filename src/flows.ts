@@ -90,12 +90,16 @@ function noteNode(
       const col = node.span.start.col;
       const lookup = index.lookup(id);
       const plan = planned.get(id);
+      const members = moduleMembers(input.nodes, id);
       if (plan) {
         verdicts.push(lineVerdict(input, "ID", id, "unverified", file, line, col, `planned ${plan.kind}`));
-      } else if (lookup.kind === "missing") {
-        verdicts.push(lineVerdict(input, "ID", id, "fail", file, line, col, "missing id"));
-      } else {
+      } else if (lookup.kind === "exact") {
         verdicts.push(lineVerdict(input, "ID", id, "ok", file, line, col, lookup.kind));
+      } else if (members === "opaque") {
+        verdicts.push(lineVerdict(input, "ID", id, "unverified", file, line, col, `opaque module`));
+      } else {
+        verdicts.push(lineVerdict(input, "ID", id, "fail", file, line, col, "K001 dangling reference"));
+        diagnostics.push(diagnostic("K001", file, node.span, `dangling reference \`${id}\`; declare \`planned\` if this is an intention`));
       }
       if (node.kind === "step" && parent) {
         if (plan) verdicts.push(lineVerdict(input, "static", id, "unverified", file, line, col, "planned"));
@@ -127,6 +131,17 @@ function noteNode(
   }
   const nextParent = node.kind === "step" || node.kind === "trigger" ? (node.refs[0]?.target ?? parent) : parent;
   for (const child of node.children) noteNode(child, nextParent, flow, file, index, input, calls, planned, tests, trace, diagnostics, verdicts);
+}
+
+function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {
+  let cur = id;
+  for (;;) {
+    const dot = cur.lastIndexOf(".");
+    if (dot === -1) return null;
+    cur = cur.slice(0, dot);
+    const node = nodes[cur];
+    if (node?.kind === "module" && (node.members === "complete" || node.members === "opaque")) return node.members;
+  }
 }
 
 function reaches(calls: Map<string, string[]>, from: string, to: string): boolean {

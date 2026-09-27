@@ -647,9 +647,45 @@ test("the in-repo check flow reports separate evidence", () => {
   assert.match(checked.stdout, /static ok/);
   assert.match(checked.stdout, /tests ok/);
   assert.match(checked.stdout, /trace ok/);
+  const summary = /(\d+) fail, (\d+) unverified, (\d+) ok/.exec(checked.stderr);
+  assert.ok(summary);
+  const unverifiedLines = checked.stdout.split("\n").filter((line) => /: unverified /.test(line) || / unverified /.test(line));
+  const okLines = checked.stdout.split("\n").filter((line) => / ID ok | static ok | tests ok | trace ok /.test(line));
+  assert.equal(Number(summary[2]), unverifiedLines.length);
+  assert.ok(okLines.length > 0);
+  assert.ok(Number(summary[3]) >= okLines.length);
   const again = keylang(root, ["check"]);
   assert.equal(again.status, checked.status);
   assert.equal(again.stdout, checked.stdout);
+});
+
+test("a missing member of an opaque module is unverified", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/ext.md"), "# flow ext\n\n- step external.node.readFile\n");
+  const checked = keylang(dir, ["check"]);
+  assert.match(checked.stdout, /ID unverified external\.node\.readFile: opaque module/);
+  assert.doesNotMatch(checked.stdout, /K001 dangling reference `external\.node\.readFile`/);
+});
+
+test("json includes a trace fail", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const snapshot = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).snapshotId as string;
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  mkdirSync(join(dir, "keylang/trace"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/pay.md"), "# flow pay\n\n- trigger domain.order.total\n  - step domain.order.createOrder\n");
+  writeFileSync(join(dir, "keylang/trace/pay.jsonl"), `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":0}\n`);
+  const cfg = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  cfg.check = { trace: "keylang/trace/pay.jsonl" };
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(cfg, null, 2)}\n`);
+  const json = keylang(dir, ["check", "--format", "json"]);
+  assert.equal(json.status, 1, json.stderr);
+  const body = JSON.parse(json.stdout) as { results: { verdict: string; evidence: string }[] };
+  assert.ok(body.results.some((row) => row.verdict === "fail" && row.evidence.includes("trace fail")));
 });
 
 test("check formats share the exit code", (t) => {

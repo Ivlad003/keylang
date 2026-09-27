@@ -15,17 +15,18 @@
     - fn [evaluateFlows](../../src/flows.ts#L38) (docs: readonly Document[], index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       - calls lang.ir.sectionNodes, lang.ir.walk, check.flows.loadTests, check.flows.loadTrace, check.flows.noteNode
     - fn [noteNode](../../src/flows.ts#L72) ( node: Node, parent: string | null, flow: string, file: string, index: Index, input: FlowInput, calls: Map<string, string[]>, planned: Map<string, { kind: string; signature: string | null }>, tests: ReportCase[] | "missing" | "stale" | null, trace: TraceFile | null, diagnostics: Diagnostic[], verdicts: Verdict[], ) → void <!-- internal -->
-      - calls check.flows.lineVerdict, check.flows.reaches, check.flows.unresolvedNear, check.flows.traceStep, base.diag.diagnostic, check.flows.matchTest
-    - fn [reaches](../../src/flows.ts#L132) (calls: Map<string, string[]>, from: string, to: string) → boolean <!-- internal -->
-    - fn [unresolvedNear](../../src/flows.ts#L147) (input: FlowInput, parent: string) → boolean <!-- internal -->
-    - fn [lineVerdict](../../src/flows.ts#L151) (input: FlowInput, criterion: "ID" | "static" | "tests" | "trace", area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, message: string) → Verdict <!-- internal -->
-    - fn [matchTest](../../src/flows.ts#L155) (tests: ReportCase[] | "missing" | "stale" | null, file: string, name: string, snapshotId: string | null) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-    - fn [loadTests](../../src/flows.ts#L169) (input: FlowInput) → ReportCase[] | "missing" | "stale" | null <!-- internal -->
-    - type [TraceEvent](../../src/flows.ts#L178) <!-- internal -->
-    - type [TraceFile](../../src/flows.ts#L193) <!-- internal -->
-    - fn [loadTrace](../../src/flows.ts#L200) (input: FlowInput) → TraceFile | null <!-- internal -->
-    - fn [traceStep](../../src/flows.ts#L213) (trace: TraceFile | null, snapshotId: string | null, flow: string, id: string) → { verdict: Verdict["verdict"]; message: string; diagnostic: boolean } <!-- internal -->
-    - fn [traceOrderProblem](../../src/flows.ts#L226) (events: TraceEvent[]) → string | null
+      - calls check.flows.moduleMembers, check.flows.lineVerdict, base.diag.diagnostic, check.flows.reaches, check.flows.unresolvedNear, check.flows.traceStep, check.flows.matchTest
+    - fn [moduleMembers](../../src/flows.ts#L136) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [reaches](../../src/flows.ts#L147) (calls: Map<string, string[]>, from: string, to: string) → boolean <!-- internal -->
+    - fn [unresolvedNear](../../src/flows.ts#L162) (input: FlowInput, parent: string) → boolean <!-- internal -->
+    - fn [lineVerdict](../../src/flows.ts#L166) (input: FlowInput, criterion: "ID" | "static" | "tests" | "trace", area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, message: string) → Verdict <!-- internal -->
+    - fn [matchTest](../../src/flows.ts#L170) (tests: ReportCase[] | "missing" | "stale" | null, file: string, name: string, snapshotId: string | null) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [loadTests](../../src/flows.ts#L184) (input: FlowInput) → ReportCase[] | "missing" | "stale" | null <!-- internal -->
+    - type [TraceEvent](../../src/flows.ts#L193) <!-- internal -->
+    - type [TraceFile](../../src/flows.ts#L208) <!-- internal -->
+    - fn [loadTrace](../../src/flows.ts#L215) (input: FlowInput) → TraceFile | null <!-- internal -->
+    - fn [traceStep](../../src/flows.ts#L228) (trace: TraceFile | null, snapshotId: string | null, flow: string, id: string) → { verdict: Verdict["verdict"]; message: string; diagnostic: boolean } <!-- internal -->
+    - fn [traceOrderProblem](../../src/flows.ts#L241) (events: TraceEvent[]) → string | null
   - module [resolve](../../src/resolve.ts#L1)
     - diag base.diag
     - ir lang.ir
@@ -62,18 +63,20 @@
     - type [RuleReport](../../src/rules.ts#L42)
     - fn [checkRules](../../src/rules.ts#L47) (docs: readonly Document[], index: Index, snapshot: SnapshotView | null = null) → Diagnostic[]
       - calls check.rules.evaluateRules
-    - fn [evaluateRules](../../src/rules.ts#L51) (docs: readonly Document[], index: Index, snapshot: SnapshotView | null) → RuleReport
+    - fn [blocksDependency](../../src/rules.ts#L52) (docs: readonly Document[], from: string, to: string) → boolean
+      - calls check.rules.specific, check.rules.collectRules
+    - fn [evaluateRules](../../src/rules.ts#L58) (docs: readonly Document[], index: Index, snapshot: SnapshotView | null) → RuleReport
       - calls check.rules.collectRules, check.rules.hashText, check.rules.evaluateOnSnapshot
-    - fn [evaluateOnSnapshot](../../src/rules.ts#L73) (rules: Collected, index: Index, snapshot: SnapshotView) → RuleReport <!-- internal -->
+    - fn [evaluateOnSnapshot](../../src/rules.ts#L80) (rules: Collected, index: Index, snapshot: SnapshotView) → RuleReport <!-- internal -->
       - calls base.diag.diagnostic, check.rules.base, check.rules.specific, check.scc.stronglyConnected, check.scc.cycleThrough
-    - fn [specific](../../src/rules.ts#L247) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → "allow" | "deny" | null <!-- internal -->
-    - type [Collected](../../src/rules.ts#L265) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L277) (docs: readonly Document[]) → Collected <!-- internal -->
+    - fn [specific](../../src/rules.ts#L254) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → "allow" | "deny" | null <!-- internal -->
+    - type [Collected](../../src/rules.ts#L272) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L284) (docs: readonly Document[]) → Collected <!-- internal -->
       - calls lang.ir.sectionNodes, check.rules.isRuleNode
-    - fn [base](../../src/rules.ts#L330) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L337) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L334) (text: string) → string <!-- internal -->
-    - fn [isRuleNode](../../src/rules.ts#L338) (n: Node) → boolean
+    - fn [hashText](../../src/rules.ts#L341) (text: string) → string <!-- internal -->
+    - fn [isRuleNode](../../src/rules.ts#L345) (n: Node) → boolean
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
     - fn [cycleThrough](../../src/scc.ts#L46) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
