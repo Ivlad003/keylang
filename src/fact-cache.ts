@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FileFacts } from "./extract/facts.ts";
+import { compareText } from "./span.ts";
 
 const CACHE_SCHEMA = 1;
 const CACHE_FILE = ".keylang/cache/facts.json";
@@ -20,6 +21,28 @@ interface Stored {
   schema: number;
   version: string;
   files: Record<string, { sha256: string; facts: StoredFacts }>;
+}
+
+/**
+ * Entries of a cache written by this schema and version. An entry of the wrong
+ * shape is dropped, so its file is extracted again instead of trusted.
+ */
+function storedFiles(value: unknown, version: string): Stored["files"] {
+  if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.files)) return {};
+  const files: Stored["files"] = {};
+  for (const [path, entry] of Object.entries(value.files)) {
+    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isRecord(entry.facts)) continue;
+    const facts = entry.facts;
+    const arrays = ["imports", "decls", "exports", "reexportsAll", "exportRows", "unsupported"] as const;
+    if (facts.path !== path || !arrays.every((key) => Array.isArray(facts[key])) || (facts.completeness !== "complete" && facts.completeness !== "opaque")) continue;
+    if (!(facts.exports as unknown[]).every((name) => typeof name === "string")) continue;
+    files[path] = { sha256: entry.sha256, facts: facts as unknown as StoredFacts };
+  }
+  return files;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const memory = new Map<string, { hash: string; facts: FileFacts }>();
@@ -45,8 +68,7 @@ export class FactCache {
     let disk: Stored["files"] = {};
     if (existsSync(file)) {
       try {
-        const stored = JSON.parse(readFileSync(file, "utf8")) as Partial<Stored>;
-        if (stored.schema === CACHE_SCHEMA && stored.version === version && stored.files && typeof stored.files === "object") disk = stored.files;
+        disk = storedFiles(JSON.parse(readFileSync(file, "utf8")), version);
       } catch {
         // A damaged cache is rebuilt, never an error.
       }
@@ -75,7 +97,7 @@ export class FactCache {
   /** Write the facts of this run (and nothing else) for the next process. */
   save(): void {
     const files: Stored["files"] = {};
-    for (const [path, entry] of [...this.used].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const [path, entry] of [...this.used].sort(([a], [b]) => compareText(a, b))) {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
     const file = join(this.root, CACHE_FILE);

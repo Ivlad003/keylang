@@ -286,6 +286,12 @@ test("lsp: completion under a module leaves out what deny forbids; after step on
   assert.equal(labels.some((label) => label.startsWith("infra.")), false, labels.join(" "));
   const planned = underModule.items.find((item) => item.label === "domain.order.later");
   assert.equal(planned?.labelDetails?.description, "planned");
+  // An `allow` names the pair a `deny` would forbid: its targets are not filtered.
+  const rulesUri = uri(dir, "keylang/rules.md");
+  const rules = `${RULES}- allow domain.order `;
+  s.notify("textDocument/didOpen", { textDocument: { uri: rulesUri, languageId: "markdown", version: 1, text: rules } });
+  const allowed = await s.request<Completion>("textDocument/completion", { textDocument: { uri: rulesUri }, position: { line: rules.split("\n").length - 1, character: "- allow domain.order ".length } });
+  assert.ok(allowed.items.some((item) => item.label === "infra.db"), allowed.items.map((item) => item.label).join(" "));
   const flowUri = uri(dir, "keylang/flows/buy.md");
   const flow = `${FLOW}  - step `;
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ text: flow }] });

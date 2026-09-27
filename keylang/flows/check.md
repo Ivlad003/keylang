@@ -6,6 +6,13 @@ resolves ids, evaluates rules and flows, and prints the findings. Nothing is
 written. The `@flow check` test in `tests/cli.test.ts` records the trace; the
 `node:test` reporter records the test results for the current snapshot.
 
+Both land in the git-ignored `.keylang/`, so run `npm test` before
+`keylang check --strict`. On a fresh clone, or after any source change
+without `npm test`, exactly these are `unverified` (no report / stale
+report, no trace / stale trace): the `trace` line of the trigger and of each
+of its ten steps, and the `tests` line of both invariants — 13 in all. ID
+and static evidence does not depend on a run.
+
 - trigger cli.cli.main
   - step cli.cli.run
     - step cli.cli.cmdCheck

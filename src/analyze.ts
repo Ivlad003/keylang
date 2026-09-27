@@ -4,9 +4,10 @@
 // not a stale committed map. Nothing is written.
 
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
-import { evidenceFiles, loadConfig, toPosix, type Config } from "./config.ts";
+import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix, type Config } from "./config.ts";
+import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
 import type { Document } from "./ir.ts";
 import { generateMap, type MapResult } from "./map.ts";
@@ -66,7 +67,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       docs.push(parse(display(abs), text));
     }
   }
-  docs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  docs.sort((a, b) => compareText(a.path, b.path));
   // Reports and traces are evidence about code; specs checked on their own have none.
   const evidence = snapshot !== null && request.withoutEvidence !== true;
   const testFiles = evidence ? evidenceFiles(config, "tests") : null;
@@ -82,7 +83,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
 export function findRoot(start: string): string {
   let dir = start;
   for (;;) {
-    if (existsSync(join(dir, "keylang.json"))) return dir;
+    if (existsSync(join(dir, CONFIG_FILE))) return dir;
     const parent = join(dir, "..");
     if (parent === dir) return start;
     dir = parent;
@@ -91,5 +92,5 @@ export function findRoot(start: string): string {
 
 export function within(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
-  return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/"));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }

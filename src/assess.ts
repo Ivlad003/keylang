@@ -1,5 +1,6 @@
 // One assessment for `keylang check` and `keylang lsp`: the same diagnostics and verdicts.
 
+import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
 import { evaluateFlows, type FlowInput } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
@@ -38,7 +39,7 @@ export function assess(docs: readonly Document[], snapshot: SnapshotInput | null
     criterion: "ID",
     area: item.message,
     snapshotId: snapshot?.snapshotId ?? null,
-    specHash: "",
+    specHash: createHash("sha256").update(item.message).digest("hex"),
     file: item.file,
     line: item.line,
     col: item.col,

@@ -429,7 +429,8 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const keyword = argument[2] ?? "";
   const callableOnly = CALLABLE_ARGS.has(keyword);
   if (!callableOnly && !ID_ARGS.has(keyword)) return [];
-  const from = moduleAround(ws, doc, parent);
+  // `allow` / `deny` name the pairs the rules are about, so their targets are not filtered by them.
+  const from = keyword === "allow" || keyword === "deny" ? null : moduleAround(ws, doc, parent);
   const labels = new Map<string, CompletionItem>();
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (callableOnly ? node.kind !== "fn" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type") continue;

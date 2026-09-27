@@ -16,6 +16,7 @@ import { explainCode } from "./explain.ts";
 import { serveLsp } from "./lsp.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
+import { compareText } from "./span.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -37,8 +38,9 @@ Options:
   -V, --version             Show version
   --strict                  Exit 1 when a required result is unverified
   --format <name>           check output: human (default), json, sarif, github
-  --explain-edge <a> <b>    Print snapshot edges from id a to id b, or the unresolved
-                            constructs in a that could form one; writes nothing
+  --explain-edge <a> <b>    Print snapshot edges between ids a and b (a → b, then b → a),
+                            or the unresolved constructs in a that could form one;
+                            writes nothing
 
 Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict)
 or a stale map with --check, 2 usage or I/O error.
@@ -46,10 +48,6 @@ or a stale map with --check, 2 usage or I/O error.
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
 export async function main(argv: readonly string[]): Promise<number> {
-  // `keylang … | head` closes stdout early; that is not an error.
-  process.stdout.on("error", (e: NodeJS.ErrnoException) => {
-    if (e.code === "EPIPE") process.exit(process.exitCode ?? 0);
-  });
   try {
     return await run(argv);
   } catch (e) {
@@ -236,9 +234,13 @@ function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
   const known = (id: string): boolean => snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`));
   for (const id of [from, to]) if (!known(id)) throw new Error(`unknown id \`${id}\``);
   const under = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
+  const between = (a: string, b: string) => (edge: AnalysisSnapshot["edges"][number]): boolean =>
+    under(edge.source, a) && ((edge.target !== null && under(edge.target, b)) || (edge.candidates ?? []).some((id) => under(id, b)));
+  // Edges in both directions: `a → b` first, then `b → a`.
+  const forward = between(from, to);
   const hits = snapshot.edges
-    .filter((edge) => under(edge.source, from) && ((edge.target !== null && under(edge.target, to)) || (edge.candidates ?? []).some((id) => under(id, to))))
-    .sort((a, b) => cmpText(a.kind, b.kind) || cmpText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || cmpText(a.source, b.source));
+    .filter((edge) => forward(edge) || between(to, from)(edge))
+    .sort((a, b) => Number(!forward(a)) - Number(!forward(b)) || compareText(a.kind, b.kind) || compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || compareText(a.source, b.source));
   for (const edge of hits) {
     const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
     const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
@@ -247,7 +249,7 @@ function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
   if (hits.length > 0) return 0;
   const holes = snapshot.coverage
     .filter((item) => item.source !== null && under(item.source, from))
-    .sort((a, b) => cmpText(a.file, b.file) || a.line - b.line || a.col - b.col || cmpText(a.reason, b.reason));
+    .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
   if (holes.length === 0) {
     process.stdout.write("no edge, coverage complete\n");
     return 0;
@@ -255,10 +257,6 @@ function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
   process.stdout.write(`no confirmed edge; ${holes.length} unresolved construct(s) in \`${from}\` could form one\n`);
   for (const hole of holes) process.stdout.write(`unresolved ${hole.file}:${hole.line}:${hole.col} ${hole.reason}\n`);
   return 0;
-}
-
-function cmpText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 interface CheckResult {
@@ -272,6 +270,7 @@ interface CheckResult {
   line: number;
   col: number;
   code: string | null;
+  specHash?: string;
   provenance?: string;
   runId?: string;
   testId?: string;
@@ -305,6 +304,7 @@ function checkResults(verdicts: Verdict[], snapshotId: string | null, diags: Dia
       line: verdict.line,
       col: verdict.col,
       code: verdict.code,
+      ...(verdict.specHash ? { specHash: verdict.specHash } : {}),
       ...(verdict.evidence ?? {}),
     }));
   return [...fromDiags, ...fromVerdicts];
@@ -344,7 +344,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
           level: result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "note",
           message: { text: result.evidence },
           locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
-          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId },
+          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId, ...(result.specHash ? { specHash: result.specHash } : {}) },
         })),
         properties: { snapshotId },
       },

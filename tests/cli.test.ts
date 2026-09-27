@@ -473,6 +473,14 @@ test("map leaves a fact cache that check reads but never writes; a foreign cache
   writeFileSync(cache, JSON.stringify({ schema: 1, version: "other", files: { "src/infra/db.ts": { sha256: "x", facts: {} } } }));
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.notEqual(JSON.parse(readFileSync(cache, "utf8")).version, "other");
+  // An entry of the wrong shape is extracted again, not trusted.
+  const good = JSON.parse(readFileSync(cache, "utf8"));
+  good.files["src/infra/db.ts"].facts.exports = [1];
+  good.files["src/domain/order.ts"].facts = { path: "src/domain/order.ts" };
+  writeFileSync(cache, JSON.stringify(good));
+  const reshaped = keylang(dir, ["check"]);
+  assert.equal(reshaped.status, 1, reshaped.stderr);
+  assert.match(reshaped.stdout, /K102/);
   writeFileSync(cache, "{ broken");
   const rebuilt = keylang(dir, ["map"]);
   assert.equal(rebuilt.status, 0, rebuilt.stderr);
@@ -703,7 +711,7 @@ test("one failing deny does not hide the verdicts of other denies", (t) => {
   writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n- deny domain app\n- deny app domain\n");
   const checked = keylang(dir, ["check"]);
   assert.equal(checked.status, 1, checked.stdout);
-  assert.match(checked.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
+  assert.match(checked.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`, which is denied by `deny domain infra` \(keylang\/rules\.md:3\)/);
   assert.match(checked.stdout, /keylang\/rules\.md:4:1: unverified unresolved import `\.\/missing\.ts` \(src\/domain\/order\.ts:\d+:\d+\)/);
   assert.match(checked.stdout, /keylang\/rules\.md:5:1: K102|src\/app\/checkout\.ts:\d+:\d+: K102 divergence: `app\.checkout` depends on `domain\.order`/);
 });
@@ -1054,6 +1062,9 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   const github = results(["--format", "github"]).stdout;
   assert.match(github, /^::warning file=src\/domain\/lonely\.ts,line=1,col=1,title=K103::absence: module `domain\.lonely`/m);
   assert.match(github, /^::notice file=keylang\/rules\.md,line=5,col=1,title=unverified::unresolved import `\.\/missing\.ts` \(src\/domain\/lonely\.ts:1:1\)$/m);
+  const denyOk = JSON.parse(results(["--format", "json"]).stdout).results as { criterion: string; verdict: string; evidence: string; specHash?: string }[];
+  const convergence = denyOk.filter((row) => row.verdict === "ok");
+  assert.ok(convergence.every((row) => /^convergence: /.test(row.evidence) && /^[0-9a-f]{64}$/.test(row.specHash ?? "")), JSON.stringify(convergence));
   const bad = keylang(dir, ["check", "--format", "xml"]);
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /unknown --format `xml`; expected human, json, sarif, github/);

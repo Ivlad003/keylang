@@ -191,7 +191,9 @@ test("tests: check.tests is validated with the field name", (t) => {
   assert.equal(o.status, 2);
   assert.match(o.stderr, /keylang\.json: check\.tests: no such file `reports\/none\.json`/);
   mkdirSync(join(dir, "reports"), { recursive: true });
-  writeFileSync(join(dir, "reports/none.json"), JSON.stringify({ tests: [{ file: "x", name: "y", status: "green" }] }));
+  writeFileSync(join(dir, "reports/none.json"), JSON.stringify({ tests: [] }));
+  assert.match(keylang(dir, ["check"]).stderr, /reports\/none\.json: `schemaVersion` is missing \(expected 1\)/);
+  writeFileSync(join(dir, "reports/none.json"), JSON.stringify({ schemaVersion: 1, tests: [{ file: "x", name: "y", status: "green" }] }));
   const bad = keylang(dir, ["check"]);
   assert.equal(bad.status, 2);
   assert.match(bad.stderr, /reports\/none\.json: tests\[0\]\.status must be "pass", "fail" or "skip", got "green"/);

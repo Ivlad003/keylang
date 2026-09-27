@@ -11,9 +11,12 @@
     - config base.config
     - map map.map
     - test-report check.test-report
-    - type [TestEvent](../../src/adapters/node-test.ts#L15) <!-- internal -->
-    - fn [keylangReporter](../../src/adapters/node-test.ts#L20) (source: AsyncIterable<TestEvent>) → AsyncGenerator<string>
-      - calls map.analyze.findRoot, base.config.toPosix, map.map.generateMap, base.config.loadConfig
+    - run-id cli.run-id
+    - type [TestEvent](../../src/adapters/node-test.ts#L17) <!-- internal -->
+    - fn [keylangReporter](../../src/adapters/node-test.ts#L22) (source: AsyncIterable<TestEvent>) → AsyncGenerator<string>
+      - calls map.analyze.findRoot, base.config.toPosix, map.map.generateMap, base.config.loadConfig, cli.run-id.runId
+  - module [run-id](../../src/adapters/run-id.ts#L1)
+    - fn [runId](../../src/adapters/run-id.ts#L4) () → string
   - module [trace-hooks](../../src/adapters/trace-hooks.ts#L1)
     - node external.node
     - config base.config
@@ -36,14 +39,16 @@
       - calls map.snapshot.sha256
   - module [trace](../../src/adapters/trace.ts#L1)
     - node external.node
+    - trace-evidence check.trace-evidence
+    - run-id cli.run-id
     - trace-hooks cli.trace-hooks
-    - type [Span](../../src/adapters/trace.ts#L19) <!-- internal -->
-    - fn [planned](../../src/adapters/trace.ts#L35) () → TracePlanMessage | null <!-- internal -->
-    - fn [write](../../src/adapters/trace.ts#L48) (event: Record<string, unknown>) → void <!-- internal -->
+    - type [Span](../../src/adapters/trace.ts#L21) <!-- internal -->
+    - fn [planned](../../src/adapters/trace.ts#L37) () → TracePlanMessage | null <!-- internal -->
+    - fn [write](../../src/adapters/trace.ts#L50) (event: Record<string, unknown>) → void <!-- internal -->
       - calls cli.trace.planned
-    - fn [start](../../src/adapters/trace.ts#L52) (symbolId: string) → Span <!-- internal -->
+    - fn [start](../../src/adapters/trace.ts#L54) (symbolId: string) → Span <!-- internal -->
       - calls cli.trace.write
-    - fn [finish](../../src/adapters/trace.ts#L60) (span: Span, outcome: "ok" | "error") → void <!-- internal -->
+    - fn [finish](../../src/adapters/trace.ts#L62) (span: Span, outcome: "ok" | "error") → void <!-- internal -->
       - calls cli.trace.write
   - module [cli](../../src/cli.ts#L1)
     - node external.node
@@ -59,26 +64,26 @@
     - lsp cli.lsp
     - snapshot map.snapshot
     - verdict check.verdict
-    - fn [main](../../src/cli.ts#L48) (argv: readonly string[]) → Promise<number>
+    - span base.span
+    - fn [main](../../src/cli.ts#L50) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
-    - fn [run](../../src/cli.ts#L61) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L59) (argv: readonly string[]) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdInit, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
-    - fn [cmdExplain](../../src/cli.ts#L112) (code: string | undefined) → number <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L110) (code: string | undefined) → number <!-- internal -->
       - calls cli.explain.explainCode
-    - fn [needPaths](../../src/cli.ts#L120) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L124) (dir: string) → Promise<number> <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L118) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L122) (dir: string) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdMap](../../src/cli.ts#L141) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L139) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, base.config.toPosix, map.map.diffMap, map.map.writeMap
-    - fn [cmdParse](../../src/cli.ts#L180) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L178) (paths: string[], json: boolean) → number <!-- internal -->
       - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L191) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L189) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L231) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
-      - calls cli.cli.cmpText
-    - fn [cmpText](../../src/cli.ts#L260) (a: string, b: string) → number <!-- internal -->
-    - type [CheckResult](../../src/cli.ts#L264) <!-- internal -->
-    - fn [checkResults](../../src/cli.ts#L281) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[] <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L229) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+      - calls base.span.compareText
+    - type [CheckResult](../../src/cli.ts#L262) <!-- internal -->
+    - fn [checkResults](../../src/cli.ts#L280) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[] <!-- internal -->
       - calls check.assess.sameFinding, base.diag.isError
     - fn [writeCheck](../../src/cli.ts#L313) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls cli.cli.checkResults, cli.cli.githubProperty, cli.cli.githubData, cli.cli.ruleText
@@ -161,14 +166,14 @@
     - type [CompletionItem](../../src/lsp-features.ts#L393)
     - fn [completions](../../src/lsp-features.ts#L413) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       - calls cli.lsp-features.docOf, cli.lsp-features.enclosing, cli.lsp-features.sectionAt, lang.parser.keywordsAt, cli.lsp-features.moduleAround, check.rules.blocksDependency, cli.lsp-features.nodesOf
-    - fn [sectionAt](../../src/lsp-features.ts#L453) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L463) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L454) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L464) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls cli.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L472) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L473) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls cli.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L485) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L486) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls cli.lsp-features.ancestors
-    - fn [codeLenses](../../src/lsp-features.ts#L501) (ws: Workspace, path: string) → { range: LspRange; command: { title: string; command: string } }[]
+    - fn [codeLenses](../../src/lsp-features.ts#L502) (ws: Workspace, path: string) → { range: LspRange; command: { title: string; command: string } }[]
       - calls cli.lsp-features.flowsUsing
   - module [lsp](../../src/lsp.ts#L1)
     - node external.node

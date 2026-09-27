@@ -3,8 +3,10 @@
 // from its siblings. Reports and traces are loaded by the caller; this module
 // only compares them with the specs and the snapshot.
 
+import { createHash } from "node:crypto";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import { renderTokens } from "./parser.ts";
 import type { Index } from "./resolve.ts";
 import type { Span } from "./span.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
@@ -50,13 +52,15 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
   const verdicts: Verdict[] = [];
   const planned = collectPlanned(docs, input, diagnostics);
   const graph = callGraph(input.edges);
+  // The spec line a verdict is about, for its hash: set while a node is visited.
+  let spec = "";
   const verdict = (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string, evidence?: Verdict["evidence"]): void => {
     verdicts.push({
       verdict: value,
       criterion: channel,
       area,
       snapshotId: input.snapshotId,
-      specHash: "",
+      specHash: specHash(spec),
       file,
       line: span.start.line,
       col: span.start.col,
@@ -96,6 +100,7 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
         input.traces === null ? null : traceFlow(input.traces, flow, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
 
       const visit = (node: Node, parent: string | null, claim: Node | null): void => {
+        spec = `${flow}\0${node.kind} ${renderTokens(node.tokens)}`;
         const nodeKey = keys.get(node);
         const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
         if (node.kind === "step" || node.kind === "trigger") {
@@ -309,4 +314,8 @@ function collectPlanned(docs: readonly Document[], input: FlowInput, diagnostics
 
 function normalizeSignature(text: string): string {
   return text.replace(/->/g, "→").replace(/\s+/g, "").replace(/;$/, "");
+}
+
+function specHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }

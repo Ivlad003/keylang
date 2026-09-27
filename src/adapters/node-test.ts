@@ -2,15 +2,17 @@
 // the current snapshot: `node --test --test-reporter=keylang/node-test-reporter`
 // (in this repository: `--test-reporter=./src/adapters/node-test.ts`).
 // It prints nothing; pair it with another reporter for the console.
-// KEYLANG_TEST_REPORT names the output file (default `.keylang/reports/node-test.json`).
+// KEYLANG_TEST_REPORT names the output file, relative to the repository root
+// (default `.keylang/reports/node-test.json`).
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findRoot } from "../analyze.ts";
 import { loadConfig, toPosix } from "../config.ts";
 import { generateMap } from "../map.ts";
-import type { JsonReport, TestStatus } from "../test-report.ts";
+import { REPORT_SCHEMA, type JsonReport, type TestStatus } from "../test-report.ts";
+import { runId } from "./run-id.ts";
 
 interface TestEvent {
   type: string;
@@ -40,8 +42,8 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
   }
   // The snapshot of the code the tests ran against; tests do not change sources.
   const snapshotId = (await generateMap(loadConfig(root))).index.snapshotId;
-  const report: JsonReport = { schemaVersion: 1, snapshotId, runId: process.env.KEYLANG_TRACE_RUN ?? `${Date.now().toString(36)}-${process.pid}`, tests };
-  const out = process.env.KEYLANG_TEST_REPORT ?? join(root, ".keylang/reports/node-test.json");
+  const report: JsonReport = { schemaVersion: REPORT_SCHEMA, snapshotId, runId: runId(), tests };
+  const out = resolve(root, process.env.KEYLANG_TEST_REPORT ?? ".keylang/reports/node-test.json");
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
 }

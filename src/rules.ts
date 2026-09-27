@@ -146,7 +146,8 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     if (match?.kind === "deny") {
       reported.add(key);
       failedDenies.add(match.rule);
-      pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`deny\``, `deny ${edge.from} ${edge.to}`, edge.from);
+      const rule = match.rule;
+      pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.span.start.line})`, rule.text, edge.from);
       continue;
     }
     if (verdict === "allow") continue;
@@ -174,7 +175,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     const area = modules.size === 0 ? deny.a : [...modules].filter((id) => within(id, deny.a)).join(",");
     const hole = [...modules].filter((id) => within(id, deny.a)).map(dependencyHoleIn).find((item) => item !== null) ?? null;
     if (hole) pushUnverified(deny.file, deny.span.start.line, deny.span.start.col, deny.text, area || deny.a, hole);
-    else verdicts.push(base(snapshot, deny.text, area || deny.a, "ok", deny.file, deny.span.start.line, deny.span.start.col, null, "ok"));
+    else verdicts.push(base(snapshot, deny.text, area || deny.a, "ok", deny.file, deny.span.start.line, deny.span.start.col, null, `convergence: no edge from \`${deny.a}\` to ${deny.b.map((b) => `\`${b}\``).join(", ")} and no dependency hole in the area`));
   }
 
   if (rules.entries.length > 0) {
@@ -234,7 +235,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     }
     if (failed) continue;
     if (unknown) pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, `exports ${rule.module}`, rule.module, unknown.reason ?? "re-export from an opaque module");
-    else verdicts.push(base(snapshot, `exports ${rule.module}`, rule.module, "ok", rule.file, rule.span.start.line, rule.span.start.col, null, "ok"));
+    else verdicts.push(base(snapshot, `exports ${rule.module}`, rule.module, "ok", rule.file, rule.span.start.line, rule.span.start.col, null, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, `exports ${rule.module}: ${[...rule.names].sort().join(", ")}`));
   }
 
   if (rules.noCycles.length > 0) {
@@ -250,7 +251,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     for (const rule of rules.noCycles) {
       const relevant = components.filter((component) => rule.under === null || component.some((id) => within(id, rule.under ?? "")));
       if (relevant.length === 0) {
-        verdicts.push(base(snapshot, "no-cycles", rule.under ?? "*", "ok", rule.file, rule.span.start.line, rule.span.start.col, null, "ok"));
+        verdicts.push(base(snapshot, "no-cycles", rule.under ?? "*", "ok", rule.file, rule.span.start.line, rule.span.start.col, null, `convergence: no import cycle${rule.under ? ` through \`${rule.under}\`` : ""}`, `no-cycles ${rule.under ?? "*"}`));
         continue;
       }
       for (const component of relevant) {
@@ -350,8 +351,9 @@ function collectRules(docs: readonly Document[]): Collected {
   return { any, order, unordered, allows, denies, entries, entryFile, noCycles, exportsRules };
 }
 
-function base(snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string): Verdict {
-  return { verdict, criterion, area, snapshotId: snapshot.snapshotId, specHash: hashText(criterion), file, line, col, code, message };
+/** `spec` is the rule as written; its hash changes when the rule does. */
+function base(snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion): Verdict {
+  return { verdict, criterion, area, snapshotId: snapshot.snapshotId, specHash: hashText(spec), file, line, col, code, message };
 }
 
 function hashText(text: string): string {

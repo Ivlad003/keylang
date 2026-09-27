@@ -27,3 +27,8 @@ export interface Spanned<T> {
 export function spanContains(span: Span, offset: number): boolean {
   return span.start.offset <= offset && offset < span.end.offset;
 }
+
+/** Code-unit order of two strings, for stable sorting of ids and paths. */
+export function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}

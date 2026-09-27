@@ -7,6 +7,7 @@
     - node external.node
     - assess check.assess
     - config base.config
+    - span base.span
     - files lang.files
     - ir lang.ir
     - map map.map
@@ -14,12 +15,12 @@
     - snapshot map.snapshot
     - test-report check.test-report
     - trace-evidence check.trace-evidence
-    - type [AnalysisRequest](../../src/analyze.ts#L18)
-    - type [Analysis](../../src/analyze.ts#L35) extends Assessment
-    - fn [analyze](../../src/analyze.ts#L42) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, base.config.evidenceFiles, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
-    - fn [findRoot](../../src/analyze.ts#L82) (start: string) → string
-    - fn [within](../../src/analyze.ts#L92) (abs: string, dir: string) → boolean
+    - type [AnalysisRequest](../../src/analyze.ts#L19)
+    - type [Analysis](../../src/analyze.ts#L36) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L43) (request: AnalysisRequest) → Promise<Analysis>
+      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, base.span.compareText, base.config.evidenceFiles, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
+    - fn [findRoot](../../src/analyze.ts#L83) (start: string) → string
+    - fn [within](../../src/analyze.ts#L93) (abs: string, dir: string) → boolean
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - snapshot map.snapshot
@@ -43,14 +44,19 @@
   - module [fact-cache](../../src/fact-cache.ts#L1)
     - node external.node
     - facts extract.facts
-    - type [StoredFacts](../../src/fact-cache.ts#L17) = Omit<FileFacts, "exports"> & { exports: string[] } <!-- internal -->
-    - type [Stored](../../src/fact-cache.ts#L19) <!-- internal -->
-    - module [FactCache](../../src/fact-cache.ts#L27)
-      - fn [constructor](../../src/fact-cache.ts#L36) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
-      - fn [open](../../src/fact-cache.ts#L43) (root: string, version: string) → FactCache
-        - calls map.fact-cache.FactCache
-      - fn [facts](../../src/fact-cache.ts#L57) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
-      - fn [save](../../src/fact-cache.ts#L76) () → void
+    - span base.span
+    - type [StoredFacts](../../src/fact-cache.ts#L18) = Omit<FileFacts, "exports"> & { exports: string[] } <!-- internal -->
+    - type [Stored](../../src/fact-cache.ts#L20) <!-- internal -->
+    - fn [storedFiles](../../src/fact-cache.ts#L30) (value: unknown, version: string) → Stored["files"] <!-- internal -->
+      - calls map.fact-cache.isRecord
+    - fn [isRecord](../../src/fact-cache.ts#L44) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - module [FactCache](../../src/fact-cache.ts#L50)
+      - fn [constructor](../../src/fact-cache.ts#L59) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+      - fn [open](../../src/fact-cache.ts#L66) (root: string, version: string) → FactCache
+        - calls map.fact-cache.storedFiles, map.fact-cache.FactCache
+      - fn [facts](../../src/fact-cache.ts#L79) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [save](../../src/fact-cache.ts#L98) () → void
+        - calls base.span.compareText
   - module [graph](../../src/graph.ts#L1)
     - node external.node
     - config base.config

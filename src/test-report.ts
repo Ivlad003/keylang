@@ -46,7 +46,8 @@ export function parseJsonReport(file: string, text: string): TestCase[] {
   }
   if (typeof body !== "object" || body === null) throw new Error(`${file}: report must be an object`);
   const report = body as Record<string, unknown>;
-  if (report.schemaVersion !== undefined && report.schemaVersion !== REPORT_SCHEMA) throw new Error(`${file}: unsupported report schemaVersion ${JSON.stringify(report.schemaVersion)}`);
+  if (report.schemaVersion === undefined) throw new Error(`${file}: \`schemaVersion\` is missing (expected ${REPORT_SCHEMA})`);
+  if (report.schemaVersion !== REPORT_SCHEMA) throw new Error(`${file}: unsupported report schemaVersion ${JSON.stringify(report.schemaVersion)}`);
   if (!Array.isArray(report.tests)) throw new Error(`${file}: \`tests\` must be an array`);
   const snapshotId = typeof report.snapshotId === "string" ? report.snapshotId : null;
   const runId = typeof report.runId === "string" ? report.runId : null;

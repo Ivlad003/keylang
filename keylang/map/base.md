@@ -60,3 +60,4 @@
     - type [Span](../../src/span.ts#L16)
     - type [Spanned](../../src/span.ts#L22)
     - fn [spanContains](../../src/span.ts#L27) (span: Span, offset: number) → boolean
+    - fn [compareText](../../src/span.ts#L32) (a: string, b: string) → number

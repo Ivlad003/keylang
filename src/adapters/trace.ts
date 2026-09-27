@@ -14,6 +14,8 @@ import { register } from "node:module";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { MessageChannel, receiveMessageOnPort } from "node:worker_threads";
+import { TRACE_SCHEMA } from "../trace-evidence.ts";
+import { runId } from "./run-id.ts";
 import type { TracePlanMessage } from "./trace-hooks.ts";
 
 interface Span {
@@ -25,7 +27,7 @@ const file = process.env.KEYLANG_TRACE;
 const flow = process.env.KEYLANG_TRACE_FLOW;
 const testId = process.env.KEYLANG_TRACE_TEST;
 if (!file || !flow || !testId) throw new Error("keylang trace: KEYLANG_TRACE, KEYLANG_TRACE_FLOW and KEYLANG_TRACE_TEST are required");
-const runId = process.env.KEYLANG_TRACE_RUN ?? `${Date.now().toString(36)}-${process.pid}`;
+const run = runId();
 const root = resolve(process.env.KEYLANG_TRACE_ROOT ?? process.cwd());
 
 const { port1, port2 } = new MessageChannel();
@@ -46,7 +48,7 @@ let seq = 0;
 let spans = 0;
 
 const write = (event: Record<string, unknown>): void => {
-  lines.push(JSON.stringify({ schemaVersion: 1, snapshotId: planned()?.snapshotId ?? null, runId, testId, flow, traceId: `${runId}:${testId}`, ...event }));
+  lines.push(JSON.stringify({ schemaVersion: TRACE_SCHEMA, snapshotId: planned()?.snapshotId ?? null, runId: run, testId, flow, traceId: `${run}:${testId}`, ...event }));
 };
 
 const start = (symbolId: string): Span => {
