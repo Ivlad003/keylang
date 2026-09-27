@@ -1,0 +1,37 @@
+{
+  "name": "keylang-vscode",
+  "displayName": "keylang",
+  "description": "Thin client for `keylang lsp`: diagnostics, hover, definition, completion, references, and code lenses for keylang specs.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "workspaceContains:keylang.json",
+    "workspaceContains:keylang/**/*.md"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "keylang",
+      "properties": {
+        "keylang.command": {
+          "type": "string",
+          "default": "keylang",
+          "description": "Executable that runs keylang (for a checkout: `node` with `keylang.args` set to the path of bin/keylang.js and `lsp`)."
+        },
+        "keylang.args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["lsp"],
+          "description": "Arguments for `keylang.command`; the last one must start the language server (`lsp`)."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

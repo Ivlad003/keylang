@@ -21,15 +21,19 @@ export interface MapResult {
   facts: { reused: number; extracted: number };
 }
 
-/** `persist` writes the fact cache for the next process (`keylang map` only). */
-export async function generateMap(config: Config, options: { persist?: boolean } = {}): Promise<MapResult> {
+/**
+ * `persist` writes the fact cache for the next process (`keylang map` only);
+ * `overlay` gives unsaved text of source files by absolute path (the language server).
+ */
+export async function generateMap(config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
   const all = sourceFiles(config);
   const indexed: { path: string; sha256: string }[] = [];
   const sources = new Map<string, string>();
   for (const p of all) {
-    const src = readFileSync(join(config.root, p), "utf8");
+    const abs = join(config.root, p);
+    const src = options.overlay?.get(abs) ?? readFileSync(abs, "utf8");
     sources.set(p, src);
     indexed.push({ path: p, sha256: sha256(src) });
   }

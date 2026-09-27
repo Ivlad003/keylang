@@ -108,15 +108,15 @@
     - fact-cache map.fact-cache
     - snapshot map.snapshot
     - type [MapResult](../../src/map.ts#L13)
-    - fn [generateMap](../../src/map.ts#L25) (config: Config, options: { persist?: boolean } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L28) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
       - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.snapshot.grammarVersions, extract.ts.extractTs, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
-    - fn [opaqueFacts](../../src/map.ts#L64) (path: string) → FileFacts <!-- internal -->
-    - type [MapDiff](../../src/map.ts#L68)
-    - fn [mapConflicts](../../src/map.ts#L76) (config: Config, r: MapResult) → string[]
+    - fn [opaqueFacts](../../src/map.ts#L68) (path: string) → FileFacts <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L72)
+    - fn [mapConflicts](../../src/map.ts#L80) (config: Config, r: MapResult) → string[]
       - calls map.emit.isGeneratedMap
-    - fn [writeMap](../../src/map.ts#L90) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
+    - fn [writeMap](../../src/map.ts#L94) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
-    - fn [diffMap](../../src/map.ts#L120) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L124) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node

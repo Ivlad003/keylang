@@ -118,6 +118,11 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
 
 const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
+/** Keywords an item may start with under `parent` (none at the top of a section). */
+export function keywordsAt(section: SectionKind, parent: NodeKind | undefined): readonly string[] {
+  return keywordsOf(ctxOf(section, parent));
+}
+
 function keywordsOf(ctx: Ctx): readonly string[] {
   switch (ctx) {
     case "map-top":

@@ -44,7 +44,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const config = loadConfig(root);
   const display = request.display ?? ((abs: string) => toPosix(relative(root, abs)));
   const overlay = request.overlay ?? new Map<string, string>();
-  const map = config.languages.length > 0 && request.withoutCode !== true ? await generateMap(config, { persist: request.persistFacts === true }) : null;
+  const map = config.languages.length > 0 && request.withoutCode !== true ? await generateMap(config, { persist: request.persistFacts === true, overlay }) : null;
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);

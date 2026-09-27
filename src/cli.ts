@@ -97,8 +97,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "explain":
       return cmdExplain(paths[0]);
     case "lsp":
-      await serveLsp();
-      return 0;
+      return serveLsp();
     case "parse":
       needPaths(cmd, paths);
       return cmdParse(paths, values.json === true);

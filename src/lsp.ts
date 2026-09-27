@@ -1,19 +1,19 @@
-// Stdio language server. Diagnostics, hover, definition, symbols, and completion
-// use the same in-memory analysis as `keylang check`. Buffer text is never written.
+// Stdio language server. It keeps the open buffers, runs one analysis per
+// generation of changes (the same `analyze()` as `keylang check`, with the
+// buffers as an overlay; nothing is written), and answers from the latest
+// generation only: a request waits while a reanalysis is pending, and results
+// of a superseded generation are never published.
+//
+// The protocol subset is small, so it is spoken directly instead of through
+// `vscode-languageserver`: that keeps the package at two runtime dependencies,
+// both installable without native code.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { analyze } from "./analyze.ts";
-import { assess, sameFinding, type Assessment } from "./assess.ts";
-import type { Diagnostic } from "./diag.ts";
-import { collectMdFiles } from "./files.ts";
-import { sectionNodes, walk, type Document } from "./ir.ts";
-import { parse } from "./parser.ts";
-import type { Index } from "./resolve.ts";
-import { blocksDependency } from "./rules.ts";
-import type { AnalysisSnapshot } from "./snapshot.ts";
-import type { Verdict } from "./verdict.ts";
+import { existsSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { analyze, findRoot, type Analysis } from "./analyze.ts";
+import { toPosix } from "./config.ts";
+import { codeLenses, completions, definition, diagnosticsFor, documentSymbols, hover, references, signatureHelp, workspace, type LspPosition, type Workspace } from "./lsp-features.ts";
 
 interface Rpc {
   jsonrpc?: string;
@@ -24,292 +24,251 @@ interface Rpc {
   error?: { code: number; message: string };
 }
 
-interface TextDoc {
-  uri?: string;
-  text?: string;
-}
+const ERRORS = { methodNotFound: -32601, internal: -32603, cancelled: -32800 } as const;
+/** Changes that arrive together are analysed once. */
+const SETTLE_MS = 60;
 
-export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout): Promise<void> {
+export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout): Promise<number> {
+  const server = new Server((message) => {
+    const json = JSON.stringify(message);
+    write.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
+  });
   let buffer = Buffer.alloc(0);
-  let root = process.cwd();
   for await (const chunk of read) {
-    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)]);
     for (;;) {
       const headerEnd = buffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) break;
-      const header = buffer.subarray(0, headerEnd).toString("utf8");
-      const match = /Content-Length: (\d+)/i.exec(header);
-      if (!match?.[1]) return;
-      const length = Number(match[1]);
+      const match = /Content-Length: (\d+)/i.exec(buffer.subarray(0, headerEnd).toString("utf8"));
+      if (!match?.[1]) return 1;
       const start = headerEnd + 4;
+      const length = Number(match[1]);
       if (buffer.length < start + length) break;
       const body = buffer.subarray(start, start + length).toString("utf8");
       buffer = buffer.subarray(start + length);
-      const message = JSON.parse(body) as Rpc;
-      if (message.method === "initialize") {
-        const params = message.params ?? {};
-        const hinted = typeof params.rootUri === "string" ? filePath(params.rootUri) : null;
-        if (hinted && existsSync(hinted)) root = hinted;
-      }
-      try {
-        const response = await handle(message, root);
-        if (response) send(write, response);
-      } catch (error) {
-        send(write, { jsonrpc: "2.0", id: message.id ?? null, error: { code: -32603, message: error instanceof Error ? error.stack ?? error.message : String(error) } });
+      server.receive(JSON.parse(body) as Rpc);
+      if (server.exitCode !== null) {
+        await server.drain();
+        return server.exitCode;
       }
     }
   }
+  await server.drain();
+  return server.exitCode ?? 0;
 }
 
-async function handle(message: Rpc, root: string): Promise<Rpc | null> {
-  if (!message.method || message.id === undefined) return null;
-  if (message.method === "initialize") {
-    return {
-      jsonrpc: "2.0",
-      id: message.id,
-      result: {
-        capabilities: {
-          diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false },
-          hoverProvider: true,
-          definitionProvider: true,
-          documentSymbolProvider: true,
-          completionProvider: { triggerCharacters: [" ", "."] },
-          referencesProvider: true,
+class Server {
+  exitCode: number | null = null;
+  private root = process.cwd();
+  private readonly buffers = new Map<string, { uri: string; version: number; text: string }>();
+  /** Requests still being answered, and those among them already answered as cancelled. */
+  private readonly open = new Set<number | string>();
+  private readonly cancelled = new Set<number | string>();
+  private readonly pending = new Set<Promise<void>>();
+  private readonly published = new Set<string>();
+  private readonly send: (message: Rpc) => void;
+  private generation = 0;
+  private running: { generation: number; result: Promise<Analysis> } | null = null;
+  private timer: NodeJS.Timeout | null = null;
+  private shutdown = false;
+
+  constructor(send: (message: Rpc) => void) {
+    this.send = send;
+  }
+
+  receive(message: Rpc): void {
+    if (!message.method) return;
+    if (message.id === undefined || message.id === null) {
+      this.notify(message.method, message.params ?? {});
+      return;
+    }
+    const id = message.id;
+    this.open.add(id);
+    const task = this.request(message.method, message.params ?? {})
+      .then(
+        (result): Rpc => ({ jsonrpc: "2.0", id, result }),
+        (error: unknown): Rpc => {
+          const code = error instanceof LspError ? error.code : ERRORS.internal;
+          return { jsonrpc: "2.0", id, error: { code, message: error instanceof Error ? error.message : String(error) } };
         },
-      },
-    };
+      )
+      .then((response) => {
+        this.open.delete(id);
+        // A cancelled request was answered when the cancel arrived.
+        if (!this.cancelled.delete(id)) this.send(response);
+      });
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task));
   }
-  if (message.method === "shutdown") return { jsonrpc: "2.0", id: message.id, result: null };
-  const textDocument = message.params?.textDocument as TextDoc | undefined;
-  const viewed = await view(root, textDocument);
-  if (message.method === "textDocument/diagnostic") {
-    const seen = (file: string): boolean => uriMatches(textDocument?.uri, file, root) || (textDocument?.text !== undefined && file === viewed.bufferPath);
-    const items = findings(viewed, seen);
-    return { jsonrpc: "2.0", id: message.id, result: { kind: "full", items } };
+
+  async drain(): Promise<void> {
+    while (this.pending.size > 0) await Promise.all([...this.pending]);
+    if (this.timer) clearTimeout(this.timer);
   }
-  if (message.method === "textDocument/documentSymbol") {
-    return { jsonrpc: "2.0", id: message.id, result: symbols(viewed.docs, viewed.index) };
-  }
-  if (message.method === "textDocument/hover" || message.method === "textDocument/definition") {
-    const word = wordAt(viewed.text, message.params?.position as { line?: number; character?: number } | undefined);
-    const node = word ? viewed.snapshot?.nodes[word] : undefined;
-    const plan = word ? findPlanned(viewed.docs, word) : null;
-    const decl = word ? viewed.index.lookup(word) : { kind: "missing" as const };
-    if (!node && !plan && decl.kind === "missing") return { jsonrpc: "2.0", id: message.id, result: null };
-    const id = word ?? "";
-    const file = node?.file ?? plan?.file ?? (decl.kind !== "missing" ? decl.decl.file : null);
-    const line = node?.line ?? plan?.line ?? (decl.kind !== "missing" ? decl.decl.span.start.line : 1);
-    const col = plan?.col ?? (decl.kind !== "missing" ? decl.decl.span.start.col : 1);
-    if (message.method === "textDocument/definition") {
-      const target = file ? pathToFileURL(file.startsWith("/") ? file : join(root, file)).href : (textDocument?.uri ?? "");
-      return { jsonrpc: "2.0", id: message.id, result: { uri: target, range: rangeOf(line ?? 1, col) } };
-    }
-    const signature = node?.signature ?? plan?.signature;
-    const kind = plan && !node ? `planned ${plan.kind}` : `${node?.kind ?? "id"}${node?.members === "opaque" ? " opaque" : ""}`;
-    const signed = signature ? ` ${signature}` : "";
-    const where = file ? `\n${file}:${line ?? 1}` : "";
-    return { jsonrpc: "2.0", id: message.id, result: { contents: { kind: "plaintext", value: `${kind} ${id}${signed}${where}${evidence(viewed.verdicts, id)}` } } };
-  }
-  if (message.method === "textDocument/completion") {
-    return { jsonrpc: "2.0", id: message.id, result: { isIncomplete: false, items: completions(viewed, message.params?.position as { line?: number } | undefined) } };
-  }
-  if (message.method === "textDocument/references") {
-    const word = wordAt(viewed.text, message.params?.position as { line?: number; character?: number } | undefined);
-    const hits: { uri: string; range: ReturnType<typeof rangeOf> }[] = [];
-    if (word) {
-      for (const doc of viewed.docs) {
-        for (const section of doc.sections) {
-          for (const top of sectionNodes(section)) {
-            walk(top, (node) => {
-              const mentioned = node.id === word || node.refs.some((ref) => ref.target === word);
-              if (!mentioned) return;
-              hits.push({ uri: pathToFileURL(join(root, doc.path)).href, range: rangeOf(node.span.start.line, node.span.start.col) });
-            });
-          }
+
+  private notify(method: string, params: Record<string, unknown>): void {
+    const doc = params.textDocument as { uri?: string; version?: number; text?: string } | undefined;
+    switch (method) {
+      case "textDocument/didOpen":
+        if (doc?.uri !== undefined && doc.text !== undefined) this.buffers.set(filePath(doc.uri), { uri: doc.uri, version: doc.version ?? 0, text: doc.text });
+        this.changed();
+        return;
+      case "textDocument/didChange": {
+        const changes = params.contentChanges as { text?: string; range?: unknown }[] | undefined;
+        // Full sync: the last change without a range is the whole text.
+        const full = [...(changes ?? [])].reverse().find((change) => change.range === undefined && change.text !== undefined);
+        if (doc?.uri !== undefined && full?.text !== undefined) this.buffers.set(filePath(doc.uri), { uri: doc.uri, version: doc.version ?? 0, text: full.text });
+        this.changed();
+        return;
+      }
+      case "textDocument/didClose":
+        if (doc?.uri !== undefined) this.buffers.delete(filePath(doc.uri));
+        this.changed();
+        return;
+      case "textDocument/didSave":
+      case "workspace/didChangeWatchedFiles":
+        this.changed();
+        return;
+      case "$/cancelRequest": {
+        const id = params.id;
+        if ((typeof id === "number" || typeof id === "string") && this.open.has(id) && !this.cancelled.has(id)) {
+          this.cancelled.add(id);
+          this.send({ jsonrpc: "2.0", id, error: { code: ERRORS.cancelled, message: "request cancelled" } });
         }
+        return;
+      }
+      case "exit":
+        this.exitCode = this.shutdown ? 0 : 1;
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** A new generation: the running analysis, if any, is superseded. */
+  private changed(): void {
+    this.generation++;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.publish();
+    }, SETTLE_MS);
+  }
+
+  private analysis(): Promise<Analysis> {
+    if (this.running?.generation === this.generation) return this.running.result;
+    const overlay = new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text]));
+    const result = analyze({ root: this.root, overlay });
+    this.running = { generation: this.generation, result };
+    return result;
+  }
+
+  /** The analysis of the current buffers; waits again when they change meanwhile. */
+  private async current(): Promise<Workspace> {
+    for (;;) {
+      const generation = this.generation;
+      const analysis = await this.analysis();
+      if (generation === this.generation) return workspace(this.root, analysis, new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text])));
+    }
+  }
+
+  private async publish(): Promise<void> {
+    const generation = this.generation;
+    let ws: Workspace;
+    try {
+      ws = await this.current();
+    } catch {
+      return;
+    }
+    if (generation !== this.generation) return;
+    const open = new Set<string>();
+    for (const [abs, buffer] of this.buffers) {
+      open.add(buffer.uri);
+      this.send({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics", params: { uri: buffer.uri, version: buffer.version, diagnostics: diagnosticsFor(ws, this.relative(abs)) } });
+    }
+    for (const uri of this.published) if (!open.has(uri)) this.send({ jsonrpc: "2.0", method: "textDocument/publishDiagnostics", params: { uri, diagnostics: [] } });
+    this.published.clear();
+    for (const uri of open) this.published.add(uri);
+  }
+
+  private relative(abs: string): string {
+    return toPosix(abs.startsWith(`${this.root}/`) ? abs.slice(this.root.length + 1) : abs);
+  }
+
+  private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (method === "initialize") return this.initialize(params);
+    if (method === "shutdown") {
+      this.shutdown = true;
+      return null;
+    }
+    const doc = params.textDocument as { uri?: string; text?: string } | undefined;
+    // A request may carry the buffer text itself (older clients and tests).
+    if (doc?.uri !== undefined && doc.text !== undefined) {
+      const abs = filePath(doc.uri);
+      if (this.buffers.get(abs)?.text !== doc.text) {
+        this.buffers.set(abs, { uri: doc.uri, version: 0, text: doc.text });
+        this.generation++;
       }
     }
-    return { jsonrpc: "2.0", id: message.id, result: hits };
+    const path = doc?.uri ? this.relative(filePath(doc.uri)) : "";
+    const position = params.position as LspPosition | undefined;
+    switch (method) {
+      case "textDocument/diagnostic":
+        return { kind: "full", items: diagnosticsFor(await this.current(), path) };
+      case "textDocument/hover":
+        return position ? hover(await this.current(), path, position) : null;
+      case "textDocument/definition":
+        return position ? definition(await this.current(), path, position) : null;
+      case "textDocument/references":
+        return position ? references(await this.current(), path, position) : [];
+      case "textDocument/documentSymbol":
+        return documentSymbols(await this.current(), path);
+      case "textDocument/completion":
+        return { isIncomplete: false, items: position ? completions(await this.current(), path, position) : [] };
+      case "textDocument/signatureHelp":
+        return position ? signatureHelp(await this.current(), path, position) : null;
+      case "textDocument/codeLens":
+        return codeLenses(await this.current(), path);
+      default:
+        throw new LspError(ERRORS.methodNotFound, `unsupported method \`${method}\``);
+    }
   }
-  return { jsonrpc: "2.0", id: message.id, result: null };
-}
 
-interface View {
-  snapshot: AnalysisSnapshot | null;
-  docs: Document[];
-  index: Index;
-  diagnostics: Diagnostic[];
-  verdicts: Verdict[];
-  text: string;
-  bufferPath: string | null;
-}
-
-interface Finding {
-  range: ReturnType<typeof rangeOf>;
-  severity: number;
-  code?: string;
-  message: string;
-  source: "keylang";
-  data: { verdict: string };
-}
-
-async function view(root: string, textDocument: TextDoc | undefined): Promise<View> {
-  const bufferAbs = textDocument?.uri ? filePath(textDocument.uri) : null;
-  const bufferPath = bufferAbs ? relativeTo(root, bufferAbs) : null;
-  const text = textDocument?.text ?? (bufferAbs && existsSync(bufferAbs) ? readFileSync(bufferAbs, "utf8") : "");
-  const overlay = new Map<string, string>();
-  if (textDocument?.text !== undefined && bufferAbs) overlay.set(bufferAbs, textDocument.text);
-  const analyzed = await analyze({ root, overlay });
-  const snapshot = analyzed.snapshot;
-  const docs = analyzed.docs;
-  const assessed: Assessment = analyzed;
-  return { snapshot, docs, index: assessed.index, diagnostics: assessed.diagnostics, verdicts: assessed.verdicts, text, bufferPath };
-}
-
-function findings(viewed: View, seen: (file: string) => boolean): Finding[] {
-  const items: Finding[] = [];
-  for (const diag of viewed.diagnostics) {
-    if (!seen(diag.file)) continue;
-    const finding: Finding = {
-      range: rangeOf(diag.span.start.line, diag.span.start.col),
-      severity: diag.severity === "error" ? 1 : 2,
-      message: diag.message,
-      source: "keylang",
-      data: { verdict: diag.severity === "error" ? "fail" : "ok" },
+  private initialize(params: Record<string, unknown>): unknown {
+    const folders = params.workspaceFolders as { uri?: string }[] | null | undefined;
+    const hinted = typeof params.rootUri === "string" ? params.rootUri : (folders?.[0]?.uri ?? (typeof params.rootPath === "string" ? pathToFileURL(params.rootPath).href : null));
+    if (hinted) {
+      const path = filePath(hinted);
+      if (existsSync(path)) this.root = findRoot(statSync(path).isDirectory() ? path : dirname(path));
+    } else {
+      this.root = findRoot(this.root);
+    }
+    return {
+      capabilities: {
+        positionEncoding: "utf-16",
+        textDocumentSync: { openClose: true, change: 1, save: { includeText: false } },
+        diagnosticProvider: { interFileDependencies: true, workspaceDiagnostics: false },
+        hoverProvider: true,
+        definitionProvider: true,
+        referencesProvider: true,
+        documentSymbolProvider: true,
+        completionProvider: { triggerCharacters: [" ", "."] },
+        signatureHelpProvider: { triggerCharacters: [" ", "("] },
+        codeLensProvider: { resolveProvider: false },
+      },
+      serverInfo: { name: "keylang" },
     };
-    finding.code = diag.code;
-    items.push(finding);
   }
-  for (const verdict of viewed.verdicts) {
-    if (!seen(verdict.file) || sameFinding(verdict, viewed.diagnostics)) continue;
-    const finding: Finding = {
-      range: rangeOf(verdict.line, verdict.col),
-      severity: verdict.verdict === "fail" ? 1 : verdict.verdict === "unverified" ? 2 : 3,
-      message: verdict.message,
-      source: "keylang",
-      data: { verdict: verdict.verdict },
-    };
-    if (verdict.code) finding.code = verdict.code;
-    items.push(finding);
-  }
-  return items;
 }
 
-function findPlanned(docs: readonly Document[], id: string): { kind: string; signature: string | null; file: string; line: number; col: number } | null {
-  let found: { kind: string; signature: string | null; file: string; line: number; col: number } | null = null;
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind === "planned" && node.id === id) {
-            found = { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
-          }
-        });
-      }
-    }
+class LspError extends Error {
+  readonly code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
   }
-  return found;
-}
-
-function evidence(verdicts: readonly Verdict[], id: string): string {
-  const lines = verdicts.filter((verdict) => verdict.area === id || verdict.message.includes(`\`${id}\``)).map((verdict) => `${verdict.criterion} ${verdict.message}`);
-  return lines.length === 0 ? "" : `\n${lines.join("\n")}`;
-}
-
-function completions(viewed: View, position: { line?: number } | undefined): { label: string; kind: number; detail?: string }[] {
-  const from = position?.line !== undefined ? enclosingId(viewed.docs, viewed.bufferPath, position.line + 1) : null;
-  const labels = new Map<string, { label: string; kind: number; detail?: string }>();
-  for (const [id, node] of Object.entries(viewed.snapshot?.nodes ?? {})) {
-    if (node.kind !== "module" && node.kind !== "fn") continue;
-    if (from && blocksDependency(viewed.docs, from, id)) continue;
-    labels.set(id, { label: id, kind: node.kind === "fn" ? 12 : 2, ...(node.signature ? { detail: node.signature } : {}) });
-  }
-  for (const doc of viewed.docs) {
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind !== "planned" || !node.id) return;
-          if (from && blocksDependency(viewed.docs, from, node.id)) return;
-          labels.set(node.id, { label: node.id, kind: 12, detail: "planned" });
-        });
-      }
-    }
-  }
-  return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : 1));
-}
-
-function enclosingId(docs: readonly Document[], bufferPath: string | null, line: number): string | null {
-  let found: string | null = null;
-  for (const doc of docs) {
-    if (bufferPath && doc.path !== bufferPath) continue;
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.span.start.line !== line) return;
-          const id = node.id ?? node.refs[0]?.target ?? null;
-          if (id) found = id;
-        });
-      }
-    }
-  }
-  return found;
-}
-
-function symbols(docs: readonly Document[], index: Index): { name: string; kind: number; range: ReturnType<typeof rangeOf>; selectionRange: ReturnType<typeof rangeOf> }[] {
-  const out: { name: string; kind: number; range: ReturnType<typeof rangeOf>; selectionRange: ReturnType<typeof rangeOf> }[] = [];
-  const add = (name: string, kind: number, line: number, col: number) => {
-    const range = rangeOf(line, col);
-    out.push({ name, kind, range, selectionRange: range });
-  };
-  for (const decl of index.decls.values()) add(decl.id, decl.kind === "fn" ? 12 : 2, decl.span.start.line, decl.span.start.col);
-  for (const flow of index.flows.values()) add(flow.id, 11, flow.span.start.line, flow.span.start.col);
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind !== "allow" && node.kind !== "deny" && node.kind !== "entry" && node.kind !== "layers" && node.kind !== "no-cycles" && node.kind !== "rule-module") return;
-          const name = node.kind === "rule-module" ? (node.refs[0]?.target ?? "module") : node.kind;
-          add(name, 7, node.span.start.line, node.span.start.col);
-        });
-      }
-    }
-  }
-  return out;
-}
-
-function uriMatches(uri: string | undefined, file: string, root: string): boolean {
-  if (!uri) return false;
-  const path = filePath(uri);
-  const abs = file.startsWith("/") ? file : join(root, file);
-  return path === abs || path.endsWith(`/${file}`);
 }
 
 function filePath(uri: string): string {
-  if (!uri.startsWith("file://")) return uri;
-  return decodeURIComponent(new URL(uri).pathname);
-}
-
-function relativeTo(root: string, path: string): string {
-  if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
-  return path;
-}
-
-function rangeOf(line: number, col: number): { start: { line: number; character: number }; end: { line: number; character: number } } {
-  return { start: { line: Math.max(0, line - 1), character: Math.max(0, col - 1) }, end: { line: Math.max(0, line - 1), character: Math.max(0, col) } };
-}
-
-function wordAt(text: string, position: { line?: number; character?: number } | undefined): string | null {
-  if (!position || position.line === undefined || position.character === undefined) return null;
-  const line = text.split("\n")[position.line] ?? "";
-  const at = position.character;
-  for (const found of line.matchAll(/[\p{L}_][\p{L}\p{N}_.-]*/gu)) {
-    const start = found.index ?? 0;
-    if (at >= start && at <= start + found[0].length) return found[0];
-  }
-  return null;
-}
-
-function send(write: NodeJS.WritableStream, message: Rpc): void {
-  const json = JSON.stringify(message);
-  write.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
+  return uri.startsWith("file:") ? fileURLToPath(uri) : resolve(uri);
 }
