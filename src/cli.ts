@@ -11,7 +11,7 @@ import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within } from "./analyze.ts";
-import { diffMap, generateMap, writeMap } from "./map.ts";
+import { diffMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { serveLsp } from "./lsp.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -141,9 +141,11 @@ async function cmdInit(dir: string): Promise<number> {
 
 async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   const root = join(process.cwd(), dir);
-  const config = loadConfig(root);
-  if (config.languages.length === 0) throw new Error(`no supported source files under ${dir}; run \`keylang init\``);
-  const r = await generateMap(config);
+  // `map --check` only reads; `map` also leaves the fact cache for the next run.
+  const analyzed = await analyze({ root, specs: [], withoutEvidence: true, persistFacts: !checkOnly });
+  const config = analyzed.config;
+  const r = analyzed.map;
+  if (r === null) throw new Error(`no supported source files under ${dir}; run \`keylang init\``);
   const s = r.graph.stats;
   for (const w of r.graph.warnings) process.stderr.write(`warning: ${w}\n`);
   const reportConflict = (p: string): void => {

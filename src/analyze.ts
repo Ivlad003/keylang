@@ -15,8 +15,6 @@ import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
 import { loadTraces } from "./trace-evidence.ts";
 
-export { filesToReextract } from "./fact-cache.ts";
-
 export interface AnalysisRequest {
   /** Repository root (directory of `keylang.json`). Absolute. */
   root: string;
@@ -28,6 +26,10 @@ export interface AnalysisRequest {
   display?: (abs: string) => string;
   /** Check the specs on their own, without the repository's code (examples, slides). */
   withoutCode?: boolean;
+  /** Leave test reports and traces out (`keylang map` needs only the snapshot). */
+  withoutEvidence?: boolean;
+  /** Write the fact cache for the next process (`keylang map`). */
+  persistFacts?: boolean;
 }
 
 export interface Analysis extends Assessment {
@@ -42,7 +44,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const config = loadConfig(root);
   const display = request.display ?? ((abs: string) => toPosix(relative(root, abs)));
   const overlay = request.overlay ?? new Map<string, string>();
-  const map = config.languages.length > 0 && request.withoutCode !== true ? await generateMap(config) : null;
+  const map = config.languages.length > 0 && request.withoutCode !== true ? await generateMap(config, { persist: request.persistFacts === true }) : null;
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
@@ -66,8 +68,9 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   }
   docs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   // Reports and traces are evidence about code; specs checked on their own have none.
-  const testFiles = snapshot ? evidenceFiles(config, "tests") : null;
-  const traceFiles = snapshot ? evidenceFiles(config, "trace") : null;
+  const evidence = snapshot !== null && request.withoutEvidence !== true;
+  const testFiles = evidence ? evidenceFiles(config, "tests") : null;
+  const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
   const assessment = assess(docs, snapshot, {
     tests: testFiles === null ? null : loadReports(root, testFiles),
     traces: traceFiles === null ? null : loadTraces(root, traceFiles),

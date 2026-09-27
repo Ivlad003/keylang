@@ -139,7 +139,7 @@ test("tests: a passing test proves its invariant, a failing one fails, none is u
   const area = "invariant total is the sum of the lines";
   const none = results(dir);
   assert.equal(none.status, 0);
-  assert.match(row(none.rows, "tests", area)!.evidence, /unverified .*: no report for tests\/purchase\.test\.ts "computes total"/);
+  assert.match(row(none.rows, "tests", area)!.evidence, /unverified .*: no report \(tests\/purchase\.test\.ts "computes total"\)/);
   const snapshot = snapshotOf(dir);
   report(dir, snapshot, [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass" }]);
   const pass = results(dir);

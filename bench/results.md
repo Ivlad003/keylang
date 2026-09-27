@@ -6,6 +6,22 @@
 2. `keylang check` на згенерованій карті;
 3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
 
+## M3 — 2026-09-27
+
+### Кеш фактів (тікет 23)
+
+`keylang map` лишає `.keylang/cache/facts.json`: факти кожного файла за вмістом, версією екстрактора й граматик. `check`, `map --check` і `lsp` його читають, але не пишуть; кеш іншої версії чи зіпсований ігнорується. Граф і знімок щоразу будуються з усіх фактів, тож зміна експорту в B перерезолвлює імпортери A (`tests/analyze.test.ts`).
+
+storefront-next-template (898 файлів, копія з `bench/run.sh`), Node v24.20.0, 8 ядер, `check` з одним зміненим `.tsx`, три запуски:
+
+| Режим | мс |
+|---|---|
+| `check` без кешу | 4784, 4933, 4847 |
+| `check` із кешем від `map`, один файл змінено | 2131, 1822, 1828 |
+| `map` без кешу / `map --check` з кешем | 5878 / 1973 |
+
+Решта ~1.8 с — читання й хешування всіх файлів, побудова графа, знімка й карти; tree-sitter працює лише для зміненого файла. Кеш — 4.5 МБ.
+
 ## M2 — 2026-09-27
 
 Реальний потік keylang — `keylang/flows/check.md`: `main → run → cmdCheck → analyze → (generateMap, parse, assess → (check, evaluateRules, evaluateFlows)) → writeCheck`, два `invariant` із `test`. Порядок перевірки: `npm test` (репортер `node:test` пише `.keylang/reports/node-test.json`, тест `@flow check` пише `.keylang/trace/check.jsonl`), потім `node bin/keylang.js check --strict`:

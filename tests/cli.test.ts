@@ -452,6 +452,33 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
 
 // RV04: a hand-written map file has no generator marker. `map` must refuse
 // before writing or deleting anything, and `--check` must not call that "stale".
+test("map leaves a fact cache that check reads but never writes; a foreign cache is rebuilt", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cache = join(dir, ".keylang/cache/facts.json");
+  assert.equal(keylang(dir, ["check"]).status, 0);
+  assert.equal(existsSync(cache), false, "check writes no cache");
+  assert.equal(keylang(dir, ["map", "--check"]).status, 1);
+  assert.equal(existsSync(cache), false, "map --check writes no cache");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const stored = JSON.parse(readFileSync(cache, "utf8"));
+  assert.equal(stored.schema, 1);
+  assert.deepEqual(Object.keys(stored.files).sort(), ["src/app/checkout.ts", "src/domain/order.ts", "src/infra/db.ts"]);
+  const before = readFileSync(cache, "utf8");
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1);
+  assert.match(checked.stdout, /K102/);
+  assert.equal(readFileSync(cache, "utf8"), before);
+  writeFileSync(cache, JSON.stringify({ schema: 1, version: "other", files: { "src/infra/db.ts": { sha256: "x", facts: {} } } }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.notEqual(JSON.parse(readFileSync(cache, "utf8")).version, "other");
+  writeFileSync(cache, "{ broken");
+  const rebuilt = keylang(dir, ["map"]);
+  assert.equal(rebuilt.status, 0, rebuilt.stderr);
+  assert.doesNotMatch(rebuilt.stderr, /cache/i);
+});
+
 test("map refuses to overwrite a manual map file", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));

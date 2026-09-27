@@ -371,7 +371,7 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function grammarVersions(): Record<string, string> {
+export function grammarVersions(): Record<string, string> {
   const require = createRequire(import.meta.url);
   const version = (name: string): string => {
     try {

@@ -111,7 +111,7 @@ export function matchTest(cases: readonly TestCase[] | null, file: string, name:
   if (cases === null) return { verdict: "unverified", message: "no report (check.tests is not configured)", runId: null };
   const inFile = cases.filter((item) => item.file === file);
   const hits = inFile.filter((item) => item.name === name || (item.suite !== "" && `${item.suite} > ${item.name}` === name));
-  if (hits.length === 0) return { verdict: "unverified", message: `no report for ${file} "${name}"`, runId: null };
+  if (hits.length === 0) return { verdict: "unverified", message: "no report", runId: null };
   if (hits.length > 1) {
     const where = [...new Set(hits.map((hit) => (hit.suite ? `${hit.suite} > ${hit.name}` : `${hit.name} (${hit.report})`)))].sort();
     return { verdict: "unverified", message: `ambiguous: ${where.join(", ")}`, runId: null };

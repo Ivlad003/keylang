@@ -7,8 +7,8 @@ import type { FileFacts } from "./extract/facts.ts";
 import { extractTs } from "./extract/ts.ts";
 import { isGeneratedMap, renderMap } from "./emit.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
-import { cachedFacts } from "./fact-cache.ts";
-import { buildSnapshot, sha256, type AnalysisSnapshot } from "./snapshot.ts";
+import { FactCache } from "./fact-cache.ts";
+import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot } from "./snapshot.ts";
 
 export interface MapResult {
   graph: Graph;
@@ -17,9 +17,12 @@ export interface MapResult {
   index: AnalysisSnapshot;
   /** Files left out because they fall outside guessed layers (docs, scripts). */
   skipped: number;
+  /** Source files whose facts were reused from a cache, and files parsed in this run. */
+  facts: { reused: number; extracted: number };
 }
 
-export async function generateMap(config: Config): Promise<MapResult> {
+/** `persist` writes the fact cache for the next process (`keylang map` only). */
+export async function generateMap(config: Config, options: { persist?: boolean } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
   const all = sourceFiles(config);
@@ -32,14 +35,16 @@ export async function generateMap(config: Config): Promise<MapResult> {
   }
   const skipped = config.guessed ? all.filter((p) => placeFile(config, p) === null) : [];
   const skippedSet = new Set(skipped);
+  const cache = FactCache.open(config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, grammars: grammarVersions() }));
   const facts: FileFacts[] = [];
   for (const p of all) {
     if (skippedSet.has(p)) continue;
     const src = sources.get(p);
     if (src === undefined) continue;
     const hash = sha256(src);
-    facts.push(await cachedFacts(`${config.root}\0${p}`, hash, () => extractTs(p, src)));
+    facts.push(await cache.facts(p, hash, () => extractTs(p, src)));
   }
+  if (options.persist) cache.save();
   // An explicitly excluded file inside a layer is a module with unknown contents.
   const excluded = excludedSourceFiles(config).filter((p) => placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
@@ -53,7 +58,7 @@ export async function generateMap(config: Config): Promise<MapResult> {
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
   ]);
-  return { graph, files: renderMap(index, mapDir), index, skipped: skipped.length };
+  return { graph, files: renderMap(index, mapDir), index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted } };
 }
 
 function opaqueFacts(path: string): FileFacts {

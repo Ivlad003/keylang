@@ -14,13 +14,12 @@
     - snapshot map.snapshot
     - test-report check.test-report
     - trace-evidence check.trace-evidence
-    - fact-cache map.fact-cache
-    - type [AnalysisRequest](../../src/analyze.ts#L20)
-    - type [Analysis](../../src/analyze.ts#L33) extends Assessment
-    - fn [analyze](../../src/analyze.ts#L40) (request: AnalysisRequest) → Promise<Analysis>
+    - type [AnalysisRequest](../../src/analyze.ts#L18)
+    - type [Analysis](../../src/analyze.ts#L35) extends Assessment
+    - fn [analyze](../../src/analyze.ts#L42) (request: AnalysisRequest) → Promise<Analysis>
       - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, map.analyze.within, lang.parser.parse, base.config.evidenceFiles, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
-    - fn [findRoot](../../src/analyze.ts#L79) (start: string) → string
-    - fn [within](../../src/analyze.ts#L89) (abs: string, dir: string) → boolean
+    - fn [findRoot](../../src/analyze.ts#L82) (start: string) → string
+    - fn [within](../../src/analyze.ts#L92) (abs: string, dir: string) → boolean
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - snapshot map.snapshot
@@ -42,9 +41,16 @@
     - fn [renderDecl](../../src/emit.ts#L102) (snapshot: AnalysisSnapshot, mapDir: string, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf
   - module [fact-cache](../../src/fact-cache.ts#L1)
+    - node external.node
     - facts extract.facts
-    - fn [cachedFacts](../../src/fact-cache.ts#L7) (path: string, hash: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
-    - fn [filesToReextract](../../src/fact-cache.ts#L17) (changed: readonly string[], edges: readonly { from: string; to: string }[]) → string[]
+    - type [StoredFacts](../../src/fact-cache.ts#L17) = Omit<FileFacts, "exports"> & { exports: string[] } <!-- internal -->
+    - type [Stored](../../src/fact-cache.ts#L19) <!-- internal -->
+    - module [FactCache](../../src/fact-cache.ts#L27)
+      - fn [constructor](../../src/fact-cache.ts#L36) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+      - fn [open](../../src/fact-cache.ts#L43) (root: string, version: string) → FactCache
+        - calls map.fact-cache.FactCache
+      - fn [facts](../../src/fact-cache.ts#L57) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [save](../../src/fact-cache.ts#L76) () → void
   - module [graph](../../src/graph.ts#L1)
     - node external.node
     - config base.config
@@ -102,15 +108,15 @@
     - fact-cache map.fact-cache
     - snapshot map.snapshot
     - type [MapResult](../../src/map.ts#L13)
-    - fn [generateMap](../../src/map.ts#L22) (config: Config) → Promise<MapResult>
-      - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.cachedFacts, extract.ts.extractTs, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
-    - fn [opaqueFacts](../../src/map.ts#L59) (path: string) → FileFacts <!-- internal -->
-    - type [MapDiff](../../src/map.ts#L63)
-    - fn [mapConflicts](../../src/map.ts#L71) (config: Config, r: MapResult) → string[]
+    - fn [generateMap](../../src/map.ts#L25) (config: Config, options: { persist?: boolean } = {}) → Promise<MapResult>
+      - calls base.config.sourceFiles, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.snapshot.grammarVersions, extract.ts.extractTs, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.emit.renderMap
+    - fn [opaqueFacts](../../src/map.ts#L64) (path: string) → FileFacts <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L68)
+    - fn [mapConflicts](../../src/map.ts#L76) (config: Config, r: MapResult) → string[]
       - calls map.emit.isGeneratedMap
-    - fn [writeMap](../../src/map.ts#L85) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
+    - fn [writeMap](../../src/map.ts#L90) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
-    - fn [diffMap](../../src/map.ts#L115) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L120) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.emit.isGeneratedMap
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node
@@ -136,4 +142,4 @@
     - fn [compareCoverage](../../src/snapshot.ts#L366) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       - calls map.snapshot.cmp
     - fn [cmp](../../src/snapshot.ts#L370) (a: string, b: string) → number <!-- internal -->
-    - fn [grammarVersions](../../src/snapshot.ts#L374) () → Record<string, string> <!-- internal -->
+    - fn [grammarVersions](../../src/snapshot.ts#L374) () → Record<string, string>
