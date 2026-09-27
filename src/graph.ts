@@ -20,9 +20,10 @@ export interface Graph {
 }
 
 export interface Gap {
-  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file";
+  kind: "unresolved-import" | "dynamic-call" | "unresolved-call" | "parse-error" | "unassigned-file" | "unsupported";
   file: string;
   line: number;
+  col: number;
   reason: string;
   /** Module or function that contains the gap, when there is one. */
   source: string | null;
@@ -57,6 +58,7 @@ export interface Dep {
   alias: string;
   target: string;
   line: number;
+  col: number;
   reexport: boolean;
 }
 
@@ -73,6 +75,7 @@ export interface Fn {
 export interface Call {
   target: string;
   line: number;
+  col: number;
 }
 
 export interface TypeNode {
@@ -167,7 +170,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       warnings.push(`${f.path}: same module ID as ${m.path} (${id}); merged`);
     }
     byFile.set(f.path, { facts: f, module: m });
-    if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, reason: "outside any layer", source: m.id });
+    if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, reason: "outside any layer", source: m.id });
+    for (const hole of f.unsupported) {
+      gaps.push({ kind: "unsupported", file: f.path, line: hole.line, col: hole.col, reason: hole.reason, source: m.id });
+    }
   }
 
   // 2. Declarations.
@@ -179,7 +185,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     if (facts.completeness === "opaque") {
       markOpaque(module);
       if (facts.parseError) {
-        gaps.push({ kind: "parse-error", file: facts.path, line: facts.parseError.line, reason: facts.parseError.reason, source: module.id });
+        gaps.push({ kind: "parse-error", file: facts.path, line: facts.parseError.line, col: 1, reason: facts.parseError.reason, source: module.id });
       }
     }
   }
@@ -210,7 +216,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         stats.importsUnresolved++;
         const reason = `unresolved import \`${imp.source}\``;
         warnings.push(`${facts.path}:${imp.line}: ${reason}`);
-        gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, reason, source: module.id });
+        gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, reason, source: module.id });
         continue;
       }
       for (const b of imp.bindings) {
@@ -233,7 +239,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
       if (module.deps.some((d) => d.target === target.id)) continue;
       aliases.set(alias, target.id);
-      module.deps.push({ alias, target: target.id, line: imp.line, reexport: imp.reexport });
+      module.deps.push({ alias, target: target.id, line: imp.line, col: imp.col, reexport: imp.reexport });
       stats.deps++;
     }
   }
@@ -291,22 +297,29 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (!fn) continue;
         const seen = new Set<string>();
         for (const c of d.calls) {
+          const head = c.callee.split(".")[0]!;
+          const shadow = d.shadows.find((s) => s.name === head);
+          if (shadow && head !== "this") {
+            stats.callsUnresolved++;
+            const why = shadow.kind === "parameter" ? "shadowed by parameter" : "shadowed by local";
+            gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, reason: `${why} \`${c.callee}\``, source: fn.id });
+            continue;
+          }
           const target = resolveCallee(c.callee, cls);
           if (!target) {
-            const head = c.callee.split(".")[0]!;
             if (locals.get(head)?.module?.layer === EXTERNAL || JS_GLOBALS.has(head)) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
               stats.callsDynamic++;
-              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, reason: `call through a local value \`${c.callee}\``, source: fn.id });
+              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, reason: `call through a local value \`${c.callee}\``, source: fn.id });
             } else {
               stats.callsUnresolved++;
-              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, reason: `unresolved call \`${c.callee}\``, source: fn.id });
+              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, reason: `unresolved call \`${c.callee}\``, source: fn.id });
             }
             continue;
           }
           if (target === fn.id || seen.has(target)) continue;
           seen.add(target);
-          fn.calls.push({ target, line: c.line });
+          fn.calls.push({ target, line: c.line, col: c.col });
           stats.callsResolved++;
         }
       }

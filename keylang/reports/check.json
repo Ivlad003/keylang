@@ -1,0 +1,9 @@
+{
+  "tests": [
+    {
+      "file": "tests/cli.test.ts",
+      "name": "check shop reports the dangling slide reference",
+      "status": "pass"
+    }
+  ]
+}

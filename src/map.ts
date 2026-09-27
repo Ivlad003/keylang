@@ -7,6 +7,7 @@ import type { FileFacts } from "./extract/facts.ts";
 import { extractTs } from "./extract/ts.ts";
 import { isGeneratedMap, renderMap } from "./emit.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
+import { cachedFacts } from "./fact-cache.ts";
 import { buildSnapshot, sha256, type AnalysisSnapshot } from "./snapshot.ts";
 
 export interface MapResult {
@@ -36,7 +37,8 @@ export async function generateMap(config: Config): Promise<MapResult> {
     if (skippedSet.has(p)) continue;
     const src = sources.get(p);
     if (src === undefined) continue;
-    facts.push(await extractTs(p, src));
+    const hash = sha256(src);
+    facts.push(await cachedFacts(`${config.root}\0${p}`, hash, () => extractTs(p, src)));
   }
   const graph = buildGraph(config, facts);
   const mapDir = `${config.dir}/map`;

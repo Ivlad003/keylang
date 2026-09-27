@@ -20,17 +20,17 @@ function keylang(cwd: string, args: string[]): { status: number | null; stdout: 
 test("check shop reports the dangling slide reference", () => {
   const o = keylang(root, ["check", "examples/shop"]);
   assert.equal(o.status, 1);
-  assert.equal(
-    o.stdout,
-    "examples/shop/map.md:27:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?)\n",
-  );
-  assert.equal(o.stderr, "3 file(s): 1 error(s), 0 warning(s)\n");
+  assert.match(o.stdout, /examples\/shop\/map\.md:27:13: K001 dangling reference `domain\.aggregate`/);
+  assert.match(o.stdout, /unverified no snapshot/);
+  assert.doesNotMatch(o.stdout, /K103/);
+  assert.match(o.stderr, /1 fail, 1 unverified, 0 ok/);
 });
 
 test("check shop-fixed is clean", () => {
   const o = keylang(root, ["check", "examples/shop-fixed"]);
   assert.equal(o.status, 0, o.stdout);
-  assert.equal(o.stdout, "");
+  assert.match(o.stdout, /unverified no snapshot/);
+  assert.doesNotMatch(o.stdout, /K001|K101|K102|K103/);
 });
 
 // M0 criterion: the Markdown from the slides, verbatim, parses; both slide
@@ -41,7 +41,8 @@ test("check verbatim slide", () => {
   assert.equal(o.status, 1);
   assert.match(o.stdout, /slide\.md:12:11: K005 unexpected arguments after layer `options`/);
   assert.match(o.stdout, /slide\.md:15:13: K001 dangling reference `domain\.aggregate`/);
-  assert.match(o.stdout, /slide\.md:2:5: K103 absence: module `domain\.orderAggregate`/);
+  assert.match(o.stdout, /unverified no snapshot/);
+  assert.doesNotMatch(o.stdout, /K103/);
   assert.equal(o.stdout.trimEnd().split("\n").length, 3, o.stdout);
 });
 
@@ -283,9 +284,9 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   assert.ok(missing, JSON.stringify(coverage));
   assert.equal(missing.line > 0, true);
   assert.match(missing.reason, /missing\.ts/);
-  const local = coverage.find((c) => c.kind === "dynamic-call" && c.file === "src/app/checkout.ts" && c.reason.includes("`save`"));
+  const local = coverage.find((c) => c.file === "src/app/checkout.ts" && c.reason.includes("`save`"));
   assert.ok(local, JSON.stringify(coverage.filter((c) => c.file === "src/app/checkout.ts")));
-  assert.match(local.reason, /local value/);
+  assert.match(local.reason, /shadowed by parameter/);
   assert.equal(index.nodes["domain.empty"].members, "complete");
   assert.equal(index.nodes["domain.bad"].members, "opaque");
   const parseError = coverage.find((c) => c.kind === "parse-error" && c.file === "src/domain/bad.ts");
@@ -434,13 +435,242 @@ test("check reports rule divergences after a forbidden import", (t) => {
   assert.equal(keylang(dir, ["map"]).status, 0);
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1);
-  assert.equal(
-    o.stdout,
-    [
-      "keylang/map/domain.md:7:10: K102 divergence: `domain.order` depends on `infra.db`, which is denied by `deny`",
-      "keylang/map/domain.md:8:16: K101 divergence: `domain.order` depends on `app.checkout` (layers say `domain < app`, dependencies must point down)",
-      "keylang/rules.md:8:1: K105 divergence: dependency cycle app.checkout → domain.order → app.checkout",
-      "",
-    ].join("\n"),
+  assert.match(o.stdout, /src\/domain\/order\.ts:\d+:\d+: K102 divergence: `domain\.order` depends on `infra\.db`/);
+  assert.match(o.stdout, /src\/domain\/order\.ts:\d+:\d+: K101 divergence: `domain\.order` depends on `app\.checkout`/);
+  assert.match(o.stdout, /K105 divergence: dependency cycle app\.checkout → domain\.order → app\.checkout/);
+});
+
+test("check sees a new denied import without writing the map", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const mapBefore = readFileSync(join(dir, "keylang/map/domain.md"), "utf8");
+  const indexBefore = readFileSync(join(dir, ".keylang/index.json"), "utf8");
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /K102/);
+  assert.match(checked.stdout, /domain\.order/);
+  assert.match(checked.stdout, /infra\.db/);
+  assert.equal(readFileSync(join(dir, "keylang/map/domain.md"), "utf8"), mapBefore);
+  assert.equal(readFileSync(join(dir, ".keylang/index.json"), "utf8"), indexBefore);
+});
+
+test("a literal import() inside a function is a denied dependency", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(
+    join(dir, "src/domain/order.ts"),
+    "export async function load(): Promise<void> {\n  const { save } = await import(\"../infra/db.ts\");\n  save({});\n}\n",
   );
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /src\/domain\/order\.ts:\d+:\d+: K102/);
+});
+
+test("a computed import specifier is coverage, not an edge", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), "export async function load(name: string): Promise<unknown> {\n  return import(`./${name}.ts`);\n}\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  const hole = (index.coverage as { reason: string; file: string; line: number }[]).find((item) => item.reason === "computed specifier");
+  assert.ok(hole, JSON.stringify(index.coverage));
+  assert.equal(hole.file, "src/domain/order.ts");
+  assert.equal(hole.line > 0, true);
+  const edges = index.edges as { reason?: string; target: string | null }[];
+  assert.equal(edges.some((edge) => edge.reason === "computed specifier"), false);
+});
+
+test("unresolved import makes deny unverified unless --strict", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { missing } from "./missing.ts";\n');
+  const loose = keylang(dir, ["check"]);
+  assert.equal(loose.status, 0, loose.stdout + loose.stderr);
+  assert.match(loose.stdout, /unverified/);
+  assert.match(loose.stdout, /missing\.ts/);
+  assert.match(loose.stderr, /unverified/);
+  const strict = keylang(dir, ["check", "--strict"]);
+  assert.equal(strict.status, 1, strict.stderr);
+  assert.match(strict.stdout, /unverified/);
+});
+
+test("removing the last function of a complete module is K001", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/use.md"), "# flow use\n\n- step domain.order.createOrder\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  writeFileSync(join(dir, "src/domain/order.ts"), "export const marker = 1;\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /K001/);
+  assert.match(checked.stdout, /domain\.order\.createOrder/);
+});
+
+test("a shadowed parameter is not a confirmed call edge", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), "export function target(): number { return 1; }\nexport function run(target: () => void): void { target(); }\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  const edges = index.edges as { source: string; target: string | null; resolution: string; reason?: string }[];
+  assert.equal(edges.some((edge) => edge.source.endsWith(".run") && edge.target?.endsWith(".target") && edge.resolution === "resolved"), false);
+  const hole = (index.coverage as { source: string | null; reason: string }[]).find((item) => item.reason.includes("shadowed by parameter"));
+  assert.ok(hole);
+});
+
+test("exports lists extra public names and a missing one", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  appendFileSync(
+    join(dir, "src/domain/order.ts"),
+    "function extra() { return 1; }\nexport { extra };\nexport const secretFlag = true;\nexport class ExtraClass {}\nexport type ExtraType = string;\n",
+  );
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- layers domain < app\n  - infra\n- module domain.order\n  - exports total, notAName\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  for (const name of ["extra", "secretFlag", "ExtraClass", "ExtraType", "createOrder"]) {
+    assert.match(checked.stdout, new RegExp(`exports \`${name}\``));
+  }
+  assert.match(checked.stdout, /does not export `notAName`/);
+});
+
+test("no-cycles reports the component that contains d", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-cycle-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`);
+  writeFileSync(join(dir, "src/a.ts"), 'import "./b.ts";\nimport "./d.ts";\nexport const a = 1;\n');
+  writeFileSync(join(dir, "src/b.ts"), 'import "./c.ts";\nexport const b = 1;\n');
+  writeFileSync(join(dir, "src/c.ts"), 'import "./a.ts";\nexport const c = 1;\n');
+  writeFileSync(join(dir, "src/d.ts"), 'import "./c.ts";\nexport const d = 1;\n');
+  mkdirSync(join(dir, "keylang"), { recursive: true });
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- module main.d\n  - no-cycles\n");
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /K105/);
+  assert.match(checked.stdout, /main\.d/);
+});
+
+test("entry does not treat a sibling as reachable", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-entry-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src/pkg"), { recursive: true });
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`);
+  writeFileSync(join(dir, "src/pkg/live.ts"), "export const live = 1;\n");
+  writeFileSync(join(dir, "src/pkg/dead.ts"), "export const dead = 1;\n");
+  mkdirSync(join(dir, "keylang"), { recursive: true });
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- entry\n  - main.pkg.live\n");
+  const checked = keylang(dir, ["check"]);
+  assert.match(checked.stdout, /K103/);
+  assert.match(checked.stdout, /main\.pkg\.dead/);
+  assert.doesNotMatch(checked.stdout, /main\.pkg\.live[\s\S]*K103[\s\S]*main\.pkg\.live/);
+});
+
+test("explain-edge prints the import and writes nothing", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const before = readdirSync(dir);
+  const explained = keylang(dir, ["check", "--explain-edge", "app.checkout", "domain.order"]);
+  assert.equal(explained.status, 0, explained.stderr);
+  assert.match(explained.stdout, /import resolved syntactic/);
+  assert.match(explained.stdout, /src\/app\/checkout\.ts:\d+:\d+/);
+  assert.deepEqual(readdirSync(dir), before);
+  const unknown = keylang(dir, ["check", "--explain-edge", "no.such", "domain.order"]);
+  assert.equal(unknown.status, 2, unknown.stderr);
+});
+
+test("explain covers every diagnostic code", () => {
+  for (const code of ["K001", "K002", "K003", "K004", "K005", "K006", "K101", "K102", "K103", "K104", "K105"]) {
+    const explained = keylang(root, ["explain", code]);
+    assert.equal(explained.status, 0, explained.stderr);
+    assert.match(explained.stdout, /example:/);
+    assert.match(explained.stdout, /fix:/);
+  }
+  assert.match(keylang(root, ["explain", "K001"]).stdout, /planned/);
+  assert.equal(keylang(root, ["explain", "NOPE"]).status, 2);
+});
+
+test("planned id is unverified and an unknown id stays K001", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- planned fn domain.order.refund (order: Order) → Promise<void>\n- step domain.order.refund\n");
+  const planned = keylang(dir, ["check"]);
+  assert.doesNotMatch(planned.stdout, /K001 dangling reference `domain\.order\.refund`/);
+  assert.match(planned.stdout, /planned/);
+  writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- step domain.order.refund\n");
+  const missing = keylang(dir, ["check"]);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stdout, /K001/);
+  assert.match(missing.stdout, /domain\.order\.refund/);
+  assert.match(missing.stdout, /planned/);
+});
+
+test("an incomplete trace is unverified and a finished trace can fail a missing step", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const snapshot = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).snapshotId as string;
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  mkdirSync(join(dir, "keylang/trace"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/pay.md"), "# flow pay\n\n- trigger domain.order.total\n  - step domain.order.createOrder\n");
+  writeFileSync(join(dir, "keylang/trace/pay.jsonl"), `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: "other" })}\n{"event":"meta","complete":true,"dropped":0}\n`);
+  const cfg = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  cfg.check = { trace: "keylang/trace/pay.jsonl" };
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(cfg, null, 2)}\n`);
+  const stale = keylang(dir, ["check"]);
+  assert.match(stale.stdout, /stale trace/);
+  writeFileSync(
+    join(dir, "keylang/trace/pay.jsonl"),
+    `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":1}\n`,
+  );
+  const partial = keylang(dir, ["check"]);
+  assert.match(partial.stdout, /incomplete trace|unverified/);
+  writeFileSync(
+    join(dir, "keylang/trace/pay.jsonl"),
+    `${JSON.stringify({ flow: "pay", symbolId: "domain.order.total", event: "start", snapshotId: snapshot })}\n{"event":"meta","complete":true,"dropped":0}\n`,
+  );
+  const missing = keylang(dir, ["check"]);
+  assert.match(missing.stdout, /trace fail missing step/);
+});
+
+test("the in-repo check flow reports separate evidence", () => {
+  const checked = keylang(root, ["check"]);
+  assert.match(checked.stdout, /ID ok/);
+  assert.match(checked.stdout, /static ok/);
+  assert.match(checked.stdout, /tests ok/);
+  assert.match(checked.stdout, /trace ok/);
+  const again = keylang(root, ["check"]);
+  assert.equal(again.status, checked.status);
+  assert.equal(again.stdout, checked.stdout);
+});
+
+test("check formats share the exit code", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\n');
+  const human = keylang(dir, ["check", "--format", "human"]);
+  const json = keylang(dir, ["check", "--format", "json"]);
+  const sarif = keylang(dir, ["check", "--format", "sarif"]);
+  const github = keylang(dir, ["check", "--format", "github"]);
+  assert.equal(human.status, 1);
+  assert.equal(json.status, human.status);
+  assert.equal(sarif.status, human.status);
+  assert.equal(github.status, human.status);
+  const body = JSON.parse(json.stdout);
+  assert.ok(Array.isArray(body.results));
+  assert.ok(body.results.some((row: { verdict: string; code: string }) => row.verdict === "fail" && row.code === "K102"));
+  const report = JSON.parse(sarif.stdout);
+  assert.equal(report.version, "2.1.0");
+  assert.equal(report.runs[0].tool.driver.name, "keylang");
+  assert.match(github.stdout, /::error /);
+  const bad = keylang(dir, ["check", "--format", "xml"]);
+  assert.equal(bad.status, 2);
 });

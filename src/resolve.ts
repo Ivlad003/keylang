@@ -113,6 +113,42 @@ export function check(docs: readonly Document[]): { index: Index; diagnostics: D
   return { index, diagnostics: diags };
 }
 
+/**
+ * Markdown treats a member-less module as opaque (Р13). A snapshot can say the
+ * module was fully indexed (`complete`) or that its contents are unknown (`opaque`).
+ */
+export function refineOpacity(
+  docs: readonly Document[],
+  index: Index,
+  nodes: Record<string, { kind: string; members?: string }> | null,
+): { added: Diagnostic[]; unverified: { file: string; line: number; col: number; message: string }[] } {
+  if (!nodes) return { added: [], unverified: [] };
+  const added: Diagnostic[] = [];
+  const unverified: { file: string; line: number; col: number; message: string }[] = [];
+  for (const doc of docs) {
+    for (const section of doc.sections) {
+      for (const node of sectionNodes(section)) {
+        walk(node, (item) => {
+          for (const ref of item.refs) {
+            const hit = index.lookup(ref.target);
+            if (hit.kind !== "opaque") continue;
+            const members = nodes[hit.decl.id]?.members;
+            if (members === "opaque") {
+              unverified.push({ file: doc.path, line: ref.span.start.line, col: ref.span.start.col, message: `opaque module \`${hit.decl.id}\`` });
+            } else if (members === "complete") {
+              let msg = `dangling reference \`${ref.target}\``;
+              const suggestion = index.suggest(ref.target);
+              if (suggestion !== undefined) msg += ` (did you mean \`${suggestion}\`?)`;
+              added.push(diagnostic("K001", doc.path, ref.span, msg));
+            }
+          }
+        });
+      }
+    }
+  }
+  return { added, unverified };
+}
+
 function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnostic[]): void {
   const prev = map.get(decl.id);
   if (!prev) {
@@ -139,6 +175,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[])
       let msg = `dangling reference \`${r.target}\``;
       const s = index.suggest(r.target);
       if (s !== undefined) msg += ` (did you mean \`${s}\`?)`;
+      msg += "; declare `planned` if this is an intention";
       diags.push(diagnostic("K001", doc.path, r.span, msg));
     }
   }

@@ -68,6 +68,8 @@ export type NodeKind =
   | "test"
   // wiring
   | "wire"
+  /** `planned <kind> <id> <signature>` — an intention, not an implementation. */
+  | "planned"
   /** `alias path` under `wire`. */
   | "wire-dep"
   | "compose"

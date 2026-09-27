@@ -9,9 +9,15 @@ import { compareDiagnostics, formatDiagnostic, isError, type Diagnostic } from "
 import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, type Document, type Node } from "./ir.ts";
+import { analyze } from "./analyze.ts";
 import { diffMap, generateMap, writeMap } from "./map.ts";
-import { check } from "./resolve.ts";
-import { checkRules } from "./rules.ts";
+import { check, refineOpacity } from "./resolve.ts";
+import { explainCode } from "./explain.ts";
+import { evaluateFlows } from "./flows.ts";
+import { serveLsp } from "./lsp.ts";
+import { evaluateRules } from "./rules.ts";
+import type { AnalysisSnapshot } from "./snapshot.ts";
+import { formatVerdict, type Verdict } from "./verdict.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -21,13 +27,19 @@ Commands:
   init [dir]                Detect languages and layers, write keylang.json, build the map
   map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json
                             (--check: fail if the committed map is stale)
-  check [paths…]            Resolve IDs and check rules over all *.md (default: ./keylang)
+  explain <code>            Print why a diagnostic code happens and how to fix it
+  lsp                       Speak LSP over stdio
+  check [paths…]            Resolve IDs and check rules (default: ./keylang)
+                            Rebuilds the analysis in memory; does not write the map
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only)
 
 Options:
   -h, --help                Show this help
   -V, --version             Show version
+  --strict                  Exit 1 when a required result is unverified
+  --format <name>           check output: human (default), json, sarif, github
+  --explain-edge <a> <b>    Print snapshot edges between two ids; writes nothing
 `;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -50,6 +62,9 @@ async function run(argv: readonly string[]): Promise<number> {
       version: { type: "boolean", short: "V" },
       json: { type: "boolean" },
       check: { type: "boolean" },
+      strict: { type: "boolean" },
+      format: { type: "string" },
+      "explain-edge": { type: "boolean" },
     },
   });
   if (values.help) {
@@ -72,7 +87,12 @@ async function run(argv: readonly string[]): Promise<number> {
     case "map":
       return cmdMap(paths[0] ?? ".", values.check === true);
     case "check":
-      return cmdCheck(paths);
+      return cmdCheck(paths, { strict: values.strict === true, format: values.format ?? "human", explain: values["explain-edge"] === true });
+    case "explain":
+      return cmdExplain(paths[0]);
+    case "lsp":
+      await serveLsp();
+      return 0;
     case "parse":
       needPaths(cmd, paths);
       return cmdParse(paths, values.json === true);
@@ -82,6 +102,14 @@ async function run(argv: readonly string[]): Promise<number> {
     default:
       throw new Error(`unknown command \`${cmd}\`; see --help`);
   }
+}
+
+function cmdExplain(code: string | undefined): number {
+  if (!code) throw new Error("explain: a code is required");
+  const text = explainCode(code);
+  if (!text) throw new Error(`unknown code \`${code}\``);
+  process.stdout.write(`${text}\n`);
+  return 0;
 }
 
 function needPaths(cmd: string, paths: string[]): void {
@@ -151,22 +179,157 @@ function cmdParse(paths: string[], json: boolean): number {
   return diags.some(isError) ? 1 : 0;
 }
 
-function cmdCheck(paths: string[]): number {
-  if (paths.length === 0) {
-    const cfg = loadConfig(process.cwd());
-    if (!existsSync(join(process.cwd(), cfg.dir))) throw new Error(`no \`${cfg.dir}/\` directory here; run \`keylang init\` or pass paths`);
-    paths = [cfg.dir];
+const FORMATS = ["human", "json", "sarif", "github"] as const;
+
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean }): Promise<number> {
+  if (!FORMATS.includes(opts.format as (typeof FORMATS)[number])) {
+    throw new Error(`unknown --format \`${opts.format}\`; expected ${FORMATS.join(", ")}`);
   }
+  const cwd = process.cwd();
+  const config = loadConfig(cwd);
+  const explicit = paths.length > 0;
+  if (!explicit) {
+    if (!existsSync(join(cwd, config.dir))) throw new Error(`no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
+    paths = [config.dir];
+  }
+  const specsAreRepo = paths.every((p) => p === config.dir || p.startsWith(`${config.dir}/`));
+  let snapshot: AnalysisSnapshot | null = null;
+  if ((opts.explain || specsAreRepo) && config.languages.length > 0) snapshot = (await analyze(config.root)).index;
+  if (opts.explain) return explainEdge(explicit ? paths : [], snapshot);
   const files = collectMdFiles(paths);
   const docs = load(files);
   const { index, diagnostics: resolveDiags } = check(docs);
-  const diags: Diagnostic[] = [...docs.flatMap((d) => d.diagnostics), ...resolveDiags, ...checkRules(docs, index)];
+  const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
+  if (config.check.tests && !existsSync(join(config.root, config.check.tests))) throw new Error(`check.tests: no such file \`${config.check.tests}\``);
+  if (config.check.trace && !existsSync(join(config.root, config.check.trace))) throw new Error(`check.trace: no such file \`${config.check.trace}\``);
+  const rules = evaluateRules(docs, index, snapshot);
+  const flows = snapshot
+    ? evaluateFlows(docs, index, {
+        root: config.root,
+        snapshotId: snapshot.snapshotId,
+        nodes: snapshot.nodes,
+        edges: snapshot.edges,
+        ...(config.check.tests ? { testsPath: config.check.tests } : {}),
+        ...(config.check.trace ? { tracePath: config.check.trace } : {}),
+      })
+    : { diagnostics: [], verdicts: [] };
+  const planned = plannedIds(docs);
+  const diags: Diagnostic[] = [...docs.flatMap((d) => d.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics].filter(
+    (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),
+  );
   diags.sort(compareDiagnostics);
-  for (const d of diags) process.stdout.write(`${formatDiagnostic(d)}\n`);
-  const errors = diags.filter(isError).length;
-  const warnings = diags.length - errors;
-  process.stderr.write(`${files.length} file(s): ${errors} error(s), ${warnings} warning(s)\n`);
-  return errors === 0 ? 0 : 1;
+  const unverified = [
+    ...rules.verdicts.filter((v) => v.verdict === "unverified"),
+    ...refined.unverified.map((item) => ({ verdict: "unverified" as const, criterion: "ID", area: item.message, snapshotId: snapshot?.snapshotId ?? null, specHash: "", file: item.file, line: item.line, col: item.col, code: null, message: item.message })),
+    ...flows.verdicts,
+  ];
+  const oks = rules.verdicts.filter((v) => v.verdict === "ok").length;
+  const fails = diags.filter(isError).length + flows.verdicts.filter((verdict) => verdict.verdict === "fail" && verdict.criterion !== "ID").length;
+  const rendered = [...diags.map(formatDiagnostic), ...unverified.map(formatVerdict)];
+  writeCheck(opts.format, rendered, rules.verdicts, snapshot?.snapshotId ?? null, diags);
+  process.stderr.write(`${fails} fail, ${unverified.length} unverified, ${oks} ok\n`);
+  if (fails > 0) return 1;
+  if (opts.strict && unverified.length > 0) return 1;
+  return 0;
+}
+
+function plannedIds(docs: ReturnType<typeof load>): Set<string> {
+  const ids = new Set<string>();
+  for (const doc of docs) {
+    for (const section of doc.sections) {
+      for (const item of section.items) {
+        const walk = (node: { kind?: string; id?: string | null; children?: unknown[] }): void => {
+          if (node.kind === "planned" && node.id) ids.add(node.id);
+          for (const child of node.children ?? []) if (child && typeof child === "object") walk(child as { kind?: string; id?: string | null; children?: unknown[] });
+        };
+        if (item.type === "node") walk(item);
+      }
+    }
+  }
+  return ids;
+}
+
+function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number {
+  const [from, to] = paths.filter((p) => p.includes("."));
+  if (!from || !to) throw new Error("check --explain-edge needs two ids");
+  if (!snapshot) throw new Error("no snapshot; run inside a repository with sources");
+  const known = (id: string): boolean => snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`) || id.startsWith(`${key}.`));
+  if (!known(from) || !known(to)) throw new Error(`unknown id \`${!known(from) ? from : to}\``);
+  const hits = snapshot.edges
+    .filter((edge) => edge.source === from || edge.source.startsWith(`${from}.`) || edge.target === to || edge.target?.startsWith(`${to}.`))
+    .filter((edge) => (edge.source === from || edge.source.startsWith(`${from}.`)) && (edge.target === to || edge.target?.startsWith(`${to}.`) || edge.target === null))
+    .sort((a, b) => a.kind.localeCompare(b.kind) || a.line - b.line || a.col - b.col);
+  if (hits.length === 0) {
+    const holes = snapshot.coverage.filter((item) => item.source === from || item.source?.startsWith(`${from}.`));
+    if (holes.length === 0) process.stdout.write(`no edge, coverage complete\n`);
+    else for (const hole of holes) process.stdout.write(`unresolved ${hole.file}:${hole.line}:${hole.col} ${hole.reason}\n`);
+    return 0;
+  }
+  for (const edge of hits) {
+    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col} ${edge.source} → ${edge.target ?? "unresolved"}${edge.reason ? ` (${edge.reason})` : ""}\n`);
+  }
+  return 0;
+}
+
+function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): void {
+  if (format === "human") {
+    for (const line of lines) process.stdout.write(`${line}\n`);
+    return;
+  }
+  if (format === "github") {
+    for (const diag of diags) {
+      const level = isError(diag) ? "error" : "warning";
+      process.stdout.write(`::${level} file=${diag.file},line=${diag.span.start.line},col=${diag.span.start.col}::${diag.code} ${diag.message}\n`);
+    }
+    for (const verdict of verdicts) if (verdict.verdict === "unverified") process.stdout.write(`::warning file=${verdict.file},line=${verdict.line},col=${verdict.col}::${verdict.message}\n`);
+    return;
+  }
+  const results = [
+    ...diags.map((diag) => ({
+      criterion: diag.code,
+      area: diag.file,
+      verdict: isError(diag) ? "fail" : "ok",
+      evidence: diag.message,
+      snapshotId,
+      file: diag.file,
+      line: diag.span.start.line,
+      col: diag.span.start.col,
+      code: diag.code,
+    })),
+    ...verdicts.filter((verdict) => verdict.verdict !== "fail").map((verdict) => ({
+      criterion: verdict.criterion,
+      area: verdict.area,
+      verdict: verdict.verdict,
+      evidence: verdict.message,
+      snapshotId: verdict.snapshotId,
+      file: verdict.file,
+      line: verdict.line,
+      col: verdict.col,
+      code: verdict.code,
+    })),
+  ];
+  if (format === "json") {
+    process.stdout.write(`${JSON.stringify({ snapshotId, results }, null, 2)}\n`);
+    return;
+  }
+  const sarif = {
+    $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: { driver: { name: "keylang", rules: [] as { id: string }[] } },
+        results: results
+          .filter((result) => result.verdict === "fail")
+          .map((result) => ({
+            ruleId: result.code ?? "unverified",
+            level: "error",
+            message: { text: String(result.evidence) },
+            locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
+          })),
+      },
+    ],
+  };
+  process.stdout.write(`${JSON.stringify(sarif, null, 2)}\n`);
 }
 
 function cmdFmt(paths: string[], checkOnly: boolean): number {

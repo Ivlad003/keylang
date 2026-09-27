@@ -20,7 +20,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
   const { tree, language } = await parseSource(g, src);
   const root = tree.rootNode;
-  const facts: FileFacts = { path, imports: [], decls: [], exports: new Set(), reexportsAll: [], completeness: "complete", parseError: null };
+  const facts: FileFacts = { path, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], completeness: "complete", parseError: null };
   const calls = query(language, g, "calls", CALLS_QUERY);
   const requires = query(language, g, "require", REQUIRE_QUERY);
 
@@ -35,11 +35,11 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
         const obj = n.childForFieldName("object");
         const prop = n.childForFieldName("property");
         if (!obj || !prop) continue;
-        if (obj.type === "this" || obj.type === "identifier") out.push({ callee: `${obj.text}.${prop.text}`, line: n.startPosition.row + 1 });
-        else if (text.length < 80) out.push({ callee: text, line: n.startPosition.row + 1 });
+        if (obj.type === "this" || obj.type === "identifier") out.push(callFact(`${obj.text}.${prop.text}`, n));
+        else if (text.length < 80) out.push(callFact(text, n));
       } else {
         if (n.text === "require") continue;
-        out.push({ callee: n.text, line: n.startPosition.row + 1 });
+        out.push(callFact(n.text, n));
       }
     }
     return out;
@@ -52,7 +52,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
       case "function_signature": {
         const name = node.childForFieldName("name")?.text;
         if (!name) return;
-        facts.decls.push(decl("fn", name, node, signature(node), exported, declCalls(node), []));
+        facts.decls.push(decl("fn", name, node, signature(node), exported, declCalls(node), collectShadows(node), []));
         break;
       }
       case "lexical_declaration":
@@ -65,15 +65,19 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
           const name = nameNode.text;
           const req = value ? requireSource(value, requires) : null;
           if (req) {
-            facts.imports.push({ source: req, line: d.startPosition.row + 1, bindings: [{ kind: "module", local: name }], reexport: false });
+            facts.imports.push({ source: req, line: d.startPosition.row + 1, col: d.startPosition.column + 1, bindings: [{ kind: "module", local: name }], reexport: false });
             continue;
           }
           if (value && (value.type === "arrow_function" || value.type === "function_expression" || value.type === "generator_function")) {
-            facts.decls.push(decl("fn", name, d, signature(value), exported, declCalls(value), []));
+            facts.decls.push(decl("fn", name, d, signature(value), exported, declCalls(value), collectShadows(value), []));
           } else if (value && value.type === "class") {
             facts.decls.push(classDecl(name, value, d, exported, declCalls));
           }
-          if (exported) facts.exports.add(name);
+          if (exported) {
+            facts.exports.add(name);
+            const kind = value && (value.type === "arrow_function" || value.type === "function_expression" || value.type === "generator_function") ? "fn" : value?.type === "class" ? "class" : "value";
+            facts.exportRows.push({ name, kind, local: name });
+          }
         }
         // `const { a, b } = require("./x")`
         for (const d of node.namedChildren) {
@@ -92,7 +96,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
               if (k && v) bindings.push({ kind: "named", local: v, imported: k });
             }
           }
-          facts.imports.push({ source: req, line: d.startPosition.row + 1, bindings, reexport: false });
+          facts.imports.push({ source: req, line: d.startPosition.row + 1, col: d.startPosition.column + 1, bindings, reexport: false });
         }
         return;
       }
@@ -108,7 +112,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
       case "enum_declaration": {
         const name = node.childForFieldName("name")?.text;
         if (!name) return;
-        facts.decls.push(decl("type", name, node, typeSignature(node), exported, [], []));
+        facts.decls.push(decl("type", name, node, typeSignature(node), exported, [], [], []));
         break;
       }
       default:
@@ -116,7 +120,11 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
     }
     if (exported) {
       const name = node.childForFieldName("name")?.text;
-      if (name) facts.exports.add(name);
+      if (name) {
+        facts.exports.add(name);
+        const kind = node.type.includes("class") ? "class" : node.type.includes("type") || node.type.includes("interface") || node.type.includes("enum") ? "type" : node.type.includes("function") ? "fn" : "value";
+        facts.exportRows.push({ name, kind, local: name });
+      }
     }
   };
 
@@ -142,6 +150,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
               if (name && alias) {
                 bindings.push({ kind: "named", local: alias, imported: name });
                 facts.exports.add(alias);
+                facts.exportRows.push({ name: alias, kind: "alias", local: name });
               }
             }
           } else if (ns) {
@@ -149,11 +158,13 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
             if (alias) {
               bindings.push({ kind: "module", local: alias });
               facts.exports.add(alias);
+              facts.exportRows.push({ name: alias, kind: "alias", local: alias });
             }
           } else if (star) {
             facts.reexportsAll.push(spec);
           }
-          facts.imports.push({ source: spec, line: node.startPosition.row + 1, bindings, reexport: true });
+          facts.imports.push({ source: spec, line: node.startPosition.row + 1, col: node.startPosition.column + 1, bindings, reexport: true });
+          if (star) facts.exportRows.push({ name: "*", kind: "reexport", local: null });
           break;
         }
         const declaration = node.childForFieldName("declaration");
@@ -165,17 +176,24 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
           for (const s of clause?.namedChildren ?? []) {
             if (s.type !== "export_specifier") continue;
             const alias = s.childForFieldName("alias")?.text ?? s.childForFieldName("name")?.text;
-            if (alias) facts.exports.add(alias);
+            if (alias) {
+              facts.exports.add(alias);
+              facts.exportRows.push({ name: alias, kind: "alias", local: s.childForFieldName("name")?.text ?? alias });
+            }
           }
           const value = node.childForFieldName("value");
           if (value) {
-            if (value.type === "identifier") facts.exports.add(value.text);
-            else if (value.type === "arrow_function" || value.type === "function_expression" || value.type === "function") {
-              facts.decls.push(decl("fn", "default", value, signature(value), true, declCalls(value), []));
+            if (value.type === "identifier") {
+              facts.exports.add(value.text);
+              facts.exportRows.push({ name: "default", kind: "default", local: value.text });
+            } else if (value.type === "arrow_function" || value.type === "function_expression" || value.type === "function") {
+              facts.decls.push(decl("fn", "default", value, signature(value), true, declCalls(value), collectShadows(value), []));
               facts.exports.add("default");
+              facts.exportRows.push({ name: "default", kind: "default", local: "default" });
             } else if (value.type === "class") {
               facts.decls.push(classDecl(value.childForFieldName("name")?.text ?? "default", value, value, true, declCalls));
               facts.exports.add("default");
+              facts.exportRows.push({ name: "default", kind: "default", local: "default" });
             }
           }
         }
@@ -188,6 +206,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
         visitDecl(node, false);
     }
   }
+  collectDynamicImports(root, facts);
   if (root.hasError) {
     facts.completeness = "opaque";
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
@@ -205,8 +224,12 @@ function errorLine(node: Node): number {
   return node.startPosition.row + 1;
 }
 
-function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], members: DeclFact[]): DeclFact {
-  return { kind, name, line: node.startPosition.row + 1, endLine: node.endPosition.row + 1, signature, exported, calls, members };
+function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], shadows: { name: string; kind: "parameter" | "local" }[], members: DeclFact[]): DeclFact {
+  return { kind, name, line: node.startPosition.row + 1, endLine: node.endPosition.row + 1, signature, exported, calls, shadows, members };
+}
+
+function callFact(callee: string, node: Node): CallFact {
+  return { callee, line: node.startPosition.row + 1, col: node.startPosition.column + 1 };
 }
 
 function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node) => CallFact[]): DeclFact {
@@ -217,10 +240,10 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       const mname = m.childForFieldName("name")?.text;
       if (!mname) continue;
       const isPrivate = mname.startsWith("#") || m.children.some((c) => c.type === "accessibility_modifier" && c.text === "private");
-      members.push(decl("fn", mname.replace(/^#/, ""), m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m) : [], []));
+      members.push(decl("fn", mname.replace(/^#/, ""), m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m) : [], collectShadows(m), []));
     }
   }
-  return decl("class", name, at, heritage(cls), exported, [], members);
+  return decl("class", name, at, heritage(cls), exported, [], [], members);
 }
 
 function importStatement(node: Node): ImportFact[] {
@@ -243,7 +266,64 @@ function importStatement(node: Node): ImportFact[] {
       }
     }
   }
-  return [{ source: spec, line: node.startPosition.row + 1, bindings, reexport: false }];
+  return [{ source: spec, line: node.startPosition.row + 1, col: node.startPosition.column + 1, bindings, reexport: false }];
+}
+
+/** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */
+function collectDynamicImports(root: Node, facts: FileFacts): void {
+  const walk = (node: Node): void => {
+    if (node.type === "call_expression") {
+      const fn = node.childForFieldName("function");
+      const isImport = fn?.type === "import";
+      const isRequire = fn?.type === "identifier" && fn.text === "require";
+      if (isImport || isRequire) {
+        const arg = node.childForFieldName("arguments")?.namedChildren[0];
+        const line = node.startPosition.row + 1;
+        const col = node.startPosition.column + 1;
+        if (arg?.type === "string") {
+          const spec = stringValue(arg);
+          if (spec && !facts.imports.some((i) => i.source === spec && i.line === line)) {
+            facts.imports.push({ source: spec, line, col, bindings: [], reexport: false });
+          }
+        } else if (arg) {
+          facts.unsupported.push({ line, col, reason: "computed specifier" });
+        }
+      }
+    }
+    for (const child of node.namedChildren) walk(child);
+  };
+  walk(root);
+}
+
+/** Parameters and locals declared directly in a function, not inside a nested one. */
+function collectShadows(fn: Node): { name: string; kind: "parameter" | "local" }[] {
+  const out: { name: string; kind: "parameter" | "local" }[] = [];
+  const params = fn.childForFieldName("parameters");
+  for (const p of params?.namedChildren ?? []) {
+    const name = parameterName(p);
+    if (name) out.push({ name, kind: "parameter" });
+  }
+  const body = fn.childForFieldName("body");
+  if (body?.type === "statement_block") {
+    for (const stmt of body.namedChildren) {
+      if (stmt.type !== "lexical_declaration" && stmt.type !== "variable_declaration") continue;
+      for (const d of stmt.namedChildren) {
+        if (d.type !== "variable_declarator") continue;
+        const nameNode = d.childForFieldName("name");
+        if (nameNode?.type === "identifier") out.push({ name: nameNode.text, kind: "local" });
+      }
+    }
+  }
+  return out;
+}
+
+function parameterName(node: Node): string | null {
+  if (node.type === "identifier") return node.text;
+  const pattern = node.childForFieldName("pattern") ?? node.childForFieldName("name") ?? node.namedChildren.find((c) => c.type === "identifier");
+  if (!pattern) return null;
+  if (pattern.type === "identifier") return pattern.text;
+  if (pattern.type === "rest_pattern") return pattern.namedChildren.find((c) => c.type === "identifier")?.text ?? null;
+  return null;
 }
 
 /** Source of the import that bound `local` as a whole module, if any. */

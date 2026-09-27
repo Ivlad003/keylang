@@ -97,6 +97,7 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
     case "rule-module":
       return "rule-module";
     case "step":
+    case "trigger":
       return "step";
     case "invariant":
       return "invariant";
@@ -124,7 +125,7 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rules-top":
       return RULES;
     case "flow-top":
-      return ["kind", "trigger", "step", "reads", "emits", "calls", "invariant", "when", "test"];
+      return ["kind", "trigger", "step", "reads", "emits", "calls", "invariant", "when", "test", "planned"];
     case "wiring-top":
       return ["wire"];
     case "layer":
@@ -136,7 +137,7 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rule-module":
       return ["exports", "no-cycles"];
     case "step":
-      return ["step", "reads", "emits", "calls", "when", "test"];
+      return ["step", "reads", "emits", "calls", "when", "test", "invariant"];
     case "invariant":
     case "then":
       return ["test"];
@@ -174,6 +175,7 @@ function keywordKind(ctx: Ctx, kw: string): NodeKind {
     case "when":
     case "then":
     case "test":
+    case "planned":
     case "wire":
     case "compose":
       return kw;
@@ -490,6 +492,22 @@ class Parser {
         } else {
           this.freeText(n, l, rest);
         }
+        break;
+      }
+      case "planned": {
+        const kindTok = rest[0];
+        const idTok = rest[1];
+        const kinds = new Set(["fn", "module", "type", "event"]);
+        if (!kindTok || !idTok || !kinds.has(kindTok.text) || !isId(idTok.text)) {
+          this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`");
+          break;
+        }
+        n.id = idTok.text;
+        n.label = { value: kindTok.text, span: kindTok.span };
+        const sig = rest.slice(2);
+        const sigStart = sig[0];
+        const sigEnd = sig.at(-1);
+        if (sigStart && sigEnd) n.text = { value: renderTokens(sig), span: { start: sigStart.span.start, end: sigEnd.span.end } };
         break;
       }
       case "test": {

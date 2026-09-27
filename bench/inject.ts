@@ -11,8 +11,15 @@ const dir = process.argv[2]!;
 const bin = join(import.meta.dirname, "../bin/keylang.js");
 const run = (...args: string[]) => spawnSync(process.execPath, [bin, ...args], { cwd: dir, encoding: "utf8" });
 
-const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { files: Record<string, { layer: string; module: string }> };
-const files = Object.entries(index.files).filter(([f]) => !/\.(tsx|jsx)$/.test(f));
+const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
+  files?: Record<string, { layer: string; module: string }>;
+  nodes?: Record<string, { kind?: string; file?: string | null; layer?: string }>;
+};
+const files = index.files
+  ? Object.entries(index.files).filter(([f]) => !/\.(tsx|jsx)$/.test(f))
+  : Object.entries(index.nodes ?? {})
+      .filter(([, node]) => node.kind === "module" && node.file)
+      .map(([id, node]) => [node.file as string, { layer: node.layer ?? id.split(".")[0] ?? "", module: id }] as const);
 if (files.length < 2) {
   console.log("skip: fewer than two modules");
   process.exit(0);

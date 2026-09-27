@@ -15,7 +15,7 @@ export const EXTRACTOR_VERSION = "m1.1";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
-export type EdgeKind = "import" | "call" | "reexport";
+export type EdgeKind = "import" | "call" | "type" | "reexport";
 
 export interface SnapshotEdge {
   kind: EdgeKind;
@@ -25,6 +25,7 @@ export interface SnapshotEdge {
   alias?: string;
   file: string | null;
   line: number;
+  col: number;
   resolution: Resolution;
   provenance: Provenance;
   reason?: string;
@@ -41,6 +42,7 @@ export interface CoverageItem {
   kind: Gap["kind"] | "skipped-file";
   file: string;
   line: number;
+  col: number;
   reason: string;
   source: string | null;
 }
@@ -185,6 +187,7 @@ export function buildSnapshot(
         alias: d.alias,
         file: m.path,
         line: d.line,
+        col: d.col,
         resolution: "resolved",
         provenance: "syntactic",
       });
@@ -197,6 +200,7 @@ export function buildSnapshot(
           target: c.target,
           file: m.path,
           line: c.line,
+          col: c.col,
           resolution: "resolved",
           provenance: "syntactic",
         });
@@ -208,7 +212,7 @@ export function buildSnapshot(
 
   const coverage: CoverageItem[] = [];
   for (const gap of graph.gaps) {
-    coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, reason: gap.reason, source: gap.source });
+    coverage.push({ kind: gap.kind, file: gap.file, line: gap.line, col: gap.col, reason: gap.reason, source: gap.source });
     if (gap.kind === "unresolved-import" || gap.kind === "dynamic-call" || gap.kind === "unresolved-call") {
       edges.push({
         kind: gap.kind === "unresolved-import" ? "import" : "call",
@@ -216,6 +220,7 @@ export function buildSnapshot(
         target: null,
         file: gap.file,
         line: gap.line,
+        col: gap.col,
         resolution: "unresolved",
         provenance: "syntactic",
         reason: gap.reason,
@@ -223,7 +228,7 @@ export function buildSnapshot(
     }
   }
   for (const file of skipped) {
-    coverage.push({ kind: "skipped-file", file, line: 1, reason: "outside guessed layers", source: null });
+    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, reason: "outside guessed layers", source: null });
   }
   coverage.sort(compareCoverage);
 
@@ -242,12 +247,19 @@ export function buildSnapshot(
 
 function exportTable(graph: Graph, facts: readonly FileFacts[]): SnapshotExport[] {
   const out: SnapshotExport[] = [];
+  const seen = new Set<string>();
   for (const file of facts) {
     const module = graph.byPath.get(file.path);
     if (!module) continue;
-    for (const name of [...file.exports].sort()) {
-      const symbol = findSymbol(module, name);
-      out.push({ module: module.id, name, symbol: symbol?.id ?? null, kind: symbol?.kind ?? "value" });
+    const rows = file.exportRows.length > 0 ? file.exportRows : [...file.exports].sort().map((name) => ({ name, kind: "value" as const, local: name }));
+    for (const row of rows) {
+      if (row.name === "*" && row.kind === "reexport") continue;
+      const key = `${module.id}\0${row.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const symbol = findSymbol(module, row.local ?? row.name);
+      const kind = symbol?.kind ?? (row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value");
+      out.push({ module: module.id, name: row.name, symbol: symbol?.id ?? null, kind });
     }
   }
   out.sort((a, b) => (a.module < b.module ? -1 : a.module > b.module ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
