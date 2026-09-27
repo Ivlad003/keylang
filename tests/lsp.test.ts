@@ -57,7 +57,8 @@ test("lsp diagnostics match check and completion uses the snapshot", async () =>
     cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
     assert.equal(spawnSync(process.execPath, [bin, "map"], { cwd: dir, encoding: "utf8" }).status, 0);
     mkdirSync(join(dir, "keylang/flows"), { recursive: true });
-    writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- planned fn domain.order.later (order: Order) → void\n");
+    const laterPath = join(dir, "keylang/flows/later.md");
+    writeFileSync(laterPath, "# flow later\n\n- planned fn domain.order.later (order: Order) → void\n- step domain.order.later\n");
     const source = join(dir, "src/domain/order.ts");
     const uri = pathToFileURL(source).href;
     const rootUri = pathToFileURL(dir).href;
@@ -69,6 +70,43 @@ test("lsp diagnostics match check and completion uses the snapshot", async () =>
       { jsonrpc: "2.0", id: 2, method: "textDocument/diagnostic", params: { textDocument: { uri } } },
     ]);
     assert.doesNotMatch(before, /K102/);
+    const cliJson = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: dir, encoding: "utf8" });
+    const laterRows = (JSON.parse(cliJson.stdout) as { results: { file: string; line: number; col: number; code: string | null; verdict: string; evidence: string }[] }).results.filter(
+      (row) => row.file === "keylang/flows/later.md",
+    );
+    assert.ok(laterRows.some((row) => row.verdict === "unverified" && row.evidence.includes("planned")));
+    assert.equal(laterRows.some((row) => row.code === "K001"), false);
+    const laterDiag = await speak(dir, [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri, capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "textDocument/diagnostic", params: { textDocument: { uri: pathToFileURL(laterPath).href } } },
+    ]);
+    const laterItems =
+      (
+        frames(laterDiag).find((message) => message.id === 2) as {
+          result?: { items: { code?: string | null; message: string; range: { start: { line: number; character: number } }; data?: { verdict: string } }[] };
+        }
+      ).result?.items ?? [];
+    const sameFindingRow = (row: (typeof laterRows)[number], item: (typeof laterItems)[number]): boolean =>
+      (item.code ?? null) === (row.code ?? null) && item.message === row.evidence && item.range.start.line === row.line - 1 && item.range.start.character === row.col - 1 && item.data?.verdict === row.verdict;
+    for (const row of laterRows) assert.ok(laterItems.some((item) => sameFindingRow(row, item)), JSON.stringify({ row, laterItems }));
+    for (const item of laterItems) assert.ok(laterRows.some((row) => sameFindingRow(row, item)), JSON.stringify({ item, laterRows }));
+    const laterText = readFileSync(laterPath, "utf8");
+    const plannedLine = laterText.split("\n").findIndex((line) => line.includes("planned") && line.includes("domain.order.later"));
+    const plannedHover = await speak(dir, [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri, capabilities: {} } },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "textDocument/hover",
+        params: {
+          textDocument: { uri: pathToFileURL(laterPath).href },
+          position: { line: plannedLine, character: laterText.split("\n")[plannedLine]?.indexOf("domain.order.later") ?? 0 },
+        },
+      },
+    ]);
+    assert.match(plannedHover, /planned fn domain\.order\.later/);
+    assert.match(plannedHover, /\(order: Order\) → void/);
+    assert.match(plannedHover, /keylang\/flows\/later\.md/);
     appendFileSync(source, 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
     const after = await speak(dir, [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri, capabilities: {} } },
@@ -125,6 +163,19 @@ test("lsp diagnostics match check and completion uses the snapshot", async () =>
     ]);
     assert.match(hovered, /createOrder/);
     assert.match(hovered, /src\/domain\/order\.ts/);
+    const defined = await speak(dir, [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri, capabilities: {} } },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "textDocument/definition",
+        params: {
+          textDocument: { uri: pathToFileURL(join(dir, "keylang/map/app.md")).href, text: appMap },
+          position: { line: callsLine, character: appMap.split("\n")[callsLine]?.indexOf("domain.order.createOrder") ?? 0 },
+        },
+      },
+    ]);
+    assert.match(defined, /src\/domain\/order\.ts/);
     const symbols = await speak(dir, [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri, capabilities: {} } },
       {
@@ -136,6 +187,7 @@ test("lsp diagnostics match check and completion uses the snapshot", async () =>
     ]);
     assert.match(symbols, /"name":"deny"/);
     assert.match(symbols, /"name":"later"/);
+    assert.match(symbols, /"name":"domain"/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

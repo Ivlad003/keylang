@@ -5,13 +5,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { analyze } from "./analyze.ts";
+import { assess, sameFinding, type Assessment } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
-import { collectMdFiles, load } from "./files.ts";
-import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import { collectMdFiles } from "./files.ts";
+import { sectionNodes, walk, type Document } from "./ir.ts";
 import { parse } from "./parser.ts";
-import { check, refineOpacity, type Index } from "./resolve.ts";
-import { blocksDependency, evaluateRules } from "./rules.ts";
+import type { Index } from "./resolve.ts";
+import { blocksDependency } from "./rules.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
+import type { Verdict } from "./verdict.ts";
 
 interface Rpc {
   jsonrpc?: string;
@@ -81,21 +83,9 @@ async function handle(message: Rpc, root: string): Promise<Rpc | null> {
   const textDocument = message.params?.textDocument as TextDoc | undefined;
   const viewed = await view(root, textDocument);
   if (message.method === "textDocument/diagnostic") {
-    const items = viewed.diagnostics.filter((diag) => uriMatches(textDocument?.uri, diag.file, root) || (textDocument?.text !== undefined && diag.file === viewed.bufferPath));
-    return {
-      jsonrpc: "2.0",
-      id: message.id,
-      result: {
-        kind: "full",
-        items: items.map((diag) => ({
-          range: rangeOf(diag.span.start.line, diag.span.start.col),
-          severity: diag.severity === "error" ? 1 : 2,
-          code: diag.code,
-          message: diag.message,
-          source: "keylang",
-        })),
-      },
-    };
+    const seen = (file: string): boolean => uriMatches(textDocument?.uri, file, root) || (textDocument?.text !== undefined && file === viewed.bufferPath);
+    const items = findings(viewed, seen);
+    return { jsonrpc: "2.0", id: message.id, result: { kind: "full", items } };
   }
   if (message.method === "textDocument/documentSymbol") {
     return { jsonrpc: "2.0", id: message.id, result: symbols(viewed.docs, viewed.index) };
@@ -103,19 +93,22 @@ async function handle(message: Rpc, root: string): Promise<Rpc | null> {
   if (message.method === "textDocument/hover" || message.method === "textDocument/definition") {
     const word = wordAt(viewed.text, message.params?.position as { line?: number; character?: number } | undefined);
     const node = word ? viewed.snapshot?.nodes[word] : undefined;
+    const plan = word ? findPlanned(viewed.docs, word) : null;
     const decl = word ? viewed.index.lookup(word) : { kind: "missing" as const };
-    if (!node && decl.kind === "missing") return { jsonrpc: "2.0", id: message.id, result: null };
+    if (!node && !plan && decl.kind === "missing") return { jsonrpc: "2.0", id: message.id, result: null };
     const id = word ?? "";
-    const file = node?.file ?? (decl.kind !== "missing" ? decl.decl.file : null);
-    const line = node?.line ?? (decl.kind !== "missing" ? decl.decl.span.start.line : 1);
-    const col = decl.kind !== "missing" ? decl.decl.span.start.col : 1;
+    const file = node?.file ?? plan?.file ?? (decl.kind !== "missing" ? decl.decl.file : null);
+    const line = node?.line ?? plan?.line ?? (decl.kind !== "missing" ? decl.decl.span.start.line : 1);
+    const col = plan?.col ?? (decl.kind !== "missing" ? decl.decl.span.start.col : 1);
     if (message.method === "textDocument/definition") {
       const target = file ? pathToFileURL(file.startsWith("/") ? file : join(root, file)).href : (textDocument?.uri ?? "");
       return { jsonrpc: "2.0", id: message.id, result: { uri: target, range: rangeOf(line ?? 1, col) } };
     }
-    const signature = node?.signature ? ` ${node.signature}` : "";
+    const signature = node?.signature ?? plan?.signature;
+    const kind = plan && !node ? `planned ${plan.kind}` : `${node?.kind ?? "id"}${node?.members === "opaque" ? " opaque" : ""}`;
+    const signed = signature ? ` ${signature}` : "";
     const where = file ? `\n${file}:${line ?? 1}` : "";
-    return { jsonrpc: "2.0", id: message.id, result: { contents: { kind: "plaintext", value: `${node?.kind ?? "id"} ${id}${signature}${where}` } } };
+    return { jsonrpc: "2.0", id: message.id, result: { contents: { kind: "plaintext", value: `${kind} ${id}${signed}${where}${evidence(viewed.verdicts, id)}` } } };
   }
   if (message.method === "textDocument/completion") {
     return { jsonrpc: "2.0", id: message.id, result: { isIncomplete: false, items: completions(viewed, message.params?.position as { line?: number } | undefined) } };
@@ -146,22 +139,38 @@ interface View {
   docs: Document[];
   index: Index;
   diagnostics: Diagnostic[];
+  verdicts: Verdict[];
   text: string;
   bufferPath: string | null;
+}
+
+interface Finding {
+  range: ReturnType<typeof rangeOf>;
+  severity: number;
+  code?: string;
+  message: string;
+  source: "keylang";
+  data: { verdict: string };
 }
 
 async function view(root: string, textDocument: TextDoc | undefined): Promise<View> {
   let snapshot: AnalysisSnapshot | null = null;
   let specDir = "keylang";
+  let testsPath: string | undefined;
+  let tracePath: string | undefined;
   try {
     const analyzed = await analyze(root);
     snapshot = analyzed.index;
     specDir = analyzed.config.dir;
+    testsPath = analyzed.config.check.tests;
+    tracePath = analyzed.config.check.trace;
   } catch {
     snapshot = null;
   }
   const specRoot = join(root, specDir);
-  const docs = existsSync(specRoot) ? load(collectMdFiles([specRoot])) : [];
+  const docs: Document[] = existsSync(specRoot)
+    ? collectMdFiles([specRoot]).map((file) => parse(file.startsWith(`${root}/`) ? file.slice(root.length + 1) : file, readFileSync(file, "utf8")))
+    : [];
   const bufferPath = textDocument?.uri ? relativeTo(root, filePath(textDocument.uri)) : null;
   const text = textDocument?.text ?? (textDocument?.uri && existsSync(filePath(textDocument.uri)) ? readFileSync(filePath(textDocument.uri), "utf8") : "");
   if (textDocument?.text !== undefined && bufferPath) {
@@ -170,11 +179,63 @@ async function view(root: string, textDocument: TextDoc | undefined): Promise<Vi
     if (at >= 0) docs[at] = parsed;
     else docs.push(parsed);
   }
-  const { index, diagnostics: resolveDiags } = check(docs);
-  const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
-  const rules = evaluateRules(docs, index, snapshot);
-  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics];
-  return { snapshot, docs, index, diagnostics, text, bufferPath };
+  const flow = {
+    root,
+    ...(testsPath && existsSync(join(root, testsPath)) ? { testsPath } : {}),
+    ...(tracePath && existsSync(join(root, tracePath)) ? { tracePath } : {}),
+  };
+  const assessed: Assessment = assess(docs, snapshot, flow);
+  return { snapshot, docs, index: assessed.index, diagnostics: assessed.diagnostics, verdicts: assessed.verdicts, text, bufferPath };
+}
+
+function findings(viewed: View, seen: (file: string) => boolean): Finding[] {
+  const items: Finding[] = [];
+  for (const diag of viewed.diagnostics) {
+    if (!seen(diag.file)) continue;
+    const finding: Finding = {
+      range: rangeOf(diag.span.start.line, diag.span.start.col),
+      severity: diag.severity === "error" ? 1 : 2,
+      message: diag.message,
+      source: "keylang",
+      data: { verdict: diag.severity === "error" ? "fail" : "ok" },
+    };
+    finding.code = diag.code;
+    items.push(finding);
+  }
+  for (const verdict of viewed.verdicts) {
+    if (!seen(verdict.file) || sameFinding(verdict, viewed.diagnostics)) continue;
+    const finding: Finding = {
+      range: rangeOf(verdict.line, verdict.col),
+      severity: verdict.verdict === "fail" ? 1 : verdict.verdict === "unverified" ? 2 : 3,
+      message: verdict.message,
+      source: "keylang",
+      data: { verdict: verdict.verdict },
+    };
+    if (verdict.code) finding.code = verdict.code;
+    items.push(finding);
+  }
+  return items;
+}
+
+function findPlanned(docs: readonly Document[], id: string): { kind: string; signature: string | null; file: string; line: number; col: number } | null {
+  let found: { kind: string; signature: string | null; file: string; line: number; col: number } | null = null;
+  for (const doc of docs) {
+    for (const section of doc.sections) {
+      for (const top of sectionNodes(section)) {
+        walk(top, (node) => {
+          if (node.kind === "planned" && node.id === id) {
+            found = { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
+          }
+        });
+      }
+    }
+  }
+  return found;
+}
+
+function evidence(verdicts: readonly Verdict[], id: string): string {
+  const lines = verdicts.filter((verdict) => verdict.area === id || verdict.message.includes(`\`${id}\``)).map((verdict) => `${verdict.criterion} ${verdict.message}`);
+  return lines.length === 0 ? "" : `\n${lines.join("\n")}`;
 }
 
 function completions(viewed: View, position: { line?: number } | undefined): { label: string; kind: number; detail?: string }[] {
@@ -274,6 +335,3 @@ function send(write: NodeJS.WritableStream, message: Rpc): void {
   const json = JSON.stringify(message);
   write.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
 }
-
-void sectionNodes;
-void walk;

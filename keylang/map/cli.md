@@ -5,47 +5,57 @@
 - cli
   - module [keylang](../../bin/keylang.js#L1)
     - cli cli.cli
+  - module [assess](../../src/assess.ts#L1)
+    - diag base.diag
+    - flows check.flows
+    - ir lang.ir
+    - resolve check.resolve
+    - rules check.rules
+    - snapshot map.snapshot
+    - verdict check.verdict
+    - type [Assessment](../../src/assess.ts#L11)
+    - fn [assess](../../src/assess.ts#L17) ( docs: readonly Document[], snapshot: AnalysisSnapshot | null, flow: { root: string; testsPath?: string; tracePath?: string } | null, ) → Assessment
+      - calls check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, cli.assess.plannedIds
+    - fn [sameFinding](../../src/assess.ts#L56) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [plannedIds](../../src/assess.ts#L60) (docs: readonly Document[]) → Set<string> <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
   - module [cli](../../src/cli.ts#L1)
     - node external.node
     - config base.config
+    - assess cli.assess
     - diag base.diag
     - files lang.files
     - fmt lang.fmt
     - ir lang.ir
     - analyze map.analyze
     - map map.map
-    - resolve check.resolve
     - explain cli.explain
-    - flows check.flows
     - lsp cli.lsp
-    - rules check.rules
     - snapshot map.snapshot
     - verdict check.verdict
-    - fn [main](../../src/cli.ts#L46) (argv: readonly string[]) → Promise<number>
+    - fn [main](../../src/cli.ts#L44) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
-    - fn [run](../../src/cli.ts#L55) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L53) (argv: readonly string[]) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdInit, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
-    - fn [cmdExplain](../../src/cli.ts#L107) (code: string | undefined) → number <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L105) (code: string | undefined) → number <!-- internal -->
       - calls cli.explain.explainCode
-    - fn [needPaths](../../src/cli.ts#L115) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L119) (dir: string) → Promise<number> <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L113) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L117) (dir: string) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdMap](../../src/cli.ts#L136) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L134) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, map.map.generateMap, base.config.toPosix, map.map.diffMap, map.map.writeMap
-    - fn [cmdParse](../../src/cli.ts#L173) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L171) (paths: string[], json: boolean) → number <!-- internal -->
       - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L184) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
-      - calls base.config.loadConfig, map.analyze.analyze, cli.cli.explainEdge, lang.files.collectMdFiles, lang.files.load, check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, cli.cli.plannedIds, cli.cli.writeCheck
-    - fn [plannedIds](../../src/cli.ts#L251) (docs: ReturnType<typeof load>) → Set<string> <!-- internal -->
-    - fn [explainEdge](../../src/cli.ts#L267) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
-    - fn [sameDiag](../../src/cli.ts#L289) (verdict: Verdict, diags: Diagnostic[]) → boolean <!-- internal -->
-    - fn [writeCheck](../../src/cli.ts#L293) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
-      - calls base.diag.isError, cli.cli.sameDiag
-    - fn [cmdFmt](../../src/cli.ts#L358) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L182) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
+      - calls base.config.loadConfig, map.analyze.analyze, cli.cli.explainEdge, lang.files.collectMdFiles, lang.files.load, cli.assess.assess, cli.assess.sameFinding, cli.cli.writeCheck
+    - fn [explainEdge](../../src/cli.ts#L223) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L245) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
+      - calls base.diag.isError, cli.assess.sameFinding
+    - fn [cmdFmt](../../src/cli.ts#L310) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L379) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L331) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L387) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L339) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
@@ -61,6 +71,7 @@
   - module [lsp](../../src/lsp.ts#L1)
     - node external.node
     - analyze map.analyze
+    - assess cli.assess
     - diag base.diag
     - files lang.files
     - ir lang.ir
@@ -68,25 +79,32 @@
     - resolve check.resolve
     - rules check.rules
     - snapshot map.snapshot
-    - type [Rpc](../../src/lsp.ts#L16) <!-- internal -->
-    - type [TextDoc](../../src/lsp.ts#L25) <!-- internal -->
-    - fn [serveLsp](../../src/lsp.ts#L30) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<void>
+    - verdict check.verdict
+    - type [Rpc](../../src/lsp.ts#L18) <!-- internal -->
+    - type [TextDoc](../../src/lsp.ts#L27) <!-- internal -->
+    - fn [serveLsp](../../src/lsp.ts#L32) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<void>
       - calls cli.lsp.filePath, cli.lsp.handle, cli.lsp.send
-    - fn [handle](../../src/lsp.ts#L62) (message: Rpc, root: string) → Promise<Rpc | null> <!-- internal -->
-      - calls cli.lsp.view, cli.lsp.uriMatches, cli.lsp.rangeOf, cli.lsp.symbols, cli.lsp.wordAt, cli.lsp.completions, lang.ir.sectionNodes, lang.ir.walk
-    - type [View](../../src/lsp.ts#L144) <!-- internal -->
-    - fn [view](../../src/lsp.ts#L153) (root: string, textDocument: TextDoc | undefined) → Promise<View> <!-- internal -->
-      - calls map.analyze.analyze, lang.files.load, lang.files.collectMdFiles, cli.lsp.relativeTo, cli.lsp.filePath, lang.parser.parse, check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules
-    - fn [completions](../../src/lsp.ts#L180) (viewed: View, position: { line?: number } | undefined) → { label: string; kind: number; detail?: string }[] <!-- internal -->
-      - calls cli.lsp.enclosingId, check.rules.blocksDependency, lang.ir.sectionNodes, lang.ir.walk
-    - fn [enclosingId](../../src/lsp.ts#L202) (docs: readonly Document[], bufferPath: string | null, line: number) → string | null <!-- internal -->
+    - fn [handle](../../src/lsp.ts#L64) (message: Rpc, root: string) → Promise<Rpc | null> <!-- internal -->
+      - calls cli.lsp.view, cli.lsp.uriMatches, cli.lsp.findings, cli.lsp.symbols, cli.lsp.wordAt, cli.lsp.findPlanned, cli.lsp.rangeOf, cli.lsp.evidence, cli.lsp.completions, lang.ir.sectionNodes, lang.ir.walk
+    - type [View](../../src/lsp.ts#L137) <!-- internal -->
+    - type [Finding](../../src/lsp.ts#L147) <!-- internal -->
+    - fn [view](../../src/lsp.ts#L156) (root: string, textDocument: TextDoc | undefined) → Promise<View> <!-- internal -->
+      - calls map.analyze.analyze, lang.files.collectMdFiles, lang.parser.parse, cli.lsp.relativeTo, cli.lsp.filePath, cli.assess.assess
+    - fn [findings](../../src/lsp.ts#L191) (viewed: View, seen: (file: string) => boolean) → Finding[] <!-- internal -->
+      - calls cli.lsp.rangeOf, cli.assess.sameFinding
+    - fn [findPlanned](../../src/lsp.ts#L220) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [symbols](../../src/lsp.ts#L219) (docs: readonly Document[], index: Index) → { name: string; kind: number; range: ReturnType<typeof rangeOf>; selectionRange: ReturnType<typeof rangeOf> }[] <!-- internal -->
+    - fn [evidence](../../src/lsp.ts#L236) (verdicts: readonly Verdict[], id: string) → string <!-- internal -->
+    - fn [completions](../../src/lsp.ts#L241) (viewed: View, position: { line?: number } | undefined) → { label: string; kind: number; detail?: string }[] <!-- internal -->
+      - calls cli.lsp.enclosingId, check.rules.blocksDependency, lang.ir.sectionNodes, lang.ir.walk
+    - fn [enclosingId](../../src/lsp.ts#L263) (docs: readonly Document[], bufferPath: string | null, line: number) → string | null <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
+    - fn [symbols](../../src/lsp.ts#L280) (docs: readonly Document[], index: Index) → { name: string; kind: number; range: ReturnType<typeof rangeOf>; selectionRange: ReturnType<typeof rangeOf> }[] <!-- internal -->
       - calls cli.lsp.rangeOf, lang.ir.sectionNodes, lang.ir.walk
-    - fn [uriMatches](../../src/lsp.ts#L241) (uri: string | undefined, file: string, root: string) → boolean <!-- internal -->
+    - fn [uriMatches](../../src/lsp.ts#L302) (uri: string | undefined, file: string, root: string) → boolean <!-- internal -->
       - calls cli.lsp.filePath
-    - fn [filePath](../../src/lsp.ts#L248) (uri: string) → string <!-- internal -->
-    - fn [relativeTo](../../src/lsp.ts#L253) (root: string, path: string) → string <!-- internal -->
-    - fn [rangeOf](../../src/lsp.ts#L258) (line: number, col: number) → { start: { line: number; character: number }; end: { line: number; character: number } } <!-- internal -->
-    - fn [wordAt](../../src/lsp.ts#L262) (text: string, position: { line?: number; character?: number } | undefined) → string | null <!-- internal -->
-    - fn [send](../../src/lsp.ts#L273) (write: NodeJS.WritableStream, message: Rpc) → void <!-- internal -->
+    - fn [filePath](../../src/lsp.ts#L309) (uri: string) → string <!-- internal -->
+    - fn [relativeTo](../../src/lsp.ts#L314) (root: string, path: string) → string <!-- internal -->
+    - fn [rangeOf](../../src/lsp.ts#L319) (line: number, col: number) → { start: { line: number; character: number }; end: { line: number; character: number } } <!-- internal -->
+    - fn [wordAt](../../src/lsp.ts#L323) (text: string, position: { line?: number; character?: number } | undefined) → string | null <!-- internal -->
+    - fn [send](../../src/lsp.ts#L334) (write: NodeJS.WritableStream, message: Rpc) → void <!-- internal -->

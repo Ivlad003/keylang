@@ -5,17 +5,15 @@ import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, configToJson, loadConfig, toPosix } from "./config.ts";
-import { compareDiagnostics, formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
+import { assess, sameFinding } from "./assess.ts";
+import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, type Document, type Node } from "./ir.ts";
 import { analyze } from "./analyze.ts";
 import { diffMap, generateMap, writeMap } from "./map.ts";
-import { check, refineOpacity } from "./resolve.ts";
 import { explainCode } from "./explain.ts";
-import { evaluateFlows } from "./flows.ts";
 import { serveLsp } from "./lsp.ts";
-import { evaluateRules } from "./rules.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
@@ -198,70 +196,28 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
   if (opts.explain) return explainEdge(explicit ? paths : [], snapshot);
   const files = collectMdFiles(paths);
   const docs = load(files);
-  const { index, diagnostics: resolveDiags } = check(docs);
-  const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
   if (config.check.tests && !existsSync(join(config.root, config.check.tests))) throw new Error(`check.tests: no such file \`${config.check.tests}\``);
   if (config.check.trace && !existsSync(join(config.root, config.check.trace))) throw new Error(`check.trace: no such file \`${config.check.trace}\``);
-  const rules = evaluateRules(docs, index, snapshot);
-  const flows = snapshot
-    ? evaluateFlows(docs, index, {
-        root: config.root,
-        snapshotId: snapshot.snapshotId,
-        nodes: snapshot.nodes,
-        edges: snapshot.edges,
-        ...(config.check.tests ? { testsPath: config.check.tests } : {}),
-        ...(config.check.trace ? { tracePath: config.check.trace } : {}),
-      })
-    : { diagnostics: [], verdicts: [] };
-  const planned = plannedIds(docs);
-  const diags: Diagnostic[] = [...docs.flatMap((d) => d.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics].filter(
-    (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),
-  );
-  diags.sort(compareDiagnostics);
-  const refinedVerdicts: Verdict[] = refined.unverified.map((item) => ({
-    verdict: "unverified",
-    criterion: "ID",
-    area: item.message,
-    snapshotId: snapshot?.snapshotId ?? null,
-    specHash: "",
-    file: item.file,
-    line: item.line,
-    col: item.col,
-    code: null,
-    message: item.message,
-  }));
-  const channel = [...rules.verdicts, ...refinedVerdicts, ...flows.verdicts];
-  const sameAsDiag = (verdict: Verdict): boolean =>
-    diags.some((diag) => diag.file === verdict.file && diag.span.start.line === verdict.line && (diag.message === verdict.message || verdict.message.includes(diag.message)));
+  const assessed = assess(docs, snapshot, {
+    root: config.root,
+    ...(config.check.tests ? { testsPath: config.check.tests } : {}),
+    ...(config.check.trace ? { tracePath: config.check.trace } : {}),
+  });
+  const diags = assessed.diagnostics;
+  const channel = assessed.verdicts;
   const unverified = channel.filter((verdict) => verdict.verdict === "unverified");
   const oks = channel.filter((verdict) => verdict.verdict === "ok").length;
-  const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameAsDiag(verdict)).length;
+  const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameFinding(verdict, diags)).length;
   const channels = new Set(["ID", "static", "tests", "trace"]);
   const rendered = [
     ...diags.map(formatDiagnostic),
-    ...channel.filter((verdict) => !sameAsDiag(verdict) && (verdict.verdict !== "ok" || channels.has(verdict.criterion))).map(formatVerdict),
+    ...channel.filter((verdict) => !sameFinding(verdict, diags) && (verdict.verdict !== "ok" || channels.has(verdict.criterion))).map(formatVerdict),
   ];
   writeCheck(opts.format, rendered, channel, snapshot?.snapshotId ?? null, diags);
   process.stderr.write(`${fails} fail, ${unverified.length} unverified, ${oks} ok\n`);
   if (fails > 0) return 1;
   if (opts.strict && unverified.length > 0) return 1;
   return 0;
-}
-
-function plannedIds(docs: ReturnType<typeof load>): Set<string> {
-  const ids = new Set<string>();
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const item of section.items) {
-        const walk = (node: { kind?: string; id?: string | null; children?: unknown[] }): void => {
-          if (node.kind === "planned" && node.id) ids.add(node.id);
-          for (const child of node.children ?? []) if (child && typeof child === "object") walk(child as { kind?: string; id?: string | null; children?: unknown[] });
-        };
-        if (item.type === "node") walk(item);
-      }
-    }
-  }
-  return ids;
 }
 
 function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number {
@@ -286,10 +242,6 @@ function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number
   return 0;
 }
 
-function sameDiag(verdict: Verdict, diags: Diagnostic[]): boolean {
-  return diags.some((diag) => diag.file === verdict.file && diag.span.start.line === verdict.line && (diag.message === verdict.message || verdict.message.includes(diag.message)));
-}
-
 function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): void {
   if (format === "human") {
     for (const line of lines) process.stdout.write(`${line}\n`);
@@ -301,7 +253,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
       process.stdout.write(`::${level} file=${diag.file},line=${diag.span.start.line},col=${diag.span.start.col}::${diag.code} ${diag.message}\n`);
     }
     for (const verdict of verdicts) {
-      if (verdict.verdict === "ok" || sameDiag(verdict, diags)) continue;
+      if (verdict.verdict === "ok" || sameFinding(verdict, diags)) continue;
       const level = verdict.verdict === "fail" ? "error" : "warning";
       process.stdout.write(`::${level} file=${verdict.file},line=${verdict.line},col=${verdict.col}::${verdict.message}\n`);
     }
@@ -319,7 +271,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
       col: diag.span.start.col,
       code: diag.code,
     })),
-    ...verdicts.filter((verdict) => !sameDiag(verdict, diags)).map((verdict) => ({
+    ...verdicts.filter((verdict) => !sameFinding(verdict, diags)).map((verdict) => ({
       criterion: verdict.criterion,
       area: verdict.area,
       verdict: verdict.verdict,
