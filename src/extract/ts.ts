@@ -35,11 +35,11 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
         const obj = n.childForFieldName("object");
         const prop = n.childForFieldName("property");
         if (!obj || !prop) continue;
-        if (obj.type === "this" || obj.type === "identifier") out.push(callFact(`${obj.text}.${prop.text}`, n));
+        if (obj.type === "this" || obj.type === "identifier") out.push(boundCall(callFact(`${obj.text}.${prop.text}`, n), obj.type === "identifier" ? bindingOf(n, obj.text, body) : null));
         else if (text.length < 80) out.push(callFact(text, n));
       } else {
         if (n.text === "require") continue;
-        out.push(callFact(n.text, n));
+        out.push(boundCall(callFact(n.text, n), bindingOf(n, n.text, body)));
       }
     }
     return out;
@@ -52,7 +52,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
       case "function_signature": {
         const name = node.childForFieldName("name")?.text;
         if (!name) return;
-        facts.decls.push(decl("fn", name, node, signature(node), exported, declCalls(node), collectTypeRefs(node), collectShadows(node), []));
+        facts.decls.push(decl("fn", name, node, signature(node), exported, declCalls(node), collectTypeRefs(node), []));
         break;
       }
       case "lexical_declaration":
@@ -69,7 +69,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
             continue;
           }
           if (value && (value.type === "arrow_function" || value.type === "function_expression" || value.type === "generator_function")) {
-            facts.decls.push(decl("fn", name, d, signature(value), exported, declCalls(value), collectTypeRefs(value), collectShadows(value), []));
+            facts.decls.push(decl("fn", name, d, signature(value), exported, declCalls(value), collectTypeRefs(value), []));
           } else if (value && value.type === "class") {
             facts.decls.push(classDecl(name, value, d, exported, declCalls));
           }
@@ -112,7 +112,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
       case "enum_declaration": {
         const name = node.childForFieldName("name")?.text;
         if (!name) return;
-        facts.decls.push(decl("type", name, node, typeSignature(node), exported, [], collectTypeRefs(node), [], []));
+        facts.decls.push(decl("type", name, node, typeSignature(node), exported, [], collectTypeRefs(node), []));
         break;
       }
       default:
@@ -203,7 +203,7 @@ export async function extractTs(path: string, src: string): Promise<FileFacts> {
               facts.exportRows.push({ name: "default", kind: "default", local: value.text });
               localExports.add(value.text);
             } else if (value.type === "arrow_function" || value.type === "function_expression" || value.type === "function") {
-              facts.decls.push(decl("fn", "default", value, signature(value), true, declCalls(value), collectTypeRefs(value), collectShadows(value), []));
+              facts.decls.push(decl("fn", "default", value, signature(value), true, declCalls(value), collectTypeRefs(value), []));
               facts.exports.add("default");
               facts.exportRows.push({ name: "default", kind: "default", local: "default" });
             } else if (value.type === "class") {
@@ -245,9 +245,13 @@ function errorLine(node: Node): number {
   return node.startPosition.row + 1;
 }
 
-function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], shadows: { name: string; kind: "parameter" | "local" }[], members: DeclFact[]): DeclFact {
+function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, shadows, members };
+  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members };
+}
+
+function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
+  return bound ? { ...call, bound } : call;
 }
 
 function callFact(callee: string, node: Node): CallFact {
@@ -301,11 +305,11 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       const mname = m.childForFieldName("name")?.text;
       if (!mname) continue;
       const isPrivate = mname.startsWith("#") || m.children.some((c) => c.type === "accessibility_modifier" && c.text === "private");
-      members.push(decl("fn", mname.replace(/^#/, ""), m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m) : [], collectTypeRefs(m), collectShadows(m), []));
+      members.push(decl("fn", mname.replace(/^#/, ""), m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m) : [], collectTypeRefs(m), []));
     }
   }
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
-  return decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode) : [], [], members);
+  return decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode) : [], members);
 }
 
 function importStatement(node: Node): ImportFact[] {
@@ -379,34 +383,94 @@ function unsupported(node: Node, reason: string): UnsupportedFact {
 }
 
 /** Parameters and locals declared directly in a function, not inside a nested one. */
-function collectShadows(fn: Node): { name: string; kind: "parameter" | "local" }[] {
-  const out: { name: string; kind: "parameter" | "local" }[] = [];
-  const params = fn.childForFieldName("parameters");
-  for (const p of params?.namedChildren ?? []) {
-    const name = parameterName(p);
-    if (name) out.push({ name, kind: "parameter" });
-  }
-  const body = fn.childForFieldName("body");
-  if (body?.type === "statement_block") {
-    for (const stmt of body.namedChildren) {
-      if (stmt.type !== "lexical_declaration" && stmt.type !== "variable_declaration") continue;
-      for (const d of stmt.namedChildren) {
-        if (d.type !== "variable_declarator") continue;
-        const nameNode = d.childForFieldName("name");
-        if (nameNode?.type === "identifier") out.push({ name: nameNode.text, kind: "local" });
-      }
+const FUNCTION_NODES = new Set(["function_declaration", "generator_function_declaration", "function_expression", "function", "generator_function", "arrow_function", "method_definition", "function_signature"]);
+const BLOCK_NODES = new Set(["statement_block", "switch_body", "class_body"]);
+
+/**
+ * Where the head identifier of a call is bound between the call and `stop`
+ * (the declaration being extracted): a parameter, a local, a destructured
+ * name, a nested function or class, a loop or catch variable. Such a call
+ * does not name the module-level symbol of the same name.
+ */
+function bindingOf(call: Node, name: string, stop: Node): "parameter" | "local" | null {
+  for (let at: Node | null = call; at; at = at.parent) {
+    if (FUNCTION_NODES.has(at.type)) {
+      const params = at.childForFieldName("parameters") ?? at.childForFieldName("parameter");
+      if (params && patternNames(params).includes(name)) return "parameter";
+      // A named function expression sees its own name.
+      if (at.id !== stop.id && at.type !== "arrow_function" && at.childForFieldName("name")?.text === name) return "local";
     }
+    if (BLOCK_NODES.has(at.type) || (at.id === stop.id && at.childForFieldName("body")?.type === "statement_block")) {
+      const block = BLOCK_NODES.has(at.type) ? at : at.childForFieldName("body");
+      if (block && blockDeclares(block, name)) return "local";
+    }
+    if (at.type === "for_in_statement") {
+      const left = at.childForFieldName("left");
+      if (left && patternNames(left).includes(name)) return "local";
+    }
+    if (at.type === "for_statement") {
+      const init = at.childForFieldName("initializer");
+      if (init && declaredNames(init).includes(name)) return "local";
+    }
+    if (at.type === "catch_clause") {
+      const param = at.childForFieldName("parameter");
+      if (param && patternNames(param).includes(name)) return "local";
+    }
+    if (at.id === stop.id) break;
   }
-  return out;
+  return null;
 }
 
-function parameterName(node: Node): string | null {
-  if (node.type === "identifier") return node.text;
-  const pattern = node.childForFieldName("pattern") ?? node.childForFieldName("name") ?? node.namedChildren.find((c) => c.type === "identifier");
-  if (!pattern) return null;
-  if (pattern.type === "identifier") return pattern.text;
-  if (pattern.type === "rest_pattern") return pattern.namedChildren.find((c) => c.type === "identifier")?.text ?? null;
-  return null;
+function blockDeclares(block: Node, name: string): boolean {
+  for (const stmt of block.namedChildren) {
+    const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
+    if (!target) continue;
+    if (declaredNames(target).includes(name)) return true;
+  }
+  return false;
+}
+
+function declaredNames(stmt: Node): string[] {
+  if (stmt.type === "lexical_declaration" || stmt.type === "variable_declaration") {
+    return stmt.namedChildren.filter((d) => d.type === "variable_declarator").flatMap((d) => {
+      const nameNode = d.childForFieldName("name");
+      return nameNode ? patternNames(nameNode) : [];
+    });
+  }
+  if (FUNCTION_NODES.has(stmt.type) || stmt.type === "class_declaration" || stmt.type === "abstract_class_declaration") {
+    const nameNode = stmt.childForFieldName("name");
+    return nameNode ? [nameNode.text] : [];
+  }
+  return [];
+}
+
+/** Every identifier bound by a parameter list or a destructuring pattern. */
+function patternNames(node: Node): string[] {
+  switch (node.type) {
+    case "identifier":
+    case "shorthand_property_identifier_pattern":
+      return [node.text];
+    case "pair_pattern": {
+      const value = node.childForFieldName("value");
+      return value ? patternNames(value) : [];
+    }
+    case "assignment_pattern":
+    case "object_assignment_pattern": {
+      const left = node.childForFieldName("left");
+      return left ? patternNames(left) : [];
+    }
+    case "required_parameter":
+    case "optional_parameter": {
+      const pattern = node.childForFieldName("pattern");
+      return pattern ? patternNames(pattern) : [];
+    }
+    case "lexical_declaration":
+    case "variable_declaration":
+      return declaredNames(node);
+    default:
+      if (node.type.endsWith("_pattern") || node.type === "formal_parameters" || node.type === "rest_pattern") return node.namedChildren.flatMap(patternNames);
+      return [];
+  }
 }
 
 /** Source of the import that bound `local` as a whole module, if any. */

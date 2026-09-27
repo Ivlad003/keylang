@@ -247,7 +247,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
           continue; // excluded file (tests, d.ts)
         }
-        if (target === module) continue;
+        // A file that imports itself is a self-loop; two files merged into one module are not.
+        if (target === module && r.file !== facts.path) continue;
       } else if (r.kind === "generated") {
         if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
@@ -355,11 +356,15 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const seen = new Set<string>();
         for (const c of d.calls) {
           const head = c.callee.split(".")[0]!;
-          const shadow = d.shadows.find((s) => s.name === head);
-          if (shadow && head !== "this") {
-            stats.callsUnresolved++;
-            const why = shadow.kind === "parameter" ? "shadowed by parameter" : "shadowed by local";
-            gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `${why} \`${c.callee}\``, source: fn.id });
+          if (c.bound && head !== "this") {
+            // A local binding hides an import or a module declaration of the same name.
+            if (locals.has(head) || localDecls.has(head)) {
+              stats.callsUnresolved++;
+              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `shadowed by ${c.bound} \`${c.callee}\``, source: fn.id });
+            } else {
+              stats.callsDynamic++;
+              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: `call through a local value \`${c.callee}\``, source: fn.id });
+            }
             continue;
           }
           if (head === "eval") continue;

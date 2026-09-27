@@ -286,7 +286,8 @@ test("snapshot keeps unresolved imports, local calls, and completeness", (t) => 
   assert.match(missing.reason, /missing\.ts/);
   const local = coverage.find((c) => c.file === "src/app/checkout.ts" && c.reason.includes("`save`"));
   assert.ok(local, JSON.stringify(coverage.filter((c) => c.file === "src/app/checkout.ts")));
-  assert.match(local.reason, /shadowed by parameter/);
+  // No module-level `save` in checkout.ts: nothing is shadowed, the parameter is a local value.
+  assert.match(local.reason, /call through a local value/);
   assert.equal(index.nodes["domain.empty"].members, "complete");
   assert.equal(index.nodes["domain.bad"].members, "opaque");
   const parseError = coverage.find((c) => c.kind === "parse-error" && c.file === "src/domain/bad.ts");
@@ -581,6 +582,36 @@ test("a shadowed parameter is not a confirmed call edge", (t) => {
   assert.ok(hole);
 });
 
+test("a local binding in any enclosing scope hides the module function", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cases = [
+    "export function a1({ save }: { save: () => void }): void { save(); }",
+    "export function a2(o: { save: () => void }): void { const { save } = o; save(); }",
+    "export function a3(): void { function save(): void {} save(); }",
+    "export function a4(flag: boolean): void { if (flag) { const save = pick(); save(); } }",
+    "export function a5(xs: (() => void)[]): void { xs.forEach((save) => save()); }",
+    "export function a6(fs: (() => void)[]): void { for (const save of fs) save(); }",
+    "export function a7(): () => void { return (save: () => void) => save(); }",
+    "export function a8(): void { const save = pick(); save(); }",
+    "export function a9(): void { try { pick(); } catch (save) { (save as () => void)(); } }",
+  ];
+  writeFileSync(join(dir, "src/domain/order.ts"), `export function save(): void {}\nexport function pick(): () => void { return save; }\n${cases.join("\n")}\nexport function direct(): void { save(); }\n`);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+  const edges = index.edges as { source: string; target: string | null; resolution: string; reason?: string }[];
+  for (let i = 1; i <= 9; i++) {
+    const hit = edges.find((edge) => edge.source === `domain.order.a${i}` && edge.target === "domain.order.save" && edge.resolution === "resolved");
+    assert.equal(hit, undefined, `a${i} must not call domain.order.save`);
+  }
+  assert.ok(edges.some((edge) => edge.source === "domain.order.direct" && edge.target === "domain.order.save" && edge.resolution === "resolved"));
+  const reasons = (index.coverage as { source: string | null; reason: string }[]).filter((item) => item.source?.startsWith("domain.order.a")).map((item) => `${item.source} ${item.reason}`);
+  assert.ok(reasons.includes("domain.order.a1 shadowed by parameter `save`"), reasons.join("\n"));
+  assert.ok(reasons.includes("domain.order.a8 shadowed by local `save`"), reasons.join("\n"));
+  // A method call on a parameter is a call through a local value, not shadowing.
+  assert.ok(reasons.includes("domain.order.a5 call through a local value `xs.forEach`"), reasons.join("\n"));
+});
+
 test("exports lists extra public names and a missing one", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -745,6 +776,70 @@ test("entry does not treat a sibling as reachable", (t) => {
   assert.doesNotMatch(checked.stdout, /main\.pkg\.live[\s\S]*K103[\s\S]*main\.pkg\.live/);
 });
 
+/** A temp repository with one layer `main` over `src/**`, the given files, and rules. */
+function mainRepo(t: { after: (f: () => void) => void }, files: Record<string, string>, rules: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-main-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  mkdirSync(join(dir, "keylang"), { recursive: true });
+  writeFileSync(join(dir, "keylang/rules.md"), `# rules\n\n${rules}`);
+  return dir;
+}
+
+test("no-cycles: a self-import is a cycle, two cycles are two findings, an acyclic graph is quiet", (t) => {
+  const self = mainRepo(t, { "src/a.ts": 'import "./a.ts";\nexport const a = 1;\n' }, "- no-cycles\n");
+  const selfChecked = keylang(self, ["check"]);
+  assert.equal(selfChecked.status, 1, selfChecked.stdout);
+  assert.match(selfChecked.stdout, /K105 divergence: dependency cycle main\.a → main\.a/);
+  const two = mainRepo(
+    t,
+    { "src/a.ts": 'import "./b.ts";\n', "src/b.ts": 'import "./a.ts";\n', "src/c.ts": 'import "./d.ts";\n', "src/d.ts": 'import "./c.ts";\n' },
+    "- no-cycles\n",
+  );
+  const twoChecked = keylang(two, ["check"]);
+  assert.equal(twoChecked.stdout.match(/K105/g)?.length, 2, twoChecked.stdout);
+  const none = mainRepo(t, { "src/a.ts": 'import "./b.ts";\n', "src/b.ts": "export const b = 1;\n" }, "- no-cycles\n");
+  const quiet = keylang(none, ["check"]);
+  assert.equal(quiet.status, 0, quiet.stdout);
+  assert.doesNotMatch(quiet.stdout, /K105/);
+});
+
+test("no-cycles under a directory module routes through that module", (t) => {
+  const dir = mainRepo(
+    t,
+    { "src/a.ts": 'import "./pkg/y.ts";\nimport "./b.ts";\n', "src/b.ts": 'import "./a.ts";\n', "src/pkg/y.ts": 'import "../a.ts";\n' },
+    "- module main.pkg\n  - no-cycles\n",
+  );
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 1, checked.stdout);
+  assert.match(checked.stdout, /K105 divergence: dependency cycle main\.pkg\.y → main\.a → main\.pkg\.y/);
+});
+
+test("entry follows re-exports, skips directory modules, and names the hole", (t) => {
+  const dir = mainRepo(
+    t,
+    {
+      "src/main.ts": 'import { a } from "./lib/index.ts";\nexport const run = a;\n',
+      "src/lib/index.ts": 'export * from "./a.ts";\nexport { b } from "./b.ts";\n',
+      "src/lib/a.ts": "export const a = 1;\n",
+      "src/lib/b.ts": "export const b = 1;\n",
+      "src/lib/c.ts": "export const c = 1;\n",
+    },
+    "- entry\n  - main.main\n",
+  );
+  const checked = keylang(dir, ["check"]);
+  assert.match(checked.stdout, /K103 absence: module `main\.lib\.c` is not reachable/);
+  assert.doesNotMatch(checked.stdout, /`main\.lib\.(a|b|index)`|`main\.lib` is not/);
+  appendFileSync(join(dir, "src/main.ts"), 'import "./missing.ts";\n');
+  const holed = keylang(dir, ["check"]);
+  assert.doesNotMatch(holed.stdout, /K103/);
+  assert.match(holed.stdout, /unverified not reached, but unresolved import `\.\/missing\.ts` \(src\/main\.ts:3:1\) may reach it/);
+});
+
 test("explain-edge prints the import and writes nothing", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -756,6 +851,27 @@ test("explain-edge prints the import and writes nothing", (t) => {
   assert.deepEqual(readdirSync(dir), before);
   const unknown = keylang(dir, ["check", "--explain-edge", "no.such", "domain.order"]);
   assert.equal(unknown.status, 2, unknown.stderr);
+  const tail = keylang(dir, ["check", "--explain-edge", "app.checkout.nonexistent", "domain.order"]);
+  assert.equal(tail.status, 2, tail.stdout);
+  assert.match(tail.stderr, /unknown id `app\.checkout\.nonexistent`/);
+});
+
+test("explain-edge lists import and call edges in a stable order, and holes when there is no edge", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const both = keylang(dir, ["check", "--explain-edge", "app", "domain"]);
+  assert.equal(both.status, 0, both.stderr);
+  const lines = both.stdout.trimEnd().split("\n");
+  assert.ok(lines.some((line) => /^call resolved syntactic src\/app\/checkout\.ts:\d+:\d+-\d+:\d+ .* app\.checkout\.\w+ → domain\.order\.\w+$/.test(line)), both.stdout);
+  assert.ok(lines.some((line) => /^import resolved syntactic src\/app\/checkout\.ts:1:1-/.test(line)), both.stdout);
+  assert.deepEqual(lines, [...lines].sort((a, b) => (a.split(" ")[0]! < b.split(" ")[0]! ? -1 : a.split(" ")[0]! > b.split(" ")[0]! ? 1 : 0)));
+  assert.equal(keylang(dir, ["check", "--explain-edge", "app", "domain"]).stdout, both.stdout);
+  const small = mainRepo(t, { "src/a.ts": "export function a(): void {}\n", "src/b.ts": "export function b(): void {}\n" }, "");
+  const clean = keylang(small, ["check", "--explain-edge", "main.a", "main.b"]);
+  assert.equal(clean.stdout, "no edge, coverage complete\n");
+  appendFileSync(join(small, "src/a.ts"), "export function later(cb: () => void): void { cb(); }\n");
+  const holed = keylang(small, ["check", "--explain-edge", "main.a", "main.b"]);
+  assert.equal(holed.stdout, "no confirmed edge; 1 unresolved construct(s) in `main.a` could form one\nunresolved src/a.ts:2:47 call through a local value `cb`\n");
 });
 
 test("explain covers every diagnostic code", () => {
@@ -877,10 +993,65 @@ test("check formats share the exit code", (t) => {
   const body = JSON.parse(json.stdout);
   assert.ok(Array.isArray(body.results));
   assert.ok(body.results.some((row: { verdict: string; code: string }) => row.verdict === "fail" && row.code === "K102"));
-  const report = JSON.parse(sarif.stdout);
-  assert.equal(report.version, "2.1.0");
-  assert.equal(report.runs[0].tool.driver.name, "keylang");
+  assertSarif(JSON.parse(sarif.stdout));
   assert.match(github.stdout, /::error /);
   const bad = keylang(dir, ["check", "--format", "xml"]);
   assert.equal(bad.status, 2);
 });
+
+/** The structure SARIF 2.1.0 requires of what keylang writes (checked offline). */
+function assertSarif(report: any): void {
+  assert.equal(report.version, "2.1.0");
+  assert.match(report.$schema, /sarif-schema-2\.1\.0\.json$/);
+  assert.ok(Array.isArray(report.runs) && report.runs.length === 1);
+  const run = report.runs[0];
+  assert.equal(typeof run.tool.driver.name, "string");
+  const ids = (run.tool.driver.rules as { id: string; shortDescription: { text: string } }[]).map((rule) => rule.id);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const result of run.results) {
+    assert.ok(["error", "warning", "note", "none"].includes(result.level), result.level);
+    assert.equal(typeof result.message.text, "string");
+    assert.equal(ids[result.ruleIndex], result.ruleId);
+    for (const location of result.locations) {
+      const physical = location.physicalLocation;
+      assert.equal(typeof physical.artifactLocation.uri, "string");
+      assert.ok(Number.isInteger(physical.region.startLine) && physical.region.startLine >= 1);
+      assert.ok(Number.isInteger(physical.region.startColumn) && physical.region.startColumn >= 1);
+    }
+  }
+}
+
+test("formats carry fail, warning, unverified, and coverage; --strict exits alike", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Not reachable from the entry, and the only unresolved import is its own.
+  writeFileSync(join(dir, "src/domain/lonely.ts"), 'import { gone } from "./missing.ts";\nexport const lonely = gone;\n');
+  const results = (args: string[]): { status: number | null; stdout: string } => keylang(dir, ["check", ...args]);
+  const json = results(["--format", "json"]);
+  assert.equal(json.status, 0, json.stdout);
+  const body = JSON.parse(json.stdout) as { snapshotId: string; results: { criterion: string; area: string; verdict: string; evidence: string; snapshotId: string; code: string | null }[]; coverage: { reason: string }[] };
+  const k103 = body.results.find((row) => row.code === "K103");
+  assert.ok(k103, json.stdout);
+  assert.equal(k103.verdict, "warning");
+  assert.equal(k103.criterion, "entry");
+  assert.equal(k103.area, "domain.lonely");
+  const unverified = body.results.find((row) => row.verdict === "unverified");
+  assert.ok(unverified && unverified.criterion === "deny domain infra" && unverified.snapshotId === body.snapshotId, json.stdout);
+  assert.ok(body.coverage.some((item) => item.reason === "unresolved import `./missing.ts`"));
+  for (const format of ["human", "json", "sarif", "github"]) {
+    assert.equal(results(["--format", format]).status, 0, format);
+    assert.equal(results(["--format", format, "--strict"]).status, 1, format);
+  }
+  const sarif = JSON.parse(results(["--format", "sarif"]).stdout);
+  assertSarif(sarif);
+  const levels = (sarif.runs[0].results as { level: string; ruleId: string }[]).map((result) => `${result.ruleId}:${result.level}`);
+  assert.ok(levels.includes("K103:warning"), levels.join(" "));
+  assert.ok(levels.includes("unverified:note"), levels.join(" "));
+  const github = results(["--format", "github"]).stdout;
+  assert.match(github, /^::warning file=src\/domain\/lonely\.ts,line=1,col=1,title=K103::absence: module `domain\.lonely`/m);
+  assert.match(github, /^::notice file=keylang\/rules\.md,line=5,col=1,title=unverified::unresolved import `\.\/missing\.ts` \(src\/domain\/lonely\.ts:1:1\)$/m);
+  const bad = keylang(dir, ["check", "--format", "xml"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /unknown --format `xml`; expected human, json, sarif, github/);
+});
+

@@ -37,11 +37,19 @@ Options:
   -V, --version             Show version
   --strict                  Exit 1 when a required result is unverified
   --format <name>           check output: human (default), json, sarif, github
-  --explain-edge <a> <b>    Print snapshot edges between two ids; writes nothing
+  --explain-edge <a> <b>    Print snapshot edges from id a to id b, or the unresolved
+                            constructs in a that could form one; writes nothing
+
+Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict)
+or a stale map with --check, 2 usage or I/O error.
 `;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
 export async function main(argv: readonly string[]): Promise<number> {
+  // `keylang … | head` closes stdout early; that is not an error.
+  process.stdout.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code === "EPIPE") process.exit(process.exitCode ?? 0);
+  });
   try {
     return await run(argv);
   } catch (e) {
@@ -212,67 +220,78 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...diags.map(formatDiagnostic),
     ...channel.filter((verdict) => !sameFinding(verdict, diags) && (verdict.verdict !== "ok" || channels.has(verdict.criterion))).map(formatVerdict),
   ];
-  writeCheck(opts.format, rendered, channel, snapshot?.snapshotId ?? null, diags);
+  writeCheck(opts.format, rendered, channel, snapshot, diags);
   process.stderr.write(`${fails} fail, ${unverified.length} unverified, ${oks} ok\n`);
   if (fails > 0) return 1;
   if (opts.strict && unverified.length > 0) return 1;
   return 0;
 }
 
-function explainEdge(paths: string[], snapshot: AnalysisSnapshot | null): number {
-  const [from, to] = paths.filter((p) => p.includes("."));
-  if (!from || !to) throw new Error("check --explain-edge needs two ids");
+function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
+  const [from, to, extra] = ids;
+  if (!from || !to || extra !== undefined) throw new Error("check --explain-edge needs exactly two ids: <from> <to>");
   if (!snapshot) throw new Error("no snapshot; run inside a repository with sources");
-  const known = (id: string): boolean => snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`) || id.startsWith(`${key}.`));
-  if (!known(from) || !known(to)) throw new Error(`unknown id \`${!known(from) ? from : to}\``);
+  // An id names a node or an ancestor of nodes (a layer or a directory), never an unknown tail.
+  const known = (id: string): boolean => snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`));
+  for (const id of [from, to]) if (!known(id)) throw new Error(`unknown id \`${id}\``);
+  const under = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const hits = snapshot.edges
-    .filter((edge) => edge.source === from || edge.source.startsWith(`${from}.`) || edge.target === to || edge.target?.startsWith(`${to}.`))
-    .filter((edge) => (edge.source === from || edge.source.startsWith(`${from}.`)) && (edge.target === to || edge.target?.startsWith(`${to}.`) || edge.target === null))
-    .sort((a, b) => a.kind.localeCompare(b.kind) || a.line - b.line || a.col - b.col);
-  if (hits.length === 0) {
-    const holes = snapshot.coverage.filter((item) => item.source === from || item.source?.startsWith(`${from}.`));
-    if (holes.length === 0) process.stdout.write(`no edge, coverage complete\n`);
-    else for (const hole of holes) process.stdout.write(`unresolved ${hole.file}:${hole.line}:${hole.col} ${hole.reason}\n`);
-    return 0;
-  }
+    .filter((edge) => under(edge.source, from) && ((edge.target !== null && under(edge.target, to)) || (edge.candidates ?? []).some((id) => under(id, to))))
+    .sort((a, b) => cmpText(a.kind, b.kind) || cmpText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || cmpText(a.source, b.source));
   for (const edge of hits) {
     const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
     const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
-    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "unresolved"}${via}${edge.reason ? ` (${edge.reason})` : ""}\n`);
+    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${edge.reason ? ` (${edge.reason})` : ""}\n`);
   }
+  if (hits.length > 0) return 0;
+  const holes = snapshot.coverage
+    .filter((item) => item.source !== null && under(item.source, from))
+    .sort((a, b) => cmpText(a.file, b.file) || a.line - b.line || a.col - b.col || cmpText(a.reason, b.reason));
+  if (holes.length === 0) {
+    process.stdout.write("no edge, coverage complete\n");
+    return 0;
+  }
+  process.stdout.write(`no confirmed edge; ${holes.length} unresolved construct(s) in \`${from}\` could form one\n`);
+  for (const hole of holes) process.stdout.write(`unresolved ${hole.file}:${hole.line}:${hole.col} ${hole.reason}\n`);
   return 0;
 }
 
-function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): void {
-  if (format === "human") {
-    for (const line of lines) process.stdout.write(`${line}\n`);
-    return;
-  }
-  if (format === "github") {
-    for (const diag of diags) {
-      const level = isError(diag) ? "error" : "warning";
-      process.stdout.write(`::${level} file=${diag.file},line=${diag.span.start.line},col=${diag.span.start.col}::${diag.code} ${diag.message}\n`);
-    }
-    for (const verdict of verdicts) {
-      if (verdict.verdict === "ok" || sameFinding(verdict, diags)) continue;
-      const level = verdict.verdict === "fail" ? "error" : "warning";
-      process.stdout.write(`::${level} file=${verdict.file},line=${verdict.line},col=${verdict.col}::${verdict.message}\n`);
-    }
-    return;
-  }
-  const results = [
-    ...diags.map((diag) => ({
-      criterion: diag.code,
-      area: diag.file,
-      verdict: isError(diag) ? "fail" : "ok",
+function cmpText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+interface CheckResult {
+  criterion: string;
+  area: string;
+  /** `warning` is a diagnostic that does not fail the check (K006, K103). */
+  verdict: "ok" | "fail" | "unverified" | "warning";
+  evidence: string;
+  snapshotId: string | null;
+  file: string;
+  line: number;
+  col: number;
+  code: string | null;
+}
+
+/** Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion. */
+function checkResults(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckResult[] {
+  const fromDiags = diags.map((diag): CheckResult => {
+    const owner = verdicts.find((verdict) => sameFinding(verdict, [diag]));
+    return {
+      criterion: owner?.criterion ?? diag.code,
+      area: owner?.area ?? diag.file,
+      verdict: isError(diag) ? "fail" : "warning",
       evidence: diag.message,
       snapshotId,
       file: diag.file,
       line: diag.span.start.line,
       col: diag.span.start.col,
       code: diag.code,
-    })),
-    ...verdicts.filter((verdict) => !sameFinding(verdict, diags)).map((verdict) => ({
+    };
+  });
+  const fromVerdicts = verdicts
+    .filter((verdict) => !sameFinding(verdict, diags))
+    .map((verdict): CheckResult => ({
       criterion: verdict.criterion,
       area: verdict.area,
       verdict: verdict.verdict,
@@ -282,30 +301,65 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
       line: verdict.line,
       col: verdict.col,
       code: verdict.code,
-    })),
-  ];
-  if (format === "json") {
-    process.stdout.write(`${JSON.stringify({ snapshotId, results }, null, 2)}\n`);
+    }));
+  return [...fromDiags, ...fromVerdicts];
+}
+
+function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]): void {
+  if (format === "human") {
+    for (const line of lines) process.stdout.write(`${line}\n`);
     return;
   }
+  const snapshotId = snapshot?.snapshotId ?? null;
+  const results = checkResults(verdicts, snapshotId, diags);
+  if (format === "github") {
+    for (const result of results) {
+      if (result.verdict === "ok") continue;
+      const level = result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "notice";
+      const title = result.code ?? result.verdict;
+      process.stdout.write(`::${level} file=${githubProperty(result.file)},line=${result.line},col=${result.col},title=${githubProperty(title)}::${githubData(result.evidence)}\n`);
+    }
+    return;
+  }
+  if (format === "json") {
+    process.stdout.write(`${JSON.stringify({ snapshotId, results, coverage: snapshot?.coverage ?? [] }, null, 2)}\n`);
+    return;
+  }
+  const reported = results.filter((result) => result.verdict !== "ok");
+  const ruleIds = [...new Set(reported.map((result) => result.code ?? result.verdict))].sort();
   const sarif = {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
     version: "2.1.0",
     runs: [
       {
-        tool: { driver: { name: "keylang", rules: [] as { id: string }[] } },
-        results: results
-          .filter((result) => result.verdict === "fail")
-          .map((result) => ({
-            ruleId: result.code ?? "unverified",
-            level: "error",
-            message: { text: String(result.evidence) },
-            locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
-          })),
+        tool: { driver: { name: "keylang", informationUri: "https://www.npmjs.com/package/keylang", rules: ruleIds.map((id) => ({ id, shortDescription: { text: ruleText(id) } })) } },
+        results: reported.map((result) => ({
+          ruleId: result.code ?? result.verdict,
+          ruleIndex: ruleIds.indexOf(result.code ?? result.verdict),
+          level: result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "note",
+          message: { text: result.evidence },
+          locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
+          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId },
+        })),
+        properties: { snapshotId },
       },
     ],
   };
   process.stdout.write(`${JSON.stringify(sarif, null, 2)}\n`);
+}
+
+function ruleText(id: string): string {
+  if (id === "unverified") return "evidence for this criterion is incomplete";
+  return explainCode(id)?.split("\n")[0] ?? id;
+}
+
+// GitHub workflow commands: https://docs.github.com/actions/reference/workflow-commands-for-github-actions
+function githubData(text: string): string {
+  return text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+function githubProperty(text: string): string {
+  return githubData(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
 }
 
 function cmdFmt(paths: string[], checkOnly: boolean): number {

@@ -62,10 +62,10 @@
     - type [FileEntry](../../src/graph.ts#L151) <!-- internal -->
     - fn [buildGraph](../../src/graph.ts#L156) (config: Config, files: FileFacts[]) → Graph
       - calls map.imports.ImportResolver, map.graph.placeFile, map.graph.addDecl, map.graph.markOpaque, base.config.layerName
-    - fn [markOpaque](../../src/graph.ts#L457) (m: Module) → void <!-- internal -->
-    - fn [addDecl](../../src/graph.ts#L462) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L462) (m: Module) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L467) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, stats: Stats) → void <!-- internal -->
       - calls base.config.layerName
-    - fn [placeFile](../../src/graph.ts#L487) (config: Config, file: string) → { layer: string; segments: string[] } | null
+    - fn [placeFile](../../src/graph.ts#L492) (config: Config, file: string) → { layer: string; segments: string[] } | null
       - calls base.glob.matchesGlob, base.glob.globPrefix
   - module [imports](../../src/imports.ts#L1)
     - node external.node

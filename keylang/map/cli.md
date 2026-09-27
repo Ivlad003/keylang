@@ -21,27 +21,37 @@
     - verdict check.verdict
     - fn [main](../../src/cli.ts#L44) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
-    - fn [run](../../src/cli.ts#L53) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L57) (argv: readonly string[]) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdInit, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
-    - fn [cmdExplain](../../src/cli.ts#L105) (code: string | undefined) → number <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L109) (code: string | undefined) → number <!-- internal -->
       - calls cli.explain.explainCode
-    - fn [needPaths](../../src/cli.ts#L113) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L117) (dir: string) → Promise<number> <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L117) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L121) (dir: string) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdMap](../../src/cli.ts#L134) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L138) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, map.map.generateMap, base.config.toPosix, map.map.diffMap, map.map.writeMap
-    - fn [cmdParse](../../src/cli.ts#L171) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L175) (paths: string[], json: boolean) → number <!-- internal -->
       - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L182) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L186) (paths: string[], opts: { strict: boolean; format: string; explain: boolean }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L222) (paths: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
-    - fn [writeCheck](../../src/cli.ts#L246) (format: string, lines: string[], verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → void <!-- internal -->
-      - calls base.diag.isError, check.assess.sameFinding
-    - fn [cmdFmt](../../src/cli.ts#L311) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L226) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+      - calls cli.cli.cmpText
+    - fn [cmpText](../../src/cli.ts#L255) (a: string, b: string) → number <!-- internal -->
+    - type [CheckResult](../../src/cli.ts#L259) <!-- internal -->
+    - fn [checkResults](../../src/cli.ts#L273) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[] <!-- internal -->
+      - calls check.assess.sameFinding, base.diag.isError
+    - fn [writeCheck](../../src/cli.ts#L304) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+      - calls cli.cli.checkResults, cli.cli.githubProperty, cli.cli.githubData, cli.cli.ruleText
+    - fn [ruleText](../../src/cli.ts#L347) (id: string) → string <!-- internal -->
+      - calls cli.explain.explainCode
+    - fn [githubData](../../src/cli.ts#L353) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L357) (text: string) → string <!-- internal -->
+      - calls cli.cli.githubData
+    - fn [cmdFmt](../../src/cli.ts#L361) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L332) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L382) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L340) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L390) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag

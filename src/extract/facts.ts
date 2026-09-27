@@ -63,8 +63,6 @@ export interface DeclFact {
   calls: CallFact[];
   /** Type names mentioned by this declaration, not including its own name. */
   types: TypeRefFact[];
-  /** Parameters and locals that hide an outer name inside this function. */
-  shadows: ShadowBinding[];
   /** Methods for classes. */
   members: DeclFact[];
 }
@@ -72,6 +70,8 @@ export interface DeclFact {
 export interface CallFact {
   /** `f()` → `f`; `a.b()` → `a.b`; `this.m()` → `this.m`; `new X()` → `X`. */
   callee: string;
+  /** The head of the callee is bound in a scope between the call and the module. */
+  bound?: "parameter" | "local";
   line: number;
   col: number;
   endLine: number;
@@ -88,10 +88,6 @@ export interface TypeRefFact {
   text: string;
 }
 
-export interface ShadowBinding {
-  name: string;
-  kind: "parameter" | "local";
-}
 
 /** One public name of a file, compared with the `exports` rule. */
 export interface ExportRow {

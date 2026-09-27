@@ -13,7 +13,7 @@ import type { Verdict } from "./verdict.ts";
 /** The slice of the snapshot rules need. Kept here so `check` does not import `map`. */
 interface SnapshotView {
   snapshotId: string;
-  nodes: Record<string, { kind: string; file: string | null; line: number | null }>;
+  nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null }>;
   edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
@@ -92,11 +92,13 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   const layerOf = (id: string): string => id.split(".")[0] ?? id;
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const edges: UseEdge[] = [];
+  const selfLoops = new Set<string>();
   for (const edge of snapshot.edges) {
     if (edge.kind !== "import" && edge.kind !== "reexport" && edge.kind !== "call" && edge.kind !== "type") continue;
     if (!edge.target || !edge.file) continue;
     const from = moduleOf(edge.source);
     const to = moduleOf(edge.target);
+    if (from && from === to && edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved") selfLoops.add(from);
     if (!from || !to || from === to) continue;
     edges.push({
       from,
@@ -111,16 +113,6 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   const modules = new Set<string>();
   for (const [id, node] of Object.entries(snapshot.nodes)) if (node.kind === "module") modules.add(id);
 
-  const holesIn = (moduleId: string): string[] => {
-    const file = snapshot.nodes[moduleId]?.file;
-    return snapshot.coverage
-      .filter((item) => item.kind !== "skipped-file" && (item.source === moduleId || item.source?.startsWith(`${moduleId}.`) || (file !== null && file !== undefined && item.file === file)))
-      .map((item) => `${item.reason} (${item.file}:${item.line})`);
-  };
-  const holeIn = (moduleId: string): string | null => {
-    const holes = holesIn(moduleId);
-    return holes.find((item) => item.startsWith("unresolved import")) ?? holes[0] ?? null;
-  };
   // A module reaches another module's code only through an import, so a call
   // through a local value cannot hide a dependency; an unknown import can.
   const dependencyHoleIn = (moduleId: string): string | null => {
@@ -201,18 +193,20 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       reachable.add(module);
       for (const edge of forward.get(module) ?? []) stack.push(edge.to);
     }
-    const reachableHasHole = [...reachable].some((id) => holeIn(id) !== null);
+    // Only an unknown import can lead to a module the known edges do not reach.
+    const reachableHole = [...reachable].sort().map(dependencyHoleIn).find((item) => item !== null) ?? null;
     for (const module of [...modules].sort()) {
       if (reachable.has(module) || rules.unordered.has(layerOf(module))) continue;
-      const decl = index.decls.get(module);
+      // A directory module without code of its own is not reached by itself.
+      if (snapshot.nodes[module]?.line === null) continue;
+      // The module's own file is the evidence; the map line is a projection of it.
       const node = snapshot.nodes[module];
-      const file = decl?.file ?? node?.file ?? rules.entryFile;
-      const line = decl?.span.start.line ?? node?.line ?? 1;
-      const col = decl?.span.start.col ?? 1;
-      if (reachableHasHole) {
-        pushUnverified(file, line, col, "entry", module, "unresolved edge may reach this module");
-      } else if (decl) {
-        pushFail("K103", file, line, col, `absence: module \`${module}\` is not reachable from any \`entry\``, "entry", module);
+      const decl = index.decls.get(module);
+      const file = node?.file ?? decl?.file ?? rules.entryFile;
+      const line = node?.file ? (node.line ?? 1) : (decl?.span.start.line ?? 1);
+      const col = node?.file ? (node.col ?? 1) : (decl?.span.start.col ?? 1);
+      if (reachableHole) {
+        pushUnverified(file, line, col, "entry", module, `not reached, but ${reachableHole} may reach it`);
       } else {
         pushFail("K103", file, line, col, `absence: module \`${module}\` is not reachable from any \`entry\``, "entry", module);
       }
@@ -251,6 +245,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       list.add(edge.to);
       adj.set(edge.from, list);
     }
+    for (const module of selfLoops) adj.set(module, new Set([...(adj.get(module) ?? []), module]));
     const components = stronglyConnected(adj);
     for (const rule of rules.noCycles) {
       const relevant = components.filter((component) => rule.under === null || component.some((id) => within(id, rule.under ?? "")));
@@ -259,7 +254,8 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
         continue;
       }
       for (const component of relevant) {
-        const focus = rule.under && component.includes(rule.under) ? rule.under : component[0] ?? "";
+        const under = rule.under;
+        const focus = (under ? component.find((id) => within(id, under)) : undefined) ?? component[0] ?? "";
         const cycle = cycleThrough(adj, new Set(component), focus);
         const route = [...cycle, cycle[0]].filter((id) => id !== undefined).join(" → ");
         pushFail("K105", rule.file, rule.span.start.line, rule.span.start.col, `divergence: dependency cycle ${route}`, "no-cycles", rule.under ?? focus);

@@ -83,14 +83,14 @@
       - calls check.rules.collectRules, check.rules.hashText, check.rules.evaluateOnSnapshot
     - fn [evaluateOnSnapshot](../../src/rules.ts#L80) (rules: Collected, index: Index, snapshot: SnapshotView) → RuleReport <!-- internal -->
       - calls base.diag.diagnostic, check.rules.base, check.rules.specific, check.scc.stronglyConnected, check.scc.cycleThrough
-    - fn [specific](../../src/rules.ts#L274) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
-    - type [Collected](../../src/rules.ts#L292) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L304) (docs: readonly Document[]) → Collected <!-- internal -->
+    - fn [specific](../../src/rules.ts#L270) (rules: Collected, edge: UseEdge, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - type [Collected](../../src/rules.ts#L288) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L300) (docs: readonly Document[]) → Collected <!-- internal -->
       - calls lang.ir.sectionNodes, check.rules.isRuleNode
-    - fn [base](../../src/rules.ts#L357) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L353) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L361) (text: string) → string <!-- internal -->
-    - fn [isRuleNode](../../src/rules.ts#L365) (n: Node) → boolean
+    - fn [hashText](../../src/rules.ts#L357) (text: string) → string <!-- internal -->
+    - fn [isRuleNode](../../src/rules.ts#L361) (n: Node) → boolean
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
     - fn [cycleThrough](../../src/scc.ts#L46) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
