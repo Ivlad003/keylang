@@ -17,7 +17,7 @@
     - fn [assess](../../src/assess.ts#L17) ( docs: readonly Document[], snapshot: AnalysisSnapshot | null, flow: { root: string; testsPath?: string; tracePath?: string } | null, ) → Assessment
       - calls check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, cli.assess.plannedIds
     - fn [sameFinding](../../src/assess.ts#L56) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [plannedIds](../../src/assess.ts#L60) (docs: readonly Document[]) → Set<string> <!-- internal -->
+    - fn [plannedIds](../../src/assess.ts#L64) (docs: readonly Document[]) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
   - module [cli](../../src/cli.ts#L1)
     - node external.node

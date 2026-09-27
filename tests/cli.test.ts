@@ -608,8 +608,9 @@ test("planned id is unverified and an unknown id stays K001", (t) => {
   writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- step domain.order.refund\n");
   const missing = keylang(dir, ["check"]);
   assert.equal(missing.status, 1);
-  assert.match(missing.stdout, /K001/);
-  assert.match(missing.stdout, /domain\.order\.refund/);
+  const k001 = missing.stdout.split("\n").filter((line) => /K001 dangling reference `domain\.order\.refund`/.test(line));
+  assert.equal(k001.length, 1, missing.stdout);
+  assert.match(missing.stderr, /^1 fail,/m);
   assert.match(missing.stdout, /planned/);
 });
 

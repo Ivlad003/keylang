@@ -54,7 +54,11 @@ export function assess(
 }
 
 export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]): boolean {
-  return diagnostics.some((diag) => diag.file === verdict.file && diag.span.start.line === verdict.line && (diag.message === verdict.message || verdict.message.includes(diag.message)));
+  return diagnostics.some((diag) => {
+    if (diag.file !== verdict.file || diag.span.start.line !== verdict.line) return false;
+    if (diag.message === verdict.message || verdict.message.includes(diag.message)) return true;
+    return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.message.includes(`\`${verdict.area}\``);
+  });
 }
 
 function plannedIds(docs: readonly Document[]): Set<string> {

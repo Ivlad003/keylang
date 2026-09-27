@@ -15,18 +15,18 @@
     - fn [evaluateFlows](../../src/flows.ts#L38) (docs: readonly Document[], index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       - calls lang.ir.sectionNodes, lang.ir.walk, check.flows.loadTests, check.flows.loadTrace, check.flows.noteNode
     - fn [noteNode](../../src/flows.ts#L72) ( node: Node, parent: string | null, flow: string, file: string, index: Index, input: FlowInput, calls: Map<string, string[]>, planned: Map<string, { kind: string; signature: string | null }>, tests: ReportCase[] | "missing" | "stale" | null, trace: TraceFile | null, diagnostics: Diagnostic[], verdicts: Verdict[], ) → void <!-- internal -->
-      - calls check.flows.moduleMembers, check.flows.lineVerdict, base.diag.diagnostic, check.flows.reaches, check.flows.unresolvedNear, check.flows.traceStep, check.flows.matchTest
-    - fn [moduleMembers](../../src/flows.ts#L136) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
-    - fn [reaches](../../src/flows.ts#L147) (calls: Map<string, string[]>, from: string, to: string) → boolean <!-- internal -->
-    - fn [unresolvedNear](../../src/flows.ts#L162) (input: FlowInput, parent: string) → boolean <!-- internal -->
-    - fn [lineVerdict](../../src/flows.ts#L166) (input: FlowInput, criterion: "ID" | "static" | "tests" | "trace", area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, message: string) → Verdict <!-- internal -->
-    - fn [matchTest](../../src/flows.ts#L170) (tests: ReportCase[] | "missing" | "stale" | null, file: string, name: string, snapshotId: string | null) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-    - fn [loadTests](../../src/flows.ts#L184) (input: FlowInput) → ReportCase[] | "missing" | "stale" | null <!-- internal -->
-    - type [TraceEvent](../../src/flows.ts#L193) <!-- internal -->
-    - type [TraceFile](../../src/flows.ts#L208) <!-- internal -->
-    - fn [loadTrace](../../src/flows.ts#L215) (input: FlowInput) → TraceFile | null <!-- internal -->
-    - fn [traceStep](../../src/flows.ts#L228) (trace: TraceFile | null, snapshotId: string | null, flow: string, id: string) → { verdict: Verdict["verdict"]; message: string; diagnostic: boolean } <!-- internal -->
-    - fn [traceOrderProblem](../../src/flows.ts#L241) (events: TraceEvent[]) → string | null
+      - calls check.flows.moduleMembers, check.flows.lineVerdict, check.flows.reaches, check.flows.unresolvedNear, check.flows.traceStep, base.diag.diagnostic, check.flows.matchTest
+    - fn [moduleMembers](../../src/flows.ts#L135) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [reaches](../../src/flows.ts#L146) (calls: Map<string, string[]>, from: string, to: string) → boolean <!-- internal -->
+    - fn [unresolvedNear](../../src/flows.ts#L161) (input: FlowInput, parent: string) → boolean <!-- internal -->
+    - fn [lineVerdict](../../src/flows.ts#L165) (input: FlowInput, criterion: "ID" | "static" | "tests" | "trace", area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, message: string) → Verdict <!-- internal -->
+    - fn [matchTest](../../src/flows.ts#L169) (tests: ReportCase[] | "missing" | "stale" | null, file: string, name: string, snapshotId: string | null) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [loadTests](../../src/flows.ts#L183) (input: FlowInput) → ReportCase[] | "missing" | "stale" | null <!-- internal -->
+    - type [TraceEvent](../../src/flows.ts#L192) <!-- internal -->
+    - type [TraceFile](../../src/flows.ts#L207) <!-- internal -->
+    - fn [loadTrace](../../src/flows.ts#L214) (input: FlowInput) → TraceFile | null <!-- internal -->
+    - fn [traceStep](../../src/flows.ts#L227) (trace: TraceFile | null, snapshotId: string | null, flow: string, id: string) → { verdict: Verdict["verdict"]; message: string; diagnostic: boolean } <!-- internal -->
+    - fn [traceOrderProblem](../../src/flows.ts#L240) (events: TraceEvent[]) → string | null
   - module [resolve](../../src/resolve.ts#L1)
     - diag base.diag
     - ir lang.ir

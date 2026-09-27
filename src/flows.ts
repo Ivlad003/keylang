@@ -99,7 +99,6 @@ function noteNode(
         verdicts.push(lineVerdict(input, "ID", id, "unverified", file, line, col, `opaque module`));
       } else {
         verdicts.push(lineVerdict(input, "ID", id, "fail", file, line, col, "K001 dangling reference"));
-        diagnostics.push(diagnostic("K001", file, node.span, `dangling reference \`${id}\`; declare \`planned\` if this is an intention`));
       }
       if (node.kind === "step" && parent) {
         if (plan) verdicts.push(lineVerdict(input, "static", id, "unverified", file, line, col, "planned"));
