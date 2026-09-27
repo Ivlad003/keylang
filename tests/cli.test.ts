@@ -1055,3 +1055,26 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   assert.match(bad.stderr, /unknown --format `xml`; expected human, json, sarif, github/);
 });
 
+test("keylang.json errors name the file and the field, exit 2", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8"));
+  const cases: [unknown, RegExp][] = [
+    [{ ...config, check: { tests: "reports/none.json" } }, /keylang\.json: check\.tests: no such file `reports\/none\.json`/],
+    [{ ...config, check: { tests: 5 } }, /keylang\.json: `check\.tests` must be a path, got 5/],
+    [{ ...config, check: { junit: "x" } }, /keylang\.json: unknown field `check\.junit`/],
+    [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be "typescript" or "javascript", got "cobol"/],
+    [{ ...config, layers: { domain: 1 } }, /keylang\.json: `layers\.domain` must be a glob or an array of globs, got 1/],
+  ];
+  for (const [body, message] of cases) {
+    writeFileSync(join(dir, "keylang.json"), JSON.stringify(body));
+    const checked = keylang(dir, ["check"]);
+    assert.equal(checked.status, 2, checked.stdout + checked.stderr);
+    assert.match(checked.stderr, message);
+  }
+  writeFileSync(join(dir, "keylang.json"), "{ nope");
+  const broken = keylang(dir, ["map"]);
+  assert.equal(broken.status, 2);
+  assert.match(broken.stderr, /keylang\.json: invalid JSON/);
+});
+

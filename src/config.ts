@@ -67,7 +67,7 @@ export function languageOf(path: string): Language | undefined {
   return m ? EXT_LANG[m[0]] : undefined;
 }
 
-interface RawConfig {
+export interface RawConfig {
   dir?: string;
   languages?: Language[];
   module?: "file" | "dir";
@@ -79,7 +79,7 @@ interface RawConfig {
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
 export function loadConfig(root: string): Config {
   const file = join(root, CONFIG_FILE);
-  const raw: RawConfig = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as RawConfig) : {};
+  const raw: RawConfig = existsSync(file) ? parseConfig(file, readFileSync(file, "utf8")) : {};
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
   let layers: Map<string, string[]>;
@@ -100,6 +100,62 @@ export function loadConfig(root: string): Config {
     check: raw.check ?? {},
     guessed,
   };
+}
+
+/** Parse and validate `keylang.json`. Errors name the file and the field. */
+export function parseConfig(file: string, text: string): RawConfig {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const fail = (field: string, expected: string, got: unknown): never => {
+    throw new Error(`${file}: \`${field}\` must be ${expected}, got ${JSON.stringify(got)}`);
+  };
+  if (!isObject(value)) return fail("(root)", "an object", value);
+  const known = new Set(["$schema", "dir", "languages", "module", "layers", "exclude", "check"]);
+  for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
+  const raw: RawConfig = {};
+  if (value.dir !== undefined) raw.dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
+  if (value.languages !== undefined) {
+    const list = value.languages;
+    if (!Array.isArray(list)) return fail("languages", "an array", list);
+    list.forEach((item, i) => {
+      if (item !== "typescript" && item !== "javascript") fail(`languages[${i}]`, '"typescript" or "javascript"', item);
+    });
+    raw.languages = list as Language[];
+  }
+  if (value.module !== undefined) raw.module = value.module === "file" || value.module === "dir" ? value.module : fail("module", '"file" or "dir"', value.module);
+  if (value.layers !== undefined) {
+    if (!isObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
+    const layers: Record<string, string | string[]> = {};
+    for (const [name, globs] of Object.entries(value.layers)) {
+      if (typeof globs === "string") layers[name] = globs;
+      else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = globs as string[];
+      else fail(`layers.${name}`, "a glob or an array of globs", globs);
+    }
+    raw.layers = layers;
+  }
+  if (value.exclude !== undefined) {
+    if (!Array.isArray(value.exclude) || !value.exclude.every((glob) => typeof glob === "string")) return fail("exclude", "an array of globs", value.exclude);
+    raw.exclude = value.exclude as string[];
+  }
+  if (value.check !== undefined) {
+    if (!isObject(value.check)) return fail("check", "an object", value.check);
+    const check: { tests?: string; trace?: string } = {};
+    for (const [key, path] of Object.entries(value.check)) {
+      if (key !== "tests" && key !== "trace") throw new Error(`${file}: unknown field \`check.${key}\``);
+      if (typeof path !== "string" || path === "") fail(`check.${key}`, "a path", path);
+      check[key] = path as string;
+    }
+    raw.check = check;
+  }
+  return raw;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The config as it would be written by `keylang init`. */

@@ -1,45 +1,162 @@
-// Forbidden-import probe for one benchmark copy: pick two modules A and B
-// from the generated index (different layers when possible), write
-// `deny A B`, add an import A → B, regenerate and expect K102.
-// Usage: node bench/inject.ts <repo copy>   (prints one verdict line)
+// Negative probes for one benchmark copy. Each probe breaks the copy in one
+// way, runs the real CLI, expects the contract's answer, and restores the
+// files it touched. Probes:
+//   deny-import     `deny A B` + a static import A → B        → K102
+//   deny-dynamic    `deny A B` + literal `import()` in a fn   → K102
+//   removed-fn      flow step on the only fn, fn removed      → K001
+//   manual-map      map file without the generated marker     → `map` exit 1, file kept
+//   shadowed-call   parameter named like a module fn, called  → no resolved edge, "shadowed by parameter"
+// Usage: node bench/inject.ts <repo copy>
+// Prints one line per probe, then `probes: N/M caught`.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
-const dir = process.argv[2]!;
+interface SnapshotNode {
+  kind: string;
+  file: string | null;
+  layer: string;
+}
+
+const dir = process.argv[2];
+if (!dir) {
+  process.stderr.write("usage: node bench/inject.ts <repo copy>\n");
+  process.exit(2);
+}
 const bin = join(import.meta.dirname, "../bin/keylang.js");
 const run = (...args: string[]) => spawnSync(process.execPath, [bin, ...args], { cwd: dir, encoding: "utf8" });
 
-const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
-  files?: Record<string, { layer: string; module: string }>;
-  nodes?: Record<string, { kind?: string; file?: string | null; layer?: string }>;
-};
-const files = index.files
-  ? Object.entries(index.files).filter(([f]) => !/\.(tsx|jsx)$/.test(f))
-  : Object.entries(index.nodes ?? {})
-      .filter(([, node]) => node.kind === "module" && node.file)
-      .map(([id, node]) => [node.file as string, { layer: node.layer ?? id.split(".")[0] ?? "", module: id }] as const);
-if (files.length < 2) {
-  console.log("skip: fewer than two modules");
+if (run("map").status !== 0) {
+  console.log("skip: map failed");
   process.exit(0);
 }
-const [fa, a] = files[0]!;
-const [fb, b] = files.find(([, m]) => m.layer !== a.layer) ?? files.find(([, m]) => m.module !== a.module)!;
-
-let spec = relative(dirname(fa), fb).split("\\").join("/");
-if (!spec.startsWith(".")) spec = `./${spec}`;
-const src = readFileSync(join(dir, fa), "utf8");
-const cjs = /\brequire\(/.test(src) && !/^\s*import\s/m.test(src);
-appendFileSync(join(dir, fa), cjs ? `\nconst __keylangProbe = require('${spec}');\n` : `\nimport * as __keylangProbe from "${spec}";\n`);
-mkdirSync(join(dir, "keylang"), { recursive: true });
-writeFileSync(join(dir, "keylang/rules.md"), `# rules\n\n- deny ${a.module} ${b.module}\n`);
-
-if (run("map").status !== 0) {
-  console.log("FAIL: map failed after injection");
-  process.exit(1);
+const readIndex = (): { nodes: Record<string, SnapshotNode>; edges: { source: string; target: string | null; resolution: string }[]; coverage: { source: string | null; reason: string }[] } =>
+  JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+const index = readIndex();
+// File modules only: a class is a module node that shares its file with the enclosing module.
+const modules = Object.entries(index.nodes)
+  .filter(([, node]) => node.kind === "module" && node.file && /\.[cm]?[jt]s$/.test(node.file))
+  .map(([id, node]) => ({ id, file: node.file as string, layer: node.layer }))
+  .filter((m, _, all) => !all.some((other) => other.file === m.file && m.id.startsWith(`${other.id}.`)));
+/** A function declared directly in a file module. */
+const topFn = (m: { id: string; file: string }): string | undefined =>
+  Object.keys(index.nodes).find((id) => index.nodes[id]!.kind === "fn" && index.nodes[id]!.file === m.file && id.startsWith(`${m.id}.`) && id.split(".").length === m.id.split(".").length + 1);
+if (modules.length < 2) {
+  console.log("skip: fewer than two script modules");
+  process.exit(0);
 }
-const out = run("check").stdout;
-const hit = out.split("\n").find((l) => l.includes("K102") && l.includes(`\`${a.module}\` depends on \`${b.module}\``));
-console.log(hit ? `caught: ${a.module} → ${b.module} (K102)` : `FAIL: ${a.module} → ${b.module} not reported\n${out}`);
-process.exit(hit ? 0 : 1);
+const a = modules[0]!;
+const b = modules.find((m) => m.layer !== a.layer) ?? modules.find((m) => m.id !== a.id)!;
+const esm = (file: string): boolean => !/\brequire\(/.test(readFileSync(join(dir, file), "utf8")) || /^\s*import\s/m.test(readFileSync(join(dir, file), "utf8"));
+const specifier = (from: string, to: string): string => {
+  const spec = relative(dirname(from), to).split("\\").join("/");
+  return spec.startsWith(".") ? spec : `./${spec}`;
+};
+
+/** Run `probe` with the listed files restored afterwards (missing files are removed). */
+function isolated(files: string[], probe: () => string | null): string | null {
+  const saved = files.map((file) => ({ file, text: existsSync(join(dir, file)) ? readFileSync(join(dir, file), "utf8") : null }));
+  try {
+    return probe();
+  } finally {
+    for (const { file, text } of saved) {
+      if (text === null) rmSync(join(dir, file), { force: true });
+      else writeFileSync(join(dir, file), text);
+    }
+  }
+}
+
+const specFiles = ["keylang/rules.md", "keylang/flows/probe.md"];
+const probes: [string, () => string | null][] = [
+  [
+    "deny-import",
+    () =>
+      isolated([a.file, ...specFiles], () => {
+        const spec = specifier(a.file, b.file);
+        writeFileSync(join(dir, a.file), `${readFileSync(join(dir, a.file), "utf8")}\n${esm(a.file) ? `import * as __keylangProbe from "${spec}";` : `const __keylangProbe = require('${spec}');`}\n`);
+        writeSpec("keylang/rules.md", `# rules\n\n- deny ${a.id} ${b.id}\n`);
+        const out = run("check").stdout;
+        return out.includes(`K102 divergence: \`${a.id}\` depends on \`${b.id}\``) ? `${a.id} → ${b.id} K102` : null;
+      }),
+  ],
+  [
+    "deny-dynamic",
+    () =>
+      isolated([a.file, ...specFiles], () => {
+        const spec = specifier(a.file, b.file);
+        writeFileSync(join(dir, a.file), `${readFileSync(join(dir, a.file), "utf8")}\nasync function __keylangProbe() { return import("${spec}"); }\n`);
+        writeSpec("keylang/rules.md", `# rules\n\n- deny ${a.id} ${b.id}\n`);
+        const out = run("check").stdout;
+        return out.includes(`K102 divergence: \`${a.id}\` depends on \`${b.id}\``) ? `import() ${a.id} → ${b.id} K102` : null;
+      }),
+  ],
+  [
+    "removed-fn",
+    () => {
+      const owner = modules.find((m) => topFn(m) !== undefined);
+      const fnId = owner ? topFn(owner) : undefined;
+      if (!owner || !fnId) return "skip: no top-level fn";
+      const file = owner.file;
+      return isolated([file, ...specFiles], () => {
+        writeSpec("keylang/flows/probe.md", `# flow probe\n\n- step ${fnId}\n`);
+        writeFileSync(join(dir, file), "export const marker = 1;\n");
+        const out = run("check").stdout;
+        return out.includes(`K001 dangling reference \`${fnId}\``) ? `${fnId} K001` : null;
+      });
+    },
+  ],
+  [
+    "manual-map",
+    () => {
+      const layer = a.layer;
+      const target = `keylang/map/${layer}.md`;
+      return isolated([target], () => {
+        const manual = `# map\n\nhand-written ${layer}\n`;
+        writeSpec(target, manual);
+        const status = run("map").status;
+        const kept = readFileSync(join(dir, target), "utf8") === manual;
+        return status === 1 && kept ? `${target} kept, map exit 1` : null;
+      });
+    },
+  ],
+  [
+    "shadowed-call",
+    () => {
+      const owner = modules.find((m) => topFn(m) !== undefined);
+      const fnId = owner ? topFn(owner) : undefined;
+      if (!owner || !fnId) return "skip: no top-level fn";
+      const name = fnId.slice(owner.id.length + 1);
+      return isolated([owner.file], () => {
+        writeFileSync(join(dir, owner.file), `${readFileSync(join(dir, owner.file), "utf8")}\nfunction __keylangShadow(${name}) { return ${name}(); }\n`);
+        if (run("map").status !== 0) return null;
+        const probed = readIndex();
+        const source = `${owner.id}.__keylangShadow`;
+        const edge = probed.edges.some((e) => e.source === source && e.target === fnId && e.resolution === "resolved");
+        const hole = probed.coverage.some((c) => c.source === source && c.reason.startsWith("shadowed by parameter"));
+        return !edge && hole ? `${source} shadowed, no edge` : null;
+      });
+    },
+  ],
+];
+
+function writeSpec(path: string, text: string): void {
+  mkdirSync(dirname(join(dir!, path)), { recursive: true });
+  writeFileSync(join(dir!, path), text);
+}
+
+let caught = 0;
+let ran = 0;
+for (const [name, probe] of probes) {
+  const result = probe();
+  if (result?.startsWith("skip:")) {
+    console.log(`${name}: ${result}`);
+    continue;
+  }
+  ran++;
+  if (result) caught++;
+  console.log(`${name}: ${result ? `caught ${result}` : "FAIL"}`);
+}
+run("map");
+console.log(`probes: ${caught}/${ran} caught`);
+process.exit(caught === ran ? 0 : 1);

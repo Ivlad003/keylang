@@ -15,7 +15,8 @@ for d in repos/*/; do
     ms=$(( ($(date +%s%N) - start) / 1000000 ))
     warn=$(grep -c '^warning:' "$work/$r.log" || true)
     node "$bin" check >"$work/$r.check" 2>&1 || true
-    probe=$(node "$(dirname "$bin")/../bench/inject.ts" "$work/$r" 2>&1 | tail -1 || true)
+    node "$(dirname "$bin")/../bench/inject.ts" "$work/$r" >"$work/$r.probes" 2>&1 || true
+    probe=$(tail -1 "$work/$r.probes")
     echo "$r | ${ms} ms | $(tail -1 "$work/$r.log") | $warn warning(s) | check: $(tail -1 "$work/$r.check") | probe: $probe"
   else
     echo "$r | — | $(tail -1 "$work/$r.log")"

@@ -4,7 +4,65 @@
 
 1. `keylang map` без `keylang.json`, тобто з вгаданими шарами;
 2. `keylang check` на згенерованій карті;
-3. пробу `bench/inject.ts`: бере два модулі A і B (з різних шарів, коли це можливо), пише `deny A B`, дописує імпорт A → B, перегенеровує карту й очікує K102.
+3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
+
+## M1.1 — 2026-09-27
+
+Node v24.20.0, keylang 0.1.0, ті самі коміти репозиторіїв, що й для M1. Лог: `KEYLANG_BENCH_WORK=<dir> bench/run.sh`, по пробах — `<dir>/<repo>.probes`.
+
+### Негативні проби на реальних репозиторіях
+
+| Проба | Що ламає | Очікування за контрактом |
+|---|---|---|
+| `deny-import` | `deny A B` + статичний імпорт A → B | K102 |
+| `deny-dynamic` | `deny A B` + літеральний `import()` у функції A | K102 |
+| `removed-fn` | flow `step` на fn файлового модуля, весь файл замінено на `export const marker = 1` | K001 на кроці (модуль `complete`, членів немає) |
+| `manual-map` | `keylang/map/<layer>.md` без маркера `keylang:generated` | `map` код 1, файл не перезаписано |
+| `shadowed-call` | `function __keylangShadow(f) { return f(); }` поруч з fn `f` модуля | немає resolved-ребра, `coverage`: `shadowed by parameter` |
+
+| Репозиторій | Результат проб |
+|---|---|
+| circlecam | 5/5: `app.circlecam → main.camera`, `app.circlecam.buildWindow` K001 |
+| meet-unmirror | 5/5: `main.content → main.popup`, `main.content.acceptNameLabel` K001 |
+| reslop | 5/5: `bin.reslop → diff.align`, `bin.reslop.fail` K001 |
+| kosmo-tui | 5/5: `bin.kosmo-tui → code.params`, `code.params.bareArrowHeader` K001 |
+| storefront-next-template | 5/5: `app.config_server → components.account-navigation`, `…order-badge-shared.getPaymentMethodDisplays` K001 |
+| health-tracker (`web/`) | 5/5: `web.src.api → web.src.errors`, `web.src.api.api` K001 |
+| voice-transcriber | пропущено: TS/JS-модулів немає |
+| Index | пропущено: `map` без мов, код 2 |
+
+Ті самі сценарії, а також видалення останньої fn, затінення в кожному виді області (деструктуризація, блок, вкладена функція, колбек, `for…of`, `catch`), `exports` з alias/default/`export *`, self-import як цикл, JSON/SARIF/github — CLI-тести в `tests/cli.test.ts`.
+
+### Tarball на двох версіях Node
+
+`npm pack` → `npm install <tgz>` у порожній каталог → запуск `node_modules/keylang/bin/keylang.js` на копії `tests/fixtures/repo`:
+
+| Node | `--version` | `map` | `check` | `check --format sarif` | `--explain-edge app domain` |
+|---|---|---|---|---|---|
+| v22.18.0 (мінімум з `engines`) | 0.1.0 | 0 | `0 fail, 0 unverified, 2 ok` | 0 | call + import з позиціями |
+| v24.20.0 (поточна LTS) | 0.1.0 | 0 | `0 fail, 0 unverified, 2 ok` | 0 | call + import з позиціями |
+
+Після `npm pack` `bin/keylang.js` відновлено (`postpack`), `git status` чистий.
+
+### Самоопис keylang
+
+`keylang.json` + `keylang/rules.md` + `keylang/flows/check.md`: 29 файлів, 29 модулів, 215 fn, 78 типів, 105 залежностей. `map --check` — 0; `check --strict` — 0, без `unverified` у правилах (виклики через локальні значення не роблять `deny` неповним, див. `docs/format.md` §7).
+
+### Виклики після резолвінгу з областями видимості (тікет 10)
+
+| Репозиторій | resolved | external | dynamic | unresolved |
+|---|---:|---:|---:|---:|
+| keylang | 337 | 350 | 982 | 21 |
+| circlecam | 65 | 121 | 76 | 2 |
+| meet-unmirror | 40 | 14 | 36 | 0 |
+| reslop | 2425 | 706 | 2120 | 185 |
+| kosmo-tui | 1207 | 683 | 1831 | 245 |
+| storefront-next-template | 2623 | 4863 | 8585 | 72 |
+| health-tracker/web | 144 | 132 | 406 | 1 |
+
+`resolved` не зменшився на жодному репозиторії порівняно з M1 (kosmo-tui: 4 виклики з `external` перейшли в `dynamic` — це локальна `const window = (…) => …` у `src/code/snippet.ts:143`, яку раніше помилково рахували глобалом `window`). Проміжна версія, що затінювала будь-який виклик методу параметра (`items.reduce`), переводила ~570 викликів keylang у `unresolved`; тепер затінення — лише коли локальне ім'я ховає імпорт або оголошення модуля, решта — `dynamic`.
+
+`map` storefront: 4.4 с проти 2.0 с у M1 на тій самій машині під навантаженням паралельних процесів; окремий замір інкрементальності — тікет 23.
 
 ## M1 — 2026-09-27
 
@@ -23,22 +81,6 @@ Node v24.20.0, keylang 0.1.0. Коміти репозиторіїв: circlecam f
 | Index (лише Markdown) | 0 | — | — | — | — | — | `no supported source files`, код виходу 2, без падіння |
 
 ¹ Chrome-розширення: скрипти спілкуються через глобальні змінні з `manifest.json`, імпортів між ними немає. Нуль залежностей тут правильний результат.
-
-### Негативні сценарії M1.1
-
-Перевірені мінімальними фікстурами в `tests/cli.test.ts` (не лише успішною генерацією карти):
-
-| Сценарій | Результат |
-|---|---|
-| заборонений імпорт додано після `map`, `check` без запису | K102, код 1, карта й індекс не змінені |
-| літеральний `import()` у функції через `deny` | K102 |
-| обчислюваний `import(\`./${name}\`)` | покриття `computed specifier`, без ребра |
-| остання fn замінена на `const` | K001 |
-| параметр затіняє функцію | немає підтвердженого ребра, `shadowed by parameter` |
-| ручний `keylang/map/*.md` без маркера | код 1, файл не перезаписано |
-| `no-cycles` і SCC з вузлом, який DFS пропускав | K105 через цей вузол |
-
-Друга версія Node для tarball (мінімум 22.18 і поточна LTS) у цьому середовищі не запускалась окремо, якщо доступний лише один runtime. Див. лог перевірки.
 
 ### Виклики
 
