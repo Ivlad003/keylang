@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { MessagePort } from "node:worker_threads";
 import { loadConfig } from "../config.ts";
-import { functionBodies, type FunctionBody } from "../extract/bodies.ts";
+import { functionBodies, parsesCleanly, type FunctionBody } from "../extract/bodies.ts";
 import { generateMap } from "../map.ts";
 import { sha256 } from "../snapshot.ts";
 import { flowSymbols } from "../trace-plan.ts";
@@ -30,11 +30,13 @@ export type TracePlanMessage =
   | { kind: "loaded"; ids: string[] };
 
 interface FilePlan {
+  /** The file the snapshot saw, and the same file with the wrappers in place. */
   sha256: string;
-  edits: { at: number; text: string }[];
+  source: string;
+  ids: string[];
 }
 
-const plans = new Map<string, FilePlan & { ids: string[] }>();
+const plans = new Map<string, FilePlan>();
 let port: MessagePort | null = null;
 
 export async function initialize(data: TraceHooksData): Promise<void> {
@@ -55,7 +57,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
     for (const [file, fns] of byFile) {
       const src = readFileSync(join(data.root, file), "utf8");
       const bodies = await functionBodies(file, src);
-      const edits: FilePlan["edits"] = [];
+      const edits: Edit[] = [];
       const ids: string[] = [];
       for (const fn of fns) {
         const body = bodies.get(`${fn.line}:${fn.col}`);
@@ -63,9 +65,12 @@ export async function initialize(data: TraceHooksData): Promise<void> {
         edits.push(...wrap(fn.id, body));
         ids.push(fn.id);
       }
+      const source = applyEdits(src, edits);
+      // A wrapper that breaks the file would break the test: the file is then left as it is, and not instrumented.
+      if (ids.length === 0 || !(await parsesCleanly(file, source))) continue;
       instrumented.push(...ids);
       // Node loads a module by its real path; a root reached through a link must match that URL.
-      plans.set(pathToFileURL(realpathSync(join(data.root, file))).href, { sha256: sha256(src), edits: edits.sort((a, b) => b.at - a.at), ids });
+      plans.set(pathToFileURL(realpathSync(join(data.root, file))).href, { sha256: sha256(src), source, ids });
     }
     data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort() } satisfies TracePlanMessage);
   } catch (e) {
@@ -73,18 +78,34 @@ export async function initialize(data: TraceHooksData): Promise<void> {
   }
 }
 
+/** Text inserted at an offset of the original source. */
+interface Edit {
+  at: number;
+  text: string;
+}
+
 /** `{ BODY }` → `{ return __keylangTrace.run(id, () => { BODY }); }`; an arrow keeps `this` and `arguments`. */
-function wrap(id: string, body: FunctionBody): { at: number; text: string }[] {
+function wrap(id: string, body: FunctionBody): Edit[] {
   const arrow = body.async ? "async () =>" : "() =>";
   const call = `globalThis.__keylangTrace.run(${JSON.stringify(id)}, ${body.async}, ${arrow}`;
   if (body.expression) return [
     { at: body.start, text: `${call} (` },
     { at: body.end, text: "))" },
   ];
+  // `{}`: both halves go to one offset, so they are one edit.
+  if (body.start === body.end) return [{ at: body.start, text: ` return ${call} {}); ` }];
   return [
     { at: body.start, text: ` return ${call} {` },
     { at: body.end, text: "}); " },
   ];
+}
+
+/** Insert every edit; edits at one offset keep the order they were made in. */
+function applyEdits(src: string, edits: readonly Edit[]): string {
+  const order = edits.map((edit, i) => ({ ...edit, i })).sort((a, b) => b.at - a.at || b.i - a.i);
+  let out = src;
+  for (const edit of order) out = out.slice(0, edit.at) + edit.text + out.slice(edit.at);
+  return out;
 }
 
 type LoadResult = { format?: string | null; source?: string | ArrayBuffer | Uint8Array | null; shortCircuit?: boolean };
@@ -93,10 +114,9 @@ export async function load(url: string, context: unknown, nextLoad: (url: string
   const result = await nextLoad(url, context);
   const plan = plans.get(url);
   if (!plan || result.source === null || result.source === undefined) return result;
-  let source = typeof result.source === "string" ? result.source : Buffer.from(result.source as Uint8Array).toString("utf8");
+  const source = typeof result.source === "string" ? result.source : Buffer.from(result.source as Uint8Array).toString("utf8");
   // The plan was made for the snapshot's copy of the file; a different file is left alone.
   if (sha256(source) !== plan.sha256) return result;
-  for (const edit of plan.edits) source = source.slice(0, edit.at) + edit.text + source.slice(edit.at);
   port?.postMessage({ kind: "loaded", ids: plan.ids } satisfies TracePlanMessage);
-  return { ...result, source };
+  return { ...result, source: plan.source };
 }

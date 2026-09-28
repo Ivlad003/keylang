@@ -169,6 +169,59 @@ test("static: the hole named is the one with the step's name nearest the parent,
   assert.doesNotMatch(evidence, /startsWith/);
 });
 
+test("static: with no possible route, the escape is cited, not an unrelated unresolved call", (t) => {
+  const files = {
+    ...CHECKOUT,
+    "src/application/aaa.ts": "export function helper(x: { feed(): void }): void {\n  x.feed();\n}\n",
+    "src/presentation/app.ts": 'import { helper } from "../application/aaa.ts";\nexport function input(x: { feed(): void }): void {\n  helper(x);\n}\n',
+  };
+  const dir = repo(t, files, { "flows/app.md": "# flow app\n\n- trigger presentation.app.input\n- step infrastructure.store.save\n" });
+  const evidence = row(results(dir).rows, "static", "infrastructure.store.save")!.evidence;
+  // `x.feed()` cannot be `save`, and `save` escapes in `viaCallback`, which `input` never reaches.
+  assert.match(evidence, /^unverified infrastructure\.store\.save: no call path from presentation\.app\.input in the static graph; `save` is read as a value at src\/application\/purchase\.ts:13:9/);
+  assert.doesNotMatch(evidence, /feed/);
+});
+
+/** A temp repository of one `app` layer in the given languages, with its files as written. */
+function appRepo(t: { after: (f: () => void) => void }, languages: string[], files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-flow-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries({ "keylang.json": JSON.stringify({ languages, layers: { app: ["src/app/**"] } }), ...files })) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+test("static: code keylang does not read names a caller even when the name is not ASCII", (t) => {
+  const dir = appRepo(t, ["python"], {
+    "src/app/main.py": 'def зберегти(): pass\ndef start(): pass\nexec("зберегти()")\n',
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.start\n  - step app.main.зберегти\n",
+  });
+  const r = row(results(dir).rows, "static", "app.main.зберегти");
+  assert.equal(r?.verdict, "unverified", r?.evidence);
+  assert.match(r!.evidence, /`exec` runs code keylang cannot read at src\/app\/main\.py:3:1 may call it/);
+});
+
+test("static: a path through a function whose calls may not run its body is not a proof", (t) => {
+  const dir = appRepo(t, ["python", "typescript"], {
+    // Python runs `replacement` for `decorated()`: the body that calls `hit` never runs.
+    "src/app/main.py": 'def hit(): print("HIT")\ndef replacement(): print("REPLACEMENT")\ndef replace(fn): return replacement\n@replace\ndef decorated(): hit()\ndef start(): decorated()\n@staticmethod\ndef kept(): hit()\ndef other(): kept()\n',
+    // A module with a syntax error does not load.
+    "src/app/broken.ts": "export function hit(): void {}\nexport function lonely(): void {}\nexport function start(): void {\n  mid();\n}\nfunction mid(): void {\n  hit();\n  const x = (;\n}\n",
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.start\n  - step app.main.hit\n  - step app.main.decorated\n\n# flow g\n\n- trigger app.main.other\n  - step app.main.hit\n\n# flow h\n\n- trigger app.broken.start\n  - step app.broken.hit\n  - step app.broken.lonely\n",
+  });
+  const o = keylang(dir, ["check", "--strict"]);
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /f\.md:4:3: static unverified app\.main\.hit: reachable from app\.main\.start via app\.main\.decorated, but `app\.main\.decorated` may not run its own body: decorator `replace` may replace `decorated` at src\/app\/main\.py:4:1/);
+  assert.match(o.stdout, /f\.md:5:3: static unverified app\.main\.decorated: called from app\.main\.start, but `app\.main\.decorated` may not run its own body/);
+  // A decorator that keeps the function is not a doubt.
+  assert.match(o.stdout, /f\.md:10:3: static ok app\.main\.hit: reachable from app\.main\.other via app\.main\.kept/);
+  assert.match(o.stdout, /f\.md:15:3: static unverified app\.broken\.hit: reachable from app\.broken\.start via app\.broken\.mid, but `app\.broken\.start` is in a module that does not parse: syntax error at src\/app\/broken\.ts:8:\d+/);
+  // Nor is an absence confirmed by calls read from it.
+  assert.match(o.stdout, /f\.md:16:3: static unverified app\.broken\.lonely: no call path from app\.broken\.start in the static graph; `app\.broken\.start` is in a module that does not parse/);
+});
+
 test("static: recursion, direct or mutual, is a path from a function to itself", (t) => {
   const code = { "src/domain/walk.ts": "export function f(n: number): void {\n  if (n > 0) g(n);\n}\nfunction g(n: number): void {\n  f(n - 1);\n}\nexport function h(): void {\n  h();\n}\n" };
   const dir = repo(t, code, { "flows/walk.md": "# flow walk\n\n- trigger domain.walk.f\n  - step domain.walk.f\n- trigger domain.walk.h\n  - step domain.walk.h\n" });
@@ -315,6 +368,30 @@ test("tests: JUnit XML with a keylang snapshot property is evidence", (t) => {
   assert.equal(row(results(dir).rows, "tests", "invariant total is the sum of the lines")?.verdict, "ok");
 });
 
+test("tests: JUnit is read as XML: each suite keeps its own snapshot, attributes may use either quote", (t) => {
+  const dir = repo(t, CHECKOUT, { "flows/checkout.md": INVARIANT_FLOW }, { tests: "reports/junit.xml" });
+  const area = "invariant total is the sum of the lines";
+  mkdirSync(join(dir, "reports"), { recursive: true });
+  writeFileSync(join(dir, "reports/junit.xml"), "<testsuites/>");
+  const snapshot = snapshotOf(dir);
+  const suite = (name: string, id: string, cases: string): string => `<testsuite name='${name}'><properties><property name='keylang.snapshotId' value='${id}'/></properties>${cases}</testsuite>`;
+  const junit = (body: string): void => writeFileSync(join(dir, "reports/junit.xml"), `<?xml version='1.0' encoding='UTF-8'?>\n<!-- merged by CI -->\n<testsuites>\n${body}\n</testsuites>\n`);
+  // Single quotes, entities, and a comment are plain XML.
+  junit(suite("purchase", snapshot, "<testcase file='tests/purchase.test.ts' classname='purchase' name='computes &apos;total&apos;'/><testcase file='tests/purchase.test.ts' classname='purchase' name='computes total'/>"));
+  assert.equal(row(results(dir).rows, "tests", area)?.verdict, "ok");
+  // A merged report: the first suite is current, the suite that holds the case ran against older code.
+  junit(`${suite("other", snapshot, "<testcase file='tests/other.test.ts' classname='other' name='x'/>")}\n${suite("purchase", "0".repeat(64), "<testcase file='tests/purchase.test.ts' classname='purchase' name='computes total'><failure message='no'/></testcase>")}`);
+  assert.match(row(results(dir).rows, "tests", area)!.evidence, /unverified .*stale report reports\/junit\.xml/);
+  // A property on the testcase binds that case only.
+  junit(`<testsuite name="purchase"><testcase file="tests/purchase.test.ts" classname="purchase" name="computes total"><properties><property name="keylang.snapshotId" value="${snapshot}"/></properties><skipped/></testcase></testsuite>`);
+  assert.match(row(results(dir).rows, "tests", area)!.evidence, /skipped in reports\/junit\.xml/);
+  // Broken XML is an error naming the file and the line.
+  writeFileSync(join(dir, "reports/junit.xml"), `<testsuites>\n<testsuite name="a">\n<testcase name="b">\n</testsuite>\n</testsuites>\n`);
+  const bad = keylang(dir, ["check"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /reports\/junit\.xml:4: invalid XML: <\/testsuite> does not close <testcase>/);
+});
+
 test("tests: check.tests is validated with the field name", (t) => {
   const dir = repo(t, CHECKOUT, { "flows/checkout.md": INVARIANT_FLOW }, { tests: "reports/none.json" });
   const o = keylang(dir, ["check"]);
@@ -341,15 +418,15 @@ interface SpanSpec {
   links?: string[];
 }
 
-/** One test run as trace JSONL. `end` omitted leaves the span open. */
-function traceRun(snapshotId: string, flow: string, spans: SpanSpec[], run: { testId?: string; complete?: boolean; dropped?: number; instrumented?: string[] } = {}): string {
+/** One test run as trace JSONL. `end` omitted leaves the span open; `endClock` ends it on another clock. */
+function traceRun(snapshotId: string, flow: string, spans: (SpanSpec & { endClock?: string })[], run: { testId?: string; complete?: boolean; dropped?: unknown; instrumented?: string[]; open?: string[] } = {}): string {
   const base = { schemaVersion: 1, snapshotId, runId: "r1", testId: run.testId ?? "t1", flow, traceId: "tr" };
   const events: object[] = [];
   for (const span of spans) {
     events.push({ ...base, event: "start", spanId: span.id, parentSpanId: span.parent ?? null, symbolId: span.symbol, clockId: span.clock ?? "c", seq: span.start, ts: 1, ...(span.links ? { links: span.links } : {}) });
-    if (span.end !== undefined) events.push({ ...base, event: "end", spanId: span.id, outcome: "ok", clockId: span.clock ?? "c", seq: span.end, ts: 1 });
+    if (span.end !== undefined) events.push({ ...base, event: "end", spanId: span.id, outcome: "ok", clockId: span.endClock ?? span.clock ?? "c", seq: span.end, ts: 1 });
   }
-  events.push({ ...base, event: "run", complete: run.complete ?? true, dropped: run.dropped ?? 0, instrumented: run.instrumented ?? [...new Set(spans.map((s) => s.symbol))] });
+  events.push({ ...base, event: "run", complete: run.complete ?? true, dropped: run.dropped ?? 0, instrumented: run.instrumented ?? [...new Set(spans.map((s) => s.symbol))], ...(run.open ? { open: run.open } : {}) });
   return `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
 }
 
@@ -468,8 +545,16 @@ test("trace: a when branch that did not run is unverified and its steps are not 
 });
 
 test("trace: a count or a negation needs its own predicate", (t) => {
-  const dir = repo(t, CHECKOUT, { "flows/checkout.md": `${CHECKOUT_FLOW}- invariant no more than 3 retries\n` });
+  const dir = repo(t, CHECKOUT, { "flows/checkout.md": `${CHECKOUT_FLOW}- invariant no more than 3 retries\n` }, { tests: ".keylang/reports/*.json" });
   assert.match(row(results(dir).rows, "tests", "invariant no more than 3 retries")!.evidence, /needs a separate predicate or test \(quantitative or negative property\)/);
+});
+
+test("tests: without check.tests there is no tests evidence, and --strict does not count it", (t) => {
+  const dir = repo(t, CHECKOUT, { "flows/checkout.md": `${INVARIANT_FLOW}- invariant no more than 3 retries\n- invariant stock is reserved\n` });
+  const { status, rows } = results(dir, ["--strict"]);
+  assert.equal(status, 0, JSON.stringify(rows.filter((r) => r.verdict !== "ok")));
+  assert.deepEqual(rows.filter((r) => r.criterion === "tests"), []);
+  assert.doesNotMatch(keylang(dir, ["check"]).stdout, /\btests\b/);
 });
 
 test("trace: check.trace is validated on input", (t) => {
@@ -481,6 +566,107 @@ test("trace: check.trace is validated on input", (t) => {
   assert.match(o.stderr, /\.keylang\/trace\/t\.jsonl:1: unsupported trace schemaVersion 2/);
   writeFileSync(join(dir, ".keylang/trace/t.jsonl"), '{"schemaVersion":1,"runId":"r","testId":"t","flow":"f","event":"start","spanId":"a"}\n');
   assert.match(keylang(dir, ["check"]).stderr, /t\.jsonl:1: `symbolId` must be a non-empty string/);
+  // Metadata of a `run` event is validated too: a string count is not zero.
+  const bad = (field: string, value: unknown): string => `{"schemaVersion":1,"runId":"r","testId":"t","flow":"f","event":"run","complete":true,"dropped":0,"instrumented":[],"open":[],"${field}":${JSON.stringify(value)}}\n`;
+  for (const [field, value, message] of [
+    ["dropped", "5", /t\.jsonl:1: `dropped` must be a non-negative integer/],
+    ["dropped", -1, /`dropped` must be a non-negative integer/],
+    ["complete", "yes", /t\.jsonl:1: `complete` must be a boolean/],
+    ["open", "s1", /t\.jsonl:1: `open` must be an array of span ids/],
+  ] as const) {
+    writeFileSync(join(dir, ".keylang/trace/t.jsonl"), bad(field, value));
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 2, `${field}: ${o.stdout}`);
+    assert.match(o.stderr, message);
+  }
+});
+
+test("trace: every span of the trigger and of a step is a candidate; an early return is not a missing step", (t) => {
+  const { snapshot, write } = traced(t);
+  // `checkout("empty")` returns before `buy`; then `buy` returns early once before the real call.
+  const spans: SpanSpec[] = [
+    { id: "a0", symbol: T, start: 1, end: 2 },
+    { id: "a", symbol: T, start: 3, end: 14 },
+    { id: "b0", symbol: BUY, parent: "a", start: 4, end: 5 },
+    { id: "b", symbol: BUY, parent: "a", start: 6, end: 11 },
+    { id: "c", symbol: CREATE, parent: "b", start: 7, end: 8 },
+    { id: "d", symbol: SAVE, parent: "b", start: 9, end: 10 },
+  ];
+  const rows = write(traceRun(snapshot, "checkout", spans, { instrumented: ALL }));
+  for (const id of ALL) assert.equal(row(rows, "trace", id)?.verdict, "ok", `${id}: ${row(rows, "trace", id)?.evidence}`);
+  // A sibling's order is kept while the search looks further: `save` before the only full `create` is still out of order.
+  const late: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 12 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 11 },
+    { id: "d", symbol: SAVE, parent: "b", start: 3, end: 4 },
+    { id: "c", symbol: CREATE, parent: "b", start: 5, end: 6 },
+  ];
+  const order = write(traceRun(snapshot, "checkout", late, { instrumented: ALL }));
+  assert.equal(row(order, "trace", CREATE)?.verdict, "ok");
+  assert.match(row(order, "trace", SAVE)!.evidence, /fail infrastructure\.store\.save: out of order: starts before `domain\.order\.create`/);
+  // No invocation of the trigger runs `save`: a real absence stays a failure.
+  const none = write(traceRun(snapshot, "checkout", spans.filter((span) => span.symbol !== SAVE), { instrumented: ALL }));
+  assert.equal(row(none, "trace", CREATE)?.verdict, "ok");
+  assert.match(row(none, "trace", SAVE)!.evidence, /fail infrastructure\.store\.save: missing step in t1/);
+});
+
+test("trace: an incomplete run confirms nothing it observed", (t) => {
+  const { dir, snapshot, write } = traced(t);
+  const verdicts = (rows: JsonResult[]): string[] => ALL.map((id) => row(rows, "trace", id)?.verdict ?? "none");
+  // Two starts and no end: the steps were seen, but the run never finished.
+  const unfinished: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1 },
+    { id: "b", symbol: BUY, parent: "a", start: 2 },
+  ];
+  const open = write(traceRun(snapshot, "checkout", unfinished, { instrumented: ALL, complete: false, open: ["a", "b"] }));
+  assert.deepEqual(verdicts(open), ["unverified", "unverified", "unverified", "unverified"]);
+  assert.match(row(open, "trace", BUY)!.evidence, /unverified application\.purchase\.buy: observed in t1; incomplete trace/);
+  // Every span closed, but the adapter reports one still open or events dropped.
+  assert.deepEqual(verdicts(write(traceRun(snapshot, "checkout", nested(), { instrumented: ALL, open: ["x"] }))), ["unverified", "unverified", "unverified", "unverified"]);
+  const dropped = write(traceRun(snapshot, "checkout", nested(), { instrumented: ALL, dropped: 2 }));
+  assert.match(row(dropped, "trace", SAVE)!.evidence, /observed in t1; incomplete trace \(2 dropped\)/);
+  // An order violation in a run that did not finish may be an event it lost.
+  const swapped = nested().map((span) => (span.id === "c" ? { ...span, start: 7, end: 8 } : span));
+  const lost = row(write(traceRun(snapshot, "checkout", swapped, { instrumented: ALL, complete: false })), "trace", SAVE);
+  assert.equal(lost?.verdict, "unverified", lost?.evidence);
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+});
+
+test("trace: many calls of every step still give a verdict, not a give-up", (t) => {
+  const LATER = "application.purchase.later";
+  const flow = `# flow checkout\n\n- trigger ${T}\n  - step ${BUY}\n  - step ${CREATE}\n  - step ${SAVE}\n  - step ${LATER}\n`;
+  const { snapshot, write } = traced(t, flow);
+  // 150 calls of each step, and every `later` before the first `buy`: no choice puts `later` last.
+  const spans: SpanSpec[] = [{ id: "t", symbol: T, start: 0, end: 100_000 }];
+  let seq = 1;
+  for (const symbol of [LATER, BUY, CREATE, SAVE]) for (let i = 0; i < 150; i++) spans.push({ id: `${symbol}-${i}`, symbol, parent: "t", start: seq++, end: seq++ });
+  const started = Date.now();
+  const rows = write(traceRun(snapshot, "checkout", spans, { instrumented: [...ALL, LATER] }));
+  for (const id of [BUY, CREATE, SAVE]) assert.equal(row(rows, "trace", id)?.verdict, "ok", `${id}: ${row(rows, "trace", id)?.evidence}`);
+  assert.match(row(rows, "trace", LATER)!.evidence, /^fail application\.purchase\.later: out of order: starts before `infrastructure\.store\.save`/);
+  assert.ok(Date.now() - started < 20_000, `${Date.now() - started} ms`);
+});
+
+test("trace: one run is one run across trace files", (t) => {
+  const { dir, snapshot, write } = traced(t);
+  const [head, ...rest] = traceRun(snapshot, "checkout", nested(), { instrumented: ALL }).trim().split("\n");
+  // The processes of one test may write to different files; the run event is in the second one.
+  mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
+  writeFileSync(join(dir, ".keylang/trace/u.jsonl"), `${rest.slice(-1).join("\n")}\n`);
+  const rows = write(`${[head, ...rest.slice(0, -1)].join("\n")}\n`);
+  for (const id of [BUY, CREATE, SAVE]) assert.equal(row(rows, "trace", id)?.verdict, "ok", `${id}: ${row(rows, "trace", id)?.evidence}`);
+  // Each process reports its own `run` event: the run is complete only when all of them are.
+  writeFileSync(join(dir, ".keylang/trace/u.jsonl"), traceRun(snapshot, "checkout", [], { complete: false, instrumented: ALL }));
+  assert.equal(row(write(traceRun(snapshot, "checkout", nested(), { instrumented: ALL })), "trace", SAVE)?.verdict, "unverified");
+});
+
+test("trace: sequence numbers of different clocks are not compared", (t) => {
+  const { snapshot, write } = traced(t);
+  // `create` starts and ends on different clocks: its end does not order it before `save`.
+  const spans = nested().map((span) => (span.id === "c" ? { ...span, end: 1, endClock: "worker" } : span));
+  const r = row(write(traceRun(snapshot, "checkout", spans, { instrumented: ALL })), "trace", SAVE);
+  assert.equal(r?.verdict, "unverified", r?.evidence);
+  assert.match(r!.evidence, /order unverified: `domain\.order\.create` ended on another clock than `infrastructure\.store\.save` started/);
 });
 
 // The adapter: instrumented TS in a child process, spans with snapshot ids.
@@ -529,6 +715,93 @@ test("trace adapter: repeats and recursion get their own spans; an async continu
   assert.deepEqual(rows.filter((r) => r.criterion === "trace" && r.area === "app.main.fact").map((r) => r.verdict), ["ok", "ok"]);
 });
 
+test("trace adapter: a test that returns early from the trigger before the real call is ok", (t) => {
+  const files = {
+    "src/app/shop.ts": [
+      "export function save(n: number): number {",
+      "  return n;",
+      "}",
+      "export function createOrder(items: number[]): number {",
+      "  return items.length;",
+      "}",
+      "export function checkout(items: number[]): void {",
+      "  if (items.length === 0) return;",
+      "  save(createOrder(items));",
+      "}",
+      "",
+    ].join("\n"),
+  };
+  const dir = repo(t, files, { "flows/buy.md": "# flow buy\n\n- trigger app.shop.checkout\n  - step app.shop.createOrder\n  - step app.shop.save\n" }, { trace: ".keylang/trace/*.jsonl" });
+  snapshotOf(dir);
+  const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), "--input-type=module", "-e", "const m = await import('./src/app/shop.ts'); m.checkout([]); m.checkout([2]);"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/buy.jsonl"), KEYLANG_TRACE_FLOW: "buy", KEYLANG_TRACE_TEST: "shop > @flow buy" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const rows = results(dir, ["--strict"]).rows;
+  for (const id of ["app.shop.checkout", "app.shop.createOrder", "app.shop.save"]) assert.equal(row(rows, "trace", id)?.verdict, "ok", `${id}: ${row(rows, "trace", id)?.evidence}`);
+});
+
+test("trace adapter: an empty function body is instrumented and still loads", (t) => {
+  const files = { "src/app/main.ts": "export function noop() {}\nexport const none = () => {};\nexport function main(): void {\n  noop();\n  none();\n}\n" };
+  const dir = repo(t, files, { "flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.noop\n  - step app.main.none\n" }, { trace: ".keylang/trace/*.jsonl" });
+  snapshotOf(dir);
+  const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), "--input-type=module", "-e", "const m = await import('./src/app/main.ts'); m.main();"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, KEYLANG_TRACE: join(dir, ".keylang/trace/f.jsonl"), KEYLANG_TRACE_FLOW: "f", KEYLANG_TRACE_TEST: "empty" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const meta = readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line)).find((e) => e.event === "run");
+  assert.equal(meta.complete, true);
+  assert.deepEqual(meta.instrumented, ["app.main.main", "app.main.none", "app.main.noop"]);
+  const rows = results(dir).rows;
+  for (const id of ["app.main.main", "app.main.noop", "app.main.none"]) assert.equal(row(rows, "trace", id)?.verdict, "ok", id);
+});
+
+// ---------- check output of flow evidence ----------
+
+test("check formats: every result has specHash and provenance; an unverified flow result is the rule `unverified`", (t) => {
+  const specs = { "rules.md": "# rules\n\n- deny application infrastructure\n", "flows/cb.md": "# flow cb\n\n- trigger application.purchase.viaCallback\n- step infrastructure.store.save\n- step infrastructure.store.gone\n" };
+  const dir = repo(t, CHECKOUT, specs, { tests: ".keylang/reports/*.json" });
+  const json = keylang(dir, ["check", "--format", "json"]);
+  assert.equal(json.status, 1, json.stderr);
+  const rows = (JSON.parse(json.stdout) as { results: (JsonResult & { specHash?: string })[] }).results;
+  for (const code of ["K102", "K001"]) assert.ok(rows.some((r) => r.code === code), code);
+  for (const r of rows) {
+    assert.match(r.specHash ?? "", /^[0-9a-f]{64}$/, `${r.code} ${r.evidence}`);
+    assert.ok(["syntactic", "test-report", "trace"].includes(r.provenance ?? ""), `${r.code} ${r.evidence}`);
+  }
+  // The same rule line gives the same hash as the verdict it explains.
+  const k102 = rows.find((r) => r.code === "K102")!;
+  assert.equal(k102.criterion, "deny application infrastructure");
+  assert.equal(k102.provenance, "syntactic");
+  const sarif = JSON.parse(keylang(dir, ["check", "--format", "sarif"]).stdout);
+  const results = sarif.runs[0].results as { ruleId: string; level: string; properties: { criterion: string; verdict: string; provenance?: string } }[];
+  const note = results.find((r) => r.properties.criterion === "static" && r.properties.verdict === "unverified");
+  assert.equal(note?.ruleId, "unverified");
+  assert.equal(note?.level, "note");
+  assert.equal(note?.properties.provenance, "syntactic");
+  assert.ok(results.filter((r) => r.properties.verdict === "unverified").every((r) => r.ruleId === "unverified"));
+  const rules = (sarif.runs[0].tool.driver.rules as { id: string }[]).map((rule) => rule.id);
+  assert.ok(!rules.includes("static") && !rules.includes("tests"), rules.join(" "));
+  const github = keylang(dir, ["check", "--format", "github"]).stdout;
+  assert.match(github, /^::notice file=keylang\/flows\/cb\.md,line=4,col=1,title=unverified::unverified infrastructure\.store\.save: /m);
+  assert.doesNotMatch(github, /title=(static|tests|trace|ID)::/);
+});
+
+test("check formats: columns count code points, and SARIF says so", (t) => {
+  // The quote is the 26th code point of its line, the 27th UTF-16 unit: 😀 is two units.
+  const dir = repo(t, CHECKOUT, { "flows/f.md": `${CHECKOUT_FLOW}  - test tests/😀.test.ts "never closed\n` });
+  assert.match(keylang(dir, ["check"]).stdout, /flows\/f\.md:7:26: K005 unterminated quote/);
+  const sarif = JSON.parse(keylang(dir, ["check", "--format", "sarif"]).stdout);
+  assert.equal(sarif.runs[0].columnKind, "unicodeCodePoints");
+  const k005 = (sarif.runs[0].results as { ruleId: string; locations: { physicalLocation: { region: { startLine: number; startColumn: number } } }[] }[]).find((r) => r.ruleId === "K005");
+  assert.deepEqual(k005?.locations[0]?.physicalLocation.region, { startLine: 7, startColumn: 26 });
+  assert.match(keylang(dir, ["check", "--format", "github"]).stdout, /^::error file=keylang\/flows\/f\.md,line=7,col=26,title=K005::unterminated quote$/m);
+});
+
 // ---------- 20: planned ----------
 
 test("planned: a declared intention is unverified, not K001; without it K001 suggests planned", (t) => {
@@ -562,12 +835,15 @@ test("planned: an implemented intention is checked as code and hints to remove t
 });
 
 test("planned: a different kind or a duplicate declaration is reported", (t) => {
-  const flow = "# flow refund\n\n- planned type application.purchase.buy\n- planned fn domain.order.later\n- planned fn domain.order.later\n";
+  const flow = "# flow refund\n\n- planned type application.purchase.buy\n- planned fn domain.order.later\n- planned fn domain.order.later\n- planned event domain.order.create\n";
   const dir = repo(t, CHECKOUT, { "flows/refund.md": flow });
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
   assert.match(o.stdout, /refund\.md:3:1: K201 planned type `application\.purchase\.buy` is implemented as a fn/);
   assert.match(o.stdout, /refund\.md:5:1: K002 duplicate planned `domain\.order\.later` \(first declared at keylang\/flows\/refund\.md:4:\d+\)/);
+  // An event is a kind of its own: a function with its ID is not the event implemented.
+  assert.match(o.stdout, /refund\.md:6:1: K201 planned event `domain\.order\.create` is implemented as a fn/);
+  assert.doesNotMatch(o.stdout, /K202/);
 });
 
 test("planned: fmt canonicalizes the line and parse --json gives its own node kind", (t) => {

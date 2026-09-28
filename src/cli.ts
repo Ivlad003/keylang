@@ -15,7 +15,7 @@ import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { diffMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
-import { checkResults } from "./check-results.ts";
+import { checkResults, type CheckResult } from "./check-results.ts";
 import { currentBaseline, explainedIds, explanationRequest, isStale, readExplanation, unknownIds, writeExplanation, type Explanation } from "./explain-llm.ts";
 import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
@@ -797,8 +797,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
     for (const result of results) {
       if (result.verdict === "ok") continue;
       const level = result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "notice";
-      const title = result.code ?? result.verdict;
-      process.stdout.write(`::${level} file=${githubProperty(result.file)},line=${result.line},col=${result.col},title=${githubProperty(title)}::${githubData(result.evidence)}\n`);
+      process.stdout.write(`::${level} file=${githubProperty(result.file)},line=${result.line},col=${result.col},title=${githubProperty(ruleOf(result))}::${githubData(result.evidence)}\n`);
     }
     return;
   }
@@ -807,20 +806,22 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
     return;
   }
   const reported = results.filter((result) => result.verdict !== "ok");
-  const ruleIds = [...new Set(reported.map((result) => result.code ?? result.verdict))].sort();
+  const ruleIds = [...new Set(reported.map(ruleOf))].sort();
   const sarif = {
     $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
     version: "2.1.0",
     runs: [
       {
         tool: { driver: { name: "keylang", informationUri: "https://www.npmjs.com/package/keylang", rules: ruleIds.map((id) => ({ id, shortDescription: { text: ruleText(id) } })) } },
+        // keylang counts columns in code points; SARIF's default is UTF-16 code units (§3.14.17).
+        columnKind: "unicodeCodePoints",
         results: reported.map((result) => ({
-          ruleId: result.code ?? result.verdict,
-          ruleIndex: ruleIds.indexOf(result.code ?? result.verdict),
+          ruleId: ruleOf(result),
+          ruleIndex: ruleIds.indexOf(ruleOf(result)),
           level: result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "note",
           message: { text: result.evidence },
           locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
-          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId, ...(result.specHash ? { specHash: result.specHash } : {}) },
+          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId, specHash: result.specHash, provenance: result.provenance },
         })),
         properties: { snapshotId },
       },
@@ -829,9 +830,22 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
   process.stdout.write(`${JSON.stringify(sarif, null, 2)}\n`);
 }
 
+/** The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind. */
+function ruleOf(result: CheckResult): string {
+  return result.verdict === "unverified" ? "unverified" : (result.code ?? result.verdict);
+}
+
+/** A flow verdict's evidence kind names its rule when it fails. */
+const EVIDENCE_RULES: Record<string, string> = {
+  ID: "flow: the id is not in the snapshot",
+  static: "flow: no call path can reach the step from its parent",
+  tests: "flow: the test of the claim failed",
+  trace: "flow: the trace of a test contradicts the step",
+};
+
 function ruleText(id: string): string {
   if (id === "unverified") return "evidence for this criterion is incomplete";
-  return explainCode(id)?.split("\n")[0] ?? id;
+  return EVIDENCE_RULES[id] ?? explainCode(id)?.split("\n")[0] ?? id;
 }
 
 // GitHub workflow commands: https://docs.github.com/actions/reference/workflow-commands-for-github-actions

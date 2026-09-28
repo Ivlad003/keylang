@@ -1,8 +1,8 @@
 // Trace evidence: JSONL spans from instrumented `@flow` tests (schema 1).
 // Steps match as a nested subsequence inside one test: extra calls are fine,
 // one span satisfies one step, order comes from start/end on one clock or
-// from `links`, never from sorting timestamps. Absence is a failure only in a
-// complete, sufficiently instrumented run.
+// from `links`, never from sorting timestamps. Only a complete run confirms or
+// refutes: absence is a failure only when the run is also sufficiently instrumented.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,22 +25,36 @@ export interface TraceSpan {
 }
 
 export interface TraceRun {
-  file: string;
+  /** Trace files the run's events came from, in reading order: one run may span several. */
+  files: string[];
   runId: string;
   testId: string;
   flow: string;
   snapshotId: string | null;
   spans: TraceSpan[];
-  /** From the `run` event: the test finished and every span closed. */
+  /** Every `run` event said the test finished; false without a `run` event. */
   complete: boolean;
-  dropped: number;
-  /** Symbols the adapter instrumented; null when the run did not say. */
+  /** Events the adapters dropped; null when a `run` event did not say. */
+  dropped: number | null;
+  /** Spans the adapters reported open and spans that started without an end. */
+  open: Set<string>;
+  /** Symbols every `run` event reported instrumented; null when one did not say. */
   instrumented: Set<string> | null;
 }
 
-/** Read and validate trace files. A malformed line is an error naming file and line. */
+/** A run as it is read: `run` events accumulate until every file is read. */
+interface RunDraft extends TraceRun {
+  snapshots: Set<string | null>;
+  runEvents: number;
+}
+
+/**
+ * Read and validate trace files. A malformed line is an error naming file and
+ * line. A run is `(runId, testId, flow)`, wherever its events are: processes of
+ * one test may write to different files.
+ */
 export function loadTraces(root: string, files: readonly string[]): TraceRun[] {
-  const runs = new Map<string, TraceRun>();
+  const runs = new Map<string, RunDraft>();
   for (const file of files) {
     const lines = readFileSync(join(root, file), "utf8").split("\n");
     lines.forEach((text, i) => {
@@ -65,26 +79,30 @@ export function loadTraces(root: string, files: readonly string[]): TraceRun[] {
         if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${at}: \`${field}\` must be a number`);
         return v;
       };
-      const key = `${file}\0${str("runId")}\0${str("testId")}`;
+      const ids = (field: string, what: string): string[] | undefined => {
+        const v = event[field];
+        if (v === undefined) return undefined;
+        if (!Array.isArray(v) || !v.every((id) => typeof id === "string")) throw new Error(`${at}: \`${field}\` must be an array of ${what}`);
+        return v as string[];
+      };
+      const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
       let run = runs.get(key);
       if (!run) {
-        run = { file, runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshotId: null, spans: [], complete: false, dropped: 0, instrumented: null };
+        run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshotId: null, spans: [], complete: true, dropped: 0, open: new Set(), instrumented: null, snapshots: new Set(), runEvents: 0 };
         runs.set(key, run);
       }
-      const snapshotId = typeof event.snapshotId === "string" ? event.snapshotId : null;
+      if (!run.files.includes(file)) run.files.push(file);
       // Events of one run that disagree on the snapshot make the run unbound.
-      if (run.spans.length === 0 && run.snapshotId === null) run.snapshotId = snapshotId;
-      else if (run.snapshotId !== snapshotId) run.snapshotId = null;
+      run.snapshots.add(typeof event.snapshotId === "string" ? event.snapshotId : null);
       const kind = str("event");
       if (kind === "start") {
-        const links = event.links === undefined ? [] : event.links;
-        if (!Array.isArray(links) || !links.every((link) => typeof link === "string")) throw new Error(`${at}: \`links\` must be an array of span ids`);
+        const links = ids("links", "span ids") ?? [];
         const parent = event.parentSpanId;
         if (parent !== undefined && parent !== null && typeof parent !== "string") throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
         const spanId = str("spanId");
         // Two starts of one span id would let one process's steps nest under another's trigger.
         if (run.spans.some((item) => item.spanId === spanId)) throw new Error(`${at}: span \`${spanId}\` started twice in run \`${run.runId}\``);
-        run.spans.push({ spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links: links as string[], start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
+        run.spans.push({ spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links, start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
       } else if (kind === "end") {
         const spanId = str("spanId");
         const span = run.spans.find((item) => item.spanId === spanId);
@@ -92,20 +110,32 @@ export function loadTraces(root: string, files: readonly string[]): TraceRun[] {
         if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
         span.end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
       } else if (kind === "run") {
-        run.complete = event.complete === true;
-        run.dropped = typeof event.dropped === "number" ? event.dropped : 0;
-        const instrumented = event.instrumented;
-        if (instrumented !== undefined) {
-          if (!Array.isArray(instrumented) || !instrumented.every((id) => typeof id === "string")) throw new Error(`${at}: \`instrumented\` must be an array of symbol ids`);
-          run.instrumented = new Set(instrumented as string[]);
-        }
+        // Each process of a run writes its own `run` event: the run is complete only when all of them are.
+        if (event.complete !== undefined && typeof event.complete !== "boolean") throw new Error(`${at}: \`complete\` must be a boolean`);
+        const dropped = event.dropped;
+        if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
+        const instrumented = ids("instrumented", "symbol ids");
+        const open = ids("open", "span ids") ?? [];
+        const draft = run;
+        draft.complete &&= event.complete === true;
+        draft.dropped = draft.dropped === null || dropped === undefined ? null : draft.dropped + dropped;
+        // A symbol is instrumented in the run only when every process says so.
+        const known = draft.instrumented;
+        if (instrumented === undefined) draft.instrumented = null;
+        else if (draft.runEvents === 0) draft.instrumented = new Set(instrumented);
+        else if (known !== null) draft.instrumented = new Set(instrumented.filter((id) => known.has(id)));
+        for (const id of open) draft.open.add(id);
+        draft.runEvents++;
       } else {
         throw new Error(`${at}: unknown event \`${kind}\``);
       }
     });
   }
-  for (const run of runs.values()) if (run.spans.some((span) => span.end === null)) run.complete = false;
-  return [...runs.values()];
+  return [...runs.values()].map(({ snapshots, runEvents, ...run }): TraceRun => {
+    for (const span of run.spans) if (span.end === null) run.open.add(span.spanId);
+    const [snapshotId] = snapshots;
+    return { ...run, complete: run.complete && runEvents > 0, dropped: runEvents > 0 ? run.dropped : null, snapshotId: snapshots.size === 1 ? (snapshotId ?? null) : null };
+  });
 }
 
 /** A flow as trace matching sees it. `key` identifies the spec node across runs. */
@@ -131,48 +161,23 @@ export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { ke
     list.push(outcome);
     perNode.set(key, list);
   };
-  const all = (nodes: readonly ShapeNode[], outcome: Outcome): void => {
-    for (const node of nodes) {
-      note(node.key, outcome);
-      all(node.children, outcome);
-    }
-  };
+  const tree: ShapeNode[] = trigger ? [{ kind: "step", key: trigger.key, id: trigger.id, children: [...shape] }] : [...shape];
   const mine = runs.filter((run) => run.flow === flow);
   for (const run of mine) {
     const base = { runId: run.runId, testId: run.testId };
+    const where = run.files.join(", ");
     if (run.snapshotId === null) {
-      all(trigger ? [{ kind: "step", key: trigger.key, id: trigger.id, children: [...shape] }] : shape, { verdict: "unverified", message: `trace ${run.file} is not bound to a snapshot`, ...base });
+      for (const key of keysOf(tree)) note(key, { verdict: "unverified", message: `trace ${where} is not bound to a snapshot`, ...base });
       continue;
     }
     if (run.snapshotId !== snapshotId) {
-      all(trigger ? [{ kind: "step", key: trigger.key, id: trigger.id, children: [...shape] }] : shape, { verdict: "unverified", message: `stale trace ${run.file} (snapshot ${run.snapshotId.slice(0, 12)})`, ...base });
+      for (const key of keysOf(tree)) note(key, { verdict: "unverified", message: `stale trace ${where} (snapshot ${run.snapshotId.slice(0, 12)})`, ...base });
       continue;
     }
-    const matcher = new Matcher(run);
-    if (trigger) {
-      const root = matcher.take(null, trigger.id, null);
-      if (!root.span) {
-        note(trigger.key, root.outcome);
-        all(shape, { verdict: "unverified", message: "trigger not observed", ...base });
-        continue;
-      }
-      note(trigger.key, { verdict: "ok", message: `observed in ${run.testId}`, ...base });
-      matcher.children(root.span, shape, note);
-    } else {
-      matcher.children(null, shape, note);
-    }
+    for (const [key, outcome] of new Matcher(run).match(tree, trigger !== null)) note(key, outcome);
   }
   const out = new Map<number, TraceEvidence>();
-  const keys = new Set<number>();
-  const collect = (nodes: readonly ShapeNode[]): void => {
-    for (const node of nodes) {
-      keys.add(node.key);
-      collect(node.children);
-    }
-  };
-  collect(shape);
-  if (trigger) keys.add(trigger.key);
-  for (const key of keys) {
+  for (const key of keysOf(tree)) {
     const outcomes = perNode.get(key) ?? [];
     const fail = outcomes.find((item) => item.verdict === "fail");
     const ok = outcomes.find((item) => item.verdict === "ok");
@@ -185,18 +190,80 @@ export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { ke
   return out;
 }
 
+function keysOf(nodes: readonly ShapeNode[]): number[] {
+  return nodes.flatMap((node) => [node.key, ...keysOf(node.children)]);
+}
+
+/** Spans of one run tried before its matching is given up as too large to search. */
+const MATCH_BUDGET = 200_000;
+
+class OverBudget extends Error {}
+
+/** Spans assigned to flow nodes: an outcome per node and the spans it took. */
+interface Assignment {
+  outcomes: [number, Outcome][];
+  spans: string[];
+  ok: number;
+  fail: number;
+}
+
+const NOTHING: Assignment = { outcomes: [], spans: [], ok: 0, fail: 0 };
+
+function assignment(outcomes: [number, Outcome][], spans: string[] = []): Assignment {
+  return { outcomes, spans, ok: outcomes.filter(([, o]) => o.verdict === "ok").length, fail: outcomes.filter(([, o]) => o.verdict === "fail").length };
+}
+
+function combine(...parts: Assignment[]): Assignment {
+  return { outcomes: parts.flatMap((p) => p.outcomes), spans: parts.flatMap((p) => p.spans), ok: parts.reduce((n, p) => n + p.ok, 0), fail: parts.reduce((n, p) => n + p.fail, 0) };
+}
+
+/** More steps observed wins, then fewer failures; an earlier candidate keeps a tie. */
+function better(a: Assignment, b: Assignment): boolean {
+  return a.ok !== b.ok ? a.ok > b.ok : a.fail < b.fail;
+}
+
+/**
+ * Matches one run against a flow. A test may call the trigger or a step more
+ * than once (an early `return` first, the real call later), so every span of a
+ * symbol is a candidate: the search keeps the assignment with the most
+ * observed steps, and a step fails only when no assignment observes it.
+ */
 class Matcher {
-  private readonly used = new Set<string>();
-  private readonly byParent = new Map<string | null, TraceSpan[]>();
   private readonly run: TraceRun;
+  private readonly byParent = new Map<string | null, TraceSpan[]>();
+  private readonly below = new Map<string | null, TraceSpan[]>();
+  private readonly belowIds = new Map<string | null, Set<string>>();
+  private readonly bounds = new Map<string, number>();
+  private readonly spans = new Map<string, TraceSpan>();
+  private readonly suffixes = new Map<readonly ShapeNode[], Set<string>[]>();
+  private readonly memo = new Map<readonly ShapeNode[], Map<string, Assignment>>();
+  /** Spans the assignment being built has taken: one span satisfies one step. */
+  private readonly used = new Set<string>();
+  private budget = MATCH_BUDGET;
 
   constructor(run: TraceRun) {
     this.run = run;
     for (const span of run.spans) {
+      this.spans.set(span.spanId, span);
       const list = this.byParent.get(span.parentSpanId) ?? [];
       list.push(span);
       this.byParent.set(span.parentSpanId, list);
     }
+  }
+
+  /** Outcomes for `nodes` (the trigger with the steps inside it when `trigger`). */
+  match(nodes: readonly ShapeNode[], trigger: boolean): [number, Outcome][] {
+    let best: Assignment;
+    try {
+      best = this.list(null, nodes, 0, null, trigger);
+    } catch (e) {
+      if (!(e instanceof OverBudget)) throw e;
+      return keysOf(nodes).map((key) => [key, { verdict: "unverified", message: `trace of ${this.run.testId} is too large to match (${this.run.spans.length} spans)`, ...this.base() }]);
+    }
+    const doubt = this.incompleteness();
+    if (doubt === null) return best.outcomes;
+    // A run that did not finish may miss the events that would contradict what was observed.
+    return best.outcomes.map(([key, outcome]) => [key, outcome.verdict === "unverified" ? outcome : { ...outcome, verdict: "unverified", message: `${outcome.message}; ${doubt}` }]);
   }
 
   private base(): { runId: string; testId: string } {
@@ -205,89 +272,170 @@ class Matcher {
 
   /** Spans under `parent` (all spans for null), depth-first in start order. */
   private descendants(parent: TraceSpan | null): TraceSpan[] {
-    if (parent === null) return [...this.run.spans];
+    const key = parent?.spanId ?? null;
+    const cached = this.below.get(key);
+    if (cached) return cached;
     const out: TraceSpan[] = [];
-    const visit = (id: string): void => {
-      for (const child of this.byParent.get(id) ?? []) {
-        out.push(child);
-        visit(child.spanId);
-      }
-    };
-    visit(parent.spanId);
+    if (parent === null) out.push(...this.run.spans);
+    else {
+      const visit = (id: string): void => {
+        for (const child of this.byParent.get(id) ?? []) {
+          out.push(child);
+          visit(child.spanId);
+        }
+      };
+      visit(parent.spanId);
+    }
+    this.below.set(key, out);
     return out;
+  }
+
+  private candidates(parent: TraceSpan | null, id: string): TraceSpan[] {
+    return this.descendants(parent).filter((span) => span.symbolId === id && !this.used.has(span.spanId));
+  }
+
+  /** Why the run cannot confirm or refute what it shows, or null for a finished run. */
+  private incompleteness(): string | null {
+    if (!this.run.complete) return "incomplete trace";
+    if (this.run.dropped === null) return "incomplete trace (dropped events unknown)";
+    if (this.run.dropped > 0) return `incomplete trace (${this.run.dropped} dropped)`;
+    if (this.run.open.size > 0) return `incomplete trace (${this.run.open.size} span${this.run.open.size === 1 ? "" : "s"} open)`;
+    return null;
   }
 
   /** Why an unobserved step is not a proven absence, or null when it is. */
   private absenceDoubt(id: string): string | null {
-    if (!this.run.complete) return "incomplete trace";
-    if (this.run.dropped > 0) return `incomplete trace (${this.run.dropped} dropped)`;
+    const doubt = this.incompleteness();
+    if (doubt !== null) return doubt;
     if (this.run.instrumented === null) return "incomplete trace (instrumented symbols unknown)";
     if (!this.run.instrumented.has(id)) return `\`${id}\` is not instrumented`;
     return null;
   }
 
-  /** Take the first unused span of `id` under `parent` that does not start before `after`. */
-  take(parent: TraceSpan | null, id: string, after: TraceSpan | null): { span: TraceSpan | null; outcome: Outcome } {
-    const pool = this.descendants(parent).filter((span) => span.symbolId === id && !this.used.has(span.spanId));
-    const inOrder = pool.find((span) => !after || !startsBefore(span, after));
-    if (inOrder) {
-      this.used.add(inOrder.spanId);
-      return { span: inOrder, outcome: this.orderOutcome(parent, inOrder, after) };
+  /** The most steps of `node` and below that any assignment under `parent` could observe. */
+  private bound(parent: TraceSpan | null, node: ShapeNode): number {
+    const key = `${parent?.spanId ?? ""}\0${node.key}`;
+    const cached = this.bounds.get(key);
+    if (cached !== undefined) return cached;
+    const probe = node.kind === "step" ? node.id : node.children.find((child) => child.kind === "step")?.id;
+    const seen = probe !== undefined && this.descendants(parent).some((span) => span.symbolId === probe);
+    const value = seen ? 1 + node.children.reduce((sum, child) => sum + this.bound(parent, child), 0) : 0;
+    this.bounds.set(key, value);
+    return value;
+  }
+
+  /** Symbols of `nodes[i..]` and everything under them. */
+  private symbolsFrom(nodes: readonly ShapeNode[], i: number): Set<string> {
+    let cached = this.suffixes.get(nodes);
+    if (!cached) {
+      cached = [];
+      this.suffixes.set(nodes, cached);
+    }
+    const hit = cached[i];
+    if (hit) return hit;
+    const out = new Set<string>();
+    const add = (node: ShapeNode): void => {
+      if (node.kind === "step") out.add(node.id);
+      node.children.forEach(add);
+    };
+    nodes.slice(i).forEach(add);
+    cached[i] = out;
+    return out;
+  }
+
+  /**
+   * The best assignment for `nodes[i..]` under `parent`, the sibling before
+   * them matched to `previous`. Memoized: the answer depends on the spans taken
+   * so far only through those it could take itself, so the search stays
+   * polynomial in the spans of a symbol.
+   */
+  private list(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean): Assignment {
+    if (i >= nodes.length) return NOTHING;
+    const symbols = this.symbolsFrom(nodes, i);
+    const parentKey = parent?.spanId ?? null;
+    let under = this.belowIds.get(parentKey);
+    if (!under) {
+      under = new Set(this.descendants(parent).map((span) => span.spanId));
+      this.belowIds.set(parentKey, under);
+    }
+    const inside = under;
+    const taken = [...this.used].filter((id) => inside.has(id) && symbols.has(this.spans.get(id)?.symbolId ?? "")).sort();
+    const key = JSON.stringify([parent?.spanId ?? null, i, previous?.spanId ?? null, taken]);
+    let cache = this.memo.get(nodes);
+    if (!cache) {
+      cache = new Map();
+      this.memo.set(nodes, cache);
+    }
+    const known = cache.get(key);
+    if (known) return known;
+    const best = this.solve(parent, nodes, i, previous, trigger);
+    cache.set(key, best);
+    return best;
+  }
+
+  private solve(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, previous: TraceSpan | null, trigger: boolean): Assignment {
+    const node = nodes[i];
+    if (!node) return NOTHING;
+    if (node.kind === "when") return this.branch(parent, nodes, i, node, previous, trigger);
+    const pool = this.candidates(parent, node.id);
+    const inOrder = pool.filter((span) => !previous || !startsBefore(span, previous));
+    if (inOrder.length > 0) {
+      const ceiling = nodes.slice(i).reduce((sum, item) => sum + this.bound(parent, item), 0);
+      let best: Assignment | null = null;
+      for (const span of inOrder) {
+        const option = this.take(parent, nodes, i, node, span, this.orderOutcome(parent, span, previous), trigger);
+        if (best === null || better(option, best)) best = option;
+        if (best.ok >= ceiling) break;
+      }
+      return best!;
     }
     const early = pool[0];
-    if (early && after) {
-      this.used.add(early.spanId);
-      return { span: early, outcome: { verdict: "fail", message: `out of order: starts before \`${after.symbolId}\``, ...this.base() } };
+    if (early && previous) return this.take(parent, nodes, i, node, early, { verdict: "fail", message: `out of order: starts before \`${previous.symbolId}\``, ...this.base() }, trigger);
+    const doubt = this.absenceDoubt(node.id);
+    const missing: Outcome = doubt ? { verdict: "unverified", message: doubt, ...this.base() } : { verdict: "fail", message: `missing step in ${this.run.testId}`, ...this.base() };
+    const unseen: Outcome = { verdict: "unverified", message: trigger ? "trigger not observed" : `parent step \`${node.id}\` not observed`, ...this.base() };
+    return combine(assignment([[node.key, missing], ...keysOf(node.children).map((key): [number, Outcome] => [key, unseen])]), this.list(parent, nodes, i + 1, previous, trigger));
+  }
+
+  /** `span` as `node`: its children are matched inside it, the siblings after it. */
+  private take(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, span: TraceSpan, outcome: Outcome, trigger: boolean): Assignment {
+    if (--this.budget < 0) throw new OverBudget();
+    this.used.add(span.spanId);
+    const inside = this.list(span, node.children, 0, null, false);
+    for (const id of inside.spans) this.used.add(id);
+    const after = this.list(parent, nodes, i + 1, span, trigger);
+    for (const id of inside.spans) this.used.delete(id);
+    this.used.delete(span.spanId);
+    return combine(assignment([[node.key, outcome]], [span.spanId]), inside, after);
+  }
+
+  /** A `when` is exercised in this test when its first step is observed; its steps are not ordered after the siblings before it. */
+  private branch(parent: TraceSpan | null, nodes: readonly ShapeNode[], i: number, node: ShapeNode, previous: TraceSpan | null, trigger: boolean): Assignment {
+    const first = node.children.find((child) => child.kind === "step");
+    if (!first || first.kind !== "step" || this.candidates(parent, first.id).length === 0) {
+      const skipped: Outcome = { verdict: "unverified", message: "branch not exercised", ...this.base() };
+      return combine(assignment(keysOf([node]).map((key): [number, Outcome] => [key, skipped])), this.list(parent, nodes, i + 1, previous, trigger));
     }
-    const doubt = this.absenceDoubt(id);
-    return { span: null, outcome: doubt ? { verdict: "unverified", message: doubt, ...this.base() } : { verdict: "fail", message: `missing step in ${this.run.testId}`, ...this.base() } };
+    const inside = this.list(parent, node.children, 0, null, false);
+    for (const id of inside.spans) this.used.add(id);
+    const after = this.list(parent, nodes, i + 1, previous, trigger);
+    for (const id of inside.spans) this.used.delete(id);
+    return combine(assignment([[node.key, { verdict: "ok", message: `branch exercised in ${this.run.testId}`, ...this.base() }]]), inside, after);
   }
 
   private orderOutcome(parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null): Outcome {
     // A child that starts after its parent ended ran asynchronously: nesting needs a link.
-    if (parent && parent.end && sameClock(parent.end, span.start) && parent.end.seq < span.start.seq && !span.links.includes(parent.spanId)) {
+    if (parent?.end && sameClock(parent.end, span.start) && parent.end.seq < span.start.seq && !span.links.includes(parent.spanId)) {
       return { verdict: "unverified", message: `async step without a link to \`${parent.symbolId}\``, ...this.base() };
     }
     if (after) {
       if (span.links.includes(after.spanId)) return { verdict: "ok", message: `observed in ${this.run.testId}`, ...this.base() };
       if (!sameClock(after.start, span.start)) return { verdict: "unverified", message: `order unverified: \`${after.symbolId}\` and \`${span.symbolId}\` ran on different clocks without links`, ...this.base() };
-      if (!after.end || after.end.seq > span.start.seq) return { verdict: "unverified", message: `order unverified: \`${span.symbolId}\` starts before \`${after.symbolId}\` ends (parallel)`, ...this.base() };
+      if (!after.end || (sameClock(after.end, span.start) && after.end.seq > span.start.seq)) return { verdict: "unverified", message: `order unverified: \`${span.symbolId}\` starts before \`${after.symbolId}\` ends (parallel)`, ...this.base() };
+      // Sequence numbers of different clocks do not compare.
+      if (!sameClock(after.end, span.start)) return { verdict: "unverified", message: `order unverified: \`${after.symbolId}\` ended on another clock than \`${span.symbolId}\` started, without links`, ...this.base() };
     }
     return { verdict: "ok", message: `observed in ${this.run.testId}`, ...this.base() };
-  }
-
-  children(parent: TraceSpan | null, nodes: readonly ShapeNode[], note: (key: number, outcome: Outcome) => void): void {
-    let previous: TraceSpan | null = null;
-    for (const node of nodes) {
-      if (node.kind === "when") {
-        // A branch is exercised in this test when its first step is observed.
-        const first = node.children.find((child) => child.kind === "step");
-        const probe = first && first.kind === "step" ? this.descendants(parent).some((span) => span.symbolId === first.id && !this.used.has(span.spanId)) : false;
-        if (!probe) {
-          note(node.key, { verdict: "unverified", message: "branch not exercised", ...this.base() });
-          markAll(node.children, { verdict: "unverified", message: "branch not exercised", ...this.base() }, note);
-          continue;
-        }
-        note(node.key, { verdict: "ok", message: `branch exercised in ${this.run.testId}`, ...this.base() });
-        this.children(parent, node.children, note);
-        continue;
-      }
-      const taken = this.take(parent, node.id, previous);
-      note(node.key, taken.outcome);
-      if (!taken.span) {
-        markAll(node.children, { verdict: "unverified", message: `parent step \`${node.id}\` not observed`, ...this.base() }, note);
-        continue;
-      }
-      this.children(taken.span, node.children, note);
-      previous = taken.span;
-    }
-  }
-}
-
-function markAll(nodes: readonly ShapeNode[], outcome: Outcome, note: (key: number, outcome: Outcome) => void): void {
-  for (const node of nodes) {
-    note(node.key, outcome);
-    markAll(node.children, outcome, note);
   }
 }
 

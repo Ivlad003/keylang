@@ -55,7 +55,7 @@ export interface FlowInput {
   nodes: Record<string, SnapshotNodeView>;
   edges: SnapshotEdge[];
   /** Constructs the snapshot does not turn into edges (`eval`, computed members, …). */
-  coverage?: { kind: string; file: string; line: number; col: number; reason: string; text?: string }[];
+  coverage?: { kind: string; file: string; line: number; col: number; reason: string; text?: string; source?: string | null }[];
   /** Default `behavior`. */
   static?: StaticMode;
   /** Test cases from `check.tests`; null when it is not configured. */
@@ -161,19 +161,22 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
           const evidence = traceOf();
           if (evidence) verdict("trace", `when ${node.text?.value ?? ""}`, evidence.verdict, doc.path, node.span, evidence.message, traceProvenance(evidence));
         }
+        // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
+        const tests = input.tests;
         if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
           const area = claimArea(node);
           const proofs = node.children.filter((child) => child.kind === "test");
-          if (proofs.length === 0 && node.kind !== "when") {
+          if (tests !== null && proofs.length === 0 && node.kind !== "when") {
             verdict("tests", area, "unverified", doc.path, node.span, quantitative(node.text?.value ?? "") ? "needs a separate predicate or test (quantitative or negative property)" : "no test evidence");
           }
           for (const child of node.children) visit(child, parent, node);
           return;
         }
         if (node.kind === "test") {
+          if (tests === null) return;
           const name = node.label?.value ?? "";
           const file = node.text?.value ?? "";
-          const matched = matchTest(input.tests, file, name, input.snapshotId);
+          const matched = matchTest(tests, file, name, input.snapshotId);
           const area = claim ? claimArea(claim) : `test ${file} "${name}"`;
           verdict("tests", area, matched.verdict, doc.path, node.span, `${matched.message} (${file} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
           return;
@@ -242,6 +245,10 @@ interface CallGraph {
   unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
   /** A module keylang has not read (excluded, unparsed): its calls are unknown. */
   opaque: string | null;
+  /** Fns a call of whose name may not run the body keylang read (a decorator that may replace it). */
+  replaced: Map<string, string>;
+  /** Fns in a file that does not parse: the module does not load, and its code is not what keylang read. */
+  unreadable: Map<string, string>;
 }
 
 function callGraph(input: FlowInput): CallGraph {
@@ -271,7 +278,33 @@ function callGraph(input: FlowInput): CallGraph {
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external")?.[0] ?? null;
-  return { resolved, open, callers, byName, unsupported, opaque };
+  return { resolved, open, callers, byName, unsupported, opaque, ...doubtfulBodies(input) };
+}
+
+/**
+ * Fns whose body a proof cannot pass through. A decorator in coverage
+ * (`@replace` before `def decorated`) belongs to the fn it names as its source
+ * or, when its source is the module, to the first fn declared at or after it.
+ * A file with a syntax error makes every fn in it unreadable.
+ */
+function doubtfulBodies(input: FlowInput): { replaced: Map<string, string>; unreadable: Map<string, string> } {
+  const fns = Object.entries(input.nodes)
+    .flatMap(([id, node]) => (node.kind === "fn" && node.file !== null && node.line !== null ? [{ id, file: node.file, line: node.line }] : []))
+    .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || compareText(a.id, b.id));
+  const replaced = new Map<string, string>();
+  const unreadable = new Map<string, string>();
+  for (const item of input.coverage ?? []) {
+    const where = `${item.file}:${item.line}:${item.col}`;
+    if (item.kind === "parse-error") {
+      for (const fn of fns) if (fn.file === item.file && !unreadable.has(fn.id)) unreadable.set(fn.id, `\`${fn.id}\` is in a module that does not parse: ${item.reason} at ${where}`);
+      continue;
+    }
+    // A decorator (`@replace`) or an attribute macro (`#[replace]`) the extractor did not know.
+    if (!item.text?.startsWith("@") && !item.text?.startsWith("#[")) continue;
+    const owner = item.source && input.nodes[item.source]?.kind === "fn" ? item.source : fns.find((fn) => fn.file === item.file && fn.line >= item.line)?.id;
+    if (owner && !replaced.has(owner)) replaced.set(owner, `\`${owner}\` may not run its own body: ${item.reason} at ${where}`);
+  }
+  return { replaced, unreadable };
 }
 
 function lastSegment(text: string): string {
@@ -317,8 +350,10 @@ function at(edge: SnapshotEdge): string {
  * Static reachability of `target` from `parent`.
  *
  * `ok`: a path over resolved calls outside closures (in `behavior` mode also
- * hook defaults and injected values). Otherwise the question is whether code
- * keylang cannot follow could still reach the target:
+ * hook defaults and injected values) through bodies that surely run: not a fn
+ * a decorator may replace, not a module that does not parse. Such a path
+ * through a doubtful body is `unverified`. Otherwise the question is whether
+ * code keylang cannot follow could still reach the target:
  * - a call with an unknown receiver (`x.feed()`, `cb()`) may run any fn of the
  *   same name, so the search goes on through every fn named like it; so does
  *   a resolved method call (an override may run instead), an ambiguous call
@@ -345,24 +380,15 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // A call in a closure runs only when that function value is called: it is a possible route, not a proof.
   const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
 
-  // 1. A proof: breadth-first over the edges this mode follows.
-  const previous = new Map<string, Step>();
-  const depth = new Map<string, number>([[parent, 0]]);
-  const queue = [parent];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    for (const step of graph.resolved.get(id) ?? []) {
-      if (!proves(step)) continue;
-      // A step that is its own parent is reached by recursion.
-      if (step.to === target) {
-        previous.set(target, step);
-        return { verdict: "ok", message: routeMessage(parent, target, previous) };
-      }
-      if (depth.has(step.to)) continue;
-      depth.set(step.to, depth.get(id)! + 1);
-      previous.set(step.to, step);
-      queue.push(step.to);
-    }
+  // 1. A proof: breadth-first over the edges this mode follows, through bodies that surely run.
+  const doubt = (id: string): string | undefined => graph.replaced.get(id) ?? graph.unreadable.get(id);
+  const sure = graph.unreadable.has(parent) ? null : search(graph, parent, target, (step) => proves(step) && doubt(step.to) === undefined).route;
+  if (sure) return { verdict: "ok", message: routeMessage(parent, target, sure) };
+  // A body that may not run still may: its calls are reachable code for what follows.
+  const { route, depth } = search(graph, parent, target, proves);
+  if (route) {
+    const blocked = graph.unreadable.get(parent) ?? routeSteps(parent, target, route).map((step) => doubt(step.to)).find((reason) => reason !== undefined);
+    return { verdict: "unverified", message: `${routeMessage(parent, target, route)}, but ${blocked ?? "a body on the route may not run"}` };
   }
 
   // 2. A possible route through calls keylang cannot pin to one target.
@@ -382,16 +408,48 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // `eval` and computed calls count in code reached by a possible route too, not only by a proof.
   const blocker = escapeOf(graph, input, routes, new Set([...depth.keys(), ...possible]));
   if (blocker) {
-    const best = bestHole(holes, target);
-    const lead = best ? `no resolved path from ${parent}; ${describeHole(best, target)} at ${at(best)} may reach it${more(best)}` : `no call path from ${parent} in the static graph`;
-    return { verdict: "unverified", message: `${lead}; ${blocker}` };
+    // Only an unresolved call in code the escaping value is handed to can be the missing link.
+    const near = blocker.from === null ? null : holeNear(graph, holes, blocker.from);
+    const lead = near ? `no resolved path from ${parent}; ${describeHole(near, target)} at ${at(near)} may reach it${more(near)}` : `no call path from ${parent} in the static graph`;
+    return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
   }
   const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
   if (unseen) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; \`${unseen}\` is opaque and may call it` };
+  // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
+  const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
+  if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
   return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them` };
 }
 
-function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
+/**
+ * Breadth-first from `parent` over the steps `follow` accepts: the route to
+ * `target` (null when there is none) and the depth of every fn reached. The
+ * search stops at the target, so `depth` is complete only without a route.
+ */
+function search(graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean): { route: Map<string, Step> | null; depth: Map<string, number> } {
+  const previous = new Map<string, Step>();
+  const depth = new Map<string, number>([[parent, 0]]);
+  const queue = [parent];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const step of graph.resolved.get(id) ?? []) {
+      if (!follow(step)) continue;
+      // A step that is its own parent is reached by recursion.
+      if (step.to === target) {
+        previous.set(target, step);
+        return { route: previous, depth };
+      }
+      if (depth.has(step.to)) continue;
+      depth.set(step.to, depth.get(id)! + 1);
+      previous.set(step.to, step);
+      queue.push(step.to);
+    }
+  }
+  return { route: null, depth };
+}
+
+/** The steps of a route from `parent` to `target`, in call order. */
+function routeSteps(parent: string, target: string, previous: Map<string, Step>): Step[] {
   const steps: Step[] = [];
   // do-while: a recursive step (target = parent) still has its route.
   let id = target;
@@ -400,6 +458,11 @@ function routeMessage(parent: string, target: string, previous: Map<string, Step
     steps.unshift(step);
     id = step.from;
   } while (id !== parent);
+  return steps;
+}
+
+function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
+  const steps = routeSteps(parent, target, previous);
   const notes = steps.filter((step) => step.edge.via).map((step) => (steps.length === 1 ? describeVia(step.edge) : `${step.from} → ${step.to}: ${describeVia(step.edge)}`));
   if (steps.length === 1) return `called from ${parent}${notes.length > 0 ? ` through ${notes[0]}` : ""}`;
   const through = notes.length > 0 ? ` (${notes.join("; ")})` : "";
@@ -452,37 +515,70 @@ function callersOf(graph: CallGraph, target: string): Set<string> {
   return seen;
 }
 
-/** Why code keylang cannot follow may still run a fn of `routes`; null when every route is by name. */
-function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>): string | null {
+/**
+ * Why code keylang cannot follow may still run a fn of `routes`, and the fn
+ * whose code hands that fn on (null when it is not in a fn: module level, an
+ * unsupported construct); null when every route is by name.
+ */
+function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>): { reason: string; from: string | null } | null {
   for (const id of [...routes].sort()) {
     const escapes = input.nodes[id]?.escapes;
-    if (escapes) return `${escapes.reason} at ${escapes.file}:${escapes.line}:${escapes.col}, so code keylang cannot follow may call \`${id}\``;
+    if (escapes) return { reason: `${escapes.reason} at ${escapes.file}:${escapes.line}:${escapes.col}, so code keylang cannot follow may call \`${id}\``, from: fnAt(input, escapes.file, escapes.line) };
   }
   for (const id of [...routes].sort()) {
     const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
-    if (closure) return `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`;
+    if (closure) return { reason: `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`, from: closure.from };
   }
-  const names = [...routes].map((id) => callName(id).replace(/^#/, ""));
-  for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+  const names = [...new Set([...routes].map((id) => callName(id).replace(/^#/, "")))].map(identifierPattern);
+  for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => compareText(a, b))) {
     for (const item of items) {
       // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
       const inReachable = [...reachable].some((id) => {
         const node = input.nodes[id];
         return node?.file === file && node.line !== null && item.line >= node.line && item.line <= (node.endLine ?? node.line);
       });
-      const mentions = item.text !== undefined && names.some((name) => new RegExp(`\\b${name.replace(/[$]/g, "\\$")}\\b`).test(item.text!));
-      if (inReachable || mentions) return `${item.reason} at ${file}:${item.line}:${item.col} may call it`;
+      const text = item.text;
+      const mentions = text !== undefined && names.some((name) => name.test(text));
+      if (inReachable || mentions) return { reason: `${item.reason} at ${file}:${item.line}:${item.col} may call it`, from: null };
     }
   }
   return null;
 }
 
-/** The hole most likely to be the missing link: named like the target, then nearest the parent, then by position. */
-function bestHole(holes: { edge: SnapshotEdge; depth: number }[], target: string): SnapshotEdge | null {
-  const name = callName(target).replace(/^#/, "");
-  const rank = (hole: { edge: SnapshotEdge; depth: number }): number => (hole.edge.resolution === "ambiguous" && hole.edge.candidates?.includes(target) ? 0 : lastSegment(hole.edge.text ?? "").replace(/^#/, "") === name ? 1 : 2);
-  const sorted = [...holes].sort((a, b) => rank(a) - rank(b) || a.depth - b.depth || compareText(a.edge.file ?? "", b.edge.file ?? "") || a.edge.line - b.edge.line || a.edge.col - b.edge.col);
-  return sorted[0]?.edge ?? null;
+/** `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit. */
+function identifierPattern(name: string): RegExp {
+  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
+}
+
+/** The innermost fn whose declaration holds `file:line`. */
+function fnAt(input: FlowInput, file: string, line: number): string | null {
+  let best: { id: string; line: number } | null = null;
+  for (const [id, node] of Object.entries(input.nodes)) {
+    if (node.kind !== "fn" || node.file !== file || node.line === null || line < node.line || line > (node.endLine ?? node.line)) continue;
+    if (best === null || node.line > best.line) best = { id, line: node.line };
+  }
+  return best?.id ?? null;
+}
+
+/**
+ * The unresolved call in reachable code nearest `from` among the fns `from`
+ * calls, itself included: where a value handed on by `from` may be called.
+ * Null when no hole is downstream of it.
+ */
+function holeNear(graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string): SnapshotEdge | null {
+  const distance = new Map<string, number>([[from, 0]]);
+  const queue = [from];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    for (const step of graph.resolved.get(id) ?? []) {
+      if (distance.has(step.to)) continue;
+      distance.set(step.to, distance.get(id)! + 1);
+      queue.push(step.to);
+    }
+  }
+  const near = holes.filter((hole) => distance.has(hole.edge.source));
+  near.sort((a, b) => distance.get(a.edge.source)! - distance.get(b.edge.source)! || compareText(a.edge.file ?? "", b.edge.file ?? "") || a.edge.line - b.edge.line || a.edge.col - b.edge.col);
+  return near[0]?.edge ?? null;
 }
 
 function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {
@@ -518,7 +614,7 @@ function collectPlanned(docs: readonly Document[], input: FlowInput, diagnostics
           planned.set(node.id, entry);
           if (!code) return;
           entry.implemented = true;
-          if (kind !== "event" && code.kind !== kind) {
+          if (code.kind !== kind) {
             diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` is implemented as a ${code.kind} (${code.file ?? "?"}:${code.line ?? 1})`));
           } else if (signature !== null && code.signature && normalizeSignature(signature) !== normalizeSignature(code.signature)) {
             diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${code.file ?? "?"}:${code.line ?? 1})`));

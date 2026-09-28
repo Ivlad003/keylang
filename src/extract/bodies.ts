@@ -22,6 +22,11 @@ export function functionBodies(path: string, src: string): Promise<Map<string, F
   return withTree(grammarFor(path), src, (tree) => bodiesOf(tree.rootNode));
 }
 
+/** The source parses without a syntax error: an instrumented copy is checked before it replaces the original. */
+export function parsesCleanly(path: string, src: string): Promise<boolean> {
+  return withTree(grammarFor(path), src, (tree) => !tree.rootNode.hasError);
+}
+
 function bodiesOf(root: Node): Map<string, FunctionBody> {
   const out = new Map<string, FunctionBody>();
   const add = (declaring: Node, fn: Node): void => {
