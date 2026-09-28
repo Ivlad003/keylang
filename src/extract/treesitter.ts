@@ -7,21 +7,28 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Language, Parser, Query, type Node, type Tree } from "web-tree-sitter";
+import { wasmFile, type Grammar } from "./grammars.ts";
 
 const require = createRequire(import.meta.url);
 
-export type Grammar = "typescript" | "tsx" | "javascript" | "rust" | "python";
+export type { Grammar };
 
 let ready: Promise<void> | null = null;
 const languages = new Map<Grammar, Promise<Language>>();
 const queries = new Map<string, Query>();
 /** One parser per grammar: parsing is synchronous, and a parser per call leaks WASM heap. */
 const parsers = new Map<Grammar, Parser>();
+/**
+ * Per tree whose source has characters outside the BMP: the index of the low
+ * half of each surrogate pair, ascending. Most sources have none, so their
+ * columns cost nothing extra.
+ */
+const surrogates = new WeakMap<Tree, number[]>();
 
 function wasmDir(): string {
-  // prepack copies grammars next to the compiled extractor (`dist/wasm`).
+  // prepack copies every grammar of `GRAMMARS` next to the compiled extractor (`dist/wasm`).
   const bundled = join(dirname(fileURLToPath(import.meta.url)), "../wasm");
-  if (existsSync(join(bundled, "tree-sitter-typescript.wasm"))) return bundled;
+  if (existsSync(bundled)) return bundled;
   return join(dirname(require.resolve("@vscode/tree-sitter-wasm/package.json")), "wasm");
 }
 
@@ -29,7 +36,7 @@ export function loadLanguage(g: Grammar): Promise<Language> {
   ready ??= Parser.init();
   let l = languages.get(g);
   if (!l) {
-    l = ready.then(() => Language.load(readFileSync(join(wasmDir(), `tree-sitter-${g}.wasm`))));
+    l = ready.then(() => Language.load(readFileSync(join(wasmDir(), wasmFile(g)))));
     languages.set(g, l);
   }
   return l;
@@ -49,6 +56,8 @@ export async function withTree<T>(g: Grammar, src: string, use: (tree: Tree, lan
   }
   const tree = parser.parse(src);
   if (!tree) throw new Error("tree-sitter: parse returned null");
+  const pairs = surrogatePairs(src);
+  if (pairs.length > 0) surrogates.set(tree, pairs);
   try {
     return use(tree, language);
   } finally {
@@ -75,15 +84,49 @@ export function grammarFor(path: string): Grammar {
   return "javascript";
 }
 
-/** 1-based range and text of a node; `endCol` is the column after it. */
+/** 1-based range and text of a node; columns count code points, and `endCol` is the column after it. */
 export function located(node: Node): { line: number; col: number; endLine: number; endCol: number; text: string } {
   return {
     line: node.startPosition.row + 1,
-    col: node.startPosition.column + 1,
+    col: startCol(node),
     endLine: node.endPosition.row + 1,
-    endCol: node.endPosition.column + 1,
+    endCol: codePointColumn(node.tree, node.endIndex, node.endPosition.column),
     text: node.text,
   };
+}
+
+/** The node's 1-based start column in code points (§7), as `located` gives it. */
+export function startCol(node: Node): number {
+  return codePointColumn(node.tree, node.startIndex, node.startPosition.column);
+}
+
+/**
+ * web-tree-sitter parses a JS string as UTF-16, so its columns and indices
+ * count code units. A surrogate pair between the line start and the point is
+ * one code point, and so one column.
+ */
+function codePointColumn(tree: Tree, index: number, units: number): number {
+  const pairs = surrogates.get(tree);
+  if (pairs === undefined) return units + 1;
+  return units + 1 - (firstAtOrAfter(pairs, index) - firstAtOrAfter(pairs, index - units + 1));
+}
+
+function surrogatePairs(src: string): number[] {
+  const out: number[] = [];
+  for (const m of src.matchAll(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)) out.push(m.index + 1);
+  return out;
+}
+
+/** Position of the first element `>= value` in an ascending array. */
+function firstAtOrAfter(sorted: readonly number[], value: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (sorted[mid]! < value) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 /** First syntax-error line, or the start of the tree when the grammar only sets `hasError`. */

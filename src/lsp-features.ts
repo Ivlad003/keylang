@@ -9,9 +9,9 @@ import type { Analysis } from "./analyze.ts";
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node, type Section } from "./ir.ts";
-import { keywordsAt } from "./parser.ts";
+import { keywordsAt, parse } from "./parser.ts";
 import { blocksDependency } from "./rules.ts";
-import type { Pos, Span } from "./span.ts";
+import { spanContains, type Pos, type Span } from "./span.ts";
 import type { Verdict } from "./verdict.ts";
 
 export interface LspPosition {
@@ -39,9 +39,17 @@ export interface Workspace {
 
 export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>): Workspace {
   const mapDir = `${analysis.config.dir}/map/`;
+  // The analysis checks a generated map as the fresh render; an open buffer
+  // of it that differs (a stale committed map) is what the editor shows, so
+  // positions in that file come from the buffer.
+  const docs = analysis.docs.map((doc) => {
+    const open = buffers.get(resolve(root, doc.path));
+    if (open === undefined || doc.generated === null || !doc.path.startsWith(mapDir)) return doc;
+    return open === analysis.map?.files.get(doc.path.slice(mapDir.length)) ? doc : parse(doc.path, open);
+  });
   return {
     root,
-    analysis,
+    analysis: docs.every((doc, i) => doc === analysis.docs[i]) ? analysis : { ...analysis, docs },
     text: (path) => {
       const abs = resolve(root, path);
       const open = buffers.get(abs);
@@ -67,11 +75,18 @@ function lineStarts(text: string): number[] {
   return starts;
 }
 
-/** An IR position (1-based line, column in code points) as an LSP position (UTF-16). */
+/**
+ * A 1-based line and column in code points — the unit of IR spans and of
+ * snapshot positions in code alike — as an LSP position (UTF-16).
+ */
+function lspPoint(text: string | null, line: number, col: number): LspPosition {
+  const content = text?.split("\n")[line - 1];
+  if (content === undefined) return { line: line - 1, character: col - 1 };
+  return { line: line - 1, character: [...content].slice(0, col - 1).join("").length };
+}
+
 function fromPos(text: string | null, pos: Pos): LspPosition {
-  const content = text?.split("\n")[pos.line - 1];
-  if (content === undefined) return { line: pos.line - 1, character: pos.col - 1 };
-  return { line: pos.line - 1, character: [...content].slice(0, pos.col - 1).join("").length };
+  return lspPoint(text, pos.line, pos.col);
 }
 
 function fromSpan(text: string | null, span: Span): LspRange {
@@ -109,21 +124,17 @@ function nodesOf(doc: Document): { node: Node; section: Section; parent: Node | 
   return out;
 }
 
-function within(span: Span, offset: number): boolean {
-  return span.start.offset <= offset && offset <= span.end.offset;
-}
-
-/** The id, reference, or code link at an offset of a document. */
+/** The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it. */
 export function targetAt(doc: Document, offset: number): Target | null {
   for (const { node } of nodesOf(doc)) {
-    if (!within(node.span, offset)) continue;
-    for (const ref of node.refs) if (within(ref.span, offset)) return { kind: "id", id: ref.target, span: ref.span };
-    if (node.link && within(node.link.span, offset) && node.link.line !== null) {
+    if (!spanContains(node.span, offset)) continue;
+    for (const ref of node.refs) if (spanContains(ref.span, offset)) return { kind: "id", id: ref.target, span: ref.span };
+    if (node.link && spanContains(node.link.span, offset) && node.link.line !== null) {
       // The link text is the declared name: it names the node, the target names the code.
-      if (node.id && node.name && within(node.name.span, offset)) return { kind: "id", id: node.id, span: node.name.span };
+      if (node.id && node.name && spanContains(node.name.span, offset)) return { kind: "id", id: node.id, span: node.name.span };
       return { kind: "link", path: node.link.path, line: node.link.line, span: node.link.span };
     }
-    if (node.id && node.name && within(node.name.span, offset)) return { kind: "id", id: node.id, span: node.name.span };
+    if (node.id && node.name && spanContains(node.name.span, offset)) return { kind: "id", id: node.id, span: node.name.span };
     if (node.kind === "planned" && node.id) return { kind: "id", id: node.id, span: node.span };
   }
   return null;
@@ -248,10 +259,9 @@ export function definition(ws: Workspace, path: string, position: LspPosition): 
   }
   const info = describe(ws, target.id);
   if (!info?.file) return null;
-  // A code position is used as is (tree-sitter columns); a spec position goes through its text.
-  const code = ws.analysis.snapshot?.nodes[target.id] !== undefined;
-  const range = code ? { start: { line: info.line - 1, character: info.col - 1 }, end: { line: info.line - 1, character: info.col - 1 } } : lineRange(ws.text(info.file), info.line, info.col);
-  return { uri: uriOf(ws.root, info.file), range: { start: range.start, end: range.start } };
+  // Code and spec positions both count code points; the file's text gives the UTF-16 character.
+  const start = lspPoint(ws.text(info.file), info.line, info.col);
+  return { uri: uriOf(ws.root, info.file), range: { start, end: start } };
 }
 
 export function signatureHelp(ws: Workspace, path: string, position: LspPosition): { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null {
@@ -267,14 +277,15 @@ export function signatureHelp(ws: Workspace, path: string, position: LspPosition
 
 // ---------- references ----------
 
-export function references(ws: Workspace, path: string, position: LspPosition): Location[] {
+/** Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations. */
+export function references(ws: Workspace, path: string, position: LspPosition, includeDeclaration = true): Location[] {
   const target = at(ws, path, position);
   if (!target || target.kind !== "id") return [];
   const out: Location[] = [];
   for (const doc of ws.analysis.docs) {
     const text = ws.text(doc.path);
     for (const { node } of nodesOf(doc)) {
-      if (node.id === target.id && node.name) out.push({ uri: uriOf(ws.root, doc.path), range: fromSpan(text, node.name.span) });
+      if (includeDeclaration && node.id === target.id && node.name) out.push({ uri: uriOf(ws.root, doc.path), range: fromSpan(text, node.name.span) });
       for (const ref of node.refs) if (ref.target === target.id) out.push({ uri: uriOf(ws.root, doc.path), range: fromSpan(text, ref.span) });
     }
   }
@@ -396,6 +407,13 @@ export interface CompletionItem {
   detail?: string;
   labelDetails?: { description: string };
   sortText?: string;
+  /**
+   * The label replaces everything typed of it: an editor's own word ends at
+   * a dot (Markdown's does), so inserting at its word would repeat the typed
+   * segments (`domain.domain.order.total`) and filter by the last one only.
+   */
+  filterText?: string;
+  textEdit?: { range: LspRange; newText: string };
 }
 
 // LSP CompletionItemKind values.
@@ -420,10 +438,14 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const argument = /^(\s*)-\s+([\w-]+)\s+(?:.*[\s,])?\S*$/.exec(before);
   const indent = (item?.[1] ?? argument?.[1] ?? /^(\s*)/.exec(before)?.[1] ?? "").length;
   const parent = enclosing(doc, position.line + 1, indent + 1);
+  // What is typed of the word under completion: back to a space or a comma, dots included.
+  const typed = /[^\s,]*$/.exec(before)?.[0] ?? "";
+  const range: LspRange = { start: { line: position.line, character: position.character - typed.length }, end: { line: position.line, character: position.character } };
+  const replacing = (label: string): Pick<CompletionItem, "filterText" | "textEdit"> => ({ filterText: label, textEdit: { range, newText: label } });
   if (item) {
     const section = sectionAt(doc, position.line + 1);
     if (!section) return [];
-    return keywordsAt(section.kind, parent?.kind).map((word) => ({ label: word, kind: COMPLETION.keyword, sortText: `0${word}` }));
+    return keywordsAt(section.kind, parent?.kind).map((word) => ({ label: word, kind: COMPLETION.keyword, sortText: `0${word}`, ...replacing(word) }));
   }
   if (!argument) return [];
   const keyword = argument[2] ?? "";
@@ -436,7 +458,7 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
     if (callableOnly ? node.kind !== "fn" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type") continue;
     if (from && blocksDependency(ws.analysis.docs, from, id)) continue;
     const kind = node.kind === "fn" ? COMPLETION.function : node.kind === "type" ? COMPLETION.struct : COMPLETION.module;
-    labels.set(id, { label: id, kind, ...(node.signature ? { detail: node.signature } : {}), sortText: `1${id}` });
+    labels.set(id, { label: id, kind, ...(node.signature ? { detail: node.signature } : {}), sortText: `1${id}`, ...replacing(id) });
   }
   for (const other of ws.analysis.docs) {
     for (const { node } of nodesOf(other)) {
@@ -445,7 +467,7 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
       if (callableOnly && plannedKind !== "fn") continue;
       if (from && blocksDependency(ws.analysis.docs, from, node.id)) continue;
       const kind = plannedKind === "fn" ? COMPLETION.function : plannedKind === "type" ? COMPLETION.struct : plannedKind === "event" ? COMPLETION.event : COMPLETION.module;
-      labels.set(node.id, { label: node.id, kind, detail: `planned ${plannedKind}${node.text ? ` ${node.text.value}` : ""}`, labelDetails: { description: "planned" }, sortText: `2${node.id}` });
+      labels.set(node.id, { label: node.id, kind, detail: `planned ${plannedKind}${node.text ? ` ${node.text.value}` : ""}`, labelDetails: { description: "planned" }, sortText: `2${node.id}`, ...replacing(node.id) });
     }
   }
   return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
@@ -506,11 +528,12 @@ type CodeLens = { range: LspRange; command: { title: string; command: string; ar
  */
 export function codeLenses(ws: Workspace, path: string): CodeLens[] {
   const out: CodeLens[] = [];
+  const text = ws.text(path);
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (node.kind !== "fn" || node.file !== path || node.line === null) continue;
     const flows = flowsUsing(ws.analysis.docs, id);
     if (flows.length === 0) continue;
-    const start = { line: node.line - 1, character: (node.col ?? 1) - 1 };
+    const start = lspPoint(text, node.line, node.col ?? 1);
     out.push({ range: { start, end: start }, command: { title: `flows: ${flows.join(", ")}`, command: "keylang.flows", arguments: [flows] } });
   }
   return out.sort((a, b) => a.range.start.line - b.range.start.line);

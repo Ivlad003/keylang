@@ -79,10 +79,11 @@ export function wav(pcm: Int16Array, rate: number = SAMPLE_RATE): Buffer {
   return Buffer.concat([header, data]);
 }
 
-/** Windows of `WINDOW_SECONDS` that overlap by `OVERLAP_SECONDS`; a short recording is one window. */
+/** Windows of `WINDOW_SECONDS` that overlap by `OVERLAP_SECONDS`; a short recording is one window, an empty one none. */
 export function windows(pcm: Int16Array, rate: number = SAMPLE_RATE): Int16Array[] {
   const size = WINDOW_SECONDS * rate;
   const step = (WINDOW_SECONDS - OVERLAP_SECONDS) * rate;
+  if (pcm.length === 0) return [];
   if (pcm.length <= size) return [pcm];
   const out: Int16Array[] = [];
   for (let start = 0; start < pcm.length; start += step) {
@@ -92,7 +93,15 @@ export function windows(pcm: Int16Array, rate: number = SAMPLE_RATE): Int16Array
   return out;
 }
 
-/** Joins window texts, dropping words the overlap repeated at a seam. */
+/** Most words one second of overlap holds (fast speech is about five a second). */
+const SEAM_WORDS = 8;
+
+/** A word as the overlap repeats it: case and punctuation differ between windows (`card,` / `Card`). */
+function seamWord(word: string): string {
+  return word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/** Joins window texts, dropping the words the overlap repeated at a seam: the longest run that ends one window and starts the next. */
 export function joinWindows(texts: readonly string[]): string {
   let out = "";
   for (const text of texts.map((t) => t.trim()).filter((t) => t !== "")) {
@@ -100,11 +109,12 @@ export function joinWindows(texts: readonly string[]): string {
       out = text;
       continue;
     }
-    const tail = out.split(/\s+/).slice(-4);
+    const tail = out.split(/\s+/).slice(-SEAM_WORDS).map(seamWord);
     const words = text.split(/\s+/);
+    const head = words.map(seamWord);
     let skip = 0;
     for (let n = Math.min(tail.length, words.length); n > 0; n--) {
-      if (tail.slice(-n).join(" ").toLowerCase() === words.slice(0, n).join(" ").toLowerCase()) {
+      if (tail.slice(-n).join(" ") === head.slice(0, n).join(" ")) {
         skip = n;
         break;
       }
@@ -153,7 +163,12 @@ function spoken(id: string): string {
     .toLowerCase();
 }
 
-/** The ID whose spoken form holds every word (the fuzzy match of completion); null when none or several tie. */
+/**
+ * The ID whose spoken form holds every word (the fuzzy match of completion).
+ * Several such IDs are ambiguous unless exactly one is said in full («order
+ * total» for `domain.order.total` beside `domain.order.totalTax`); then null,
+ * and the words stay as said.
+ */
 export function matchId(words: string, ids: readonly string[]): string | null {
   const want = words.toLowerCase().split(/\s+/).filter((w) => w !== "");
   if (want.length === 0) return null;
@@ -161,9 +176,9 @@ export function matchId(words: string, ids: readonly string[]): string | null {
     const said = spoken(id);
     return want.every((w) => said.includes(w));
   });
-  if (hits.length === 0) return null;
-  hits.sort((a, b) => spoken(a).length - spoken(b).length);
-  return hits.length === 1 || spoken(hits[0]!).length < spoken(hits[1]!).length ? hits[0]! : null;
+  if (hits.length <= 1) return hits[0] ?? null;
+  const exact = hits.filter((id) => spoken(id) === want.join(" "));
+  return exact.length === 1 ? exact[0]! : null;
 }
 
 /**
@@ -182,7 +197,22 @@ export function speechToSpec(text: string, ids: readonly string[], indent = ""):
   return said;
 }
 
-/** One OpenRouter chat completion per window, with the glossary as the prompt. */
+/** The text of an OpenRouter chat completion; anything else (not JSON, an error with status 200) is an error that says so. */
+function transcriptOf(reply: string): string {
+  let body: unknown;
+  try {
+    body = JSON.parse(reply);
+  } catch {
+    throw new Error(`voice: openrouter answered with something other than JSON: ${reply.slice(0, 200)}`);
+  }
+  const answer = body as { choices?: { message?: { content?: unknown } }[]; error?: { message?: unknown } } | null;
+  if (answer?.error !== undefined) throw new Error(`voice: openrouter: ${typeof answer.error?.message === "string" ? answer.error.message : JSON.stringify(answer.error)}`);
+  const content = answer?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") throw new Error(`voice: openrouter returned no transcript: ${reply.slice(0, 200)}`);
+  return content;
+}
+
+/** One OpenRouter chat completion per window, with the glossary as the prompt; an empty recording sends nothing. */
 export async function transcribeOpenRouter(engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]): Promise<string> {
   const key = engine.key;
   const texts: string[] = [];
@@ -203,9 +233,9 @@ export async function transcribeOpenRouter(engine: Extract<VoiceEngine, { kind: 
         ],
       }),
     });
-    if (!response.ok) throw new Error(`voice: openrouter HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
-    const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-    texts.push(body.choices?.[0]?.message?.content ?? "");
+    const reply = await response.text();
+    if (!response.ok) throw new Error(`voice: openrouter HTTP ${response.status}: ${reply.slice(0, 200)}`);
+    texts.push(transcriptOf(reply));
   }
   return joinWindows(texts);
 }

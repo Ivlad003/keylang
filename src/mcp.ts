@@ -2,21 +2,24 @@
 // §7.3. The graph by default, code on request: `search`, `node`, `code`,
 // `flows`, `check` (the same results as `check --format json`), `explain`
 // (a saved explanation or the offline summary) and `apply_diff`, which only
-// writes a proposal a person merges. Every call builds a fresh analysis, so
-// an answer never describes code that changed since. stdout carries the
-// protocol only.
+// writes a proposal a person merges. Every call answers for the current
+// inputs (`currentAnalysis`), so an answer never describes code that changed
+// since. stdout carries the protocol only.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { analyze, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
-import { toPosix } from "./config.ts";
+import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
+import { collectMdFiles } from "./files.ts";
 import { sectionNodes, walk } from "./ir.ts";
+import { generateMap } from "./map.ts";
 import { lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -24,9 +27,37 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
 const json = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
 const failure = (message: string): ToolResult => ({ content: [{ type: "text", text: message }], isError: true });
 
+/**
+ * The analysis of the current inputs, cheaper than a new `analyze()` per
+ * call. The snapshot is rebuilt every time: its id hashes all the graph
+ * depends on (sources, configuration, the files import resolution read).
+ * The rest of the analysis (specs, the rendered map, evidence, verdicts) is
+ * reused while the snapshot id, keylang.json, the specs and the evidence
+ * files are those of the last call. Each part of the key is read before the
+ * analysis reads it, so a change in between only costs a rebuild next time.
+ */
+export function currentAnalysis(root: string): () => Promise<Analysis> {
+  let last: { key: string; analysis: Analysis } | null = null;
+  return async () => {
+    const configFile = join(root, CONFIG_FILE);
+    const raw = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
+    const config = loadConfig(root);
+    const map = config.languages.length > 0 ? await generateMap(config) : null;
+    const specDir = join(root, config.dir);
+    const specs = existsSync(specDir) ? collectMdFiles([specDir]) : [];
+    const evidence = [...(evidenceFiles(config, "tests") ?? []), ...(evidenceFiles(config, "trace") ?? [])].map((file) => join(root, file));
+    const digest = (file: string): string => `${file}\u0000${createHash("sha256").update(readFileSync(file)).digest("hex")}`;
+    const key = JSON.stringify([raw, map?.index.snapshotId ?? null, specs.map(digest), evidence.map(digest)]);
+    if (last?.key === key) return last.analysis;
+    const analysis = await analyze({ root, ...(map ? { generate: () => Promise.resolve(map) } : {}) });
+    last = { key, analysis };
+    return analysis;
+  };
+}
+
 export function mcpServer(root: string, version: string): McpServer {
   const server = new McpServer({ name: "keylang", version });
-  const fresh = (): Promise<Analysis> => analyze({ root });
+  const fresh = currentAnalysis(root);
 
   server.registerTool(
     "search",
@@ -37,11 +68,23 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ query, limit }) => {
       const analysis = await fresh();
       const q = query.toLowerCase();
-      const hits = Object.entries(analysis.snapshot?.nodes ?? {})
-        .filter(([id]) => id.toLowerCase().includes(q))
-        .sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1))
-        .slice(0, limit ?? 20)
-        .map(([id, node]) => ({ id, kind: node.kind, signature: node.signature ?? null, file: node.file, line: node.line }));
+      const found = new Map<string, { id: string; kind: string; signature: string | null; file: string | null; line: number | null }>();
+      for (const [id, node] of Object.entries(analysis.snapshot?.nodes ?? {})) found.set(id, { id, kind: node.kind, signature: node.signature ?? null, file: node.file, line: node.line });
+      // Intentions: `planned` declarations the code does not have yet, at their line in the spec.
+      for (const doc of analysis.docs) {
+        for (const section of doc.sections) {
+          for (const top of sectionNodes(section)) {
+            walk(top, (node) => {
+              if (node.kind !== "planned" || !node.id || found.has(node.id)) return;
+              found.set(node.id, { id: node.id, kind: `planned ${node.label?.value ?? "fn"}`, signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line });
+            });
+          }
+        }
+      }
+      const hits = [...found.values()]
+        .filter((hit) => hit.id.toLowerCase().includes(q))
+        .sort((a, b) => a.id.length - b.id.length || (a.id < b.id ? -1 : 1))
+        .slice(0, limit ?? 20);
       return json(hits);
     },
   );

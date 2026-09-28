@@ -8,9 +8,9 @@
 // `vscode-languageserver`, which would add a dependency for a few messages.
 
 import { existsSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { analyze, findRoot, type Analysis } from "./analyze.ts";
+import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { toPosix } from "./config.ts";
 import { codeLenses, completions, definition, diagnosticsFor, documentSymbols, hover, references, signatureHelp, workspace, type LspPosition, type Workspace } from "./lsp-features.ts";
 
@@ -38,11 +38,13 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
     for (;;) {
       const headerEnd = buffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) break;
-      const match = /Content-Length: (\d+)/i.exec(buffer.subarray(0, headerEnd).toString("utf8"));
+      const match = /^Content-Length:\s*(\d+)\s*$/im.exec(buffer.subarray(0, headerEnd).toString("utf8"));
       if (!match?.[1]) {
-        // Without a length the stream cannot be framed again; say why instead of exiting silently.
+        // Without a length the stream cannot be framed again: an I/O failure (2), not the client's
+        // `exit` before `shutdown` (1). Say why instead of exiting silently.
         process.stderr.write("keylang lsp: a message header without Content-Length; the stream cannot continue\n");
-        return 1;
+        await server.drain();
+        return 2;
       }
       const start = headerEnd + 4;
       const length = Number(match[1]);
@@ -90,6 +92,8 @@ class Server {
   private pulls = false;
   private refreshes = false;
   private serverRequests = 0;
+  /** The last analysis failure shown to the client (an invalid keylang.json); shown again only when it changes. */
+  private failure: string | null = null;
 
   constructor(send: (message: Rpc) => void) {
     this.send = send;
@@ -189,6 +193,13 @@ class Server {
     const overlay = new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text]));
     const result = analyze({ root: this.root, overlay });
     this.running = { generation: this.generation, result };
+    // A failure (an invalid keylang.json) would otherwise reach the client only as errors of later requests.
+    result.then(
+      () => {
+        this.failure = null;
+      },
+      (error: unknown) => this.report(error instanceof Error ? error.message : String(error)),
+    );
     return result;
   }
 
@@ -226,7 +237,15 @@ class Server {
   }
 
   private relative(abs: string): string {
-    return toPosix(abs.startsWith(`${this.root}/`) ? abs.slice(this.root.length + 1) : abs);
+    return toPosix(within(abs, this.root) ? relative(this.root, abs) : abs);
+  }
+
+  /** In stderr (the client's log) and as a message the editor shows, once while the same failure lasts. */
+  private report(message: string): void {
+    if (message === this.failure) return;
+    this.failure = message;
+    process.stderr.write(`keylang lsp: ${message}\n`);
+    this.send({ jsonrpc: "2.0", method: "window/showMessage", params: { type: 1, message: `keylang: ${message}` } });
   }
 
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
@@ -256,7 +275,7 @@ class Server {
       case "textDocument/definition":
         return position ? definition(await this.current(), path, position) : null;
       case "textDocument/references":
-        return position ? references(await this.current(), path, position) : [];
+        return position ? references(await this.current(), path, position, (params.context as { includeDeclaration?: unknown } | undefined)?.includeDeclaration !== false) : [];
       case "textDocument/documentSymbol":
         return documentSymbols(await this.current(), path);
       case "textDocument/completion":
@@ -277,7 +296,8 @@ class Server {
     const folders = params.workspaceFolders as { uri?: string }[] | null | undefined;
     const hinted = typeof params.rootUri === "string" ? params.rootUri : (folders?.[0]?.uri ?? (typeof params.rootPath === "string" ? pathToFileURL(params.rootPath).href : null));
     if (hinted) {
-      const path = filePath(hinted);
+      // `resolve` drops a trailing slash (`file:///repo/`), so root-relative paths stay relative.
+      const path = resolve(filePath(hinted));
       if (existsSync(path)) this.root = findRoot(statSync(path).isDirectory() ? path : dirname(path));
     } else {
       this.root = findRoot(this.root);

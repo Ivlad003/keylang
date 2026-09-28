@@ -54,6 +54,34 @@ test("mcp: node gives signature, edges, flows and evidence; search, code and flo
   assert.match(unknown.text, /did you mean `app\.checkout\.checkout`/);
 });
 
+test("mcp: search finds planned ids beside the snapshot's", async (t) => {
+  const mcp = await connect(t);
+  writeFileSync(join(mcp.dir, "keylang/flows/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
+  const hits = JSON.parse((await mcp.call("search", { query: "refund" })).text) as { id: string; kind: string; signature: string | null; file: string; line: number }[];
+  assert.deepEqual(hits, [{ id: "domain.order.refund", kind: "planned fn", signature: "(order: Order) → void", file: "keylang/flows/refund.md", line: 3 }]);
+});
+
+test("mcp: each call sees sources, specs and evidence changed since the last one", async (t) => {
+  const mcp = await connect(t);
+  const config = join(mcp.dir, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), check: { tests: ".keylang/reports/*.json" } }));
+  type Check = { results: { code: string | null; verdict: string; evidence: string }[] };
+  const check = async (): Promise<Check> => JSON.parse((await mcp.call("check")).text) as Check;
+  const codes = (r: Check): (string | null)[] => r.results.filter((row) => row.verdict === "fail").map((row) => row.code);
+  assert.deepEqual(codes(await check()), []);
+  assert.deepEqual(codes(await check()), [], "an unchanged repository answers the same");
+  const source = join(mcp.dir, "src/domain/order.ts");
+  writeFileSync(source, `${readFileSync(source, "utf8")}import { save } from "../infra/db.ts";\nexport function keep(o: Order): void { save(o); }\n`);
+  assert.ok(codes(await check()).includes("K102"), "a denied import added to a source");
+  writeFileSync(join(mcp.dir, "keylang/flows/checkout.md"), `${FLOW}  - step domain.order.missingFn\n`);
+  assert.ok(codes(await check()).includes("K001"), "a dangling step added to a spec");
+  mkdirSync(join(mcp.dir, ".keylang/reports"), { recursive: true });
+  writeFileSync(join(mcp.dir, ".keylang/reports/run.json"), "{ not json");
+  const broken = await mcp.call("check");
+  assert.equal(broken.isError, true);
+  assert.match(broken.text, /run\.json: invalid JSON report/);
+});
+
 test("mcp: check returns the results of `check --format json`", async (t) => {
   const mcp = await connect(t);
   const viaMcp = JSON.parse((await mcp.call("check")).text) as { results: unknown[]; snapshotId: string };

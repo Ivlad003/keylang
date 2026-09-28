@@ -3,7 +3,7 @@
 
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
-import { errorLine, fingerprint, grammarFor, located, query, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
+import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
 
 const CALLS_QUERY = `
 (call_expression function: (identifier) @callee)
@@ -810,7 +810,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
   const first = new Map<string, ValueRefFact>();
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
-    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
+    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: startCol(node) });
   };
   const walk = (node: Node): void => {
     const parent = node.parent;

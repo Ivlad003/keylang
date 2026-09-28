@@ -2,7 +2,7 @@
 // Positions match the declaration ranges of `FileFacts` (1-based line/col of
 // the declaring node); offsets index the JS string (UTF-16 code units).
 
-import { grammarFor, withTree, type Node } from "./treesitter.ts";
+import { grammarFor, startCol, withTree, type Node } from "./treesitter.ts";
 
 export interface FunctionBody {
   /** Offset of the body: after `{` for a block, the expression start otherwise. */
@@ -28,7 +28,7 @@ function bodiesOf(root: Node): Map<string, FunctionBody> {
     const body = fn.childForFieldName("body");
     if (!body) return;
     const block = body.type === "statement_block";
-    const key = `${declaring.startPosition.row + 1}:${declaring.startPosition.column + 1}`;
+    const key = `${declaring.startPosition.row + 1}:${startCol(declaring)}`;
     if (out.has(key)) return;
     out.set(key, {
       start: block ? body.startIndex + 1 : body.startIndex,

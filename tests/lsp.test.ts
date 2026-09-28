@@ -33,11 +33,13 @@ class Session {
   readonly messages: Message[] = [];
   private next = 1;
   readonly exited: Promise<number | null>;
+  stderr = "";
 
   constructor(cwd: string) {
     // Language clients add `--stdio`; the server accepts it.
     this.child = spawn(process.execPath, [bin, "lsp", "--stdio"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     this.exited = new Promise((done) => this.child.on("exit", (code) => done(code)));
+    this.child.stderr.on("data", (chunk: Buffer) => (this.stderr += chunk.toString()));
     this.child.stdout.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       for (;;) {
@@ -54,6 +56,11 @@ class Session {
   notify(method: string, params: unknown): void {
     const json = JSON.stringify({ jsonrpc: "2.0", method, params });
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
+  }
+
+  /** Bytes as they are, for framing a client might get wrong. */
+  write(raw: string): void {
+    this.child.stdin.write(raw);
   }
 
   send(method: string, params: unknown): number {
@@ -193,6 +200,40 @@ test("lsp: a client that pulls diagnostics gets no pushed copy, only a refresh",
   assert.ok(pulled.some((d) => d.code === "K001"));
 });
 
+test("lsp: a root URI with a trailing slash is the same repository", async (t) => {
+  const dir = fixture(t);
+  const s = new Session(dir);
+  t.after(() => s.close());
+  await s.request("initialize", { rootUri: `${pathToFileURL(dir).href}/`, capabilities: {} });
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  const text = "# flow draft\n\n- step domain.order.missingFn\n- step domain.order.total\n";
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text } });
+  const pushed = await s.until(() => s.messages.find((m) => m.method === "textDocument/publishDiagnostics" && m.params?.uri === flowUri));
+  assert.ok(pushed.params!.diagnostics!.some((d) => d.code === "K001" && /missingFn/.test(d.message)), JSON.stringify(pushed));
+  const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: flowUri }, position: { line: 3, character: charOf(text, 3, "total") } });
+  assert.match(shown?.contents.value ?? "", /\*\*fn\*\* `domain\.order\.total`/);
+});
+
+test("lsp: an invalid keylang.json is shown to the client and in stderr; once fixed, the repository is analysed", async (t) => {
+  const dir = fixture(t);
+  const config = readFileSync(join(dir, "keylang.json"), "utf8");
+  writeFileSync(join(dir, "keylang.json"), '{"languages": ["cobol"]}\n');
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: "# flow draft\n\n- step domain.order.missingFn\n" } });
+  const shown = await s.until(() => s.messages.find((m) => m.method === "window/showMessage"));
+  const message = shown.params as unknown as { type: number; message: string };
+  assert.equal(message.type, 1);
+  assert.match(message.message, /keylang\.json.*languages/);
+  await s.until(() => (/keylang\.json.*languages/.test(s.stderr) ? true : undefined));
+  writeFileSync(join(dir, "keylang.json"), config);
+  s.notify("workspace/didChangeWatchedFiles", { changes: [{ uri: uri(dir, "keylang.json"), type: 2 }] });
+  const pushed = await s.until(() => s.messages.find((m) => m.method === "textDocument/publishDiagnostics" && m.params?.uri === flowUri));
+  assert.ok(pushed.params!.diagnostics!.some((d) => d.code === "K001"), JSON.stringify(pushed));
+  // The same failure is not repeated for every change while it lasts.
+  assert.equal(s.messages.filter((m) => m.method === "window/showMessage").length, 1);
+});
+
 test("lsp: hover on a flow step shows the signature and each kind of evidence; planned says so", async (t) => {
   const dir = fixture(t, { "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
@@ -209,6 +250,22 @@ test("lsp: hover on a flow step shows the signature and each kind of evidence; p
   assert.match(later.contents.value, /\*\*planned fn\*\* `domain\.order\.later` `\(order: Order\) → void`/);
   assert.match(later.contents.value, /planned, not implemented/);
   assert.match(later.contents.value, /- static: unverified domain\.order\.later: planned fn, not implemented/);
+});
+
+test("lsp: spans are half-open, so the character after an id is not that id", async (t) => {
+  const text = "# flow pair\n\n- trigger app.checkout.checkout\n  - calls domain.order.total, domain.order.createOrder\n";
+  const dir = fixture(t, { "keylang/flows/pair.md": text });
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/pair.md");
+  const line = lineOf(text, "- calls");
+  const at = async (character: number): Promise<string | null> => {
+    const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: flowUri }, position: { line, character } });
+    return /`([^`]+)`/.exec(shown?.contents.value ?? "")?.[1] ?? null;
+  };
+  const comma = charOf(text, line, ",");
+  assert.equal(await at(comma - 1), "domain.order.total");
+  assert.equal(await at(comma), null, "the comma right after the id");
+  assert.equal(await at(charOf(text, line, "domain.order.createOrder")), "domain.order.createOrder");
 });
 
 test("lsp: definition from the map opens the decoded file at the code position", async (t) => {
@@ -235,6 +292,34 @@ test("lsp: definition from the map opens the decoded file at the code position",
   assert.deepEqual(fromFlow.range.start, { line: 2, character: 9 });
 });
 
+test("lsp: code columns count code points in the snapshot and UTF-16 characters over LSP, in every language", async (t) => {
+  // An astral character (two UTF-16 code units, one code point) before the declaration and before a call.
+  const line = '/* 😀 é */ export function wave(): number { return ["😀", total([1])].length; }';
+  const dir = fixture(t, { "src/app/wave.ts": `import { total } from "../domain/order.ts";\n${line}\n`, "keylang/flows/wave.md": "# flow wave\n\n- trigger app.wave.wave\n" });
+  const before = (needle: string): string => line.slice(0, line.indexOf(needle));
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { line: number; col: number }>; edges: { kind: string; source: string; target: string | null; line: number; col: number }[] };
+  assert.deepEqual([index.nodes["app.wave.wave"]?.line, index.nodes["app.wave.wave"]?.col], [2, [...before("function")].length + 1]);
+  const call = index.edges.find((e) => e.kind === "call" && e.source === "app.wave.wave" && e.target === "domain.order.total");
+  assert.deepEqual([call?.line, call?.col], [2, [...before("total(")].length + 1]);
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/wave.md");
+  const def = await s.request<{ range: { start: { line: number; character: number } } }>("textDocument/definition", { textDocument: { uri: flowUri }, position: { line: 2, character: "- trigger app.wave.".length } });
+  assert.deepEqual(def.range.start, { line: 1, character: before("function").length });
+  const lenses = await s.request<{ range: { start: { line: number; character: number } } }[]>("textDocument/codeLens", { textDocument: { uri: uri(dir, "src/app/wave.ts") } });
+  assert.deepEqual(lenses.map((lens) => lens.range.start), [{ line: 1, character: before("function").length }]);
+  // Rust and Python facts come from the same tree-sitter positions.
+  const { frontendFor } = await import("../src/frontends.ts");
+  for (const [path, src] of [
+    ["src/wave.rs", 'fn wave() -> usize { let _s = "😀é"; helper() }\n'],
+    ["pkg/wave.py", 'def wave():\n    return ("😀é", helper())\n'],
+  ] as const) {
+    const facts = await frontendFor(path)!.extract(path, src);
+    const target = src.split("\n").find((l) => l.includes("helper("))!;
+    const calls = facts.decls.flatMap((decl) => decl.calls).filter((c) => c.callee === "helper");
+    assert.deepEqual(calls.map((c) => c.col), [[...target.slice(0, target.indexOf("helper("))].length + 1], path);
+  }
+});
+
 test("lsp: document symbols are a tree per document, flows and rules with their status", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
@@ -255,6 +340,26 @@ test("lsp: document symbols are a tree per document, flows and rules with their 
   assert.ok(names.some((name) => name.startsWith("module domain.order [fail]")), names.join("\n"));
 });
 
+test("lsp: an open generated map that differs from the fresh render answers at the positions of its buffer", async (t) => {
+  const dir = fixture(t);
+  const mapUri = uri(dir, "keylang/map/domain.md");
+  const rendered = readFileSync(join(dir, "keylang/map/domain.md"), "utf8");
+  // A stale committed map: two lines more above the module than the render has.
+  const lines = rendered.split("\n");
+  const first = lines.findIndex((l) => l.startsWith("- domain"));
+  lines.splice(first + 1, 0, "  - module [gone](../../src/domain/gone.ts#L1)", "    - fn [old](../../src/domain/gone.ts#L1)");
+  const stale = lines.join("\n");
+  const s = await open(t, dir);
+  s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: stale } });
+  type Sym = { name: string; selectionRange: { start: { line: number; character: number } }; children: Sym[] };
+  const symbols = await s.request<Sym[]>("textDocument/documentSymbol", { textDocument: { uri: mapUri } });
+  const order = symbols[0]!.children.find((sym) => sym.name === "order");
+  const line = lineOf(stale, "module [order]");
+  assert.deepEqual(order?.selectionRange.start, { line, character: charOf(stale, line, "order") }, JSON.stringify(symbols));
+  const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: mapUri }, position: { line: lineOf(stale, "fn [total]"), character: charOf(stale, lineOf(stale, "fn [total]"), "total") } });
+  assert.match(shown?.contents.value ?? "", /`domain\.order\.total`/);
+});
+
 test("lsp: shutdown and exit end the server with code 0; exit alone with 1; unknown methods are errors", async (t) => {
   const dir = fixture(t);
   const s = await open(t, dir);
@@ -266,6 +371,19 @@ test("lsp: shutdown and exit end the server with code 0; exit alone with 1; unkn
   const rude = await open(t, dir);
   rude.notify("exit", null);
   assert.equal(await rude.exited, 1);
+});
+
+test("lsp: a frame without Content-Length ends the server with code 2 and says why; no space after the colon is fine", async (t) => {
+  const dir = fixture(t);
+  const s = new Session(dir);
+  t.after(() => s.close());
+  const initialize = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { rootUri: pathToFileURL(dir).href, capabilities: {} } });
+  s.write(`Content-Length:${Buffer.byteLength(initialize)}\r\n\r\n${initialize}`);
+  const response = await s.response(1);
+  assert.equal((response.result as { serverInfo: { name: string } }).serverInfo.name, "keylang");
+  s.write('Content-Type: application/vscode-jsonrpc\r\n\r\n{"jsonrpc":"2.0","method":"initialized"}');
+  assert.equal(await s.exited, 2);
+  assert.match(s.stderr, /without Content-Length/);
 });
 
 test("lsp: a cancelled request answers RequestCancelled", async (t) => {
@@ -319,6 +437,31 @@ test("lsp: completion under a module leaves out what deny forbids; after step on
   assert.deepEqual(keywords.items.map((item) => item.label).sort(), ["calls", "emits", "invariant", "kind", "planned", "reads", "step", "test", "trigger", "when"]);
 });
 
+test("lsp: a completion replaces the whole dotted prefix, which editors split at dots", async (t) => {
+  const dir = fixture(t, { "keylang/flows/buy.md": FLOW });
+  const s = await open(t, dir);
+  type Edit = { range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string };
+  type Completion = { items: { label: string; filterText?: string; textEdit?: Edit }[] };
+  const flowUri = uri(dir, "keylang/flows/buy.md");
+  const typed = `${FLOW}  - step domain.or`;
+  const line = typed.split("\n").length - 1;
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ text: typed }] });
+  const list = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line, character: "  - step domain.or".length } });
+  const total = list.items.find((item) => item.label === "domain.order.total");
+  assert.ok(total, JSON.stringify(list.items.map((item) => item.label)));
+  assert.equal(total.filterText, "domain.order.total");
+  assert.deepEqual(total.textEdit, { range: { start: { line, character: "  - step ".length }, end: { line, character: "  - step domain.or".length } }, newText: "domain.order.total" });
+  // Applied, the edit gives the id once, not `domain.domain.order.total`.
+  const applied = typed.split("\n")[line]!;
+  assert.equal(applied.slice(0, total.textEdit.range.start.character) + total.textEdit.newText + applied.slice(total.textEdit.range.end.character), "  - step domain.order.total");
+  const keywordText = `${FLOW}- tri`;
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 3 }, contentChanges: [{ text: keywordText }] });
+  const keywords = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: keywordText.split("\n").length - 1, character: "- tri".length } });
+  const trigger = keywords.items.find((item) => item.label === "trigger");
+  assert.deepEqual(trigger?.textEdit?.range.start.character, 2);
+  assert.equal(trigger?.textEdit?.newText, "trigger");
+});
+
 test("lsp: references find the flow and rules lines; code lens names the flows; signature help", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
@@ -330,6 +473,11 @@ test("lsp: references find the flow and rules lines; code lens names the flows; 
   assert.ok(where.some((w) => w.startsWith("keylang/rules.md:7:")), where.join("\n"));
   assert.ok(where.some((w) => w.startsWith("keylang/map/domain.md:")), where.join("\n"));
   assert.ok(where.some((w) => w.startsWith("keylang/map/app.md:")), where.join("\n"));
+  // Without the declaration: the map line that declares the fn is left out, the uses stay.
+  const uses = await s.request<{ uri: string }[]>("textDocument/references", { textDocument: { uri: flowUri }, position: { line: step, character: charOf(FLOW, step, "createOrder") }, context: { includeDeclaration: false } });
+  const usedIn = uses.map((ref) => ref.uri.slice(pathToFileURL(dir).href.length + 1));
+  assert.equal(usedIn.includes("keylang/map/domain.md"), false, usedIn.join("\n"));
+  assert.equal(uses.length, refs.length - 1);
   const lenses = await s.request<{ range: { start: { line: number } }; command: { title: string } }[]>("textDocument/codeLens", { textDocument: { uri: uri(dir, "src/domain/order.ts") } });
   assert.deepEqual(lenses.map((lens) => [lens.range.start.line, lens.command.title]), [[9, "flows: buy"]]);
   assert.deepEqual((lenses[0] as unknown as { command: { command: string; arguments: string[][] } }).command, { title: "flows: buy", command: "keylang.flows", arguments: [["buy"]] });

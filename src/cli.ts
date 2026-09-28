@@ -86,7 +86,8 @@ Commands:
   check [paths…]            Resolve IDs and check rules (default: ./keylang)
                             Rebuilds the analysis in memory; does not write the map
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
-  fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only)
+  fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only);
+                            a file it cannot read or write is named and the rest are done (exit 2)
 
 Options:
   -h, --help                Show this help
@@ -550,23 +551,41 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   return 0;
 }
 
+/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: §12, code 0. */
 async function cmdDoctor(): Promise<number> {
   const root = findRoot(process.cwd());
   const config = loadConfig(root);
   const { llmClient } = await import("./llm.ts");
-  const { localAvailable, microphoneAvailable } = await import("./voice-local.ts");
+  const { localStatus, microphoneStatus } = await import("./voice-local.ts");
   const { localModel, modelsDir, voiceEngine } = await import("./voice.ts");
-  const agent = config.agent === null ? null : llmClient(config.agent);
-  const whisper = await localAvailable();
-  const engine = voiceEngine(config.voice, whisper);
+  const problem = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+  const agent = (): string => {
+    if (config.agent === null) return "not configured (keylang.json `agent`)";
+    try {
+      const setup = llmClient(config.agent);
+      return `${config.agent}: ${"missing" in setup ? setup.missing : "credentials found"}`;
+    } catch (error) {
+      return `${config.agent}: ${problem(error)}`;
+    }
+  };
+  const whisper = await localStatus();
+  const engine = (): string => {
+    try {
+      const found = voiceEngine(config.voice, whisper.status === "ok");
+      return "missing" in found ? found.missing : found.kind === "openrouter" ? `openrouter (${found.model})` : `local (${found.modelFile})`;
+    } catch (error) {
+      return problem(error);
+    }
+  };
+  const microphone = await microphoneStatus();
   const model = localModel();
   const lines = [
     `languages: ${config.languages.join(", ") || "none found"}${existsSync(join(root, CONFIG_FILE)) ? "" : ` (guessed; no ${CONFIG_FILE})`}`,
-    `agent: ${config.agent === null ? "not configured (keylang.json \`agent\`)" : agent !== null && "missing" in agent ? `${config.agent}: ${agent.missing}` : `${config.agent}: credentials found`}`,
-    `voice: engine ${config.voice.engine} → ${"missing" in engine ? engine.missing : engine.kind === "openrouter" ? `openrouter (${engine.model})` : `local (${engine.modelFile})`}`,
+    `agent: ${agent()}`,
+    `voice: engine ${config.voice.engine} → ${engine()}`,
     `voice model: ${model ?? `none in ${modelsDir()}`}`,
-    `@fugood/whisper.node: ${whisper ? "installed" : "not installed (optional)"}`,
-    `microphone (decibri): ${(await microphoneAvailable()) ? "installed" : "not installed (optional; keylang web uses the browser's microphone)"}`,
+    `@fugood/whisper.node: ${whisper.status === "ok" ? "installed" : whisper.status === "missing" ? "not installed (optional)" : `unavailable: ${whisper.reason}`}`,
+    `microphone (decibri): ${microphone.status === "ok" ? "installed" : microphone.status === "missing" ? "not installed (optional; keylang web uses the browser's microphone)" : `unavailable: ${microphone.reason} (keylang web uses the browser's microphone)`}`,
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
   return 0;
@@ -788,25 +807,45 @@ function githubProperty(text: string): string {
   return githubData(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
 }
 
+/**
+ * Each file is formatted on its own, so one that cannot be read or written
+ * does not stop the rest: every such failure is reported, and the code is 2;
+ * otherwise 1 for diagnostics or, with `--check`, an unformatted file.
+ */
 function cmdFmt(paths: string[], checkOnly: boolean): number {
-  let ok = true;
+  let findings = false;
+  let failed = false;
+  const fail = (file: string, action: string, error: unknown): void => {
+    failed = true;
+    process.stderr.write(`${file}: cannot ${action}: ${error instanceof Error ? error.message : String(error)}\n`);
+  };
   for (const file of collectMdFiles(paths)) {
-    const src = readFileSync(file, "utf8");
+    let src: string;
+    try {
+      src = readFileSync(file, "utf8");
+    } catch (error) {
+      fail(file, "read", error);
+      continue;
+    }
     const r = formatSource(file, src);
     if (!r.ok) {
-      ok = false;
+      findings = true;
       for (const d of r.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
     } else if (r.text !== src) {
       if (checkOnly) {
-        ok = false;
+        findings = true;
         process.stdout.write(`${file}: not formatted\n`);
-      } else {
+        continue;
+      }
+      try {
         writeFileSync(file, r.text);
         process.stdout.write(`${file}: formatted\n`);
+      } catch (error) {
+        fail(file, "write", error);
       }
     }
   }
-  return ok ? 0 : 1;
+  return failed ? 2 : findings ? 1 : 0;
 }
 
 function printTree(doc: Document): void {

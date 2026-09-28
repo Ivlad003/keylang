@@ -1,7 +1,10 @@
 # keylang for VS Code
 
 A thin client: it starts `keylang lsp` over stdio and shows what the server
-returns. It is not part of the `keylang` npm package.
+returns. It is not part of the `keylang` npm package. It sends the server the
+Markdown specs under `dir` of each folder's `keylang.json` (`keylang/`
+without one) and the TypeScript, JavaScript, Rust and Python sources; a new
+`dir` takes effect after a window reload.
 
 ## Run from a checkout
 
@@ -40,9 +43,13 @@ profile, this extension, and `test/smoke.js`, and prints one line per step
    evidence.
 4. Go to Definition on the step opens `src/domain/order.ts` at the function.
 5. Completion after `- step ` offers functions, not modules.
-6. `src/domain/order.ts` has the code lens `flows: use`.
+6. Accepting the top suggestion after `- step domain.or` gives one whole id
+   (`domain.order.createOrder`): the items replace the typed dotted prefix,
+   which Markdown's word pattern splits at dots, and rank above Markdown's
+   snippets.
+7. `src/domain/order.ts` has the code lens `flows: use`.
 
-Last run: 2026-09-27, VS Code 1.139.0 on Linux — all six steps ok.
+Last run: 2026-09-28, VS Code 1.139.0 on Linux — all seven steps ok.
 
 ## By hand
 

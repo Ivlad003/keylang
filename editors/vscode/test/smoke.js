@@ -63,6 +63,20 @@ async function run() {
     const labels = list.items.map((item) => (typeof item.label === "string" ? item.label : item.label.label));
     step("completion after step offers callables only", labels.includes("domain.order.createOrder") && !labels.includes("domain.order"), labels);
 
+    // Markdown's word ends at a dot: accepting the top suggestion after `domain.or` must give one whole id,
+    // not `domain.domain.order.…`, and not a Markdown snippet (`ordered list`) ranked above the ids.
+    const editor = await vscode.window.showTextDocument(flowDoc);
+    const prefixed = new vscode.WorkspaceEdit();
+    prefixed.replace(flowUri, flowDoc.lineAt(last).range, "  - step domain.or");
+    await vscode.workspace.applyEdit(prefixed);
+    const end = flowDoc.lineAt(last).range.end;
+    editor.selection = new vscode.Selection(end, end);
+    await vscode.commands.executeCommand("editor.action.triggerSuggest");
+    await new Promise((done) => setTimeout(done, 2500));
+    await vscode.commands.executeCommand("acceptSelectedSuggestion");
+    const accepted = flowDoc.lineAt(last).text;
+    step("accepting a completion after a dotted prefix gives the whole id", /^ {2}- step domain\.order\.\w+$/.test(accepted), accepted);
+
     const sourceUri = vscode.Uri.file(path.join(root, "src/domain/order.ts"));
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(sourceUri));
     const lenses = await until("code lens", async () => {

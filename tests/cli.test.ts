@@ -2,11 +2,12 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { GRAMMARS, wasmFile } from "../src/extract/grammars.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -117,6 +118,22 @@ test("fmt keeps a quoted token that touches the next one", (t) => {
   const o = keylang(dir, ["fmt", "--check", "m.md"]);
   assert.equal(o.status, 0, o.stdout);
   assert.equal(keylang(root, ["fmt", "--check", "keylang"]).status, 0);
+});
+
+test("fmt over a directory formats every file it can and names each one it cannot write, exit 2", { skip: process.getuid?.() === 0 ? "root writes read-only files" : false }, (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-fmt-dir-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const messy = readFileSync(join(root, "tests/fixtures/fmt/messy.md"), "utf8");
+  const expected = readFileSync(join(root, "tests/fixtures/fmt/messy.expected"), "utf8");
+  for (const name of ["a.md", "b.md", "c.md"]) writeFileSync(join(dir, name), messy);
+  chmodSync(join(dir, "b.md"), 0o444);
+  const o = keylang(dir, ["fmt", "."]);
+  assert.equal(o.status, 2, o.stderr);
+  assert.match(o.stderr, /^b\.md: cannot write: EACCES/m);
+  assert.equal(readFileSync(join(dir, "a.md"), "utf8"), expected);
+  assert.equal(readFileSync(join(dir, "b.md"), "utf8"), messy);
+  assert.equal(readFileSync(join(dir, "c.md"), "utf8"), expected, "the file after the failure is formatted too");
+  assert.equal(o.stdout, "a.md: formatted\nc.md: formatted\n");
 });
 
 test("fmt refuses bad indentation", () => {
@@ -409,9 +426,8 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.equal(listing.status, 0, listing.stderr);
   const names = listing.stdout.split("\n");
   assert.ok(names.some((n) => n.endsWith("/dist/cli.js")));
-  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-typescript.wasm")));
-  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-tsx.wasm")));
-  assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-javascript.wasm")));
+  // Every grammar the runtime loads ships in dist/wasm, which the package reads instead of @vscode/tree-sitter-wasm.
+  for (const grammar of GRAMMARS) assert.ok(names.some((n) => n.endsWith(`/dist/wasm/${wasmFile(grammar)}`)), grammar);
   assert.ok(names.some((n) => n.endsWith("/bin/keylang.js")));
   for (const asset of ["xterm.js", "xterm.css", "addon-fit.js", "xterm.LICENSE"]) assert.ok(names.some((n) => n.endsWith(`/dist/web/${asset}`)), asset);
   assert.ok(names.some((n) => n.endsWith("/dist/tui/analysis-worker.js")));
@@ -449,6 +465,23 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
     assert.equal(doctor.status, 0, doctor.stderr);
     assert.match(doctor.stdout, /^@fugood\/whisper\.node: not installed \(optional\)$/m);
     assert.match(doctor.stdout, /^microphone \(decibri\): not installed/m);
+    // Installed but not loadable (no prebuilt binary for the platform): unavailable with the reason, still code 0,
+    // and whisper.node's console.warn while it looks for a binary does not reach the output.
+    mkdirSync(join(bare, "node_modules/decibri"), { recursive: true });
+    writeFileSync(join(bare, "node_modules/decibri/package.json"), '{"name":"decibri","version":"0.0.0","main":"index.js"}\n');
+    writeFileSync(join(bare, "node_modules/decibri/index.js"), 'throw new Error("Failed to load native binding");\n');
+    mkdirSync(join(bare, "node_modules/@fugood/whisper.node"), { recursive: true });
+    writeFileSync(join(bare, "node_modules/@fugood/whisper.node/package.json"), '{"name":"@fugood/whisper.node","version":"0.0.0","main":"index.js"}\n');
+    writeFileSync(
+      join(bare, "node_modules/@fugood/whisper.node/index.js"),
+      'exports.initWhisper = async () => { throw new Error("no binary"); };\nexports.loadWhisperModule = async () => { console.warn("Not found package for your platform, fallback to local build"); throw new Error("Failed to load whisper.node: no build/Release/index.node"); };\n',
+    );
+    const broken = spawnSync(process.execPath, [join(bare, "node_modules/keylang/bin/keylang.js"), "doctor"], { cwd: bare, encoding: "utf8", env: { ...process.env, HOME: bare } });
+    assert.equal(broken.status, 0, broken.stderr);
+    assert.match(broken.stdout, /^@fugood\/whisper\.node: unavailable: Failed to load whisper\.node: no build\/Release\/index\.node; Not found package for your platform/m);
+    assert.match(broken.stdout, /^microphone \(decibri\): unavailable: Failed to load native binding/m);
+    assert.match(broken.stdout, /^voice: engine auto → install the optional @fugood\/whisper\.node/m, "an unavailable whisper is not an engine");
+    assert.doesNotMatch(`${broken.stdout}${broken.stderr}`, /^Not found package/m);
   } finally {
     rmSync(bare, { recursive: true, force: true });
   }
@@ -475,6 +508,25 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   const packedIndex = JSON.parse(readFileSync(join(packedRepo, ".keylang/index.json"), "utf8"));
   assert.equal(packedIndex.snapshotId, localIndex.snapshotId);
   assert.equal(packedIndex.schema, localIndex.schema);
+  // Rust and Python parse with the package's own grammars too: the same map and snapshot as the checkout.
+  for (const fixture of ["rust-shop", "py-shop"]) {
+    const local = mkdtempSync(join(tmpdir(), `keylang-${fixture}-`));
+    const packedCopy = mkdtempSync(join(tmpdir(), `keylang-${fixture}-packed-`));
+    t.after(() => {
+      rmSync(local, { recursive: true, force: true });
+      rmSync(packedCopy, { recursive: true, force: true });
+    });
+    cpSync(join(root, "tests/fixtures", fixture), local, { recursive: true });
+    cpSync(join(root, "tests/fixtures", fixture), packedCopy, { recursive: true });
+    assert.equal(keylang(local, ["init"]).status, 0, fixture);
+    const packedInit = spawnSync(process.execPath, [installedBin, "init"], { cwd: packedCopy, encoding: "utf8" });
+    assert.equal(packedInit.status, 0, `${fixture}: ${packedInit.stderr}`);
+    const maps = readdirSync(join(local, "keylang/map"));
+    assert.ok(maps.length > 0, fixture);
+    for (const name of maps) assert.equal(readFileSync(join(packedCopy, "keylang/map", name), "utf8"), readFileSync(join(local, "keylang/map", name), "utf8"), `${fixture}: ${name}`);
+    const snapshotOf = (dir: string): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId;
+    assert.equal(snapshotOf(packedCopy), snapshotOf(local), fixture);
+  }
 
   // `keylang web` from the package: xterm.js from dist/web, the snapshot from the dist worker.
   const web = spawn(process.execPath, [installedBin, "web", "--port", "0"], { cwd: packedRepo, stdio: ["ignore", "pipe", "pipe"] });

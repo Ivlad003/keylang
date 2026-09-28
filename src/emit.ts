@@ -93,8 +93,25 @@ function renderModule(snapshot: AnalysisSnapshot, children: Map<string, string[]
   return s;
 }
 
+/** Edges by source, built once per snapshot: each module and declaration reads its own, not the whole list. */
+const edgesBySource = new WeakMap<AnalysisSnapshot, Map<string, SnapshotEdge[]>>();
+
+function edgesFrom(snapshot: AnalysisSnapshot, id: string): readonly SnapshotEdge[] {
+  let index = edgesBySource.get(snapshot);
+  if (!index) {
+    index = new Map();
+    for (const edge of snapshot.edges) {
+      const list = index.get(edge.source);
+      if (list) list.push(edge);
+      else index.set(edge.source, [edge]);
+    }
+    edgesBySource.set(snapshot, index);
+  }
+  return index.get(id) ?? [];
+}
+
 function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
-  return snapshot.edges
+  return edgesFrom(snapshot, id)
     .filter((e) => e.source === id && (e.kind === "import" || e.kind === "reexport") && e.resolution === "resolved" && e.alias && e.target)
     .sort((a, b) => a.line - b.line);
 }
@@ -106,7 +123,7 @@ function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node
   if (node.signature) head += ` ${node.signature}`;
   if (node.exported === false) head += " <!-- internal -->";
   let s = `${pad}- ${keyword} ${head}\n`;
-  const calls = snapshot.edges
+  const calls = edgesFrom(snapshot, id)
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
