@@ -22,6 +22,9 @@ import { completions, definition, hover, references, targetAt, workspace, type L
 import { contextPack, type ContextPack } from "../agent-context.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { isStale, readExplanation } from "../explain-llm.ts";
+import { loadBriefs } from "../explanations.ts";
+import { EXPLAINED_MAP_DIR } from "../map.ts";
+import { searchNodes } from "../node-search.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
@@ -32,7 +35,7 @@ import { errorText, MergeSession } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, Cursor, Hover, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, editorRows, filesTop, gutterWidth, layout, navEntries, readCursorRow, render } from "./view.ts";
+import { contextTop, editorRows, filesTop, gutterWidth, layout, navEntries, navListHeight, readCursorRow, render } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
 
 export interface Surface {
@@ -70,6 +73,9 @@ export const MAX_ROWS = 400;
 const HELD_KEYS = 32;
 /** Keys handled before the mode: they show panels and reanalyse, and never edit. */
 const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5"]);
+
+/** Most nodes the `s` prompt lists. */
+const NODE_HITS = 50;
 
 export class App {
   readonly state: State;
@@ -129,6 +135,7 @@ export class App {
       ghost: null,
       search: null,
       quitArmed: false,
+      briefs: new Map(),
     };
     // The helpers reach the session through closures: its private methods stay private.
     this.merges = new MergeSession({
@@ -351,14 +358,18 @@ export class App {
 
   /** Files and clean buffers follow the new analysis (a regenerated map, a change on disk). */
   private adopt(analysis: Analysis): void {
-    const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path)]);
+    const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/${name}`);
+    const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained]);
     this.state.files = sortFiles([...paths], analysis);
+    this.state.briefs = loadBriefs(analysis.config);
     const ws = workspace(this.state.root, analysis, new Map());
     for (const buffer of this.state.buffers.values()) {
       if (buffer.text !== buffer.saved) continue;
       const fresh = ws.text(buffer.path);
       const text = fresh === null ? buffer.text : splitEol(fresh).text;
-      buffer.readOnly = analysis.docs.find((doc) => doc.path === buffer.path)?.generated != null;
+      // The explained map is no spec, so the analysis has no document of it: its marker decides.
+      const doc = analysis.docs.find((d) => d.path === buffer.path);
+      buffer.readOnly = doc ? doc.generated !== null : buffer.doc?.generated != null;
       if (text !== buffer.text) {
         setText(buffer, text);
         buffer.saved = text;
@@ -634,6 +645,72 @@ export class App {
     this.state.hover = null;
   }
 
+  /** The ID of the node whose item is at the cursor line or the nearest one above it (a description, `calls`). */
+  private nodeAtCursor(): string | null {
+    const doc = this.buffer()?.doc;
+    if (!doc) return null;
+    let best: { id: string; line: number } | null = null;
+    forNodes(doc, (node) => {
+      const line = node.span.start.line - 1;
+      if (node.id && line <= this.state.cursor.line && (best === null || line >= best.line)) best = { id: node.id, line };
+    });
+    return (best as { id: string; line: number } | null)?.id ?? null;
+  }
+
+  /** The 0-based line of the item that declares `id` in the file at `path`, or null. */
+  private lineOfNode(path: string, id: string): number | null {
+    const doc = this.load(path).doc;
+    let line: number | null = null;
+    if (doc) forNodes(doc, (node) => void (line ??= node.id === id ? node.span.start.line - 1 : null));
+    return line;
+  }
+
+  /** The map directory of each variant, relative to the root. */
+  private mapDirs(analysis: Analysis): { map: string; explained: string } {
+    return { map: `${analysis.config.dir}/map/`, explained: `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/` };
+  }
+
+  /** `t`: the same layer file in the other map, the cursor on the same node. */
+  private toggleMap(): void {
+    const analysis = this.state.analysis;
+    const path = this.state.current;
+    if (!analysis || !path) {
+      this.state.message = analysis ? "no file open" : "analysis is still running";
+      return;
+    }
+    const dirs = this.mapDirs(analysis);
+    let target: string;
+    if (path.startsWith(dirs.map)) {
+      if (!analysis.map?.explained) {
+        this.state.message = 'the explained map is off: add "explain": {"map": true} to keylang.json, then F5';
+        return;
+      }
+      target = dirs.explained + path.slice(dirs.map.length);
+    } else if (path.startsWith(dirs.explained) && path !== `${dirs.explained}README.md`) {
+      target = dirs.map + path.slice(dirs.explained.length);
+    } else {
+      this.state.message = "t switches a layer file between the map and the explained map";
+      return;
+    }
+    const id = this.nodeAtCursor();
+    const line = id ? this.lineOfNode(target, id) : null;
+    this.open(target, { line: line ?? 0, col: 0 });
+  }
+
+  /** The node's line in the map the reader is in: the explained map from one of its files, the map otherwise. */
+  private goToNode(id: string): void {
+    const analysis = this.state.analysis;
+    const node = analysis?.snapshot?.nodes[id];
+    if (!analysis || !node) return this.goToSpec(id);
+    const dirs = this.mapDirs(analysis);
+    const explained = this.state.current?.startsWith(dirs.explained) === true && analysis.map?.explained?.has(`${node.layer}.md`) === true;
+    const path = `${explained ? dirs.explained : dirs.map}${node.layer}.md`;
+    const line = this.lineOfNode(path, id);
+    if (line === null) return this.goToSpec(id);
+    const text = bufferLines(this.load(path))[line] ?? "";
+    this.open(path, { line, col: graphemes(/^\s*(?:- )?/.exec(text)![0]).length });
+  }
+
   private goToSpec(id: string | null): void {
     const analysis = this.state.analysis;
     if (!analysis || !id) {
@@ -860,6 +937,11 @@ export class App {
         return this.merges.undo();
       case "e":
         return this.explainAtCursor();
+      case "t":
+        return this.toggleMap();
+      case "s":
+        this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
+        return this.findNodes();
       case "?":
         this.state.help = true;
         return;
@@ -1070,7 +1152,7 @@ export class App {
     while (items[index]?.kind === "heading" && index + direction >= 0 && index + direction < items.length) index += direction;
     this.state.navIndex = index;
     const nav = layout(this.state).nav;
-    const height = (nav?.height ?? 2) - 1;
+    const height = (nav ? navListHeight(this.state, nav) : 2) - 1;
     if (index < this.state.navTop) this.state.navTop = index;
     if (index >= this.state.navTop + height) this.state.navTop = index - height + 1;
   }
@@ -1363,6 +1445,18 @@ export class App {
       prompt.items = this.paletteItems(prompt.text);
       prompt.index = 0;
     }
+    if (prompt.kind === "node") this.findNodes();
+  }
+
+  /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
+  private findNodes(): void {
+    const prompt = this.state.prompt;
+    const analysis = this.state.analysis;
+    if (prompt?.kind !== "node") return;
+    const hits = analysis ? searchNodes(analysis, this.state.briefs, { query: prompt.text, limit: NODE_HITS, fuzzy: true }) : [];
+    prompt.items = hits.map((hit) => `${hit.id}${hit.explanation ? `  ${hit.explanation.text}` : ""}`);
+    prompt.ids = hits.map((hit) => hit.id);
+    prompt.index = 0;
   }
 
   private promptKey(event: KeyEvent): void {
@@ -1377,9 +1471,10 @@ export class App {
         prompt.items = this.paletteItems(prompt.text);
         prompt.index = 0;
       }
+      if (prompt.kind === "node") this.findNodes();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && prompt.kind === "palette" && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       return;
     }
@@ -1390,6 +1485,9 @@ export class App {
         this.findNext();
       } else if (prompt.kind === "context") {
         this.addToContext(prompt.text.trim().replace(/^@/, ""));
+      } else if (prompt.kind === "node") {
+        const id = prompt.ids?.[prompt.index];
+        if (id) this.goToNode(id);
       } else {
         const chosen = prompt.items[prompt.index];
         if (chosen) this.runCommand(chosen);
@@ -1400,7 +1498,7 @@ export class App {
   }
 
   private commands(): string[] {
-    return ["check (F5)", "files panel (F2)", "navigation panel (F3)", "reading mode (v)", "edit (i)", "merge proposal (m)", "keys (?)", "quit (q)", ...this.state.files.map((file) => `open ${file}`)];
+    return ["check (F5)", "files panel (F2)", "navigation panel (F3)", "find a node (s)", "map / explained map (t)", "reading mode (v)", "edit (i)", "merge proposal (m)", "keys (?)", "quit (q)", ...this.state.files.map((file) => `open ${file}`)];
   }
 
   private paletteItems(query: string): string[] {
@@ -1501,7 +1599,7 @@ function plannedIds(docs: readonly Document[]): { id: string; kind: string }[] {
 
 /** Hand-written specs first (flows, rules), then generated map files, then `keylang.json`. */
 function sortFiles(files: string[], analysis: Analysis | null): string[] {
-  const rank = (file: string): number => (file === CONFIG_FILE ? 2 : analysis?.docs.find((doc) => doc.path === file)?.generated != null || /(^|\/)map\//.test(file) ? 1 : 0);
+  const rank = (file: string): number => (file === CONFIG_FILE ? 2 : analysis?.docs.find((doc) => doc.path === file)?.generated != null || /(^|\/)map(-explained)?\//.test(file) ? 1 : 0);
   return [...new Set(files)].sort((a, b) => rank(a) - rank(b) || compareText(a, b));
 }
 

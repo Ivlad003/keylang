@@ -2,6 +2,7 @@
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
 
 import type { Analysis } from "../analyze.ts";
+import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { Decision, Hunk } from "./merge.ts";
@@ -98,11 +99,13 @@ export interface LastMerge {
 }
 
 export interface Prompt {
-  /** `context`: an ID to add to the agent's context (`@` in the context panel). */
-  kind: "search" | "palette" | "context";
+  /** `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`). */
+  kind: "search" | "palette" | "context" | "node";
   text: string;
-  /** Palette entries matching `text`, and the selected one. */
+  /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
+  /** `node`: the ID of each item. */
+  ids?: string[];
   index: number;
 }
 
@@ -159,4 +162,6 @@ export interface State {
   context: { open: boolean; index: number; added: string[]; removed: Set<string> };
   search: string | null;
   quitArmed: boolean;
+  /** Model briefs saved under `<dir>/explain/brief/`, read with each analysis: explanations for the nav panel and the node search. */
+  briefs: ReadonlyMap<string, StoredExplanation>;
 }

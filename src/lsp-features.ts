@@ -8,7 +8,9 @@ import { pathToFileURL } from "node:url";
 import type { Analysis } from "./analyze.ts";
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
+import { isGeneratedMap } from "./emit.ts";
 import { sectionNodes, walk, type Document, type Node, type Section } from "./ir.ts";
+import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { keywordsAt, parse } from "./parser.ts";
 import { blocksDependency } from "./rules.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
@@ -47,6 +49,7 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
     if (open === undefined || doc.generated === null || !doc.path.startsWith(mapDir)) return doc;
     return open === analysis.map?.files.get(doc.path.slice(mapDir.length)) ? doc : parse(doc.path, open);
   });
+  const explainedDir = `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/`;
   return {
     root,
     analysis: docs.every((doc, i) => doc === analysis.docs[i]) ? analysis : { ...analysis, docs },
@@ -54,6 +57,12 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
       const abs = resolve(root, path);
       const open = buffers.get(abs);
       if (open !== undefined) return open;
+      // The explained map as this analysis renders it, unless a hand-written file stands there.
+      const rendered = path.startsWith(explainedDir) ? analysis.map?.explained?.get(path.slice(explainedDir.length)) : undefined;
+      if (rendered !== undefined) {
+        const disk = readOrNull(abs);
+        return disk === null || isGeneratedMap(disk) ? rendered : disk;
+      }
       if (path.startsWith(mapDir) && analysis.map?.files.has(path.slice(mapDir.length))) {
         const doc = analysis.docs.find((d) => d.path === path);
         if (doc && doc.generated !== null) return analysis.map.files.get(path.slice(mapDir.length)) ?? null;
@@ -141,7 +150,34 @@ export function targetAt(doc: Document, offset: number): Target | null {
 }
 
 function docOf(ws: Workspace, path: string): Document | undefined {
-  return ws.analysis.docs.find((doc) => doc.path === path);
+  return ws.analysis.docs.find((doc) => doc.path === path) ?? readingDoc(ws, path);
+}
+
+function readOrNull(abs: string): string | null {
+  try {
+    return readFileSync(abs, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** The last parse of each explained map file: a frame asks for it many times over one text. */
+const readingDocs = new Map<string, { text: string; doc: Document }>();
+
+/**
+ * A file of the explained map. The analysis does not check it (it is no
+ * spec), but its IDs and code links lead where the map's do: hover,
+ * definition and Enter in the TUI work there too.
+ */
+function readingDoc(ws: Workspace, path: string): Document | undefined {
+  if (!path.startsWith(`${ws.analysis.config.dir}/${EXPLAINED_MAP_DIR}/`)) return undefined;
+  const text = ws.text(path);
+  if (text === null) return undefined;
+  const cached = readingDocs.get(path);
+  if (cached?.text === text) return cached.doc;
+  const doc = parse(path, text);
+  readingDocs.set(path, { text, doc });
+  return doc;
 }
 
 function at(ws: Workspace, path: string, position: LspPosition): Target | null {

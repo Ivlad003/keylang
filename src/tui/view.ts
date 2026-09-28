@@ -4,6 +4,7 @@
 
 import { contextPack } from "../agent-context.ts";
 import { explainCode } from "../explain.ts";
+import { explanationOf } from "../explanations.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
@@ -324,7 +325,57 @@ export function navEntries(state: State): NavItem[] {
   return navItems(state.analysis, state.navExpanded);
 }
 
+/** Most rows the explanation of the selected node takes at the bottom of the nav panel. */
+const NAV_NOTE_ROWS = 4;
+
+/**
+ * The explanation of the node selected in the nav panel, wrapped to `width`
+ * cells with its origin (`code`, or `llm · model · date`, `stale`); none for a
+ * node without one or an item that is no node.
+ */
+export function navNote(state: State, width: number): string[] {
+  const item = navEntries(state)[state.navIndex];
+  const snapshot = state.analysis?.snapshot;
+  if (!item?.id || !snapshot || width < 8) return [];
+  const e = explanationOf(snapshot, state.briefs, item.id);
+  if (!e) return [];
+  const origin = e.origin === "doc" ? "code" : `llm · ${e.agent ?? "?"} · ${e.date ?? "?"}${e.stale ? " · stale" : ""}`;
+  const rows = wrapWords(`${e.text} (${origin})`, width);
+  return rows.length > NAV_NOTE_ROWS ? [...rows.slice(0, NAV_NOTE_ROWS - 1), `${rows[NAV_NOTE_ROWS - 1]!.slice(0, Math.max(0, width - 1))}…`] : rows;
+}
+
+/** Words of `text` in rows of at most `width` cells; a longer word is cut. */
+function wrapWords(text: string, width: number): string[] {
+  const rows: string[] = [];
+  let row = "";
+  for (const word of text.split(/\s+/).filter((w) => w !== "")) {
+    const next = row === "" ? word : `${row} ${word}`;
+    if (stringWidth(next) <= width) row = next;
+    else {
+      if (row !== "") rows.push(row);
+      row = stringWidth(word) <= width ? word : graphemes(word).slice(0, width).join("");
+    }
+  }
+  if (row !== "") rows.push(row);
+  return rows;
+}
+
+/** Rows of the nav panel's list: what the explanation of the selected node leaves. */
+export function navListHeight(state: State, rect: Rect): number {
+  const note = navNote(state, rect.width - 2).length;
+  return note === 0 ? rect.height : Math.max(2, rect.height - note - 1);
+}
+
 function drawNav(grid: Grid, state: State, rect: Rect): void {
+  const note = navNote(state, rect.width - 2);
+  const listHeight = navListHeight(state, rect);
+  if (note.length > 0) {
+    const y = rect.y + listHeight;
+    grid.fill(rect.x, y, rect.width, rect.height - listHeight, THEME.panel);
+    grid.write(rect.x, y, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
+    note.forEach((row, i) => grid.write(rect.x + 1, y + 1 + i, row, { ...THEME.panel, fg: 250 }, rect.width - 2));
+    rect = { ...rect, height: listHeight };
+  }
   const stale = state.updating || state.outdated;
   const entries = navEntries(state).map((item) => {
     const arrow = item.parent ? (item.expanded ? "▾ " : "▸ ") : item.kind === "heading" ? "" : "  ";
@@ -411,6 +462,7 @@ const HELP: Record<string, string[]> = {
     "/  n               search         :                    command palette",
     "?                  keys, explain  q / Ctrl+C           quit",
     "F4                 agent context  e                    explain id",
+    "s                  find a node    t                    explained map",
     "Ctrl+Space         agent draft of this flow as MERGE",
     "  in context: @ add id · x drop · Esc close",
   ],
@@ -445,20 +497,23 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : ":";
+  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
-  grid.cursor = { x: Math.min(rect.width - 1, 1 + stringWidth(prompt.text)), y: rect.y };
-  if (prompt.kind !== "palette") return;
-  const items = prompt.items.slice(0, Math.min(10, editor.height - 2));
+  grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
+  if (prompt.kind !== "palette" && prompt.kind !== "node") return;
+  // The list scrolls to keep the selected entry in view.
+  const shown = Math.min(10, editor.height - 2);
+  const first = Math.max(0, prompt.index - shown + 1);
+  const items = prompt.items.slice(first, first + shown);
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, "commands", THEME.popup, THEME.popupTitle);
-  items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), i === prompt.index ? THEME.selected : THEME.popup));
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : "commands", THEME.popup, THEME.popupTitle);
+  items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
 const HINTS: Record<string, string> = {
-  view: "Enter code · Alt+Enter spec · / search · F5 check · i edit · ? keys",
+  view: "Enter code · Alt+Enter spec · / search · s node · F5 check · i edit · ? keys",
   edit: "Ctrl+S save · Ctrl+Space complete · Ctrl+G text→spec · Esc view · ? keys",
   read: "Enter code · v raw · F5 check · ? keys",
   code: "Esc back · ↑↓ scroll · ? keys",

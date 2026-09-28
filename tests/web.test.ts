@@ -455,3 +455,35 @@ test("web: a tab closed while it records ends the recording instead of leaving i
   await again.opened;
   await waitFor(() => again.vt.text().includes("voice: the page closed during the recording"), "the recording ended");
 });
+
+test("web: t switches the map to the explained map on the same node, the screen the terminal shows", async (t) => {
+  const repo = checkoutRepo(t, { "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nimport { save } from "../infrastructure/store.ts";\n/** Buys the cart: creates the order, then stores it. */\nexport function buy(): void {\n  create();\n  save();\n}\n' });
+  const config = join(repo, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), explain: { map: true } }));
+  const cols = 100;
+  const rows = 28;
+  const terminal = new VirtualTerminal(cols, rows);
+  const app = new App({ root: repo, cols, rows });
+  t.after(() => app.close());
+  app.attach({ kind: "terminal", write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  await app.idle();
+  for (let i = 0; i < 5; i++) app.input(KEY.down);
+  app.input(KEY.altEnter);
+  app.input("t");
+  const explained = terminal.lines();
+  assert.match(explained[0]!, /keylang\/map-explained\/application\.md/);
+  assert.match(explained.join("\n"), /<br>Buys the cart/);
+
+  const { url } = await startWeb(t, repo);
+  const client = new Client(url, "session-explained", cols, rows);
+  t.after(() => client.close());
+  await client.opened;
+  await waitFor(() => /✗ 0 /.test(client.vt.lines().at(-1) ?? "") && !/updating|analyzing/.test(client.vt.text()), "the first analysis");
+  for (let i = 0; i < 5; i++) client.input(KEY.down);
+  client.input(KEY.altEnter);
+  client.input("t");
+  await waitFor(() => client.vt.lines()[0]!.includes("map-explained/application.md"), "the explained map");
+  assert.deepEqual(client.vt.lines(), explained);
+  client.input("t");
+  await waitFor(() => client.vt.lines()[0]!.includes("keylang/map/application.md"), "the map again");
+});

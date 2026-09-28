@@ -21,7 +21,9 @@ export interface ReadRow {
 
 const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|_([^_]+)_/gu;
 
-export function inline(text: string, base: Style): Segment[] {
+export function inline(written: string, base: Style): Segment[] {
+  // Anchors and line breaks written as HTML (the explained map's) show nothing, as on GitHub.
+  const text = written.replace(/<a\s[^>]*><\/a>|<br\s*\/?>/gi, "");
   const out: Segment[] = [];
   let at = 0;
   for (const match of text.matchAll(INLINE)) {

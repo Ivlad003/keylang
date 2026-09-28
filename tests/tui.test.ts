@@ -17,6 +17,7 @@ import { test } from "node:test";
 import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
+import { navEntries } from "../src/tui/view.ts";
 import { InputDecoder } from "../src/tui/input.ts";
 import { applyHunks, diffLines } from "../src/tui/merge.ts";
 import { ENTER, Grid, LEAVE, renderDiff } from "../src/tui/screen.ts";
@@ -1671,4 +1672,96 @@ test("terminal: nothing is drawn while $EDITOR or a Ctrl+Z stop has the screen; 
   assert.match(term.out.slice(stopped + 1).join(""), /\x1b\[2J/);
   term.signal("SIGTERM");
   assert.equal(await running, 0);
+});
+
+/** The checkout repository with documented code, a model brief, and the explained map on (or off). */
+function explainedRepo(t: { after: (f: () => void) => void }, on: boolean): string {
+  const root = checkoutRepo(t, {
+    "src/application/purchase.ts": [
+      "// Buying: the use case of the shop.",
+      "",
+      'import { create } from "../domain/order.ts";',
+      'import { save } from "../infrastructure/store.ts";',
+      "",
+      "/** Buys the cart: creates the order, then stores it. */",
+      "export function buy(): void {",
+      "  create();",
+      "  save();",
+      "}",
+      "",
+    ].join("\n"),
+    "src/infrastructure/store.ts": "/** Keeps the order on disk for the next run. */\nexport function save(): void {}\n",
+  });
+  const file = join(root, "keylang.json");
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...(on ? { explain: { map: true } } : {}) }, null, 2));
+  return root;
+}
+
+test("tui: t switches a map file to the explained map and back on the same node; s finds a node by its explanation; F3 shows it", async (t) => {
+  const s = session(explainedRepo(t, true));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.altEnter);
+  assert.equal(s.app.state.current, "keylang/map/application.md");
+  s.send("t");
+  assert.equal(s.app.state.current, "keylang/map-explained/application.md");
+  assert.match(s.lines()[0]!, /map-explained\/application\.md.*generated, read-only/);
+  const cursorLine = (): string => s.app.state.buffers.get(s.app.state.current!)!.text.split("\n")[s.app.state.cursor.line]!;
+  assert.match(cursorLine(), /- fn \[buy\]/);
+  assert.equal(s.app.state.buffers.get(s.app.state.current!)!.text.split("\n")[s.app.state.cursor.line + 1], '      <a id="application.purchase.buy"></a><br>Buys the cart: creates the order, then stores it.');
+  // Reading mode shows the text a Markdown viewer shows: no anchors, no `<br>`.
+  s.send("v");
+  assert.ok(s.text().includes("Buys the cart: creates the order, then stores it."), s.text());
+  assert.doesNotMatch(s.text(), /<a id=|<br>/);
+  s.send("v");
+  // `/` and `n` search the explained map like any buffer.
+  s.send("/");
+  for (const ch of "then stores") s.send(ch);
+  s.send(KEY.enter);
+  assert.match(cursorLine(), /Buys the cart/);
+  s.send("t");
+  assert.equal(s.app.state.current, "keylang/map/application.md");
+  assert.match(cursorLine(), /- fn \[buy\]/, "from the description line back to its node");
+
+  // `s`: a word only the explanation has finds the node; Enter goes to its line in the map the reader is in, Enter again to the code.
+  s.send("t");
+  s.send("s");
+  for (const ch of "next run") s.send(ch);
+  assert.match(s.text(), /infrastructure\.store\.save {2}Keeps the order on disk for the next run\./);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/map-explained/infrastructure.md");
+  assert.match(cursorLine(), /- fn \[save\]/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "code");
+  assert.match(s.lines()[1]!, /src\/infrastructure\/store\.ts:2/);
+  s.send(KEY.ctrlO);
+
+  // F3: the explanation of the selected node, with its origin; a node without one has none.
+  s.send(KEY.tab);
+  assert.equal(s.app.state.focus, "nav");
+  // The nav panel's column, its rows joined: a wrapped explanation reads as one text.
+  const nav = (): string => s.lines().map((line) => line.slice(-31).trim()).join(" ").replace(/\s+/g, " ");
+  const selected = (): string | undefined => navEntries(s.app.state)[s.app.state.navIndex]?.id ?? undefined;
+  for (let i = 0; i < 20 && selected() !== "application.purchase"; i++) s.send(KEY.down);
+  assert.equal(selected(), "application.purchase");
+  assert.match(nav(), /Buying: the use case of the shop\./);
+  assert.match(nav(), /\(code\)/);
+  s.send(KEY.down);
+  assert.doesNotMatch(nav(), /\(code\)|\(llm/);
+  s.send("?");
+  assert.match(s.text(), /s {18}find a node {4}t {20}explained map/);
+});
+
+test("tui: t with the explained map off says how to turn it on and changes nothing", async (t) => {
+  const s = session(explainedRepo(t, false));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.altEnter);
+  const before = { current: s.app.state.current, cursor: { ...s.app.state.cursor } };
+  s.send("t");
+  assert.deepEqual({ current: s.app.state.current, cursor: s.app.state.cursor }, before);
+  assert.match(s.text(), /the explained map is off: add "explain": \{"map": true\} to keylang\.json, then F5/);
+  assert.ok(!s.app.state.files.some((file) => file.includes("map-explained")));
 });
