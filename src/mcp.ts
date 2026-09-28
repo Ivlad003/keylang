@@ -17,9 +17,11 @@ import { checkResults } from "./check-results.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
+import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
+import { searchNodes } from "./node-search.ts";
 import { lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -55,6 +57,12 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
   };
 }
 
+/** A node's explanation for an agent: its text, where it comes from, and for a model's brief the model, the date and whether the code changed since. */
+function explanationJson(e: NodeExplanation | null): { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null {
+  if (e === null) return null;
+  return { text: e.text, origin: e.origin, stale: e.stale, ...(e.agent !== undefined ? { agent: e.agent } : {}), ...(e.date !== undefined ? { date: e.date } : {}) };
+}
+
 export function mcpServer(root: string, version: string): McpServer {
   const server = new McpServer({ name: "keylang", version });
   const fresh = currentAnalysis(root);
@@ -62,30 +70,14 @@ export function mcpServer(root: string, version: string): McpServer {
   server.registerTool(
     "search",
     {
-      description: "Find IDs of the architecture map (layers, modules, fns, types, planned) whose ID contains the query, case-insensitive. Start here to get IDs for the other tools.",
+      description:
+        "Find IDs of the architecture map (layers, modules, classes, fns, types, planned) whose ID contains the query, then those whose explanation contains it (the doc comment in the code, or a saved model brief), case-insensitive. Each hit has its explanation with origin (`doc` or `llm`) and whether it is stale. Start here to get IDs for the other tools.",
       inputSchema: { query: z.string().min(1), limit: z.number().int().min(1).max(100).optional() },
     },
     async ({ query, limit }) => {
       const analysis = await fresh();
-      const q = query.toLowerCase();
-      const found = new Map<string, { id: string; kind: string; signature: string | null; file: string | null; line: number | null }>();
-      for (const [id, node] of Object.entries(analysis.snapshot?.nodes ?? {})) found.set(id, { id, kind: node.kind, signature: node.signature ?? null, file: node.file, line: node.line });
-      // Intentions: `planned` declarations the code does not have yet, at their line in the spec.
-      for (const doc of analysis.docs) {
-        for (const section of doc.sections) {
-          for (const top of sectionNodes(section)) {
-            walk(top, (node) => {
-              if (node.kind !== "planned" || !node.id || found.has(node.id)) return;
-              found.set(node.id, { id: node.id, kind: `planned ${node.label?.value ?? "fn"}`, signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line });
-            });
-          }
-        }
-      }
-      const hits = [...found.values()]
-        .filter((hit) => hit.id.toLowerCase().includes(q))
-        .sort((a, b) => a.id.length - b.id.length || (a.id < b.id ? -1 : 1))
-        .slice(0, limit ?? 20);
-      return json(hits);
+      const hits = searchNodes(analysis, loadBriefs(analysis.config), { query, limit: limit ?? 20, fuzzy: false });
+      return json(hits.map((hit) => ({ id: hit.id, kind: hit.kind, signature: hit.signature, file: hit.file, line: hit.line, explanation: explanationJson(hit.explanation) })));
     },
   );
 
@@ -103,7 +95,8 @@ export function mcpServer(root: string, version: string): McpServer {
         .filter((e) => e.source === id || e.target === id)
         .map((e) => ({ kind: e.kind, source: e.source, target: e.target, resolution: e.resolution, file: e.file, line: e.line, text: e.text }));
       const evidence = analysis.verdicts.filter((v) => v.area === id).map((v) => ({ criterion: v.criterion, verdict: v.verdict, message: v.message, file: v.file, line: v.line }));
-      return json({ ...result.summary, edges, evidence, snapshotId: analysis.snapshot?.snapshotId ?? null });
+      const explanation = analysis.snapshot ? explanationOf(analysis.snapshot, loadBriefs(analysis.config), id) : null;
+      return json({ ...result.summary, explanation: explanationJson(explanation), edges, evidence, snapshotId: analysis.snapshot?.snapshotId ?? null });
     },
   );
 

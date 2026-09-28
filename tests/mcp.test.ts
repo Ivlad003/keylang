@@ -15,12 +15,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
 const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
 
-async function connect(t: TestContext): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }> }> {
+async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }> }> {
   const dir = mkdtempSync(join(tmpdir(), "keylang-mcp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+  cpSync(join(root, "tests/fixtures", fixture), dir, { recursive: true });
   mkdirSync(join(dir, "keylang/flows"), { recursive: true });
-  writeFileSync(join(dir, "keylang/flows/checkout.md"), FLOW);
+  if (fixture === "repo") writeFileSync(join(dir, "keylang/flows/checkout.md"), FLOW);
   const client = new Client({ name: "keylang-test", version: "0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin, "mcp"], cwd: dir, stderr: "pipe" }));
   t.after(() => client.close());
@@ -58,7 +58,46 @@ test("mcp: search finds planned ids beside the snapshot's", async (t) => {
   const mcp = await connect(t);
   writeFileSync(join(mcp.dir, "keylang/flows/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
   const hits = JSON.parse((await mcp.call("search", { query: "refund" })).text) as { id: string; kind: string; signature: string | null; file: string; line: number }[];
-  assert.deepEqual(hits, [{ id: "domain.order.refund", kind: "planned fn", signature: "(order: Order) → void", file: "keylang/flows/refund.md", line: 3 }]);
+  assert.deepEqual(hits, [{ id: "domain.order.refund", kind: "planned fn", signature: "(order: Order) → void", file: "keylang/flows/refund.md", line: 3, explanation: null }]);
+});
+
+type Hit = { id: string; kind: string; explanation: { text: string; origin: string; stale: boolean; agent?: string; date?: string } | null };
+
+test("mcp: search finds a node by the words of its explanation after the ID matches; node carries the explanation", async (t) => {
+  const mcp = await connect(t, "explained");
+  // "memory" is only in the JSDoc of the class.
+  const memory = JSON.parse((await mcp.call("search", { query: "Memory" })).text) as Hit[];
+  assert.deepEqual(
+    memory.map((h) => [h.id, h.kind, h.explanation]),
+    [["domain.order.Ledger", "class", { text: "Keeps orders in memory.", origin: "doc", stale: false }]],
+  );
+  const order = JSON.parse((await mcp.call("search", { query: "order", limit: 100 })).text) as Hit[];
+  const byText = order.findIndex((h) => !h.id.toLowerCase().includes("order"));
+  assert.equal(order[byText]?.id, "app.checkout", "its doc comment says `order`, its ID does not");
+  assert.ok(order.slice(byText).every((h) => !h.id.toLowerCase().includes("order")), "every ID match comes before every text match");
+  assert.ok(byText > 0);
+  assert.equal((JSON.parse((await mcp.call("search", { query: "order", limit: 2 })).text) as Hit[]).length, 2);
+  const node = JSON.parse((await mcp.call("node", { id: "domain.order.total" })).text) as Hit;
+  assert.deepEqual(node.explanation, { text: "Sums item prices. The sum calls `items.reduce()` once.", origin: "doc", stale: false });
+  assert.equal((JSON.parse((await mcp.call("node", { id: "domain.order.createOrder" })).text) as Hit).explanation, null);
+});
+
+test("mcp: a saved model brief is an `llm` explanation, stale once the code under it changes; explain.map need not be on", async (t) => {
+  const mcp = await connect(t, "explained");
+  assert.equal(spawnSync(process.execPath, [bin, "map"], { cwd: mcp.dir }).status, 0);
+  const index = JSON.parse(readFileSync(join(mcp.dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { closure?: { fingerprint: string } }> };
+  const closure = index.nodes["domain.order.createOrder"]!.closure!.fingerprint;
+  mkdirSync(join(mcp.dir, "keylang/explain/brief"), { recursive: true });
+  writeFileSync(join(mcp.dir, "keylang/explain/brief/domain.order.createOrder.md"), `<!-- keylang:explain agent=anthropic:m date=2026-09-28 closure=${closure} lang=en detail=brief -->\nAssembles an order from item prices.\n`);
+  const search = async (): Promise<Hit[]> => JSON.parse((await mcp.call("search", { query: "assembles" })).text) as Hit[];
+  assert.deepEqual(
+    (await search()).map((h) => [h.id, h.explanation]),
+    [["domain.order.createOrder", { text: "Assembles an order from item prices.", origin: "llm", stale: false, agent: "anthropic:m", date: "2026-09-28" }]],
+  );
+  const file = join(mcp.dir, "src/domain/order.ts");
+  writeFileSync(file, readFileSync(file, "utf8").replace("return { id, total: total(items) };", "return { id: id.trim(), total: total(items) };"));
+  assert.equal((await search())[0]?.explanation?.stale, true);
+  assert.equal((JSON.parse((await mcp.call("node", { id: "domain.order.createOrder" })).text) as Hit).explanation?.stale, true);
 });
 
 test("mcp: each call sees sources, specs and evidence changed since the last one", async (t) => {
