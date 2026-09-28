@@ -179,12 +179,12 @@
         - calls base.config.toPosix, map.analyze.within
       - fn [report](../../src/lsp.ts#L244) (message: string) → void <!-- internal -->
       - fn [request](../../src/lsp.ts#L251) (method: string, params: Record<string, unknown>) → Promise<unknown> <!-- internal -->
-        - calls cli.lsp.Server.initialize, cli.lsp.LspError, cli.lsp.filePath, cli.lsp.Server.relative, features.lsp-features.diagnosticsFor, cli.lsp.Server.current, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references, features.lsp-features.documentSymbols, features.lsp-features.completions, features.lsp-features.signatureHelp, features.lsp-features.codeLenses
-      - fn [initialize](../../src/lsp.ts#L292) (params: Record<string, unknown>) → unknown <!-- internal -->
+        - calls cli.lsp.Server.initialize, cli.lsp.LspError, cli.lsp.filePath, cli.lsp.Server.relative, features.lsp-features.diagnosticsFor, cli.lsp.Server.current, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references, features.lsp-features.documentSymbols, features.lsp-features.completions, features.lsp-features.signatureHelp, features.lsp-features.codeLenses, features.lsp-features.workspaceSymbols
+      - fn [initialize](../../src/lsp.ts#L294) (params: Record<string, unknown>) → unknown <!-- internal -->
         - calls cli.lsp.filePath, map.analyze.findRoot
-    - module [LspError](../../src/lsp.ts#L323) <!-- internal -->
-      - fn [constructor](../../src/lsp.ts#L325) (code: number, message: string)
-    - fn [filePath](../../src/lsp.ts#L331) (uri: string) → string <!-- internal -->
+    - module [LspError](../../src/lsp.ts#L326) <!-- internal -->
+      - fn [constructor](../../src/lsp.ts#L328) (code: number, message: string)
+    - fn [filePath](../../src/lsp.ts#L334) (uri: string) → string <!-- internal -->
   - module [mcp](../../src/mcp.ts#L1)
     - modelcontextprotocol-sdk external.modelcontextprotocol-sdk
     - node external.node
