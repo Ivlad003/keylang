@@ -3,8 +3,9 @@
 // a local or missing callee stays a gap instead of a confirmed edge.
 
 import { posix } from "node:path";
-import { layerName, type Config } from "./config.ts";
-import type { CallFact, DeclFact, FileFacts, HookFact, TypeRefFact } from "./extract/facts.ts";
+import { isExcluded, layerName, type Config } from "./config.ts";
+import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import type { Resolution } from "./imports.ts";
@@ -23,6 +24,8 @@ export interface Graph {
   openEdges: OpenEdge[];
   /** Config files import resolution read (`tsconfig.json`, `package.json`), with their text or null. */
   resolverInputs: Map<string, string | null>;
+  /** Public names of every indexed module, resolved to symbols; sorted by module and name. */
+  exports: ExportEntry[];
 }
 
 export interface Gap {
@@ -70,6 +73,8 @@ export interface Module {
   endCol: number | null;
   /** True for a directory node created only to nest file modules. */
   synthetic: boolean;
+  /** A class declared in the module's source: its children are members. Other modules are files, directories or packages. */
+  class: boolean;
   /** Original package name for external modules. */
   comment: string | null;
   deps: Dep[];
@@ -106,6 +111,10 @@ export interface Fn {
   endCol: number;
   signature: string | null;
   exported: boolean;
+  /** A `static` class member: called on the class (`X.m()`), not on an instance. */
+  static?: true;
+  /** The name as written, when the ID segment differs (`m` for `X.m-static`, `go` for `Y.go-private`). */
+  written?: string;
   /** Body and signature of every declaration of the fn (overloads joined); absent when an extractor gives none. */
   fingerprint?: string;
   calls: Call[];
@@ -190,15 +199,18 @@ interface FileEntry {
 
 export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // Resolvers read their config files up front: the snapshot id depends on them even without imports.
+  // They see the files of this analysis, unsaved ones included, whatever is on disk now.
+  const sources = new Set(files.map((f) => f.path));
   const resolvers = new Map<Frontend, SourceResolver>();
   for (const language of config.languages) {
     const frontend = frontendOf(language);
-    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root));
+    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources));
   }
   const resolverFor = (file: string): SourceResolver | null => {
     const frontend = frontendFor(file);
     return frontend === undefined ? null : resolvers.get(frontend) ?? null;
   };
+  const resolve = (file: string, spec: string): Resolution => resolverFor(file)?.resolve(file, spec) ?? { kind: "unresolved" };
   const modules = new Map<string, Module>();
   const layers = new Map<string, Layer>();
   const stats: Stats = { files: files.length, modules: 0, fns: 0, types: 0, deps: 0, callsResolved: 0, callsUnresolved: 0, callsExternal: 0, callsDynamic: 0, importsUnresolved: 0, unassignedFiles: 0 };
@@ -216,7 +228,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return l;
   };
 
-  const ensureModule = (id: string, layer: string, path: string | null, line: number | null, synthetic: boolean): Module => {
+  /** `dir`: the path the module stands for without an extension (`src/a/b` for `src/a/b.ts`, `src/a/b/index.ts`, or the directory in `dir` mode); its parent is the directory above. */
+  const ensureModule = (id: string, layer: string, path: string | null, line: number | null, synthetic: boolean, dir: string | null): Module => {
     let m = modules.get(id);
     if (m) {
       if (m.synthetic && !synthetic) {
@@ -228,29 +241,50 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     }
     const dot = id.lastIndexOf(".");
     const name = id.slice(dot + 1);
-    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
+    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, class: false, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
     modules.set(id, m);
     const parentId = id.slice(0, dot);
+    const parentDir = dir === null ? null : posix.dirname(dir);
     if (parentId === layer) getLayer(layer).modules.push(m);
-    else ensureModule(parentId, layer, path === null ? null : posix.dirname(path), null, true).children.push(m);
+    else ensureModule(parentId, layer, parentDir, null, true, parentDir).children.push(m);
     return m;
   };
-
-  // 1. Files → modules.
-  const byFile = new Map<string, FileEntry>();
-  for (const f of files) {
-    const placed = placeFile(config, f.path);
-    if (!placed) stats.unassignedFiles++;
-    const layer = placed?.layer ?? UNASSIGNED;
-    const segments = placed?.segments ?? f.path.replace(/\.[^.]+$/, "").split("/").map(layerName);
-    const id = [layer, ...segments].join(".");
-    const m = ensureModule(id, layer, f.path, 1, false);
+  const representative = (m: Module, f: FileFacts): void => {
+    m.path = f.path;
     m.line = 1;
     m.col = 1;
     m.endLine = f.endLine;
     m.endCol = f.endCol;
-    if (m.path !== f.path) {
-      // Two files map to one module (e.g. `x.ts` and `x/index.ts`).
+  };
+
+  // 1. Files → modules.
+  const byFile = new Map<string, FileEntry>();
+  /** Module id → the path its first file stands for; a file standing for another path is an ID collision. */
+  const stems = new Map<string, { stem: string; file: string }>();
+  const collided = new Set<Module>();
+  for (const f of files) {
+    const placed = placeFile(config, f.path);
+    if (!placed) stats.unassignedFiles++;
+    const layer = placed?.layer ?? UNASSIGNED;
+    const stem = placed?.stem ?? f.path.replace(/\.[^./]+$/, "");
+    const segments = placed?.segments ?? stem.split("/").map(layerName);
+    const id = [layer, ...segments].join(".");
+    const m = ensureModule(id, layer, f.path, 1, false, stem);
+    const first = stems.get(id);
+    if (!first) {
+      stems.set(id, { stem, file: f.path });
+      representative(m, f);
+    } else if (first.stem !== stem) {
+      // `foo.bar.ts` and `foo_bar.ts`, `2fa/` and `_2fa/`: two paths that sanitize to one ID. Their members cannot be told apart.
+      const reason = `module ID collision: same module ID as \`${first.file}\` (\`${id}\`) from another path; the module is opaque until one of them is renamed`;
+      warnings.push(`${f.path}: ${reason}`);
+      gaps.push({ kind: "unsupported", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason, source: m.id });
+      collided.add(m);
+    } else if (config.module === "dir") {
+      // Every file of a directory is its module; the index file (`index.ts`, `mod.rs`, `__init__.py`) stands for it.
+      if (isIndexFile(f.path) && !(m.path !== null && isIndexFile(m.path))) representative(m, f);
+    } else {
+      // `x.ts` and `x/index.ts` are one module.
       warnings.push(`${f.path}: same module ID as ${m.path} (${id}); merged`);
     }
     byFile.set(f.path, { facts: f, module: m });
@@ -263,7 +297,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // 2. Declarations.
   // Module id → name → node id; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
   const declModule = new Map<string, Map<string, string>>();
-  const decls: Decls = { ids: new Map(), fns: new Map(), classes: new Map(), members: new Map() };
+  const decls: Decls = { ids: new Map(), fns: new Map(), classes: new Map(), types: new Set(), members: new Map() };
   for (const { facts, module } of byFile.values()) {
     const names = declModule.get(module.id) ?? new Map<string, string>();
     declModule.set(module.id, names);
@@ -275,32 +309,40 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
     }
   }
+  for (const module of collided) markOpaque(module);
 
   // 3. Imports → dependencies.
   const externalLayer = getLayer(EXTERNAL);
-  const importTargets = new Map<string, Map<string, { module: Module | null; imported: string | null }[]>>(); // file → local → targets
+  const externalIds = externalModuleIds(files, resolve, warnings);
+  const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
   for (const { facts, module } of byFile.values()) {
-    const locals = new Map<string, { module: Module | null; imported: string | null }[]>();
+    const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
     const aliases = new Map<string, string>();
+    const hole = (imp: FileFacts["imports"][number], reason: string): void => {
+      stats.importsUnresolved++;
+      warnings.push(`${facts.path}:${imp.line}: ${reason}`);
+      gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
+    };
     for (const imp of facts.imports) {
-      const r: Resolution = resolverFor(facts.path)?.resolve(facts.path, imp.source) ?? { kind: "unresolved" };
+      const r = resolve(facts.path, imp.source);
       const star = imp.reexport && imp.bindings.length === 0;
       let target: Module | null = null;
       if (r.kind === "internal") {
         target = byFile.get(r.file)?.module ?? null;
-        if (!target && r.workspace) {
-          // A workspace package's entry (`dist/index.js`) keylang does not index: the dependency is there, its target unknown.
-          stats.importsUnresolved++;
-          const reason = `unresolved import \`${imp.source}\` (workspace package entry \`${r.file}\` is not indexed)`;
-          warnings.push(`${facts.path}:${imp.line}: ${reason}`);
-          gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
+        if (!target) {
+          // A workspace package's entry (`dist/index.js`), a file of a language
+          // keylang.json does not list, a file in a build directory or one that
+          // appeared after the sources were read: the dependency is there, its target unknown.
+          const why = r.workspace ? `workspace package entry \`${r.file}\` is not indexed` : notIndexed(config, r.file);
+          if (why === null || imp.optional) {
+            // Left out on purpose: tests, declaration files, `exclude`, files outside guessed layers, non-source files.
+            if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
+            continue;
+          }
+          hole(imp, `unresolved import \`${imp.source}\` (${why})`);
           if (star) module.starSources.push({ target: null, reason: `re-export from unindexed \`${imp.source}\`` });
           continue;
-        }
-        if (!target) {
-          if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
-          continue; // excluded file (tests, d.ts)
         }
         // A file that imports itself is a self-loop; two files merged into one module are not.
         if (target === module && r.file !== facts.path) continue;
@@ -311,26 +353,29 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         continue;
       } else if (r.kind === "external" || r.kind === "builtin") {
         const pkg = r.kind === "builtin" ? "node" : r.pkg;
-        const id = `${EXTERNAL}.${layerName(pkg.replace(/^@/, "").replace("/", "-"))}`;
-        target = ensureModule(id, EXTERNAL, null, null, false);
+        target = ensureModule(externalIds.get(pkg) ?? `${EXTERNAL}.${externalSegment(pkg)}`, EXTERNAL, null, null, false, null);
         if (pkg !== target.name) target.comment = pkg;
         if (externalLayer.modules.length === 0) layers.set(EXTERNAL, externalLayer);
       } else {
-        stats.importsUnresolved++;
-        const reason = `unresolved import \`${imp.source}\``;
-        warnings.push(`${facts.path}:${imp.line}: ${reason}`);
-        gaps.push({ kind: "unresolved-import", file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason, source: module.id });
+        // `new URL("./worker", import.meta.url)` without a source file behind it names no module.
+        if (imp.optional) continue;
+        hole(imp, `unresolved import \`${imp.source}\``);
         if (star) module.starSources.push({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
         continue;
       }
       if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
       for (const b of imp.bindings) {
         const list = locals.get(b.local) ?? [];
-        // A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module.
-        list.push({ module: target, imported: b.kind === "named" && !(r.kind === "internal" && r.whole) ? b.imported : null });
+        list.push(importTarget(target, b, r.kind === "internal" && r.whole === true));
         locals.set(b.local, list);
       }
-      const wanted = imp.bindings.find((b) => b.kind === "module")?.local ?? target.name;
+      // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
+      const same = module.deps.filter((d) => d.target === target.id);
+      if (same.length > 0) {
+        if (!same.some((d) => d.reexport === imp.reexport)) module.deps.push({ alias: same[0]!.alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
+        continue;
+      }
+      const wanted = imp.bindings.find((b) => b.kind === "module" || b.kind === "default")?.local ?? target.name;
       let alias = layerName(wanted);
       const existing = aliases.get(alias);
       if (existing === target.id) continue;
@@ -345,12 +390,31 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         while (taken(`${alias}${n}`)) n++;
         alias = `${alias}${n}`;
       }
-      if (module.deps.some((d) => d.target === target.id)) continue;
       aliases.set(alias, target.id);
       module.deps.push({ alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
       stats.deps++;
     }
   }
+
+  // 3b. Export tables: what each public name stands for, through aliases, re-exports and `export *`.
+  const moduleFiles = new Map<string, FileEntry[]>();
+  for (const entry of byFile.values()) {
+    const list = moduleFiles.get(entry.module.id) ?? [];
+    list.push(entry);
+    moduleFiles.set(entry.module.id, list);
+  }
+  const exportInputs = new Map<string, ModuleExportsInput>();
+  for (const [id, entries] of moduleFiles) {
+    const module = entries[0]!.module;
+    const rows: ExportRowInput[] = [];
+    for (const { facts } of entries) {
+      const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
+      for (const row of listed) if (row.name !== "*") rows.push(exportInput(row, facts, module, importTargets.get(facts.path)!, declModule));
+    }
+    exportInputs.set(id, { rows, stars: module.starSources, opaque: module.members === "opaque" });
+  }
+  const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
+  const exportTables = resolveExports(exportInputs, symbolKind, (module, name) => declModule.get(module)?.get(layerName(name)) ?? null);
 
   // 4. Calls. Hook calls and the values callers pass are collected for step 5.
   const hookCalls: { fn: Fn; hook: HookFact; owner: string; call: CallFact }[] = [];
@@ -362,71 +426,27 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // Class → its internal base class, or the `extends` text when keylang has not read the base.
   const classBase = new Map<string, { internal: string | null; text: string }>();
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
-  const moduleFiles = new Map<string, FileEntry[]>();
-  for (const entry of byFile.values()) {
-    const list = moduleFiles.get(entry.module.id) ?? [];
-    list.push(entry);
-    moduleFiles.set(entry.module.id, list);
-  }
-  const reexports = (facts: FileFacts, name: string, kind?: "module"): boolean => facts.imports.some((imp) => imp.reexport && imp.bindings.some((b) => b.local === name && (kind === undefined || b.kind === kind)));
   /**
    * The symbol a public name of a module stands for: `export { a as b }`,
    * `export default f`, `export { x } from`, `export { x as y } from`, an
-   * imported name exported again, and `export * from`. A name without an
-   * export row (CommonJS, an unexported helper) is the declaration of that name.
+   * imported name exported again, `export * as ns from` (the module), and
+   * `export * from`. A name without an export row (CommonJS, an unexported
+   * helper) is the declaration of that name.
    */
-  const resolveExport = (target: Module, name: string, seen: Set<string> = new Set()): string | null => {
-    const key = `${target.id}\0${name}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    const names = declModule.get(target.id);
-    for (const { facts } of moduleFiles.get(target.id) ?? []) {
-      const imported = importTargets.get(facts.path);
-      const follow = (local: string): string | null => {
-        for (const imp of imported?.get(local) ?? []) {
-          // A module binding exported again is its default export.
-          const id = imp.module ? resolveExport(imp.module, imp.imported ?? "default", seen) : null;
-          if (id) return id;
-        }
-        return null;
-      };
-      // `export * as name from`: a namespace, not a symbol.
-      if (reexports(facts, name, "module")) return null;
-      if (reexports(facts, name)) {
-        const id = follow(name);
-        if (id) return id;
-        continue;
-      }
-      for (const row of facts.exportRows) {
-        if (row.name !== name || row.kind === "reexport") continue;
-        const local = row.local ?? name;
-        const id = names?.get(layerName(local)) ?? follow(local);
-        if (id) return id;
-      }
-    }
-    if (name !== "default") {
-      for (const star of target.starSources) {
-        const from = star.target ? modules.get(star.target) : undefined;
-        const id = from ? resolveExport(from, name, seen) : null;
-        if (id) return id;
-      }
-    }
-    return names?.get(layerName(name)) ?? null;
+  const resolveExport = (target: Module, name: string): string | null => exportTables.symbolOf(target.id, name);
+  /** A module that a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
+  const namespaceModule = (id: string | null): Module | null => {
+    const m = id === null ? undefined : modules.get(id);
+    return m && !m.class && m.layer !== EXTERNAL ? m : null;
   };
-  /** `export * as ns from "./x"`: the module a re-exported namespace names. */
-  const namespaceOf = (target: Module, name: string): Module | null => {
-    for (const { facts } of moduleFiles.get(target.id) ?? []) {
-      if (!reexports(facts, name, "module")) continue;
-      const from = importTargets.get(facts.path)?.get(name)?.find((imp) => imp.module && imp.imported === null)?.module;
-      if (from) return from;
-    }
-    return null;
-  };
-  for (const { facts, module } of byFile.values()) {
+  /** A symbol a call can run: a fn, or a class (its constructor). */
+  const callable = (id: string): boolean => decls.fns.has(id) || decls.classes.has(id);
+  /** Per file: how its names resolve to symbols. */
+  const scopeOf = (facts: FileFacts, module: Module) => {
     const locals = importTargets.get(facts.path)!;
     const localDecls = declModule.get(module.id)!;
-    /** The symbol an import binds: the named export, or the default export of a module binding. */
-    const importedSymbol = (imp: { module: Module | null; imported: string | null }): string | null => (imp.module ? resolveExport(imp.module, imp.imported ?? "default") : null);
+    /** The symbol an import binds: the named export, or the default export of a default or whole-module binding. */
+    const importedSymbol = (imp: ImportTarget): string | null => resolveExport(imp.module, imp.imported ?? "default");
     /** A class by the name this file uses for it: a local declaration or an import. */
     const classNamed = (name: string): string | null => {
       const ids = new Set<string>();
@@ -456,7 +476,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (local) found.add(local);
         for (const imp of locals.get(head) ?? []) {
           const id = importedSymbol(imp);
-          if (id) found.add(id);
+          if (id && callable(id)) found.add(id);
         }
         return [...found];
       }
@@ -465,18 +485,24 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         // `X.m()` on a class names its static member.
         const staticOf = (clsId: string | null): string | undefined => (clsId && decls.classes.has(clsId) ? declModule.get(clsId)?.get(memberKey(member, true)) : undefined);
         for (const imp of locals.get(head) ?? []) {
-          if (!imp.module) continue;
-          if (imp.imported) {
-            const symbol = resolveExport(imp.module, imp.imported);
-            const id = staticOf(symbol);
-            if (id) found.add(id);
-            // `import { ns } from "./barrel"` with `export * as ns from "./x"`.
-            const ns = symbol ? null : namespaceOf(imp.module, imp.imported);
-            const nsId = ns ? resolveExport(ns, member) : null;
-            if (nsId) found.add(nsId);
-          } else {
+          if (imp.kind === "module") {
+            // `import * as ns`, `require()`: a named export; for `require`, also a static member of `module.exports`.
             const id = resolveExport(imp.module, member) ?? staticOf(resolveExport(imp.module, "default"));
             if (id) found.add(id);
+            continue;
+          }
+          const name = imp.imported ?? "default";
+          const symbol = resolveExport(imp.module, name);
+          const id = staticOf(symbol);
+          if (id) found.add(id);
+          // `import { ns } from "./barrel"` with `export * as ns from "./x"`.
+          const ns = namespaceModule(symbol);
+          const nsId = ns ? resolveExport(ns, member) : null;
+          if (nsId) found.add(nsId);
+          // A default import of a module without `export default` (CommonJS) is its `module.exports`.
+          if (imp.kind === "default" && symbol === null && exportTables.lookup(imp.module.id, "default") === null) {
+            const cjs = resolveExport(imp.module, member);
+            if (cjs) found.add(cjs);
           }
         }
         const id = staticOf(localDecls.get(head) ?? null);
@@ -493,13 +519,52 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       return cls ? (declModule.get(cls)?.get(memberKey(member, false)) ?? null) : null;
     };
     /** One target for a callee that names a declaration; null for locals, gaps and ambiguity. */
-    const single = (fact: { callee: string; bound?: string; receiver?: string }, cls: Module | null, isStatic: boolean): string | null => {
+    const single = (fact: { callee: string; bound?: string; receiver?: string; opaque?: true }, cls: Module | null, isStatic: boolean): string | null => {
+      if (fact.opaque) return null;
       const typed = receiverTarget(fact.callee, fact.receiver);
       if (typed) return typed;
       if (fact.bound) return null;
       const targets = resolveCallees(fact.callee, cls, isStatic);
       return targets.length === 1 ? targets[0]! : null;
     };
+    /** A name of the language or of a package: calls through it are external. */
+    const external = (head: string): boolean => globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module.layer === EXTERNAL);
+    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external };
+  };
+  const scopes = new Map<string, ReturnType<typeof scopeOf>>();
+  for (const { facts, module } of byFile.values()) scopes.set(facts.path, scopeOf(facts, module));
+  // Every class's base first: `super()` in one file may run the constructor of a base in another.
+  for (const { facts } of byFile.values()) {
+    const { resolveCallees, classNamed } = scopes.get(facts.path)!;
+    const visit = (factDecls: readonly DeclFact[]): void => {
+      for (const d of factDecls) {
+        const id = d.kind === "class" ? decls.ids.get(d) : undefined;
+        if (!id || !d.base) continue;
+        const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
+        classBase.set(id, { internal: internal.length === 1 ? internal[0]! : null, text: d.base });
+      }
+    };
+    visit(facts.decls);
+  }
+  /**
+   * `super()` / `super.m()` in a class: the base's member, looked up through
+   * bases that do not declare it. `last`: the last base on that chain, null
+   * when the class has none.
+   */
+  const superTarget = (cls: Module, member: string, isStatic: boolean): { target: string | null; last: { internal: string | null; text: string } | null } => {
+    const seen = new Set<string>();
+    let last: { internal: string | null; text: string } | null = null;
+    for (let at = classBase.get(cls.id); at; at = at.internal ? classBase.get(at.internal) : undefined) {
+      last = at;
+      if (!at.internal || seen.has(at.internal)) break;
+      seen.add(at.internal);
+      const id = declModule.get(at.internal)?.get(member === "constructor" ? "constructor" : memberKey(member, isStatic));
+      if (id) return { target: id, last };
+    }
+    return { target: null, last };
+  };
+  for (const { facts, module } of byFile.values()) {
+    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
         if (d.kind === "class") {
@@ -515,16 +580,33 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const isStatic = d.static === true || initializer;
         if (d.accessor) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "an accessor runs on property access" };
         if (initializer) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "a static initializer runs when the module loads" };
-        const seen = new Set<string>();
         const push = (target: string, c: CallFact, extra: Partial<Call> = {}): void => {
           // A self-call stays an edge: recursion is a static path from a function to itself.
-          if (seen.has(target)) return;
-          seen.add(target);
-          fn.calls.push({ target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...extra });
-          if (!extra.via) stats.callsResolved++;
+          const added = addCall(fn, { target, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, ...(c.closure ? { closure: true as const } : {}), ...extra });
+          if (added && !extra.via) stats.callsResolved++;
+        };
+        const dynamic = (c: CallFact, reason: string): void => {
+          stats.callsDynamic++;
+          gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
         };
         for (const c of d.calls) {
+          // An expression keylang does not name is a hole, never an edge.
+          if (c.opaque) {
+            dynamic(c, `call through an expression \`${c.callee}\``);
+            continue;
+          }
           const head = c.callee.split(".")[0]!;
+          if (head === "super" && cls && c.callee.split(".").length <= 2) {
+            // `super()` runs the base constructor; `super.m()` the base's `m`.
+            const member = c.callee === "super" ? "constructor" : c.callee.slice("super.".length);
+            const { target, last } = superTarget(cls, member, isStatic);
+            if (target) push(target, c);
+            // Bases of this repository without a constructor of their own: the implicit ones run nothing keylang indexes.
+            else if (last?.internal && member === "constructor") continue;
+            else if (last && !last.internal && external(last.text.split(".")[0]!)) stats.callsExternal++;
+            else dynamic(c, `call through \`super\` of ${last ? `\`${last.text}\`` : "a class without a base keylang resolved"}`);
+            continue;
+          }
           // The values a resolved call passes may be what its callee's hook calls.
           const callee = c.passes ? single(c, cls, isStatic) : null;
           if (callee && c.passes) {
@@ -552,7 +634,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             continue;
           }
           // `this.waiting.get()` with `waiting = new Map()`: a method of a global or package class.
-          if (c.receiver && (globalsOf(facts.path).values.has(c.receiver) || (locals.get(c.receiver) ?? []).some((imp) => imp.module?.layer === EXTERNAL))) {
+          if (c.receiver && external(c.receiver)) {
             stats.callsExternal++;
             continue;
           }
@@ -575,8 +657,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           }
           const target = targets[0] ?? null;
           if (!target) {
-            const imported = (locals.get(head) ?? []).find((imp) => imp.module);
-            if (imported?.module?.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
+            const imported = (locals.get(head) ?? [])[0];
+            if (imported?.module.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
               stats.callsDynamic++;
               gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
@@ -598,21 +680,15 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       const escape: Escape = { file: facts.path, line: c.line, col: c.col, reason: `\`${c.callee}\` is called from ${c.closure ? "a function value outside declarations" : "module-level code"}` };
       const head = c.callee.split(".")[0]!;
       const typed = receiverTarget(c.callee, c.receiver);
-      const targets = typed ? [typed] : c.bound ? [] : resolveCallees(c.callee, null, false);
+      const targets = typed ? [typed] : c.bound || c.opaque || head === "super" ? [] : resolveCallees(c.callee, null, false);
       for (const id of targets) {
         const target = decls.classes.has(id) ? `${id}.constructor` : id;
         if (!readIds.has(target)) readIds.set(target, escape);
       }
       if (targets.length > 0 || !c.callee.includes(".")) continue;
-      if (globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module?.layer === EXTERNAL)) continue;
+      if (external(head)) continue;
       const member = c.callee.slice(c.callee.lastIndexOf(".") + 1).replace(/^#/, "");
-      if (!calledNames.has(member)) calledNames.set(member, escape);
-    }
-    for (const d of facts.decls) {
-      const id = d.kind === "class" && d.base ? decls.ids.get(d) : undefined;
-      if (!id || !d.base) continue;
-      const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
-      classBase.set(id, { internal: internal.length === 1 ? internal[0]! : null, text: d.base });
+      if (IDENTIFIER.test(member) && !calledNames.has(member)) calledNames.set(member, escape);
     }
     for (const ref of facts.valueRefs ?? []) {
       const escape = { file: facts.path, line: ref.line, col: ref.col, reason: `\`${ref.name}\` is read as a value` };
@@ -627,20 +703,30 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
     }
     const resolveType = (ref: TypeRefFact): string[] => {
-      const head = ref.name.split(".")[0] ?? "";
+      const segments = ref.name.split(".");
+      const head = segments[0] ?? "";
       if (!head) return [];
       const found = new Set<string>();
       const local = localDecls.get(layerName(head));
       if (local) found.add(local);
+      const member = segments.length > 1 ? segments.at(-1)! : "";
+      const narrowed = new Set<string>();
       for (const imp of locals.get(head) ?? []) {
+        // `NS.Id` with `import * as NS`: the named export `Id`, not a member of the default export.
+        if (imp.kind === "module" && segments.length === 2) {
+          const id = resolveExport(imp.module, member);
+          if (id) narrowed.add(id);
+          continue;
+        }
         const id = importedSymbol(imp);
         if (id) found.add(id);
       }
-      const member = ref.name.includes(".") ? ref.name.slice(ref.name.lastIndexOf(".") + 1) : "";
-      if (!member) return [...found];
-      const narrowed = new Set<string>();
+      // A namespace (`export * as T`) is not a type.
+      if (!member) return [...found].filter((id) => namespaceModule(id) === null);
       for (const id of found) {
-        const child = declModule.get(id)?.get(layerName(member));
+        const ns = namespaceModule(id);
+        // `T.Id` with `import { T }` of `export * as T from "./t"`.
+        const child = ns ? (segments.length === 2 ? resolveExport(ns, member) : null) : declModule.get(id)?.get(layerName(member));
         if (child) narrowed.add(child);
       }
       return [...narrowed];
@@ -707,7 +793,130 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const orderedLayers = [...layers.values()].filter((l) => l.modules.length > 0);
   const byPath = new Map<string, Module>();
   for (const [path, entry] of byFile) byPath.set(path, entry.module);
-  return { layers: orderedLayers, modules, byPath, stats, warnings, gaps, openEdges, resolverInputs: new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs])) };
+  return {
+    layers: orderedLayers,
+    modules,
+    byPath,
+    stats,
+    warnings,
+    gaps,
+    openEdges,
+    resolverInputs: new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs])),
+    exports: exportTables.entries(),
+  };
+}
+
+const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
+
+/** What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself. */
+interface ImportTarget {
+  module: Module;
+  kind: ImportBinding["kind"];
+  /** The export the binding names: its name, `default`, or null for the whole module. */
+  imported: string | null;
+}
+
+/** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
+function importTarget(module: Module, binding: ImportBinding, whole: boolean): ImportTarget {
+  if (whole || binding.kind === "module") return { module, kind: "module", imported: null };
+  return binding.kind === "default" ? { module, kind: "default", imported: "default" } : { module, kind: "named", imported: binding.imported };
+}
+
+/**
+ * One export row of a file, with what it stands for: a declaration of the
+ * module, a name or the namespace of the module an import binds, or nothing
+ * keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes
+ * through its own import; any other name through a declaration of the module
+ * or an import of the file.
+ */
+function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>): ExportRowInput {
+  const name = row.name;
+  // Rows of frontends that say how a name is exported in `kind`.
+  const legacy: ExportForm | undefined = row.kind === "default" || (row.kind === "alias" && name === "default") ? "default" : row.kind === "alias" && row.local !== null && row.local !== name ? "alias" : row.kind === "reexport" ? "reexport" : undefined;
+  let form = row.form ?? legacy;
+  const kind: ExportKind = row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value";
+  const reexported = facts.imports.some((imp) => imp.reexport && imp.bindings.some((b) => b.local === name));
+  const local = row.local ?? name;
+  const declared = reexported ? undefined : declModule.get(module.id)?.get(layerName(local));
+  const found = declared === undefined ? imported.get(reexported ? name : local)?.[0] : undefined;
+  const from = found?.module.id;
+  let target: ExportTarget = { kind: "none" };
+  if (declared !== undefined) target = { kind: "symbol", id: declared };
+  else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.module.id } : { kind: "name", module: found.module.id, name: found.imported ?? "default" };
+  if (target.kind === "namespace" && form !== "default") form = "namespace";
+  return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
+}
+
+/** ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. */
+function externalSegment(pkg: string): string {
+  return layerName(pkg.replace(/^@/, "").replace("/", "-"));
+}
+
+/**
+ * Module IDs of the external packages the files import. Two packages whose
+ * names sanitize to one segment (`@scope/pkg` and `scope-pkg`) get two IDs:
+ * the one whose name is the segment keeps it, the others get `-2`, `-3`… in
+ * name order, with a warning; the IDs do not depend on file order.
+ */
+function externalModuleIds(files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution, warnings: string[]): Map<string, string> {
+  const packages = new Set<string>();
+  for (const f of files) {
+    for (const imp of f.imports) {
+      const r = resolve(f.path, imp.source);
+      if (r.kind === "external") packages.add(r.pkg);
+      else if (r.kind === "builtin") packages.add("node");
+    }
+  }
+  const bySegment = new Map<string, string[]>();
+  for (const pkg of [...packages].sort()) {
+    const segment = externalSegment(pkg);
+    bySegment.set(segment, [...(bySegment.get(segment) ?? []), pkg]);
+  }
+  const ids = new Map<string, string>();
+  for (const [segment, names] of bySegment) {
+    const keeper = names.find((n) => n === segment) ?? names[0]!;
+    ids.set(keeper, `${EXTERNAL}.${segment}`);
+    let n = 2;
+    for (const name of names) {
+      if (name === keeper) continue;
+      while (bySegment.has(`${segment}-${n}`)) n++;
+      const id = `${EXTERNAL}.${segment}-${n++}`;
+      ids.set(name, id);
+      warnings.push(`packages \`${keeper}\` and \`${name}\` share the ID segment \`${segment}\`; \`${name}\` is \`${id}\``);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Why a resolved source file has no module; null when it is left out on
+ * purpose: not source code (JSON, CSS), a test or declaration file,
+ * `exclude`, outside guessed layers.
+ */
+function notIndexed(config: Config, file: string): string | null {
+  const language = languageOf(file);
+  if (language === undefined || isExcluded(file, config.exclude)) return null;
+  if (config.guessed && placeFile(config, file) === null) return null;
+  return config.languages.includes(language) ? `\`${file}\` is not indexed` : `\`${file}\` is ${language}, which \`languages\` does not list`;
+}
+
+function isIndexFile(file: string): boolean {
+  const language = languageOf(file);
+  const base = posix.basename(file).replace(/\.[^.]+$/, "");
+  return language !== undefined && LANGUAGES[language].index.includes(base);
+}
+
+/**
+ * Add a call unless an edge to the same target already says as much: a
+ * direct call proves what a hook edge does, a call outside a closure what one
+ * inside does. A stronger edge replaces the weaker ones. True when added.
+ */
+function addCall(fn: Fn, call: Call): boolean {
+  const covers = (a: Call, b: Call): boolean => a.target === b.target && (a.via === undefined || a.via === b.via) && (a.closure !== true || b.closure === true);
+  if (fn.calls.some((c) => covers(c, call))) return false;
+  fn.calls = fn.calls.filter((c) => !covers(call, c));
+  fn.calls.push(call);
+  return true;
 }
 
 function holeReason(c: CallFact): string {
@@ -735,7 +944,7 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
       if (ref) fn.escapes = ref;
       else if (isClass && !members.get(fn.id)?.hash && IMPLICIT_METHODS.has(name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
     }
-    for (const child of m.children) if (!modules.has(child.id)) visit(child, true);
+    for (const child of m.children) if (child.class) visit(child, true);
   };
   for (const m of modules.values()) visit(m, false);
 }
@@ -750,6 +959,8 @@ interface Decls {
   ids: Map<DeclFact, string>;
   fns: Map<string, Fn>;
   classes: Map<string, Module>;
+  /** Type node ids. */
+  types: Set<string>;
   /** Class member fn id → its name as written without `#`, and whether it is `#private`. */
   members: Map<string, { name: string; hash: boolean }>;
 }
@@ -798,12 +1009,21 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
       decls.ids.set(d, existing);
       const fn = decls.fns.get(existing)!;
       if (fn.fingerprint !== undefined && d.fingerprint !== undefined) fn.fingerprint = `${fn.fingerprint}:${d.fingerprint}`;
+      return;
     }
-    return;
+    // `interface Foo` and `class Foo` merge in TypeScript: the value (class or
+    // fn) is the node, whichever comes first, and the type's references are its own.
+    if (d.kind === "type" || !decls.types.has(existing)) {
+      if (d.kind === "type") decls.ids.set(d, existing);
+      return;
+    }
+    module.types.splice(module.types.findIndex((t) => t.id === existing), 1);
+    decls.types.delete(existing);
+    stats.types--;
   }
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
+    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
     module.children.push(cls);
     names.set(key, id);
     decls.ids.set(d, id);
@@ -822,29 +1042,51 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   names.set(key, id);
   decls.ids.set(d, id);
   if (d.kind === "fn") {
-    const fn: Fn = { id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, calls: [], ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}) };
+    const fn: Fn = {
+      id,
+      name,
+      file,
+      line: d.line,
+      col: d.col,
+      endLine: d.endLine,
+      endCol: d.endCol,
+      signature: d.signature,
+      exported: d.exported,
+      ...(d.static ? { static: true as const } : {}),
+      ...(d.name !== name ? { written: d.name } : {}),
+      calls: [],
+      ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}),
+    };
     module.fns.push(fn);
     decls.fns.set(id, fn);
     stats.fns++;
   } else {
     module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}) });
+    decls.types.add(id);
     stats.types++;
   }
 }
 
-/** Layer and module path segments for a file, from the first matching layer glob. */
-export function placeFile(config: Config, file: string): { layer: string; segments: string[] } | null {
+/**
+ * Layer and module path segments for a file, from the first matching layer
+ * glob. `stem` is the path the module stands for, before segments are
+ * sanitized: the file without its extension (`src/a/b` for `src/a/b.ts` and
+ * `src/a/b/index.ts`), or its directory in `dir` mode. Two files of one ID
+ * and one stem are one module; two stems of one ID are a collision.
+ */
+export function placeFile(config: Config, file: string): { layer: string; segments: string[]; stem: string } | null {
   for (const [layer, globs] of config.layers) {
     for (const g of globs) {
       if (!matchesGlob(file, g)) continue;
       const prefix = globPrefix(g);
-      let rel = prefix && file.startsWith(`${prefix}/`) ? file.slice(prefix.length + 1) : file;
-      rel = rel.replace(/\.[^./]+$/, "");
+      const under = prefix !== "" && file.startsWith(`${prefix}/`);
+      const rel = (under ? file.slice(prefix.length + 1) : file).replace(/\.[^./]+$/, "");
       let segments = rel.split("/");
-      if (config.module === "dir" && segments.length > 1) segments = segments.slice(0, -1);
       const language = languageOf(file);
-      if (segments.length > 1 && language !== undefined && LANGUAGES[language].index.includes(segments.at(-1)!)) segments = segments.slice(0, -1);
-      return { layer, segments: segments.map(layerName) };
+      if (config.module === "dir" && segments.length > 1) segments = segments.slice(0, -1);
+      // The index file of a directory (`index.ts`, `mod.rs`, `__init__.py`) is its module; in `dir` mode the file name is gone already, and a directory named `index` is a module of its own.
+      else if (segments.length > 1 && language !== undefined && LANGUAGES[language].index.includes(segments.at(-1)!)) segments = segments.slice(0, -1);
+      return { layer, segments: segments.map(layerName), stem: [...(under ? [prefix] : []), ...segments].join("/") };
     }
   }
   return null;

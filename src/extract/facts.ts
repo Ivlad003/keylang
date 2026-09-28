@@ -51,11 +51,18 @@ export interface ImportFact {
   bindings: ImportBinding[];
   /** `export … from`: the import is re-exported. */
   reexport: boolean;
+  /**
+   * The specifier may name a module or another file: `new URL("./worker", import.meta.url)`
+   * without an extension. An edge when it resolves to a source file, nothing otherwise.
+   */
+  optional?: true;
 }
 
 export type ImportBinding =
-  /** `import x from`, `import * as x from`, `const x = require()` — `x` is the whole module. */
+  /** `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module (its namespace). */
   | { kind: "module"; local: string }
+  /** `import x from` — `x` is the export `default` (for a CommonJS module without one, `module.exports`). */
+  | { kind: "default"; local: string }
   /** `import { a as b } from` — `b` is the export `a`. */
   | { kind: "named"; local: string; imported: string };
 
@@ -90,8 +97,18 @@ export interface DeclFact {
 }
 
 export interface CallFact {
-  /** `f()` → `f`; `a.b()` → `a.b`; `this.m()` → `this.m`; `new X()` → `X`. */
+  /**
+   * `f()` → `f`; `a.b()` → `a.b`; `this.m()` → `this.m`; `new X()` → `X`;
+   * `new ns.X()` → `ns.X`; `super()` → `super`. For an `opaque` call, the
+   * callee's source text (at most 80 characters).
+   */
   callee: string;
+  /**
+   * The callee is an expression keylang does not name (`f()()`, `(a || b)()`,
+   * `new (load())()`, a chain too long to read): never an edge, always a
+   * `dynamic-call` hole. Every call in the code is an edge or a hole.
+   */
+  opaque?: true;
   /** The head of the callee is bound in a scope between the call and the module; for `this.m`, `this` is not the class. */
   bound?: "parameter" | "local";
   /**
@@ -158,13 +175,38 @@ export interface TypeRefFact {
 }
 
 
-/** One public name of a file, compared with the `exports` rule. */
+/**
+ * One public name of a file, compared with the `exports` rule and followed by
+ * the graph to the symbol it stands for.
+ */
 export interface ExportRow {
-  /** Name visible to importers. */
+  /**
+   * Name visible to importers: `default` for `export default …`, `export =`
+   * and `module.exports = …`; `*` for `export * from`.
+   */
   name: string;
+  /**
+   * What the name is as far as the file shows (`fn`, `class`, `type`,
+   * `value`). `alias`, `default` and `reexport` say how it is exported
+   * instead; a frontend that sets `form` gives the kind here.
+   */
   kind: "fn" | "value" | "class" | "type" | "alias" | "default" | "reexport";
-  /** Local declaration name, when it differs from `name` (`export { a as b }`). */
+  /**
+   * The local declaration or binding the name stands for (`export { a as b }`
+   * → `a`, `export default function main` → `main`, `export { a as b } from`
+   * → `a` in that module); null when no name is written (`export default 3`,
+   * `export * from`) or the frontend does not say.
+   */
   local: string | null;
+  /**
+   * How the name is exported; absent for a declaration under its own name.
+   * `alias`: `export { a as b }`; `default`: the default export;
+   * `reexport`: a name of another module (`from`); `namespace`: a module
+   * object (`export * as ns from`, `export namespace N {}`).
+   */
+  form?: "alias" | "default" | "reexport" | "namespace";
+  /** Specifier of the module a re-export or an exported namespace comes from. */
+  from?: string;
 }
 
 export interface UnsupportedFact {

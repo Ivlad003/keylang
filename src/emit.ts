@@ -110,10 +110,13 @@ function edgesFrom(snapshot: AnalysisSnapshot, id: string): readonly SnapshotEdg
   return index.get(id) ?? [];
 }
 
+/** One line per dependency alias: an import and a re-export of one module are one dependency with two edges. */
 function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
-  return edgesFrom(snapshot, id)
+  const edges = edgesFrom(snapshot, id)
     .filter((e) => e.source === id && (e.kind === "import" || e.kind === "reexport") && e.resolution === "resolved" && e.alias && e.target)
     .sort((a, b) => a.line - b.line);
+  const seen = new Set<string | undefined>();
+  return edges.filter((e) => !seen.has(e.alias) && seen.add(e.alias));
 }
 
 function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node: SnapshotNode, depth: number): string {
@@ -127,6 +130,6 @@ function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
-  if (calls.length > 0) s += `${pad}  - calls ${calls.map((c) => c.target).join(", ")}\n`;
+  if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target))].join(", ")}\n`;
   return s;
 }

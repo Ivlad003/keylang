@@ -1,12 +1,18 @@
 // Import specifier → file. Relative paths with extension probing, `tsconfig`
 // (or `jsconfig`, and the configs it `references`) `paths`/`baseUrl`,
-// `package.json` `imports` (`#alias`), Node built-ins. A bare specifier is an
+// `package.json` `imports` (`#alias`), Node built-ins. A bare specifier goes
+// through `paths` (the most specific pattern, as `tsc` picks it) and
+// `baseUrl` before it is a built-in or a package, so an alias named like a
+// built-in (`constants`, `events`) is the project's file. A bare specifier is an
 // external package only when the project declares or installs it — at the
 // root, or in a `package.json` / `node_modules` between the importing file and
 // the root, as Node looks for it (`web/package.json` of a monorepo); any other
 // is unresolved — an alias keylang does not know is a hole, not a package.
 // A workspace package (a `node_modules` link into the repository, or a
 // `workspaces` entry) is internal: its `exports`/`module`/`main` name the file.
+// Files of the analysis (including unsaved or proposed ones, not yet on disk)
+// exist for the resolver whatever the disk says, so one snapshot resolves the
+// same way before and after a candidate is written.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -43,32 +49,37 @@ export class ImportResolver {
   private readonly root: string;
   private readonly baseUrl: string | null;
   private readonly paths: PathRule[];
-  private readonly pkgImports: PathRule[];
   private readonly packages: Set<string>;
   private readonly workspaces: string[];
   private readonly read: (file: string) => unknown;
+  /** Source files of the analysis: they exist even when the disk does not have them (yet). */
+  private readonly sources: ReadonlySet<string>;
   private readonly cache = new Map<string, Resolution>();
   private readonly located = new Map<string, Located>();
   /** Per directory under the root: the packages its own `package.json` declares. */
   private readonly nested = new Map<string, Set<string>>();
+  /** Per directory under the root: the `imports` of its `package.json`, null without one. */
+  private readonly scopes = new Map<string, PathRule[] | null>();
   /** Config files read, with their text (null: absent); edges depend on them, so the snapshot id does too. */
   readonly inputs = new Map<string, string | null>();
 
-  constructor(root: string) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
     this.root = root;
+    this.sources = sources;
+    // One read per file: the text hashed into the snapshot id is the text parsed.
     const read = (file: string): unknown => {
-      const abs = join(root, file);
-      this.inputs.set(file, existsSync(abs) ? readFileSync(abs, "utf8") : null);
-      return readJsonc(abs);
+      const known = this.inputs.get(file);
+      const text = known !== undefined ? known : readText(join(root, file));
+      this.inputs.set(file, text);
+      return text === null ? null : parseJsonc(text);
     };
     this.read = read;
     const configFile = existsSync(join(root, "tsconfig.json")) || !existsSync(join(root, "jsconfig.json")) ? "tsconfig.json" : "jsconfig.json";
-    const ts = loadTsconfig(read, configFile, 0);
+    const ts = loadTsconfig(read, configFile);
     this.baseUrl = ts.baseUrl;
     this.paths = ts.paths;
-    const pkg = read("package.json") as { imports?: Record<string, unknown>; dependencies?: object; devDependencies?: object; peerDependencies?: object; optionalDependencies?: object; workspaces?: unknown } | null;
-    this.pkgImports = Object.entries(pkg?.imports ?? {}).map(([pattern, t]) => ({ pattern, targets: flattenTarget(t) }));
-    this.packages = new Set([pkg?.dependencies, pkg?.devDependencies, pkg?.peerDependencies, pkg?.optionalDependencies].flatMap((deps) => Object.keys(deps ?? {})));
+    const pkg = read("package.json") as { dependencies?: object; devDependencies?: object; peerDependencies?: object; optionalDependencies?: object; workspaces?: unknown } | null;
+    this.packages = new Set([pkg?.dependencies, pkg?.devDependencies, pkg?.peerDependencies, pkg?.optionalDependencies].flatMap((deps) => (isObject(deps) ? Object.keys(deps) : [])));
     const workspaces = Array.isArray(pkg?.workspaces) ? pkg.workspaces : isObject(pkg?.workspaces) && Array.isArray(pkg.workspaces.packages) ? pkg.workspaces.packages : [];
     this.workspaces = workspaces.filter((w): w is string => typeof w === "string");
   }
@@ -185,23 +196,12 @@ export class ImportResolver {
       const f = this.probe(posix.join(posix.dirname(fromFile), spec));
       return f ? { kind: "internal", file: f } : { kind: "unresolved" };
     }
-    if (spec.startsWith("#")) {
-      for (const rule of this.pkgImports) {
-        const m = matchPattern(rule.pattern, spec);
-        if (m === null) continue;
-        for (const t of rule.targets) {
-          const f = this.probe(posix.normalize(toPosix(t).replace("*", m)));
-          if (f) return { kind: "internal", file: f };
-        }
-      }
-      return { kind: "unresolved" };
-    }
-    if (isNodeBuiltin(spec)) return { kind: "builtin" };
-    for (const rule of this.paths) {
-      const m = matchPattern(rule.pattern, spec);
-      if (m === null) continue;
-      for (const t of rule.targets) {
-        const f = this.probe(t.replace("*", m));
+    if (spec.startsWith("#")) return this.resolveSubpathImport(fromFile, spec);
+    // `tsc` tries only the most specific `paths` pattern, then `baseUrl`, then built-ins and packages.
+    const matched = bestMatch(this.paths, spec);
+    if (matched) {
+      for (const t of matched.rule.targets) {
+        const f = this.probe(t.replace("*", matched.star));
         if (f) return { kind: "internal", file: f };
       }
     }
@@ -209,6 +209,49 @@ export class ImportResolver {
       const f = this.probe(posix.join(this.baseUrl, spec));
       if (f) return { kind: "internal", file: f };
     }
+    if (isNodeBuiltin(spec)) return { kind: "builtin" };
+    return this.resolvePackage(fromFile, spec);
+  }
+
+  /**
+   * `#alias`: the `imports` of the nearest `package.json` above the importing
+   * file, as Node scopes them (an exact key, else the longest pattern prefix).
+   * A target that is not a relative path names a package.
+   */
+  private resolveSubpathImport(fromFile: string, spec: string): Resolution {
+    for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
+      const scope = dir === "." || dir === "" ? "" : dir;
+      const rules = this.scopeImports(scope);
+      if (rules !== null) {
+        const matched = bestMatch(rules, spec);
+        if (!matched) return { kind: "unresolved" };
+        for (const t of matched.rule.targets) {
+          const target = toPosix(t).replaceAll("*", matched.star);
+          if (!target.startsWith(".")) {
+            if (target.startsWith("#") || target.startsWith("/")) continue;
+            return this.resolve(fromFile, target);
+          }
+          const f = this.probe(posix.normalize(posix.join(scope, target)));
+          if (f) return { kind: "internal", file: f };
+        }
+        return { kind: "unresolved" };
+      }
+      if (scope === "") return { kind: "unresolved" };
+    }
+  }
+
+  /** `imports` of `<dir>/package.json`; an empty list when it has none, null without the file. */
+  private scopeImports(dir: string): PathRule[] | null {
+    const known = this.scopes.get(dir);
+    if (known !== undefined) return known;
+    const manifest = this.read(dir === "" ? "package.json" : `${dir}/package.json`);
+    const imports = isObject(manifest) && isObject(manifest.imports) ? manifest.imports : {};
+    const rules = manifest === null ? null : Object.entries(imports).map(([pattern, t]) => ({ pattern, targets: flattenTarget(t) }));
+    this.scopes.set(dir, rules);
+    return rules;
+  }
+
+  private resolvePackage(fromFile: string, spec: string): Resolution {
     const pkg = packageName(spec);
     const located = this.locate(pkg);
     if (located?.kind === "workspace") {
@@ -242,16 +285,15 @@ export class ImportResolver {
     const c = posix.normalize(candidate);
     if (c.startsWith("../")) return null;
     const tryFile = (p: string): string | null => {
+      if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
       return existsSync(abs) && statSync(abs).isFile() ? p : null;
     };
-    // NodeNext style: `./x.js` written for `./x.ts`.
-    const swapped = /\.[cm]?js$/.exec(c) ? c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts") : null;
-    for (const p of [c, swapped, c.replace(/\.js$/, ".tsx")]) {
-      if (p) {
-        const f = tryFile(p);
-        if (f) return f;
-      }
+    // NodeNext style: `./x.js` written for `./x.ts` (or `.tsx`, `.jsx`), `./x.jsx` for `./x.tsx`.
+    const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];
+    for (const p of [c, ...swapped]) {
+      const f = tryFile(p);
+      if (f) return f;
     }
     for (const e of EXTS) {
       const f = tryFile(c + e);
@@ -287,6 +329,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The rule `tsc` (`matchPatternOrExact`) and Node (`PATTERN_KEY_COMPARE`)
+ * apply: an exact key, else the matching pattern with the longest prefix
+ * before `*` (then the longer key), else the first in the file. `star` is the
+ * text the `*` stands for.
+ */
+function bestMatch(rules: readonly PathRule[], spec: string): { rule: PathRule; star: string } | null {
+  let best: { rule: PathRule; star: string; prefix: number } | null = null;
+  for (const rule of rules) {
+    const star = matchPattern(rule.pattern, spec);
+    if (star === null) continue;
+    if (!rule.pattern.includes("*")) return { rule, star };
+    const prefix = rule.pattern.indexOf("*");
+    if (!best || prefix > best.prefix || (prefix === best.prefix && rule.pattern.length > best.rule.pattern.length)) best = { rule, star, prefix };
+  }
+  return best && { rule: best.rule, star: best.star };
+}
+
 function matchPattern(pattern: string, spec: string): string | null {
   const star = pattern.indexOf("*");
   if (star === -1) return pattern === spec ? "" : null;
@@ -312,12 +372,22 @@ export function packageName(spec: string): string {
 
 /** JSON with comments and trailing commas (tsconfig style). */
 export function readJsonc(path: string): unknown {
-  if (!existsSync(path)) return null;
+  const text = readText(path);
+  return text === null ? null : parseJsonc(text);
+}
+
+/** The value of JSONC text; null when it does not parse. */
+export function parseJsonc(text: string): unknown {
   try {
-    return JSON.parse(stripJsonc(readFileSync(path, "utf8")));
+    return JSON.parse(stripJsonc(text));
   } catch {
     return null;
   }
+}
+
+/** A file's text, or null when it is missing. */
+function readText(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
 }
 
 /** Remove comments and trailing commas outside of strings. */
@@ -347,41 +417,63 @@ interface Tsconfig {
   paths: PathRule[];
 }
 
+/** Options of one config after its `extends` chain, before `paths` targets are placed. */
+interface MergedOptions {
+  baseUrl: string | null;
+  /** `paths` as written, with the directory of the config that declares them. */
+  paths: { rules: Record<string, unknown>; dir: string } | null;
+}
+
 /**
  * `compilerOptions.baseUrl`/`paths` following relative `extends` chains.
- * `paths` targets resolve against `baseUrl`, or the directory of the config
- * that declares them. A solution config (`"files": []` with `references`, the
- * Vite template) takes the `paths` of the configs it references.
+ * As in `tsc`, `paths` targets resolve against the `baseUrl` of the final
+ * options (a child config's `baseUrl` moves inherited `paths` too), or the
+ * directory of the config that declares them. A solution config (`"files": []`
+ * with `references`, the Vite template) takes the `paths` of the configs it references.
  */
-function loadTsconfig(read: (file: string) => unknown, file: string, depth: number): Tsconfig {
-  const raw = read(file) as { extends?: string | string[]; references?: { path?: string }[]; compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } } | null;
-  let result: Tsconfig = { baseUrl: null, paths: [] };
-  if (!raw || depth > 5) return result;
+function loadTsconfig(read: (file: string) => unknown, file: string): Tsconfig {
+  const own = mergedOptions(read, file, 0);
+  const result: Tsconfig = { baseUrl: own.baseUrl, paths: placePaths(own) };
+  if (result.paths.length > 0) return result;
+  const raw = read(file);
+  const references = isObject(raw) && Array.isArray(raw.references) ? raw.references : [];
   const dir = posix.dirname(toPosix(file));
-  const parents = typeof raw.extends === "string" ? [raw.extends] : (raw.extends ?? []);
+  for (const ref of references) {
+    if (!isObject(ref) || typeof ref.path !== "string") continue;
+    const target = posix.normalize(posix.join(dir, toPosix(ref.path)));
+    const refFile = target.endsWith(".json") ? target : posix.join(target, "tsconfig.json");
+    if (refFile.startsWith("../")) continue;
+    const referenced = mergedOptions(read, refFile, 1);
+    result.paths.push(...placePaths(referenced));
+    result.baseUrl ??= referenced.baseUrl;
+  }
+  return result;
+}
+
+function mergedOptions(read: (file: string) => unknown, file: string, depth: number): MergedOptions {
+  const raw = read(file);
+  let result: MergedOptions = { baseUrl: null, paths: null };
+  if (!isObject(raw) || depth > 5) return result;
+  const dir = posix.dirname(toPosix(file));
+  const parents = typeof raw.extends === "string" ? [raw.extends] : Array.isArray(raw.extends) ? raw.extends.filter((e): e is string => typeof e === "string") : [];
   for (const e of parents) {
     if (!e.startsWith(".")) continue; // package configs (`@tsconfig/node22`) carry no paths
     const parentFile = posix.normalize(posix.join(dir, e.endsWith(".json") ? e : `${e}.json`));
     if (parentFile.startsWith("../")) continue;
-    const p = loadTsconfig(read, parentFile, depth + 1);
-    result = { baseUrl: p.baseUrl ?? result.baseUrl, paths: p.paths.length > 0 ? p.paths : result.paths };
+    const p = mergedOptions(read, parentFile, depth + 1);
+    result = { baseUrl: p.baseUrl ?? result.baseUrl, paths: p.paths ?? result.paths };
   }
-  const co = raw.compilerOptions;
-  if (co?.baseUrl) result.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
-  if (co?.paths) {
-    const base = result.baseUrl ?? dir;
-    result.paths = Object.entries(co.paths).map(([pattern, targets]) => ({ pattern, targets: targets.map((t) => posix.normalize(posix.join(base, toPosix(t)))) }));
-  }
-  if (depth === 0 && result.paths.length === 0) {
-    for (const ref of raw.references ?? []) {
-      if (typeof ref?.path !== "string") continue;
-      const target = posix.normalize(posix.join(dir, toPosix(ref.path)));
-      const refFile = target.endsWith(".json") ? target : posix.join(target, "tsconfig.json");
-      if (refFile.startsWith("../")) continue;
-      const p = loadTsconfig(read, refFile, depth + 1);
-      result.paths.push(...p.paths);
-      result.baseUrl ??= p.baseUrl;
-    }
-  }
+  const co = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
+  if (typeof co.baseUrl === "string" && co.baseUrl !== "") result.baseUrl = posix.normalize(posix.join(dir, toPosix(co.baseUrl)));
+  if (isObject(co.paths)) result.paths = { rules: co.paths, dir };
   return result;
+}
+
+function placePaths(options: MergedOptions): PathRule[] {
+  if (!options.paths) return [];
+  const base = options.baseUrl ?? options.paths.dir;
+  return Object.entries(options.paths.rules).map(([pattern, targets]) => ({
+    pattern,
+    targets: (Array.isArray(targets) ? targets : []).filter((t): t is string => typeof t === "string").map((t) => posix.normalize(posix.join(base, toPosix(t)))),
+  }));
 }

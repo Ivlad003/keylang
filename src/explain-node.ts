@@ -51,8 +51,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   if (node) {
     const holes: Record<string, number> = {};
     for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
-    const parent = analysis.snapshot?.nodes[id.slice(0, id.lastIndexOf("."))];
-    const isClass = node.kind === "module" && parent?.kind === "module" && parent.file !== null && parent.file === node.file;
+    const isClass = node.kind === "module" && node.class === true;
     return {
       summary: {
         id,

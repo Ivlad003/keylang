@@ -25,27 +25,136 @@ interface Stored {
 
 /**
  * Entries of a cache written by this schema and version. An entry of the wrong
- * shape is dropped, so its file is extracted again instead of trusted.
+ * shape — any field the graph reads, at any depth — is dropped, so its file is
+ * extracted again instead of trusted or thrown on.
  */
 function storedFiles(value: unknown, version: string): Stored["files"] {
   if (!isRecord(value) || value.schema !== CACHE_SCHEMA || value.version !== version || !isRecord(value.files)) return {};
   const files: Stored["files"] = {};
   for (const [path, entry] of Object.entries(value.files)) {
-    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isRecord(entry.facts)) continue;
-    const facts = entry.facts;
-    const arrays = ["imports", "decls", "exports", "reexportsAll", "exportRows", "unsupported", "valueRefs", "moduleCalls"] as const;
-    if (facts.path !== path || !arrays.every((key) => Array.isArray(facts[key])) || (facts.completeness !== "complete" && facts.completeness !== "opaque")) continue;
-    if (!(facts.exports as unknown[]).every((name) => typeof name === "string")) continue;
-    // The shapes the graph walks: a damaged entry is extracted again, never trusted or thrown on.
-    if (!(facts.imports as unknown[]).every((item) => isRecord(item) && typeof item.source === "string" && Array.isArray(item.bindings))) continue;
-    if (!(facts.decls as unknown[]).every(validDecl)) continue;
-    files[path] = { sha256: entry.sha256, facts: facts as unknown as StoredFacts };
+    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isStoredFacts(entry.facts) || entry.facts.path !== path) continue;
+    files[path] = { sha256: entry.sha256, facts: entry.facts };
   }
   return files;
 }
 
-function validDecl(value: unknown): boolean {
-  return isRecord(value) && typeof value.name === "string" && typeof value.kind === "string" && Array.isArray(value.calls) && Array.isArray(value.types) && Array.isArray(value.members) && value.members.every(validDecl);
+function isStoredFacts(value: unknown): value is StoredFacts {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.path === "string" &&
+    isPosition(value.endLine) &&
+    isPosition(value.endCol) &&
+    every(value.imports, isImport) &&
+    every(value.decls, isDecl) &&
+    every(value.exports, isString) &&
+    every(value.reexportsAll, isString) &&
+    every(value.exportRows, isExportRow) &&
+    every(value.unsupported, (u) => isRecord(u) && isRange(u) && typeof u.text === "string" && typeof u.reason === "string") &&
+    every(value.valueRefs, (r) => isRecord(r) && typeof r.name === "string" && optionalTrue(r.member) && isPosition(r.line) && isPosition(r.col)) &&
+    every(value.moduleCalls, isCall) &&
+    (value.completeness === "complete" || value.completeness === "opaque") &&
+    (value.parseError === null || (isRecord(value.parseError) && isPosition(value.parseError.line) && typeof value.parseError.reason === "string"))
+  );
+}
+
+function isImport(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.source === "string" &&
+    isRange(value) &&
+    typeof value.text === "string" &&
+    typeof value.reexport === "boolean" &&
+    optionalTrue(value.optional) &&
+    every(value.bindings, (b) => isRecord(b) && typeof b.local === "string" && (b.kind === "module" || b.kind === "default" || (b.kind === "named" && typeof b.imported === "string")))
+  );
+}
+
+function isDecl(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.kind === "fn" || value.kind === "class" || value.kind === "type") &&
+    typeof value.name === "string" &&
+    isRange(value) &&
+    (value.signature === null || typeof value.signature === "string") &&
+    typeof value.exported === "boolean" &&
+    every(value.calls, isCall) &&
+    every(value.types, (t) => isRecord(t) && typeof t.name === "string" && isRange(t) && typeof t.text === "string") &&
+    every(value.members, isDecl) &&
+    optional(value.fingerprint, isString) &&
+    optionalTrue(value.accessor) &&
+    optionalTrue(value.static) &&
+    optionalTrue(value.hash) &&
+    optional(value.base, isString)
+  );
+}
+
+function isCall(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.callee === "string" &&
+    isRange(value) &&
+    optionalTrue(value.opaque) &&
+    optional(value.bound, isBound) &&
+    optional(value.receiver, isString) &&
+    optional(value.hook, isHook) &&
+    optional(value.passes, (p) => every(p, isPass)) &&
+    optionalTrue(value.closure)
+  );
+}
+
+function isHook(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.fallback === "string" &&
+    (value.param === null || (isInteger(value.param) && value.param >= 0)) &&
+    typeof value.path === "string" &&
+    (value.owner === "self" || value.owner === "constructor")
+  );
+}
+
+function isPass(value: unknown): boolean {
+  return isRecord(value) && Number.isInteger(value.arg) && typeof value.path === "string" && typeof value.callee === "string" && optional(value.bound, isBound) && optional(value.receiver, isString);
+}
+
+const ROW_KINDS = new Set(["fn", "value", "class", "type", "alias", "default", "reexport"]);
+const ROW_FORMS = new Set(["alias", "default", "reexport", "namespace"]);
+
+function isExportRow(value: unknown): boolean {
+  return isRecord(value) && typeof value.name === "string" && typeof value.kind === "string" && ROW_KINDS.has(value.kind) && (value.local === null || typeof value.local === "string") && optional(value.form, (f) => typeof f === "string" && ROW_FORMS.has(f)) && optional(value.from, isString);
+}
+
+function isBound(value: unknown): boolean {
+  return value === "parameter" || value === "local";
+}
+
+/** 1-based `line`, `col`, `endLine`, `endCol`. */
+function isRange(value: Record<string, unknown>): boolean {
+  return isPosition(value.line) && isPosition(value.col) && isPosition(value.endLine) && isPosition(value.endCol);
+}
+
+function isPosition(value: unknown): boolean {
+  return isInteger(value) && value >= 1;
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+function isString(value: unknown): boolean {
+  return typeof value === "string";
+}
+
+function every(value: unknown, check: (item: unknown) => boolean): boolean {
+  return Array.isArray(value) && value.every(check);
+}
+
+function optional(value: unknown, check: (item: unknown) => boolean): boolean {
+  return value === undefined || check(value);
+}
+
+function optionalTrue(value: unknown): boolean {
+  return value === undefined || value === true;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

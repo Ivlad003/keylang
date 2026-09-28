@@ -5,14 +5,13 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { Config } from "./config.ts";
-import { layerName } from "./config.ts";
-import type { FileFacts } from "./extract/facts.ts";
+import type { ExportEntry } from "./exports.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
 import { components } from "./scc.ts";
 
-export const SNAPSHOT_SCHEMA = 5;
+export const SNAPSHOT_SCHEMA = 6;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.7";
+export const EXTRACTOR_VERSION = "m1.8";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -55,13 +54,29 @@ export interface SnapshotEdge {
 
 export interface SnapshotExport {
   module: string;
-  /** Public name. `*` marks an `export * from` whose names are unknown (`reason`). */
+  /**
+   * Public name importers use: `default` for `export default …`, `export =`
+   * and `module.exports = …`. `*` marks an `export * from` whose names are
+   * unknown (`reason`).
+   */
   name: string;
+  /**
+   * Node the name stands for, through aliases, re-export chains and `export *`:
+   * a fn, a class, a type, or the module of a namespace (`form: namespace`).
+   * Null when it is no declaration keylang indexes (`export default 3`, a package's name).
+   */
   symbol: string | null;
   kind: "fn" | "class" | "type" | "value" | "reexport";
-  /** How the name is exported when it is not a plain declaration. */
-  form?: "alias" | "default" | "reexport";
-  /** Module an `export *` row comes from. */
+  /**
+   * How the name is exported; absent for a declaration under its own name.
+   * `alias`: `export { a as b }`; `default`: the default export;
+   * `reexport`: a name of another module (`from`); `namespace`: a module
+   * object (`export * as ns from`, `export namespace N {}`).
+   */
+  form?: "alias" | "default" | "reexport" | "namespace";
+  /** The local or source name when it differs from `name`: `a` for `export { a as b }`, `main` for `export default function main`. */
+  local?: string;
+  /** Module the name is re-exported from (for `export *`, the module that exports it). */
   from?: string;
   reason?: string;
 }
@@ -80,6 +95,8 @@ export interface CoverageItem {
 
 export interface SnapshotNode {
   kind: "layer" | "module" | "fn" | "type";
+  /** A module node that is a class declared in its parent module: its children are members, `<id>.constructor` its constructor. */
+  class?: true;
   layer: string;
   file: string | null;
   line: number | null;
@@ -89,6 +106,10 @@ export interface SnapshotNode {
   endCol?: number;
   signature?: string | null;
   exported?: boolean;
+  /** fn: a `static` class member, called on the class (`X.m()`). */
+  static?: true;
+  /** fn: the name as written, when the ID segment differs (`m` for `X.m-static`, `go` for `Y.go-private`). */
+  name?: string;
   members?: "complete" | "opaque";
   /** Generator comment, such as an external package name or `internal` on a class. */
   comment?: string;
@@ -139,7 +160,6 @@ export function sha256(text: string): string {
 export function buildSnapshot(
   graph: Graph,
   config: Config,
-  facts: readonly FileFacts[],
   files: readonly { path: string; sha256: string }[],
   skipped: readonly { file: string; reason: string }[],
 ): AnalysisSnapshot {
@@ -169,12 +189,13 @@ export function buildSnapshot(
   const visit = (m: Module): void => {
     const moduleNode: SnapshotNode = {
       kind: "module",
+      ...(m.class ? { class: true as const } : {}),
       layer: m.layer,
       file: m.path,
       line: m.line,
       col: m.col,
       members: m.members,
-      deps: m.deps.map((d) => d.target),
+      deps: [...new Set(m.deps.map((d) => d.target))],
       dependents: [],
     };
     if (m.endLine !== null) moduleNode.endLine = m.endLine;
@@ -192,7 +213,9 @@ export function buildSnapshot(
         endCol: f.endCol,
         signature: f.signature,
         exported: f.exported,
-        calls: f.calls.filter((c) => c.via !== "injected").map((c) => c.target),
+        ...(f.static ? { static: true as const } : {}),
+        ...(f.written !== undefined ? { name: f.written } : {}),
+        calls: [...new Set(f.calls.filter((c) => c.via !== "injected").map((c) => c.target))],
         callers: [],
       };
       if (f.escapes) fn.escapes = f.escapes;
@@ -327,7 +350,7 @@ export function buildSnapshot(
     manifest: { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles },
     nodes: ordered,
     edges,
-    exports: exportTable(graph, facts),
+    exports: graph.exports.map(exportRow),
     coverage,
     stats: graph.stats,
   };
@@ -341,10 +364,12 @@ export function buildSnapshot(
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
   const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
+  // `new C()` names the class; what runs is its constructor.
+  const runs = (target: string): string | null => (nodes[target]?.kind === "fn" ? target : nodes[target]?.class && nodes[`${target}.constructor`]?.kind === "fn" ? `${target}.constructor` : null);
   const adj = new Map<string, Set<string>>();
   for (const [id, node] of Object.entries(nodes)) {
     if (node.kind !== "fn" && node.kind !== "type") continue;
-    adj.set(id, new Set((node.calls ?? []).filter((target) => nodes[target]?.kind === "fn")));
+    adj.set(id, new Set((node.calls ?? []).map(runs).filter((target): target is string => target !== null)));
   }
   const done = new Map<string, { fingerprint: string; complete: boolean }>();
   // Tarjan emits a component after every component it reaches.
@@ -368,68 +393,18 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
   }
 }
 
-function exportTable(graph: Graph, facts: readonly FileFacts[]): SnapshotExport[] {
-  const own = new Map<string, SnapshotExport[]>();
-  const stars = new Map<string, Module>();
-  for (const file of facts) {
-    const module = graph.byPath.get(file.path);
-    if (!module) continue;
-    const rows = own.get(module.id) ?? [];
-    own.set(module.id, rows);
-    stars.set(module.id, module);
-    const listed = file.exportRows.length > 0 ? file.exportRows : [...file.exports].sort().map((name) => ({ name, kind: "value" as const, local: name }));
-    for (const row of listed) {
-      if (row.name === "*" && row.kind === "reexport") continue;
-      if (rows.some((item) => item.name === row.name)) continue;
-      const symbol = row.kind === "alias" && isForeign(file, row) ? null : findSymbol(module, row.local ?? row.name);
-      const kind = symbol?.kind ?? (row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value");
-      const form = row.kind === "alias" || row.kind === "default" ? row.kind : row.name === "default" ? "default" : undefined;
-      rows.push({ module: module.id, name: row.name, symbol: symbol?.id ?? null, kind, ...(form ? { form } : {}) });
-    }
-  }
-  // `export * from "./x"` re-exports every name of x except `default`, transitively.
-  const expanded = new Map<string, SnapshotExport[]>();
-  const expand = (id: string, visiting: Set<string>): SnapshotExport[] => {
-    const done = expanded.get(id);
-    if (done) return done;
-    const rows = [...(own.get(id) ?? [])];
-    const module = stars.get(id);
-    if (module && !visiting.has(id)) {
-      visiting.add(id);
-      for (const star of module.starSources) {
-        if (star.target === null || !own.has(star.target)) {
-          rows.push({ module: id, name: "*", symbol: null, kind: "reexport", form: "reexport", reason: star.reason || `re-export from \`${star.target}\`` });
-          continue;
-        }
-        for (const row of expand(star.target, visiting)) {
-          if (row.name === "default" || rows.some((item) => item.name === row.name)) continue;
-          rows.push({ ...row, module: id, form: "reexport", from: row.from ?? star.target });
-        }
-      }
-      visiting.delete(id);
-    }
-    expanded.set(id, rows);
-    return rows;
+/** A row of the graph's export table, with its fields in a fixed order. */
+function exportRow(entry: ExportEntry): SnapshotExport {
+  return {
+    module: entry.module,
+    name: entry.name,
+    symbol: entry.symbol,
+    kind: entry.kind,
+    ...(entry.form ? { form: entry.form } : {}),
+    ...(entry.local !== undefined ? { local: entry.local } : {}),
+    ...(entry.from !== undefined ? { from: entry.from } : {}),
+    ...(entry.reason !== undefined ? { reason: entry.reason } : {}),
   };
-  const out = [...own.keys()].flatMap((id) => expand(id, new Set()));
-  out.sort((a, b) => (a.module < b.module ? -1 : a.module > b.module ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  return out;
-}
-
-/** `export { a as b } from "./x"` names a symbol of x, not a local declaration. */
-function isForeign(file: FileFacts, row: { name: string }): boolean {
-  return file.imports.some((imp) => imp.reexport && imp.bindings.some((binding) => binding.local === row.name));
-}
-
-function findSymbol(m: Module, name: string): { id: string; kind: "fn" | "class" | "type" } | null {
-  const key = layerName(name);
-  const fn = m.fns.find((f) => f.name === key);
-  if (fn) return { id: fn.id, kind: "fn" };
-  const type = m.types.find((t) => t.name === key);
-  if (type) return { id: type.id, kind: "type" };
-  const child = m.children.find((c) => c.name === key && !c.synthetic);
-  if (child) return { id: child.id, kind: "class" };
-  return null;
 }
 
 function compareCoverage(a: CoverageItem, b: CoverageItem): number {

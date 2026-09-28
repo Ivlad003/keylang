@@ -135,11 +135,10 @@ function depValue(d: WireDep, name: (id: string) => Names): string {
   return value;
 }
 
-/** A class is a module node declared in the same file as its parent module. */
+/** A class is a module node with the class marker. */
 function isClass(snapshot: AnalysisSnapshot, id: string): boolean {
   const node = snapshot.nodes[id];
-  const parent = snapshot.nodes[id.slice(0, id.lastIndexOf("."))];
-  return node?.kind === "module" && parent?.kind === "module" && parent.file !== null && parent.file === node.file;
+  return node?.kind === "module" && node.class === true;
 }
 
 /**

@@ -18,6 +18,7 @@ interface SnapshotNode {
   kind: string;
   file: string | null;
   layer: string;
+  class?: true;
 }
 
 const dir = process.argv[2];
@@ -35,11 +36,10 @@ if (run("map").status !== 0) {
 const readIndex = (): { nodes: Record<string, SnapshotNode>; edges: { source: string; target: string | null; resolution: string }[]; coverage: { source: string | null; reason: string }[] } =>
   JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
 const index = readIndex();
-// File modules only: a class is a module node that shares its file with the enclosing module.
+// File modules only: the snapshot marks a class module with `class: true`.
 const modules = Object.entries(index.nodes)
-  .filter(([, node]) => node.kind === "module" && node.file && /\.([cm]?[jt]s|rs|py)$/.test(node.file))
-  .map(([id, node]) => ({ id, file: node.file as string, layer: node.layer }))
-  .filter((m, _, all) => !all.some((other) => other.file === m.file && m.id.startsWith(`${other.id}.`)));
+  .filter(([, node]) => node.kind === "module" && !node.class && node.file && /\.([cm]?[jt]s|rs|py)$/.test(node.file))
+  .map(([id, node]) => ({ id, file: node.file as string, layer: node.layer }));
 /** A function declared directly in a file module. */
 const topFn = (m: { id: string; file: string }): string | undefined =>
   Object.keys(index.nodes).find((id) => index.nodes[id]!.kind === "fn" && index.nodes[id]!.file === m.file && id.startsWith(`${m.id}.`) && id.split(".").length === m.id.split(".").length + 1);

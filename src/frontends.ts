@@ -15,8 +15,12 @@ import { RustResolver } from "./rust-imports.ts";
 export interface Frontend {
   name: string;
   extract(path: string, src: string): Promise<FileFacts>;
-  /** One resolver per graph: files of all this frontend's languages share it. */
-  resolver(root: string): SourceResolver;
+  /**
+   * One resolver per graph: files of all this frontend's languages share it.
+   * `sources`: the files of the analysis, which exist for resolution even when
+   * the disk does not have them (an unsaved or proposed file).
+   */
+  resolver(root: string, sources: ReadonlySet<string>): SourceResolver;
   /** Edge kinds the extractor reports; a kind missing here is absent from the snapshot, not proven absent from the code. */
   edges: readonly ("import" | "call" | "type" | "reexport")[];
   /** Names of the language and platform: a call or type through them is external, not unresolved. */
@@ -73,8 +77,8 @@ const FRONTENDS: Record<Language, Frontend> = {
   typescript: ecmascript,
 };
 
-function ecmascriptResolver(root: string): SourceResolver {
-  return new ImportResolver(root);
+function ecmascriptResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
+  return new ImportResolver(root, sources);
 }
 
 function pythonResolver(root: string): SourceResolver {

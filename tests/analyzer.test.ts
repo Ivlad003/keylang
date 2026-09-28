@@ -36,9 +36,10 @@ function statics(dir: string): string[] {
 
 interface Snapshot {
   snapshotId: string;
-  nodes: Record<string, { kind: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string }[];
+  nodes: Record<string, { kind: string; class?: true; static?: true; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; alias?: string; reason?: string; closure?: true }[];
   coverage: { kind: string; file: string; line: number; reason: string }[];
+  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; local?: string; from?: string; reason?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
@@ -299,4 +300,254 @@ test("classes: a static initializer runs on module load; `this` in it is the cla
   const lines = statics(dir);
   assert.match(lines[0]!, /static unverified a\.x\.hit: .*a static initializer runs when the module loads at src\/a\/x\.ts:3:3/);
   assert.match(lines[1]!, /static ok a\.x\.K\.make: called from a\.x\.K\.static/);
+});
+
+test("imports: `paths` and `baseUrl` win over built-in names; the most specific pattern wins; inherited `paths` move with `baseUrl`; `#imports` of the nearest package.json", (t) => {
+  const dir = repo(t, {
+    "tsconfig.base.json": '{"compilerOptions":{"paths":{"constants":["./lib/constants.ts"],"@/*":["./lib/*"],"@/protected/*":["./secret/*"]}}}',
+    "tsconfig.json": '{"extends":"./tsconfig.base.json","compilerOptions":{"baseUrl":"./src"}}',
+    "package.json": '{"imports":{"#z":"./nowhere.ts"}}',
+    "src/lib/constants.ts": "export function danger(): void {}\n",
+    "src/events.ts": "export function on(): void {}\n",
+    "src/lib/x.tsx": "export function x(): void {}\n",
+    "src/lib/y.tsx": "export function y(): void {}\n",
+    "src/lib/protected/store.ts": "export function save(): void {}\n",
+    "src/secret/store.ts": "export function save(): void {}\n",
+    "src/app/a.ts": [
+      'import { danger } from "constants";',
+      'import { on } from "events";',
+      'import { save } from "@/protected/store";',
+      'import { x } from "@/x";',
+      'import { y } from "../lib/y.jsx";',
+      "export function main(): void { danger(); on(); save(); x(); y(); }",
+      "",
+    ].join("\n"),
+    "web/package.json": '{"name":"web","imports":{"#z":"./src/z.ts"}}',
+    "web/src/z.ts": "export function z(): void {}\n",
+    "web/src/app/w.ts": 'import { z } from "#z";\nexport function main(): void { z(); }\n',
+    "keylang/rules.md": "# rules\n\n- deny app lib\n- deny app secret\n",
+  }, { layers: { app: ["src/app/**", "web/src/app/**"], lib: ["src/lib/**", "src/events.ts", "web/src/z.ts"], secret: ["src/secret/**"] } });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout + o.stderr);
+  assert.match(o.stdout, /src\/app\/a\.ts:1:1: K102 divergence: `app\.a` depends on `lib\.constants`/);
+  assert.match(o.stdout, /src\/app\/a\.ts:2:1: K102 divergence: `app\.a` depends on `lib\.events`/);
+  // `@/protected/*` is more specific than `@/*`, whichever comes first.
+  assert.match(o.stdout, /src\/app\/a\.ts:3:1: K102 divergence: `app\.a` depends on `secret\.store`/);
+  assert.doesNotMatch(o.stdout, /lib\.protected/);
+  // The inherited `@/*` resolves against the child's `baseUrl`: `src/lib/x.tsx`.
+  assert.match(o.stdout, /src\/app\/a\.ts:4:1: K102 divergence: `app\.a` depends on `lib\.x`/);
+  assert.match(o.stdout, /src\/app\/a\.ts:5:1: K102 divergence: `app\.a` depends on `lib\.y`/);
+  assert.match(o.stdout, /web\/src\/app\/w\.ts:1:1: K102 divergence: `app\.w` depends on `lib\.z`/);
+  assert.doesNotMatch(o.stdout, /unverified/);
+});
+
+test("calls: `new ns.X()`, `new C().m()`, a class merged with its interface, a default import beside a same-named export, `super()`; an unknown callee is a hole", (t) => {
+  const dir = repo(t, {
+    "src/lib/svc.ts": [
+      "export class X { constructor() { hit(); } }",
+      "export interface Foo { a: number }",
+      "export class Foo { run(): void { hit(); } }",
+      "export class Base { constructor() { hit(); } }",
+      "export class Derived extends Base { constructor() { super(); } }",
+      "export function hit(): void {}",
+      "",
+    ].join("\n"),
+    "src/lib/api.ts": "export function hit(): void {}\nexport default class Actual { static hit(): void {} }\nexport class Twin { m(): void {} static m(): void {} }\n",
+    "src/app/a.ts": [
+      'import * as ns from "../lib/svc.ts";',
+      'import { Foo, Derived } from "../lib/svc.ts";',
+      'import API from "../lib/api.ts";',
+      "export function viaNamespace(): void { new ns.X(); }",
+      "export function merged(): void { new Foo().run(); }",
+      "export function viaDefault(): void { API.hit(); }",
+      "export function viaSuper(): void { new Derived(); }",
+      "export function opaque(pick: () => () => void): void { pick()(); }",
+      "export function typed(foo: ns.Foo): void {}",
+      "",
+    ].join("\n"),
+    "keylang/flows/f.md": [
+      "# flow a\n\n- trigger app.a.viaNamespace\n- step lib.svc.X.constructor\n",
+      "# flow b\n\n- trigger app.a.merged\n- step lib.svc.Foo.run\n",
+      "# flow c\n\n- trigger app.a.viaDefault\n- step lib.api.Actual.hit\n",
+      "# flow d\n\n- trigger app.a.viaSuper\n- step lib.svc.Base.constructor\n",
+    ].join("\n"),
+  });
+  const lines = statics(dir);
+  assert.match(lines[0]!, /static ok lib\.svc\.X\.constructor: called from app\.a\.viaNamespace/);
+  assert.match(lines[1]!, /static ok lib\.svc\.Foo\.run: called from app\.a\.merged/);
+  assert.match(lines[2]!, /static ok lib\.api\.Actual\.hit: called from app\.a\.viaDefault/);
+  assert.match(lines[3]!, /static ok lib\.svc\.Base\.constructor: reachable from app\.a\.viaSuper via lib\.svc\.Derived\.constructor/);
+  const snap = snapshot(dir);
+  // `API` is the default export `Actual`, not the module: `API.hit()` is not `lib.api.hit`.
+  assert.deepEqual(snap.edges.filter((e) => e.kind === "call" && e.source === "app.a.viaDefault").map((e) => e.target), ["lib.api.Actual.hit"]);
+  assert.equal(snap.nodes["lib.svc.Foo"]?.class, true);
+  assert.equal(snap.nodes["lib.api.Actual.hit"]?.static, true);
+  assert.equal(snap.nodes["lib.api.Twin.m-static"]?.name, "m");
+  assert.equal(snap.nodes["lib.api.Twin.m"]?.static, undefined);
+  assert.ok(snap.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through an expression `pick()`"), JSON.stringify(snap.coverage));
+  // `ns.Foo` with `import * as ns` is the export `Foo` of that module.
+  assert.deepEqual(snap.edges.filter((e) => e.kind === "type" && e.source === "app.a.typed").map((e) => [e.target, e.resolution]), [["lib.svc.Foo", "resolved"]]);
+});
+
+test("exports: every export form names its symbol; `export *` resolves cycles, drops ambiguous names and stays unknown for an opaque source", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/lib/x.ts": "export function a(): void {}\nexport default function d(): void {}\n",
+      "src/lib/forms.ts": [
+        'export { a } from "./x.ts";',
+        'export { a as renamed, default as dflt } from "./x.ts";',
+        'import * as ns from "./x.ts";',
+        "export { ns };",
+        'export * as star from "./x.ts";',
+        "export namespace Util { export const k = 1; }",
+        "export default 3;",
+        "",
+      ].join("\n"),
+      "src/lib/eq.ts": "function api(): void {}\nexport = api;\n",
+      "src/lib/h.ts": "function handler(): void {}\nexport default handler;\n",
+      "src/lib/c1.ts": 'export * from "./c2.ts";\nexport function one(): void {}\n',
+      "src/lib/c2.ts": 'export * from "./c3.ts";\nexport function two(): void {}\n',
+      "src/lib/c3.ts": 'export * from "./c1.ts";\nexport function three(): void {}\n',
+      "src/lib/p.ts": "export function dup(): void {}\n",
+      "src/lib/q.ts": "export function dup(): void {}\n",
+      "src/lib/both.ts": 'export * from "./p.ts";\nexport * from "./q.ts";\n',
+      "src/lib/gen.ts": "export function g(): void {}\n",
+      "src/lib/wrap.ts": 'export * from "./gen.ts";\nexport function w(): void {}\n',
+      "keylang/rules.md": [
+        "# rules",
+        "",
+        "- module lib.forms",
+        "  - exports a, renamed, dflt, ns, star, Util, default",
+        "- module lib.eq",
+        "  - exports default",
+        "- module lib.c3",
+        "  - exports one, two, three",
+        "- module lib.both",
+        "  - exports dup",
+        "- module lib.wrap",
+        "  - exports w, g",
+        "",
+      ].join("\n"),
+    },
+    { exclude: ["src/lib/gen.ts"] },
+  );
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout + o.stderr);
+  assert.deepEqual(
+    o.stdout.split("\n").filter((l) => l.startsWith("keylang/rules.md")),
+    ["keylang/rules.md:10:3: K104 absence: `lib.both` does not export `dup`", "keylang/rules.md:12:3: unverified re-export from `lib.gen`, whose contents keylang did not read"],
+  );
+  assert.match(o.stderr, /1 fail, 1 unverified, 3 ok/);
+  const snap = snapshot(dir);
+  const row = (module: string, name: string) => snap.exports.find((e) => e.module === module && e.name === name);
+  assert.deepEqual(row("lib.forms", "a"), { module: "lib.forms", name: "a", symbol: "lib.x.a", kind: "fn", form: "reexport", from: "lib.x" });
+  assert.deepEqual(row("lib.forms", "renamed"), { module: "lib.forms", name: "renamed", symbol: "lib.x.a", kind: "fn", form: "reexport", local: "a", from: "lib.x" });
+  assert.equal(row("lib.forms", "dflt")?.symbol, "lib.x.d");
+  assert.deepEqual([row("lib.forms", "ns")?.symbol, row("lib.forms", "ns")?.form, row("lib.forms", "star")?.form], ["lib.x", "namespace", "namespace"]);
+  assert.deepEqual(row("lib.forms", "Util"), { module: "lib.forms", name: "Util", symbol: null, kind: "value", form: "namespace" });
+  assert.deepEqual(row("lib.forms", "default"), { module: "lib.forms", name: "default", symbol: null, kind: "value", form: "default" });
+  assert.deepEqual(row("lib.x", "default"), { module: "lib.x", name: "default", symbol: "lib.x.d", kind: "fn", form: "default", local: "d" });
+  assert.deepEqual(row("lib.eq", "default"), { module: "lib.eq", name: "default", symbol: "lib.eq.api", kind: "fn", form: "default", local: "api" });
+  assert.deepEqual(snap.exports.filter((e) => e.module === "lib.c1").map((e) => e.name), ["one", "three", "two"]);
+  // `import * as ns from "./x.ts"` and `export { a } from "./x.ts"`: one dependency, an edge of each kind.
+  assert.deepEqual(snap.edges.filter((e) => e.source === "lib.forms" && e.target === "lib.x").map((e) => `${e.kind} ${e.alias}`).sort(), ["import x", "reexport x"]);
+  // Exporting a function is not reading it as a value.
+  assert.equal(snap.nodes["lib.h.handler"]?.escapes, undefined);
+  assert.equal(snap.nodes["lib.eq.api"]?.escapes, undefined);
+});
+
+test("static: a direct call beside the same call in a closure proves the path; a `require` parameter and a URL of a non-module are not imports; a file of an unlisted language is a hole", (t) => {
+  const dir = repo(t, {
+    "src/lib/x.ts": "export function hit(): void {}\n",
+    "src/lib/worker.ts": "export function w(): void {}\n",
+    "src/lib/legacy.js": "exports.old = function () {};\n",
+    "src/app/a.ts": 'import { hit } from "../lib/x.ts";\nexport function main(): void {\n  const deferred = () => hit();\n  hit();\n  deferred();\n}\n',
+    "src/app/b.ts": 'export function load(require: (s: string) => unknown): void { require("../lib/x.ts"); }\n',
+    "src/app/c.ts": 'export function start(): void {\n  new Worker(new URL("../lib/worker", import.meta.url));\n  new URL("./LICENSE", import.meta.url);\n}\n',
+    "src/app/d.ts": 'import { old } from "../lib/legacy.js";\nexport function use(): void { old(); }\n',
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.a.main\n- step lib.x.hit\n",
+    "keylang/rules.md": "# rules\n\n- deny app lib\n",
+  });
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /static ok lib\.x\.hit: called from app\.a\.main/);
+  assert.match(o.stdout, /src\/app\/a\.ts:1:1: K102 /);
+  assert.match(o.stdout, /src\/app\/c\.ts:2:14: K102 divergence: `app\.c` depends on `lib\.worker`/);
+  assert.doesNotMatch(o.stdout, /src\/app\/b\.ts:\d+:\d+: K102/);
+  const snap = snapshot(dir);
+  const imports = snap.coverage.filter((c) => c.kind === "unresolved-import").map((c) => `${c.file}:${c.line} ${c.reason}`);
+  assert.deepEqual(imports, ["src/app/d.ts:1 unresolved import `../lib/legacy.js` (`src/lib/legacy.js` is javascript, which `languages` does not list)"]);
+});
+
+test("modules: two paths of one ID are an opaque module with a hole; scoped packages keep their own IDs; `dir` mode keeps an `index` directory and knows a class in any file", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"dependencies":{"@scope/pkg":"1","scope-pkg":"1"}}',
+    "src/lib/foo.bar.ts": "export function one(): void {}\n",
+    "src/lib/foo_bar.ts": "export function two(): void {}\n",
+    "src/lib/s/t/index.ts": "export function t(): void {}\n",
+    "src/app/a.ts": 'import { a } from "@scope/pkg";\nimport { b } from "scope-pkg";\nexport function main(): void { a(); b(); }\n',
+  });
+  const o = keylang(dir, ["map"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.match(o.stderr, /src\/lib\/foo_bar\.ts: module ID collision: same module ID as `src\/lib\/foo\.bar\.ts` \(`lib\.foo_bar`\)/);
+  assert.match(o.stderr, /`@scope\/pkg` is `external\.scope-pkg-2`/);
+  const snap = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
+  assert.equal(snap.nodes["lib.foo_bar"]?.members, "opaque");
+  // A directory node stands for its own directory, not the one of the index file below it.
+  assert.equal(snap.nodes["lib.s"]?.file, "src/lib/s");
+  assert.ok(snap.coverage.some((c) => c.kind === "unsupported" && c.file === "src/lib/foo_bar.ts" && /module ID collision/.test(c.reason)));
+  assert.deepEqual(snap.edges.filter((e) => e.kind === "import" && e.source === "app.a").map((e) => e.target).sort(), ["external.scope-pkg", "external.scope-pkg-2"]);
+
+  const dirMode = repo(
+    t,
+    {
+      "src/lib/a/z.ts": "export function z(): void {}\n",
+      "src/lib/a/index.ts": "export function i(): void {}\n",
+      "src/lib/a/k.ts": "export class K { m(): void {} }\n",
+      "src/lib/a/index/y.ts": "export function y(): void {}\n",
+      "src/lib/a/b/c.ts": "export function c(): void {}\n",
+      "src/lib/p/q/r.ts": "export function r(): void {}\n",
+      "keylang/wiring.md": "# wiring\n\n- wire lib.a.K\n- wire lib.a\n",
+    },
+    { module: "dir" },
+  );
+  const mapped = keylang(dirMode, ["map"]);
+  assert.equal(mapped.status, 0, mapped.stderr);
+  assert.doesNotMatch(mapped.stderr, /same module ID/);
+  const nodes = (JSON.parse(readFileSync(join(dirMode, ".keylang/index.json"), "utf8")) as Snapshot).nodes;
+  assert.equal(nodes["lib.a"]?.file, "src/lib/a/index.ts");
+  assert.equal(nodes["lib.a.index"]?.file, "src/lib/a/index/y.ts");
+  assert.equal(nodes["lib.a.b"]?.file, "src/lib/a/b/c.ts");
+  assert.equal(nodes["lib.p"]?.file, "src/lib/p");
+  assert.deepEqual([nodes["lib.a.K"]?.class, nodes["lib.a.K"]?.file], [true, "src/lib/a/k.ts"]);
+  const checked = keylang(dirMode, ["check"]);
+  assert.doesNotMatch(checked.stdout, /K302 wire `lib\.a\.K`/);
+  assert.match(checked.stdout, /K302 wire `lib\.a` is a module/);
+  assert.match(keylang(dirMode, ["explain", "lib.a.K"]).stdout, /^class lib\.a\.K/);
+});
+
+test("robustness: a file nested thousands deep is opaque, not a crash; a fact cache damaged deep inside is extracted again", (t) => {
+  const dir = repo(t, {
+    "src/lib/deep.ts": `export const x = ${Array.from({ length: 5000 }, (_, i) => `a${i}`).join(" + ")};\n`,
+    "src/lib/ok.ts": "export function f(): void { g(); }\nexport function g(): void {}\n",
+    "src/app/a.ts": 'import { f } from "../lib/ok.ts";\nexport function main(): void { f(); }\n',
+    "keylang/rules.md": "# rules\n\n- deny app lib\n",
+  });
+  const first = snapshot(dir);
+  assert.ok(first.coverage.some((c) => c.kind === "parse-error" && c.file === "src/lib/deep.ts" && /nested deeper than/.test(c.reason)), JSON.stringify(first.coverage));
+  assert.equal(first.nodes["lib.deep"]?.members, "opaque");
+  const file = join(dir, ".keylang/cache/facts.json");
+  const cache = JSON.parse(readFileSync(file, "utf8"));
+  cache.files["src/lib/ok.ts"].facts.decls[0].calls = [null];
+  cache.files["src/lib/ok.ts"].facts.moduleCalls = [{ line: 1 }];
+  cache.files["src/app/a.ts"].facts.imports[0].bindings = [{ kind: "weird", local: 1 }];
+  cache.files["src/app/a.ts"].facts.valueRefs = [{ name: "f", line: "1", col: 1 }];
+  cache.files["src/lib/deep.ts"].facts.exportRows = [{ name: "x", kind: "nope", local: null }];
+  writeFileSync(file, JSON.stringify(cache));
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stderr);
+  assert.match(o.stdout, /src\/app\/a\.ts:1:1: K102 /);
+  const again = snapshot(dir);
+  assert.ok(again.edges.some((e) => e.kind === "call" && e.source === "lib.ok.f" && e.target === "lib.ok.g"));
+  assert.ok(again.edges.some((e) => e.kind === "call" && e.source === "app.a.main" && e.target === "lib.ok.f"));
 });

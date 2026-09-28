@@ -14,7 +14,7 @@ import type { Verdict } from "./verdict.ts";
 /** The slice of the snapshot rules need. Kept here so `check` does not import `map`. */
 interface SnapshotView {
   snapshotId: string;
-  nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string }>;
+  nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
   edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
@@ -102,14 +102,8 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   const verdicts: Verdict[] = [];
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const isModule = (id: string): boolean => snapshot.nodes[id]?.kind === "module";
-  // A class is a module node of its file's module (declared in the same file).
-  // Until snapshot nodes mark classes, this is the same test `wiring` uses.
-  const isClass = (id: string): boolean => {
-    const node = snapshot.nodes[id];
-    const dot = id.lastIndexOf(".");
-    const parent = dot === -1 ? undefined : snapshot.nodes[id.slice(0, dot)];
-    return node?.kind === "module" && parent?.kind === "module" && parent.file !== null && parent.file === node.file;
-  };
+  // A class is a module node of its file's module; the snapshot marks it (any file of a `module: "dir"` module too).
+  const isClass = (id: string): boolean => snapshot.nodes[id]?.kind === "module" && snapshot.nodes[id]?.class === true;
   const scopeOf = (id: string): string | null => {
     for (let cur = id; ; cur = cur.slice(0, cur.lastIndexOf("."))) {
       if (isModule(cur)) return cur;

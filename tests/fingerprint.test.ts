@@ -76,3 +76,14 @@ test("fingerprint: a call cycle terminates and changes as one; an unresolved cal
   assert.notEqual(after.nodes["main.pong.pong"]!.closure!.fingerprint, ping.fingerprint, "a change in ping changes pong through the cycle");
   assert.equal(after.nodes["main.pong.pong"]!.fingerprint, before.nodes["main.pong.pong"]!.fingerprint);
 });
+
+test("fingerprint: `new C()` covers the constructor it runs", (t) => {
+  const source = (n: number): string => `export class C {\n  constructor() {\n    helper(${n});\n  }\n}\n\nexport function helper(n: number): number {\n  return n;\n}\n\nexport function start(): C {\n  return new C();\n}\n`;
+  const r = repo(t, { "src/c.ts": source(1) });
+  const before = r.map().nodes["main.c.start"]!;
+  r.write("src/c.ts", source(2));
+  const after = r.map().nodes["main.c.start"]!;
+  assert.equal(after.fingerprint, before.fingerprint);
+  assert.notEqual(after.closure!.fingerprint, before.closure!.fingerprint, "a changed constructor changes the closure of `start`");
+  assert.equal(after.closure!.complete, true);
+});

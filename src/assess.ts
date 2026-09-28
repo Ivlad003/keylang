@@ -84,13 +84,10 @@ export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]
   });
 }
 
-/** Snapshot kinds, with a class told apart: a module node declared in the same file as its parent module. */
+/** Snapshot kinds, with a class told apart by its marker. */
 function nodeKinds(nodes: SnapshotInput["nodes"]): Map<string, string> {
   const kinds = new Map<string, string>();
-  for (const [id, node] of Object.entries(nodes)) {
-    const parent = nodes[id.slice(0, id.lastIndexOf("."))];
-    kinds.set(id, node.kind === "module" && parent?.kind === "module" && parent.file !== null && parent.file === node.file ? "class" : node.kind);
-  }
+  for (const [id, node] of Object.entries(nodes)) kinds.set(id, node.kind === "module" && node.class === true ? "class" : node.kind);
   return kinds;
 }
 

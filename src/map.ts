@@ -41,13 +41,20 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     all.push(...added);
     all.sort(compareText);
   }
+  // One read per file: the manifest hash, the cache key and the extracted facts come from the same text.
   const indexed: { path: string; sha256: string }[] = [];
-  const sources = new Map<string, string>();
-  for (const p of all) {
+  const sources = new Map<string, { text: string; sha256: string }>();
+  for (const p of [...all]) {
     const abs = join(config.root, p);
-    const src = options.overlay?.get(abs) ?? readFileSync(abs, "utf8");
-    sources.set(p, src);
-    indexed.push({ path: p, sha256: sha256(src) });
+    const src = options.overlay?.get(abs) ?? readSource(abs);
+    if (src === null) {
+      // Removed between listing and reading: not part of this snapshot.
+      all.splice(all.indexOf(p), 1);
+      continue;
+    }
+    const hash = sha256(src);
+    sources.set(p, { text: src, sha256: hash });
+    indexed.push({ path: p, sha256: hash });
   }
   const skipped = config.guessed ? all.filter((p) => placeFile(config, p) === null) : [];
   const skippedSet = new Set(skipped);
@@ -57,10 +64,9 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     if (skippedSet.has(p)) continue;
     const src = sources.get(p);
     if (src === undefined) continue;
-    const hash = sha256(src);
     const frontend = frontendFor(p);
     if (!frontend) continue;
-    facts.push(await cache.facts(p, hash, () => frontend.extract(p, src)));
+    facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
   if (options.persist) cache.save();
   // An explicitly excluded file inside a layer is a module with unknown contents.
@@ -72,7 +78,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     if (module) module.comment = "excluded";
   }
   const mapDir = `${config.dir}/map`;
-  const index = buildSnapshot(graph, config, facts, indexed, [
+  const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
   ]);
@@ -81,6 +87,32 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
 
 function opaqueFacts(path: string): FileFacts {
   return { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "opaque", parseError: null };
+}
+
+/** A file's text; null when it no longer exists. */
+function readSource(abs: string): string | null {
+  try {
+    return readFileSync(abs, "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * Facts of one file; a file whose syntax nests deeper than the extractor's
+ * stack (thousands of `+` terms or parentheses) is opaque with a parse error,
+ * so one pathological file does not stop the whole analysis.
+ */
+async function extractGuarded(extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string): Promise<FileFacts> {
+  try {
+    return await extract(path, src);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    const lines = src.split("\n");
+    const last = lines.at(-1) ?? "";
+    return { ...opaqueFacts(path), endLine: lines.length, endCol: [...last].length + 1, parseError: { line: 1, reason: "nesting too deep to read" } };
+  }
 }
 
 export interface MapDiff {

@@ -32,6 +32,8 @@ interface SnapshotEdge {
 
 interface SnapshotNodeView {
   kind: string;
+  /** A module node that is a class. */
+  class?: true;
   layer?: string;
   members?: string;
   signature?: string | null;

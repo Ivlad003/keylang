@@ -163,7 +163,7 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 5);
+  assert.equal(index.schema, 6);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
@@ -563,7 +563,7 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
   assert.equal(o.status, 0, out);
   assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 5);
+  assert.equal(index.schema, 6);
   assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
 });
 
