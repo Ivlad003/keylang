@@ -6,6 +6,7 @@
 //   removed-fn      flow step on the only fn, fn removed      → K001
 //   manual-map      map file without the generated marker     → `map` exit 1, file kept
 //   shadowed-call   parameter named like a module fn, called  → no resolved edge, "shadowed by parameter"
+// Probes speak the language of the file they break (TS/JS, Rust or Python); `deny-dynamic` has no Rust or Python form.
 // Usage: node bench/inject.ts <repo copy>
 // Prints one line per probe, then `probes: N/M caught`.
 
@@ -36,7 +37,7 @@ const readIndex = (): { nodes: Record<string, SnapshotNode>; edges: { source: st
 const index = readIndex();
 // File modules only: a class is a module node that shares its file with the enclosing module.
 const modules = Object.entries(index.nodes)
-  .filter(([, node]) => node.kind === "module" && node.file && /\.[cm]?[jt]s$/.test(node.file))
+  .filter(([, node]) => node.kind === "module" && node.file && /\.([cm]?[jt]s|rs|py)$/.test(node.file))
   .map(([id, node]) => ({ id, file: node.file as string, layer: node.layer }))
   .filter((m, _, all) => !all.some((other) => other.file === m.file && m.id.startsWith(`${other.id}.`)));
 /** A function declared directly in a file module. */
@@ -46,8 +47,25 @@ if (modules.length < 2) {
   console.log("skip: fewer than two script modules");
   process.exit(0);
 }
-const a = modules[0]!;
-const b = modules.find((m) => m.layer !== a.layer) ?? modules.find((m) => m.id !== a.id)!;
+const rust = (file: string): boolean => file.endsWith(".rs");
+const python = (file: string): boolean => file.endsWith(".py");
+/** `app/services/bmr.py` → `app.services.bmr`, `app/__init__.py` → `app`. */
+const dotted = (file: string): string => file.replace(/\.py$/, "").replace(/\/__init__$/, "").split("/").join(".");
+/** `src/live/app.rs` → `crate::live::app`; null outside `src/`. */
+const cratePath = (file: string): string | null => {
+  const m = /(?:^|\/)src\/(.+)\.rs$/.exec(file);
+  if (!m) return null;
+  const parts = m[1]!.split("/");
+  if (parts.at(-1) === "mod") parts.pop();
+  if (parts.length === 1 && (parts[0] === "lib" || parts[0] === "main")) parts.pop();
+  return ["crate", ...parts].join("::");
+};
+// A Rust file outside `src/` (`build.rs`) is a crate of its own: `use crate::…` there names nothing in the repository.
+const a = modules.find((m) => !m.file.endsWith(".rs") || cratePath(m.file) !== null) ?? modules[0]!;
+// An import names a module of the same language: Python cannot import a `.ts` file.
+const family = (file: string): string => (rust(file) ? "rust" : python(file) ? "python" : "ecmascript");
+const reachable = modules.filter((m) => family(m.file) === family(a.file) && (!rust(a.file) || cratePath(m.file) !== null));
+const b = reachable.find((m) => m.layer !== a.layer) ?? reachable.find((m) => m.id !== a.id)!;
 const esm = (file: string): boolean => !/\brequire\(/.test(readFileSync(join(dir, file), "utf8")) || /^\s*import\s/m.test(readFileSync(join(dir, file), "utf8"));
 const specifier = (from: string, to: string): string => {
   const spec = relative(dirname(from), to).split("\\").join("/");
@@ -74,7 +92,10 @@ const probes: [string, () => string | null][] = [
     () =>
       isolated([a.file, ...specFiles], () => {
         const spec = specifier(a.file, b.file);
-        writeFileSync(join(dir, a.file), `${readFileSync(join(dir, a.file), "utf8")}\n${esm(a.file) ? `import * as __keylangProbe from "${spec}";` : `const __keylangProbe = require('${spec}');`}\n`);
+        const target = cratePath(b.file);
+        const line = rust(a.file) ? `#[allow(unused_imports)]\nuse ${target} as __keylang_probe;` : python(a.file) ? `import ${dotted(b.file)} as __keylang_probe` : esm(a.file) ? `import * as __keylangProbe from "${spec}";` : `const __keylangProbe = require('${spec}');`;
+        if (rust(a.file) && target === null) return "skip: target outside `src/`";
+        writeFileSync(join(dir, a.file), `${readFileSync(join(dir, a.file), "utf8")}\n${line}\n`);
         writeSpec("keylang/rules.md", `# rules\n\n- deny ${a.id} ${b.id}\n`);
         const out = run("check").stdout;
         return out.includes(`K102 divergence: \`${a.id}\` depends on \`${b.id}\``) ? `${a.id} → ${b.id} K102` : null;
@@ -83,7 +104,7 @@ const probes: [string, () => string | null][] = [
   [
     "deny-dynamic",
     () =>
-      isolated([a.file, ...specFiles], () => {
+      rust(a.file) || python(a.file) ? "skip: no literal dynamic import edge in Rust or Python" : isolated([a.file, ...specFiles], () => {
         const spec = specifier(a.file, b.file);
         writeFileSync(join(dir, a.file), `${readFileSync(join(dir, a.file), "utf8")}\nasync function __keylangProbe() { return import("${spec}"); }\n`);
         writeSpec("keylang/rules.md", `# rules\n\n- deny ${a.id} ${b.id}\n`);
@@ -100,7 +121,7 @@ const probes: [string, () => string | null][] = [
       const file = owner.file;
       return isolated([file, ...specFiles], () => {
         writeSpec("keylang/flows/probe.md", `# flow probe\n\n- step ${fnId}\n`);
-        writeFileSync(join(dir, file), "export const marker = 1;\n");
+        writeFileSync(join(dir, file), rust(file) ? "pub const MARKER: u8 = 1;\n" : python(file) ? "MARKER = 1\n" : "export const marker = 1;\n");
         const out = run("check").stdout;
         return out.includes(`K001 dangling reference \`${fnId}\``) ? `${fnId} K001` : null;
       });
@@ -128,10 +149,11 @@ const probes: [string, () => string | null][] = [
       if (!owner || !fnId) return "skip: no top-level fn";
       const name = fnId.slice(owner.id.length + 1);
       return isolated([owner.file], () => {
-        writeFileSync(join(dir, owner.file), `${readFileSync(join(dir, owner.file), "utf8")}\nfunction __keylangShadow(${name}) { return ${name}(); }\n`);
+        const shadow = rust(owner.file) ? `fn __keylang_shadow(${name}: fn()) { ${name}(); }` : python(owner.file) ? `def __keylang_shadow(${name}):\n    return ${name}()` : `function __keylangShadow(${name}) { return ${name}(); }`;
+        writeFileSync(join(dir, owner.file), `${readFileSync(join(dir, owner.file), "utf8")}\n${shadow}\n`);
         if (run("map").status !== 0) return null;
         const probed = readIndex();
-        const source = `${owner.id}.__keylangShadow`;
+        const source = `${owner.id}.${rust(owner.file) || python(owner.file) ? "__keylang_shadow" : "__keylangShadow"}`;
         const edge = probed.edges.some((e) => e.source === source && e.target === fnId && e.resolution === "resolved");
         const hole = probed.coverage.some((c) => c.source === source && c.reason.startsWith("shadowed by parameter"));
         return !edge && hole ? `${source} shadowed, no edge` : null;

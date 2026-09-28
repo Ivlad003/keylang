@@ -68,6 +68,16 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`planned fn app.refund (order: Order) → Refund` after `export function refund(order: Order): Refund` was added.",
     fix: "Remove the `planned` line; the step is already checked as implemented code.",
   },
+  K301: {
+    cause: "`wire` factories depend on each other in a cycle, so one of them would get a dependency that is not built yet (ADR 0003).",
+    example: "`wire app.a` with `- b app.b` and `wire app.b` with `- a app.a`.",
+    fix: "Break the cycle in code: pass a callback or an event, or move what both need into a third factory.",
+  },
+  K302: {
+    cause: "A `wire` target or dependency names something that cannot build a value: a module, a layer or a type.",
+    example: "`wire application.purchase` where `purchase` is a file module, not its factory.",
+    fix: "Name the factory function or the class: `wire application.purchase.createPurchase`.",
+  },
 };
 
 export function explainCode(code: string): string | null {

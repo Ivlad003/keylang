@@ -2,6 +2,7 @@
 // Layout: title, [files] | editor with gutter | [navigation], a detail line
 // and the status bar. Popups (hover, completion, palette, help) draw on top.
 
+import { contextPack } from "../agent-context.ts";
 import { explainCode } from "../explain.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
@@ -30,12 +31,15 @@ export interface Layout {
 
 export const FILES_WIDTH = 24;
 export const NAV_WIDTH = 32;
+export const CONTEXT_WIDTH = 52;
 
-export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav">): Layout {
+export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"] }): Layout {
   const bodyTop = 1;
   const bodyHeight = Math.max(1, state.rows - 3);
   const files = state.showFiles && state.cols >= 60 ? { x: 0, y: bodyTop, width: FILES_WIDTH, height: bodyHeight } : null;
-  const nav = state.showNav && state.cols >= 70 ? { x: state.cols - NAV_WIDTH, y: bodyTop, width: NAV_WIDTH, height: bodyHeight } : null;
+  // The context panel (F4) takes the navigation's place, wider: its labels are IDs and paths.
+  const width = state.context?.open === true ? Math.min(CONTEXT_WIDTH, Math.floor(state.cols / 2)) : NAV_WIDTH;
+  const nav = (state.showNav || state.context?.open === true) && state.cols >= 70 ? { x: state.cols - width, y: bodyTop, width, height: bodyHeight } : null;
   const left = files ? files.width + 1 : 0;
   const right = nav ? nav.width + 1 : 0;
   return {
@@ -185,6 +189,14 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
     grid.write(rect.x + 2, y, String(row.line + 1).padStart(numberWidth), { ...base, fg: THEME.lineNumber.fg! });
     drawRuns(grid, rect.x + gutter, y, rect.width - gutter, lines[row.line] ?? "", runs.get(row.line + 1) ?? [], state.left, base);
   });
+  if (state.ghost && state.mode === "edit") {
+    const rowIndex = state.ghost.line - state.top;
+    const typed = graphemes(lines[state.ghost.line] ?? "");
+    const rest = graphemes(state.ghost.variants[state.ghost.index] ?? "").slice(typed.length).join("");
+    const x = rect.x + gutter + stringWidth(typed.slice(state.left).join(""));
+    const more = state.ghost.variants.length > 1 ? `  (${state.ghost.index + 1}/${state.ghost.variants.length}, Alt+])` : "";
+    if (rowIndex >= 0 && rowIndex < rect.height) grid.write(x, rect.y + rowIndex, `${rest}${more}`, { ...THEME.text, ...THEME.cursorLine, fg: 242, italic: true }, rect.x + rect.width - x);
+  }
   if (state.mode === "edit" && state.focus === "editor") {
     const rowIndex = state.cursor.line - state.top;
     const line = graphemes(lines[state.cursor.line] ?? "");
@@ -295,6 +307,17 @@ function drawNav(grid: Grid, state: State, rect: Rect): void {
   drawPanelList(grid, rect, "NAVIGATION", entries, state.navIndex, state.focus === "nav", state.navTop);
 }
 
+/** What goes to the model: kind, label and tokens per item; `◇` planned, `?` incomplete data. */
+function drawContext(grid: Grid, state: State, rect: Rect): void {
+  const buffer = state.current ? state.buffers.get(state.current) : undefined;
+  const pack = buffer && state.analysis ? contextPack(state.analysis, { path: buffer.path, text: buffer.text, line: state.cursor.line, added: state.context.added, removed: state.context.removed }) : null;
+  const entries = (pack?.items ?? []).map((item) => ({
+    text: `${item.kind.padEnd(8)} ${item.label} · ${item.tokens}`,
+    mark: item.planned ? { glyph: "◇", style: { fg: 141 } } : item.incomplete ? { glyph: "?", style: { fg: 179 } } : null,
+  }));
+  drawPanelList(grid, rect, pack ? `CONTEXT · ${pack.tokens} tok · @ add · x drop` : "CONTEXT · analyzing…", entries, state.context.index, state.focus === "context", Math.max(0, state.context.index - rect.height + 2));
+}
+
 function drawFiles(grid: Grid, state: State, rect: Rect): void {
   const entries = state.files.map((file) => {
     const buffer = state.buffers.get(file);
@@ -353,6 +376,9 @@ const HELP: Record<string, string[]> = {
     "m                  merge proposal u                    undo last merge",
     "/  n               search         :                    command palette",
     "?                  keys, explain  q / Ctrl+C           quit",
+    "F4                 agent context  e                    explain id",
+    "Ctrl+Space         agent draft of this flow as MERGE",
+    "  in context: @ add id · x drop · Esc close",
   ],
   edit: [
     "type               edit           Ctrl+S               save",
@@ -385,7 +411,7 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "search" ? "/" : ":";
+  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, 1 + stringWidth(prompt.text)), y: rect.y };
   if (prompt.kind !== "palette") return;
@@ -424,7 +450,8 @@ export function render(state: State): Grid {
   }
   if (area.nav) {
     for (let y = area.nav.y; y < area.nav.y + area.nav.height; y++) grid.write(area.nav.x - 1, y, "│", { fg: 238 });
-    drawNav(grid, state, area.nav);
+    if (state.context.open) drawContext(grid, state, area.nav);
+    else drawNav(grid, state, area.nav);
   }
   if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
   else if (state.mode === "merge" && state.merge) drawMerge(grid, state, area.editor);

@@ -15,6 +15,15 @@
     - ir lang.ir
     - lsp-features features.lsp-features
     - parser lang.parser
+    - proposals features.proposals
+    - agent-context features.agent-context
+    - draft features.draft
+    - explain-node features.explain-node
+    - explain-llm features.explain-llm
+    - stats features.stats
+    - ghost features.ghost
+    - voice features.voice
+    - voice-local features.voice-local
     - span base.span
     - input tui.input
     - merge tui.merge
@@ -23,166 +32,193 @@
     - text-to-spec tui.text-to-spec
     - view tui.view
     - width tui.width
-    - type [Surface](../../src/tui/app.ts#L28)
-    - type [Analyzer](../../src/tui/app.ts#L35) = (request: AnalysisRequest) => Promise<Analysis>
-    - type [AppOptions](../../src/tui/app.ts#L37)
-    - module [App](../../src/tui/app.ts#L55)
-      - fn [constructor](../../src/tui/app.ts#L71) (options: AppOptions)
+    - llm features.llm
+    - draft-llm features.draft-llm
+    - type [Surface](../../src/tui/app.ts#L38)
+    - type [Analyzer](../../src/tui/app.ts#L45) = (request: AnalysisRequest) => Promise<Analysis>
+    - type [AppOptions](../../src/tui/app.ts#L47)
+    - module [App](../../src/tui/app.ts#L70)
+      - fn [constructor](../../src/tui/app.ts#L90) (options: AppOptions)
         - calls tui.input.InputDecoder, tui.app.App.diskFiles, tui.app.App.open, tui.app.App.scanProposals, tui.app.App.reanalyze
-      - fn [attach](../../src/tui/app.ts#L120) (surface: Surface, cols: number, rows: number) → void
+      - fn [attach](../../src/tui/app.ts#L142) (surface: Surface, cols: number, rows: number) → void
         - calls tui.app.App.resize
-      - fn [detach](../../src/tui/app.ts#L126) () → void
-      - fn [resize](../../src/tui/app.ts#L130) (cols: number, rows: number) → void
+      - fn [detach](../../src/tui/app.ts#L148) () → void
+      - fn [resize](../../src/tui/app.ts#L152) (cols: number, rows: number) → void
         - calls tui.app.App.keepVisible, tui.app.App.draw
-      - fn [input](../../src/tui/app.ts#L138) (chunk: string) → void
+      - fn [input](../../src/tui/app.ts#L160) (chunk: string) → void
         - calls tui.input.InputDecoder.feed, tui.app.typedRun, tui.app.App.safely, tui.input.InputDecoder.flush, tui.app.App.draw
-      - fn [safely](../../src/tui/app.ts#L167) (event: InputEvent) → void <!-- internal -->
+      - fn [safely](../../src/tui/app.ts#L189) (event: InputEvent) → void <!-- internal -->
         - calls tui.app.App.handle
-      - fn [frame](../../src/tui/app.ts#L176) () → Grid
+      - fn [frame](../../src/tui/app.ts#L198) () → Grid
         - calls tui.view.render
-      - fn [unsaved](../../src/tui/app.ts#L181) () → string[]
-      - fn [idle](../../src/tui/app.ts#L186) () → Promise<void>
-      - fn [close](../../src/tui/app.ts#L191) () → void
+      - fn [unsaved](../../src/tui/app.ts#L203) () → string[]
+      - fn [idle](../../src/tui/app.ts#L208) () → Promise<void>
+      - fn [close](../../src/tui/app.ts#L213) () → void
         - calls tui.app.App.wake
-      - fn [draw](../../src/tui/app.ts#L200) () → void <!-- internal -->
+      - fn [draw](../../src/tui/app.ts#L224) () → void <!-- internal -->
         - calls tui.view.render, tui.screen.renderDiff
-      - fn [redraw](../../src/tui/app.ts#L208) () → void
+      - fn [redraw](../../src/tui/app.ts#L232) () → void
         - calls tui.app.App.draw
-      - fn [overlay](../../src/tui/app.ts#L215) () → Map<string, string> <!-- internal -->
-      - fn [reanalyze](../../src/tui/app.ts#L222) () → void
+      - fn [overlay](../../src/tui/app.ts#L239) () → Map<string, string> <!-- internal -->
+      - fn [reanalyze](../../src/tui/app.ts#L246) () → void
         - calls map.analyze.analyze, tui.app.App.overlay, tui.app.App.adoptResult, tui.app.App.draw, tui.app.App.wake
-      - fn [adoptResult](../../src/tui/app.ts#L256) (analysis: Analysis, edits: number) → void <!-- internal -->
+      - fn [adoptResult](../../src/tui/app.ts#L280) (analysis: Analysis, edits: number) → void <!-- internal -->
         - calls tui.app.App.adopt
-      - fn [reanalyzeSoon](../../src/tui/app.ts#L265) () → void <!-- internal -->
+      - fn [reanalyzeSoon](../../src/tui/app.ts#L289) () → void <!-- internal -->
         - calls tui.app.App.reanalyze
-      - fn [wake](../../src/tui/app.ts#L275) () → void <!-- internal -->
-      - fn [adopt](../../src/tui/app.ts#L283) (analysis: Analysis) → void <!-- internal -->
+      - fn [wake](../../src/tui/app.ts#L299) () → void <!-- internal -->
+      - fn [adopt](../../src/tui/app.ts#L307) (analysis: Analysis) → void <!-- internal -->
         - calls tui.app.App.diskFiles, tui.app.sortFiles, features.lsp-features.workspace, tui.app.splitEol, tui.app.docOf, tui.app.readText, tui.app.App.open, tui.app.App.scanProposals, tui.app.App.clampCursor
-      - fn [diskFiles](../../src/tui/app.ts#L304) () → string[] <!-- internal -->
+      - fn [diskFiles](../../src/tui/app.ts#L328) () → string[] <!-- internal -->
         - calls base.config.loadConfig, tui.app.sortFiles, lang.files.collectMdFiles, base.config.toPosix
-      - fn [scanProposals](../../src/tui/app.ts#L318) () → string[] <!-- internal -->
+      - fn [scanProposals](../../src/tui/app.ts#L342) () → string[] <!-- internal -->
         - calls tui.app.App.proposalFiles, tui.app.App.proposalProblem
-      - fn [proposalFiles](../../src/tui/app.ts#L322) () → string[] <!-- internal -->
+      - fn [proposalFiles](../../src/tui/app.ts#L346) () → string[] <!-- internal -->
         - calls base.config.toPosix
-      - fn [specDir](../../src/tui/app.ts#L337) () → string <!-- internal -->
+      - fn [specDir](../../src/tui/app.ts#L361) () → string <!-- internal -->
         - calls base.config.loadConfig, base.config.toPosix
-      - fn [proposalProblem](../../src/tui/app.ts#L352) (path: string) → string | null <!-- internal -->
+      - fn [proposalProblem](../../src/tui/app.ts#L377) (path: string) → string | null <!-- internal -->
         - calls tui.app.App.proposalLimits
-      - fn [proposalLimits](../../src/tui/app.ts#L360) (path: string) → string | null <!-- internal -->
-        - calls tui.app.App.specDir, lang.parser.parse, map.analyze.within, tui.app.realPrefix
-      - fn [buffer](../../src/tui/app.ts#L378) () → Buffer | null <!-- internal -->
-      - fn [load](../../src/tui/app.ts#L382) (path: string) → Buffer <!-- internal -->
+      - fn [proposalLimits](../../src/tui/app.ts#L385) (path: string) → string | null <!-- internal -->
+        - calls features.proposals.codeProposalProblem, features.proposals.proposalProblem, tui.app.App.specDir
+      - fn [buffer](../../src/tui/app.ts#L392) () → Buffer | null <!-- internal -->
+      - fn [load](../../src/tui/app.ts#L396) (path: string) → Buffer <!-- internal -->
         - calls tui.app.readText, features.lsp-features.workspace, tui.app.splitEol, tui.app.docOf
-      - fn [open](../../src/tui/app.ts#L395) (path: string, cursor: Cursor, remember = true) → void <!-- internal -->
+      - fn [open](../../src/tui/app.ts#L409) (path: string, cursor: Cursor, remember = true) → void <!-- internal -->
         - calls tui.app.App.load, tui.app.App.clampCursor, tui.app.App.keepVisible
-      - fn [lines](../../src/tui/app.ts#L410) () → string[] <!-- internal -->
+      - fn [lines](../../src/tui/app.ts#L424) () → string[] <!-- internal -->
         - calls tui.app.App.buffer
-      - fn [clampCursor](../../src/tui/app.ts#L414) () → void <!-- internal -->
+      - fn [clampCursor](../../src/tui/app.ts#L428) () → void <!-- internal -->
         - calls tui.app.App.lines, tui.width.graphemes
-      - fn [keepVisible](../../src/tui/app.ts#L421) () → void <!-- internal -->
+      - fn [keepVisible](../../src/tui/app.ts#L435) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.view.layout, tui.view.gutterWidth, tui.width.graphemes, tui.app.App.lines, tui.width.stringWidth
-      - fn [edit](../../src/tui/app.ts#L436) (change: (lines: string[], cursor: Cursor) => void, coalesce = false) → void <!-- internal -->
+      - fn [edit](../../src/tui/app.ts#L450) (change: (lines: string[], cursor: Cursor) => void, coalesce = false) → void <!-- internal -->
         - calls tui.app.App.buffer, tui.app.docOf, tui.app.App.clampCursor, tui.app.App.keepVisible, tui.app.App.reanalyzeSoon
-      - fn [save](../../src/tui/app.ts#L458) () → void <!-- internal -->
+      - fn [save](../../src/tui/app.ts#L472) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.app.readText, tui.app.withEol, tui.app.writeAtomic, tui.app.App.reanalyze
-      - fn [live](../../src/tui/app.ts#L480) () → Workspace | null <!-- internal -->
+      - fn [live](../../src/tui/app.ts#L494) () → Workspace | null <!-- internal -->
         - calls features.lsp-features.workspace
-      - fn [lspPosition](../../src/tui/app.ts#L489) (cursor: Cursor) → LspPosition <!-- internal -->
+      - fn [lspPosition](../../src/tui/app.ts#L503) (cursor: Cursor) → LspPosition <!-- internal -->
         - calls tui.app.App.lines, tui.width.clusterOffset
-      - fn [columnAt](../../src/tui/app.ts#L495) (line: string, x: number) → number <!-- internal -->
+      - fn [columnAt](../../src/tui/app.ts#L509) (line: string, x: number) → number <!-- internal -->
         - calls tui.width.graphemes, tui.width.graphemeWidth
-      - fn [cellAt](../../src/tui/app.ts#L506) (x: number, y: number) → Cursor | null <!-- internal -->
+      - fn [cellAt](../../src/tui/app.ts#L520) (x: number, y: number) → Cursor | null <!-- internal -->
         - calls tui.app.App.buffer, tui.view.layout, tui.view.editorRows, tui.view.gutterWidth, tui.app.App.columnAt, tui.app.App.lines
-      - fn [targetNear](../../src/tui/app.ts#L519) (cursor: Cursor) → Cursor | null <!-- internal -->
+      - fn [targetNear](../../src/tui/app.ts#L533) (cursor: Cursor) → Cursor | null <!-- internal -->
         - calls tui.app.App.buffer, tui.app.App.lines, tui.width.clusterOffset, features.lsp-features.targetAt, tui.app.forNodes, tui.width.clusterAt
-      - fn [hoverAt](../../src/tui/app.ts#L538) (cursor: Cursor, x: number, y: number, source: Hover["source"]) → Hover | null <!-- internal -->
+      - fn [hoverAt](../../src/tui/app.ts#L552) (cursor: Cursor, x: number, y: number, source: Hover["source"]) → Hover | null <!-- internal -->
         - calls tui.app.App.live, tui.app.App.buffer, tui.app.App.lspPosition, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references
-      - fn [goToCode](../../src/tui/app.ts#L568) () → void <!-- internal -->
+      - fn [goToCode](../../src/tui/app.ts#L582) () → void <!-- internal -->
         - calls tui.app.App.targetNear, tui.app.App.live, features.lsp-features.definition, tui.app.App.lspPosition, tui.app.App.jump
-      - fn [jump](../../src/tui/app.ts#L586) (abs: string, line: number) → void <!-- internal -->
+      - fn [jump](../../src/tui/app.ts#L600) (abs: string, line: number) → void <!-- internal -->
         - calls base.config.toPosix, tui.app.App.open, tui.app.App.redraw, tui.view.layout
-      - fn [goToSpec](../../src/tui/app.ts#L611) (id: string | null) → void <!-- internal -->
+      - fn [goToSpec](../../src/tui/app.ts#L625) (id: string | null) → void <!-- internal -->
         - calls tui.app.App.load, tui.app.App.open, tui.width.clusterAt
-      - fn [idAtCursor](../../src/tui/app.ts#L626) () → string | null <!-- internal -->
+      - fn [idAtCursor](../../src/tui/app.ts#L640) () → string | null <!-- internal -->
         - calls tui.app.App.buffer, tui.app.App.targetNear, tui.app.App.lines, tui.width.clusterOffset, features.lsp-features.targetAt
-      - fn [goBack](../../src/tui/app.ts#L638) () → void <!-- internal -->
+      - fn [goBack](../../src/tui/app.ts#L652) () → void <!-- internal -->
         - calls tui.app.App.load, tui.app.App.clampCursor, tui.app.App.keepVisible
-      - fn [handle](../../src/tui/app.ts#L656) (event: InputEvent) → void <!-- internal -->
-        - calls tui.app.App.mouse, tui.app.App.promptType, tui.app.App.insert, tui.app.App.quit, tui.app.App.promptKey, tui.app.App.reanalyze, tui.app.App.keepVisible, tui.app.App.mergeKey, tui.app.App.codeKey, tui.app.App.editKey, tui.app.App.navKey, tui.app.App.filesKey, tui.app.App.viewKey
-      - fn [quit](../../src/tui/app.ts#L700) () → void <!-- internal -->
+      - fn [handle](../../src/tui/app.ts#L670) (event: InputEvent) → void <!-- internal -->
+        - calls tui.app.App.mouse, tui.app.App.promptType, tui.app.App.insert, tui.app.App.quit, tui.app.App.promptKey, tui.app.App.reanalyze, tui.app.App.keepVisible, tui.app.App.toggleContext, tui.app.App.mergeKey, tui.app.App.codeKey, tui.app.App.editKey, tui.app.App.contextKey, tui.app.App.navKey, tui.app.App.filesKey, tui.app.App.viewKey
+      - fn [quit](../../src/tui/app.ts#L716) () → void <!-- internal -->
         - calls tui.app.App.unsaved, tui.app.App.close
-      - fn [move](../../src/tui/app.ts#L711) (lines: number) → void <!-- internal -->
+      - fn [move](../../src/tui/app.ts#L727) (lines: number) → void <!-- internal -->
         - calls tui.app.App.clampCursor, tui.app.App.keepVisible
-      - fn [common](../../src/tui/app.ts#L718) (event: KeyEvent) → boolean <!-- internal -->
+      - fn [common](../../src/tui/app.ts#L734) (event: KeyEvent) → boolean <!-- internal -->
         - calls tui.view.layout, tui.app.App.move, tui.app.App.keepVisible, tui.app.App.clampCursor
-      - fn [cycleFocus](../../src/tui/app.ts#L759) () → void <!-- internal -->
+      - fn [cycleFocus](../../src/tui/app.ts#L775) () → void <!-- internal -->
         - calls tui.app.App.fixNavIndex
-      - fn [viewKey](../../src/tui/app.ts#L766) (event: KeyEvent) → void <!-- internal -->
-        - calls tui.app.App.common, tui.app.App.goToSpec, tui.app.App.idAtCursor, tui.app.App.goBack, tui.app.App.textToSpec, tui.app.App.goToCode, tui.app.App.cycleFocus, tui.app.App.move, tui.app.App.keepVisible, tui.app.App.lines, tui.app.App.targetNear, tui.app.App.buffer, tui.view.layout, tui.app.App.hoverAt, tui.view.gutterWidth, tui.app.App.openProposal, tui.app.App.undoMerge, tui.app.App.paletteItems, tui.app.App.findNext, tui.app.App.quit
-      - fn [editKey](../../src/tui/app.ts#L845) (event: KeyEvent) → void <!-- internal -->
-        - calls tui.app.App.acceptCompletion, tui.app.App.save, tui.app.App.undoEdit, tui.app.App.textToSpec, tui.app.App.complete, tui.app.App.goBack, tui.app.App.common, tui.app.App.edit, tui.width.graphemes, tui.app.App.insert
-      - fn [insert](../../src/tui/app.ts#L917) (raw: string) → void <!-- internal -->
+      - fn [viewKey](../../src/tui/app.ts#L782) (event: KeyEvent) → void <!-- internal -->
+        - calls tui.app.App.common, tui.app.App.goToSpec, tui.app.App.idAtCursor, tui.app.App.goBack, tui.app.App.textToSpec, tui.app.App.agentDraft, tui.app.App.goToCode, tui.app.App.cycleFocus, tui.app.App.move, tui.app.App.keepVisible, tui.app.App.lines, tui.app.App.targetNear, tui.app.App.buffer, tui.view.layout, tui.app.App.hoverAt, tui.view.gutterWidth, tui.app.App.openProposal, tui.app.App.undoMerge, tui.app.App.explainAtCursor, tui.app.App.paletteItems, tui.app.App.findNext, tui.app.App.quit
+      - fn [editKey](../../src/tui/app.ts#L865) (event: KeyEvent) → void <!-- internal -->
+        - calls tui.app.App.acceptGhost, tui.app.App.recordSuggestion, tui.app.App.editKeyWithoutGhost, tui.app.App.ghostSoon
+      - fn [editKeyWithoutGhost](../../src/tui/app.ts#L881) (event: KeyEvent) → void <!-- internal -->
+        - calls tui.app.App.acceptCompletion, tui.app.App.recordSuggestion, tui.app.App.save, tui.app.App.voice, tui.app.App.undoEdit, tui.app.App.textToSpec, tui.app.App.complete, tui.app.App.goBack, tui.app.App.common, tui.app.App.edit, tui.width.graphemes, tui.app.App.insert
+      - fn [insert](../../src/tui/app.ts#L955) (raw: string) → void <!-- internal -->
         - calls tui.app.printable, tui.app.App.edit, tui.width.graphemes, tui.app.App.complete
-      - fn [undoEdit](../../src/tui/app.ts#L939) () → void <!-- internal -->
+      - fn [undoEdit](../../src/tui/app.ts#L977) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.app.docOf, tui.app.App.clampCursor, tui.app.App.keepVisible, tui.app.App.reanalyzeSoon
-      - fn [complete](../../src/tui/app.ts#L958) (explicit: boolean) → void <!-- internal -->
-        - calls tui.app.App.live, tui.app.App.buffer, tui.width.graphemes, tui.app.App.lines, features.lsp-features.completions, tui.app.App.lspPosition
-      - fn [acceptCompletion](../../src/tui/app.ts#L980) () → void <!-- internal -->
-        - calls tui.app.App.edit, tui.width.graphemes
-      - fn [fixNavIndex](../../src/tui/app.ts#L997) (direction: 1 | -1) → void <!-- internal -->
+      - fn [complete](../../src/tui/app.ts#L996) (explicit: boolean) → void <!-- internal -->
+        - calls tui.app.App.live, tui.app.App.buffer, tui.width.graphemes, tui.app.App.lines, features.lsp-features.completions, tui.app.App.lspPosition, tui.app.App.recordSuggestion
+      - fn [acceptCompletion](../../src/tui/app.ts#L1021) () → void <!-- internal -->
+        - calls tui.app.App.recordSuggestion, tui.app.App.edit, tui.width.graphemes
+      - fn [voice](../../src/tui/app.ts#L1044) () → void <!-- internal -->
+        - calls tui.app.App.buffer, features.voice.voiceEngine, features.voice-local.defaultMicrophone, tui.app.App.draw, features.voice.glossary, features.voice.transcribeOpenRouter, tui.app.App.insertSpeech, tui.app.App.wake
+      - fn [insertSpeech](../../src/tui/app.ts#L1093) (text: string, line: number, analysis: Analysis) → void <!-- internal -->
+        - calls tui.app.App.buffer, tui.app.App.lines, tui.app.App.edit, features.voice.speechToSpec, tui.width.graphemes
+      - fn [ghostSoon](../../src/tui/app.ts#L1119) () → void <!-- internal -->
+        - calls tui.app.App.buffer, features.ghost.ghostSignal, features.ghost.ghostSuggestions, tui.app.App.contextPack, tui.app.App.recordSuggestion, tui.app.App.draw, tui.app.App.wake
+      - fn [acceptGhost](../../src/tui/app.ts#L1152) (ghost: NonNullable<State["ghost"]>) → void <!-- internal -->
+        - calls tui.app.App.edit, tui.width.graphemes, tui.app.App.recordSuggestion
+      - fn [recordSuggestion](../../src/tui/app.ts#L1163) (source: "ghost" | "completion", field: "proposed" | "accepted" | "rejected", shown: number | null | undefined) → void <!-- internal -->
+        - calls features.stats.updateStats
+      - fn [fixNavIndex](../../src/tui/app.ts#L1177) (direction: 1 | -1) → void <!-- internal -->
         - calls tui.view.navEntries, tui.view.layout
-      - fn [navKey](../../src/tui/app.ts#L1009) (event: KeyEvent) → void <!-- internal -->
+      - fn [toggleContext](../../src/tui/app.ts#L1191) () → void <!-- internal -->
+        - calls tui.app.App.keepVisible
+      - fn [contextPack](../../src/tui/app.ts#L1200) () → ContextPack | null
+        - calls tui.app.App.buffer, features.agent-context.contextPack
+      - fn [contextKey](../../src/tui/app.ts#L1208) (event: KeyEvent) → void <!-- internal -->
+        - calls tui.app.App.contextPack, tui.app.App.cycleFocus, tui.app.App.toggleContext
+      - fn [agentDraft](../../src/tui/app.ts#L1247) () → void <!-- internal -->
+        - calls tui.app.App.buffer, tui.app.docOf, lang.ir.sectionNodes, lang.ir.walk, tui.app.App.contextPack, features.agent-context.contextText, features.stats.updateStats, features.stats.addDrafts, features.proposals.writeProposal, features.draft.withFlow, tui.app.App.openProposal, tui.app.App.draw, tui.app.App.wake
+      - fn [addToContext](../../src/tui/app.ts#L1293) (id: string) → void <!-- internal -->
+        - calls features.explain-node.summarizeNode
+      - fn [explainAtCursor](../../src/tui/app.ts#L1311) () → void <!-- internal -->
+        - calls tui.app.App.idAtCursor, features.explain-node.summarizeNode, features.explain-llm.readExplanation, features.explain-node.formatSummary, features.explain-llm.isStale, tui.view.layout
+      - fn [navKey](../../src/tui/app.ts#L1336) (event: KeyEvent) → void <!-- internal -->
         - calls tui.view.navEntries, tui.app.App.fixNavIndex, tui.app.App.open, tui.app.App.jump, tui.app.App.cycleFocus, tui.app.App.quit
-      - fn [filesKey](../../src/tui/app.ts#L1056) (event: KeyEvent) → void <!-- internal -->
+      - fn [filesKey](../../src/tui/app.ts#L1383) (event: KeyEvent) → void <!-- internal -->
         - calls tui.app.App.open, tui.app.App.cycleFocus, tui.app.App.quit
-      - fn [codeKey](../../src/tui/app.ts#L1084) (event: KeyEvent) → void <!-- internal -->
+      - fn [codeKey](../../src/tui/app.ts#L1411) (event: KeyEvent) → void <!-- internal -->
         - calls tui.view.layout, tui.app.App.goBack
-      - fn [mouse](../../src/tui/app.ts#L1119) (event: MouseEvent) → void <!-- internal -->
+      - fn [mouse](../../src/tui/app.ts#L1446) (event: MouseEvent) → void <!-- internal -->
         - calls tui.view.layout, tui.app.App.lines, tui.app.App.clampCursor, tui.app.App.cellAt, tui.app.App.hoverAt, tui.app.App.fixNavIndex, tui.view.navEntries, tui.app.App.navKey, tui.view.filesTop, tui.app.App.filesKey, tui.app.App.keepVisible, tui.app.App.goToCode
-      - fn [promptType](../../src/tui/app.ts#L1183) (text: string) → void <!-- internal -->
+      - fn [promptType](../../src/tui/app.ts#L1510) (text: string) → void <!-- internal -->
         - calls tui.app.App.paletteItems
-      - fn [promptKey](../../src/tui/app.ts#L1192) (event: KeyEvent) → void <!-- internal -->
-        - calls tui.width.graphemes, tui.app.App.paletteItems, tui.app.App.findNext, tui.app.App.runCommand, tui.app.App.promptType
-      - fn [commands](../../src/tui/app.ts#L1224) () → string[] <!-- internal -->
-      - fn [paletteItems](../../src/tui/app.ts#L1228) (query: string) → string[] <!-- internal -->
+      - fn [promptKey](../../src/tui/app.ts#L1519) (event: KeyEvent) → void <!-- internal -->
+        - calls tui.width.graphemes, tui.app.App.paletteItems, tui.app.App.findNext, tui.app.App.addToContext, tui.app.App.runCommand, tui.app.App.promptType
+      - fn [commands](../../src/tui/app.ts#L1553) () → string[] <!-- internal -->
+      - fn [paletteItems](../../src/tui/app.ts#L1557) (query: string) → string[] <!-- internal -->
         - calls tui.app.App.commands
-      - fn [runCommand](../../src/tui/app.ts#L1238) (command: string) → void <!-- internal -->
+      - fn [runCommand](../../src/tui/app.ts#L1567) (command: string) → void <!-- internal -->
         - calls tui.app.App.open, tui.app.App.handle
-      - fn [findNext](../../src/tui/app.ts#L1245) () → void <!-- internal -->
+      - fn [findNext](../../src/tui/app.ts#L1574) () → void <!-- internal -->
         - calls tui.app.App.lines, tui.width.graphemes, tui.app.App.keepVisible
-      - fn [openProposal](../../src/tui/app.ts#L1268) () → void <!-- internal -->
-        - calls tui.app.App.scanProposals, tui.app.App.proposalFiles, tui.app.App.proposalProblem, tui.app.App.load, tui.app.App.open, tui.app.readText, tui.app.lf, tui.app.App.startMerge, tui.app.splitEol
-      - fn [startMerge](../../src/tui/app.ts#L1291) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null) → void <!-- internal -->
+      - fn [openProposal](../../src/tui/app.ts#L1597) () → void <!-- internal -->
+        - calls tui.app.App.scanProposals, tui.app.App.proposalFiles, tui.app.App.proposalProblem, tui.app.readText, tui.app.lf, tui.app.App.startMerge, tui.app.splitEol, tui.app.App.load, tui.app.App.open
+      - fn [startMerge](../../src/tui/app.ts#L1628) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null) → void <!-- internal -->
         - calls tui.merge.diffLines, tui.app.App.scanProposals
-      - fn [mergeKey](../../src/tui/app.ts#L1305) (event: KeyEvent) → void <!-- internal -->
+      - fn [mergeKey](../../src/tui/app.ts#L1642) (event: KeyEvent) → void <!-- internal -->
         - calls tui.app.App.writeMerge
-      - fn [leaveMerge](../../src/tui/app.ts#L1363) (merge: MergeState, message: string) → void <!-- internal -->
+      - fn [leaveMerge](../../src/tui/app.ts#L1700) (merge: MergeState, message: string) → void <!-- internal -->
         - calls tui.app.App.clampCursor
-      - fn [writeMerge](../../src/tui/app.ts#L1377) () → void <!-- internal -->
-        - calls tui.app.App.load, tui.merge.applyHunks, tui.app.App.leaveMerge, tui.app.docOf, tui.app.App.reanalyzeSoon, tui.app.readText, tui.app.withEol, tui.app.writeAtomic, tui.app.App.scanProposals, tui.app.App.reanalyze
-      - fn [undoMerge](../../src/tui/app.ts#L1426) () → void <!-- internal -->
-        - calls tui.app.App.load, tui.app.readText, tui.app.writeAtomic, tui.app.docOf, tui.app.App.scanProposals, tui.app.App.clampCursor, tui.app.App.reanalyze
-      - fn [textToSpec](../../src/tui/app.ts#L1457) () → void <!-- internal -->
+      - fn [writeMerge](../../src/tui/app.ts#L1714) () → void <!-- internal -->
+        - calls tui.app.App.writeCodeMerge, tui.app.App.load, tui.merge.applyHunks, tui.app.App.leaveMerge, tui.app.docOf, tui.app.App.reanalyzeSoon, tui.app.readText, tui.app.withEol, tui.app.writeAtomic, features.stats.updateStats, features.stats.addDrafts, features.stats.statusesIn, tui.app.App.scanProposals, tui.app.App.reanalyze
+      - fn [writeCodeMerge](../../src/tui/app.ts#L1775) (merge: MergeState) → void <!-- internal -->
+        - calls tui.app.readText, tui.app.App.leaveMerge, tui.app.withEol, tui.merge.applyHunks, tui.app.splitEol, tui.app.writeAtomic, tui.app.App.scanProposals, tui.app.App.reanalyze
+      - fn [undoMerge](../../src/tui/app.ts#L1804) () → void <!-- internal -->
+        - calls tui.app.readText, tui.app.writeAtomic, tui.app.App.scanProposals, tui.app.App.reanalyze, tui.app.App.load, tui.app.docOf, tui.app.App.clampCursor
+      - fn [textToSpec](../../src/tui/app.ts#L1856) () → void <!-- internal -->
         - calls tui.app.App.buffer, tui.app.plannedIds, tui.text-to-spec.textToSpec, tui.app.App.startMerge
-    - fn [forNodes](../../src/tui/app.ts#L1504) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
+    - fn [forNodes](../../src/tui/app.ts#L1903) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [plannedIds](../../src/tui/app.ts#L1508) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
+    - fn [plannedIds](../../src/tui/app.ts#L1907) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
       - calls tui.app.forNodes
-    - fn [sortFiles](../../src/tui/app.ts#L1519) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
+    - fn [sortFiles](../../src/tui/app.ts#L1918) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
       - calls base.span.compareText
-    - fn [docOf](../../src/tui/app.ts#L1525) (path: string, text: string) → Document | null <!-- internal -->
+    - fn [docOf](../../src/tui/app.ts#L1924) (path: string, text: string) → Document | null <!-- internal -->
       - calls lang.parser.parse
-    - fn [typedRun](../../src/tui/app.ts#L1530) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
-    - fn [printable](../../src/tui/app.ts#L1544) (text: string) → string <!-- internal -->
-    - fn [lf](../../src/tui/app.ts#L1551) (text: string) → string <!-- internal -->
-    - fn [splitEol](../../src/tui/app.ts#L1560) (raw: string) → { text: string; eol: Buffer["eol"] } <!-- internal -->
+    - fn [typedRun](../../src/tui/app.ts#L1929) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
+    - fn [printable](../../src/tui/app.ts#L1943) (text: string) → string <!-- internal -->
+    - fn [lf](../../src/tui/app.ts#L1950) (text: string) → string <!-- internal -->
+    - fn [splitEol](../../src/tui/app.ts#L1959) (raw: string) → { text: string; eol: Buffer["eol"] } <!-- internal -->
       - calls tui.app.lf
-    - fn [withEol](../../src/tui/app.ts#L1566) (text: string, eol: Buffer["eol"]) → string <!-- internal -->
-    - fn [readText](../../src/tui/app.ts#L1570) (abs: string) → string | null <!-- internal -->
-    - fn [writeAtomic](../../src/tui/app.ts#L1583) (abs: string, text: string) → void <!-- internal -->
+    - fn [withEol](../../src/tui/app.ts#L1965) (text: string, eol: Buffer["eol"]) → string <!-- internal -->
+    - fn [readText](../../src/tui/app.ts#L1969) (abs: string) → string | null <!-- internal -->
+    - fn [writeAtomic](../../src/tui/app.ts#L1982) (abs: string, text: string) → void <!-- internal -->
       - calls tui.app.linkTarget
-    - fn [linkTarget](../../src/tui/app.ts#L1600) (abs: string) → string <!-- internal -->
-    - fn [realPrefix](../../src/tui/app.ts#L1616) (abs: string) → string <!-- internal -->
+    - fn [linkTarget](../../src/tui/app.ts#L1999) (abs: string) → string <!-- internal -->
   - module [background](../../src/tui/background.ts#L1)
     - node external.node
     - config base.config
@@ -305,16 +341,16 @@
     - ir lang.ir
     - merge tui.merge
     - type [Mode](../../src/tui/state.ts#L9) = "view" | "edit" | "read" | "code" | "merge"
-    - type [Focus](../../src/tui/state.ts#L10) = "editor" | "nav" | "files"
+    - type [Focus](../../src/tui/state.ts#L10) = "editor" | "nav" | "files" | "context"
     - type [Cursor](../../src/tui/state.ts#L12)
     - type [Buffer](../../src/tui/state.ts#L19)
     - type [Hover](../../src/tui/state.ts#L37)
     - type [CodeView](../../src/tui/state.ts#L46)
     - type [MergeState](../../src/tui/state.ts#L56)
     - type [LastMerge](../../src/tui/state.ts#L74)
-    - type [Prompt](../../src/tui/state.ts#L85)
-    - type [Place](../../src/tui/state.ts#L93)
-    - type [State](../../src/tui/state.ts#L99)
+    - type [Prompt](../../src/tui/state.ts#L87)
+    - type [Place](../../src/tui/state.ts#L96)
+    - type [State](../../src/tui/state.ts#L102)
   - module [terminal](../../src/tui/terminal.ts#L1)
     - node external.node
     - app tui.app
@@ -343,6 +379,7 @@
     - fn [highlight](../../src/tui/theme.ts#L62) (doc: Document | null, text: string, layers: readonly string[]) → Map<number, Run[]>
       - calls tui.theme.idStyle, lang.ir.sectionNodes, lang.ir.walk
   - module [view](../../src/tui/view.ts#L1)
+    - agent-context features.agent-context
     - explain features.explain
     - code-highlight tui.code-highlight
     - evidence tui.evidence
@@ -353,52 +390,54 @@
     - state tui.state
     - theme tui.theme
     - width tui.width
-    - type [Rect](../../src/tui/view.ts#L16)
-    - type [Layout](../../src/tui/view.ts#L23)
-    - fn [layout](../../src/tui/view.ts#L34) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav">) → Layout
-    - type [EditorRow](../../src/tui/view.ts#L51)
-    - fn [lineCount](../../src/tui/view.ts#L53) (buffer: Buffer) → number
-    - fn [gutterWidth](../../src/tui/view.ts#L57) (buffer: Buffer) → number
+    - type [Rect](../../src/tui/view.ts#L17)
+    - type [Layout](../../src/tui/view.ts#L24)
+    - fn [layout](../../src/tui/view.ts#L36) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"] }) → Layout
+    - type [EditorRow](../../src/tui/view.ts#L55)
+    - fn [lineCount](../../src/tui/view.ts#L57) (buffer: Buffer) → number
+    - fn [gutterWidth](../../src/tui/view.ts#L61) (buffer: Buffer) → number
       - calls tui.view.lineCount
-    - fn [editorRows](../../src/tui/view.ts#L62) (state: State, buffer: Buffer, height: number) → EditorRow[]
+    - fn [editorRows](../../src/tui/view.ts#L66) (state: State, buffer: Buffer, height: number) → EditorRow[]
       - calls tui.view.lineCount, tui.evidence.evidenceOf
-    - fn [drawRuns](../../src/tui/view.ts#L74) (grid: Grid, x: number, y: number, width: number, text: string, runs: readonly Run[], from: number, base: Style) → void <!-- internal -->
+    - fn [drawRuns](../../src/tui/view.ts#L78) (grid: Grid, x: number, y: number, width: number, text: string, runs: readonly Run[], from: number, base: Style) → void <!-- internal -->
       - calls tui.width.graphemes, tui.screen.Grid.write
-    - fn [markCell](../../src/tui/view.ts#L89) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
-    - fn [detailText](../../src/tui/view.ts#L98) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
-    - fn [lineMessage](../../src/tui/view.ts#L122) (item: LineEvidence | undefined) → { text: string; style: Style } | null
+    - fn [markCell](../../src/tui/view.ts#L93) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
+    - fn [detailText](../../src/tui/view.ts#L102) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
+    - fn [lineMessage](../../src/tui/view.ts#L126) (item: LineEvidence | undefined) → { text: string; style: Style } | null
       - calls features.explain.explainCode
-    - fn [drawBox](../../src/tui/view.ts#L135) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
+    - fn [drawBox](../../src/tui/view.ts#L139) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write
-    - fn [runsOf](../../src/tui/view.ts#L149) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
+    - fn [runsOf](../../src/tui/view.ts#L153) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
       - calls tui.theme.highlight
-    - fn [drawEditor](../../src/tui/view.ts#L159) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawEditor](../../src/tui/view.ts#L163) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.evidence.evidenceOf, tui.view.runsOf, tui.view.gutterWidth, tui.view.editorRows, tui.screen.Grid.write, tui.screen.Grid.fill, tui.view.detailText, tui.view.markCell, tui.view.drawRuns, tui.width.graphemes, tui.width.stringWidth
-    - fn [drawRead](../../src/tui/view.ts#L196) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawRead](../../src/tui/view.ts#L208) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.evidence.evidenceOf, tui.markdown.renderMarkdown, tui.screen.Grid.fill, tui.view.markCell, tui.screen.Grid.write
-    - fn [drawCode](../../src/tui/view.ts#L219) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawCode](../../src/tui/view.ts#L231) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write, tui.code-highlight.highlightCode, tui.view.drawRuns
-    - fn [drawMerge](../../src/tui/view.ts#L242) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawMerge](../../src/tui/view.ts#L254) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.merge.mergeRows, tui.screen.Grid.fill, tui.screen.Grid.write
-    - fn [drawPanelList](../../src/tui/view.ts#L267) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
+    - fn [drawPanelList](../../src/tui/view.ts#L279) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write, tui.width.padWidth
-    - fn [navEntries](../../src/tui/view.ts#L281) (state: State) → NavItem[]
+    - fn [navEntries](../../src/tui/view.ts#L293) (state: State) → NavItem[]
       - calls tui.nav.navItems
-    - fn [drawNav](../../src/tui/view.ts#L285) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawNav](../../src/tui/view.ts#L297) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.view.navEntries, tui.view.drawPanelList
-    - fn [drawFiles](../../src/tui/view.ts#L298) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawContext](../../src/tui/view.ts#L311) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+      - calls features.agent-context.contextPack, tui.view.drawPanelList
+    - fn [drawFiles](../../src/tui/view.ts#L321) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.view.drawPanelList, tui.view.filesTop
-    - fn [filesTop](../../src/tui/view.ts#L309) (state: Pick<State, "filesIndex">, rect: Rect) → number
-    - fn [drawHover](../../src/tui/view.ts#L313) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [filesTop](../../src/tui/view.ts#L332) (state: Pick<State, "filesIndex">, rect: Rect) → number
+    - fn [drawHover](../../src/tui/view.ts#L336) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawCompletion](../../src/tui/view.ts#L327) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawCompletion](../../src/tui/view.ts#L350) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.width.graphemes, tui.view.gutterWidth, tui.view.drawBox, tui.screen.Grid.write, tui.width.padWidth
-    - fn [drawHelp](../../src/tui/view.ts#L371) (grid: Grid, state: State, editor: Rect, buffer: Buffer | null) → void <!-- internal -->
+    - fn [drawHelp](../../src/tui/view.ts#L397) (grid: Grid, state: State, editor: Rect, buffer: Buffer | null) → void <!-- internal -->
       - calls tui.evidence.evidenceOf, features.explain.explainCode, tui.width.stringWidth, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawPrompt](../../src/tui/view.ts#L385) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
+    - fn [drawPrompt](../../src/tui/view.ts#L411) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write, tui.width.stringWidth, tui.view.drawBox, tui.width.padWidth
-    - fn [render](../../src/tui/view.ts#L408) (state: State) → Grid
-      - calls tui.screen.Grid, tui.view.layout, tui.screen.Grid.fill, tui.screen.Grid.write, tui.view.drawFiles, tui.view.drawNav, tui.view.drawCode, tui.view.drawMerge, tui.view.drawRead, tui.view.drawEditor, tui.evidence.evidenceOf, tui.view.lineMessage, tui.evidence.totals, tui.width.stringWidth, tui.view.drawHover, tui.view.drawCompletion, tui.view.drawHelp, tui.view.drawPrompt
+    - fn [render](../../src/tui/view.ts#L434) (state: State) → Grid
+      - calls tui.screen.Grid, tui.view.layout, tui.screen.Grid.fill, tui.screen.Grid.write, tui.view.drawFiles, tui.view.drawContext, tui.view.drawNav, tui.view.drawCode, tui.view.drawMerge, tui.view.drawRead, tui.view.drawEditor, tui.evidence.evidenceOf, tui.view.lineMessage, tui.evidence.totals, tui.width.stringWidth, tui.view.drawHover, tui.view.drawCompletion, tui.view.drawHelp, tui.view.drawPrompt
   - module [web](../../src/tui/web.ts#L1)
     - node external.node
     - ws external.ws
@@ -410,13 +449,22 @@
     - fn [assetPath](../../src/tui/web.ts#L50) (name: AssetName) → string | null
     - type [WebServer](../../src/tui/web.ts#L64)
     - type [Session](../../src/tui/web.ts#L76) <!-- internal -->
-    - fn [clampSize](../../src/tui/web.ts#L83) (value: unknown, fallback: number, max: number) → number
-    - fn [sameSecret](../../src/tui/web.ts#L88) (given: string | null | undefined, token: string) → boolean <!-- internal -->
-    - fn [offeredToken](../../src/tui/web.ts#L96) (request: IncomingMessage) → string | null <!-- internal -->
-    - fn [serveWeb](../../src/tui/web.ts#L104) (options: { root: string; port: number; host?: string; analyzer?: Analyzer; /** How long a detached session waits for a reconnect. */ keepMs?: number }) → Promise<WebServer>
-      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, tui.web.reply, tui.web.assetPath, tui.web.page, tui.web.clampSize, tui.app.App, tui.background.SnapshotWorker.close
-    - fn [reply](../../src/tui/web.ts#L269) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-    - fn [page](../../src/tui/web.ts#L275) () → string <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L85) (message: object) → string <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L93) <!-- internal -->
+      - fn [push](../../src/tui/web.ts#L100) (chunk: Int16Array) → void
+        - calls tui.web.AudioQueue.wake
+      - fn [end](../../src/tui/web.ts#L107) (failure: Error | null = null) → void
+        - calls tui.web.AudioQueue.wake
+      - fn [wake](../../src/tui/web.ts#L113) () → void <!-- internal -->
+      - fn [chunks](../../src/tui/web.ts#L120) () → AsyncGenerator<Int16Array>
+    - fn [pcmOf](../../src/tui/web.ts#L135) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [clampSize](../../src/tui/web.ts#L145) (value: unknown, fallback: number, max: number) → number
+    - fn [sameSecret](../../src/tui/web.ts#L150) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L158) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [serveWeb](../../src/tui/web.ts#L166) (options: { root: string; port: number; host?: string; analyzer?: Analyzer; /** How long a detached session waits for a reconnect. */ keepMs?: number }) → Promise<WebServer>
+      - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, tui.web.reply, tui.web.assetPath, tui.web.page, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.background.SnapshotWorker.close
+    - fn [reply](../../src/tui/web.ts#L352) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L358) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L9) (text: string) → string[]
     - fn [codePointWidth](../../src/tui/width.ts#L33) (cp: number) → 0 | 1 | 2 <!-- internal -->

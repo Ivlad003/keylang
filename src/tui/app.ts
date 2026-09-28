@@ -16,6 +16,16 @@ import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
 import { parse } from "../parser.ts";
+import { codeProposalProblem, PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
+import { contextPack, contextText, type ContextPack } from "../agent-context.ts";
+import { withFlow } from "../draft.ts";
+import { writeProposal } from "../proposals.ts";
+import { formatSummary, summarizeNode } from "../explain-node.ts";
+import { isStale, readExplanation } from "../explain-llm.ts";
+import { addDrafts, statusesIn, updateStats } from "../stats.ts";
+import { ghostSignal, ghostSuggestions } from "../ghost.ts";
+import { glossary, speechToSpec, transcribeOpenRouter, voiceEngine } from "../voice.ts";
+import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { applyHunks, diffLines } from "./merge.ts";
@@ -40,6 +50,12 @@ export interface AppOptions {
   rows: number;
   analyzer?: Analyzer;
   onQuit?: () => void;
+  /**
+   * Microphone PCM (16 kHz, mono, s16le) until `stop` is called or the source
+   * ends; null: no microphone. Default: the optional `decibri`. `keylang web`
+   * passes the browser's microphone; tests pass recorded PCM.
+   */
+  microphone?: () => Promise<{ chunks: AsyncIterable<Int16Array>; stop: () => void } | null>;
 }
 
 /** Changes typed together are analysed once. */
@@ -47,7 +63,6 @@ const SETTLE_MS = 120;
 const ESC_MS = 25;
 /** A bracketed paste whose end marker has not come within this pause is ended by hand. */
 const PASTE_MS = 1000;
-export const PROPOSALS_DIR = ".keylang/proposals";
 /** The largest frame a session draws; a bigger size from a client is cut to it. */
 export const MAX_COLS = 1000;
 export const MAX_ROWS = 400;
@@ -61,6 +76,10 @@ export class App {
   private readonly onQuit: () => void;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
+  private ghostTimer: NodeJS.Timeout | null = null;
+  private microphone: NonNullable<AppOptions["microphone"]>;
+  /** A recording in progress: `Ctrl+R` again stops it. */
+  private recording: { stop: () => void } | null = null;
   private generation = 0;
   /** Bumped on every buffer change; an analysis started before the last one is outdated on arrival. */
   private edits = 0;
@@ -71,6 +90,7 @@ export class App {
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
     this.onQuit = options.onQuit ?? (() => {});
+    this.microphone = options.microphone ?? defaultMicrophone;
     this.state = {
       root: options.root,
       cols: options.cols,
@@ -104,6 +124,8 @@ export class App {
       back: [],
       message: null,
       proposals: [],
+      context: { open: false, index: 0, added: [], removed: new Set() },
+      ghost: null,
       search: null,
       quitArmed: false,
     };
@@ -184,7 +206,7 @@ export class App {
 
   /** Resolves when no analysis is running or waiting to start. */
   idle(): Promise<void> {
-    if (this.running === 0 && this.settleTimer === null) return Promise.resolve();
+    if (this.running === 0 && this.settleTimer === null && this.ghostTimer === null) return Promise.resolve();
     return new Promise((done) => this.waiters.push(done));
   }
 
@@ -193,6 +215,8 @@ export class App {
     if (this.escTimer) clearTimeout(this.escTimer);
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (this.ghostTimer) clearTimeout(this.ghostTimer);
+    this.ghostTimer = null;
     this.surface = null;
     this.wake();
   }
@@ -273,7 +297,7 @@ export class App {
   }
 
   private wake(): void {
-    if (this.running > 0 || this.settleTimer !== null) return;
+    if (this.running > 0 || this.settleTimer !== null || this.ghostTimer !== null) return;
     const waiters = this.waiters;
     this.waiters = [];
     for (const done of waiters) done();
@@ -325,7 +349,7 @@ export class App {
     // An unreadable proposals directory means no proposals, not the end of a session with unsaved buffers.
     try {
       return readdirSync(dir, { recursive: true, withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+        .filter((entry) => entry.isFile())
         .map((entry) => toPosix(relative(dir, join(entry.parentPath, entry.name))))
         .sort(compareText);
     } catch {
@@ -345,9 +369,10 @@ export class App {
   }
 
   /**
-   * Why `.keylang/proposals/<path>` may not be merged, or null. A proposal
-   * replaces one hand-written spec: a Markdown file under the spec directory,
+   * Why `.keylang/proposals/<path>` may not be merged, or null. A Markdown
+   * proposal replaces one hand-written spec: a file under the spec directory,
    * not a generated map file, and not reached through a link that leads out.
+   * Any other replaces a source file (`spec-to-code`) under the code limits.
    */
   private proposalProblem(path: string): string | null {
     try {
@@ -358,19 +383,8 @@ export class App {
   }
 
   private proposalLimits(path: string): string | null {
-    const specDir = this.specDir();
-    if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return "not a plain relative path";
-    // The same files `check` reads as specs: none under hidden directories, `node_modules` or `target`.
-    if (path.split("/").slice(0, -1).some((part) => part.startsWith(".") || part === "node_modules" || part === "target")) return "in a directory specs are not read from";
-    if (specDir === ".." || specDir.startsWith("../")) return "the spec directory is outside the repository";
-    if (specDir !== "" && !path.startsWith(`${specDir}/`)) return `outside ${specDir}/: a proposal changes specs only`;
-    if (path.startsWith(`${specDir === "" ? "" : `${specDir}/`}map/`)) return "a generated map file: change the code or the rules, then run `keylang map`";
-    const abs = resolve(this.state.root, path);
-    if (existsSync(abs) && parse(path, readFileSync(abs, "utf8")).generated !== null) return "a generated file: it is written by `keylang map` only";
-    if (this.state.analysis?.docs.some((doc) => doc.path === path && doc.generated !== null)) return "a generated file: it is written by `keylang map` only";
-    const specRoot = resolve(this.state.root, specDir);
-    if (!within(realPrefix(abs), existsSync(specRoot) ? realpathSync(specRoot) : specRoot)) return `leads out of ${specDir || "."}/ through a link`;
-    return null;
+    if (!path.endsWith(".md")) return codeProposalProblem(this.state.root, path);
+    return proposalProblem(this.state.root, this.specDir(), path, (p) => this.state.analysis?.docs.some((doc) => doc.path === p && doc.generated !== null) === true);
   }
 
   // ---------- buffers ----------
@@ -683,6 +697,7 @@ export class App {
       if (!this.state.showNav && this.state.focus === "nav") this.state.focus = "editor";
       return this.keepVisible();
     }
+    if (event.name === "f4") return this.toggleContext();
     switch (this.state.mode) {
       case "merge":
         return this.mergeKey(event);
@@ -691,6 +706,7 @@ export class App {
       case "edit":
         return this.editKey(event);
       default:
+        if (this.state.focus === "context") return this.contextKey(event);
         if (this.state.focus === "nav") return this.navKey(event);
         if (this.state.focus === "files") return this.filesKey(event);
         return this.viewKey(event);
@@ -757,7 +773,7 @@ export class App {
   }
 
   private cycleFocus(): void {
-    const order = ["editor", ...(this.state.showNav ? ["nav"] : []), ...(this.state.showFiles ? ["files"] : [])] as const;
+    const order = ["editor", ...(this.state.context.open ? ["context"] : this.state.showNav ? ["nav"] : []), ...(this.state.showFiles ? ["files"] : [])] as const;
     const at = order.indexOf(this.state.focus as (typeof order)[number]);
     this.state.focus = order[(at + 1) % order.length] as State["focus"];
     if (this.state.focus === "nav") this.fixNavIndex(1);
@@ -768,6 +784,11 @@ export class App {
     if (event.name === "enter" && event.alt) return this.goToSpec(this.idAtCursor());
     if (event.ctrl && event.name === "o") return this.goBack();
     if (event.ctrl && event.name === "g") return this.textToSpec();
+    if (event.ctrl && event.name === "space") return this.agentDraft();
+    if (event.ctrl && event.name === "r") {
+      this.state.message = "voice goes where the cursor is: press i to edit, then Ctrl+R";
+      return;
+    }
     if (event.ctrl || event.alt) return;
     switch (event.name) {
       case "enter":
@@ -822,8 +843,7 @@ export class App {
       case "u":
         return this.undoMerge();
       case "e":
-        this.state.message = "explain (LLM) is part of M7; ? shows the diagnostic explanation";
-        return;
+        return this.explainAtCursor();
       case "?":
         this.state.help = true;
         return;
@@ -843,6 +863,22 @@ export class App {
   }
 
   private editKey(event: KeyEvent): void {
+    const ghost = this.state.ghost;
+    if (ghost) {
+      if (event.alt && event.name === "]") {
+        ghost.index = (ghost.index + 1) % ghost.variants.length;
+        return;
+      }
+      this.state.ghost = null;
+      if (event.name === "tab" && !this.state.completion) return this.acceptGhost(ghost);
+      this.recordSuggestion("ghost", "rejected", ghost.shown);
+      if (event.name === "escape") return;
+    }
+    this.editKeyWithoutGhost(event);
+    if (this.state.mode === "edit") this.ghostSoon();
+  }
+
+  private editKeyWithoutGhost(event: KeyEvent): void {
     const completion = this.state.completion;
     if (completion) {
       if (event.name === "up" || event.name === "down") {
@@ -851,11 +887,13 @@ export class App {
       }
       if (event.name === "tab" || event.name === "enter") return this.acceptCompletion();
       if (event.name === "escape") {
+        this.recordSuggestion("completion", "rejected", completion.shown);
         this.state.completion = null;
         return;
       }
     }
     if (event.ctrl && event.name === "s") return this.save();
+    if (event.ctrl && event.name === "r") return this.voice();
     if (event.ctrl && event.name === "z") return this.undoEdit();
     if (event.ctrl && event.name === "g") return this.textToSpec();
     if (event.ctrl && event.name === "space") return this.complete(true);
@@ -974,7 +1012,10 @@ export class App {
     const starts = all.filter((item) => item.label.toLowerCase().startsWith(prefix));
     const contains = all.filter((item) => !item.label.toLowerCase().startsWith(prefix) && item.label.toLowerCase().includes(prefix));
     const items = [...starts, ...contains];
-    this.state.completion = items.length > 0 && !(items.length === 1 && items[0]!.label.toLowerCase() === prefix) ? { items, index: 0, from } : null;
+    const open = items.length > 0 && !(items.length === 1 && items[0]!.label.toLowerCase() === prefix);
+    const shown = this.state.completion?.shown;
+    if (open && shown === undefined) this.recordSuggestion("completion", "proposed", null);
+    this.state.completion = open ? { items, index: 0, from, shown: shown ?? Date.now() } : null;
   }
 
   private acceptCompletion(): void {
@@ -982,6 +1023,7 @@ export class App {
     if (!completion) return;
     const item = completion.items[completion.index]!;
     this.state.completion = null;
+    this.recordSuggestion("completion", "accepted", completion.shown);
     // The list belongs to the word it was opened on; text moved under it since is not replaced.
     if (completion.from > this.state.cursor.col) return;
     this.edit((lines, cursor) => {
@@ -990,6 +1032,144 @@ export class App {
       lines[cursor.line] = chars.join("");
       cursor.col = completion.from + graphemes(item.label).length;
     });
+  }
+
+  // ---------- voice ----------
+
+  /**
+   * `Ctrl+R`: record until `Ctrl+R` again (or the source ends), recognize,
+   * and insert: on a new list item a command («крок …», «коли … тоді …»)
+   * becomes the item, anything else is free text at the cursor.
+   */
+  private voice(): void {
+    if (this.recording) {
+      this.recording.stop();
+      this.recording = null;
+      this.state.message = "voice: recognizing…";
+      return;
+    }
+    const analysis = this.state.analysis;
+    const buffer = this.buffer();
+    if (!analysis || !buffer) {
+      this.state.message = "analysis is still running";
+      return;
+    }
+    const line = this.state.cursor.line;
+    this.running++;
+    void (async () => {
+      const { localAvailable } = await import("../voice-local.ts");
+      const engine = voiceEngine(analysis.config.voice, await localAvailable());
+      if ("missing" in engine) throw new Error(engine.missing);
+      const mic = await this.microphone();
+      if (!mic) throw new Error("voice: no microphone: install the optional decibri, or speak in `keylang web`");
+      this.recording = mic;
+      this.state.message = "● voice: recording… Ctrl+R stops";
+      this.draw();
+      const chunks: Int16Array[] = [];
+      for await (const chunk of mic.chunks) chunks.push(chunk);
+      this.recording = null;
+      const pcm = new Int16Array(chunks.reduce((n, c) => n + c.length, 0));
+      let at = 0;
+      for (const c of chunks) {
+        pcm.set(c, at);
+        at += c.length;
+      }
+      const terms = glossary(analysis, buffer.path, buffer.text, line);
+      const text = engine.kind === "openrouter" ? await transcribeOpenRouter(engine, pcm, terms) : await (await import("../voice-local.ts")).transcribeLocal(engine.modelFile, pcm, terms);
+      if (this.closed || text.trim() === "") return;
+      this.insertSpeech(text, line, analysis);
+    })()
+      .catch((error: unknown) => {
+        this.recording = null;
+        this.state.message = error instanceof Error ? error.message : String(error);
+      })
+      .finally(() => {
+        this.running--;
+        this.draw();
+        this.wake();
+      });
+  }
+
+  private insertSpeech(text: string, line: number, analysis: Analysis): void {
+    const buffer = this.buffer();
+    if (!buffer) return;
+    const current = this.lines()[line] ?? "";
+    const indent = /^\s*/.exec(current)![0];
+    const ids = [...Object.keys(analysis.snapshot?.nodes ?? {}).filter((id) => analysis.snapshot!.nodes[id]!.kind === "fn")];
+    this.edit((lines, cursor) => {
+      if (/^\s*-?\s*$/.test(current)) {
+        const spec = speechToSpec(text, ids, indent);
+        const items = spec.startsWith(`${indent}- `) ? spec.split("\n") : [`${indent}- ${spec}`];
+        lines.splice(line, 1, ...items);
+        cursor.line = line + items.length - 1;
+        cursor.col = graphemes(items.at(-1)!).length;
+      } else {
+        const chars = graphemes(lines[cursor.line] ?? "");
+        chars.splice(cursor.col, 0, text.trim());
+        lines[cursor.line] = chars.join("");
+        cursor.col += graphemes(text.trim()).length;
+      }
+    });
+    this.state.message = `voice: ${text.trim()}`;
+  }
+
+  // ---------- ghost text ----------
+
+  /** After a pause with the cursor on a new flow item, ask the agent for one next line. */
+  private ghostSoon(): void {
+    if (this.ghostTimer) clearTimeout(this.ghostTimer);
+    this.ghostTimer = null;
+    const buffer = this.buffer();
+    const analysis = this.state.analysis;
+    if (!buffer || !analysis?.snapshot || !analysis.config.agent || this.state.completion) return;
+    const { line, col } = this.state.cursor;
+    if (!ghostSignal(buffer.path, buffer.text, line, col)) return;
+    this.ghostTimer = setTimeout(() => {
+      this.ghostTimer = null;
+      const text = buffer.text;
+      this.running++;
+      void (async () => {
+        const { llmClient } = await import("../llm.ts");
+        const setup = llmClient(analysis.config.agent);
+        if ("missing" in setup) return;
+        const variants = await ghostSuggestions(analysis, setup.client, buffer.path, text, line, this.contextPack());
+        // The person typed on meanwhile: a suggestion for older text is not shown.
+        if (this.closed || buffer.text !== text || this.state.cursor.line !== line || this.state.mode !== "edit" || variants.length === 0) return;
+        this.state.ghost = { line, variants, index: 0, shown: Date.now() };
+        this.recordSuggestion("ghost", "proposed", null);
+      })()
+        .catch((error: unknown) => {
+          this.state.message = `agent: ${error instanceof Error ? error.message : String(error)}`;
+        })
+        .finally(() => {
+          this.running--;
+          this.draw();
+          this.wake();
+        });
+    }, analysis.config.ghost.delay);
+  }
+
+  private acceptGhost(ghost: NonNullable<State["ghost"]>): void {
+    const text = ghost.variants[ghost.index]!;
+    this.edit((lines, cursor) => {
+      lines[ghost.line] = text;
+      cursor.line = ghost.line;
+      cursor.col = graphemes(text).length;
+    });
+    this.recordSuggestion("ghost", "accepted", ghost.shown);
+  }
+
+  /** Counts for design §7.3: ghost measured against the deterministic completion. */
+  private recordSuggestion(source: "ghost" | "completion", field: "proposed" | "accepted" | "rejected", shown: number | null | undefined): void {
+    try {
+      updateStats(this.state.root, (stats) => {
+        const tally = (stats.suggestions[source] ??= { proposed: 0, accepted: 0, rejected: 0, ms: 0 });
+        tally[field]++;
+        if (field !== "proposed" && typeof shown === "number") tally.ms += Date.now() - shown;
+      });
+    } catch {
+      // Metrics never stop editing: an unwritable `.keylang/` only loses the count.
+    }
   }
 
   // ---------- panels ----------
@@ -1004,6 +1184,153 @@ export class App {
     const height = (nav?.height ?? 2) - 1;
     if (index < this.state.navTop) this.state.navTop = index;
     if (index >= this.state.navTop + height) this.state.navTop = index - height + 1;
+  }
+
+  // ---------- context panel ----------
+
+  private toggleContext(): void {
+    const context = this.state.context;
+    context.open = !context.open;
+    if (context.open) this.state.focus = "context";
+    else if (this.state.focus === "context") this.state.focus = "editor";
+    this.keepVisible();
+  }
+
+  /** The pack for the current buffer and cursor line; null before the first analysis. */
+  contextPack(): ContextPack | null {
+    const buffer = this.buffer();
+    const analysis = this.state.analysis;
+    if (!buffer || !analysis) return null;
+    const context = this.state.context;
+    return contextPack(analysis, { path: buffer.path, text: buffer.text, line: this.state.cursor.line, added: context.added, removed: context.removed });
+  }
+
+  private contextKey(event: KeyEvent): void {
+    const pack = this.contextPack();
+    const items = pack?.items ?? [];
+    const context = this.state.context;
+    switch (event.name) {
+      case "up":
+      case "k":
+        context.index = Math.max(0, context.index - 1);
+        return;
+      case "down":
+      case "j":
+        context.index = Math.min(Math.max(0, items.length - 1), context.index + 1);
+        return;
+      case "x": {
+        const item = items[context.index];
+        if (!item) return;
+        context.removed.add(item.key);
+        context.added = context.added.filter((id) => `node:${id}` !== item.key);
+        context.index = Math.min(context.index, Math.max(0, items.length - 2));
+        this.state.message = `context: ${item.label} left out`;
+        return;
+      }
+      case "@":
+        this.state.prompt = { kind: "context", text: "", items: [], index: 0 };
+        return;
+      case "tab":
+        return this.cycleFocus();
+      case "escape":
+        return this.toggleContext();
+      default:
+        return;
+    }
+  }
+
+  /**
+   * `Ctrl+Space` in the view: the agent drafts the flow under the cursor
+   * (hybrid, with the context panel's pack) and the draft opens as MERGE.
+   * Nothing is written before `a` and `w`.
+   */
+  private agentDraft(): void {
+    const buffer = this.buffer();
+    const analysis = this.state.analysis;
+    if (!buffer || !analysis?.snapshot) {
+      this.state.message = analysis ? "no spec open" : "analysis is still running";
+      return;
+    }
+    const doc = buffer.doc ?? docOf(buffer.path, buffer.text);
+    const line = this.state.cursor.line + 1;
+    const sections = (doc?.sections ?? []).filter((section) => section.heading !== null);
+    const section = sections.filter((s) => s.heading!.span.start.line <= line).at(-1);
+    let trigger: string | null = null;
+    if (section?.kind === "flow") for (const top of sectionNodes(section)) walk(top, (node) => {
+      if (trigger === null && node.kind === "trigger") trigger = node.refs[0]?.target ?? null;
+    });
+    if (!section || section.kind !== "flow" || !section.name || trigger === null) {
+      this.state.message = "Ctrl+Space drafts a flow: put the cursor in a `# flow` with a `trigger`";
+      return;
+    }
+    const name = section.name.value;
+    const from: string = trigger;
+    this.state.message = `agent: drafting flow ${name}…`;
+    this.running++;
+    void (async () => {
+      const { llmClient } = await import("../llm.ts");
+      const setup = llmClient(analysis.config.agent);
+      if ("missing" in setup) throw new Error(setup.missing);
+      const { draftFlowWithModel } = await import("../draft-llm.ts");
+      const pack = this.contextPack();
+      const draft = await draftFlowWithModel(analysis, from, setup.client, "hybrid", name, pack ? contextText(pack) : undefined);
+      updateStats(this.state.root, (stats) => addDrafts(stats, draft.counts, "proposed"));
+      writeProposal(this.state.root, buffer.path, withFlow(buffer.saved, draft));
+      if (this.closed) return;
+      this.openProposal();
+      if (draft.unknown.length > 0) this.state.message = `agent: still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")}`;
+    })()
+      .catch((error: unknown) => {
+        this.state.message = `agent: ${error instanceof Error ? error.message : String(error)}`;
+      })
+      .finally(() => {
+        this.running--;
+        this.draw();
+        this.wake();
+      });
+  }
+
+  private addToContext(id: string): void {
+    const analysis = this.state.analysis;
+    if (!analysis) {
+      this.state.message = "analysis is still running";
+      return;
+    }
+    const result = summarizeNode(analysis, id);
+    if ("unknown" in result) {
+      this.state.message = `unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`;
+      return;
+    }
+    const context = this.state.context;
+    context.removed.delete(`node:${id}`);
+    if (!context.added.includes(id)) context.added.push(id);
+    this.state.message = `context: ${id} added`;
+  }
+
+  /** `e`: the offline summary of the id under the cursor, with its saved explanation (model, date, stale?). */
+  private explainAtCursor(): void {
+    const id = this.idAtCursor();
+    const analysis = this.state.analysis;
+    if (!id || !analysis) {
+      this.state.message = analysis ? "no id on this line" : "analysis is still running";
+      return;
+    }
+    const result = summarizeNode(analysis, id);
+    if ("unknown" in result) {
+      this.state.message = `unknown id \`${id}\``;
+      return;
+    }
+    const saved = readExplanation(this.state.root, id);
+    const lines: Hover["lines"] = formatSummary(result.summary).split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
+    if (saved) {
+      lines.push({ text: "", kind: "rule" });
+      for (const text of saved.text.split("\n")) lines.push({ text, kind: "text" });
+      lines.push({ text: `${saved.agent} · ${saved.date} · ${isStale(analysis, id, saved) ? "stale" : "fresh"}`, kind: "evidence" });
+    } else {
+      lines.push({ text: "no explanation yet: keylang explain <id> --llm", kind: "evidence" });
+    }
+    const editor = layout(this.state).editor;
+    this.state.hover = { x: editor.x + 2, y: editor.y + this.state.cursor.line - this.state.top, lines, source: "key" };
   }
 
   private navKey(event: KeyEvent): void {
@@ -1212,6 +1539,8 @@ export class App {
       if (prompt.kind === "search") {
         this.state.search = prompt.text;
         this.findNext();
+      } else if (prompt.kind === "context") {
+        this.addToContext(prompt.text.trim().replace(/^@/, ""));
       } else {
         const chosen = prompt.items[prompt.index];
         if (chosen) this.runCommand(chosen);
@@ -1276,6 +1605,14 @@ export class App {
       this.state.message = ignored.length > 0 ? `proposal ignored: ${ignored.map((item) => `${item.file} (${item.problem})`).join("; ")}` : `no proposals under ${PROPOSALS_DIR}/`;
       return;
     }
+    if (!path.endsWith(".md")) {
+      // Code is never a buffer here: the merge compares the proposal with the file on disk.
+      const disk = readText(resolve(this.state.root, path));
+      const proposed = lf(readFileSync(join(this.state.root, PROPOSALS_DIR, path), "utf8"));
+      if (this.state.mode === "code") this.state.mode = "view";
+      this.startMerge(path, "code", splitEol(disk ?? "").text.split("\n"), proposed.split("\n"), disk);
+      return;
+    }
     const buffer = this.load(path);
     if (path !== this.state.current) this.open(path, { line: 0, col: 0 });
     // The proposal changes the file on disk; unsaved edits would show up as hunks that revert them.
@@ -1292,7 +1629,7 @@ export class App {
     const hunks = diffLines(base, proposed);
     if (hunks.length === 0) {
       this.state.message = "the proposal matches the file; nothing to merge";
-      if (origin === "proposal") rmSync(join(this.state.root, PROPOSALS_DIR, path), { force: true });
+      if (origin !== "text-to-spec") rmSync(join(this.state.root, PROPOSALS_DIR, path), { force: true });
       this.state.proposals = this.scanProposals();
       return;
     }
@@ -1376,6 +1713,7 @@ export class App {
    */
   private writeMerge(): void {
     const merge = this.state.merge!;
+    if (merge.origin === "code") return this.writeCodeMerge(merge);
     const buffer = this.load(merge.path);
     const accepted = merge.decisions.filter((decision) => decision === "accepted").length;
     const pending = merge.decisions.filter((decision) => decision === "pending").length;
@@ -1414,8 +1752,48 @@ export class App {
     }
     const consumed = pending === 0;
     if (consumed) rmSync(proposalAbs, { force: true });
+    // How often model lines are taken calibrates how drafts are shown (design §5.1 p.7).
+    updateStats(this.state.root, (stats) => {
+      merge.hunks.forEach((hunk, i) => {
+        const decision = merge.decisions[i];
+        if (decision === "accepted" || decision === "rejected") addDrafts(stats, statusesIn(hunk.lines), decision);
+      });
+    });
     this.state.proposals = this.scanProposals();
     this.state.lastMerge = { path: merge.path, before: accepted > 0 ? base : buffer.text, after: buffer.text, disk, proposal: consumed && proposalText !== null ? { abs: proposalAbs, text: proposalText } : null };
+    const written = accepted > 0 ? ` and written to ${merge.path}` : "";
+    const kept = consumed ? "" : `; ${pending} pending hunk(s) stay in the proposal`;
+    this.leaveMerge(merge, `merge: ${accepted} of ${merge.hunks.length} hunk(s) applied${written}${kept}; u undoes`);
+    this.reanalyze();
+  }
+
+  /**
+   * A code proposal: the accepted hunks go to the file on disk, with its line
+   * endings, unless the file changed since the merge began. A new file gets
+   * its directories. No buffer is involved: code is edited elsewhere.
+   */
+  private writeCodeMerge(merge: MergeState): void {
+    const accepted = merge.decisions.filter((decision) => decision === "accepted").length;
+    const pending = merge.decisions.filter((decision) => decision === "pending").length;
+    if (accepted === 0 && pending > 0) {
+      this.state.message = "nothing accepted yet: a accepts, r rejects; the proposal is kept until every hunk is decided (Esc leaves)";
+      return;
+    }
+    const abs = resolve(this.state.root, merge.path);
+    if (readText(abs) !== merge.disk) return this.leaveMerge(merge, `${merge.path} changed on disk during the merge; nothing written — press m to compare again`);
+    const proposalAbs = join(this.state.root, PROPOSALS_DIR, merge.path);
+    const proposalText = readText(proposalAbs);
+    let disk: { before: string | null; after: string } | null = null;
+    if (accepted > 0) {
+      const after = withEol(applyHunks(merge.base, merge.hunks, merge.decisions).join("\n"), merge.disk === null ? "\n" : splitEol(merge.disk).eol);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeAtomic(abs, after);
+      disk = { before: merge.disk, after };
+    }
+    const consumed = pending === 0;
+    if (consumed) rmSync(proposalAbs, { force: true });
+    this.state.proposals = this.scanProposals();
+    this.state.lastMerge = { path: merge.path, before: "", after: "", disk, proposal: consumed && proposalText !== null ? { abs: proposalAbs, text: proposalText } : null, code: true };
     const written = accepted > 0 ? ` and written to ${merge.path}` : "";
     const kept = consumed ? "" : `; ${pending} pending hunk(s) stay in the proposal`;
     this.leaveMerge(merge, `merge: ${accepted} of ${merge.hunks.length} hunk(s) applied${written}${kept}; u undoes`);
@@ -1427,6 +1805,27 @@ export class App {
     const last = this.state.lastMerge;
     if (!last) {
       this.state.message = "no merge to undo";
+      return;
+    }
+    if (last.code) {
+      const abs = resolve(this.state.root, last.path);
+      if (last.disk !== null && readText(abs) !== last.disk.after) {
+        this.state.lastMerge = null;
+        this.state.message = `${last.path} changed after the merge; u no longer applies`;
+        return;
+      }
+      if (last.disk) {
+        if (last.disk.before === null) rmSync(abs, { force: true });
+        else writeAtomic(abs, last.disk.before);
+      }
+      if (last.proposal) {
+        mkdirSync(dirname(last.proposal.abs), { recursive: true });
+        writeAtomic(last.proposal.abs, last.proposal.text);
+      }
+      this.state.lastMerge = null;
+      this.state.proposals = this.scanProposals();
+      this.state.message = `merge undone in ${last.path}${last.proposal ? "; the proposal is back" : ""}`;
+      this.reanalyze();
       return;
     }
     const buffer = this.load(last.path);
@@ -1613,14 +2012,3 @@ function linkTarget(abs: string): string {
 }
 
 /** `abs` with its longest existing prefix resolved through links; the rest of the path does not exist yet. */
-function realPrefix(abs: string): string {
-  let dir = abs;
-  const rest: string[] = [];
-  while (!existsSync(dir)) {
-    const parent = dirname(dir);
-    if (parent === dir) return abs;
-    rest.unshift(relative(parent, dir));
-    dir = parent;
-  }
-  return join(realpathSync(dir), ...rest);
-}

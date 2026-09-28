@@ -1,0 +1,1 @@
+{ "languages": ["typescript"], "layers": { "domain": ["src/domain/**"], "infra": ["src/infra/**"], "app": ["src/app/**"], "wiring": ["keylang.gen.ts"] } }

@@ -7,7 +7,7 @@ import type { Document } from "../ir.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
 export type Mode = "view" | "edit" | "read" | "code" | "merge";
-export type Focus = "editor" | "nav" | "files";
+export type Focus = "editor" | "nav" | "files" | "context";
 
 export interface Cursor {
   /** 0-based line. */
@@ -55,8 +55,8 @@ export interface CodeView {
 
 export interface MergeState {
   path: string;
-  /** `proposal`: a file under `.keylang/proposals/`; `text-to-spec`: from `Ctrl+G`. */
-  origin: "proposal" | "text-to-spec";
+  /** `proposal`: a spec under `.keylang/proposals/`; `code`: a source file there (`spec-to-code`); `text-to-spec`: from `Ctrl+G`. */
+  origin: "proposal" | "code" | "text-to-spec";
   base: string[];
   /**
    * `proposal`: the file on disk when the merge began (null: it did not
@@ -80,10 +80,13 @@ export interface LastMerge {
   disk: { before: string | null; after: string } | null;
   /** The consumed proposal, restored by `u`. */
   proposal: { abs: string; text: string } | null;
+  /** A source file: no buffer holds it, so `u` checks the disk only. */
+  code?: true;
 }
 
 export interface Prompt {
-  kind: "search" | "palette";
+  /** `context`: an ID to add to the agent's context (`@` in the context panel). */
+  kind: "search" | "palette" | "context";
   text: string;
   /** Palette entries matching `text`, and the selected one. */
   items: string[];
@@ -125,7 +128,10 @@ export interface State {
   merge: MergeState | null;
   /** The last written merge, for `u` in the view. Any later edit of the file clears it. */
   lastMerge: LastMerge | null;
-  completion: { items: CompletionItem[]; index: number; from: number } | null;
+  /** `shown`: ms timestamp, for the time to a decision in `.keylang/stats.json`. */
+  completion: { items: CompletionItem[]; index: number; from: number; shown?: number } | null;
+  /** A grey next line from the agent on `line`: `Tab` takes `variants[index]`, `Alt+]` the next, `Esc` drops it. */
+  ghost: { line: number; variants: string[]; index: number; shown: number } | null;
   /** Lines selected with Shift+arrows in the editor: anchor line. */
   selection: number | null;
   prompt: Prompt | null;
@@ -133,6 +139,8 @@ export interface State {
   back: Place[];
   message: string | null;
   proposals: string[];
+  /** The context panel (F4): what goes to the model; `added` by `@id`, `removed` by `x` (item keys). */
+  context: { open: boolean; index: number; added: string[]; removed: Set<string> };
   search: string | null;
   quitArmed: boolean;
 }

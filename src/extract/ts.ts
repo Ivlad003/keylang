@@ -3,7 +3,7 @@
 
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
-import { grammarFor, query, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
+import { errorLine, fingerprint, grammarFor, located, query, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
 
 const CALLS_QUERY = `
 (call_expression function: (identifier) @callee)
@@ -259,19 +259,9 @@ function extractTree(path: string, root: Node, language: Language, g: Grammar): 
   return facts;
 }
 
-/** First syntax-error line, or the start of the tree when the grammar only sets `hasError`. */
-function errorLine(node: Node): number {
-  if (node.type === "ERROR" || node.isMissing) return node.startPosition.row + 1;
-  for (const child of node.children) {
-    if (!child.hasError) continue;
-    return errorLine(child);
-  }
-  return node.startPosition.row + 1;
-}
-
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members };
+  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, fingerprint: fingerprint(node) };
 }
 
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {
@@ -281,16 +271,6 @@ function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFac
 function callFact(callee: string, node: Node): CallFact {
   const at = located(node);
   return { callee, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol };
-}
-
-function located(node: Node): { line: number; col: number; endLine: number; endCol: number; text: string } {
-  return {
-    line: node.startPosition.row + 1,
-    col: node.startPosition.column + 1,
-    endLine: node.endPosition.row + 1,
-    endCol: node.endPosition.column + 1,
-    text: node.text,
-  };
 }
 
 function importAt(node: Node, source: string, bindings: ImportBinding[], reexport: boolean): ImportFact {
@@ -412,7 +392,8 @@ const FUNCTION_VALUES = new Set(["arrow_function", "function_expression", "funct
 function initializer(name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]): DeclFact {
   const first = located(items[0]!.node);
   const last = located(items[items.length - 1]!.node);
-  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [] };
+  const print = items.map((item) => fingerprint(item.node)).join(":");
+  return { kind: "fn", name, line: first.line, col: first.col, endLine: last.endLine, endCol: last.endCol, signature: null, exported: true, calls: items.flatMap((item) => item.calls), types: [], members: [], fingerprint: print };
 }
 
 function memberName(node: Node): string {

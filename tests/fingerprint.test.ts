@@ -1,0 +1,78 @@
+// Fingerprints of snapshot nodes (design §4.4, ticket m5-m7/11): what changes
+// them and what does not, through `keylang map` and `.keylang/index.json`.
+
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { test, type TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const bin = join(root, "bin/keylang.js");
+
+interface Node {
+  fingerprint?: string;
+  closure?: { fingerprint: string; complete: boolean };
+}
+
+function repo(t: TestContext, files: Record<string, string>): { dir: string; write(file: string, text: string): void; map(): { snapshotId: string; nodes: Record<string, Node> } } {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-fp-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (file: string, text: string): void => {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), text);
+  };
+  write("keylang.json", JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }));
+  for (const [file, text] of Object.entries(files)) write(file, text);
+  return {
+    dir,
+    write,
+    map() {
+      const r = spawnSync(process.execPath, [bin, "map"], { cwd: dir, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+    },
+  };
+}
+
+const ORDER = "export function valid(total: number): boolean {\n  return total > 0;\n}\n\nexport function describe(): string {\n  return valid(1) ? \"ok\" : \"empty\";\n}\n";
+
+test("fingerprint: a changed operator changes the fn and the closure of its callers; comments and layout do not", (t) => {
+  const r = repo(t, { "src/order.ts": ORDER });
+  const before = r.map();
+  const valid = before.nodes["main.order.valid"]!;
+  const describe = before.nodes["main.order.describe"]!;
+  assert.match(valid.fingerprint!, /^[0-9a-f]{64}$/);
+  assert.deepEqual(valid.closure?.complete, true);
+
+  r.write("src/order.ts", ORDER.replace("total > 0", "total >= 0"));
+  const changed = r.map();
+  assert.notEqual(changed.nodes["main.order.valid"]!.fingerprint, valid.fingerprint);
+  // `describe` itself is unchanged; what it calls is not.
+  assert.equal(changed.nodes["main.order.describe"]!.fingerprint, describe.fingerprint);
+  assert.notEqual(changed.nodes["main.order.describe"]!.closure!.fingerprint, describe.closure!.fingerprint);
+
+  r.write("src/order.ts", ORDER.replace("  return total > 0;", "  // positive totals only\n  return   total >\n    0;"));
+  const reformatted = r.map();
+  assert.equal(reformatted.nodes["main.order.valid"]!.fingerprint, valid.fingerprint);
+  assert.equal(reformatted.nodes["main.order.describe"]!.closure!.fingerprint, describe.closure!.fingerprint);
+});
+
+test("fingerprint: a call cycle terminates and changes as one; an unresolved call makes the closure incomplete", (t) => {
+  const r = repo(t, {
+    "src/ping.ts": 'import { pong } from "./pong.ts";\n\nexport function ping(n: number): number {\n  return n > 0 ? pong(n - 1) : 0;\n}\n',
+    "src/pong.ts": 'import { ping } from "./ping.ts";\n\nexport function pong(n: number): number {\n  return ping(n);\n}\n\nexport function start(worker: { run(): void }): number {\n  worker.run();\n  return pong(3);\n}\n',
+  });
+  const before = r.map();
+  const ping = before.nodes["main.ping.ping"]!.closure!;
+  assert.equal(before.nodes["main.pong.pong"]!.closure!.fingerprint, ping.fingerprint, "a cycle hashes as one");
+  assert.equal(ping.complete, true);
+  assert.equal(before.nodes["main.pong.start"]!.closure!.complete, false, "`worker.run()` is a call keylang does not resolve");
+
+  r.write("src/ping.ts", 'import { pong } from "./pong.ts";\n\nexport function ping(n: number): number {\n  return n > 1 ? pong(n - 1) : 0;\n}\n');
+  const after = r.map();
+  assert.notEqual(after.nodes["main.pong.pong"]!.closure!.fingerprint, ping.fingerprint, "a change in ping changes pong through the cycle");
+  assert.equal(after.nodes["main.pong.pong"]!.fingerprint, before.nodes["main.pong.pong"]!.fingerprint);
+});

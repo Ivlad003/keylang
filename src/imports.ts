@@ -1,7 +1,9 @@
 // Import specifier → file. Relative paths with extension probing, `tsconfig`
 // (or `jsconfig`, and the configs it `references`) `paths`/`baseUrl`,
 // `package.json` `imports` (`#alias`), Node built-ins. A bare specifier is an
-// external package only when the project declares or installs it; any other
+// external package only when the project declares or installs it — at the
+// root, or in a `package.json` / `node_modules` between the importing file and
+// the root, as Node looks for it (`web/package.json` of a monorepo); any other
 // is unresolved — an alias keylang does not know is a hole, not a package.
 // A workspace package (a `node_modules` link into the repository, or a
 // `workspaces` entry) is internal: its `exports`/`module`/`main` name the file.
@@ -14,11 +16,20 @@ import { isNodeBuiltin } from "./extract/ts.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
-  | { kind: "internal"; file: string; workspace?: string }
+  /** `whole`: the specifier names the module itself, so a named binding is the module (Rust `use crate::a`). */
+  | { kind: "internal"; file: string; workspace?: string; whole?: true }
+  /** The specifier names the importing file itself (Rust `use self::X`): no dependency. */
+  | { kind: "local" }
   | { kind: "external"; pkg: string }
   | { kind: "builtin" }
   | { kind: "generated" }
   | { kind: "unresolved" };
+
+export interface SourceResolver {
+  resolve(fromFile: string, spec: string): Resolution;
+  /** Config files read, with their text (null: absent); the snapshot id depends on them. */
+  readonly inputs: ReadonlyMap<string, string | null>;
+}
 
 const EXTS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
@@ -38,6 +49,8 @@ export class ImportResolver {
   private readonly read: (file: string) => unknown;
   private readonly cache = new Map<string, Resolution>();
   private readonly located = new Map<string, Located>();
+  /** Per directory under the root: the packages its own `package.json` declares. */
+  private readonly nested = new Map<string, Set<string>>();
   /** Config files read, with their text (null: absent); edges depend on them, so the snapshot id does too. */
   readonly inputs = new Map<string, string | null>();
 
@@ -202,7 +215,26 @@ export class ImportResolver {
       const f = this.packageEntry(located.dir, spec.slice(pkg.length));
       return f ? { kind: "internal", file: f, workspace: pkg } : { kind: "unresolved" };
     }
-    return this.known(pkg) ? { kind: "external", pkg } : { kind: "unresolved" };
+    return this.known(pkg) || this.knownNear(fromFile, pkg) ? { kind: "external", pkg } : { kind: "unresolved" };
+  }
+
+  /** Declared in, or installed next to, a `package.json` between `fromFile` and the root. */
+  private knownNear(fromFile: string, pkg: string): boolean {
+    for (let dir = posix.dirname(fromFile); dir !== "." && dir !== "" && !dir.startsWith(".."); dir = posix.dirname(dir)) {
+      let declared = this.nested.get(dir);
+      if (declared === undefined) {
+        const manifest = this.read(`${dir}/package.json`) as Record<string, unknown> | null;
+        declared = new Set(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].flatMap((k) => (isObject(manifest?.[k]) ? Object.keys(manifest[k]) : [])));
+        this.nested.set(dir, declared);
+      }
+      if (declared.has(pkg) || declared.has(`@types/${pkg.replace(/^@/, "").replace("/", "__")}`)) return true;
+      const installed = existsSync(join(this.root, dir, "node_modules", pkg));
+      if (installed) {
+        this.inputs.set(`${dir}/node_modules/${pkg}`, "installed");
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Candidate file (POSIX, relative to root) → existing source file, or null. */

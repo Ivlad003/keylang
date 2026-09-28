@@ -194,7 +194,7 @@ function describe(ws: Workspace, id: string): Described | null {
   return { kind: decl.decl.kind, id: decl.decl.id, signature: null, file: decl.decl.file, line: decl.decl.span.start.line, col: decl.decl.span.start.col, state: decl.kind === "opaque" ? ["opaque"] : [] };
 }
 
-function plannedDecl(docs: readonly Document[], id: string): { kind: string; signature: string | null; file: string; line: number; col: number } | null {
+export function plannedDecl(docs: readonly Document[], id: string): { kind: string; signature: string | null; file: string; line: number; col: number } | null {
   for (const doc of docs) {
     for (const { node } of nodesOf(doc)) {
       if (node.kind === "planned" && node.id === id) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
@@ -203,7 +203,7 @@ function plannedDecl(docs: readonly Document[], id: string): { kind: string; sig
   return null;
 }
 
-function flowsUsing(docs: readonly Document[], id: string): string[] {
+export function flowsUsing(docs: readonly Document[], id: string): string[] {
   const flows = new Set<string>();
   for (const doc of docs) {
     for (const section of doc.sections) {

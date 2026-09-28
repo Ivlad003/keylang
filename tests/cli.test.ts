@@ -146,7 +146,7 @@ test("map generates the expected map and index", (t) => {
     assert.equal(readFileSync(join(dir, "keylang/map", n), "utf8"), readFileSync(join(expectedDir, n), "utf8"), n);
   }
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 4);
+  assert.equal(index.schema, 5);
   assert.equal(index.nodes["domain.order"].members, "complete");
   assert.equal(index.nodes["external.node"].members, "opaque");
   assert.deepEqual(index.nodes["domain.order.createOrder"].callers, ["app.checkout.checkout"]);
@@ -276,6 +276,26 @@ test("snapshot id tracks sources and config, not the clock", (t) => {
   assert.equal(keylang(dir, ["map"]).status, 0);
   const reconfigured = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
   assert.notEqual(reconfigured.snapshotId, edited.snapshotId);
+});
+
+test("a bare import is external when a package.json between the file and the root declares it, as Node looks for it", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src/app/web"), { recursive: true });
+  writeFileSync(join(dir, "src/app/web/package.json"), JSON.stringify({ dependencies: { "left-pad": "1" } }));
+  writeFileSync(join(dir, "src/app/web/ui.ts"), 'import pad from "left-pad";\n\nexport function ui(): string {\n  return pad("a", 2);\n}\n');
+  appendFileSync(join(dir, "src/app/checkout.ts"), 'import pad from "left-pad";\n');
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const unresolved = (): string[] =>
+    (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")).coverage as { kind: string; file: string; text: string }[])
+      .filter((c) => c.kind === "unresolved-import" && c.text.includes("left-pad"))
+      .map((c) => c.file);
+  // checkout.ts is outside web/: web's package.json does not reach it.
+  assert.deepEqual(unresolved(), ["src/app/checkout.ts"]);
+  writeFileSync(join(dir, "src/app/web/package.json"), "{}");
+  assert.equal(keylang(dir, ["map", "--check"]).status, 1, "the nested package.json is an input of the snapshot");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.deepEqual(unresolved(), ["src/app/checkout.ts", "src/app/web/ui.ts"]);
 });
 
 test("snapshot keeps unresolved imports, local calls, and completeness", (t) => {
@@ -417,6 +437,21 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   const api = spawnSync(process.execPath, ["--input-type=module", "-e", 'const k = await import("keylang"); console.log(typeof k.parse)'], { cwd: tmp, encoding: "utf8" });
   assert.equal(api.stdout, "function\n", api.stderr);
   assert.doesNotMatch(listing.stdout, /dist\/tui\/websocket\.js/, "prepack starts from an empty dist/");
+  // Without the optional voice modules (no prebuilt binary for a platform, or `--omit=optional`) the CLI works and says so.
+  // A directory of its own: module resolution must not find the first install in a parent's node_modules.
+  const bare = mkdtempSync(join(tmpdir(), "keylang-bare-"));
+  try {
+    writeFileSync(join(bare, "package.json"), '{"name":"keylang-bare-test","private":true}\n');
+    const bareInstall = spawnSync("npm", ["install", "--omit=dev", "--omit=optional", "--offline", "--ignore-scripts", tarball], { cwd: bare, encoding: "utf8" });
+    assert.equal(bareInstall.status, 0, bareInstall.stderr);
+    assert.ok(!existsSync(join(bare, "node_modules/decibri")) && !existsSync(join(bare, "node_modules/@fugood/whisper.node")));
+    const doctor = spawnSync(process.execPath, [join(bare, "node_modules/keylang/bin/keylang.js"), "doctor"], { cwd: bare, encoding: "utf8", env: { ...process.env, HOME: bare } });
+    assert.equal(doctor.status, 0, doctor.stderr);
+    assert.match(doctor.stdout, /^@fugood\/whisper\.node: not installed \(optional\)$/m);
+    assert.match(doctor.stdout, /^microphone \(decibri\): not installed/m);
+  } finally {
+    rmSync(bare, { recursive: true, force: true });
+  }
 
   const localParse = keylang(localRepo, ["parse", "--json", "keylang/rules.md"]);
   const packedParse = spawnSync(process.execPath, [installedBin, "parse", "--json", "keylang/rules.md"], {
@@ -476,7 +511,7 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
   assert.equal(o.status, 0, out);
   assert.doesNotMatch(out, /incompatible|schema|corrupt/i);
   const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
-  assert.equal(index.schema, 4);
+  assert.equal(index.schema, 5);
   assert.match(index.snapshotId, /^[0-9a-f]{64}$/);
 });
 
@@ -1274,7 +1309,7 @@ test("keylang.json errors name the file and the field, exit 2", (t) => {
     [{ ...config, check: { tests: "reports/none.json" } }, /keylang\.json: check\.tests: no such file `reports\/none\.json`/],
     [{ ...config, check: { tests: 5 } }, /keylang\.json: `check\.tests` must be a path, got 5/],
     [{ ...config, check: { junit: "x" } }, /keylang\.json: unknown field `check\.junit`/],
-    [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be "typescript" or "javascript", got "cobol"/],
+    [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be one of "javascript", "python", "rust", "typescript", got "cobol"/],
     [{ ...config, layers: { domain: 1 } }, /keylang\.json: `layers\.domain` must be a glob or an array of globs, got 1/],
   ];
   for (const [body, message] of cases) {

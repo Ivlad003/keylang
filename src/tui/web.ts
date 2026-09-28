@@ -77,6 +77,68 @@ interface Session {
   app: App;
   connection: WebSocket | null;
   timer: NodeJS.Timeout | null;
+  /** The browser's microphone while `Ctrl+R` records: PCM the page sends in `audio` messages. */
+  audio: AudioQueue | null;
+}
+
+/** A control message for the page: a frame that starts with NUL, which no ANSI frame does. */
+function control(message: object): string {
+  return `\u0000${JSON.stringify(message)}`;
+}
+
+/** At most 10 minutes of 16 kHz speech per recording: a page cannot fill the server's memory. */
+const MAX_SAMPLES = 16000 * 600;
+
+/** PCM chunks from the page, read by the session's recognizer as they arrive. */
+class AudioQueue {
+  private readonly pending: Int16Array[] = [];
+  private waiting: (() => void) | null = null;
+  private ended = false;
+  private failure: Error | null = null;
+  private samples = 0;
+
+  push(chunk: Int16Array): void {
+    if (this.ended || this.samples + chunk.length > MAX_SAMPLES) return;
+    this.samples += chunk.length;
+    this.pending.push(chunk);
+    this.wake();
+  }
+
+  end(failure: Error | null = null): void {
+    this.ended = true;
+    this.failure ??= failure;
+    this.wake();
+  }
+
+  private wake(): void {
+    const waiting = this.waiting;
+    this.waiting = null;
+    waiting?.();
+  }
+
+  /** The chunks as they come, until `end`. */
+  async *chunks(): AsyncGenerator<Int16Array> {
+    for (;;) {
+      const chunk = this.pending.shift();
+      if (chunk) {
+        yield chunk;
+        continue;
+      }
+      if (this.failure) throw this.failure;
+      if (this.ended) return;
+      await new Promise<void>((done) => (this.waiting = done));
+    }
+  }
+}
+
+/** s16le PCM from base64; an odd byte count or bad base64 is dropped, not trusted. */
+function pcmOf(data: unknown): Int16Array | null {
+  if (typeof data !== "string" || data.length > MAX_MESSAGE) return null;
+  const bytes = Buffer.from(data, "base64");
+  if (bytes.length === 0 || bytes.length % 2 !== 0) return null;
+  const pcm = new Int16Array(bytes.length / 2);
+  for (let i = 0; i < pcm.length; i++) pcm[i] = bytes.readInt16LE(i * 2);
+  return pcm;
 }
 
 /** A size from the client: an integer within the grid limits, else the fallback. */
@@ -179,6 +241,16 @@ export async function serveWeb(options: { root: string; port: number; host?: str
       if (!session || session.connection !== connection) return;
       if (message.type === "input" && typeof message.data === "string") session.app.input(message.data);
       else if (message.type === "resize") session.app.resize(cols, rows);
+      else if (message.type === "audio") {
+        const pcm = pcmOf(message.data);
+        if (pcm) session.audio?.push(pcm);
+      } else if (message.type === "audio-end") {
+        session.audio?.end();
+        session.audio = null;
+      } else if (message.type === "audio-error") {
+        session.audio?.end(new Error(`voice: the browser gave no microphone${typeof message.data === "string" ? ` (${message.data.slice(0, 200)})` : ""}`));
+        session.audio = null;
+      }
     };
     connection.on("close", () => {
       const current = session;
@@ -209,8 +281,19 @@ export async function serveWeb(options: { root: string; port: number; host?: str
           ended?.connection?.send("\x1b[0m\x1b[2J\x1b[H keylang session ended; reload the page for a new one.\r\n");
           ended?.connection?.close(CLOSE_ENDED, "session ended");
         },
+        // The browser's microphone: the page records while `Ctrl+R` does, and sends PCM on this socket.
+        microphone: async () => {
+          const current = sessions.get(id);
+          const socket = current?.connection;
+          if (!current || !socket) return null;
+          current.audio?.end();
+          const queue = new AudioQueue();
+          current.audio = queue;
+          socket.send(control({ type: "mic", on: true }));
+          return { chunks: queue.chunks(), stop: () => current.connection?.send(control({ type: "mic", on: false })) };
+        },
       });
-      found = { app, connection: null, timer: null };
+      found = { app, connection: null, timer: null, audio: null };
       sessions.set(id, found);
     }
     if (found.timer) clearTimeout(found.timer);
@@ -332,7 +415,11 @@ function page(): string {
       state.style.display = "none";
       send({ type: "hello", session, cols: term.cols, rows: term.rows });
     };
-    socket.onmessage = (event) => term.write(event.data);
+    socket.onmessage = (event) => {
+      // A frame starting with NUL is a control message (the microphone), never ANSI.
+      if (typeof event.data === "string" && event.data.charCodeAt(0) === 0) return onControl(JSON.parse(event.data.slice(1)));
+      term.write(event.data);
+    };
     socket.onclose = (event) => {
       if (event.code === ${CLOSE_ENDED}) return;
       // Another tab took the session: wait for a click here, or two tabs would take it back and forth.
@@ -350,6 +437,41 @@ function page(): string {
       setTimeout(connect, delay);
       delay = Math.min(delay * 2, 4000);
     };
+  };
+  // Voice (Ctrl+R): 16 kHz mono PCM from getUserMedia, as base64 s16le in "audio" messages.
+  let mic = null;
+  const onControl = async (message) => {
+    if (message.type !== "mic") return;
+    if (!message.on) {
+      if (mic) {
+        mic.node.disconnect();
+        mic.stream.getTracks().forEach((track) => track.stop());
+        mic.context.close();
+        mic = null;
+      }
+      send({ type: "audio-end" });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+      const context = new AudioContext({ sampleRate: 16000 });
+      const source = context.createMediaStreamSource(stream);
+      const node = context.createScriptProcessor(4096, 1, 1);
+      node.onaudioprocess = (event) => {
+        const samples = event.inputBuffer.getChannelData(0);
+        const pcm = new Int16Array(samples.length);
+        for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+        const bytes = new Uint8Array(pcm.buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        send({ type: "audio", data: btoa(binary) });
+      };
+      source.connect(node);
+      node.connect(context.destination);
+      mic = { stream, context, node };
+    } catch (error) {
+      send({ type: "audio-error", data: String(error) });
+    }
   };
   term.onData((data) => send({ type: "input", data }));
   term.onBinary((data) => send({ type: "input", data }));

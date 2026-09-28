@@ -5,8 +5,7 @@
 // of a superseded generation are never published.
 //
 // The protocol subset is small, so it is spoken directly instead of through
-// `vscode-languageserver`: that keeps the package at two runtime dependencies,
-// both installable without native code.
+// `vscode-languageserver`, which would add a dependency for a few messages.
 
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";

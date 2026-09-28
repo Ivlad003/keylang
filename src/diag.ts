@@ -30,7 +30,12 @@ export type Code =
   /** A `planned` declaration disagrees with the implemented symbol (kind or signature). */
   | "K201"
   /** A `planned` declaration is implemented and can be removed (warning). */
-  | "K202";
+  | "K202"
+  // wiring (M6)
+  /** A cycle among `wire` factories. */
+  | "K301"
+  /** A `wire` factory or dependency that is not a fn or a class. */
+  | "K302";
 
 export type Severity = "error" | "warning";
 

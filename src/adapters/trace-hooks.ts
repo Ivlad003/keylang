@@ -9,11 +9,9 @@ import { pathToFileURL } from "node:url";
 import type { MessagePort } from "node:worker_threads";
 import { loadConfig } from "../config.ts";
 import { functionBodies, type FunctionBody } from "../extract/bodies.ts";
-import { collectMdFiles } from "../files.ts";
-import { sectionNodes, walk } from "../ir.ts";
 import { generateMap } from "../map.ts";
-import { parse } from "../parser.ts";
 import { sha256 } from "../snapshot.ts";
+import { flowSymbols } from "../trace-plan.ts";
 
 export interface TraceHooksData {
   root: string;
@@ -44,7 +42,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
   try {
     const config = loadConfig(data.root);
     const { index } = await generateMap(config);
-    const wanted = flowSymbols(data.root, config.dir, data.flow);
+    const wanted = flowSymbols(data.root, config.dir, data.flow) ?? new Set<string>();
     const byFile = new Map<string, { id: string; line: number; col: number }[]>();
     for (const id of wanted) {
       const node = index.nodes[id];
@@ -87,22 +85,6 @@ function wrap(id: string, body: FunctionBody): { at: number; text: string }[] {
     { at: body.start, text: ` return ${call} {` },
     { at: body.end, text: "}); " },
   ];
-}
-
-function flowSymbols(root: string, dir: string, flow: string): Set<string> {
-  const out = new Set<string>();
-  for (const file of collectMdFiles([join(root, dir)])) {
-    const doc = parse(file, readFileSync(file, "utf8"));
-    for (const section of doc.sections) {
-      if (section.kind !== "flow" || section.name?.value !== flow) continue;
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind === "trigger" || node.kind === "step") for (const ref of node.refs) out.add(ref.target);
-        });
-      }
-    }
-  }
-  return out;
 }
 
 type LoadResult = { format?: string | null; source?: string | ArrayBuffer | Uint8Array | null; shortCircuit?: boolean };

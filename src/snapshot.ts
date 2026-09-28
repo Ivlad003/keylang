@@ -8,10 +8,11 @@ import type { Config } from "./config.ts";
 import { layerName } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
+import { components } from "./scc.ts";
 
-export const SNAPSHOT_SCHEMA = 4;
+export const SNAPSHOT_SCHEMA = 5;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.6";
+export const EXTRACTOR_VERSION = "m1.7";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -97,6 +98,14 @@ export interface SnapshotNode {
   callers?: string[];
   /** A fn that code may call without naming it in a call: read as a value, an accessor, or called implicitly. */
   escapes?: { file: string; line: number; col: number; reason: string };
+  /** fn and type: SHA-256 of the declaration's syntax without comments and layout. */
+  fingerprint?: string;
+  /**
+   * fn and type: the fingerprint of the node with everything it calls, transitively
+   * (a call cycle hashes as one). `complete: false` when the node or something it
+   * reaches has a call keylang did not resolve, or has no fingerprint.
+   */
+  closure?: { fingerprint: string; complete: boolean };
 }
 
 export interface AnalysisSnapshot {
@@ -187,6 +196,7 @@ export function buildSnapshot(
         callers: [],
       };
       if (f.escapes) fn.escapes = f.escapes;
+      if (f.fingerprint !== undefined) fn.fingerprint = sha256(`${f.signature ?? ""}\u0000${f.fingerprint}`);
       nodes[f.id] = fn;
     }
     for (const t of m.types) {
@@ -200,6 +210,7 @@ export function buildSnapshot(
         endCol: t.endCol,
         signature: t.signature,
         exported: t.exported,
+        ...(t.fingerprint !== undefined ? { fingerprint: sha256(t.fingerprint) } : {}),
       };
     }
     for (const c of m.children) visit(c);
@@ -307,6 +318,7 @@ export function buildSnapshot(
     coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: graph.byPath.get(file)?.id ?? null });
   }
   coverage.sort(compareCoverage);
+  closures(ordered, coverage);
 
   return {
     schema: SNAPSHOT_SCHEMA,
@@ -319,6 +331,41 @@ export function buildSnapshot(
     coverage,
     stats: graph.stats,
   };
+}
+
+/**
+ * `closure` of every fn and type, bottom-up over strongly connected
+ * components of the call graph: a component hashes its members' own
+ * fingerprints with the closures it calls outside itself, so a cycle
+ * terminates and every member of it changes together.
+ */
+function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
+  const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
+  const adj = new Map<string, Set<string>>();
+  for (const [id, node] of Object.entries(nodes)) {
+    if (node.kind !== "fn" && node.kind !== "type") continue;
+    adj.set(id, new Set((node.calls ?? []).filter((target) => nodes[target]?.kind === "fn")));
+  }
+  const done = new Map<string, { fingerprint: string; complete: boolean }>();
+  // Tarjan emits a component after every component it reaches.
+  for (const component of components(adj)) {
+    const members = [...component].sort();
+    const inside = new Set(members);
+    const outside = [...new Set(members.flatMap((id) => [...(adj.get(id) ?? [])]).filter((id) => !inside.has(id)))].sort();
+    let complete = members.every((id) => nodes[id]?.fingerprint !== undefined && !holes.has(id));
+    const parts = members.map((id) => `${id}=${nodes[id]?.fingerprint ?? "?"}`);
+    for (const id of outside) {
+      const closure = done.get(id);
+      if (!closure?.complete) complete = false;
+      parts.push(`${id}>${closure?.fingerprint ?? "?"}`);
+    }
+    const closure = { fingerprint: sha256(parts.join("\n")), complete };
+    for (const id of members) {
+      done.set(id, closure);
+      const node = nodes[id];
+      if (node) node.closure = closure;
+    }
+  }
 }
 
 function exportTable(graph: Graph, facts: readonly FileFacts[]): SnapshotExport[] {

@@ -1,11 +1,13 @@
 // `keylang map`: source files → facts → graph → map/*.md + .keylang/index.json.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { excludedSourceFiles, sourceFiles, type Config } from "./config.ts";
+import { excludedSourceFiles, isExcluded, sourceFiles, toPosix, type Config } from "./config.ts";
+import { languageOf } from "./languages.ts";
+import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
-import { extractTs } from "./extract/ts.ts";
+import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderMap } from "./emit.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FactCache } from "./fact-cache.ts";
@@ -30,6 +32,15 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
   const all = sourceFiles(config);
+  // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
+  const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
+    const language = languageOf(rel);
+    return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && !isExcluded(rel, config.exclude);
+  });
+  if (added.length > 0) {
+    all.push(...added);
+    all.sort(compareText);
+  }
   const indexed: { path: string; sha256: string }[] = [];
   const sources = new Map<string, string>();
   for (const p of all) {
@@ -47,7 +58,9 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     const src = sources.get(p);
     if (src === undefined) continue;
     const hash = sha256(src);
-    facts.push(await cache.facts(p, hash, () => extractTs(p, src)));
+    const frontend = frontendFor(p);
+    if (!frontend) continue;
+    facts.push(await cache.facts(p, hash, () => frontend.extract(p, src)));
   }
   if (options.persist) cache.save();
   // An explicitly excluded file inside a layer is a module with unknown contents.

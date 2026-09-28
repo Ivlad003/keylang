@@ -5,8 +5,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix, relative } from "node:path";
 import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
+import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
-export type Language = "typescript" | "javascript";
 
 export interface Config {
   /** Repository root (directory of `keylang.json`). Absolute. */
@@ -21,6 +21,14 @@ export interface Config {
   /** Globs excluded from indexing, in addition to the built-in list. */
   exclude: string[];
   check: { tests?: string; trace?: string };
+  /** `anthropic:<model>` or `openrouter:<model>`; null: no model is configured. */
+  agent: string | null;
+  /** Voice input (`Ctrl+R`): which recognizer, and the OpenRouter model with audio input. */
+  voice: { engine: "local" | "openrouter" | "auto"; model: string | null };
+  /** Ghost text: pause in ms before the agent is asked for a next line (design §7.3). */
+  ghost: { delay: number };
+  /** Language and detail of LLM explanations (`keylang explain <id> --llm`). */
+  explain: { lang: string; detail: "short" | "full" };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
 }
@@ -28,7 +36,7 @@ export interface Config {
 export const CONFIG_FILE = "keylang.json";
 
 /** Directories never indexed. */
-const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "target", "vendor", "__pycache__"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "target", "vendor", "__pycache__", "venv", "site-packages"]);
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
 const DEFAULT_EXCLUDE = [
   "**/*.d.ts",
@@ -42,29 +50,16 @@ const DEFAULT_EXCLUDE = [
   "**/tests/**",
   "**/e2e/**",
   "**/__mocks__/**",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/conftest.py",
   "*.config.*",
   "**/*.config.{js,cjs,mjs,ts}",
 ];
 
-const EXT_LANG: Record<string, Language> = {
-  ".ts": "typescript",
-  ".tsx": "typescript",
-  ".mts": "typescript",
-  ".cts": "typescript",
-  ".js": "javascript",
-  ".jsx": "javascript",
-  ".mjs": "javascript",
-  ".cjs": "javascript",
-};
-
 /** A directory we never descend into: hidden, build output, or a nested repository. */
 function skipDir(abs: string, name: string): boolean {
   return name.startsWith(".") || SKIP_DIRS.has(name) || existsSync(join(abs, ".git"));
-}
-
-export function languageOf(path: string): Language | undefined {
-  const m = /\.[cm]?[jt]sx?$/.exec(path);
-  return m ? EXT_LANG[m[0]] : undefined;
 }
 
 export interface RawConfig {
@@ -74,6 +69,10 @@ export interface RawConfig {
   layers?: Record<string, string | string[]>;
   exclude?: string[];
   check?: { tests?: string; trace?: string };
+  agent?: string;
+  ghost?: { delay?: number };
+  voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
+  explain?: { lang?: string; detail?: "short" | "full" };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -94,12 +93,22 @@ export function loadConfig(root: string): Config {
     root,
     dir: raw.dir ?? "keylang",
     languages,
-    module: raw.module ?? "file",
+    module: raw.module ?? defaultModule(languages),
     layers,
     exclude,
     check: raw.check ?? {},
+    agent: raw.agent ?? null,
+    ghost: { delay: raw.ghost?.delay ?? 400 },
+    voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
+    explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short" },
     guessed,
   };
+}
+
+/** The languages' own module granularity when they agree; a file otherwise. */
+function defaultModule(languages: readonly Language[]): Config["module"] {
+  const modes = new Set(languages.map((name) => LANGUAGES[name].module));
+  return modes.size === 1 ? [...modes][0]! : "file";
 }
 
 /** Parse and validate `keylang.json`. Errors name the file and the field. */
@@ -122,7 +131,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "dir", "languages", "module", "layers", "exclude", "check"]);
+  const known = new Set(["$schema", "dir", "languages", "module", "layers", "exclude", "check", "agent", "explain", "ghost", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.dir !== undefined) {
@@ -135,7 +144,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     const list = value.languages;
     if (!Array.isArray(list)) return fail("languages", "an array", list);
     list.forEach((item, i) => {
-      if (item !== "typescript" && item !== "javascript") fail(`languages[${i}]`, '"typescript" or "javascript"', item);
+      if (!isLanguage(item)) fail(`languages[${i}]`, `one of ${LANGUAGE_NAMES.map((name) => JSON.stringify(name)).join(", ")}`, item);
     });
     raw.languages = list as Language[];
   }
@@ -165,6 +174,37 @@ export function parseConfig(file: string, text: string): RawConfig {
       check[key] = path as string;
     }
     raw.check = check;
+  }
+  if (value.agent !== undefined) {
+    raw.agent = typeof value.agent === "string" && /^(anthropic|openrouter):\S+$/.test(value.agent) ? value.agent : fail("agent", '"anthropic:<model>" or "openrouter:<model>"', value.agent);
+  }
+  if (value.ghost !== undefined) {
+    if (!isObject(value.ghost)) return fail("ghost", "an object", value.ghost);
+    for (const [key, v] of Object.entries(value.ghost)) {
+      if (key !== "delay") throw new Error(`${file}: unknown field \`ghost.${key}\``);
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10000) fail("ghost.delay", "milliseconds from 0 to 10000", v);
+    }
+    raw.ghost = value.ghost as { delay?: number };
+  }
+  if (value.voice !== undefined) {
+    if (!isObject(value.voice)) return fail("voice", "an object", value.voice);
+    const voice: NonNullable<RawConfig["voice"]> = {};
+    for (const [key, v] of Object.entries(value.voice)) {
+      if (key === "engine") voice.engine = v === "local" || v === "openrouter" || v === "auto" ? v : fail("voice.engine", '"local", "openrouter" or "auto"', v);
+      else if (key === "model") voice.model = typeof v === "string" && v !== "" ? v : fail("voice.model", "a model name", v);
+      else throw new Error(`${file}: unknown field \`voice.${key}\``);
+    }
+    raw.voice = voice;
+  }
+  if (value.explain !== undefined) {
+    if (!isObject(value.explain)) return fail("explain", "an object", value.explain);
+    const explain: NonNullable<RawConfig["explain"]> = {};
+    for (const [key, v] of Object.entries(value.explain)) {
+      if (key === "lang") explain.lang = typeof v === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]+)?$/.test(v) ? v : fail("explain.lang", "a language code such as \"uk\"", v);
+      else if (key === "detail") explain.detail = v === "short" || v === "full" ? v : fail("explain.detail", '"short" or "full"', v);
+      else throw new Error(`${file}: unknown field \`explain.${key}\``);
+    }
+    raw.explain = explain;
   }
   return raw;
 }

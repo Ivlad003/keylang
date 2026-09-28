@@ -6,6 +6,65 @@
 2. `keylang check` на згенерованій карті;
 3. негативні проби `bench/inject.ts` (з M1.1 — п'ять, див. нижче); кожна ламає копію в один спосіб, запускає справжній CLI й відновлює файли.
 
+## M7: голос на реальному залізі — 2026-09-28
+
+Ручна перевірка, не CI: Intel i5-1145G7 (8 потоків), Node v24.20.0, `@fugood/whisper.node` 1.1.3 (CPU-варіант), `decibri` 5.7.0.
+
+| Що | Результат |
+|---|---|
+| `transcribeLocal` з `ggml-tiny.en.bin` на `jfk.wav` (11 с, whisper.cpp samples) | дослівний текст, 21 с разом із завантаженням моделі |
+| той самий запис ×3 (33 с: два вікна по 25 с з перекриттям 1 с) | текст трьох повторів без дублювання на шві, 44 с |
+| `defaultMicrophone()` на системному пристрої, 1 с | 10 чанків, 14 725 семплів 16 кГц |
+
+Перевірка знайшла помилку: `initWhisper` приймає `filePath`, а не `model`, тож до виправлення локальне розпізнавання не запускалося взагалі. Тест `voice: local whisper.cpp transcribes a recording` (`tests/explain.test.ts`) відтворює цей сценарій, коли задано `KEYLANG_TEST_WHISPER_MODEL` і `KEYLANG_TEST_WHISPER_WAV`. Точність на українській мові й ID з глосарієм не вимірювалась.
+
+## M5 — 2026-09-28
+
+### Rust: voice-transcriber (тікети m5-m7/01–04)
+
+Коміт `4871f19`, копія з `bench/run.sh` (без `target`), вгадані шари `app` (`build.rs`), `live`, `main`, Node v24.20.0. `map` без кешу фактів займає **0.66 с**: 20 файлів, 653 вузли, 521 fn, 136 залежностей (132 `import` і 4 `reexport` розв'язані, 5 нерозв'язані). Двічі поспіль карта однакова (`map --check` = 0).
+
+| Виклики | Кількість | Що це |
+|---|---:|---|
+| resolved | 614 | `use`-імена, шляхи `crate::`/`super::`, `Self::f`, `self.m()`, `Type::f()` |
+| external | 567 | крейти з `Cargo.toml` (включно з `[target.…dependencies]`), `std`, примітиви (`u64::from`) |
+| dynamic | 1313 | метод через значення (`error.to_string()`, `tx.send()`): без типів цілі немає, §10.7 |
+| unresolved | 23 | метод трейту на `self` (`to_string`), `Default::default` похідних, затінення параметром або локальною змінною |
+
+У покритті `unsupported` — 438 викликів макросів крейту (`ui_message!`, `stream!`, `json!` без шляху): код, який вони розгортають, ребер не дає. Макроси `std`, логування й макроси зі шляхом у чужий крейт (`serde_json::json!`) діркою не є. П'ять нерозв'язаних імпортів — `sys::…` через перейменований шлях `whisper_rs` і `use native` вбудованого модуля.
+
+Перший прогін знайшов шум, який виправлено в тому ж тікеті. `Enum::Variant(x)`, `Some(x)` і tuple-struct рахувалися як виклики: давали 85 зайвих unresolved і 434 зайвих external. Тепер останній сегмент у `CamelCase` є конструктором. `u64::from` ставав нерозв'язаним імпортом: тепер примітиви глобальні. `super::i18n::Message::raw()` шукав `raw` у модулі, а тепер шукає член `Message.raw`.
+
+Негативні проби (`bench/inject.ts` тепер пише Rust для `.rs`): **4/4**.
+
+| Проба | Результат |
+|---|---|
+| `deny-import` | `use crate as …` (корінь `src/lib.rs`) у `src/live/app.rs` → K102 `live.app → main.lib` |
+| `deny-dynamic` | пропущено: динамічного імпорту в Rust немає |
+| `removed-fn` | `build.rs` замінено на `pub const` → K001 `app.build.main` |
+| `manual-map` | `keylang/map/live.md` без маркера → `map` код 1, файл збережено |
+| `shadowed-call` | `fn __keylang_shadow(main: fn()) { main(); }` → без ребра, `shadowed by parameter` |
+
+### Python: health-tracker (тікети m5-m7/05–07)
+
+Коміт `b4e527d`, копія з `bench/run.sh`. `keylang init` без правок конфігу визначає `javascript`, `python`, `typescript` і шари `app` (Python) та `web` (TS). `map` без кешу фактів займає **1.07 с** на весь репозиторій: 74 файли, 610 fn, 450 залежностей. Карта детермінована.
+
+Частка Python: 43 файли (`tests/`, `test_*.py`, `conftest.py` виключено за замовчуванням), 528 fn, 305 розв'язаних імпортів.
+
+| Виклики з Python | Кількість | Що це |
+|---|---:|---|
+| resolved | 1026 | імпортовані імена, `module.f()` через `from pkg import module`, `self.m()`, `Class.m()` |
+| dynamic | 1927 | метод через змінну чи атрибут `self` невідомого типу (`session.execute()`, `self._queue.put()`): синтаксичний recall низький, §10.7 |
+| unresolved | 7 | метод зовнішнього базового класу на `self` (`logging.Formatter.formatTime`), затінення |
+
+У покритті `unsupported` — 95 записів. З них 19 — `getattr`, решта — декоратори поза відомим списком: `@router.get`, `@field_validator`, `@asynccontextmanager`. Такий декоратор може підмінити функцію, тому виклик за іменем не доводить, що виконано її тіло. Для FastAPI-маршрутів це шум, але keylang не знає, що саме робить декоратор. `importlib.import_module` — `dynamic import`. Ім'я верхнього рівня, якого немає в репозиторії (`fastapi`, `telegram`, `json`), — зовнішній пакет: path-аліасів Python не має, а назва пакета в `requirements.txt` відрізняється від імені модуля (`python-telegram-bot` → `telegram`).
+
+Перший прогін знайшов два дефекти. `from pkg import mod` порівнював вузли tree-sitter як об'єкти, тому ім'я модуля потрапляло в список імпортованих і давало зайве ребро до `pkg/__init__.py`. `self._queue.put()` давав unresolved-call замість dynamic, що для 10 викликів хибно стверджувало, ніби ціль шукали й не знайшли.
+
+Негативні проби: **4/4** (`deny-dynamic` для Python пропущено). `deny-import`: `import app.backfill_apple_health as …` у `app/__init__.py` → K102. `removed-fn`: K001 `app.backfill_apple_health._additional_data`. `manual-map`: код 1, файл збережено. `shadowed-call`: без ребра, `shadowed by parameter`.
+
+Не з Python: у `web/` нерозв'язаних імпортів було 28, з них 23 — `react`. TS-резолвер читав лише кореневий `package.json`, а залежності `web/` оголошено у `web/package.json`. Тепер він, як Node, дивиться й `package.json` / `node_modules` між файлом і коренем (2026-09-28). Лишилось 5: `../lib/meal`, `../lib/balance`, `../lib/image` — теку `web/src/lib/` у репозиторії виключено через `.gitignore` (`lib/`), тож файлів справді немає.
+
 ## M4 — 2026-09-27
 
 TUI і `keylang web` (тікети 29–31). Заміри — у справжньому pseudo-terminal (Python `pty`, 120×35), Node v24.20.0, зібраний `dist/` (як з tarball); у дужках — чекаут, де Node виконує `.ts` напряму.

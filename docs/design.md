@@ -512,15 +512,16 @@ VS Code extension — тонкий LSP-клієнт. LSP, CLI та TUI вико�
 | ядро: парсер, резолвер, `check`, `fmt` | зібраний JavaScript у `dist/`; вихідний TS — для розробки | TypeScript-компілятор чи TS-loader на машині користувача |
 | розбір коду | `web-tree-sitter` + `.wasm`-граматики (`tree-sitter-wasms` / `@vscode/tree-sitter-wasm`) | компілятор C, `node-gyp`, CLI tree-sitter |
 | точні посилання | вбудований резолвер імпортів; SCIP-індекс читається, **якщо він є** | `scip-*` (опційно) |
-| git | `es-git` (prebuilt libgit2: diff, blame, status) або `isomorphic-git` (чистий JS, без blame); свіжість знімка базується на хешах файлів і не залежить від git | `git` CLI |
+| маніфести Rust/Python | `smol-toml` (`Cargo.toml`, `pyproject.toml`) | — |
+| git | не потрібен: свіжість знімка базується на хешах файлів; diff для `code-to-spec` — через `git` CLI, **якщо він є** (`--since <ref>`) | `git` як обов'язкова програма |
 | TUI | власний рендерер (`src/tui/screen.ts`); мишка через SGR-послідовності в stdin. Ink 7 + `react` не взято: JSX без кроку збірки й layout без координат клітинок ([ADR 0001](adr/0001-tui-without-ink.md), [ADR 0002](adr/0002-dependencies-by-value-ws.md)) | Ink, React |
 | веб-варіант | `node:http` + `ws` (без власних залежностей, [ADR 0002](adr/0002-dependencies-by-value-ws.md)); сесія TUI пише ANSI у сокет, xterm.js копіюється в `dist/web/` на `prepack` | `ttyd`, PTY, CDN |
 | Markdown | власний рендерер підмножини специфікацій (`src/tui/markdown.ts`) замість `marked` + `marked-terminal` | `glow`, `mdcat` |
 | підсвітка коду | ті самі tree-sitter-запити `highlights.scm` → ANSI | `bat`, `highlight.js`-теми з диска |
 | голос | `@fugood/whisper.node` (prebuilt whisper.cpp) + `decibri` — обидва `optionalDependencies`; модель — на вимогу в кеш | `ffmpeg`, `sox`, `pw-cat`, Python |
-| LLM / OpenRouter | вбудований `fetch` + SSE-парсер (~100 рядків) або `@anthropic-ai/sdk` | `curl`, `claude`/`codex` CLI |
-| LSP | `vscode-languageserver` | — |
-| MCP | `@modelcontextprotocol/sdk` | — |
+| LLM / OpenRouter | `@anthropic-ai/sdk` для Claude; OpenRouter — вбудований `fetch` + `eventsource-parser` (SSE) | `curl`, `claude`/`codex` CLI |
+| LSP | власна реалізація потрібної підмножини протоколу поверх stdio (`src/lsp.ts`) | `vscode-languageserver` |
+| MCP | `@modelcontextprotocol/sdk` + `zod` (схеми інструментів) | — |
 | перехід у код | вбудований переглядач коду в TUI (read-only, з підсвіткою) | `$EDITOR`, `code` — лише якщо є |
 
 **Збірка релізу.** Node не виконує type stripping для `.ts` усередині `node_modules` ([документація](https://nodejs.org/api/typescript.html#type-stripping-in-dependencies)). Тому `prepack` компілює TS у JS із переписуванням відносних `.ts`-імпортів; опублікований CLI-entrypoint завантажує `dist/*.js`. Прямий запуск TS лишається способом локальної розробки. На встановленні пакета компіляція TS не виконується.
@@ -571,7 +572,7 @@ $ keylang               # TUI з M4; keylang web — те саме в брауз
 }
 ```
 
-Файл `keylang.json` (JSON, бо в Node немає вбудованого TOML, а зайва залежність у ядрі не потрібна); до нього додається JSON Schema. `check.tests` — шлях або глоб до звітів тест-раннера: JSON keylang (пише репортер `keylang/node-test-reporter` зі `snapshotId`) або JUnit XML із властивістю `keylang.snapshotId`; `check.trace` — шлях або глоб до JSONL trace (пише адаптер `node --import keylang/trace`). Формати й адаптери — `docs/format.md` §7. Конфігурація валідується на вході й входить у manifest знімка. `module`: `"file"` — файл є модулем, тека з `index.ts` — модуль із підмодулями (дефолт для TS); `"dir"` — тека є модулем (дефолт для Python і Rust-`mod`). Об’єднання в режимі `dir` явне; колізія двох різних сутностей у режимі `file` не є дозволом злити їх мовчки.
+Файл `keylang.json` (JSON, бо в Node немає вбудованого TOML, а зайва залежність у ядрі не потрібна); до нього додається JSON Schema. `check.tests` — шлях або глоб до звітів тест-раннера: JSON keylang (пише репортер `keylang/node-test-reporter` зі `snapshotId`) або JUnit XML із властивістю `keylang.snapshotId`; `check.trace` — шлях або глоб до JSONL trace (пише адаптер `node --import keylang/trace`). Формати й адаптери — `docs/format.md` §7. Конфігурація валідується на вході й входить у manifest знімка. `module`: `"file"` — файл є модулем, тека з `index.ts` — модуль із підмодулями (дефолт для TS); `"dir"` — тека є модулем. Для Python і Rust дефолт — теж `"file"` з файлом-індексом `__init__.py` / `mod.rs`: так ID збігаються з модульними шляхами самих мов (`crate::domain::order` → `domain.order`, `app.services.bmr` → `app.services.bmr`), а тека з індексом — модуль із підмодулями. Об’єднання в режимі `dir` явне; колізія двох різних сутностей у режимі `file` не є дозволом злити їх мовчки.
 
 ## 9. Дорожня карта
 
@@ -585,9 +586,9 @@ $ keylang               # TUI з M4; keylang web — те саме в брауз
 | **M2** — виконано 2026-09-27, крім стейлнесу прози (тікет 21 чекає рішень) ([результати](../bench/results.md)) | static + звіт e2e + мінімальний TS/JS trace без wiring; `planned` | `keylang/flows/check.md` дає окремі ID, static, tests, trace; sibling-кроки не потребують шляху між собою; негативні trace і planned покриті CLI-тестами. Зміна тіла без зміни сигнатури чекає рішення тікета 21 |
 | **M3** — виконано 2026-09-27, крім usability-проби й заморожування v1 (тікет 28, для людини) | `analyze()` і кеш фактів, `keylang explain`, `keylang lsp`, тонкий VS Code-клієнт | діагностики й вердикти LSP збігаються з `check`; hover із доказами, definition у код, дерево documentSymbol, контекстне доповнення (ключові слова, callable після `step`, фільтр `deny`), references, CodeLens, signature help; повторний `check` на storefront ~2.6× швидший із кешем. Запуск клієнта в VS Code описано для ручної перевірки |
 | **M4** — TUI та web — виконано 2026-09-27 ([результати](../bench/results.md), [ADR 0001](adr/0001-tui-without-ink.md)) | редактор, жолоб доказів, hover, навігація, читання Markdown; спільна модель термінала й браузера; MERGE по шматках і детермінований text → spec | сценарій «flow → hover на кроці → код» дає той самий екран у терміналі й у браузері (e2e через `keylang web`); під час холодної переіндексації storefront (898 файлів, ~5 с) відгук на клавішу ~4 мс; `ID ✓` без trace — `◌`. Стейлнес у жолобі чекає тікета 21, `e` (LLM) — M7 |
-| **M5** — інші мови | Rust і Python frontends, резолвери та trace-адаптери з явними можливостями | карта `voice-transcriber` та Python-репозиторію генерується; відомі порушення й неповнота відтворені за тим самим контрактом |
-| **M6** — wiring, опційно | TS codegen після перевірки контракту життєвого циклу; додаткові точки trace | типізована збірка, async init/dispose і цикли мають визначену поведінку; conformance перевіряється незалежно від контейнера |
-| **M7** — LLM, MCP та співавторство | `draft` llm/hybrid, explain, code-to-spec/spec-to-code, MCP, панель контексту й ghost; голос — опційне розширення | `refund` проходить planned → код → окремі докази; provenance збережено; LLM не змінює вердикт; користь ghost/голосу виміряна відносно автодоповнення M3 |
+| **M5** — інші мови — виконано 2026-09-28 ([результати](../bench/results.md)) | Rust і Python frontends, резолвери та trace-адаптери з явними можливостями | карта `voice-transcriber` та Python-репозиторію генерується; відомі порушення й неповнота відтворені за тим самим контрактом |
+| **M6** — wiring, опційно — виконано 2026-09-28 ([ADR 0003](adr/0003-wiring-lifecycle.md), запропоновано) | TS codegen після перевірки контракту життєвого циклу; додаткові точки trace | типізована збірка, async init/dispose і цикли мають визначену поведінку; conformance перевіряється незалежно від контейнера |
+| **M7** — LLM, MCP та співавторство — виконано 2026-09-28, крім виміру користі ghost/голосу з людьми ([format.md](format.md) §7, §12) | `draft` llm/hybrid, explain, code-to-spec/spec-to-code, MCP, панель контексту й ghost; голос — опційне розширення | `refund` проходить planned → код → окремі докази; provenance збережено; LLM не змінює вердикт; користь ghost/голосу виміряна відносно автодоповнення M3 |
 
 M4–M7 — окремі розширення після надійного ядра й стабілізації контракту; одне не мусить блокувати всі інші. Результати бенчмарку доповнюються мінімальними негативними сценаріями, а не лише успішною генерацією карти.
 
@@ -595,7 +596,7 @@ M4–M7 — окремі розширення після надійного яд
 
 ## 10. Відкриті питання
 
-1. ~~Гранулярність модуля за замовчуванням~~ — вирішено (§8): дефолт залежить від мови (TS — файл, Python/Rust — тека/`mod`), `module` перевизначає.
+1. ~~Гранулярність модуля за замовчуванням~~ — вирішено (§8): дефолт — файл із файлом-індексом мови (`index.*`, `mod.rs`, `__init__.py`), тека з індексом — модуль із підмодулями; `module: "dir"` перевизначає (M5, 2026-09-28).
 2. **Мова описів.** Ключові слова англійською, опис вузлів будь-якою мовою. Чи потрібна локалізація ключових слів — ймовірно, ні.
 3. **Lisp/JS-форми.** Чи потрібні окремі представлення, крім демонстрації еквівалентності? Семантичний знімок спільний, але точне відтворення текстового IR — окремий контракт.
 4. **Зберігання трасування.** `snapshotId`, `runId`, `testId` та повнота обов’язкові незалежно від місця зберігання. Термін збереження CI-артефактів і доцільність комітування trace лишаються відкритими.

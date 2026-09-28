@@ -2,12 +2,17 @@
 // A component is cyclic when it has two or more modules, or a self-loop.
 
 export function stronglyConnected(adj: ReadonlyMap<string, ReadonlySet<string>>): string[][] {
+  return components(adj).filter((component) => component.length > 1 || (adj.get(component[0] ?? "")?.has(component[0] ?? "") ?? false));
+}
+
+/** Every strongly connected component, each after all components it reaches (Tarjan's order). */
+export function components(adj: ReadonlyMap<string, ReadonlySet<string>>): string[][] {
   let index = 0;
   const indices = new Map<string, number>();
   const low = new Map<string, number>();
   const stack: string[] = [];
   const onStack = new Set<string>();
-  const components: string[][] = [];
+  const found: string[][] = [];
   const nodes = new Set<string>(adj.keys());
   for (const targets of adj.values()) for (const target of targets) nodes.add(target);
 
@@ -46,13 +51,12 @@ export function stronglyConnected(adj: ReadonlyMap<string, ReadonlySet<string>>)
         component.push(item);
         if (item === node) break;
       }
-      const self = component.length === 1 && (adj.get(component[0] ?? "")?.has(component[0] ?? "") ?? false);
-      if (component.length > 1 || self) components.push(component.sort());
+      found.push(component.sort());
     }
   };
 
   for (const node of [...nodes].sort()) if (!indices.has(node)) visit(node);
-  return components;
+  return found;
 }
 
 /** One cycle inside `members` that passes through `start`. */

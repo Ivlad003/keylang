@@ -1,0 +1,2 @@
+class Db:
+    pass

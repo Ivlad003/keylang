@@ -9,6 +9,7 @@ import { evaluateRules } from "./rules.ts";
 import type { TestCase } from "./test-report.ts";
 import type { TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
+import { checkWiring } from "./wiring.ts";
 
 /** The slice of the analysis snapshot that checks read; `check` does not import `map`. */
 export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & { nodes: FlowInput["nodes"]; edges: FlowInput["edges"] };
@@ -40,7 +41,8 @@ export function assess(
           ...(evidence.static ? { static: evidence.static } : {}),
         });
   const planned = plannedIds(docs);
-  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics].filter(
+  const wiring = checkWiring(docs, snapshot === null ? null : nodeKinds(snapshot.nodes));
+  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics, ...wiring].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
@@ -68,6 +70,16 @@ export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]
     if (diag.message === verdict.message || verdict.message.includes(diag.message)) return true;
     return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.target === verdict.area;
   });
+}
+
+/** Snapshot kinds, with a class told apart: a module node declared in the same file as its parent module. */
+function nodeKinds(nodes: SnapshotInput["nodes"]): Map<string, string> {
+  const kinds = new Map<string, string>();
+  for (const [id, node] of Object.entries(nodes)) {
+    const parent = nodes[id.slice(0, id.lastIndexOf("."))];
+    kinds.set(id, node.kind === "module" && parent?.kind === "module" && parent.file !== null && parent.file === node.file ? "class" : node.kind);
+  }
+  return kinds;
 }
 
 function plannedIds(docs: readonly Document[]): Set<string> {

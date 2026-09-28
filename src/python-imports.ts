@@ -1,0 +1,65 @@
+// Python dotted path → file. `.m.x` starts at the importing file's package
+// (one dot per level), `a.b.x` at a source root (the repository root, then
+// `src/`). A module is `p.py` or the package `p/__init__.py`; the longest
+// prefix of the path that is a module names the file, and when that is the
+// whole path the import binds the module itself. A top-level name found in
+// no source root is a package: Python has no path aliases, so a name that is
+// not in the repository comes from the environment (stdlib or installed).
+
+import { existsSync, statSync } from "node:fs";
+import { join, posix } from "node:path";
+import type { Resolution, SourceResolver } from "./imports.ts";
+
+const ROOTS = ["", "src"];
+
+export class PythonResolver implements SourceResolver {
+  private readonly root: string;
+  private readonly roots: string[];
+  /** The resolver reads no configuration files: edges depend only on the indexed sources. */
+  readonly inputs = new Map<string, string | null>();
+
+  constructor(root: string) {
+    this.root = root;
+    this.roots = ROOTS.filter((dir) => dir === "" || isDir(join(root, dir)));
+  }
+
+  resolve(fromFile: string, spec: string): Resolution {
+    const dots = /^\.*/.exec(spec)![0].length;
+    const segments = spec.slice(dots).split(".").filter((s) => s !== "");
+    if (dots > 0) {
+      let base = posix.dirname(fromFile);
+      for (let i = 1; i < dots; i++) {
+        if (base === ".") return { kind: "unresolved" };
+        base = posix.dirname(base);
+      }
+      return this.longest(base === "." ? "" : base, segments, fromFile) ?? { kind: "unresolved" };
+    }
+    for (const root of this.roots) {
+      const head = posix.join(root, segments[0]!);
+      if (!this.moduleFile(head) && !isDir(join(this.root, head))) continue;
+      return this.longest(root, segments, fromFile) ?? { kind: "unresolved" };
+    }
+    return { kind: "external", pkg: segments[0]! };
+  }
+
+  private longest(base: string, segments: string[], fromFile: string): Resolution | null {
+    for (let k = segments.length; k >= 0; k--) {
+      if (k === 0 && base === "") return null;
+      const file = this.moduleFile(posix.join(base, ...segments.slice(0, k)));
+      if (file === null) continue;
+      if (file === fromFile) return { kind: "local" };
+      return k === segments.length ? { kind: "internal", file, whole: true } : { kind: "internal", file };
+    }
+    return null;
+  }
+
+  /** `a/b.py`, else the package `a/b/__init__.py`; null for neither. */
+  private moduleFile(path: string): string | null {
+    for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (existsSync(join(this.root, file))) return file;
+    return null;
+  }
+}
+
+function isDir(abs: string): boolean {
+  return existsSync(abs) && statSync(abs).isDirectory();
+}

@@ -77,6 +77,8 @@ export interface DeclFact {
   types: TypeRefFact[];
   /** Methods for classes. */
   members: DeclFact[];
+  /** `fingerprint()` of the declaring node: changes with the body and signature, not with comments or layout. */
+  fingerprint?: string;
   /** A getter or setter: property access runs it without a call expression. */
   accessor?: true;
   /** A `static` class member. */

@@ -3,9 +3,129 @@
 # map
 
 - features
+  - module [agent-context](../../src/agent-context.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - explain-node features.explain-node
+    - ir lang.ir
+    - parser lang.parser
+    - type [ContextKind](../../src/agent-context.ts#L15)
+    - type [ContextItem](../../src/agent-context.ts#L17)
+    - type [ContextPack](../../src/agent-context.ts#L30)
+    - type [ContextInput](../../src/agent-context.ts#L37)
+    - fn [estimateTokens](../../src/agent-context.ts#L47) (text: string) → number
+    - fn [contextPack](../../src/agent-context.ts#L53) (analysis: Analysis, input: ContextInput) → ContextPack
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk, features.agent-context.estimateTokens, features.explain-node.summarizeNode, features.explain-node.formatSummary, features.agent-context.sectionText
+    - fn [sectionText](../../src/agent-context.ts#L117) (path: string, analysis: Analysis, heading: number) → string <!-- internal -->
+    - fn [contextText](../../src/agent-context.ts#L126) (pack: ContextPack) → string
+  - module [check-results](../../src/check-results.ts#L1)
+    - assess check.assess
+    - diag base.diag
+    - verdict check.verdict
+    - type [CheckResult](../../src/check-results.ts#L9)
+    - fn [checkResults](../../src/check-results.ts#L27) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
+      - calls check.assess.sameFinding, base.diag.isError
+  - module [draft-llm](../../src/draft-llm.ts#L1)
+    - analyze map.analyze
+    - assess check.assess
+    - config base.config
+    - draft features.draft
+    - ir lang.ir
+    - llm features.llm
+    - parser lang.parser
+    - type [DraftStatus](../../src/draft-llm.ts#L16) = "agree" | "llm-only" | "algo-only" | "conflict"
+    - type [ModelDraft](../../src/draft-llm.ts#L18)
+    - fn [draftFlowWithModel](../../src/draft-llm.ts#L41) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string) → Promise<ModelDraft>
+      - calls features.draft.draftFlow, features.draft-llm.compactMap, features.draft-llm.similarFlows, features.draft-llm.flowText, features.draft-llm.unknownIn, features.draft-llm.reconcile
+    - fn [reconcile](../../src/draft-llm.ts#L74) (analysis: Analysis, text: string, algoSteps: readonly string[], mode: "llm" | "hybrid", agent: string) → { text: string; counts: Record<DraftStatus, number> } <!-- internal -->
+    - fn [flowText](../../src/draft-llm.ts#L101) (answer: string, name: string) → string <!-- internal -->
+    - fn [unknownIn](../../src/draft-llm.ts#L112) (analysis: Analysis, text: string) → string[] <!-- internal -->
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - fn [compactMap](../../src/draft-llm.ts#L130) (analysis: Analysis, steps: readonly string[]) → string <!-- internal -->
+    - fn [similarFlows](../../src/draft-llm.ts#L140) (docs: readonly Document[], steps: readonly string[]) → string[] <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk, features.draft-llm.lineTree
+    - fn [lineTree](../../src/draft-llm.ts#L160) (node: { tokens: { text: string }[]; children: unknown[] }, level: number) → string[] <!-- internal -->
+    - type [RulesDraft](../../src/draft-llm.ts#L166)
+    - fn [draftRulesWithModel](../../src/draft-llm.ts#L180) (analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string) → Promise<RulesDraft>
+      - calls features.draft-llm.judgeRule
+    - fn [judgeRule](../../src/draft-llm.ts#L224) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
+      - calls lang.parser.parse, check.assess.assess
+    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L256) (analysis: Analysis, client: LlmClient, files: readonly string[]) → Promise<Record<string, string[]>>
+      - calls base.config.parseConfig
+  - module [draft](../../src/draft.ts#L1)
+    - snapshot map.snapshot
+    - type [FlowDraft](../../src/draft.ts#L10)
+    - fn [draftFlow](../../src/draft.ts#L18) (snapshot: AnalysisSnapshot, trigger: string, options: { name?: string; depth?: number } = {}) → FlowDraft
+    - fn [withFlow](../../src/draft.ts#L51) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
+    - fn [draftRules](../../src/draft.ts#L70) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
+      - calls features.draft.layerOrder
+    - fn [layerOrder](../../src/draft.ts#L95) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
+    - fn [codeToSpec](../../src/draft.ts#L112) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+      - calls features.draft.draftFlow
+    - type [ChangedLines](../../src/draft.ts#L131)
+    - fn [diffHunks](../../src/draft.ts#L137) (diff: string) → Map<string, [number, number][]>
+    - fn [changedFlows](../../src/draft.ts#L162) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+      - calls features.draft.draftFlow
+  - module [explain-llm](../../src/explain-llm.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - explain-node features.explain-node
+    - llm features.llm
+    - lsp-features features.lsp-features
+    - type [Explanation](../../src/explain-llm.ts#L14)
+    - fn [explanationFile](../../src/explain-llm.ts#L27) (root: string, id: string) → string
+    - fn [readExplanation](../../src/explain-llm.ts#L31) (root: string, id: string) → Explanation | null
+      - calls features.explain-llm.explanationFile
+    - fn [writeExplanation](../../src/explain-llm.ts#L41) (root: string, id: string, e: Explanation) → void
+      - calls features.explain-llm.explanationFile
+    - fn [explainedIds](../../src/explain-llm.ts#L48) (root: string) → string[]
+    - fn [currentBaseline](../../src/explain-llm.ts#L55) (analysis: Analysis, id: string) → string | null
+      - calls features.lsp-features.plannedDecl
+    - fn [isStale](../../src/explain-llm.ts#L61) (analysis: Analysis, id: string, e: Explanation) → boolean
+      - calls features.explain-llm.currentBaseline
+    - fn [unknownIds](../../src/explain-llm.ts#L66) (analysis: Analysis, text: string) → string[]
+      - calls features.lsp-features.plannedDecl
+    - fn [explanationRequest](../../src/explain-llm.ts#L79) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: "short" | "full" }) → LlmRequest
+      - calls features.explain-llm.sourceLines, features.explain-node.formatSummary
+    - fn [sourceLines](../../src/explain-llm.ts#L105) (root: string, file: string, from: number, to: number) → string | null <!-- internal -->
+  - module [explain-node](../../src/explain-node.ts#L1)
+    - analyze map.analyze
+    - ir lang.ir
+    - lsp-features features.lsp-features
+    - type [NodeSummary](../../src/explain-node.ts#L9)
+    - type [ExplainResult](../../src/explain-node.ts#L30)
+    - fn [summarizeNode](../../src/explain-node.ts#L32) (analysis: Analysis, id: string) → ExplainResult
+      - calls features.lsp-features.plannedDecl, lang.ir.sectionNodes, lang.ir.walk, features.lsp-features.flowsUsing
+    - fn [formatSummary](../../src/explain-node.ts#L84) (s: NodeSummary) → string
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L73) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L83) (code: string) → string | null
+  - module [ghost](../../src/ghost.ts#L1)
+    - analyze map.analyze
+    - agent-context features.agent-context
+    - ir lang.ir
+    - llm features.llm
+    - parser lang.parser
+    - fn [ghostSignal](../../src/ghost.ts#L14) (path: string, text: string, line: number, col: number) → boolean
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - fn [ghostSuggestions](../../src/ghost.ts#L27) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null) → Promise<string[]>
+      - calls features.agent-context.contextText, lang.ir.sectionNodes, lang.ir.walk, lang.parser.parse
+  - module [keys](../../src/keys.ts#L1)
+    - node external.node
+    - fn [readKey](../../src/keys.ts#L8) (home: string, name: string) → string | undefined
+  - module [llm](../../src/llm.ts#L1)
+    - Anthropic external.anthropic-ai-sdk
+    - eventsource-parser external.eventsource-parser
+    - node external.node
+    - keys features.keys
+    - type [LlmRequest](../../src/llm.ts#L15)
+    - type [LlmClient](../../src/llm.ts#L21)
+    - type [LlmSetup](../../src/llm.ts#L28) = { client: LlmClient } | { missing: string }
+    - type [Env](../../src/llm.ts#L30) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - fn [llmClient](../../src/llm.ts#L35) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
+      - calls features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
+    - fn [anthropicComplete](../../src/llm.ts#L57) (client: Anthropic, model: string, request: LlmRequest) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L74) (base: string, key: string, model: string, request: LlmRequest) → Promise<string> <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -44,9 +164,9 @@
     - type [Described](../../src/lsp-features.ts#L173) <!-- internal -->
     - fn [describe](../../src/lsp-features.ts#L183) (ws: Workspace, id: string) → Described | null <!-- internal -->
       - calls features.lsp-features.plannedDecl
-    - fn [plannedDecl](../../src/lsp-features.ts#L197) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null <!-- internal -->
+    - fn [plannedDecl](../../src/lsp-features.ts#L197) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
       - calls features.lsp-features.nodesOf
-    - fn [flowsUsing](../../src/lsp-features.ts#L206) (docs: readonly Document[], id: string) → string[] <!-- internal -->
+    - fn [flowsUsing](../../src/lsp-features.ts#L206) (docs: readonly Document[], id: string) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
     - fn [hover](../../src/lsp-features.ts#L221) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
       - calls features.lsp-features.at, features.lsp-features.describe, features.lsp-features.flowsUsing, features.lsp-features.fromSpan
@@ -73,3 +193,96 @@
     - type [CodeLens](../../src/lsp-features.ts#L501) <!-- internal -->
     - fn [codeLenses](../../src/lsp-features.ts#L507) (ws: Workspace, path: string) → CodeLens[]
       - calls features.lsp-features.flowsUsing
+  - module [proposals](../../src/proposals.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - languages base.languages
+    - parser lang.parser
+    - wire-gen map.wire-gen
+    - fn [proposalProblem](../../src/proposals.ts#L23) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
+      - calls lang.parser.parse, map.analyze.within, features.proposals.realPrefix
+    - fn [codeProposalProblem](../../src/proposals.ts#L45) (root: string, path: string) → string | null
+      - calls base.languages.languageOf, map.analyze.within, features.proposals.realPrefix
+    - fn [writeProposal](../../src/proposals.ts#L56) (root: string, path: string, text: string) → string
+    - fn [realPrefix](../../src/proposals.ts#L64) (abs: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L77) (before: string, after: string) → string
+  - module [spec-to-code](../../src/spec-to-code.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - glob base.glob
+    - graph map.graph
+    - ir lang.ir
+    - lsp-features features.lsp-features
+    - rules check.rules
+    - llm features.llm
+    - verdict check.verdict
+    - type [FileCandidate](../../src/spec-to-code.ts#L22)
+    - type [CodeCandidate](../../src/spec-to-code.ts#L29) extends FileCandidate
+    - fn [specToCode](../../src/spec-to-code.ts#L47) (analysis: Analysis, id: string, into?: string, model?: LlmClient) → Promise<CodeCandidate>
+      - calls features.lsp-features.plannedDecl, features.spec-to-code.callersInFlows, check.rules.blocksDependency, features.spec-to-code.newModuleFile, map.graph.placeFile, features.spec-to-code.modelBody, features.spec-to-code.stubFor, map.analyze.analyze, lang.ir.sectionNodes, lang.ir.walk, features.spec-to-code.testCandidates
+    - fn [flowTests](../../src/spec-to-code.ts#L87) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
+    - fn [testCandidates](../../src/spec-to-code.ts#L110) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+      - calls features.spec-to-code.flowTests, base.config.toPosix, features.spec-to-code.modelTest, features.spec-to-code.testStub
+    - fn [testStub](../../src/spec-to-code.ts#L139) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L147) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L164) (analysis: Analysis, id: string) → string[] <!-- internal -->
+      - calls lang.ir.sectionNodes
+    - fn [newModuleFile](../../src/spec-to-code.ts#L181) (config: Config, moduleId: string) → string <!-- internal -->
+      - calls base.glob.globPrefix
+    - fn [stubFor](../../src/spec-to-code.ts#L192) (file: string, name: string, id: string, signature: string | null) → string <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L207) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
+  - module [stats](../../src/stats.ts#L1)
+    - node external.node
+    - type [Tally](../../src/stats.ts#L8)
+    - type [Stats](../../src/stats.ts#L14)
+    - fn [readStats](../../src/stats.ts#L24) (root: string) → Stats
+    - fn [updateStats](../../src/stats.ts#L37) (root: string, change: (stats: Stats) => void) → void
+      - calls features.stats.readStats
+    - fn [statusesIn](../../src/stats.ts#L46) (lines: readonly string[]) → Record<string, number>
+    - fn [addDrafts](../../src/stats.ts#L55) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
+  - module [voice-local](../../src/voice-local.ts#L1)
+    - node external.node
+    - voice features.voice
+    - fugood-whisper_node external.fugood-whisper_node
+    - decibri external.decibri
+    - type [Microphone](../../src/voice-local.ts#L15) = { chunks: AsyncIterable<Int16Array>; stop: () => void } <!-- internal -->
+    - fn [localAvailable](../../src/voice-local.ts#L18) () → Promise<boolean>
+      - calls features.voice-local.optional
+    - fn [defaultMicrophone](../../src/voice-local.ts#L24) () → Promise<Microphone | null>
+      - calls features.voice-local.optional
+    - type [WhisperContext](../../src/voice-local.ts#L43) <!-- internal -->
+    - fn [transcribeLocal](../../src/voice-local.ts#L49) (modelFile: string, pcm: Int16Array, terms: readonly string[]) → Promise<string>
+      - calls features.voice-local.optional, features.voice.windows, features.voice.joinWindows
+    - fn [microphoneAvailable](../../src/voice-local.ts#L67) () → Promise<boolean>
+      - calls features.voice-local.optional
+    - fn [optional](../../src/voice-local.ts#L76) (load: () => unknown) → Promise<unknown> <!-- internal -->
+  - module [voice](../../src/voice.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - ir lang.ir
+    - keys features.keys
+    - parser lang.parser
+    - type [Env](../../src/voice.ts#L23) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [VoiceConfig](../../src/voice.ts#L25)
+    - type [VoiceEngine](../../src/voice.ts#L30)
+    - fn [modelsDir](../../src/voice.ts#L35) (home: string = homedir()) → string
+    - fn [localModel](../../src/voice.ts#L40) (home: string = homedir()) → string | null
+      - calls features.voice.modelsDir
+    - fn [voiceEngine](../../src/voice.ts#L50) (config: VoiceConfig, localAvailable: boolean, env: Env = process.env, home: string = homedir()) → VoiceEngine
+      - calls features.keys.readKey, features.voice.localModel, features.voice.modelsDir
+    - fn [wav](../../src/voice.ts#L63) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Buffer
+    - fn [windows](../../src/voice.ts#L83) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Int16Array[]
+    - fn [joinWindows](../../src/voice.ts#L96) (texts: readonly string[]) → string
+    - fn [glossary](../../src/voice.ts#L122) (analysis: Analysis, path: string, text: string, line: number) → string[]
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - fn [spoken](../../src/voice.ts#L146) (id: string) → string <!-- internal -->
+    - fn [matchId](../../src/voice.ts#L157) (words: string, ids: readonly string[]) → string | null
+      - calls features.voice.spoken
+    - fn [speechToSpec](../../src/voice.ts#L174) (text: string, ids: readonly string[], indent = "") → string
+      - calls features.voice.matchId
+    - fn [transcribeOpenRouter](../../src/voice.ts#L186) (engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]) → Promise<string>
+      - calls features.voice.windows, features.voice.wav, features.voice.joinWindows

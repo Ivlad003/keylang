@@ -6,10 +6,11 @@
 
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { request } from "node:http";
+import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import xterm from "@xterm/headless";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -29,11 +30,12 @@ async function waitFor(check: () => boolean, what: string, timeout = 10000): Pro
   }
 }
 
-async function startWeb(t: { after: (f: () => void | Promise<void>) => void }, cwd: string): Promise<{ url: URL; child: ChildProcessWithoutNullStreams }> {
-  const child = spawn(process.execPath, [bin, "web", "--port", "0"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+async function startWeb(t: { after: (f: () => void | Promise<void>) => void }, cwd: string, env: Record<string, string> = {}): Promise<{ url: URL; child: ChildProcessWithoutNullStreams }> {
+  const child = spawn(process.execPath, [bin, "web", "--port", "0"], { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...env } });
   t.after(async () => {
     if (child.exitCode === null) {
-      child.kill("SIGINT");
+      // SIGTERM stops at once; SIGINT would wait for a second one over unsaved buffers.
+      child.kill("SIGTERM");
       await new Promise((done) => child.once("exit", done));
     }
   });
@@ -56,13 +58,23 @@ class Client {
   closeCode: number | null = null;
   /** Every frame received, as sent. */
   readonly raw: string[] = [];
+  readonly controls: { type: string; on?: boolean }[] = [];
+  onControl: ((message: { type: string; on?: boolean }) => void) | null = null;
 
   constructor(url: URL, session: string, cols: number, rows: number) {
     this.vt = new VirtualTerminal(cols, rows);
     this.socket = new WebSocket(`ws://${url.host}/ws`, ["keylang", `keylang.t.${tokenOf(url)}`]);
     this.socket.onmessage = (event) => {
-      this.raw.push(String(event.data));
-      this.vt.feed(String(event.data));
+      const text = String(event.data);
+      // A NUL-prefixed frame is a control message for the page (the microphone), not ANSI.
+      if (text.charCodeAt(0) === 0) {
+        const message = JSON.parse(text.slice(1)) as { type: string; on?: boolean };
+        this.controls.push(message);
+        this.onControl?.(message);
+        return;
+      }
+      this.raw.push(text);
+      this.vt.feed(text);
     };
     this.socket.onclose = (event) => {
       this.closed = true;
@@ -309,4 +321,48 @@ test("web: --port must be a number", async () => {
   const code = await new Promise<number | null>((done) => child.on("exit", done));
   assert.equal(code, 2);
   assert.match(err, /--port must be a number/);
+});
+
+test("web: Ctrl+R records from the browser's microphone over the same socket; the speech reaches the recognizer", async (t) => {
+  const repo = checkoutRepo(t);
+  const config = join(repo, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), voice: { engine: "openrouter" } }));
+  const heard: { format: string; bytes: number }[] = [];
+  const recognizer = createServer((req, res) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+    req.on("end", () => {
+      const audio = (JSON.parse(data) as { messages: { content: { input_audio?: { data: string; format: string } }[] }[] }).messages[0]!.content[1]!.input_audio!;
+      heard.push({ format: audio.format, bytes: Buffer.from(audio.data, "base64").length });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "емітить order paid" } }] }));
+    });
+  });
+  await new Promise<void>((resolve) => recognizer.listen(0, "127.0.0.1", resolve));
+  t.after(() => recognizer.close());
+  const { url } = await startWeb(t, repo, { OPENROUTER_BASE_URL: `http://127.0.0.1:${(recognizer.address() as AddressInfo).port}`, OPENROUTER_API_KEY: "test" });
+  const client = new Client(url, "session-voice", 120, 30);
+  t.after(() => client.close());
+  await client.opened;
+  await waitFor(() => /✗ 0 /.test(client.vt.lines().at(-1) ?? ""), "the first analysis");
+  // What a page does: on "mic on", stream PCM; on "mic off", end the recording.
+  client.onControl = (message) => {
+    if (message.on) {
+      const pcm = Buffer.alloc(3200 * 2);
+      for (let i = 0; i < 3200; i++) pcm.writeInt16LE(Math.round(Math.sin(i / 5) * 8000), i * 2);
+      client.send({ type: "audio", data: pcm.toString("base64") });
+      client.send({ type: "audio", data: pcm.toString("base64") });
+      client.input("\x12");
+    } else client.send({ type: "audio-end" });
+  };
+  client.input("i");
+  for (let i = 0; i < 6; i++) client.input(KEY.down);
+  client.input(KEY.end);
+  client.input(KEY.enter);
+  client.input("\x12");
+  await waitFor(() => client.vt.text().includes("- emits order.paid"), "the recognized item in the editor");
+  assert.deepEqual(client.controls, [{ type: "mic", on: true }, { type: "mic", on: false }]);
+  assert.equal(heard.length, 1);
+  assert.equal(heard[0]!.format, "wav");
+  assert.equal(heard[0]!.bytes, 44 + 3200 * 2 * 2, "a WAV header and both chunks");
 });

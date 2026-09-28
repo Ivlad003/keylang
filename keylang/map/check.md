@@ -13,12 +13,14 @@
     - test-report check.test-report
     - trace-evidence check.trace-evidence
     - verdict check.verdict
-    - type [SnapshotInput](../../src/assess.ts#L14)
-    - type [Assessment](../../src/assess.ts#L16)
-    - fn [assess](../../src/assess.ts#L22) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode } = { tests: null, traces: null }, ) → Assessment
-      - calls check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, check.assess.plannedIds
-    - fn [sameFinding](../../src/assess.ts#L65) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [plannedIds](../../src/assess.ts#L73) (docs: readonly Document[]) → Set<string> <!-- internal -->
+    - wiring check.wiring
+    - type [SnapshotInput](../../src/assess.ts#L15)
+    - type [Assessment](../../src/assess.ts#L17)
+    - fn [assess](../../src/assess.ts#L23) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode } = { tests: null, traces: null }, ) → Assessment
+      - calls check.resolve.check, check.resolve.refineOpacity, check.rules.evaluateRules, check.flows.evaluateFlows, check.assess.plannedIds, check.wiring.checkWiring, check.assess.nodeKinds
+    - fn [sameFinding](../../src/assess.ts#L67) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [nodeKinds](../../src/assess.ts#L76) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+    - fn [plannedIds](../../src/assess.ts#L85) (docs: readonly Document[]) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
   - module [flows](../../src/flows.ts#L1)
     - node external.node
@@ -125,7 +127,9 @@
     - fn [isRuleNode](../../src/rules.ts#L395) (n: Node) → boolean
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
-    - fn [cycleThrough](../../src/scc.ts#L59) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
+      - calls check.scc.components
+    - fn [components](../../src/scc.ts#L9) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
+    - fn [cycleThrough](../../src/scc.ts#L63) (adj: ReadonlyMap<string, ReadonlySet<string>>, members: ReadonlySet<string>, start: string) → string[]
   - module [test-report](../../src/test-report.ts#L1)
     - node external.node
     - type [TestStatus](../../src/test-report.ts#L8) = "pass" | "fail" | "skip"
@@ -171,3 +175,17 @@
     - type [VerdictKind](../../src/verdict.ts#L3) = "ok" | "fail" | "unverified"
     - type [Verdict](../../src/verdict.ts#L5)
     - fn [formatVerdict](../../src/verdict.ts#L23) (v: Verdict) → string
+  - module [wiring](../../src/wiring.ts#L1)
+    - diag base.diag
+    - ir lang.ir
+    - rules check.rules
+    - span base.span
+    - type [WireDep](../../src/wiring.ts#L11)
+    - type [Wire](../../src/wiring.ts#L23)
+    - type [NodeKinds](../../src/wiring.ts#L31) = ReadonlyMap<string, string> | null
+    - fn [collectWiring](../../src/wiring.ts#L36) (docs: readonly Document[]) → { wires: Wire[]; diagnostics: Diagnostic[] }
+      - calls lang.ir.sectionNodes, base.diag.diagnostic
+    - type [WireOrder](../../src/wiring.ts#L68) = { order: string[] } | { cycle: string[] }
+    - fn [wireOrder](../../src/wiring.ts#L74) (wires: readonly Wire[]) → WireOrder
+    - fn [checkWiring](../../src/wiring.ts#L103) (docs: readonly Document[], kinds: NodeKinds) → Diagnostic[]
+      - calls check.wiring.collectWiring, base.diag.diagnostic, check.wiring.wireOrder, check.rules.blocksDependency

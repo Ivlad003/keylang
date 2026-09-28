@@ -6,7 +6,9 @@ import { posix } from "node:path";
 import { layerName, type Config } from "./config.ts";
 import type { CallFact, DeclFact, FileFacts, HookFact, TypeRefFact } from "./extract/facts.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
-import { ImportResolver } from "./imports.ts";
+import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
+import type { Resolution } from "./imports.ts";
+import { LANGUAGES, languageOf } from "./languages.ts";
 
 export interface Graph {
   layers: Layer[];
@@ -104,6 +106,8 @@ export interface Fn {
   endCol: number;
   signature: string | null;
   exported: boolean;
+  /** Body and signature of every declaration of the fn (overloads joined); absent when an extractor gives none. */
+  fingerprint?: string;
   calls: Call[];
   /** Code may call the function without naming it: it is read as a value, is an accessor, or is called implicitly. */
   escapes?: Escape;
@@ -147,6 +151,7 @@ export interface TypeNode {
   endCol: number;
   signature: string | null;
   exported: boolean;
+  fingerprint?: string;
 }
 
 export interface Stats {
@@ -170,11 +175,13 @@ export const EXTERNAL = "external";
 /** Words that, under a module, start a declaration rather than a dependency alias. */
 const CONTEXT_ALIAS = new Set(["module", "fn", "type", "event", "calls"]);
 
-/** Language and platform globals: calls to them are external, not unresolved. */
-const JS_GLOBALS = new Set(
-  "Array ArrayBuffer BigInt Boolean Buffer DataView Date Error EvalError Float32Array Float64Array Function Int8Array Int16Array Int32Array Intl JSON Map Math Number Object Promise Proxy RangeError Reflect RegExp Set String Symbol SyntaxError TypeError URIError URL URLSearchParams Uint8Array Uint16Array Uint32Array Uint8ClampedArray WeakMap WeakRef WeakSet AbortController TextDecoder TextEncoder Response Request Headers FormData Blob Event EventTarget WebSocket Worker console process globalThis window document navigator crypto performance fetch structuredClone queueMicrotask setTimeout clearTimeout setInterval clearInterval setImmediate clearImmediate requestAnimationFrame cancelAnimationFrame parseInt parseFloat isNaN isFinite encodeURIComponent decodeURIComponent encodeURI decodeURI atob btoa alert require".split(" "),
-);
 export const UNASSIGNED = "unassigned";
+
+const NO_GLOBALS = { values: new Set<string>(), types: new Set<string>() };
+
+function globalsOf(file: string): Frontend["globals"] {
+  return frontendFor(file)?.globals ?? NO_GLOBALS;
+}
 
 interface FileEntry {
   facts: FileFacts;
@@ -182,7 +189,16 @@ interface FileEntry {
 }
 
 export function buildGraph(config: Config, files: FileFacts[]): Graph {
-  const resolver = new ImportResolver(config.root);
+  // Resolvers read their config files up front: the snapshot id depends on them even without imports.
+  const resolvers = new Map<Frontend, SourceResolver>();
+  for (const language of config.languages) {
+    const frontend = frontendOf(language);
+    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root));
+  }
+  const resolverFor = (file: string): SourceResolver | null => {
+    const frontend = frontendFor(file);
+    return frontend === undefined ? null : resolvers.get(frontend) ?? null;
+  };
   const modules = new Map<string, Module>();
   const layers = new Map<string, Layer>();
   const stats: Stats = { files: files.length, modules: 0, fns: 0, types: 0, deps: 0, callsResolved: 0, callsUnresolved: 0, callsExternal: 0, callsDynamic: 0, importsUnresolved: 0, unassignedFiles: 0 };
@@ -268,7 +284,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     importTargets.set(facts.path, locals);
     const aliases = new Map<string, string>();
     for (const imp of facts.imports) {
-      const r = resolver.resolve(facts.path, imp.source);
+      const r: Resolution = resolverFor(facts.path)?.resolve(facts.path, imp.source) ?? { kind: "unresolved" };
       const star = imp.reexport && imp.bindings.length === 0;
       let target: Module | null = null;
       if (r.kind === "internal") {
@@ -288,6 +304,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         }
         // A file that imports itself is a self-loop; two files merged into one module are not.
         if (target === module && r.file !== facts.path) continue;
+      } else if (r.kind === "local") {
+        continue;
       } else if (r.kind === "generated") {
         if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
@@ -308,7 +326,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
       for (const b of imp.bindings) {
         const list = locals.get(b.local) ?? [];
-        list.push({ module: target, imported: b.kind === "named" ? b.imported : null });
+        // A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module.
+        list.push({ module: target, imported: b.kind === "named" && !(r.kind === "internal" && r.whole) ? b.imported : null });
         locals.set(b.local, list);
       }
       const wanted = imp.bindings.find((b) => b.kind === "module")?.local ?? target.name;
@@ -533,7 +552,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             continue;
           }
           // `this.waiting.get()` with `waiting = new Map()`: a method of a global or package class.
-          if (c.receiver && (JS_GLOBALS.has(c.receiver) || (locals.get(c.receiver) ?? []).some((imp) => imp.module?.layer === EXTERNAL))) {
+          if (c.receiver && (globalsOf(facts.path).values.has(c.receiver) || (locals.get(c.receiver) ?? []).some((imp) => imp.module?.layer === EXTERNAL))) {
             stats.callsExternal++;
             continue;
           }
@@ -557,7 +576,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           const target = targets[0] ?? null;
           if (!target) {
             const imported = (locals.get(head) ?? []).find((imp) => imp.module);
-            if (imported?.module?.layer === EXTERNAL || JS_GLOBALS.has(head)) stats.callsExternal++;
+            if (imported?.module?.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
               stats.callsDynamic++;
               gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
@@ -585,7 +604,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (!readIds.has(target)) readIds.set(target, escape);
       }
       if (targets.length > 0 || !c.callee.includes(".")) continue;
-      if (JS_GLOBALS.has(head) || (locals.get(head) ?? []).some((imp) => imp.module?.layer === EXTERNAL)) continue;
+      if (globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module?.layer === EXTERNAL)) continue;
       const member = c.callee.slice(c.callee.lastIndexOf(".") + 1).replace(/^#/, "");
       if (!calledNames.has(member)) calledNames.set(member, escape);
     }
@@ -632,7 +651,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         for (const ref of d.types) {
           const targets = resolveType(ref).filter((id) => id !== source);
           if (targets.length === 0) {
-            if (TYPE_GLOBALS.has(ref.name.split(".")[0] ?? ref.name)) continue;
+            if (globalsOf(facts.path).types.has(ref.name.split(".")[0] ?? ref.name)) continue;
             openEdges.push({ kind: "type", source, target: null, candidates: [], file: facts.path, line: ref.line, col: ref.col, endLine: ref.endLine, endCol: ref.endCol, text: ref.text, resolution: "unresolved" });
             continue;
           }
@@ -688,7 +707,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const orderedLayers = [...layers.values()].filter((l) => l.modules.length > 0);
   const byPath = new Map<string, Module>();
   for (const [path, entry] of byFile) byPath.set(path, entry.module);
-  return { layers: orderedLayers, modules, byPath, stats, warnings, gaps, openEdges, resolverInputs: resolver.inputs };
+  return { layers: orderedLayers, modules, byPath, stats, warnings, gaps, openEdges, resolverInputs: new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs])) };
 }
 
 function holeReason(c: CallFact): string {
@@ -720,10 +739,6 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
   };
   for (const m of modules.values()) visit(m, false);
 }
-
-const TYPE_GLOBALS = new Set(
-  "Promise Array ReadonlyArray Record Partial Required Readonly Pick Omit Exclude Extract NonNullable ReturnType Parameters ConstructorParameters InstanceType Map Set WeakMap WeakSet Date RegExp Error Iterable Iterator AsyncIterable AsyncIterator Generator IterableIterator Buffer Function Object Boolean Number String".split(" "),
-);
 
 function markOpaque(m: Module): void {
   m.members = "opaque";
@@ -779,7 +794,11 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   const existing = names.get(key);
   if (existing !== undefined) {
     // Overloads and duplicate declarations: the implementation's calls join the first node.
-    if (d.kind === "fn" && decls.fns.has(existing)) decls.ids.set(d, existing);
+    if (d.kind === "fn" && decls.fns.has(existing)) {
+      decls.ids.set(d, existing);
+      const fn = decls.fns.get(existing)!;
+      if (fn.fingerprint !== undefined && d.fingerprint !== undefined) fn.fingerprint = `${fn.fingerprint}:${d.fingerprint}`;
+    }
     return;
   }
   if (d.kind === "class") {
@@ -803,12 +822,12 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   names.set(key, id);
   decls.ids.set(d, id);
   if (d.kind === "fn") {
-    const fn: Fn = { id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, calls: [] };
+    const fn: Fn = { id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, calls: [], ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}) };
     module.fns.push(fn);
     decls.fns.set(id, fn);
     stats.fns++;
   } else {
-    module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported });
+    module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}) });
     stats.types++;
   }
 }
@@ -823,7 +842,8 @@ export function placeFile(config: Config, file: string): { layer: string; segmen
       rel = rel.replace(/\.[^./]+$/, "");
       let segments = rel.split("/");
       if (config.module === "dir" && segments.length > 1) segments = segments.slice(0, -1);
-      if (segments.length > 1 && segments.at(-1) === "index") segments = segments.slice(0, -1);
+      const language = languageOf(file);
+      if (segments.length > 1 && language !== undefined && LANGUAGES[language].index.includes(segments.at(-1)!)) segments = segments.slice(0, -1);
       return { layer, segments: segments.map(layerName) };
     }
   }

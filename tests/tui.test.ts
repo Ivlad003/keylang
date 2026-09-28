@@ -5,12 +5,16 @@
 // text → spec, and the pure pieces (input decoding, hunks, widths).
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
-import { App } from "../src/tui/app.ts";
+import { App, type AppOptions } from "../src/tui/app.ts";
 import { InputDecoder } from "../src/tui/input.ts";
 import { applyHunks, diffLines } from "../src/tui/merge.ts";
 import { Grid, renderDiff } from "../src/tui/screen.ts";
@@ -21,11 +25,11 @@ import { stringWidth } from "../src/tui/width.ts";
 import { checkoutRepo, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
-function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis> } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
+function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; microphone?: AppOptions["microphone"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}) });
+  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.microphone ? { microphone: options.microphone } : {}) });
   app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
@@ -216,6 +220,28 @@ test("tui: completion after `step` offers callables and Tab inserts one", async 
   s.send(KEY.ctrlS);
   await s.app.idle();
   assert.match(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), /- step infrastructure\.store\.save\n {2}- step infrastructure\.store\.save\n/);
+});
+
+test("tui: MERGE decisions on model lines are counted in .keylang/stats.json", async (t) => {
+  const root = checkoutRepo(t);
+  const proposed = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal.\n\n- step infrastructure.store.save <!-- keylang:llm model=m status=llm-only -->").replace(
+    "  - step infrastructure.store.save\n",
+    "  - step infrastructure.store.save\n- emits order.created <!-- keylang:algo status=algo-only -->\n",
+  );
+  mkdirSync(join(root, ".keylang/proposals/keylang/flows"), { recursive: true });
+  writeFileSync(join(root, ".keylang/proposals/keylang/flows/checkout.md"), proposed);
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("m");
+  assert.match(s.lines()[1]!, /hunk 1\/2/);
+  s.send("a");
+  s.send("r");
+  s.send("w");
+  await s.app.idle();
+  const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { accepted: number; rejected: number }> };
+  assert.deepEqual(stats.drafts["llm-only"], { proposed: 0, accepted: 1, rejected: 0 });
+  assert.deepEqual(stats.drafts["algo-only"], { proposed: 0, accepted: 0, rejected: 1 });
 });
 
 test("tui: MERGE of two hunks: accept one, reject the other, only the first reaches the disk", async (t) => {
@@ -539,6 +565,74 @@ test("tui: a proposal for a new directory is written; a write that fails is a me
   assert.ok(existsSync(join(root, ".keylang/proposals/keylang/flows/pay/card.md")));
 });
 
+test("tui: spec-to-code proposes code and its test; MERGE writes the accepted hunks to disk, u takes them back", async (t) => {
+  const flow = `${CHECKOUT_FLOW}\n# flow refund\n\n- planned fn application.refund.refund (order: Order) → Order\n- trigger application.refund.refund\n  - test tests/refund.test.ts "refund returns the order"\n`;
+  const root = checkoutRepo(t, { [FLOW_PATH]: flow });
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const cli = spawnSync(process.execPath, [bin, "spec-to-code", "application.refund.refund"], { cwd: root, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stderr, /proposed \.keylang\/proposals\/src\/application\/refund\.ts, \.keylang\/proposals\/tests\/refund\.test\.ts; merge them hunk by hunk/);
+  assert.ok(!existsSync(join(root, "src/application/refund.ts")), "a proposal, not the code");
+
+  const code = join(root, "src/application/refund.ts");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.match(s.lines().at(-1)!, /≈ 2 proposal\(s\): m/);
+  s.send("m");
+  assert.match(s.lines()[1]!, /MERGE src\/application\/refund\.ts · code · hunk 1\/1 · 0 accepted, 0 rejected, 1 pending/);
+  assert.match(s.text(), /\+ export function refund\(order: Order\): Order \{/);
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.match(readFileSync(code, "utf8"), /^export function refund\(order: Order\): Order \{\n {2}throw new Error\("not implemented: application\.refund\.refund"\);\n\}\n$/);
+  assert.ok(!existsSync(join(root, ".keylang/proposals/src/application/refund.ts")), "the proposal is consumed");
+  const verdicts = s.app.state.analysis?.verdicts.filter((v) => v.area === "application.refund.refund").map((v) => `${v.criterion} ${v.verdict}`);
+  assert.ok(verdicts?.includes("ID ok"), `the new code is analyzed: ${verdicts?.join(", ")}`);
+  // No buffer holds the code: `u` restores the disk and the proposal.
+  s.send("u");
+  await s.app.idle();
+  assert.ok(!existsSync(code));
+  assert.ok(existsSync(join(root, ".keylang/proposals/src/application/refund.ts")));
+
+  s.send("m");
+  s.send("a");
+  writeFileSync(code, "// written meanwhile\n");
+  s.send("w");
+  assert.match(s.app.state.message ?? "", /src\/application\/refund\.ts changed on disk during the merge; nothing written/);
+  assert.equal(readFileSync(code, "utf8"), "// written meanwhile\n");
+
+  // Compared again with the file as it is now: the hunk shows what accepting would replace.
+  s.send("m");
+  assert.match(s.lines()[1]!, /MERGE src\/application\/refund\.ts · code/);
+  assert.match(s.text(), /- \/\/ written meanwhile/);
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.match(readFileSync(code, "utf8"), /^export function refund/);
+  s.send("m");
+  assert.match(s.lines()[1]!, /MERGE tests\/refund\.test\.ts · code/);
+  s.send("r");
+  s.send("w");
+  await s.app.idle();
+  assert.ok(!existsSync(join(root, "tests/refund.test.ts")));
+  assert.equal(s.app.state.proposals.length, 0);
+});
+
+test("tui: code proposals outside the sources keylang reads, or for generated wiring, are ignored", async (t) => {
+  const root = checkoutRepo(t);
+  writeFileSync(join(root, "keylang.gen.ts"), "// keylang:generated — не редагувати, `keylang wire`\n");
+  propose(root, "keylang.gen.ts", "export {};\n");
+  propose(root, "node_modules/pkg/index.ts", "export {};\n");
+  propose(root, "notes.txt", "hi\n");
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("m");
+  assert.equal(s.app.state.mode, "view");
+  assert.match(s.app.state.message ?? "", /keylang\.gen\.ts \(a generated file: it is written by `keylang wire` only\); node_modules\/pkg\/index\.ts \(in a directory sources are not read from\); notes\.txt \(not a source file of a language keylang reads\)/);
+});
+
 test("tui: proposals outside the spec directory or for the generated map are ignored", async (t) => {
   const root = checkoutRepo(t);
   writeFileSync(join(root, "README.md"), "# readme\n");
@@ -838,4 +932,244 @@ test("tui: an unreadable proposals directory is no proposals, not a crash", asyn
   await s.app.idle();
   s.send("m");
   assert.match(s.text(), /no proposals under \.keylang\/proposals\//);
+});
+
+test("tui: the context panel (F4) shows what goes to the model; @id adds, x drops, tokens follow; planned is marked", async (t) => {
+  const flow = CHECKOUT_FLOW.replace("- trigger presentation.terminal.checkout", "- planned fn application.purchase.refund () → void\n- trigger presentation.terminal.checkout");
+  const root = checkoutRepo(t, { "keylang/flows/checkout.md": flow });
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The cursor on `- step application.purchase.buy`.
+  for (let i = 0; i < 6; i++) s.send(KEY.down);
+  s.send("\x1bOS");
+  assert.equal(s.app.state.focus, "context");
+  const tokens = (): number => Number(/CONTEXT · (\d+) tok/.exec(s.text())?.[1]);
+  const before = tokens();
+  assert.ok(before > 0, s.text());
+  assert.match(lineOf(s.lines(), "node     application.purchase.buy"), /· \d+/);
+  assert.match(s.text(), /neighbor domain\.order\.create/);
+  assert.match(s.text(), /flow {5}flow checkout/);
+  s.send("@");
+  for (const ch of "presentation.terminal.checkout") s.send(ch);
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /context: presentation\.terminal\.checkout added/);
+  assert.ok(tokens() > before);
+  s.send("@");
+  for (const ch of "application.purchase.nope") s.send(ch);
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /unknown id `application\.purchase\.nope`/);
+  const withAdded = tokens();
+  // The first item is the buffer: x leaves it out.
+  s.send("x");
+  assert.match(s.app.state.message ?? "", /context: keylang\/flows\/checkout\.md left out/);
+  assert.ok(tokens() < withAdded);
+  s.send("\x1bOS");
+  assert.equal(s.app.state.focus, "editor");
+  // On the planned line, the intention is marked in the panel.
+  s.send(KEY.up);
+  s.send(KEY.up);
+  s.send("\x1bOS");
+  assert.match(lineOf(s.lines(), "node     application.purchase.refund"), /◇/);
+});
+
+/** A Messages API stand-in in this process: the TUI runs here too. */
+async function mockModel(t: { after: (f: () => void) => void }, reply: string): Promise<{ prompts: string[] }> {
+  const prompts: string[] = [];
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+    req.on("end", () => {
+      prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY };
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  process.env.ANTHROPIC_API_KEY = "test";
+  t.after(() => {
+    server.close();
+    if (saved.url === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.url;
+    if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved.key;
+  });
+  return { prompts };
+}
+
+test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens the draft as MERGE; nothing is written before w", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+  const model = await mockModel(t, "```markdown\n# flow checkout\n\n- trigger presentation.terminal.checkout\n  - step application.purchase.buy\n    - step domain.order.create\n    - step infrastructure.store.save\n```");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.ctrlSpace);
+  await s.app.idle();
+  assert.equal(model.prompts.length, 1);
+  assert.match(model.prompts[0]!, /Context chosen by the developer:\n\[buffer\] keylang\/flows\/checkout\.md/);
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW, "nothing written before w");
+  for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.match(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), /- step domain\.order\.create <!-- keylang:llm model=anthropic:claude-opus-5 status=agree -->/);
+  const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { proposed: number; accepted: number }> };
+  assert.equal(stats.drafts.agree?.proposed, 4);
+  assert.equal(stats.drafts.agree?.accepted, 4);
+});
+
+test("tui: Ctrl+Space without a model or in a flow without a trigger explains what to do", async (t) => {
+  const noTrigger = checkoutRepo(t, { "keylang/flows/checkout.md": CHECKOUT_FLOW.replace("- trigger presentation.terminal.checkout\n", "") });
+  const bare = session(noTrigger, { cols: 150 });
+  t.after(() => bare.app.close());
+  await bare.app.idle();
+  bare.send(KEY.ctrlSpace);
+  assert.match(bare.app.state.message ?? "", /put the cursor in a `# flow` with a `trigger`/);
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlSpace);
+  await s.app.idle();
+  assert.match(s.app.state.message ?? "", /agent: no model configured: set `agent` in keylang\.json/);
+  assert.equal(s.app.state.mode, "view");
+});
+
+test("tui: ghost text appears only on a new flow item, never with an unknown id; Alt+] cycles, Tab takes it, Esc drops it; counts go to stats", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5", ghost: { delay: 0 } }));
+  const model = await mockModel(t, "- step domain.order.create\n- step domain.order.invented\n- invariant the order is saved once");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  // On a line with content there is no signal: nothing is asked.
+  for (let i = 0; i < 7; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  await s.app.idle();
+  assert.equal(model.prompts.length, 0);
+  // Enter opens a new `  - ` item under the step: the signal.
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(model.prompts.length, 1);
+  const ghost = s.app.state.ghost!;
+  assert.deepEqual(ghost.variants, ["  - step domain.order.create", "  - invariant the order is saved once"], "the invented id is dropped");
+  assert.match(s.text(), /- step domain\.order\.create {2}\(1\/2, Alt\+\]\)/);
+  s.send("\x1b]");
+  assert.equal(s.app.state.ghost!.index, 1);
+  s.send(KEY.tab);
+  assert.equal(s.app.state.ghost, null);
+  assert.equal(s.app.state.buffers.get("keylang/flows/checkout.md")!.text.split("\n")[8], "  - invariant the order is saved once");
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.ok(s.app.state.ghost);
+  s.send("\x1b");
+  await sleep(60);
+  assert.equal(s.app.state.ghost, null);
+  const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { suggestions: Record<string, { proposed: number; accepted: number; rejected: number }> };
+  assert.equal(stats.suggestions.ghost?.proposed, 2);
+  assert.equal(stats.suggestions.ghost?.accepted, 1);
+  assert.equal(stats.suggestions.ghost?.rejected, 1);
+});
+
+/** An OpenRouter stand-in in this process: records the audio requests, answers with the next text. */
+async function mockOpenRouter(t: { after: (f: () => void) => void }, replies: string[]): Promise<{ bodies: { model: string; messages: { content: { type: string; text?: string; input_audio?: { data: string; format: string } }[] }[] }[] }> {
+  const bodies: { model: string; messages: { content: { type: string; text?: string; input_audio?: { data: string; format: string } }[] }[] }[] = [];
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+    req.on("end", () => {
+      bodies.push(JSON.parse(data));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: replies[Math.min(bodies.length - 1, replies.length - 1)] } }] }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const saved = { url: process.env.OPENROUTER_BASE_URL, key: process.env.OPENROUTER_API_KEY };
+  process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  process.env.OPENROUTER_API_KEY = "test";
+  t.after(() => {
+    server.close();
+    for (const [name, value] of [["OPENROUTER_BASE_URL", saved.url], ["OPENROUTER_API_KEY", saved.key]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  return { bodies };
+}
+
+/** Recorded PCM: `seconds` of a 440 Hz tone, in 0.5 s chunks. */
+function recorded(seconds: number): AppOptions["microphone"] {
+  return async () => {
+    const chunks: Int16Array[] = [];
+    for (let s = 0; s < seconds * 2; s++) chunks.push(Int16Array.from({ length: 8000 }, (_, i) => Math.round(Math.sin(((s * 8000 + i) * 2 * Math.PI * 440) / 16000) * 8000)));
+    return { chunks: (async function* () { yield* chunks; })(), stop: () => {} };
+  };
+}
+
+test("tui: Ctrl+R records, OpenRouter recognizes with a glossary; «крок …» on a new item becomes a step with the matched id", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), voice: { engine: "openrouter" } }));
+  const audio = await mockOpenRouter(t, ["крок store save"]);
+  const s = session(root, { cols: 150, microphone: recorded(2) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  for (let i = 0; i < 6; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  s.send("\x12");
+  await s.app.idle();
+  assert.equal(audio.bodies.length, 1);
+  const parts = audio.bodies[0]!.messages[0]!.content;
+  assert.equal(audio.bodies[0]!.model, "openai/gpt-4o-audio-preview");
+  assert.equal(parts[1]!.input_audio!.format, "wav");
+  assert.equal(Buffer.from(parts[1]!.input_audio!.data, "base64").subarray(0, 4).toString(), "RIFF");
+  assert.match(parts[0]!.text!, /Terms that may occur: .*domain\.order\.create/);
+  assert.equal(s.app.state.buffers.get("keylang/flows/checkout.md")!.text.split("\n")[7], "  - step infrastructure.store.save");
+});
+
+test("tui: Ctrl+R without an engine or a microphone explains what to set up; nothing is recorded", async (t) => {
+  const root = checkoutRepo(t);
+  const saved = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  t.after(() => {
+    if (saved !== undefined) process.env.OPENROUTER_API_KEY = saved;
+  });
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("\x12");
+  assert.match(s.app.state.message ?? "", /press i to edit, then Ctrl\+R/);
+  s.send("i");
+  s.send("\x12");
+  await s.app.idle();
+  assert.match(s.app.state.message ?? "", /install the optional @fugood\/whisper\.node .* or set OPENROUTER_API_KEY/);
+});
+
+test("tui: a recording longer than 25 s goes in overlapping windows; the words the overlap repeats are joined once", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), voice: { engine: "openrouter", model: "some/audio-model" } }));
+  const audio = await mockOpenRouter(t, ["paid by card and", "card and then shipped"]);
+  const s = session(root, { cols: 150, microphone: recorded(30) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(" ");
+  s.send("\x12");
+  await s.app.idle();
+  assert.equal(audio.bodies.length, 2, "25 s windows with 1 s overlap: two for 30 s");
+  assert.equal(audio.bodies[0]!.model, "some/audio-model");
+  assert.equal(s.app.state.buffers.get("keylang/flows/checkout.md")!.text.split("\n")[2], "Checkout from the terminal. paid by card and then shipped");
 });
