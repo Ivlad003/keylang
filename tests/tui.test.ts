@@ -1027,6 +1027,21 @@ test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens t
   assert.equal(stats.drafts.agree?.accepted, 4);
 });
 
+test("tui: Ctrl+Space says which lines of the model's draft it dropped", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+  await mockModel(t, "# flow checkout\n\n- trigger presentation.terminal.checkout\n  - step application.purchase.buy\n  - invariant paid once\n    - step domain.order.create\n");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.ctrlSpace);
+  await s.app.idle();
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.match(s.app.state.message ?? "", /^agent: dropped from the model's draft: - step domain\.order\.create: /);
+});
+
 test("tui: Ctrl+Space without a model or in a flow without a trigger explains what to do", async (t) => {
   const noTrigger = checkoutRepo(t, { "keylang/flows/checkout.md": CHECKOUT_FLOW.replace("- trigger presentation.terminal.checkout\n", "") });
   const bare = session(noTrigger, { cols: 150 });

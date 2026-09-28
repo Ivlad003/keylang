@@ -329,14 +329,18 @@ export class Assist {
         // The count is lost, not the draft.
       }
       if (this.host.closed) return;
-      const unknown = draft.unknown.length > 0 ? `still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")}` : "";
+      // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
+      const notes = [
+        ...(draft.unknown.length > 0 ? [`still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")}`] : []),
+        ...(draft.dropped.length > 0 ? [`dropped from the model's draft: ${draft.dropped.join("; ")}`] : []),
+      ].join("; ");
       // The person moved on (another file, an edit, a merge): the draft waits as a proposal.
       if (!this.at(spot) || this.state.merge) {
-        this.state.message = `agent: the draft of flow ${name} is a proposal for ${buffer.path}: m merges it${unknown ? `; ${unknown}` : ""}`;
+        this.state.message = `agent: the draft of flow ${name} is a proposal for ${buffer.path}: m merges it${notes ? `; ${notes}` : ""}`;
         return;
       }
       this.host.openProposal(buffer.path);
-      if (this.state.mode === "merge" && unknown) this.state.message = `agent: ${unknown}`;
+      if (this.state.mode === "merge" && notes) this.state.message = `agent: ${notes}`;
     })().catch((error: unknown) => {
       this.state.message = `agent: ${errorText(error)}`;
     });
