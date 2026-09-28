@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import { constructorName } from "./languages.ts";
 import { renderTokens } from "./parser.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
@@ -251,6 +252,8 @@ interface CallGraph {
   replaced: Map<string, string>;
   /** Fns in a file that does not parse: the module does not load, and its code is not what keylang read. */
   unreadable: Map<string, string>;
+  /** What a call of `id` runs: the class constructor for a class, else `id` itself. */
+  callable: (id: string) => string;
 }
 
 function callGraph(input: FlowInput): CallGraph {
@@ -262,8 +265,9 @@ function callGraph(input: FlowInput): CallGraph {
     list.push(item);
     map.set(key, list);
   };
-  // `new X()` names the class; what runs is its constructor.
-  const callable = (id: string): string => (input.nodes[id]?.kind !== "fn" && input.nodes[`${id}.constructor`]?.kind === "fn" ? `${id}.constructor` : id);
+  // `new X()` (Python `X()`) names the class; what runs is its constructor (`__init__`).
+  const constructorOf = (id: string): string => `${id}.${constructorName(input.nodes[id]?.file) ?? "constructor"}`;
+  const callable = (id: string): string => (input.nodes[id]?.kind !== "fn" && input.nodes[constructorOf(id)]?.kind === "fn" ? constructorOf(id) : id);
   for (const edge of input.edges) {
     if (edge.kind !== "call") continue;
     if (edge.resolution === "resolved" && edge.target) {
@@ -280,7 +284,7 @@ function callGraph(input: FlowInput): CallGraph {
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external")?.[0] ?? null;
-  return { resolved, open, callers, byName, unsupported, opaque, ...doubtfulBodies(input) };
+  return { resolved, open, callers, byName, unsupported, opaque, callable, ...doubtfulBodies(input) };
 }
 
 /**
@@ -490,7 +494,7 @@ function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, targe
     }
     for (const edge of graph.open.get(id) ?? []) {
       const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, lastSegment(edge.text ?? ""));
-      for (const other of names) next.push({ to: input.nodes[other]?.kind === "fn" ? other : `${other}.constructor`, edge });
+      for (const other of names) next.push({ to: input.nodes[other]?.kind === "fn" ? other : graph.callable(other), edge });
     }
     for (const item of next) {
       if (first.has(item.to)) continue;

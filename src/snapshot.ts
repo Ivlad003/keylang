@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
+import { constructorName } from "./languages.ts";
 import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 6;
@@ -95,7 +96,7 @@ export interface CoverageItem {
 
 export interface SnapshotNode {
   kind: "layer" | "module" | "fn" | "type";
-  /** A module node that is a class declared in its parent module: its children are members, `<id>.constructor` its constructor. */
+  /** A module node that is a class declared in its parent module: its children are members, `<id>.constructor` (Python `<id>.__init__`) its constructor. */
   class?: true;
   layer: string;
   file: string | null;
@@ -364,8 +365,12 @@ export function buildSnapshot(
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
   const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
-  // `new C()` names the class; what runs is its constructor.
-  const runs = (target: string): string | null => (nodes[target]?.kind === "fn" ? target : nodes[target]?.class && nodes[`${target}.constructor`]?.kind === "fn" ? `${target}.constructor` : null);
+  // `new C()` (Python `C()`) names the class; what runs is its constructor, named by the class's language.
+  const runs = (target: string): string | null => {
+    if (nodes[target]?.kind === "fn") return target;
+    const constructor = `${target}.${constructorName(nodes[target]?.file) ?? "constructor"}`;
+    return nodes[target]?.class && nodes[constructor]?.kind === "fn" ? constructor : null;
+  };
   const adj = new Map<string, Set<string>>();
   for (const [id, node] of Object.entries(nodes)) {
     if (node.kind !== "fn" && node.kind !== "type") continue;

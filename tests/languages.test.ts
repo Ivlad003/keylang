@@ -24,10 +24,22 @@ function copy(t: TestContext, fixture: string): string {
   return dir;
 }
 
+/** A repository of `files` in a temporary directory. */
+function repo(t: TestContext, files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-lang-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [file, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), text);
+  }
+  return dir;
+}
+
 interface Snapshot {
-  nodes: Record<string, { kind: string }>;
+  nodes: Record<string, { kind: string; escapes?: { reason: string } }>;
   edges: { kind: string; source: string; target: string | null; resolution: string; text: string }[];
-  coverage: { kind: string; file: string; line: number; reason: string }[];
+  coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
+  exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
 }
 
 function snapshot(dir: string): Snapshot {
@@ -134,7 +146,7 @@ test("python: init detects the language; map follows relative and absolute impor
   assert.ok(edge("call", "app.main.main", "infra.store.save"));
   // A method through a variable of unknown type, a dynamic import and a replacing decorator are holes, not edges.
   assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason.includes("order.total")));
-  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason.includes("this.queue.put")), "a method of an attribute of `self`");
+  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `self.queue.put`"), "a method of an attribute of `self`");
   assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "dynamic import"));
   assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "decorator `route` may replace `handler`"));
   assert.equal(keylang(dir, ["map", "--check"]).status, 0);
@@ -215,4 +227,301 @@ test("rust: explicit spans give trace evidence; a step without a span is unobser
   assert.match(o.stdout, /flows\.md:5:5: trace ok domain\.order\.place/);
   assert.match(o.stdout, /flows\.md:6:7: trace unverified domain\.order\.Order\.new: `domain\.order\.Order\.new` is not instrumented/);
   assert.match(o.stdout, /flows\.md:7:3: trace fail domain\.order\.refund: missing step in shop > @flow save/);
+});
+
+const cargoToml = '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n';
+
+/** Verdicts of `check --format json` as `<criterion> <verdict> <area>: <reason>` lines. */
+function verdicts(dir: string, args: string[] = []): { status: number | null; lines: string[] } {
+  const o = keylang(dir, ["check", "--format", "json", ...args]);
+  const results = (JSON.parse(o.stdout) as { results: { criterion: string; evidence: string }[] }).results;
+  return { status: o.status, lines: results.map((r) => `${r.criterion} ${r.evidence}`) };
+}
+
+test("rust: a call keylang cannot name is a hole, so the step is unverified, never a confirmed absence", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/**"] } }),
+    "src/db.rs": "pub struct Db;\nimpl Db {\n    pub fn save(&self) {}\n    pub fn flush(&self) {}\n    pub fn add(&self) {}\n}\n\nimpl Drop for Db {\n    fn drop(&mut self) {}\n}\n",
+    "src/main.rs":
+      "mod db;\nuse crate::db::Db;\n\npub struct Order { db: Db, items: Vec<Db> }\n\nimpl Order {\n    pub fn new() -> Self { Order { db: Db, items: vec![] } }\n    pub fn total(&self) -> u32 { 1 }\n    pub fn run(&self) {\n        self.db.save();\n        self.items[0].flush();\n    }\n    pub fn boxed(self: Box<Self>) {\n        self.run();\n    }\n}\n\nfn helper() {\n    Order::new().total();\n}\n\nfn main() {\n    helper();\n    use_it(later);\n    Box::new(Order::new()).boxed();\n}\n\nfn later() {}\nfn use_it(f: fn()) { f(); }\n",
+    "keylang/flows.md":
+      "# flow a\n\n- trigger app.main.Order.run\n  - step app.db.Db.save\n  - step app.db.Db.flush\n\n# flow b\n\n- trigger app.main.main\n  - step app.main.helper\n    - step app.main.Order.total\n  - step app.main.later\n\n# flow c\n\n- trigger app.main.Order.boxed\n  - step app.main.Order.run\n",
+  });
+  const { lines } = verdicts(dir);
+  assert.ok(!lines.some((line) => line.startsWith("static fail")), lines.join("\n"));
+  assert.ok(lines.includes("static unverified app.db.Db.save: no resolved path from app.main.Order.run; call through a local value `self.db.save` at src/main.rs:10:9 may reach it (and 1 more unresolved call in reachable code)"), lines.join("\n"));
+  assert.ok(lines.some((line) => line.startsWith("static unverified app.db.Db.flush: ") && line.includes("`self.items[0].flush`")), lines.join("\n"));
+  assert.ok(lines.includes("static unverified app.main.Order.total: no resolved path from app.main.helper; call through a local value `Order::new().total` at src/main.rs:19:5 may reach it"), lines.join("\n"));
+  // A fn passed as a value may be called by whoever holds it.
+  assert.ok(lines.some((line) => line.startsWith("static unverified app.main.later: ") && line.includes("`later` is read as a value at src/main.rs:24:12")), lines.join("\n"));
+  // `self: Box<Self>` is a receiver: `self.run()` is the method.
+  assert.ok(lines.includes("static ok app.main.Order.run: called from app.main.Order.boxed"), lines.join("\n"));
+  // The end of a scope calls `Drop::drop`; an inherent `add` is called only by name.
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  assert.equal(index.nodes["app.db.Db.drop"]?.escapes?.reason, "`drop` is called implicitly");
+  assert.equal(index.nodes["app.db.Db.add"]?.escapes, undefined);
+});
+
+test("python: a call keylang cannot name is a hole; `X()` runs `__init__`, `self.m()` a static method, and a nested class is indexed", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] } }),
+    "app/__init__.py": "",
+    "app/main.py":
+      "class Base:\n    def m(self):\n        pass\n\n\nclass Order(Base):\n    def __init__(self):\n        self.x = 1\n\n    def m(self):\n        super().m()\n\n    def total(self):\n        return 1\n\n    @staticmethod\n    def util():\n        pass\n\n    def run(self):\n        self.util()\n\n    @dataclass\n    class Line:\n        def price(self):\n            pass\n\n\ndef make():\n    return Order()\n\n\ndef later(cb):\n    cb()\n\n\ndef hit():\n    pass\n\n\ndef start():\n    make().total()\n    items = [Order()]\n    items[0].run()\n    (hit)()\n    later(make)\n",
+    "keylang/flows.md":
+      "# flow a\n\n- trigger app.main.start\n  - step app.main.make\n    - step app.main.Order.__init__\n  - step app.main.Order.total\n  - step app.main.Order.run\n    - step app.main.Order.util\n  - step app.main.hit\n  - step app.main.Order.Line.price\n",
+  });
+  const { lines } = verdicts(dir);
+  assert.ok(lines.includes("static ok app.main.Order.__init__: called from app.main.make"), lines.join("\n"));
+  assert.ok(lines.includes("static unverified app.main.Order.total: no resolved path from app.main.start; call through a local value `make().total` at app/main.py:42:5 may reach it (and 2 more unresolved calls in reachable code)"), lines.join("\n"));
+  assert.ok(lines.some((line) => line.startsWith("static unverified app.main.Order.run: ") && line.includes("`items[0].run`")), lines.join("\n"));
+  assert.ok(lines.includes("static ok app.main.Order.util: called from app.main.Order.run"), lines.join("\n"));
+  assert.ok(lines.includes("static ok app.main.hit: called from app.main.start"), lines.join("\n"));
+  // The member of a nested class exists: no K001, and nothing calls it.
+  assert.ok(lines.includes("ID ok app.main.Order.Line.price: exact"), lines.join("\n"));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `super().m`"));
+  assert.equal(index.nodes["app.main.make"]?.escapes?.reason, "`make` is read as a value");
+});
+
+test("an import inside a function body is a dependency: `deny` fails on it (Python and Rust)", (t) => {
+  const py = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"], infra: ["infra/**"] } }),
+    "infra/store.py": "def save():\n    pass\n",
+    "app/main.py": "def start():\n    from infra.store import save\n    save()\n",
+    "keylang/rules.md": "# rules\n\n- deny app infra\n",
+  });
+  const p = keylang(py, ["check", "--strict"]);
+  assert.equal(p.status, 1, p.stdout);
+  assert.match(p.stdout, /app\/main\.py:2:5: K102 divergence: `app\.main` depends on `infra\.store`, which is denied by `deny app infra`/);
+  const rs = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/*.rs"], infra: ["src/infra/**"] } }),
+    "src/main.rs": "mod infra;\n\nfn main() {\n    use crate::infra::store;\n    store::save();\n}\n",
+    "src/infra/mod.rs": "pub mod store;\n",
+    "src/infra/store.rs": "pub fn save() {}\n",
+    "keylang/rules.md": "# rules\n\n- deny app infra\n",
+  });
+  const r = keylang(rs, ["check", "--strict"]);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /src\/main\.rs:4:5: K102 divergence: `app\.main` depends on `infra\.store`/);
+});
+
+test("python: a decorator that may replace a fn is a hole of that fn, not of the module's dependencies", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"], infra: ["infra/**"] } }),
+    "infra/store.py": "def save():\n    pass\n",
+    "app/web.py": 'from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get("/orders")\ndef handler():\n    pass\n\n\nclass Ctx:\n    def __exit__(self, *args):\n        pass\n',
+    "keylang/rules.md": "# rules\n\n- deny app infra\n",
+  });
+  const { status, lines } = verdicts(dir, ["--strict"]);
+  assert.equal(status, 0, lines.join("\n"));
+  assert.ok(lines.includes("deny app infra convergence: no edge from `app` to `infra` and no dependency hole in the area"), lines.join("\n"));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "decorator `router.get` may replace `handler`" && c.source === "app.web.handler"), JSON.stringify(index.coverage));
+  // A framework holds the decorated fn and calls it; a dunder method runs through syntax.
+  assert.equal(index.nodes["app.web.handler"]?.escapes?.reason, "`handler` is read as a value");
+  assert.equal(index.nodes["app.web.Ctx.__exit__"]?.escapes?.reason, "`__exit__` is called implicitly");
+});
+
+test("rust: an attribute macro that may replace a fn is a hole of that fn, not of the module's dependencies", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/*.rs"], infra: ["src/infra/**"] } }),
+    "src/main.rs": 'mod infra;\n\n#[tokio::main]\nasync fn main() {}\n\n#[get("/orders")]\n#[inline]\nasync fn orders() {}\n',
+    "src/infra/mod.rs": "pub fn save() {}\n",
+    "keylang/rules.md": "# rules\n\n- deny app infra\n",
+  });
+  const { status, lines } = verdicts(dir, ["--strict"]);
+  assert.equal(status, 0, lines.join("\n"));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  const holes = index.coverage.filter((c) => c.kind === "unsupported").map((c) => `${c.reason} (${c.source})`);
+  assert.deepEqual(holes, ["attribute `get` may replace `orders` (app.main.orders)"]);
+  assert.equal(index.nodes["app.main.orders"]?.escapes?.reason, "`orders` is read as a value");
+  assert.equal(index.nodes["app.main.main"]?.escapes, undefined, "`#[tokio::main]` runs the body");
+});
+
+test("rust: the library and each binary are separate crate roots; `crate::`, `self::` and paths through a `use` resolve in the right tree", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": `${cargoToml}\n[workspace]\nmembers = ["engine"]\n\n[dependencies]\nengine = { path = "engine" }\n`,
+    "engine/Cargo.toml": '[package]\nname = "engine"\nversion = "0.1.0"\n\n[lib]\npath = "lib/core.rs"\n',
+    "engine/lib/core.rs": "pub mod util;\n\npub fn start() {\n    util::helper();\n}\n",
+    "engine/lib/util.rs": "pub fn helper() {}\n",
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/*.rs", "src/bin/**"], domain: ["src/domain/**"], engine: ["engine/**"] } }),
+    "src/lib.rs":
+      "pub mod domain;\n\npub fn helper() {}\n\n#[cfg(all(test, unix))]\nmod tests {\n    use super::*;\n}\n\n#[cfg(test)]\n// a comment between the attribute and the item\nfn only_in_tests() {}\n\n#[test]\nfn a_test() {}\n",
+    "src/main.rs": "mod cli;\n\nfn helper() {\n    run();\n}\n\nfn run() {}\n\nfn main() {\n    crate::helper();\n    self::run();\n    cli::go();\n    engine::start();\n}\n",
+    "src/cli.rs": "pub fn go() {\n    crate::run();\n}\n",
+    "src/bin/tool.rs": "fn helper() {}\n\nfn main() {\n    crate::helper();\n    shop::helper();\n}\n",
+    "src/domain/mod.rs": "pub mod order;\n",
+    "src/domain/order.rs":
+      "pub struct Order;\n\nimpl Order {\n    pub fn new() -> Self { Order }\n}\n\npub fn f() {}\n\npub mod inner {\n    pub fn f() {}\n}\n\npub fn via_module() {\n    use crate::domain::order;\n    order::Order::new();\n    crate::domain::order::inner::f();\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  const calls = index.edges.filter((e) => e.kind === "call").map((e) => `${e.source} -> ${e.target ?? `(${e.resolution})`}`);
+  for (const call of [
+    "app.main.main -> app.main.helper",
+    "app.main.main -> app.main.run",
+    "app.cli.go -> app.main.run",
+    "app.tool.main -> app.tool.helper",
+    "app.tool.main -> app.lib.helper",
+    "app.main.main -> engine.lib.core.start",
+    "engine.lib.core.start -> engine.lib.util.helper",
+    "domain.order.via_module -> domain.order.Order.new",
+  ]) {
+    assert.ok(calls.includes(call), `${call}\n${calls.join("\n")}`);
+  }
+  // `main.rs` is not the library: `crate::helper` there is its own; `inner::f` is not the top-level `f`.
+  assert.ok(!calls.includes("app.main.main -> app.lib.helper"), calls.join("\n"));
+  assert.ok(!calls.includes("domain.order.via_module -> domain.order.f"), calls.join("\n"));
+  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `crate::domain::order::inner::f`"), JSON.stringify(index.coverage));
+  for (const id of ["app.lib.only_in_tests", "app.lib.a_test"]) assert.equal(index.nodes[id], undefined, id);
+  assert.ok(!index.coverage.some((c) => c.reason.includes("`tests`")), "`#[cfg(all(test, …))]` is test code");
+});
+
+test("rust and python: a re-exported name has form `reexport`, its symbol and its source module", (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust", "python"], layers: { app: ["src/*.rs"], domain: ["src/domain/**"], py: ["shop/**"] } }),
+    "src/lib.rs": "pub mod domain;\n\npub use crate::domain::order::place as run;\n",
+    "src/domain/mod.rs": "pub mod order;\n",
+    "src/domain/order.rs": "pub fn place() {}\n",
+    "shop/__init__.py": "",
+    "shop/domain/__init__.py": "from .order import place\nfrom . import _private\n",
+    "shop/domain/order.py": "def place():\n    pass\n\n\ndef other():\n    pass\n",
+    "shop/domain/_private.py": "",
+    "shop/app.py": "import shop.domain.order\nfrom shop.domain import place\n\n\ndef run():\n    place()\n    shop.domain.order.other()\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = snapshot(dir);
+  assert.deepEqual(index.exports.find((e) => e.module === "app.lib" && e.name === "run"), { module: "app.lib", name: "run", symbol: "domain.order.place", kind: "fn", form: "reexport", from: "domain.order" });
+  assert.deepEqual(index.exports.find((e) => e.module === "py.domain" && e.name === "place"), { module: "py.domain", name: "place", symbol: "py.domain.order.place", kind: "fn", form: "reexport", from: "py.domain.order" });
+  assert.ok(!index.exports.some((e) => e.module === "py.domain" && e.name === "_private"), "a private name is not re-exported");
+  const calls = index.edges.filter((e) => e.kind === "call" && e.source === "py.app.run").map((e) => `${e.target} ${e.text}`);
+  assert.deepEqual(calls.sort(), ["py.domain.order.other shop.domain.order.other", "py.domain.order.place place"]);
+});
+
+test("python: the trace adapter records a function by file, name and first line; generators and coroutines are not instrumented; `sys.exit(3)` is incomplete", { skip: python3 ? false : "python3 is not installed" }, (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] }, exclude: ["run.py"], check: { trace: ".keylang/trace/*.jsonl" } }),
+    "app/__init__.py": "",
+    "app/main.py": "class A:\n    def save(self):\n        pass\n\n\nclass B:\n    def save(self):\n        pass\n\n\ndef gen():\n    yield 1\n\n\nasync def fetch():\n    pass\n\n\ndef start():\n    A().save()\n    gen()\n\n\ndef stop():\n    import sys\n    sys.exit(3)\n",
+    "run.py": "import sys\nfrom app.main import start, stop\n\nstart()\nif len(sys.argv) > 1:\n    stop()\n",
+    "keylang/flows.md": "# flow a\n\n- trigger app.main.start\n  - step app.main.B.save\n  - step app.main.gen\n  - step app.main.fetch\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "a"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const trace = (...args: string[]): number | null =>
+    spawnSync("python3", [join(root, "adapters/python/keylang_trace.py"), "run.py", ...args], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow a" },
+    }).status;
+  assert.equal(trace(), 0);
+  const o = keylang(dir, ["check"]);
+  // `A.save` ran; its code is not the planned `B.save` declared further down.
+  assert.match(o.stdout, /flows\.md:4:3: trace fail app\.main\.B\.save: missing step in run\.py > @flow a/);
+  // A generator that was never iterated and a coroutine that was never awaited are not observable.
+  assert.match(o.stdout, /flows\.md:5:3: trace unverified app\.main\.gen: `app\.main\.gen` is not instrumented/);
+  assert.match(o.stdout, /flows\.md:6:3: trace unverified app\.main\.fetch: `app\.main\.fetch` is not instrumented/);
+  rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
+  assert.equal(trace("exit"), 3);
+  const run = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; complete?: boolean }).find((e) => e.event === "run");
+  assert.equal(run?.complete, false);
+});
+
+const asyncShop = (adapter: string): string => `#[path = ${JSON.stringify(adapter)}]
+mod keylang_trace;
+
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+/// Pending once, then ready: a suspension point.
+struct Yield(bool);
+impl Future for Yield {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.0 { Poll::Ready(()) } else { self.0 = true; cx.waker().wake_by_ref(); Poll::Pending }
+    }
+}
+
+async fn slow() {
+    // A guard kept across \`.await\` would adopt \`quick\`, polled meanwhile.
+    let _span = keylang_trace::span("app.main.slow");
+    Yield(false).await;
+}
+
+async fn quick() {
+    keylang_trace::instrument("app.main.quick", async {
+        nested();
+    })
+    .await
+}
+
+fn nested() {
+    // keylang_trace::span("app.main.nested");
+}
+
+fn waker() -> Waker {
+    fn clone(_: *const ()) -> RawWaker { RawWaker::new(std::ptr::null(), &VTABLE) }
+    fn noop(_: *const ()) {}
+    static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
+    unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+}
+
+/// Poll two futures in turn on this thread until both are done.
+fn join(a: impl Future<Output = ()>, b: impl Future<Output = ()>) {
+    let waker = waker();
+    let mut cx = Context::from_waker(&waker);
+    let (mut a, mut b) = (Box::pin(a), Box::pin(b));
+    let (mut done_a, mut done_b) = (false, false);
+    while !(done_a && done_b) {
+        if !done_a { done_a = a.as_mut().poll(&mut cx).is_ready(); }
+        if !done_b { done_b = b.as_mut().poll(&mut cx).is_ready(); }
+    }
+}
+
+fn run() {
+    let _span = keylang_trace::span("app.main.run");
+    join(slow(), quick());
+}
+
+fn main() {
+    run();
+    keylang_trace::finish();
+}
+`;
+
+test("rust: a span in async code comes from `instrument`, not a guard; a span in a comment does not instrument", { skip: rustc ? false : "rustc is not installed" }, (t) => {
+  const dir = repo(t, {
+    "Cargo.toml": cargoToml,
+    "keylang.json": JSON.stringify({ languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }),
+    "src/main.rs": asyncShop(join(root, "adapters/rust/keylang_trace.rs")),
+    "keylang/flows.md": "# flow a\n\n- trigger app.main.run\n  - step app.main.slow\n    - step app.main.quick\n  - step app.main.quick\n    - step app.main.nested\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "a"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow a" } });
+  assert.equal(exec.status, 0, exec.stderr);
+  const events = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; spanId?: string; parentSpanId?: string | null; symbolId?: string; instrumented?: string[] });
+  const start = (id: string): { spanId?: string; parentSpanId?: string | null } | undefined => events.find((e) => e.event === "start" && e.symbolId === id);
+  assert.equal(start("app.main.slow"), undefined, "a guard in async code is not recorded");
+  assert.equal(start("app.main.quick")?.parentSpanId, start("app.main.run")?.spanId, "an instrumented future nests where it was created");
+  assert.deepEqual(events.find((e) => e.event === "run")?.instrumented, ["app.main.quick", "app.main.run"]);
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /flows\.md:4:3: trace unverified app\.main\.slow: `app\.main\.slow` is not instrumented/);
+  assert.match(o.stdout, /flows\.md:5:5: trace unverified app\.main\.quick: parent step `app\.main\.slow` not observed/);
+  assert.match(o.stdout, /flows\.md:6:3: trace ok app\.main\.quick: observed in shop > @flow a/);
+  assert.match(o.stdout, /flows\.md:7:5: trace unverified app\.main\.nested: `app\.main\.nested` is not instrumented/);
 });

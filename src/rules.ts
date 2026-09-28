@@ -142,12 +142,21 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
 
   // A module reaches another module's code only through an import, so a call
   // through a local value cannot hide a dependency; an unknown import can.
+  // So cannot a construct inside one declaration, like a decorator that may
+  // replace a fn: it changes which code a call runs, not what the module imports.
+  const inDeclaration = (source: string | null): boolean => {
+    const node = source === null ? undefined : snapshot.nodes[source];
+    const parent = source === null ? undefined : snapshot.nodes[source.slice(0, source.lastIndexOf("."))];
+    // A fn, or a class: a module node declared in its parent module's file.
+    return node?.kind === "fn" || (node?.kind === "module" && parent?.kind === "module" && node.file !== null && parent.file === node.file);
+  };
   const dependencyHoleIn = (moduleId: string): string | null => {
     const file = snapshot.nodes[moduleId]?.file;
     const hole = snapshot.coverage.find(
       (item) =>
         DEPENDENCY_HOLES.has(item.kind) &&
         item.reason !== "unsupported construct `computed call`" &&
+        !(item.kind === "unsupported" && inDeclaration(item.source)) &&
         (item.source === moduleId || item.source?.startsWith(`${moduleId}.`) || (file !== null && file !== undefined && item.file === file)),
     );
     return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;

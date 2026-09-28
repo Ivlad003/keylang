@@ -88,6 +88,8 @@ export interface DeclFact {
   fingerprint?: string;
   /** A getter or setter: property access runs it without a call expression. */
   accessor?: true;
+  /** The language calls the member through syntax, not a call that names it: a Rust `Drop::drop`, `Display::fmt`, `Add::add`. */
+  implicit?: true;
   /** A `static` class member. */
   static?: true;
   /** An ECMAScript private member (`#name`); `name` is written without `#`. */
@@ -216,4 +218,10 @@ export interface UnsupportedFact {
   endCol: number;
   text: string;
   reason: string;
+  /**
+   * The declaration the construct changes, as a dotted path in the file
+   * (`place`, `Order.save`): a decorator that may replace a fn. Such a hole
+   * is in how calls of that declaration behave; it adds no dependency.
+   */
+  symbol?: string;
 }

@@ -9,13 +9,21 @@ export interface LanguageInfo {
   module: "file" | "dir";
   /** File names (without extension) that stand for their directory's module, like `index.ts`. */
   index: readonly string[];
+  /** Member a call of the class runs (`new X()`, `X()`); null when calling a type runs no member (Rust). */
+  constructor: string | null;
+  /** Members the language calls without a call expression that names them (`then`, `__str__`, `drop`). */
+  implicit: (name: string) => boolean;
 }
 
+const JS_IMPLICIT = new Set(["then", "next", "return", "throw", "toString", "valueOf", "toJSON"]);
+
 export const LANGUAGES = {
-  javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"] },
-  python: { extensions: [".py"], module: "file", index: ["__init__"] },
-  rust: { extensions: [".rs"], module: "file", index: ["mod"] },
-  typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"] },
+  javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name) },
+  // Dunder methods other than `__init__` run through syntax and built-ins: `with`, `for`, `str()`, operators, `x()`.
+  python: { extensions: [".py"], module: "file", index: ["__init__"], constructor: "__init__", implicit: (name) => /^__.+__$/.test(name) && name !== "__init__" },
+  // Rust: the extractor marks the methods of `impl Drop`, `impl Display`, … (a name alone does not say it).
+  rust: { extensions: [".rs"], module: "file", index: ["mod"], constructor: null, implicit: () => false },
+  typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name) },
 } satisfies Record<string, LanguageInfo>;
 
 export type Language = keyof typeof LANGUAGES;
@@ -31,4 +39,16 @@ export function languageOf(path: string): Language | undefined {
     if (LANGUAGES[name].extensions.some((ext) => path.endsWith(ext))) return name;
   }
   return undefined;
+}
+
+/** The member a call of a class declared in `file` runs; JS `constructor` for a file of no known language. */
+export function constructorName(file: string | null | undefined): string | null {
+  const language = file ? languageOf(file) : undefined;
+  return language === undefined ? "constructor" : LANGUAGES[language].constructor;
+}
+
+/** A member of a class in `file` that the language calls without naming it. */
+export function implicitMember(file: string | null | undefined, name: string): boolean {
+  const language = file ? languageOf(file) : undefined;
+  return LANGUAGES[language ?? "typescript"].implicit(name);
 }

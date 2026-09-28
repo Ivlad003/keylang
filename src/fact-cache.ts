@@ -49,7 +49,7 @@ function isStoredFacts(value: unknown): value is StoredFacts {
     every(value.exports, isString) &&
     every(value.reexportsAll, isString) &&
     every(value.exportRows, isExportRow) &&
-    every(value.unsupported, (u) => isRecord(u) && isRange(u) && typeof u.text === "string" && typeof u.reason === "string") &&
+    every(value.unsupported, (u) => isRecord(u) && isRange(u) && typeof u.text === "string" && typeof u.reason === "string" && optional(u.symbol, isString)) &&
     every(value.valueRefs, (r) => isRecord(r) && typeof r.name === "string" && optionalTrue(r.member) && isPosition(r.line) && isPosition(r.col)) &&
     every(value.moduleCalls, isCall) &&
     (value.completeness === "complete" || value.completeness === "opaque") &&
@@ -84,6 +84,7 @@ function isDecl(value: unknown): boolean {
     optionalTrue(value.accessor) &&
     optionalTrue(value.static) &&
     optionalTrue(value.hash) &&
+    optionalTrue(value.implicit) &&
     optional(value.base, isString)
   );
 }

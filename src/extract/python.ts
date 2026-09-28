@@ -2,14 +2,22 @@
 // is one import whose specifier is the dotted path (`..pkg.mod.f`); the
 // resolver decides how much of it is a module. Methods through values,
 // `getattr`, dynamic imports and replacing decorators are holes, not edges.
+// Every call expression is an edge or a hole: a callee keylang cannot name
+// is a call through a value, never dropped.
 
-import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact } from "./facts.ts";
+import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
 /** Decorators that keep the function a plain function (or method) of that name. */
 const KEEPING_DECORATORS = new Set(
-  "staticmethod classmethod property abstractmethod dataclass wraps functools.wraps cache functools.cache lru_cache functools.lru_cache cached_property functools.cached_property override typing.override overload typing.overload final typing.final".split(" "),
+  "staticmethod classmethod property abstractmethod abc.abstractmethod dataclass dataclasses.dataclass wraps functools.wraps cache functools.cache lru_cache functools.lru_cache cached_property functools.cached_property override typing.override typing_extensions.override overload typing.overload final typing.final total_ordering functools.total_ordering unique enum.unique runtime_checkable typing.runtime_checkable".split(" "),
 );
+
+/** Decorators that make a method run on attribute access. */
+const ACCESSOR_DECORATORS = new Set(["property", "cached_property", "functools.cached_property"]);
+
+/** Nodes whose identifiers name what is bound, not what is read. */
+const BINDING_PARENTS = new Set(["parameters", "lambda_parameters", "global_statement", "nonlocal_statement", "dotted_name", "aliased_import", "import_statement", "import_from_statement", "decorator", "list_splat_pattern", "dictionary_splat_pattern", "pattern_list", "tuple_pattern", "list_pattern", "type", "as_pattern_target"]);
 
 export function extractPython(path: string, src: string): Promise<FileFacts> {
   return withTree("python", src, (tree) => extractTree(path, tree.rootNode));
@@ -17,51 +25,43 @@ export function extractPython(path: string, src: string): Promise<FileFacts> {
 
 function extractTree(path: string, root: Node): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null };
-  const all = dunderAll(root);
   const values: string[] = [];
   const topLevel: Node[] = [];
   for (const node of root.namedChildren) collectTopLevel(node, topLevel);
-  for (const node of topLevel) if (node.type === "import_statement" || node.type === "import_from_statement") facts.imports.push(...importsOf(node));
+  const all = dunderAll(topLevel);
+  // A package re-exports what its `__init__.py` imports: `from .order import place` is `shop.domain.place`.
+  const pkg = /(^|\/)__init__\.py$/.test(path);
+  const isPublic = (name: string): boolean => (all ? all.has(name) : !name.startsWith("_"));
+  // Imports anywhere in the file: one inside a function is a dependency of the module as much as one at the top.
+  // A name in `__all__`, or any public name a package imports, is re-exported; so is `from .x import *` of a package without `__all__`.
+  facts.imports = importsIn(root, (local) => (local === null ? pkg && all === null : all ? all.has(local) : pkg && isPublic(local)));
   for (const node of topLevel) {
     const def = node.type === "decorated_definition" ? node.childForFieldName("definition") : node;
     if (!def) continue;
     const name = def.childForFieldName("name")?.text;
     if (def.type === "function_definition" && name) {
       facts.decls.push(fnDecl(def, name, null));
-      noteDecorators(node, name, facts);
+      noteDecorators(node, name, false, facts);
     } else if (def.type === "class_definition" && name) {
-      const at = located(def);
-      const members: DeclFact[] = [];
-      for (const item of def.childForFieldName("body")?.namedChildren ?? []) {
-        const method = item.type === "decorated_definition" ? item.childForFieldName("definition") : item;
-        const member = method?.childForFieldName("name")?.text;
-        if (method?.type !== "function_definition" || !member) continue;
-        const decl = fnDecl(method, member, name);
-        // `_name` is private by convention; dunder methods (`__init__`) are the class's protocol.
-        decl.exported = !member.startsWith("_") || /^__.+__$/.test(member);
-        if (decorators(item).some((d) => d === "staticmethod" || d === "classmethod")) decl.static = true;
-        members.push(decl);
-        noteDecorators(item, `${name}.${member}`, facts);
-      }
-      const base = def.childForFieldName("superclasses")?.namedChildren[0]?.text;
-      facts.decls.push({ kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, fingerprint: fingerprint(def), ...(base ? { base } : {}) });
+      facts.decls.push(classDecl(def, name, name, true, facts));
+      noteDecorators(node, name, false, facts);
     } else if (node.type === "expression_statement") {
       const assignment = node.namedChildren[0];
       const target = assignment?.type === "assignment" ? assignment.childForFieldName("left") : null;
       if (target?.type === "identifier" && target.text !== "__all__") values.push(target.text);
     }
   }
-  // `__all__` lists the public names; without it, every name not starting with `_` is public.
-  const isPublic = (name: string): boolean => (all ? all.has(name) : !name.startsWith("_"));
   for (const d of facts.decls) {
     d.exported = isPublic(d.name);
     if (d.exported) exportRow(facts, d.name, d.kind === "class" ? "class" : "fn");
   }
   for (const name of new Set(values)) if (isPublic(name)) exportRow(facts, name, "value");
   for (const imp of facts.imports) {
-    for (const b of imp.bindings) if (all?.has(b.local)) exportRow(facts, b.local, "reexport");
+    for (const b of imp.bindings) if (imp.reexport) exportRow(facts, b.local, "reexport");
   }
+  const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
+  facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names)].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
   const end = located(root);
   facts.endLine = end.endLine;
@@ -83,16 +83,36 @@ function collectTopLevel(node: Node, out: Node[]): void {
   out.push(node);
 }
 
-/** The names in a literal `__all__ = [...]`; null without one. */
-function dunderAll(root: Node): Set<string> | null {
-  for (const node of root.namedChildren) {
-    const assignment = node.type === "expression_statement" ? node.namedChildren[0] : null;
-    if (assignment?.type !== "assignment" || assignment.childForFieldName("left")?.text !== "__all__") continue;
-    const list = assignment.childForFieldName("right");
-    if (!list || (list.type !== "list" && list.type !== "tuple")) return null;
-    return new Set(list.namedChildren.filter((s) => s.type === "string").map((s) => s.namedChildren.find((c) => c.type === "string_content")?.text ?? ""));
+/**
+ * The names of `__all__`: a literal list or tuple, extended by `+=`, `+`,
+ * `.extend([...])` and `.append("x")`; null without an `__all__`.
+ */
+function dunderAll(topLevel: Node[]): Set<string> | null {
+  let out: Set<string> | null = null;
+  const literal = (node: Node | null): string[] | null => {
+    if (!node) return null;
+    if (node.type === "list" || node.type === "tuple") return node.namedChildren.filter((s) => s.type === "string").map((s) => s.namedChildren.find((c) => c.type === "string_content")?.text ?? "");
+    if (node.type === "binary_operator" && node.childForFieldName("operator")?.text === "+") {
+      const left = literal(node.childForFieldName("left"));
+      const right = literal(node.childForFieldName("right"));
+      return left && right ? [...left, ...right] : null;
+    }
+    if (node.type === "string") return [node.namedChildren.find((c) => c.type === "string_content")?.text ?? ""];
+    return null;
+  };
+  for (const node of topLevel) {
+    const expr = node.type === "expression_statement" ? node.namedChildren[0] : null;
+    if (!expr) continue;
+    if ((expr.type === "assignment" || expr.type === "augmented_assignment") && expr.childForFieldName("left")?.text === "__all__") {
+      const names = literal(expr.childForFieldName("right"));
+      if (expr.type === "assignment") out = names ? new Set(names) : null;
+      else if (names) out = new Set([...(out ?? []), ...names]);
+    } else if (expr.type === "call" && /^__all__\.(extend|append)$/.test(expr.childForFieldName("function")?.text ?? "")) {
+      const names = literal(expr.childForFieldName("arguments")?.namedChildren[0] ?? null);
+      if (names) out = new Set([...(out ?? []), ...names]);
+    }
   }
-  return null;
+  return out;
 }
 
 function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): void {
@@ -101,29 +121,86 @@ function exportRow(facts: FileFacts, name: string, kind: ExportRow["kind"]): voi
   facts.exportRows.push({ name, kind, local: null });
 }
 
-function decorators(node: Node): string[] {
+function decorators(node: Node): { name: string; node: Node }[] {
   if (node.type !== "decorated_definition") return [];
-  return node.namedChildren.filter((c) => c.type === "decorator").map((d) => (d.namedChildren[0]?.type === "call" ? d.namedChildren[0].childForFieldName("function")?.text : d.namedChildren[0]?.text) ?? "");
+  return node.namedChildren
+    .filter((c) => c.type === "decorator")
+    .map((d) => ({ name: (d.namedChildren[0]?.type === "call" ? d.namedChildren[0].childForFieldName("function")?.text : d.namedChildren[0]?.text) ?? "", node: d }));
 }
 
-/** A decorator keylang does not know may return another function: calls of the name may not reach the body. */
-function noteDecorators(node: Node, name: string, facts: FileFacts): void {
-  for (const [i, decorator] of decorators(node).entries()) {
-    if (KEEPING_DECORATORS.has(decorator)) continue;
-    const at = node.namedChildren.filter((c) => c.type === "decorator")[i]!;
-    facts.unsupported.push(unsupported(at, `decorator \`${decorator}\` may replace \`${name}\``));
+/** `@property`, `@x.setter`: the method runs on attribute access. */
+function isAccessor(name: string): boolean {
+  return ACCESSOR_DECORATORS.has(name) || /\.(setter|getter|deleter)$/.test(name);
+}
+
+/**
+ * A decorator keylang does not know may return another function: calls of
+ * the name may not reach the body (a hole of that declaration), and the
+ * decorator holds the function as a value, so code keylang cannot follow may
+ * call it (a framework calling a registered handler).
+ */
+function noteDecorators(node: Node, symbol: string, member: boolean, facts: FileFacts): void {
+  for (const decorator of decorators(node)) {
+    if (KEEPING_DECORATORS.has(decorator.name) || isAccessor(decorator.name)) continue;
+    facts.unsupported.push({ ...unsupported(decorator.node, `decorator \`${decorator.name}\` may replace \`${symbol}\``), symbol });
+    const at = located(decorator.node);
+    facts.valueRefs.push({ name: member ? symbol.slice(symbol.lastIndexOf(".") + 1) : symbol, ...(member ? { member: true as const } : {}), line: at.line, col: at.col });
   }
 }
 
-function fnDecl(node: Node, name: string, owner: string | null): DeclFact {
+/** A class and its members: methods, and nested classes with theirs. `symbol` is its dotted path in the file. */
+function classDecl(def: Node, name: string, symbol: string, topLevel: boolean, facts: FileFacts): DeclFact {
+  const at = located(def);
+  const items = (def.childForFieldName("body")?.namedChildren ?? []).map((item) => ({ item, def: item.type === "decorated_definition" ? item.childForFieldName("definition") : item }));
+  const statics = new Set<string>();
+  for (const { item, def: method } of items) {
+    const member = method?.childForFieldName("name")?.text;
+    if (method?.type === "function_definition" && member && decorators(item).some((d) => d.name === "staticmethod" || d.name === "classmethod")) statics.add(member);
+  }
+  const members: DeclFact[] = [];
+  for (const { item, def: inner } of items) {
+    const member = inner?.childForFieldName("name")?.text;
+    if (!inner || !member) continue;
+    const path = `${symbol}.${member}`;
+    // `_name` is private by convention; dunder methods (`__init__`) are the class's protocol.
+    const exported = !member.startsWith("_") || /^__.+__$/.test(member);
+    if (inner.type === "class_definition") {
+      members.push({ ...classDecl(inner, member, path, false, facts), exported });
+      noteDecorators(item, path, true, facts);
+      continue;
+    }
+    if (inner.type !== "function_definition") continue;
+    const names = decorators(item).map((d) => d.name);
+    const isStatic = names.includes("staticmethod");
+    const decl = fnDecl(inner, member, { name, statics: topLevel ? statics : new Set(), receiver: !isStatic });
+    decl.exported = exported;
+    if (isStatic || names.includes("classmethod")) decl.static = true;
+    if (names.some(isAccessor)) decl.accessor = true;
+    members.push(decl);
+    noteDecorators(item, path, true, facts);
+  }
+  const base = def.childForFieldName("superclasses")?.namedChildren[0]?.text;
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, fingerprint: fingerprint(def), ...(base ? { base } : {}) };
+}
+
+/** The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver. */
+interface Owner {
+  name: string;
+  statics: ReadonlySet<string>;
+  receiver: boolean;
+}
+
+function fnDecl(node: Node, name: string, owner: Owner | null): DeclFact {
   const at = located(node);
   const params = node.childForFieldName("parameters");
   const returns = node.childForFieldName("return_type");
   const signature = params ? `${params.text.replace(/\s+/g, " ")}${returns ? ` → ${returns.text.replace(/\s+/g, " ")}` : ""}` : null;
   const first = params?.namedChildren[0];
-  const receiver = owner !== null && first?.type === "identifier" ? first.text : null;
+  const firstName = first?.type === "identifier" ? first.text : first?.type === "typed_parameter" ? first.namedChildren.find((c) => c.type === "identifier")?.text : undefined;
+  // A `@staticmethod` has no receiver: its first parameter is an ordinary value.
+  const receiver = owner?.receiver && firstName ? firstName : null;
   const body = node.childForFieldName("body");
-  const calls = body ? bodyCalls(body, { receiver, bound: boundNames(node) }) : [];
+  const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node) }) : [];
   return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], fingerprint: fingerprint(node) };
 }
 
@@ -156,6 +233,7 @@ function boundNames(fn: Node): Map<string, "parameter" | "local"> {
 interface CallScope {
   /** `self` (or `cls`) of a method. */
   receiver: string | null;
+  owner: Owner | null;
   bound: ReadonlyMap<string, "parameter" | "local">;
 }
 
@@ -163,11 +241,8 @@ function bodyCalls(body: Node, scope: CallScope): CallFact[] {
   const out: CallFact[] = [];
   const walk = (node: Node, closure: boolean): void => {
     if (node.type === "call") {
-      const fact = callOf(node.childForFieldName("function"), scope);
-      if (fact) {
-        const at = located(node);
-        out.push({ ...fact, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, ...(closure ? { closure: true as const } : {}) });
-      }
+      const at = located(node);
+      out.push({ ...callOf(node.childForFieldName("function"), scope), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, ...(closure ? { closure: true as const } : {}) });
     }
     const inner = closure || node.type === "lambda" || node.type === "function_definition";
     for (const c of node.namedChildren) walk(c, inner);
@@ -176,40 +251,51 @@ function bodyCalls(body: Node, scope: CallScope): CallFact[] {
   return out;
 }
 
-/** `f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m`; `x.m()` through a value → `x.m`, bound. Null for other shapes. */
-function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "bound"> | null {
-  if (!fn) return null;
+/**
+ * `f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a
+ * static method); `x.m()` through a value → `x.m`, bound. Any other callee
+ * (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang
+ * cannot name, written as in the source.
+ */
+function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "bound"> {
+  if (!fn) return { callee: "?", bound: "local" };
+  // `(f)()` is `f()`.
+  if (fn.type === "parenthesized_expression" && fn.namedChildren.length === 1) return callOf(fn.namedChildren[0]!, scope);
   if (fn.type === "identifier") {
     const bound = scope.bound.get(fn.text);
     return bound ? { callee: fn.text, bound } : { callee: fn.text };
   }
-  if (fn.type !== "attribute") return null;
   const parts: string[] = [];
   let at: Node | null = fn;
   while (at?.type === "attribute") {
     parts.unshift(at.childForFieldName("attribute")?.text ?? "");
     at = at.childForFieldName("object");
   }
-  if (at?.type !== "identifier") return null;
+  if (fn.type !== "attribute" || at?.type !== "identifier") return { callee: fn.text.replace(/\s+/g, " "), bound: "local" };
   const head = at.text;
-  // `self.m()` is a method; `self.queue.put()` goes through an attribute whose type keylang does not know.
-  if (head === scope.receiver) return parts.length === 1 ? { callee: `this.${parts[0]}` } : { callee: ["this", ...parts].join("."), bound: "local" };
+  if (head === scope.receiver) {
+    // `self.queue.put()` goes through an attribute whose type keylang does not know.
+    if (parts.length !== 1) return { callee: [head, ...parts].join("."), bound: "local" };
+    return scope.owner?.statics.has(parts[0]!) ? { callee: `${scope.owner.name}.${parts[0]}` } : { callee: `this.${parts[0]}` };
+  }
   const callee = [head, ...parts].join(".");
   const bound = scope.bound.get(head);
   return bound ? { callee, bound } : { callee };
 }
 
-/** Calls outside every `def` and `class`: they run when the module loads. */
+/** Calls outside every `def`: module level and class bodies run when the module loads; so does a decorator. */
 function moduleCalls(root: Node): CallFact[] {
   const out: CallFact[] = [];
+  const noScope: CallScope = { receiver: null, owner: null, bound: new Map() };
   const walk = (node: Node): void => {
-    if (node.type === "function_definition" || node.type === "class_definition") return;
+    if (node.type === "function_definition") return;
     if (node.type === "call") {
-      const fact = callOf(node.childForFieldName("function"), { receiver: null, bound: new Map() });
-      if (fact) {
-        const at = located(node);
-        out.push({ ...fact, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
-      }
+      const at = located(node);
+      out.push({ ...callOf(node.childForFieldName("function"), noScope), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
+    } else if (node.type === "decorator" && node.namedChildren[0]?.type !== "call") {
+      // `@register` calls `register(fn)`.
+      const at = located(node);
+      out.push({ ...callOf(node.namedChildren[0] ?? null, noScope), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol });
     }
     for (const c of node.namedChildren) walk(c);
   };
@@ -217,12 +303,67 @@ function moduleCalls(root: Node): CallFact[] {
   return out;
 }
 
-/** `getattr(x, name)`, `importlib.import_module(name)`, `__import__(name)`, `exec`/`eval`: what they reach is decided at run time. */
+/**
+ * Functions read as values: `later(hit)`, `{"save": save}`, `callback=self.save`,
+ * `mod.save` without a call. Code holding the value may call it. Names bound
+ * in an enclosing `def` are locals, not the module's.
+ */
+function valueRefs(root: Node, names: ReadonlySet<string>): ValueRefFact[] {
+  const first = new Map<string, ValueRefFact>();
+  const note = (name: string, node: Node, member: boolean): void => {
+    const key = `${member ? "." : ""}${name}`;
+    if (!first.has(key)) first.set(key, { name, ...(member ? { member: true as const } : {}), line: node.startPosition.row + 1, col: node.startPosition.column + 1 });
+  };
+  const walk = (node: Node, bound: ReadonlySet<string>): void => {
+    if (node.type === "import_statement" || node.type === "import_from_statement" || node.type === "future_import_statement" || node.type === "type") return;
+    if (node.type === "function_definition" || node.type === "lambda") bound = new Set([...bound, ...boundNames(node).keys()]);
+    const parent = node.parent;
+    if (node.type === "identifier" && parent && names.has(node.text) && !bound.has(node.text) && !bindsOrCalls(node, parent)) note(node.text, node, false);
+    // `@app.route` is called with the function, not read.
+    if (node.type === "attribute" && parent && parent.type !== "decorator" && !(parent.type === "call" && parent.childForFieldName("function")?.id === node.id) && !assigned(node, parent)) {
+      const member = node.childForFieldName("attribute")?.text;
+      const object = node.childForFieldName("object");
+      if (member) {
+        note(member, node, true);
+        // `order.place` of an imported module reads the module function itself.
+        if (object?.type === "identifier" && names.has(object.text) && !bound.has(object.text)) note(`${object.text}.${member}`, node, false);
+      }
+    }
+    for (const child of node.namedChildren) walk(child, bound);
+  };
+  walk(root, new Set());
+  return [...first.values()];
+}
+
+/** The identifier is a callee, a declared name or a binding — not a value read. */
+function bindsOrCalls(node: Node, parent: Node): boolean {
+  const is = (field: string): boolean => parent.childForFieldName(field)?.id === node.id;
+  if (parent.type === "call" && is("function")) return true;
+  if (parent.type === "attribute") return true;
+  if ((parent.type === "function_definition" || parent.type === "class_definition") && is("name")) return true;
+  if ((parent.type === "typed_parameter" || parent.type === "default_parameter" || parent.type === "typed_default_parameter") && (is("name") || parent.namedChildren[0]?.id === node.id)) return true;
+  if (BINDING_PARENTS.has(parent.type)) return true;
+  if (assigned(node, parent)) return true;
+  if ((parent.type === "for_statement" || parent.type === "for_in_clause") && is("left")) return true;
+  return (parent.type === "keyword_argument" || parent.type === "named_expression") && is("name");
+}
+
+/** The node is the target of an assignment (`x = …`, `x += …`, `self.x = …`). */
+function assigned(node: Node, parent: Node): boolean {
+  return (parent.type === "assignment" || parent.type === "augmented_assignment") && parent.childForFieldName("left")?.id === node.id;
+}
+
+/**
+ * `getattr(x, name)`, `importlib.import_module(name)`, `__import__(name)`,
+ * `exec`/`eval`: what they reach is decided at run time. A `getattr` in a
+ * `def` is a hole of that function's calls; the others may import anything.
+ */
 function collectDynamic(root: Node, facts: FileFacts): void {
   const walk = (node: Node): void => {
     if (node.type === "call") {
       const callee = node.childForFieldName("function")?.text;
-      if (callee === "getattr") facts.unsupported.push(unsupported(node, "`getattr` reads an attribute chosen at run time"));
+      const symbol = enclosingFn(node);
+      if (callee === "getattr") facts.unsupported.push({ ...unsupported(node, "`getattr` reads an attribute chosen at run time"), ...(symbol ? { symbol } : {}) });
       else if (callee === "importlib.import_module" || callee === "import_module" || callee === "__import__") facts.unsupported.push(unsupported(node, "dynamic import"));
       else if (callee === "exec" || callee === "eval") facts.unsupported.push(unsupported(node, `\`${callee}\` runs code keylang cannot read`));
     }
@@ -231,19 +372,68 @@ function collectDynamic(root: Node, facts: FileFacts): void {
   walk(root);
 }
 
-/** `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a` plus a dependency on `a.b`; `from .m import x` → `.m.x` bound to `x`. */
-function importsOf(node: Node): ImportFact[] {
+/** No `def` or `class` encloses the node: it is at the top of the module (possibly under `if`/`try`). */
+function isDeclarationLevel(node: Node): boolean {
+  for (let at = node.parent; at; at = at.parent) if (at.type === "function_definition" || at.type === "class_definition") return false;
+  return true;
+}
+
+/**
+ * The indexed fn whose body holds the node, as a dotted path (`place`,
+ * `Order.save`, `Order.Line.price`); a `def` nested in a `def` belongs to
+ * the outer one. Null at module level and in a class body outside methods.
+ */
+function enclosingFn(node: Node): string | null {
+  const chain: Node[] = [];
+  for (let at = node.parent; at; at = at.parent) if (at.type === "function_definition" || at.type === "class_definition") chain.unshift(at);
+  const path: string[] = [];
+  let last: Node | null = null;
+  for (const def of chain) {
+    // After a `def`, nested declarations are part of its body; after a class, only its direct members are indexed.
+    if (last?.type === "function_definition") break;
+    const holder = def.parent?.type === "decorated_definition" ? def.parent.parent : def.parent;
+    if (last !== null && holder?.parent?.id !== last.id) break;
+    path.push(def.childForFieldName("name")?.text ?? "?");
+    last = def;
+  }
+  return last?.type === "function_definition" ? path.join(".") : null;
+}
+
+/**
+ * Every import of the file, in source order, wherever it is written.
+ * `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a`
+ * plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`.
+ * `reexported(local)`: the name (null for `*`) is part of this module's public API.
+ */
+function importsIn(root: Node, reexported: (local: string | null) => boolean): ImportFact[] {
   const out: ImportFact[] = [];
+  const walk = (node: Node): void => {
+    if (node.type === "import_statement" || node.type === "import_from_statement") {
+      out.push(...importsOf(node, reexported));
+      return;
+    }
+    for (const c of node.namedChildren) walk(c);
+  };
+  walk(root);
+  return out;
+}
+
+function importsOf(node: Node, reexported: (local: string | null) => boolean): ImportFact[] {
+  const out: ImportFact[] = [];
+  // Only a top-level import makes a public name; one inside a `def` binds a local.
+  const top = isDeclarationLevel(node);
+  const at = (source: string, bindings: ImportFact["bindings"], reexport = false): ImportFact => importAt(node, source, bindings, top && reexport);
   if (node.type === "import_statement") {
     for (const item of node.namedChildren) {
       if (item.type === "aliased_import") {
         const name = item.childForFieldName("name")?.text;
         const alias = item.childForFieldName("alias")?.text;
-        if (name && alias) out.push(importAt(node, name, [{ kind: "module", local: alias }]));
+        if (name && alias) out.push(at(name, [{ kind: "module", local: alias }], reexported(alias)));
       } else if (item.type === "dotted_name") {
         const head = item.text.split(".")[0]!;
-        out.push(importAt(node, head, [{ kind: "module", local: head }]));
-        if (item.text !== head) out.push(importAt(node, item.text, []));
+        out.push(at(head, [{ kind: "module", local: head }], reexported(head)));
+        // `a.b.f()` goes through the path; the dependency alias stays the module's own name.
+        if (item.text !== head) out.push(at(item.text, [{ kind: "named", local: item.text, imported: item.text.slice(item.text.lastIndexOf(".") + 1) }]));
       }
     }
     return out;
@@ -256,25 +446,25 @@ function importsOf(node: Node): ImportFact[] {
     // Nodes are fresh wrappers on every access: compare ids, not objects.
     if (item.id === moduleNode?.id) continue;
     if (item.type === "wildcard_import") {
-      out.push(importAt(node, from, []));
+      out.push(at(from, [], reexported(null)));
       named = true;
     } else if (item.type === "dotted_name") {
-      out.push(importAt(node, join(item.text), [{ kind: "named", local: item.text, imported: item.text }]));
+      out.push(at(join(item.text), [{ kind: "named", local: item.text, imported: item.text }], reexported(item.text)));
       named = true;
     } else if (item.type === "aliased_import") {
       const name = item.childForFieldName("name")?.text;
       const alias = item.childForFieldName("alias")?.text;
-      if (name && alias) out.push(importAt(node, join(name), [{ kind: "named", local: alias, imported: name }]));
+      if (name && alias) out.push(at(join(name), [{ kind: "named", local: alias, imported: name }], reexported(alias)));
       named = true;
     }
   }
-  if (!named) out.push(importAt(node, from, []));
+  if (!named) out.push(at(from, []));
   return out;
 }
 
-function importAt(node: Node, source: string, bindings: ImportFact["bindings"]): ImportFact {
+function importAt(node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean): ImportFact {
   const at = located(node);
-  return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport: false };
+  return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
 function unsupported(node: Node, reason: string): UnsupportedFact {

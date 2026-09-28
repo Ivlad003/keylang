@@ -9,7 +9,7 @@ import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding,
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import type { Resolution } from "./imports.ts";
-import { LANGUAGES, languageOf } from "./languages.ts";
+import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 
 export interface Graph {
   layers: Layer[];
@@ -289,9 +289,6 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     }
     byFile.set(f.path, { facts: f, module: m });
     if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason: "outside any layer", source: m.id });
-    for (const hole of f.unsupported) {
-      gaps.push({ kind: "unsupported", file: f.path, line: hole.line, col: hole.col, endLine: hole.endLine, endCol: hole.endCol, text: hole.text, reason: hole.reason, source: m.id });
-    }
   }
 
   // 2. Declarations.
@@ -302,6 +299,12 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const names = declModule.get(module.id) ?? new Map<string, string>();
     declModule.set(module.id, names);
     for (const d of facts.decls) addDecl(module, d, names, declModule, decls, stats, facts.path);
+    for (const hole of facts.unsupported) {
+      // A hole in one declaration (a Python decorator that may replace a fn) belongs to that declaration.
+      const own = hole.symbol === undefined ? null : [module.id, ...hole.symbol.split(".").map(layerName)].join(".");
+      const source = own !== null && (decls.fns.has(own) || decls.classes.has(own)) ? own : module.id;
+      gaps.push({ kind: "unsupported", file: facts.path, line: hole.line, col: hole.col, endLine: hole.endLine, endCol: hole.endCol, text: hole.text, reason: hole.reason, source });
+    }
     if (facts.completeness === "opaque") {
       markOpaque(module);
       if (facts.parseError) {
@@ -347,6 +350,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         // A file that imports itself is a self-loop; two files merged into one module are not.
         if (target === module && r.file !== facts.path) continue;
       } else if (r.kind === "local") {
+        // `crate::run()` or `self::X` in the file that declares them: the name is this module's own.
+        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(module, b, false)]);
         continue;
       } else if (r.kind === "generated") {
         if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
@@ -364,7 +369,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         continue;
       }
       if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
-      for (const b of imp.bindings) {
+      // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
+      for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) {
         const list = locals.get(b.local) ?? [];
         list.push(importTarget(target, b, r.kind === "internal" && r.whole === true));
         locals.set(b.local, list);
@@ -417,6 +423,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const exportTables = resolveExports(exportInputs, symbolKind, (module, name) => declModule.get(module)?.get(layerName(name)) ?? null);
 
   // 4. Calls. Hook calls and the values callers pass are collected for step 5.
+  /** What a call of the class runs: `constructor` in JS, `__init__` in Python. */
+  const constructorOf = (classId: string): string => `${classId}.${constructorName(decls.classes.get(classId)?.path) ?? "constructor"}`;
   const hookCalls: { fn: Fn; hook: HookFact; owner: string; call: CallFact }[] = [];
   // Functions read as values: a plain read resolves like a callee in its file; a property read names any method.
   const readIds = new Map<string, Escape>();
@@ -462,7 +470,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     };
     /** `isStatic`: the call sits in a static member, where `this` is the class itself. */
     const resolveCallees = (callee: string, cls: Module | null, isStatic: boolean): string[] => {
-      const [head, ...rest] = callee.split(".");
+      const parts = callee.split(".");
+      // Python `import a.b` binds the path `a.b`: in `a.b.f()` the head is that module, not `a`.
+      const cut = Math.max(1, ...parts.map((_, k) => (k > 1 && locals.has(parts.slice(0, k).join(".")) ? k : 0)));
+      const head = parts.slice(0, cut).join(".");
+      const rest = parts.slice(cut);
       if (!head) return [];
       const found = new Set<string>();
       if (head === "this") {
@@ -579,6 +591,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const initializer = cls !== null && d.name === "static" && d.signature === null && !d.static;
         const isStatic = d.static === true || initializer;
         if (d.accessor) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "an accessor runs on property access" };
+        if (d.implicit) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: `\`${d.name}\` is called implicitly` };
         if (initializer) fn.escapes ??= { file: facts.path, line: d.line, col: d.col, reason: "a static initializer runs when the module loads" };
         const push = (target: string, c: CallFact, extra: Partial<Call> = {}): void => {
           // A self-call stays an edge: recursion is a static path from a function to itself.
@@ -611,7 +624,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           const callee = c.passes ? single(c, cls, isStatic) : null;
           if (callee && c.passes) {
             // `new App({ … })` passes values to the constructor.
-            const owners = decls.classes.has(callee) ? [`${callee}.constructor`] : [callee];
+            const owners = decls.classes.has(callee) ? [constructorOf(callee)] : [callee];
             for (const pass of c.passes) {
               const value = single(pass, cls, isStatic);
               if (!value) continue;
@@ -625,7 +638,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (c.hook) {
             const fallback = single({ callee: c.hook.fallback }, cls, isStatic);
             if (fallback) push(fallback, c, { via: "default", hook: c.hook.name });
-            const owner = c.hook.owner === "self" ? fn.id : cls ? `${cls.id}.constructor` : null;
+            const owner = c.hook.owner === "self" ? fn.id : cls ? constructorOf(cls.id) : null;
             if (owner && c.hook.param !== null) hookCalls.push({ fn, hook: c.hook, owner, call: c });
           }
           const typed = receiverTarget(c.callee, c.receiver);
@@ -682,7 +695,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       const typed = receiverTarget(c.callee, c.receiver);
       const targets = typed ? [typed] : c.bound || c.opaque || head === "super" ? [] : resolveCallees(c.callee, null, false);
       for (const id of targets) {
-        const target = decls.classes.has(id) ? `${id}.constructor` : id;
+        const target = decls.classes.has(id) ? constructorOf(id) : id;
         if (!readIds.has(target)) readIds.set(target, escape);
       }
       if (targets.length > 0 || !c.callee.includes(".")) continue;
@@ -698,7 +711,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
       // A class read as a value (`extends A`, a factory argument) may be constructed anywhere.
       for (const id of resolveCallees(ref.name, null, false)) {
-        const target = decls.classes.has(id) ? `${id}.constructor` : id;
+        const target = decls.classes.has(id) ? constructorOf(id) : id;
         if (!readIds.has(target)) readIds.set(target, escape);
       }
     }
@@ -785,7 +798,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const base = unknownBase(id, new Set());
     const cls = decls.classes.get(id);
     if (!base || !cls) continue;
-    for (const fn of cls.fns) if (fn.name !== "constructor") fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
+    for (const fn of cls.fns) if (fn.name !== constructorName(fn.file ?? cls.path)) fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
   }
   markEscapes(modules, readIds, readMembers, calledNames, decls.members);
 
@@ -925,9 +938,6 @@ function holeReason(c: CallFact): string {
   return `call through a local value \`${c.callee}\``;
 }
 
-/** Called by the language without a call expression in the code. */
-const IMPLICIT_METHODS = new Set(["then", "next", "return", "throw", "toString", "valueOf", "toJSON"]);
-
 /**
  * Functions that code may reach without naming them in a call: read as a value
  * (`later(save)` names the declaration `save` resolves to; `obj.save` any
@@ -940,9 +950,9 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
       if (fn.escapes) continue;
       // A member is named in code as written (`go`), whatever suffix its ID has (`go-private`).
       const name = members.get(fn.id)?.name ?? fn.name;
-      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== "constructor" ? readMembers.get(name) : undefined) ?? calledNames.get(name);
+      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(fn.file ?? m.path) ? readMembers.get(name) : undefined) ?? calledNames.get(name);
       if (ref) fn.escapes = ref;
-      else if (isClass && !members.get(fn.id)?.hash && IMPLICIT_METHODS.has(name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
+      else if (isClass && !members.get(fn.id)?.hash && implicitMember(fn.file ?? m.path, name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
     }
     for (const child of m.children) if (child.class) visit(child, true);
   };

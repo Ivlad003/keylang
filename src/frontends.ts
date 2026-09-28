@@ -57,11 +57,12 @@ const rust: Frontend = {
 };
 
 // Methods through values, `getattr`, dynamic imports and replacing decorators are holes; types are not followed yet.
+// A package's `__init__.py` re-exports the public names it imports.
 const python: Frontend = {
   name: "python",
   extract: extractPython,
   resolver: pythonResolver,
-  edges: ["import", "call"],
+  edges: ["import", "call", "reexport"],
   globals: {
     values: new Set(
       "abs aiter all anext any ascii bin bool breakpoint bytearray bytes callable chr classmethod compile complex delattr dict dir divmod enumerate eval exec filter float format frozenset getattr globals hasattr hash help hex id input int isinstance issubclass iter len list locals map max memoryview min next object oct open ord pow print property range repr reversed round set setattr slice sorted staticmethod str sum super tuple type vars zip __import__ ArithmeticError AssertionError AttributeError BaseException ConnectionError Exception FileExistsError FileNotFoundError ImportError IndexError KeyError KeyboardInterrupt LookupError NotImplementedError OSError OverflowError PermissionError RuntimeError StopIteration TimeoutError TypeError UnicodeDecodeError ValueError ZeroDivisionError".split(" "),

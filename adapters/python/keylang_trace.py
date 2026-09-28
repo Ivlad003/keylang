@@ -12,13 +12,18 @@ Environment:
     KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
 
 Only the plan's functions are recorded, and only in files whose content still
-has the hash the snapshot saw. Generators and coroutines are not recorded:
-their frames suspend and resume, so a call stack does not give their nesting.
-Spans nest by the call stack of each thread. Needs no package beyond the
-standard library; Python 3.12+ uses `sys.monitoring`, older versions
-`sys.setprofile` (every span then ends with outcome `ok`).
+has the hash the snapshot saw. A code object is the plan's function when its
+file, name and first line (the first decorator, else `def`) are the ones the
+source gives for that declaration. Generators and coroutines are not recorded
+and not `instrumented`: their frames suspend and resume, so a call stack does
+not give their nesting. Spans nest by the call stack of each thread. A process
+that ends with an uncaught exception or a non-zero `sys.exit` is `complete:
+false`. Needs no package beyond the standard library; Python 3.12+ uses
+`sys.monitoring`, older versions `sys.setprofile` (every span then ends with
+outcome `ok`).
 """
 
+import ast
 import atexit
 import hashlib
 import json
@@ -39,6 +44,32 @@ def fail(message):
     sys.exit(2)
 
 
+def declaration(content, name, line):
+    """First line of the code of `def <name>` at `line`, and whether it suspends (async, or a generator); None without one."""
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name and node.lineno == line:
+            first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+            return first, isinstance(node, ast.AsyncFunctionDef) or yields(node)
+    return None
+
+
+def yields(fn):
+    """The body of `fn` itself (not a nested function, lambda or class) has `yield`: it is a generator."""
+    stack = list(fn.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return False
+
+
 class Tracer:
     def __init__(self, plan, root, test, run):
         self.flow = plan["flow"]
@@ -54,33 +85,34 @@ class Tracer:
         self.spans = 0
         self.crashed = False
         self.suspending = set()
-        # (real file, function name) → [(declaration line, id)]; a decorated function's code starts at its first decorator.
+        # (real file, function name, first line of its code) → id; a decorated function's code starts at its first decorator.
         self.symbols = {}
         self.instrumented = []
         for symbol in plan["symbols"]:
             path = os.path.realpath(os.path.join(root, symbol["file"]))
             try:
                 with open(path, "rb") as source:
-                    digest = hashlib.sha256(source.read()).hexdigest()
+                    content = source.read()
             except OSError:
                 continue
-            if digest != symbol["sha256"]:
+            if hashlib.sha256(content).hexdigest() != symbol["sha256"]:
                 continue
-            self.symbols.setdefault((path, symbol["name"]), []).append((symbol["line"], symbol["id"]))
+            found = declaration(content, symbol["name"], symbol["line"])
+            # No such `def` there (the file does not parse, or the ID's name is not the code's): it cannot be observed.
+            if found is None or found[1]:
+                continue
+            first = found[0]
+            self.symbols[(path, symbol["name"], first)] = symbol["id"]
             self.instrumented.append(symbol["id"])
         self.codes = {}
 
     def symbol_of(self, code):
         if code in self.codes:
             return self.codes[code]
-        found = None
-        candidates = self.symbols.get((os.path.realpath(code.co_filename), code.co_name), [])
-        before = [(line - code.co_firstlineno, symbol) for line, symbol in candidates if line >= code.co_firstlineno]
-        if before:
-            found = min(before)[1]
-            if code.co_flags & SUSPENDING:
-                self.suspending.add(found)
-                found = None
+        found = self.symbols.get((os.path.realpath(code.co_filename), code.co_name, code.co_firstlineno))
+        if found is not None and code.co_flags & SUSPENDING:
+            self.suspending.add(found)
+            found = None
         self.codes[code] = found
         return found
 
@@ -188,7 +220,10 @@ def main():
     install(tracer)
     try:
         runpy.run_path(script, run_name="__main__")
-    except SystemExit:
+    except SystemExit as exit:
+        # `sys.exit(3)` stopped the flow short of its end, as a crash does; `sys.exit()` and `sys.exit(0)` did not.
+        if exit.code not in (None, 0):
+            tracer.crashed = True
         raise
     except BaseException:
         # A crashed process did not run the flow to its end: its spans are not complete evidence.

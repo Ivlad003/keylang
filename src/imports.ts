@@ -23,7 +23,8 @@ import { isNodeBuiltin } from "./extract/ts.ts";
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
   /** `whole`: the specifier names the module itself, so a named binding is the module (Rust `use crate::a`). */
-  | { kind: "internal"; file: string; workspace?: string; whole?: true }
+  /** `nested`: the path goes on into a module declared inside the file (Rust `mod x {}`): a dependency on the file, but the name is not its member. */
+  | { kind: "internal"; file: string; workspace?: string; whole?: true; nested?: true }
   /** The specifier names the importing file itself (Rust `use self::X`): no dependency. */
   | { kind: "local" }
   | { kind: "external"; pkg: string }
