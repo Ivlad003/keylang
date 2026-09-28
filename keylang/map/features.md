@@ -95,26 +95,46 @@
     - node external.node
     - agent-context features.agent-context
     - analyze map.analyze
+    - brief base.brief
+    - config base.config
     - explain-node features.explain-node
+    - explanations map.explanations
     - llm features.llm
     - lsp-features features.lsp-features
     - safe-write base.safe-write
-    - type [Explanation](../../src/explain-llm.ts#L17)
-    - fn [explanationFile](../../src/explain-llm.ts#L32) (root: string, id: string) → string
-    - fn [readExplanation](../../src/explain-llm.ts#L36) (root: string, id: string) → Explanation | null
-      - calls features.explain-llm.explanationFile
-    - fn [writeExplanation](../../src/explain-llm.ts#L46) (root: string, id: string, e: Explanation) → void
-      - calls base.safe-write.safeWrite
-    - fn [explainedIds](../../src/explain-llm.ts#L51) (root: string) → string[]
-    - fn [currentBaseline](../../src/explain-llm.ts#L64) (analysis: Analysis, id: string) → string | null
-      - calls features.lsp-features.plannedDecl
-    - fn [isStale](../../src/explain-llm.ts#L80) (analysis: Analysis, id: string, e: Explanation) → boolean
+    - type [Explanation](../../src/explain-llm.ts#L19) = StoredExplanation
+    - fn [readExplanation](../../src/explain-llm.ts#L22) (config: Config, id: string, detail: ExplanationDetail = "short") → Explanation | null
+      - calls map.explanations.readStoredExplanation, map.explanations.explanationPath
+    - fn [writeExplanation](../../src/explain-llm.ts#L27) (config: Config, id: string, e: Explanation) → void
+      - calls base.safe-write.safeWrite, map.explanations.explanationPath, map.explanations.formatStoredExplanation, map.explanations.explainDir
+    - fn [explainedIds](../../src/explain-llm.ts#L32) (config: Config, kind: "answers" | "briefs") → string[]
+      - calls map.explanations.storedIds, map.explanations.explainDir
+    - fn [oldExplanations](../../src/explain-llm.ts#L37) (root: string) → number
+    - fn [moveHint](../../src/explain-llm.ts#L43) (config: Config, count: number) → string
+      - calls map.explanations.explainDir
+    - fn [currentBaseline](../../src/explain-llm.ts#L51) (analysis: Analysis, id: string) → string | null
+      - calls map.explanations.snapshotBaseline, features.lsp-features.plannedDecl
+    - fn [isStale](../../src/explain-llm.ts#L56) (analysis: Analysis, id: string, e: Explanation) → boolean
       - calls features.explain-llm.currentBaseline
-    - fn [unknownIds](../../src/explain-llm.ts#L88) (analysis: Analysis, text: string) → string[]
+    - fn [briefText](../../src/explain-llm.ts#L61) (answer: string) → string
+      - calls base.brief.briefOf
+    - fn [unknownIds](../../src/explain-llm.ts#L69) (analysis: Analysis, text: string) → string[]
       - calls features.lsp-features.plannedDecl
-    - fn [explanationRequest](../../src/explain-llm.ts#L103) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: "short" | "full" }) → LlmRequest
-      - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary
-    - fn [sourceLines](../../src/explain-llm.ts#L132) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [explanationRequest](../../src/explain-llm.ts#L84) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs?: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary, features.explain-llm.members, map.explanations.loadBriefs
+    - fn [members](../../src/explain-llm.ts#L124) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+      - calls map.explanations.explanationOf
+    - fn [sourceLines](../../src/explain-llm.ts#L140) (text: string, from: number, to: number) → string <!-- internal -->
+    - type [BriefBatch](../../src/explain-llm.ts#L147) = "missing" | "stale"
+    - type [BriefLevel](../../src/explain-llm.ts#L150) = "fn/type" | "class/module" | "layer"
+    - type [PlannedBrief](../../src/explain-llm.ts#L152)
+    - fn [planBriefs](../../src/explain-llm.ts#L165) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+      - calls map.explanations.snapshotBaseline
+    - fn [estimateTokens](../../src/explain-llm.ts#L183) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+      - calls features.explain-node.summarizeNode, features.explain-llm.explanationRequest
+    - type [BatchResult](../../src/explain-llm.ts#L194)
+    - fn [runBriefs](../../src/explain-llm.ts#L204) ( analysis: Analysis, client: LlmClient, plan: readonly PlannedBrief[], options: { jobs: number; briefs: Map<string, StoredExplanation>; progress: (done: number, total: number, id: string, failed: string | null) => void }, ) → Promise<BatchResult>
+      - calls features.explain-node.summarizeNode, features.explain-llm.explanationRequest, features.explain-llm.currentBaseline, features.explain-llm.briefText, features.explain-llm.writeExplanation
   - module [explain-node](../../src/explain-node.ts#L1)
     - analyze map.analyze
     - ir lang.ir

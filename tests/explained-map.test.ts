@@ -3,8 +3,10 @@
 // batch generation, through the real CLI.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -168,4 +170,186 @@ test("explain.map: a value that is not a boolean is exit 2; turned off, map remo
   const conflict = keylang(dir, ["map"]);
   assert.equal(conflict.status, 1);
   assert.equal(conflict.stdout, "keylang/map-explained/README.md: manual file without keylang:generated marker\n");
+});
+
+interface Mock {
+  url: string;
+  /** The prompt of every request, in order. */
+  prompts: { system: string; prompt: string }[];
+  /** The answer to a prompt; an Error is answered with HTTP 400, which the SDK does not retry. */
+  reply: (prompt: string) => string | Error;
+}
+
+/** A local stand-in for the Messages API: no network, answers with `mock.reply`. */
+async function mockAnthropic(t: TestContext): Promise<Mock> {
+  const mock: Mock = { url: "", prompts: [], reply: () => "" };
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+    req.on("end", () => {
+      const body = JSON.parse(data) as { system: string; messages: { content: string }[] };
+      const prompt = body.messages[0]?.content ?? "";
+      mock.prompts.push({ system: body.system, prompt });
+      const answer = mock.reply(prompt);
+      if (answer instanceof Error) {
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: answer.message } }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: answer }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 10, output_tokens: 10 } }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  mock.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return mock;
+}
+
+/** `keylang` without blocking this process: the mock server answers while the CLI waits. */
+function keylangAsync(cwd: string, args: string[], env: Record<string, string | undefined>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [bin, ...args], { cwd, env: { ...process.env, ...env } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+/** The node a prompt asks about: the first line of the summary is `<kind> <id> …`. */
+function askedId(prompt: string): string {
+  return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
+}
+
+function withModel(dir: string, mock: Mock): Record<string, string | undefined> {
+  configure(dir, { map: true });
+  const file = join(dir, "keylang.json");
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "anthropic:claude-opus-5" }));
+  return { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "test-key", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir };
+}
+
+const today = new Date().toISOString().slice(0, 10);
+
+test("explain --llm --brief: a brief in keylang/explain/brief/ shows in the explained map with model and date, a doc comment wins, a code change makes it stale", async (t) => {
+  const dir = copy(t);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  mock.reply = (prompt) => (askedId(prompt) === "domain.order.createOrder" ? "Creates an order with its total. It never saves it. A third sentence the map leaves out." : "Sums the prices; see `domain.order.nope`.");
+  const brief = await keylangAsync(dir, ["explain", "domain.order.createOrder", "--llm", "--brief"], env);
+  assert.equal(brief.status, 0, brief.stderr);
+  assert.match(mock.prompts[0]!.system, /one or two sentences in one paragraph/);
+  assert.equal(brief.stdout, `Creates an order with its total. It never saves it.\n\nanthropic:claude-opus-5 · ${today} · fresh\n`);
+  const saved = readFileSync(join(dir, "keylang/explain/brief/domain.order.createOrder.md"), "utf8");
+  assert.match(saved, /^<!-- keylang:explain agent=anthropic:claude-opus-5 date=\S+ closure=[0-9a-f]{64} lang=en detail=brief -->\nCreates an order with its total\. It never saves it\.\n$/);
+  // A node with a doc comment keeps it in the map; a model's unknown ID is reported and stays plain text.
+  const total = await keylangAsync(dir, ["explain", "domain.order.total", "--llm", "--brief"], env);
+  assert.match(total.stdout, /^unknown ids: domain\.order\.nope$/m);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const map = (): string[] => readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8").split("\n");
+  const after = (head: string): string | undefined => map()[map().findIndex((line) => line.includes(head)) + 1];
+  assert.equal(after("fn [createOrder]"), `      <br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today})_`);
+  assert.equal(after("fn [total]"), "      <br>Sums item prices. The sum calls `items.reduce()` once.");
+  assert.match(readFileSync(join(dir, "keylang/map-explained/README.md"), "utf8"), /^\| \[domain\]\(domain\.md\) \|\s*\| 6 \| 1 \| 0 \| 3 \|$/m);
+  assert.equal(keylang(dir, ["parse", "keylang/map-explained"]).status, 0);
+
+  const order = join(dir, "src/domain/order.ts");
+  writeFileSync(order, readFileSync(order, "utf8").replace("return { id, total: total(items) };", "return { id: id.trim(), total: total(items) };"));
+  const check = keylang(dir, ["map", "--check"]);
+  assert.equal(check.status, 1);
+  assert.match(check.stdout, /^keylang\/map-explained\/domain\.md: stale/m);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.equal(after("fn [createOrder]"), `      <br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today} · stale)_`);
+  assert.match(keylang(dir, ["explain", "--stale"]).stdout, /^domain\.order\.createOrder \(brief\): stale \(explained \S+\); run `keylang explain domain\.order\.createOrder --llm --brief`$/m);
+});
+
+test("saved explanations are not specs; the store of keylang 0.1 is named with a way to move it", async (t) => {
+  const dir = copy(t);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  const before = keylang(dir, ["check"]);
+  // Read as a spec, an answer that starts a list would be a layer with arguments (K005).
+  mock.reply = () => "- Creates an order and returns it.";
+  assert.equal((await keylangAsync(dir, ["explain", "domain.order.createOrder", "--llm", "--brief"], env)).status, 0);
+  assert.equal((await keylangAsync(dir, ["explain", "domain.order.createOrder", "--llm"], env)).status, 0);
+  assert.ok(existsSync(join(dir, "keylang/explain/domain.order.createOrder.md")));
+  assert.deepEqual(keylang(dir, ["check"]), before);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), /^      <br>\\- Creates an order and returns it\. _\(llm/m);
+  assert.equal(keylang(dir, ["parse", "keylang/map-explained/domain.md"]).status, 0);
+
+  mkdirSync(join(dir, ".keylang/explain"), { recursive: true });
+  writeFileSync(join(dir, ".keylang/explain/app.checkout.md"), "<!-- keylang:explain agent=a:b date=2026-01-01 closure= lang=en detail=short -->\nOld.\n");
+  const note = "keylang: note: 1 explanation(s) in .keylang/explain/ are not read any more; move them: mkdir -p keylang/explain && mv .keylang/explain/*.md keylang/explain/\n";
+  const explain = keylang(dir, ["explain", "app.checkout"]);
+  assert.equal(explain.stderr, note);
+  assert.doesNotMatch(explain.stdout, /Old\./);
+  assert.match(keylang(dir, ["doctor"], { HOME: dir }).stdout, /^explanations: 1 saved, 1 brief\(s\) in keylang\/explain\/; explained map on \(keylang\.json `explain\.map`\); 1 explanation\(s\) in \.keylang\/explain\/ are not read any more; move them: /m);
+});
+
+test("explain --missing --llm: a brief for each node without a doc comment, bottom-up; a layer's prompt carries its modules' briefs; --dry-run asks nothing", async (t) => {
+  const dir = copy(t);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
+  const dry = keylang(dir, ["explain", "--missing", "--llm", "--dry-run"], env);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.match(dry.stdout, /^would explain 6 node\(s\): 3 fn\/type, 1 class\/module, 2 layer\nestimated tokens: ~\d+ in, ~480 out\n$/);
+  assert.equal(mock.prompts.length, 0);
+  assert.ok(!existsSync(join(dir, "keylang/explain")));
+  assert.equal(keylang(dir, ["explain", "--missing", "--limit", "2"]).stdout, "app.checkout.checkout (fn/type)\ndomain.order.Ledger.size (fn/type)\n");
+
+  const run = await keylangAsync(dir, ["explain", "--missing", "--llm", "--jobs", "2"], env);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, "explained 6 of 6 node(s)\n");
+  assert.match(run.stderr, /^\[6\/6\] /m);
+  const asked = mock.prompts.map((p) => askedId(p.prompt));
+  assert.deepEqual(asked.slice(0, 3).sort(), ["app.checkout.checkout", "domain.order.Ledger.size", "domain.order.createOrder"]);
+  assert.equal(asked[3], "domain.money");
+  assert.deepEqual(asked.slice(4).sort(), ["app", "domain"]);
+  const layer = mock.prompts.find((p) => askedId(p.prompt) === "domain")!.prompt;
+  assert.match(layer, /^- module `domain\.money`: Brief of domain\.money\.$/m);
+  assert.match(layer, /^- module `domain\.order`: Orders and their totals\. Nothing here does I\/O\.$/m);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), new RegExp(`^    <br>Brief of domain\\.money\\. _\\(llm · claude-opus-5 · ${today}\\)_$`, "m"));
+
+  const again = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
+  assert.equal(again.stdout, "nothing to explain\n");
+  assert.equal(mock.prompts.length, 6);
+});
+
+test("explain --missing --llm: a failed node is named with exit 1 and a rerun asks only for it; --stale --llm asks only for stale briefs; no key is exit 2", async (t) => {
+  const dir = copy(t);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  mock.reply = (prompt) => (askedId(prompt) === "domain.order.createOrder" ? new Error("model is overloaded") : `Brief of ${askedId(prompt)}.`);
+  const run = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
+  assert.equal(run.status, 1, run.stderr);
+  assert.match(run.stdout, /^explained 5 of 6 node\(s\)\nfailed: domain\.order\.createOrder: .*model is overloaded/);
+  assert.equal(readdirSync(join(dir, "keylang/explain/brief")).length, 5, "every other brief is kept");
+
+  mock.prompts.length = 0;
+  mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
+  const rerun = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.deepEqual(mock.prompts.map((p) => askedId(p.prompt)), ["domain.order.createOrder"]);
+
+  // The body of createOrder changes: its brief, its caller's, and both layers' go stale.
+  const order = join(dir, "src/domain/order.ts");
+  writeFileSync(order, readFileSync(order, "utf8").replace("return { id, total: total(items) };", "return { id: id.trim(), total: total(items) };"));
+  mock.prompts.length = 0;
+  const stale = await keylangAsync(dir, ["explain", "--stale", "--llm"], env);
+  assert.equal(stale.status, 0, stale.stderr);
+  assert.deepEqual(mock.prompts.map((p) => askedId(p.prompt)).sort(), ["app", "app.checkout.checkout", "domain", "domain.order.createOrder"]);
+
+  const noKey = keylang(dir, ["explain", "--missing", "--llm"], { ...env, ANTHROPIC_API_KEY: undefined });
+  assert.equal(noKey.status, 0, "nothing is missing, so no model is needed");
+  const bad = keylang(dir, ["explain", "--missing", "--llm", "--jobs", "0"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /--jobs must be a positive whole number, got `0`/);
+  rmSync(join(dir, "keylang/explain"), { recursive: true });
+  const missingKey = keylang(dir, ["explain", "--missing", "--llm"], { ...env, ANTHROPIC_API_KEY: undefined });
+  assert.equal(missingKey.status, 2);
+  assert.match(missingKey.stderr, /no Anthropic credentials/);
 });

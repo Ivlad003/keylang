@@ -110,8 +110,8 @@ test("explain --llm: asks the model once, saves the answer with its baseline, re
 
   const again = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], env);
   assert.equal(again.status, 0);
-  assert.equal(mock.requests.length, 1, "a fresh explanation is read from .keylang/explain/, not asked for again");
-  assert.ok(existsSync(join(dir, ".keylang/explain/app.checkout.checkout.md")));
+  assert.equal(mock.requests.length, 1, "a fresh explanation is read from keylang/explain/, not asked for again");
+  assert.ok(existsSync(join(dir, "keylang/explain/app.checkout.checkout.md")));
 
   // A body change moves the closure fingerprint: the explanation is stale, `check` does not change.
   const before = keylang(dir, ["check"]).stdout;
@@ -194,7 +194,7 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
     assert.equal(o.status, 2, `${what}: ${o.stdout}${o.stderr}`);
     assert.match(o.stderr, message, what);
   }
-  assert.ok(!existsSync(join(dir, ".keylang/explain")), "no empty explanation is kept as fresh");
+  assert.ok(!existsSync(join(dir, "keylang/explain")), "no empty explanation is kept as fresh");
   const bad = keylang(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, KEYLANG_LLM_TIMEOUT_MS: "soon" });
   assert.match(bad.stderr, /KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds/);
 });

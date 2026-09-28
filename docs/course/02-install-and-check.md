@@ -23,7 +23,7 @@ In this checkout the entry point is `node bin/keylang.js`, which loads TypeScrip
 | `keylang map --check` | No | Exit 1 when the committed map does not match a fresh render, or when a map file lacks the marker |
 | `keylang explain K001` | No | Why the code exists, a short example, and a fix |
 | `keylang explain <id>` | No | Kind, signature, file, calls, callers, flows and rules that name the id |
-| `keylang explain <id> --llm` | `.keylang/explain/<id>.md` | A prose explanation from the configured agent. Does not change any verdict |
+| `keylang explain <id> --llm` | `keylang/explain/<id>.md` (committed; `--brief`: `keylang/explain/brief/<id>.md`) | A prose explanation from the configured agent. Does not change any verdict |
 | `keylang fmt <file>` | The file, in canonical form | Exit 1 when the file had diagnostics or, with `--check`, when it was not canonical |
 | `keylang parse <file>` | No | A text dump of the IR. `--json` is machine-readable and is the only thing on stdout |
 | `keylang doctor` | No | Languages, whether an agent key is configured, voice engine. Exit 0 even when it reports a problem |

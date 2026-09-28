@@ -88,7 +88,7 @@ The boundary is the proposal directory.
 | `draft map` | Nothing. Prints a `keylang.json` layout | The layout changes only when you edit the file |
 | `code-to-spec <file:line>` | Flows for the function at that line, or every exported function | `--since <git-ref>` limits the draft to functions the diff touches |
 | `spec-to-code <id>` | A stub and failing tests for a `planned fn` | `--apply` writes the files directly. The default does not |
-| `explain <id> --llm` | `.keylang/explain/<id>.md` | Never changes a verdict. `explain --stale` lists explanations whose code moved |
+| `explain <id> --llm` | `keylang/explain/<id>.md` | Never changes a verdict. `explain --stale` lists explanations whose code moved |
 
 `keylang mcp` serves search, node, code, flows, check, explain, and `apply_diff` over stdio. `apply_diff` stores a full new text as a proposal for one hand-written spec. It rejects paths outside the spec directory, generated maps, and anything with `..`. The file on disk is unchanged until a person merges.
 

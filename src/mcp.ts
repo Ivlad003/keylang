@@ -180,7 +180,7 @@ export function mcpServer(root: string, version: string): McpServer {
       const analysis = await fresh();
       const result = summarizeNode(analysis, id);
       if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
-      const saved = readExplanation(root, id);
+      const saved = readExplanation(analysis.config, id);
       return json({ summary: result.summary, explanation: saved ? { text: saved.text, agent: saved.agent, date: saved.date, stale: isStale(analysis, id, saved) } : null });
     },
   );

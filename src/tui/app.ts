@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { analyze, type Analysis, type AnalysisRequest } from "../analyze.ts";
+import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
 import { CONFIG_FILE, loadConfig, toPosix } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
@@ -380,7 +380,10 @@ export class App {
     // The settings are `keylang.json` in the same editor, not a separate form (design §7.1).
     const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [CONFIG_FILE] : [];
     if (!existsSync(dir)) return config;
-    return sortFiles([...collectMdFiles([dir]).map((abs) => toPosix(relative(this.state.root, abs))), ...config], null);
+    // Saved explanations are the model's text about nodes, not specs to edit.
+    const store = join(dir, "explain");
+    const specs = collectMdFiles([dir]).filter((abs) => !within(abs, store));
+    return sortFiles([...specs.map((abs) => toPosix(relative(this.state.root, abs))), ...config], null);
   }
 
   // ---------- buffers ----------
@@ -1155,7 +1158,7 @@ export class App {
       this.state.message = `unknown id \`${id}\``;
       return;
     }
-    const saved = readExplanation(this.state.root, id);
+    const saved = readExplanation(analysis.config, id);
     const lines: Hover["lines"] = formatSummary(result.summary).split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
     if (saved) {
       lines.push({ text: "", kind: "rule" });

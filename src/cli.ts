@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix } from "./config.ts";
+import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
@@ -16,7 +16,8 @@ import { diffMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
-import { currentBaseline, explainedIds, explanationRequest, isStale, readExplanation, unknownIds, writeExplanation, type Explanation } from "./explain-llm.ts";
+import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
+import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
@@ -52,8 +53,18 @@ Commands:
                             An id: what the snapshot and specs say about it (offline),
                             and its saved explanation with model, date and stale?
   explain <id> --llm        Explain the id in plain language with the configured
-                            agent; saved in .keylang/explain/ (--full: in detail)
-  explain --stale           List saved explanations whose code changed since
+                            agent; saved in keylang/explain/ (--full: in detail;
+                            --brief: one or two sentences for the explained map,
+                            in keylang/explain/brief/)
+  explain --stale           List saved explanations and briefs whose code changed since
+  explain --missing --llm   Write a brief for every node of the explained map with no
+                            doc comment and no fresh brief, bottom-up (fn and types,
+                            then classes and modules, then layers: a parent's prompt
+                            carries its members' briefs); each is saved as it arrives,
+                            so a rerun goes on where it stopped. --stale --llm: only
+                            the stale briefs. Without --llm: list the nodes.
+                            --dry-run: counts and a token estimate, no request;
+                            --limit N: at most N nodes; --jobs N: requests at once (4)
   draft flow <trigger>      Propose a flow from the snapshot's calls as
                             .keylang/proposals/<spec>; merge it with m in the TUI
                             (--mode algo|llm|hybrid, default hybrid: the model's steps
@@ -141,6 +152,11 @@ async function run(argv: readonly string[]): Promise<number> {
       print: { type: "boolean" },
       apply: { type: "boolean" },
       full: { type: "boolean" },
+      brief: { type: "boolean" },
+      missing: { type: "boolean" },
+      "dry-run": { type: "boolean" },
+      limit: { type: "string" },
+      jobs: { type: "string" },
       stale: { type: "boolean" },
       strict: { type: "boolean" },
       format: { type: "string" },
@@ -179,7 +195,16 @@ async function run(argv: readonly string[]): Promise<number> {
     case "check":
       return cmdCheck(paths, { strict: values.strict === true, format: values.format ?? "human", explain: values["explain-edge"] === true, static: values.static ?? "behavior" });
     case "explain":
-      return cmdExplain(paths[0], { llm: values.llm === true, full: values.full === true, stale: values.stale === true });
+      return cmdExplain(paths[0], {
+        llm: values.llm === true,
+        full: values.full === true,
+        brief: values.brief === true,
+        stale: values.stale === true,
+        missing: values.missing === true,
+        dryRun: values["dry-run"] === true,
+        limit: values.limit,
+        jobs: values.jobs,
+      });
     case "lsp":
       return serveLsp();
     case "doctor":
@@ -243,14 +268,37 @@ async function cmdWeb(portText: string, host: string): Promise<number> {
   return 0;
 }
 
-async function cmdExplain(subject: string | undefined, opts: { llm: boolean; full: boolean; stale: boolean }): Promise<number> {
+interface ExplainOptions {
+  llm: boolean;
+  full: boolean;
+  brief: boolean;
+  stale: boolean;
+  missing: boolean;
+  dryRun: boolean;
+  limit: string | undefined;
+  jobs: string | undefined;
+}
+
+async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Promise<number> {
+  if (opts.full && opts.brief) throw new Error("explain: --full and --brief are two details; pass one");
+  if (opts.missing && opts.stale) throw new Error("explain: --missing already includes stale briefs; pass one of --missing and --stale");
+  if (opts.missing || (opts.stale && (opts.llm || opts.dryRun))) {
+    if (subject !== undefined) throw new Error(`explain ${opts.missing ? "--missing" : "--stale"} explains every node it finds; it takes no id`);
+    return cmdExplainBatch(opts.missing ? "missing" : "stale", opts);
+  }
+  if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs go with --missing or --stale");
   if (opts.stale) {
     const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-    for (const id of explainedIds(analysis.config.root)) {
-      const e = readExplanation(analysis.config.root, id);
-      if (!e) continue;
-      if (currentBaseline(analysis, id) === null) process.stdout.write(`${id}: gone (explained ${e.date})\n`);
-      else if (isStale(analysis, id, e)) process.stdout.write(`${id}: stale (explained ${e.date}); run \`keylang explain ${id} --llm\`\n`);
+    noteOldExplanations(analysis.config);
+    for (const kind of ["answers", "briefs"] as const) {
+      for (const id of explainedIds(analysis.config, kind)) {
+        const e = readExplanation(analysis.config, id, kind === "briefs" ? "brief" : "short");
+        if (!e) continue;
+        const what = kind === "briefs" ? `${id} (brief)` : id;
+        const again = `keylang explain ${id} --llm${kind === "briefs" ? " --brief" : ""}`;
+        if (currentBaseline(analysis, id) === null) process.stdout.write(`${what}: gone (explained ${e.date})\n`);
+        else if (isStale(analysis, id, e)) process.stdout.write(`${what}: stale (explained ${e.date}); run \`${again}\`\n`);
+      }
     }
     return 0;
   }
@@ -262,12 +310,13 @@ async function cmdExplain(subject: string | undefined, opts: { llm: boolean; ful
     return 0;
   }
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
+  noteOldExplanations(analysis.config);
   const result = summarizeNode(analysis, subject);
   if ("unknown" in result) throw new Error(`unknown id \`${subject}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
-  const root = analysis.config.root;
-  const { lang } = analysis.config.explain;
-  const detail = opts.full ? "full" : analysis.config.explain.detail;
-  const saved = readExplanation(root, subject);
+  const config = analysis.config;
+  const { lang } = config.explain;
+  const detail: ExplanationDetail = opts.brief ? "brief" : opts.full ? "full" : config.explain.detail;
+  const saved = readExplanation(config, subject, detail);
   const show = (e: Explanation): void => {
     const unknown = unknownIds(analysis, e.text);
     process.stdout.write(`${e.text}\n\n${e.agent} · ${e.date} · ${isStale(analysis, subject, e) ? "stale" : "fresh"}\n`);
@@ -288,7 +337,7 @@ async function cmdExplain(subject: string | undefined, opts: { llm: boolean; ful
   }
   // The SDK loads only when a model is asked: other commands start without it.
   const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(analysis.config.agent);
+  const setup = llmClient(config.agent);
   if ("missing" in setup) {
     process.stderr.write(`keylang: ${setup.missing}; showing what the snapshot says\n`);
     process.stdout.write(`${formatSummary(result.summary)}\n`);
@@ -298,11 +347,69 @@ async function cmdExplain(subject: string | undefined, opts: { llm: boolean; ful
     }
     return 0;
   }
-  const text = await setup.client.complete(explanationRequest(analysis, result.summary, { lang, detail }));
+  const answer = await setup.client.complete(explanationRequest(analysis, result.summary, { lang, detail }));
+  const text = detail === "brief" ? briefText(answer) : answer;
   const e: Explanation = { agent: setup.client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analysis, subject) ?? "", lang, detail, text };
-  writeExplanation(root, subject, e);
+  writeExplanation(config, subject, e);
   show(e);
   return 0;
+}
+
+/**
+ * `explain --missing|--stale [--llm] [--dry-run] [--limit N] [--jobs N]`:
+ * briefs for the explained map, bottom-up. Without `--llm` it lists the nodes;
+ * `--dry-run` counts them and estimates tokens. Exit 1 when some nodes failed.
+ */
+async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise<number> {
+  const limit = opts.limit === undefined ? Infinity : positiveInteger("--limit", opts.limit);
+  const jobs = opts.jobs === undefined ? DEFAULT_JOBS : positiveInteger("--jobs", opts.jobs);
+  const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
+  const config = analysis.config;
+  noteOldExplanations(config);
+  if (!analysis.snapshot) throw new Error("no snapshot: explain --missing needs a repository with sources");
+  const briefs = loadBriefs(config);
+  const plan = planBriefs(analysis, batch, briefs).slice(0, limit);
+  if (opts.dryRun) {
+    const count = (level: BriefLevel): number => plan.filter((p) => p.level === level).length;
+    const tokens = estimateTokens(analysis, plan, briefs);
+    process.stdout.write(`would explain ${plan.length} node(s): ${count("fn/type")} fn/type, ${count("class/module")} class/module, ${count("layer")} layer\n`);
+    process.stdout.write(`estimated tokens: ~${tokens.input} in, ~${tokens.output} out\n`);
+    return 0;
+  }
+  if (!opts.llm) {
+    for (const p of plan) process.stdout.write(`${p.id} (${p.level})\n`);
+    return 0;
+  }
+  if (plan.length === 0) {
+    process.stdout.write("nothing to explain\n");
+    return 0;
+  }
+  const { llmClient } = await import("./llm.ts");
+  const setup = llmClient(config.agent);
+  if ("missing" in setup) throw new Error(setup.missing);
+  const result = await runBriefs(analysis, setup.client, plan, {
+    jobs,
+    briefs,
+    progress: (done, total, id, failed) => process.stderr.write(`[${done}/${total}] ${id}${failed === null ? "" : `: failed: ${failed}`}\n`),
+  });
+  process.stdout.write(`explained ${result.done.length} of ${plan.length} node(s)\n`);
+  for (const f of result.failed) process.stdout.write(`failed: ${f.id}: ${f.reason}\n`);
+  return result.failed.length > 0 ? 1 : 0;
+}
+
+/** Requests a batch keeps in flight: enough to be quick, few enough for a provider's rate limit. */
+const DEFAULT_JOBS = 4;
+
+function positiveInteger(flag: string, text: string): number {
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`${flag} must be a positive whole number, got \`${text}\``);
+  return n;
+}
+
+/** One note per command while the store of keylang 0.1 still holds files. */
+function noteOldExplanations(config: Config): void {
+  const count = oldExplanations(config.root);
+  if (count > 0) process.stderr.write(`keylang: note: ${moveHint(config, count)}\n`);
 }
 
 async function cmdDraft(args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }): Promise<number> {
@@ -618,9 +725,12 @@ async function cmdDoctor(): Promise<number> {
   };
   const microphone = await microphoneStatus();
   const model = localModel();
+  const old = oldExplanations(root);
+  const explanations = `${explainedIds(config, "answers").length} saved, ${explainedIds(config, "briefs").length} brief(s) in ${config.dir}/explain/; explained map ${config.explain.map ? "on" : "off"} (keylang.json \`explain.map\`)${old > 0 ? `; ${moveHint(config, old)}` : ""}`;
   const lines = [
     `languages: ${config.languages.join(", ") || "none found"}${existsSync(join(root, CONFIG_FILE)) ? "" : ` (guessed; no ${CONFIG_FILE})`}`,
     `agent: ${agent()}`,
+    `explanations: ${explanations}`,
     `voice: engine ${config.voice.engine} → ${engine()}`,
     `voice model: ${model ?? `none in ${modelsDir()}`}`,
     `@fugood/whisper.node: ${whisper.status === "ok" ? "installed" : whisper.status === "missing" ? "not installed (optional)" : `unavailable: ${whisper.reason}`}`,
