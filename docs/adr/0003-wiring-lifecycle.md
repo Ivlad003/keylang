@@ -1,6 +1,6 @@
 # 0003. Життєвий цикл wiring: пряма згенерована функція, без контейнера й без циклів
 
-**Дата:** 2026-09-28 · **Статус:** запропоновано (чекає рішення людини) · **Джерело:** design §6, §10.10; тікет `.scratch/m5-m7/issues/08`; прототип [`examples/wiring-lifecycle/`](../../examples/wiring-lifecycle/)
+**Дата:** 2026-09-28 · **Статус:** прийнято 2026-09-28 (реалізовано в M6: `src/wiring.ts`, `src/wire-gen.ts`, `tests/wiring.test.ts`) · **Джерело:** design §6, §10.10; тікет `.scratch/m5-m7/issues/08`; прототип [`examples/wiring-lifecycle/`](../../examples/wiring-lifecycle/)
 
 ## Контекст
 

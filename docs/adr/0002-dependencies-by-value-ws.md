@@ -17,6 +17,6 @@ ADR 0001 відмовився від `ws` з тієї ж причини, що й
 
 ## Наслідки
 
-- `npm ls --omit=dev`: `@vscode/tree-sitter-wasm`, `web-tree-sitter`, `ws` — 3 пакети.
+- На момент рішення (M4) `npm ls --omit=dev` — 3 пакети: `@vscode/tree-sitter-wasm`, `web-tree-sitter`, `ws`. Після M5–M7 (2026-09-28) прямих runtime-залежностей 10 — ще `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`, `zod`, `smol-toml`, `eventsource-parser` і опційні `@fugood/whisper.node`, `decibri`; разом із транзитивними 114 пакетів (107 без опційних). Ліміту кількості немає; кожну додано за критеріями цього ADR і design §7.4.
 - Помилки транспорту закриває бібліотека: валідація кадрів, фрагментація, коди закриття, ліміт розміру. Разом з тим у `web.ts` лишається те, що ніяка бібліотека не вирішить: межі `cols`/`rows`, обробник `error` на сокеті до upgrade, передача сесії між вкладками, cookie замість токена в URL.
 - Тести web перевіряють кадри не лише на `tests/vt.ts`, а й у справжньому xterm.js (`@xterm/headless`, devDependency).

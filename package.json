@@ -2,6 +2,7 @@
   "name": "keylang",
   "version": "0.1.0",
   "description": "keylang: architecture description bound to a repository",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "keylang": "./bin/keylang.js"

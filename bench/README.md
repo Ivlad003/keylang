@@ -1,6 +1,6 @@
 # Бенчмарк conformance
 
-Репозиторії, на яких перевіряється `keylang map` / `keylang check` (обрано 2026-09-27). Клонуються в `bench/repos/` (не в git): `bench/clone.sh`.
+Репозиторії, на яких перевіряється `keylang map` / `keylang check` (обрано 2026-09-27). Клонуються в `bench/repos/` (не в git): `node bench/clone.ts`; приватний voice-transcriber підключається з локальної копії через `--voice-transcriber <шлях>`. Прогін: `node bench/run.ts [--work <тека>]` — `map`, `check` і проби `bench/inject.ts` на тимчасових копіях.
 
 | Репозиторій | Мова | Роль у бенчмарку |
 |---|---|---|
