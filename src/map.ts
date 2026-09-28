@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { excludedSourceFiles, isExcluded, sourceFiles, toPosix, type Config } from "./config.ts";
+import { excludedSourceFiles, isExcluded, sourceTree, toPosix, type Config } from "./config.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
@@ -31,7 +31,8 @@ export interface MapResult {
 export async function generateMap(config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
-  const all = sourceFiles(config);
+  const tree = sourceTree(config);
+  const all = tree.files;
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
   const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
     const language = languageOf(rel);
@@ -78,12 +79,22 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     if (module) module.comment = "excluded";
   }
   const mapDir = `${config.dir}/map`;
+  // An unreadable directory inside a layer: a hole of the module IDs its files would have.
+  const unreadable = tree.unreadable.flatMap(({ dir, reason }) => {
+    graph.warnings.push(`\`${dir}\`: ${reason}; its files are not indexed`);
+    const place = placeFile(config, `${dir}/${UNREADABLE_PROBE}`);
+    return place === null ? [] : [{ file: dir, reason, source: [place.layer, ...place.segments.slice(0, -1)].join(".") }];
+  });
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
+    ...unreadable,
   ]);
   return { graph, files: renderMap(index, mapDir), index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted } };
 }
+
+/** A file name to place an unreadable directory in the layers, as any of its source files would be. */
+const UNREADABLE_PROBE = "keylang-unreadable.ts";
 
 function opaqueFacts(path: string): FileFacts {
   return { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "opaque", parseError: null };

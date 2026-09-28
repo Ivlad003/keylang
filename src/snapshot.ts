@@ -162,7 +162,8 @@ export function buildSnapshot(
   graph: Graph,
   config: Config,
   files: readonly { path: string; sha256: string }[],
-  skipped: readonly { file: string; reason: string }[],
+  /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
+  skipped: readonly { file: string; reason: string; source?: string }[],
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -338,8 +339,8 @@ export function buildSnapshot(
       });
     }
   }
-  for (const { file, reason } of skipped) {
-    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: graph.byPath.get(file)?.id ?? null });
+  for (const { file, reason, source } of skipped) {
+    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
   coverage.sort(compareCoverage);
   closures(ordered, coverage);

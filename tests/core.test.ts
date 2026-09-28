@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -495,4 +495,30 @@ test("a partly parsed module keeps an unknown member unverified, not K001, even 
   const r = keylang(dir, ["check"]);
   assert.doesNotMatch(r.stdout, /K001/, r.stdout);
   assert.match(r.stdout, /f\.md:4:3: ID unverified app\.util\.three: opaque module/);
+});
+
+test("a source directory keylang cannot read is a hole of its scope, not a crash and not an absence", { skip: process.getuid?.() === 0 ? "root reads any directory" : false }, (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ domain: ["src/domain/**"], infra: ["src/infra/**"] }),
+    "keylang/rules.md": "# rules\n\n- layers infra < domain\n- deny domain infra\n- no-cycles\n",
+    "src/domain/order.ts": "export function total(): number {\n  return 1;\n}\n",
+    "src/infra/db.ts": "export function save(): void {}\n",
+    "src/domain/locked/sneaky.ts": 'import { save } from "../../infra/db.ts";\nexport function sneaky(): void {\n  save();\n}\n',
+  });
+  const locked = join(dir, "src/domain/locked");
+  chmodSync(locked, 0o000);
+  try {
+    const map = keylang(dir, ["map"]);
+    assert.equal(map.status, 0, map.stderr);
+    assert.match(map.stderr, /warning: `src\/domain\/locked`: directory is not readable \(EACCES\); its files are not indexed/);
+    const check = keylang(dir, ["check", "--strict"]);
+    assert.equal(check.status, 1, "unverified under --strict");
+    assert.match(check.stdout, /rules\.md:4:1: unverified directory is not readable \(EACCES\) \(src\/domain\/locked:1:1\)/, "deny over the scope is not ok");
+    assert.match(check.stdout, /rules\.md:5:1: unverified no cycle among the known imports, but directory is not readable/);
+    assert.match(check.stderr, /0 fail, 3 unverified, 0 ok/);
+  } finally {
+    // Before the temporary copy is removed.
+    chmodSync(locked, 0o755);
+  }
+  assert.match(keylang(dir, ["check"]).stdout, /K102 divergence: `domain\.locked\.sneaky` depends on `infra\.db`/, "readable again, the edge is there");
 });

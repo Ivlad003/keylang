@@ -146,9 +146,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   // replace a fn: it changes which code a call runs, not what the module imports.
   const inDeclaration = (source: string | null): boolean => {
     const node = source === null ? undefined : snapshot.nodes[source];
-    const parent = source === null ? undefined : snapshot.nodes[source.slice(0, source.lastIndexOf("."))];
-    // A fn, or a class: a module node declared in its parent module's file.
-    return node?.kind === "fn" || (node?.kind === "module" && parent?.kind === "module" && node.file !== null && parent.file === node.file);
+    return node?.kind === "fn" || isClass(source ?? "");
   };
   const dependencyHoleIn = (moduleId: string): string | null => {
     const file = snapshot.nodes[moduleId]?.file;
@@ -162,6 +160,13 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
   };
   const holeAmong = (ids: Iterable<string>): string | null => [...ids].sort().map(dependencyHoleIn).find((item) => item !== null) ?? null;
+  // A hole whose scope has no node — a directory that could not be read — may hide modules of any ID under
+  // that scope: it is in the area of a rule over the scope, above it or below it (null: any area).
+  const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
+  const scopeHole = (scope: string | null): string | null => {
+    const hole = orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!));
+    return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
+  };
 
   const pushFail = (code: Diagnostic["code"], file: string, line: number, col: number, message: string, criterion: string, area: string): void => {
     diagnostics.push(diagnostic(code, file, pointAt(line, col), message));
@@ -223,7 +228,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       const layer = layerOf(id);
       return order.layers.includes(layer) || (!rules.ordered.has(layer) && !rules.unordered.has(layer));
     });
-    const hole = holeAmong(area);
+    const hole = holeAmong(area) ?? orphans.map((item) => layerOf(item.source!)).filter((layer) => order.layers.includes(layer) || (!rules.ordered.has(layer) && !rules.unordered.has(layer))).map(scopeHole)[0] ?? null;
     const names = order.layers.map((layer) => `\`${layer}\``).join(", ");
     if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`);
     else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down, and no dependency hole in the area`);
@@ -241,7 +246,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       pushUnverified(...at, deny.text, area, `\`${intended}\` is planned: no code in the area yet`);
       continue;
     }
-    const hole = holeAmong(scope);
+    const hole = holeAmong(scope) ?? scopeHole(deny.a);
     const winners = overridden.get(deny);
     if (hole) pushUnverified(...at, deny.text, area, hole);
     else if (scope.length === 0) pushOk(deny.file, deny.span, deny.text, area, `convergence: no module under \`${deny.a}\` yet, so no edge to ${targets}`);
@@ -273,6 +278,8 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     }
     // Only an unknown import can lead to a module the known edges do not reach.
     const reachableHole = holeAmong(reachable);
+    // Modules in a directory keylang could not read may be unreachable too.
+    const unknownModules = scopeHole(null);
     let unreached = 0;
     for (const module of [...units].sort()) {
       if (reachable.has(module) || rules.unordered.has(layerOf(module))) continue;
@@ -292,7 +299,9 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
         diagnostics.push({ ...diagnostic("K103", file, pointAt(line, col), `absence: module \`${module}\` is not reachable from any \`entry\``), criterion: "entry", area: module });
       }
     }
-    if (unreached === 0) {
+    if (unreached === 0 && unknownModules !== null) {
+      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entry.text);
+    } else if (unreached === 0) {
       for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entry.text);
     }
   }
@@ -354,7 +363,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       const inScope = (id: string): boolean => under === null || within(id, under);
       const relevant = components.filter((component) => component.some(inScope));
       // A cycle may run through an import keylang could not resolve.
-      const hole = relevant.length === 0 ? holeAmong([...units].filter(inScope)) : null;
+      const hole = relevant.length === 0 ? (holeAmong([...units].filter(inScope)) ?? scopeHole(under)) : null;
       if (hole) {
         pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${hole}`);
         continue;

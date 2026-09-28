@@ -2,7 +2,7 @@
 // Without a config file the layout is guessed from the directory tree
 // (`keylang init` writes that guess down so it can be edited).
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
 import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
@@ -241,20 +241,39 @@ export function configToJson(c: Config): string {
 
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
+  return walkSources(c, (rel) => !isExcluded(rel, c.exclude)).files;
+}
+
+/**
+ * The indexable source files and the directories that could not be listed
+ * (no permission): their files are unknown, which is a hole, not an absence.
+ */
+export function sourceTree(c: Config): { files: string[]; unreadable: { dir: string; reason: string }[] } {
   return walkSources(c, (rel) => !isExcluded(rel, c.exclude));
 }
 
 /** Source files left out only by the `exclude` of `keylang.json`: their modules are opaque. */
 export function excludedSourceFiles(c: Config): string[] {
   if (c.exclude.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude));
+  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude)).files;
 }
 
-function walkSources(c: Config, keep: (rel: string) => boolean): string[] {
+function walkSources(c: Config, keep: (rel: string) => boolean): { files: string[]; unreadable: { dir: string; reason: string }[] } {
   const out: string[] = [];
+  const unreadable: { dir: string; reason: string }[] = [];
   const specDir = c.dir.replace(/\/$/, "");
   const walk = (dir: string): void => {
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    let listed: Dirent[];
+    try {
+      listed = readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      // A subdirectory without permission: the rest of the tree is still read. The root itself is an I/O error.
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      if (dir === c.root || (code !== "EACCES" && code !== "EPERM")) throw error;
+      unreadable.push({ dir: toPosix(relative(c.root, dir)), reason: `directory is not readable (${code})` });
+      return;
+    }
+    const entries = listed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const e of entries) {
       const abs = join(dir, e.name);
       const rel = toPosix(relative(c.root, abs));
@@ -270,7 +289,7 @@ function walkSources(c: Config, keep: (rel: string) => boolean): string[] {
     }
   };
   walk(c.root);
-  return out;
+  return { files: out, unreadable };
 }
 
 /**
