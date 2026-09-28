@@ -1,6 +1,8 @@
-// Snapshot → generated `map/<layer>.md` files.
+// Snapshot → generated `map/<layer>.md` files, and the explained map: the same
+// tree with an explanation under every node (ADR 0004).
 
 import { posix } from "node:path";
+import { modelName, type NodeExplanation } from "./explanations.ts";
 import type { AnalysisSnapshot, SnapshotEdge, SnapshotNode } from "./snapshot.ts";
 
 export const GENERATED_MARK = "<!-- keylang:generated — не редагувати, `keylang map` -->";
@@ -32,15 +34,117 @@ function encodeSegment(seg: string): string {
 
 /** One Markdown document per layer, keyed by file name (`domain.md`). `mapDir` is where those files are written, relative to the repo root. */
 export function renderMap(snapshot: AnalysisSnapshot, mapDir: string): Map<string, string> {
-  const out = new Map<string, string>();
+  return renderLayers({ snapshot, children: childrenByParent(snapshot), mapDir, explain: null });
+}
+
+/** A node's explanation for the explained map; null leaves the node without text. */
+export type ExplainNode = (id: string) => NodeExplanation | null;
+
+/**
+ * The explained map: the layer files of `renderMap` with a description line
+ * under each node that has an explanation, and `README.md` with counts per
+ * layer. `mapDir` is the explained map's own directory, so links to code
+ * start from there.
+ */
+export function renderExplainedMap(snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode): Map<string, string> {
   const children = childrenByParent(snapshot);
-  for (const layerId of Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.kind === "layer").sort()) {
-    let s = `${GENERATED_MARK}\n\n# map\n\n- ${layerId}\n`;
-    for (const id of sortIds(snapshot, children.get(layerId) ?? [])) s += renderModule(snapshot, children, mapDir, id, 1);
+  const out = renderLayers({ snapshot, children, mapDir, explain });
+  out.set("README.md", renderReadme(snapshot, explain));
+  return out;
+}
+
+interface Render {
+  snapshot: AnalysisSnapshot;
+  children: Map<string, string[]>;
+  mapDir: string;
+  /** Set for the explained map. */
+  explain: ExplainNode | null;
+}
+
+function renderLayers(r: Render): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const layerId of layerIds(r.snapshot)) {
+    let s = `${GENERATED_MARK}\n\n# map\n\n- ${layerId}\n${describe(r, layerId, 1)}`;
+    for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) s += renderModule(r, id, 1);
     out.set(`${layerId}.md`, s);
   }
   return out;
 }
+
+function layerIds(snapshot: AnalysisSnapshot): string[] {
+  return Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.kind === "layer").sort();
+}
+
+/** The description line of a node at `depth`, or "" (the canonical map, a node without an explanation). */
+function describe(r: Render, id: string, depth: number): string {
+  const e = r.explain?.(id) ?? null;
+  return e === null ? "" : `${"  ".repeat(depth)}${descriptionText(e)}\n`;
+}
+
+/**
+ * The text of a description line: `<br>` so a Markdown viewer starts it on a
+ * line of its own, the explanation, and for a brief from a model its origin.
+ * The text never starts a block (a list item, a heading, a quote, a fence) and
+ * never opens or closes an HTML comment, so the file stays the same keylang.
+ */
+export function descriptionText(e: NodeExplanation): string {
+  let text = e.text.replace(/\s+/g, " ").trim().replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
+  if (/^\d+[.)]/.test(text)) text = text.replace(/^(\d+)([.)])/, "$1\\$2");
+  else if (/^(?:[-*+_=#>|]|~~~|```)/.test(text)) text = `\\${text}`;
+  const origin = e.origin === "llm" ? ` _(llm · ${modelName(e.agent ?? "?")} · ${e.date ?? "?"}${e.stale ? " · stale" : ""})_` : "";
+  return `<br>${text}${origin}`;
+}
+
+/** Explanation counts of the nodes of one layer (the layer included). */
+interface Counts {
+  doc: number;
+  llm: number;
+  stale: number;
+  none: number;
+}
+
+function renderReadme(snapshot: AnalysisSnapshot, explain: ExplainNode): string {
+  const counts = new Map<string, Counts>();
+  for (const [id, node] of Object.entries(snapshot.nodes)) {
+    if (node.layer === EXTERNAL_LAYER) continue;
+    let c = counts.get(node.layer);
+    if (!c) counts.set(node.layer, (c = { doc: 0, llm: 0, stale: 0, none: 0 }));
+    const e = explain(id);
+    if (e === null) c.none++;
+    else if (e.origin === "doc") c.doc++;
+    else if (e.stale) c.stale++;
+    else c.llm++;
+  }
+  const total: Counts = { doc: 0, llm: 0, stale: 0, none: 0 };
+  const rows: string[] = [];
+  for (const layer of layerIds(snapshot)) {
+    const c = counts.get(layer);
+    const e = explain(layer);
+    const text = e === null ? "" : descriptionText(e).slice("<br>".length).replaceAll("|", "\\|");
+    if (!c) {
+      rows.push(`| [${layer}](${layer}.md) | ${text} | | | | |`);
+      continue;
+    }
+    for (const key of ["doc", "llm", "stale", "none"] as const) total[key] += c[key];
+    rows.push(`| [${layer}](${layer}.md) | ${text} | ${c.doc} | ${c.llm} | ${c.stale} | ${c.none} |`);
+  }
+  return [
+    GENERATED_MARK,
+    "",
+    "## Explained map",
+    "",
+    "The tree of the map with a brief under each node: the documentation comment from the code, or a brief a model wrote, marked _(llm · model · date)_ and _stale_ once the code under it changed. `keylang map` writes it from the code and `explain/brief/`; it never asks a model.",
+    "",
+    "| Layer | Explanation | Code | LLM | LLM, stale | None |",
+    "|---|---|---|---|---|---|",
+    ...rows,
+    `| **all** | | ${total.doc} | ${total.llm} | ${total.stale} | ${total.none} |`,
+    "",
+  ].join("\n");
+}
+
+/** Packages; their nodes have no code in the repository to explain. */
+const EXTERNAL_LAYER = "external";
 
 function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
   const children = new Map<string, string[]>();
@@ -74,21 +178,22 @@ function linkedName(mapDir: string, node: SnapshotNode, name: string): string {
   return `[${name}](${codeHref(mapDir, node.file, node.line)})`;
 }
 
-function renderModule(snapshot: AnalysisSnapshot, children: Map<string, string[]>, mapDir: string, id: string, depth: number): string {
+function renderModule(r: Render, id: string, depth: number): string {
+  const { snapshot, mapDir } = r;
   const node = snapshot.nodes[id];
   if (!node) return "";
   const pad = "  ".repeat(depth);
   let head = linkedName(mapDir, node, nameOf(id));
   if (node.comment) head += ` <!-- ${node.comment} -->`;
-  let s = `${pad}- module ${head}\n`;
+  let s = `${pad}- module ${head}\n${describe(r, id, depth + 1)}`;
   for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${edge.target}\n`;
-  const nested = children.get(id) ?? [];
+  const nested = r.children.get(id) ?? [];
   const body = sortIds(snapshot, nested);
   for (const childId of body) {
     const child = snapshot.nodes[childId];
     if (!child) continue;
-    if (child.kind === "module") s += renderModule(snapshot, children, mapDir, childId, depth + 1);
-    else s += renderDecl(snapshot, mapDir, childId, child, depth + 1);
+    if (child.kind === "module") s += renderModule(r, childId, depth + 1);
+    else s += renderDecl(r, childId, child, depth + 1);
   }
   return s;
 }
@@ -119,13 +224,14 @@ function depsOf(snapshot: AnalysisSnapshot, id: string): SnapshotEdge[] {
   return edges.filter((e) => !seen.has(e.alias) && seen.add(e.alias));
 }
 
-function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node: SnapshotNode, depth: number): string {
+function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): string {
+  const { snapshot, mapDir } = r;
   const pad = "  ".repeat(depth);
   const keyword = node.kind === "type" ? "type" : "fn";
   let head = linkedName(mapDir, node, nameOf(id));
   if (node.signature) head += ` ${node.signature}`;
   if (node.exported === false) head += " <!-- internal -->";
-  let s = `${pad}- ${keyword} ${head}\n`;
+  let s = `${pad}- ${keyword} ${head}\n${describe(r, id, depth + 1)}`;
   const calls = edgesFrom(snapshot, id)
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")

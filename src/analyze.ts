@@ -11,7 +11,7 @@ import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
 import type { StaticMode } from "./flows.ts";
 import type { Document } from "./ir.ts";
-import { generateMap, type MapResult } from "./map.ts";
+import { EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { loadReports } from "./test-report.ts";
@@ -43,6 +43,8 @@ export interface Analysis extends Assessment {
   map: MapResult | null;
   snapshot: AnalysisSnapshot | null;
   docs: Document[];
+  /** Paths the request named that hold no specs (the explained map, saved explanations), as displayed. */
+  notSpecs: string[];
 }
 
 export async function analyze(request: AnalysisRequest): Promise<Analysis> {
@@ -56,8 +58,12 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
-  const files = collectMdFiles(specs);
-  for (const abs of overlay.keys()) if (abs.endsWith(".md") && !files.includes(abs) && specs.some((spec) => within(abs, spec))) files.push(abs);
+  // Generated reading aids beside the specs: never assessed, so the explained map repeats no ID (K002).
+  const reading = [join(specDir, EXPLAINED_MAP_DIR), join(specDir, "explain")];
+  const notSpec = (abs: string): boolean => reading.some((dir) => within(abs, dir));
+  const notSpecs = specs.filter(notSpec).map(display);
+  const files = collectMdFiles(specs.filter((spec) => !notSpec(spec))).filter((abs) => !notSpec(abs));
+  for (const abs of overlay.keys()) if (abs.endsWith(".md") && !files.includes(abs) && !notSpec(abs) && specs.some((spec) => within(abs, spec))) files.push(abs);
   const mapDir = join(specDir, "map");
   const docs: Document[] = [];
   for (const abs of files) {
@@ -84,7 +90,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     traces: traceFiles === null ? null : loadTraces(root, traceFiles),
     ...(request.static ? { static: request.static } : {}),
   });
-  return { ...assessment, config, map, snapshot, docs };
+  return { ...assessment, config, map, snapshot, docs, notSpecs };
 }
 
 /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */

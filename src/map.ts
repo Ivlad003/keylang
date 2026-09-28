@@ -1,6 +1,6 @@
 // `keylang map`: source files → facts → graph → map/*.md + .keylang/index.json.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { excludedSourceFiles, isExcluded, sourceTree, toPosix, type Config } from "./config.ts";
@@ -8,7 +8,8 @@ import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { frontendFor } from "./frontends.ts";
-import { isGeneratedMap, renderMap } from "./emit.ts";
+import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
+import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FactCache } from "./fact-cache.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot } from "./snapshot.ts";
@@ -17,6 +18,8 @@ export interface MapResult {
   graph: Graph;
   /** File name under `<dir>/map/` → content. */
   files: Map<string, string>;
+  /** File name under `<dir>/map-explained/` → content; null when `explain.map` is off. */
+  explained: Map<string, string> | null;
   index: AnalysisSnapshot;
   /** Files left out because they fall outside guessed layers (docs, scripts). */
   skipped: number;
@@ -90,8 +93,16 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...unreadable,
   ]);
-  return { graph, files: renderMap(index, mapDir), index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted } };
+  let explained: Map<string, string> | null = null;
+  if (config.explain.map) {
+    const briefs = loadBriefs(config);
+    explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
+  }
+  return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted } };
 }
+
+/** The explained map's directory under the spec directory. */
+export const EXPLAINED_MAP_DIR = "map-explained";
 
 /** A file name to place an unreadable directory in the layers, as any of its source files would be. */
 const UNREADABLE_PROBE = "keylang-unreadable.ts";
@@ -133,43 +144,62 @@ export interface MapDiff {
   stale: string[];
 }
 
-/** Target files under `<dir>/map/` that exist and are not generated. Sorted. */
+/**
+ * Directories the generator owns and what they should hold: the map, and the
+ * explained map (empty when `explain.map` is off, so its generated files go).
+ */
+function targets(config: Config, r: MapResult): { dir: string; files: ReadonlyMap<string, string> }[] {
+  return [
+    { dir: join(config.root, config.dir, "map"), files: r.files },
+    { dir: join(config.root, config.dir, EXPLAINED_MAP_DIR), files: r.explained ?? new Map() },
+  ];
+}
+
+/** Generated files in `dir` that should not be there. */
+function extraGenerated(dir: string, files: ReadonlyMap<string, string>): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((e) => e.endsWith(".md") && !files.has(e) && isGeneratedMap(readFileSync(join(dir, e), "utf8")))
+    .map((e) => join(dir, e));
+}
+
+/** Target files of both maps that exist and are not generated. Sorted. */
 export function mapConflicts(config: Config, r: MapResult): string[] {
-  const mapDir = join(config.root, config.dir, "map");
   const conflicts: string[] = [];
-  for (const name of r.files.keys()) {
-    const p = join(mapDir, name);
-    if (existsSync(p) && !isGeneratedMap(readFileSync(p, "utf8"))) conflicts.push(p);
+  for (const { dir, files } of targets(config, r)) {
+    for (const name of files.keys()) {
+      const p = join(dir, name);
+      if (existsSync(p) && !isGeneratedMap(readFileSync(p, "utf8"))) conflicts.push(p);
+    }
   }
   return conflicts.sort();
 }
 
 /**
- * Write map files and the index. A manual target file blocks every write and
+ * Write both maps and the index. A manual target file blocks every write and
  * every removal: the generator checks all targets before touching disk.
  */
 export function writeMap(config: Config, r: MapResult): { written: string[]; removed: string[]; conflicts: string[] } {
   const conflicts = mapConflicts(config, r);
   if (conflicts.length > 0) return { written: [], removed: [], conflicts };
-  const mapDir = join(config.root, config.dir, "map");
-  mkdirSync(mapDir, { recursive: true });
   const written: string[] = [];
   const removed: string[] = [];
-  for (const [name, text] of r.files) {
-    const p = join(mapDir, name);
-    if (!existsSync(p) || readFileSync(p, "utf8") !== text) {
-      writeFileSync(p, text);
-      written.push(p);
+  for (const { dir, files } of targets(config, r)) {
+    if (files.size > 0) mkdirSync(dir, { recursive: true });
+    for (const [name, text] of files) {
+      const p = join(dir, name);
+      if (!existsSync(p) || readFileSync(p, "utf8") !== text) {
+        writeFileSync(p, text);
+        written.push(p);
+      }
     }
-  }
-  // Only generated files for layers that no longer exist may be removed.
-  for (const e of readdirSync(mapDir)) {
-    if (!e.endsWith(".md") || r.files.has(e)) continue;
-    const p = join(mapDir, e);
-    if (isGeneratedMap(readFileSync(p, "utf8"))) {
+    // Only generated files of layers that no longer exist (or of a map turned off) may be removed.
+    for (const p of extraGenerated(dir, files)) {
       rmSync(p);
       removed.push(p);
     }
+    // A map turned off leaves no empty directory behind; one with manual files stays.
+    if (files.size === 0 && existsSync(dir) && readdirSync(dir).length === 0) rmdirSync(dir);
   }
   const idxDir = join(config.root, ".keylang");
   mkdirSync(idxDir, { recursive: true });
@@ -177,21 +207,18 @@ export function writeMap(config: Config, r: MapResult): { written: string[]; rem
   return { written, removed, conflicts };
 }
 
-/** Compare generated map with the files on disk (`map --check`). */
+/** Compare both generated maps with the files on disk (`map --check`). */
 export function diffMap(config: Config, r: MapResult): MapDiff {
-  const mapDir = join(config.root, config.dir, "map");
   const conflicts = mapConflicts(config, r);
   const conflicted = new Set(conflicts);
   const stale: string[] = [];
-  for (const [name, text] of r.files) {
-    const p = join(mapDir, name);
-    if (conflicted.has(p)) continue;
-    if (!existsSync(p) || readFileSync(p, "utf8") !== text) stale.push(p);
-  }
-  if (existsSync(mapDir)) {
-    for (const e of readdirSync(mapDir)) {
-      if (e.endsWith(".md") && !r.files.has(e) && isGeneratedMap(readFileSync(join(mapDir, e), "utf8"))) stale.push(join(mapDir, e));
+  for (const { dir, files } of targets(config, r)) {
+    for (const [name, text] of files) {
+      const p = join(dir, name);
+      if (conflicted.has(p)) continue;
+      if (!existsSync(p) || readFileSync(p, "utf8") !== text) stale.push(p);
     }
+    stale.push(...extraGenerated(dir, files));
   }
   return { conflicts, stale };
 }

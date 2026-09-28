@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -83,4 +83,89 @@ test("map: documentation comments reach the snapshot as `doc`; the canonical map
   assert.equal(after?.doc, "Adds up item prices. The sum calls `items.reduce()` once.");
   assert.equal(after?.fingerprint, before?.fingerprint);
   assert.equal(after?.closure?.fingerprint, before?.closure?.fingerprint);
+});
+
+function configure(dir: string, explain: Record<string, unknown> | undefined): void {
+  const file = join(dir, "keylang.json");
+  const config = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  if (explain === undefined) delete config.explain;
+  else config.explain = explain;
+  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+/** The explained map without its description lines: what is left is the canonical map. */
+function withoutDescriptions(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s+<br>/.test(line))
+    .join("\n");
+}
+
+test("map with explain.map: the explained map repeats the map's tree with doc comments; check does not read it", (t) => {
+  const dir = copy(t);
+  const before = keylang(dir, ["check"]);
+  configure(dir, { map: true });
+  const o = keylang(dir, ["map"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.match(o.stdout, /^keylang\/map-explained\/domain\.md: written$/m);
+  assert.match(o.stdout, /^keylang\/map-explained\/README\.md: written$/m);
+  const explained = readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8");
+  const lines = explained.split("\n");
+  const after = (head: string): string | undefined => lines[lines.findIndex((line) => line.includes(head)) + 1];
+  assert.equal(after("fn [total]"), "      <br>Sums item prices. The sum calls `items.reduce()` once.");
+  assert.equal(after("module [Ledger]"), "      <br>Keeps orders in memory.");
+  assert.equal(after("type [Money]"), "      <br>Money in cents.");
+  assert.equal(after("module [order]"), "    <br>Orders and their totals. Nothing here does I/O.");
+  assert.equal(after("fn [createOrder]"), "      - calls domain.order.total", "a node without documentation has no text");
+  assert.equal(withoutDescriptions(explained), readFileSync(join(dir, "keylang/map/domain.md"), "utf8"));
+  const readme = readFileSync(join(dir, "keylang/map-explained/README.md"), "utf8");
+  assert.match(readme, /^\| \[domain\]\(domain\.md\) \|\s*\| 6 \| 0 \| 0 \| 4 \|$/m);
+  assert.match(readme, /^\| \*\*all\*\* \| \| 7 \| 0 \| 0 \| 6 \|$/m);
+
+  const parsed = keylang(dir, ["parse", "keylang/map-explained"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  assert.equal(parsed.stderr, "");
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang/map-explained"]).status, 0);
+  const checked = keylang(dir, ["check"]);
+  assert.deepEqual(checked, before, "the explained map changes nothing check sees");
+  assert.doesNotMatch(checked.stdout, /K002/);
+  const named = keylang(dir, ["check", "keylang/map-explained/domain.md"]);
+  assert.equal(named.status, 0);
+  assert.match(named.stderr, /note: keylang\/map-explained\/domain\.md: the explained map and saved explanations are not specs; skipped/);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 0);
+
+  // A changed doc comment leaves the canonical map as it is and the explained map stale.
+  const file = join(dir, "src/domain/order.ts");
+  writeFileSync(file, readFileSync(file, "utf8").replace("Keeps orders in memory.", "Keeps orders until the process exits."));
+  const stale = keylang(dir, ["map", "--check"]);
+  assert.equal(stale.status, 1);
+  assert.equal(stale.stdout, "keylang/map-explained/domain.md: stale, run `keylang map`\n");
+  assert.equal(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), explained, "--check writes nothing");
+});
+
+test("explain.map: a value that is not a boolean is exit 2; turned off, map removes its generated files and keeps manual ones", (t) => {
+  const dir = copy(t);
+  configure(dir, { map: "yes" });
+  const bad = keylang(dir, ["map"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /`explain\.map` must be true or false, got "yes"/);
+
+  configure(dir, { map: true });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  writeFileSync(join(dir, "keylang/map-explained/notes.md"), "# rules\n");
+  configure(dir, undefined);
+  const stale = keylang(dir, ["map", "--check"]);
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /^keylang\/map-explained\/README\.md: stale, run `keylang map`$/m);
+  const off = keylang(dir, ["map"]);
+  assert.equal(off.status, 0, off.stderr);
+  assert.match(off.stdout, /^keylang\/map-explained\/domain\.md: removed$/m);
+  assert.deepEqual(readdirSync(join(dir, "keylang/map-explained")), ["notes.md"]);
+
+  // A manual file where a generated one goes blocks the whole write, as for the map.
+  configure(dir, { map: true });
+  writeFileSync(join(dir, "keylang/map-explained/README.md"), "my notes\n");
+  const conflict = keylang(dir, ["map"]);
+  assert.equal(conflict.status, 1);
+  assert.equal(conflict.stdout, "keylang/map-explained/README.md: manual file without keylang:generated marker\n");
 });

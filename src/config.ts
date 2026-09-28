@@ -27,8 +27,11 @@ export interface Config {
   voice: { engine: "local" | "openrouter" | "auto"; model: string | null };
   /** Ghost text: pause in ms before the agent is asked for a next line (design §7.3). */
   ghost: { delay: number };
-  /** Language and detail of LLM explanations (`keylang explain <id> --llm`). */
-  explain: { lang: string; detail: "short" | "full" };
+  /**
+   * Language and detail of LLM explanations (`keylang explain <id> --llm`);
+   * `map`: `keylang map` also writes the explained map, `<dir>/map-explained/`.
+   */
+  explain: { lang: string; detail: "short" | "full"; map: boolean };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
 }
@@ -82,7 +85,7 @@ export interface RawConfig {
   agent?: string;
   ghost?: { delay?: number };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
-  explain?: { lang?: string; detail?: "short" | "full" };
+  explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
 }
 
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
@@ -110,7 +113,7 @@ export function loadConfig(root: string): Config {
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? 400 },
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
-    explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short" },
+    explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     guessed,
   };
 }
@@ -215,6 +218,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     for (const [key, v] of Object.entries(value.explain)) {
       if (key === "lang") explain.lang = typeof v === "string" && /^[a-z]{2,3}(-[A-Za-z0-9]+)?$/.test(v) ? v : fail("explain.lang", "a language code such as \"uk\"", v);
       else if (key === "detail") explain.detail = v === "short" || v === "full" ? v : fail("explain.detail", '"short" or "full"', v);
+      else if (key === "map") explain.map = typeof v === "boolean" ? v : fail("explain.map", "true or false", v);
       else throw new Error(`${file}: unknown field \`explain.${key}\``);
     }
     raw.explain = explain;

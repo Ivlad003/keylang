@@ -15,6 +15,7 @@ A repository already has the structure. What it usually lacks is a short text, r
 | Job | How keylang does it |
 |---|---|
 | See the repository | `keylang map` writes `keylang/map/<layer>.md`: layers, modules, functions, imports and calls, with links to source lines |
+| Read what each node does | With `"explain": {"map": true}` in `keylang.json`, `keylang map` also writes `keylang/map-explained/`: the same tree with a one- or two-sentence explanation under each node, from its doc comment or a saved model brief marked with model and date |
 | Forbid a dependency | Hand-written `keylang/rules.md` (`layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles`) is evaluated on the current snapshot |
 | Name a scenario | A `# flow` lists a trigger and steps by stable ids. Each step reports `ID`, `static`, `tests` and `trace` separately |
 | Keep the map honest in CI | `keylang map --check` exits 1 when the committed map is stale. `keylang check` exits 1 on a violation |

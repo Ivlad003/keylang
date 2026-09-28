@@ -43,8 +43,11 @@ Commands:
   web [--port N] [--host H] The TUI in a browser tab: serves http://localhost:7070
                             with a one-time token (localhost only by default)
   init [dir]                Detect languages and layers, write keylang.json, build the map
-  map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json
-                            (--check: fail if the committed map is stale)
+  map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json;
+                            with "explain": {"map": true} in keylang.json also the
+                            explained map keylang/map-explained/ (a brief under each
+                            node: the doc comment, else a saved model brief)
+                            (--check: fail if a committed map is stale)
   explain <code|id>         A diagnostic code: why it happens and how to fix it.
                             An id: what the snapshot and specs say about it (offline),
                             and its saved explanation with model, date and stale?
@@ -734,6 +737,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     static: staticMode,
     ...(inRepo ? {} : { withoutCode: true }),
   });
+  for (const path of analyzed.notSpecs) process.stderr.write(`keylang: note: ${path}: the explained map and saved explanations are not specs; skipped\n`);
   const diags = analyzed.diagnostics;
   const snapshot = analyzed.snapshot;
   const channel = analyzed.verdicts;
