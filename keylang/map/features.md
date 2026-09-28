@@ -245,6 +245,20 @@
     - type [CodeLens](../../src/lsp-features.ts#L528) <!-- internal -->
     - fn [codeLenses](../../src/lsp-features.ts#L534) (ws: Workspace, path: string) → CodeLens[]
       - calls features.lsp-features.flowsUsing, features.lsp-features.lspPoint
+  - module [node-search](../../src/node-search.ts#L1)
+    - analyze map.analyze
+    - explanations map.explanations
+    - ir lang.ir
+    - type [NodeHit](../../src/node-search.ts#L8)
+    - type [NodeQuery](../../src/node-search.ts#L21)
+    - fn [searchNodes](../../src/node-search.ts#L39) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>, q: NodeQuery) → NodeHit[]
+      - calls features.node-search.candidates, features.node-search.idRank, features.node-search.compare
+    - fn [candidates](../../src/node-search.ts#L53) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
+      - calls map.explanations.explanationOf, lang.ir.sectionNodes, lang.ir.walk
+    - fn [idRank](../../src/node-search.ts#L75) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
+      - calls features.node-search.subsequence
+    - fn [subsequence](../../src/node-search.ts#L89) (query: string, text: string) → boolean <!-- internal -->
+    - fn [compare](../../src/node-search.ts#L96) (a: string, b: string) → number <!-- internal -->
   - module [proposals](../../src/proposals.ts#L1)
     - node external.node
     - analyze map.analyze
