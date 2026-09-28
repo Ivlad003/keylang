@@ -131,12 +131,13 @@ function firstAtOrAfter(sorted: readonly number[], value: number): number {
 
 /** First syntax-error line, or the start of the tree when the grammar only sets `hasError`. */
 export function errorLine(node: Node): number {
-  if (node.type === "ERROR" || node.isMissing) return node.startPosition.row + 1;
-  for (const child of node.children) {
-    if (!child.hasError) continue;
-    return errorLine(child);
+  // A loop down the first erroneous child, not recursion: a deep tree must not overflow the stack.
+  for (let n = node; ; ) {
+    if (n.type === "ERROR" || n.isMissing) return n.startPosition.row + 1;
+    const child = n.children.find((c) => c.hasError);
+    if (!child) return n.startPosition.row + 1;
+    n = child;
   }
-  return node.startPosition.row + 1;
 }
 
 /**
@@ -146,18 +147,27 @@ export function errorLine(node: Node): number {
  */
 export function fingerprint(node: Node): string {
   const hash = createHash("sha256");
-  const visit = (n: Node): void => {
-    if (n.type.includes("comment")) return;
+  // An explicit stack in document order (a closing mark after a node's children), not recursion.
+  const stack: (Node | typeof CLOSE)[] = [node];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    if (n === CLOSE) {
+      hash.update(")\u0002");
+      continue;
+    }
+    if (n.type.includes("comment")) continue;
     if (n.childCount === 0) {
       hash.update(`${n.type}\u0001${n.text}\u0002`);
-      return;
+      continue;
     }
     hash.update(`(${n.type}\u0002`);
-    for (const c of n.children) visit(c);
-    hash.update(")\u0002");
-  };
-  visit(node);
+    stack.push(CLOSE);
+    const children = n.children;
+    for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]!);
+  }
   return hash.digest("hex");
 }
+
+const CLOSE = Symbol("close");
 
 export type { Language, Node, Tree };
