@@ -226,7 +226,9 @@ test("doctor: reports what is set up and what is optional, exit 0, nothing writt
   assert.match(o.stdout, /^languages: typescript$/m);
   assert.match(o.stdout, /^agent: not configured/m);
   // Without a model file or a key there is no engine, whether the optional modules are installed or not.
-  assert.match(o.stdout, /^voice: engine auto → install the optional @fugood\/whisper\.node/m);
+  assert.match(o.stdout, /^voice: engine auto → (install the optional @fugood\/whisper\.node and put a model|put a model) .* or set OPENROUTER_API_KEY$/m);
+  // Advice names only what is missing: an installed, loading whisper needs just a model.
+  if (/^@fugood\/whisper\.node: installed$/m.test(o.stdout)) assert.match(o.stdout, /^voice: engine auto → put a model/m);
   assert.match(o.stdout, /^voice model: none in .*\.cache\/keylang\/models$/m);
   assert.match(o.stdout, /^@fugood\/whisper\.node: (installed|not installed \(optional\))$/m);
   assert.match(o.stdout, /^microphone \(decibri\): (installed|not installed \(optional; keylang web uses the browser's microphone\))$/m);

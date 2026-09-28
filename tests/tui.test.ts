@@ -1155,7 +1155,7 @@ test("tui: Ctrl+R without an engine or a microphone explains what to set up; not
   s.send("i");
   s.send("\x12");
   await s.app.idle();
-  assert.match(s.app.state.message ?? "", /install the optional @fugood\/whisper\.node .* or set OPENROUTER_API_KEY/);
+  assert.match(s.app.state.message ?? "", /(install the optional @fugood\/whisper\.node and )?put a model .* or set OPENROUTER_API_KEY/);
 });
 
 test("tui: a recording longer than 25 s goes in overlapping windows; the words the overlap repeats are joined once", async (t) => {

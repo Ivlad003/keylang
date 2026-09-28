@@ -365,6 +365,14 @@ export function buildSnapshot(
  */
 function closures(nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]): void {
   const holes = new Set(coverage.filter((c) => c.kind === "dynamic-call" || c.kind === "unresolved-call").map((c) => c.source));
+  // A hole in a declaration itself (a decorator or attribute macro that may replace it): what a call of
+  // it runs is not the body keylang read. For a class it is every member, the constructor included.
+  for (const c of coverage) {
+    if (c.kind !== "unsupported" || c.source === null) continue;
+    const owner = nodes[c.source];
+    if (owner?.kind === "fn") holes.add(c.source);
+    else if (owner?.class) for (const id of Object.keys(nodes)) if (id.startsWith(`${c.source}.`) && nodes[id]?.kind === "fn") holes.add(id);
+  }
   // `new C()` (Python `C()`) names the class; what runs is its constructor, named by the class's language.
   const runs = (target: string): string | null => {
     if (nodes[target]?.kind === "fn") return target;

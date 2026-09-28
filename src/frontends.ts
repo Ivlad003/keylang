@@ -82,12 +82,12 @@ function ecmascriptResolver(root: string, sources: ReadonlySet<string>): SourceR
   return new ImportResolver(root, sources);
 }
 
-function pythonResolver(root: string): SourceResolver {
-  return new PythonResolver(root);
+function pythonResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
+  return new PythonResolver(root, sources);
 }
 
-function rustResolver(root: string): SourceResolver {
-  return new RustResolver(root);
+function rustResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
+  return new RustResolver(root, sources);
 }
 
 export function frontendOf(language: Language): Frontend {

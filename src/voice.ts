@@ -53,8 +53,11 @@ export function voiceEngine(config: VoiceConfig, localAvailable: boolean, env: E
   const local = (): VoiceEngine | null => (model && localAvailable ? { kind: "local", modelFile: model } : null);
   const openrouter = (): VoiceEngine | null =>
     key ? { kind: "openrouter", key, base: env.OPENROUTER_BASE_URL ?? "https://openrouter.ai", model: config.model ?? DEFAULT_OPENROUTER_MODEL } : null;
-  const setup = `install the optional @fugood/whisper.node and put a model (${LOCAL_MODELS.join(" or ")}) in ${modelsDir(home)}, or set OPENROUTER_API_KEY`;
-  if (config.engine === "local") return local() ?? { missing: model ? "voice.engine is local, but the optional @fugood/whisper.node is not installed" : `voice.engine is local, but no model in ${modelsDir(home)}` };
+  // Advice names only what is missing: a loading whisper needs just a model, a model just a working whisper.
+  const putModel = `put a model (${LOCAL_MODELS.join(" or ")}) in ${modelsDir(home)}`;
+  const getWhisper = "install the optional @fugood/whisper.node (`keylang doctor` says why it does not load)";
+  const setup = `${localAvailable ? putModel : model ? getWhisper : `install the optional @fugood/whisper.node and ${putModel}`}, or set OPENROUTER_API_KEY`;
+  if (config.engine === "local") return local() ?? { missing: !localAvailable ? "voice.engine is local, but the optional @fugood/whisper.node is not installed or does not load" : `voice.engine is local, but no model in ${modelsDir(home)}` };
   if (config.engine === "openrouter") return openrouter() ?? { missing: "voice.engine is openrouter, but OPENROUTER_API_KEY is not set" };
   return local() ?? openrouter() ?? { missing: setup };
 }

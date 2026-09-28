@@ -40,9 +40,12 @@ export class RustResolver implements SourceResolver {
   /** File → names of the modules it declares with `mod x;` (`files`) and `mod x {}` (`inline`). */
   private readonly declared = new Map<string, { files: Set<string>; inline: Set<string> }>();
   readonly inputs = new Map<string, string | null>();
+  /** Files of the analysis (unsaved buffers included): they exist for resolution, on disk or not. */
+  private readonly sources: ReadonlySet<string>;
 
-  constructor(root: string) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
     this.root = root;
+    this.sources = sources;
     const top = this.crateAt("");
     for (const dir of this.workspaceMembers()) {
       const crate = this.crateAt(dir);
@@ -114,7 +117,7 @@ export class RustResolver implements SourceResolver {
     const dir = posix.dirname(rootFile);
     for (const c of [`${path.join("/")}.rs`, `${path.join("/")}/mod.rs`]) {
       const file = dir === "." ? c : posix.join(dir, c);
-      if (existsSync(join(this.root, file))) return file;
+      if (this.sources.has(file) || existsSync(join(this.root, file))) return file;
     }
     return null;
   }
@@ -187,7 +190,7 @@ export class RustResolver implements SourceResolver {
         }
       }
       const at = (path: string): string => posix.normalize(posix.join(dir, path));
-      const exists = (path: string): boolean => existsSync(join(this.root, path));
+      const exists = (path: string): boolean => this.sources.has(path) || existsSync(join(this.root, path));
       const libPath = isObject(manifest.lib) && typeof manifest.lib.path === "string" ? at(manifest.lib.path) : at("src/lib.rs");
       const bins = new Set<string>();
       if (exists(at("src/main.rs"))) bins.add(at("src/main.rs"));

@@ -15,12 +15,17 @@ const ROOTS = ["", "src"];
 export class PythonResolver implements SourceResolver {
   private readonly root: string;
   private readonly roots: string[];
+  /** Files of the analysis (unsaved buffers included) and their directories: they exist for resolution, on disk or not. */
+  private readonly sources: ReadonlySet<string>;
+  private readonly sourceDirs: ReadonlySet<string>;
   /** The resolver reads no configuration files: edges depend only on the indexed sources. */
   readonly inputs = new Map<string, string | null>();
 
-  constructor(root: string) {
+  constructor(root: string, sources: ReadonlySet<string> = new Set()) {
     this.root = root;
-    this.roots = ROOTS.filter((dir) => dir === "" || isDir(join(root, dir)));
+    this.sources = sources;
+    this.sourceDirs = directoriesOf(sources);
+    this.roots = ROOTS.filter((dir) => dir === "" || this.isDir(dir));
   }
 
   resolve(fromFile: string, spec: string): Resolution {
@@ -36,7 +41,7 @@ export class PythonResolver implements SourceResolver {
     }
     for (const root of this.roots) {
       const head = posix.join(root, segments[0]!);
-      if (!this.moduleFile(head) && !isDir(join(this.root, head))) continue;
+      if (!this.moduleFile(head) && !this.isDir(head)) continue;
       return this.longest(root, segments, fromFile) ?? { kind: "unresolved" };
     }
     return { kind: "external", pkg: segments[0]! };
@@ -55,11 +60,20 @@ export class PythonResolver implements SourceResolver {
 
   /** `a/b.py`, else the package `a/b/__init__.py`; null for neither. */
   private moduleFile(path: string): string | null {
-    for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (existsSync(join(this.root, file))) return file;
+    for (const file of [`${path}.py`, posix.join(path, "__init__.py")]) if (this.sources.has(file) || existsSync(join(this.root, file))) return file;
     return null;
+  }
+
+  private isDir(path: string): boolean {
+    if (this.sourceDirs.has(path)) return true;
+    const abs = join(this.root, path);
+    return existsSync(abs) && statSync(abs).isDirectory();
   }
 }
 
-function isDir(abs: string): boolean {
-  return existsSync(abs) && statSync(abs).isDirectory();
+/** Every directory above a file of `files` (POSIX, relative). */
+function directoriesOf(files: ReadonlySet<string>): Set<string> {
+  const dirs = new Set<string>();
+  for (const file of files) for (let dir = posix.dirname(file); dir !== "." && !dirs.has(dir); dir = posix.dirname(dir)) dirs.add(dir);
+  return dirs;
 }

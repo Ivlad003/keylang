@@ -45,3 +45,31 @@ test("an unsaved file resolves as it will once written: the same edges under the
   assert.deepEqual(edgesOf(after.snapshot!), edgesOf(before.snapshot!));
   assert.equal(after.snapshot!.snapshotId, before.snapshot!.snapshotId);
 });
+
+test("an unsaved Python module or package and an unsaved Rust module resolve as they will once written", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-analyze-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "app"), { recursive: true });
+  mkdirSync(join(dir, "crate/src"), { recursive: true });
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify({ languages: ["python", "rust"], layers: { app: "app/**", core: "crate/**" } }));
+  writeFileSync(join(dir, "app/main.py"), "from app.fresh import fresh\nfrom app.pkg.inner import inner\n\n\ndef main():\n    fresh()\n    inner()\n");
+  writeFileSync(join(dir, "crate/Cargo.toml"), '[package]\nname = "core"\nversion = "0.1.0"\n');
+  writeFileSync(join(dir, "crate/src/lib.rs"), "mod fresh;\n\npub fn main() {\n    fresh::fresh();\n}\n");
+  const unsaved = new Map([
+    [join(dir, "app/fresh.py"), "def fresh():\n    pass\n"],
+    [join(dir, "app/pkg/__init__.py"), ""],
+    [join(dir, "app/pkg/inner.py"), "def inner():\n    pass\n"],
+    [join(dir, "crate/src/fresh.rs"), "pub fn fresh() {}\n"],
+  ]);
+  const edgesOf = (snapshot: { edges: { kind: string; source: string; target: string | null; resolution: string }[] }) =>
+    snapshot.edges.filter((e) => e.kind === "call" && (e.source.endsWith(".main"))).map((e) => `${e.source} → ${e.target} ${e.resolution}`).sort();
+  const before = await analyze({ root: dir, specs: [], overlay: unsaved });
+  assert.deepEqual(edgesOf(before.snapshot!), ["app.main.main → app.fresh.fresh resolved", "app.main.main → app.pkg.inner.inner resolved", "core.src.lib.main → core.src.fresh.fresh resolved"]);
+  for (const [file, text] of unsaved) {
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, text);
+  }
+  const after = await analyze({ root: dir, specs: [] });
+  assert.deepEqual(edgesOf(after.snapshot!), edgesOf(before.snapshot!));
+  assert.equal(after.snapshot!.snapshotId, before.snapshot!.snapshotId);
+});

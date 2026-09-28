@@ -87,3 +87,16 @@ test("fingerprint: `new C()` covers the constructor it runs", (t) => {
   assert.notEqual(after.closure!.fingerprint, before.closure!.fingerprint, "a changed constructor changes the closure of `start`");
   assert.equal(after.closure!.complete, true);
 });
+
+test("fingerprint: a decorator that may replace a fn makes its closure and its callers' incomplete; `C()` covers `__init__`", (t) => {
+  const r = repo(t, {
+    "app/main.py":
+      "def replace(fn):\n    return fn\n\n\n@replace\ndef decorated():\n    return 1\n\n\ndef plain():\n    return 2\n\n\ndef start():\n    return decorated() + plain()\n\n\nclass C:\n    def __init__(self):\n        plain()\n\n\ndef make():\n    return C()\n",
+  });
+  r.write("keylang.json", JSON.stringify({ languages: ["python"], layers: { main: ["app/**"] } }));
+  const nodes = r.map().nodes;
+  assert.equal(nodes["main.main.decorated"]!.closure!.complete, false, "the body read may not be what a call runs");
+  assert.equal(nodes["main.main.start"]!.closure!.complete, false, "a caller reaches the replaced fn");
+  assert.equal(nodes["main.main.plain"]!.closure!.complete, true);
+  assert.equal(nodes["main.main.make"]!.closure!.complete, true, "`C()` runs `C.__init__`, which is complete");
+});
