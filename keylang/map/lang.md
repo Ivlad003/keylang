@@ -7,10 +7,13 @@
     - node external.node
     - ir lang.ir
     - parser lang.parser
-    - fn [collectMdFiles](../../src/files.ts#L12) (paths: readonly string[]) → string[]
-      - calls lang.files.walkDir
-    - fn [walkDir](../../src/files.ts#L34) (dir: string, out: string[]) → void <!-- internal -->
-    - fn [load](../../src/files.ts#L47) (files: readonly string[]) → Document[]
+    - fn [collectMdFiles](../../src/files.ts#L14) (paths: readonly string[]) → string[]
+      - calls lang.files.walkDir, lang.files.realPath
+    - fn [walkDir](../../src/files.ts#L39) (dir: string, out: string[], walked: Set<string>) → void <!-- internal -->
+      - calls lang.files.realPath, lang.files.entryType
+    - fn [entryType](../../src/files.ts#L57) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [realPath](../../src/files.ts#L67) (path: string) → string <!-- internal -->
+    - fn [load](../../src/files.ts#L76) (files: readonly string[]) → Document[]
       - calls lang.parser.parse
   - module [fmt](../../src/fmt.ts#L1)
     - diag base.diag
@@ -73,35 +76,35 @@
       - fn [finish](../../src/parser.ts#L246) () → Document
         - calls lang.parser.Parser.section, lang.parser.Parser.flushProse, lang.parser.Parser.closeList
       - fn [line](../../src/parser.ts#L256) (l: Line) → void
-        - calls lang.parser.Parser.section, lang.parser.Parser.flushProse, lang.parser.Parser.err, lang.parser.Line.span, lang.parser.Parser.heading, lang.parser.Parser.closeList, lang.parser.isBullet, lang.parser.Parser.item
-      - fn [heading](../../src/parser.ts#L312) (l: Line) → void <!-- internal -->
+        - calls lang.parser.Parser.section, lang.parser.Parser.flushProse, lang.parser.Parser.err, lang.parser.Parser.heading, lang.parser.Parser.closeList, lang.parser.isBullet, lang.parser.Parser.item, lang.parser.Line.span
+      - fn [heading](../../src/parser.ts#L315) (l: Line) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Parser.closeList, lang.parser.lex, lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.isSegment
-      - fn [item](../../src/parser.ts#L345) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
+      - fn [item](../../src/parser.ts#L346) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
         - calls lang.parser.Parser.flushProse, lang.parser.Line.span, lang.parser.Parser.err, lang.parser.Parser.closeList, lang.parser.Parser.section, lang.parser.lex, lang.parser.ctxOf, lang.parser.Parser.sectionKind, lang.parser.Parser.interpret
-      - fn [interpret](../../src/parser.ts#L398) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [interpret](../../src/parser.ts#L399) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.parser.keywordsOf, lang.parser.Parser.bare, lang.parser.keywordKind, lang.parser.Parser.decl, lang.parser.Parser.refList, lang.parser.isSegment, lang.parser.Parser.layers, lang.ir.kindLabel, lang.parser.Parser.oneRef, lang.parser.spanned, lang.parser.Parser.freeText, lang.parser.isId, lang.parser.renderTokens
-      - fn [bare](../../src/parser.ts#L544) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [bare](../../src/parser.ts#L546) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         - calls lang.parser.Parser.decl, lang.parser.isSegment, lang.parser.spanned, lang.parser.Parser.oneRef, lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.keywordsOf
-      - fn [decl](../../src/parser.ts#L594) (n: Node, rest: Token[], parentId: string | null, sig: boolean) → void <!-- internal -->
+      - fn [decl](../../src/parser.ts#L596) (n: Node, rest: Token[], parentId: string | null, sig: boolean) → void <!-- internal -->
         - calls lang.parser.Parser.err, lang.ir.kindLabel, lang.parser.parseLink, lang.parser.isSegment, lang.parser.codePoints, lang.parser.renderTokens
-      - fn [makeRef](../../src/parser.ts#L639) (t: Token) → Ref | null <!-- internal -->
+      - fn [makeRef](../../src/parser.ts#L641) (t: Token) → Ref | null <!-- internal -->
         - calls lang.parser.isId, lang.parser.Parser.err
-      - fn [oneRef](../../src/parser.ts#L647) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [oneRef](../../src/parser.ts#L649) (n: Node, rest: Token[]) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
-      - fn [refList](../../src/parser.ts#L658) (n: Node, rest: Token[], min: number) → void <!-- internal -->
+      - fn [refList](../../src/parser.ts#L660) (n: Node, rest: Token[], min: number) → void <!-- internal -->
         - calls lang.parser.Parser.makeRef, lang.parser.Parser.err, lang.ir.kindLabel
-      - fn [layers](../../src/parser.ts#L672) (n: Node, rest: Token[]) → void <!-- internal -->
-        - calls lang.parser.Parser.err, lang.parser.Parser.makeRef
-      - fn [freeText](../../src/parser.ts#L686) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
-        - calls lang.parser.Line.span, lang.parser.Parser.err, lang.ir.kindLabel
-    - fn [spanned](../../src/parser.ts#L699) (t: Token) → Spanned<string> <!-- internal -->
-    - fn [isBullet](../../src/parser.ts#L703) (rest: string) → boolean <!-- internal -->
-    - fn [isSegment](../../src/parser.ts#L710) (s: string) → boolean
-    - fn [isId](../../src/parser.ts#L716) (s: string) → boolean
-    - fn [parseLink](../../src/parser.ts#L720) (t: Token) → Link <!-- internal -->
+      - fn [layers](../../src/parser.ts#L674) (n: Node, rest: Token[]) → void <!-- internal -->
+        - calls lang.parser.Parser.makeRef, lang.parser.Parser.err
+      - fn [freeText](../../src/parser.ts#L688) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+        - calls lang.parser.renderTokens, lang.parser.Line.span, lang.parser.Parser.err, lang.ir.kindLabel
+    - fn [spanned](../../src/parser.ts#L702) (t: Token) → Spanned<string> <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L706) (rest: string) → boolean <!-- internal -->
+    - fn [isSegment](../../src/parser.ts#L713) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L719) (s: string) → boolean
+    - fn [parseLink](../../src/parser.ts#L723) (t: Token) → Link <!-- internal -->
       - calls lang.parser.decodeLinkPath
-    - fn [decodeLinkPath](../../src/parser.ts#L739) (path: string) → string <!-- internal -->
-    - fn [lex](../../src/parser.ts#L753) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L742) (path: string) → string <!-- internal -->
+    - fn [lex](../../src/parser.ts#L756) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       - calls lang.parser.Line.span, lang.parser.linkEnd
-    - fn [linkEnd](../../src/parser.ts#L812) (s: string, i: number) → number | null <!-- internal -->
-    - fn [renderTokens](../../src/parser.ts#L822) (tokens: readonly Token[]) → string
+    - fn [linkEnd](../../src/parser.ts#L815) (s: string, i: number) → number | null <!-- internal -->
+    - fn [renderTokens](../../src/parser.ts#L825) (tokens: readonly Token[]) → string

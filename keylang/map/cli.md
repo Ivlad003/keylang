@@ -27,11 +27,13 @@
     - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L16)
     - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L28)
     - type [FilePlan](../../src/adapters/trace-hooks.ts#L32) <!-- internal -->
-    - fn [initialize](../../src/adapters/trace-hooks.ts#L40) (data: TraceHooksData) → Promise<void>
-      - calls base.config.loadConfig, map.map.generateMap, map.trace-plan.flowSymbols, extract.bodies.functionBodies, cli.trace-hooks.wrap, map.snapshot.sha256
-    - fn [wrap](../../src/adapters/trace-hooks.ts#L77) (id: string, body: FunctionBody) → { at: number; text: string }[] <!-- internal -->
-    - type [LoadResult](../../src/adapters/trace-hooks.ts#L90) <!-- internal -->
-    - fn [load](../../src/adapters/trace-hooks.ts#L92) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
+    - fn [initialize](../../src/adapters/trace-hooks.ts#L42) (data: TraceHooksData) → Promise<void>
+      - calls base.config.loadConfig, map.map.generateMap, map.trace-plan.flowSymbols, extract.bodies.functionBodies, cli.trace-hooks.wrap, cli.trace-hooks.applyEdits, extract.bodies.parsesCleanly, map.snapshot.sha256
+    - type [Edit](../../src/adapters/trace-hooks.ts#L82) <!-- internal -->
+    - fn [wrap](../../src/adapters/trace-hooks.ts#L88) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
+    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L104) (src: string, edits: readonly Edit[]) → string <!-- internal -->
+    - type [LoadResult](../../src/adapters/trace-hooks.ts#L111) <!-- internal -->
+    - fn [load](../../src/adapters/trace-hooks.ts#L113) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
       - calls map.snapshot.sha256
   - module [trace](../../src/adapters/trace.ts#L1)
     - node external.node
@@ -66,6 +68,7 @@
     - draft features.draft
     - scc check.scc
     - proposals features.proposals
+    - safe-write base.safe-write
     - spec-to-code features.spec-to-code
     - stats features.stats
     - wiring check.wiring
@@ -80,53 +83,58 @@
     - draft-llm features.draft-llm
     - voice-local features.voice-local
     - voice features.voice
-    - fn [main](../../src/cli.ts#L111) (argv: readonly string[]) → Promise<number>
+    - fn [main](../../src/cli.ts#L114) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
-    - fn [run](../../src/cli.ts#L120) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L123) (argv: readonly string[]) → Promise<number> <!-- internal -->
       - calls tui.terminal.runTerminal, map.analyze.findRoot, cli.cli.cmdInit, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.cmdDoctor, cli.cli.cmdDraft, cli.cli.cmdSpecToCode, cli.cli.cmdCodeToSpec, cli.cli.cmdWire, cli.cli.cmdTracePlan, cli.cli.cmdWeb, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
-    - fn [cmdWeb](../../src/cli.ts#L210) (portText: string, host: string) → Promise<number> <!-- internal -->
+    - fn [cmdWeb](../../src/cli.ts#L213) (portText: string, host: string) → Promise<number> <!-- internal -->
       - calls tui.web.serveWeb, map.analyze.findRoot
-    - fn [cmdExplain](../../src/cli.ts#L240) (subject: string | undefined, opts: { llm: boolean; full: boolean; stale: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L243) (subject: string | undefined, opts: { llm: boolean; full: boolean; stale: boolean }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, features.explain-llm.explainedIds, features.explain-llm.readExplanation, features.explain-llm.currentBaseline, features.explain-llm.isStale, features.explain.explainCode, features.explain-node.summarizeNode, features.explain-llm.unknownIds, features.explain-node.formatSummary, features.explain-llm.explanationRequest, features.explain-llm.writeExplanation
-    - fn [cmdDraft](../../src/cli.ts#L302) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
-      - calls cli.cli.cmdDraftLayout, map.analyze.analyze, map.analyze.findRoot, features.draft.draftFlow, features.stats.updateStats, features.stats.addDrafts, base.config.toPosix, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal
-    - fn [cmdSpecToCode](../../src/cli.ts#L347) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
-      - calls map.analyze.analyze, map.analyze.findRoot, features.spec-to-code.specToCode, base.config.toPosix, features.proposals.lineDiff, check.verdict.formatVerdict, base.diag.formatDiagnostic, features.proposals.codeProposalProblem, features.proposals.writeProposal
-    - fn [cmdCodeToSpec](../../src/cli.ts#L391) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, map.analyze.analyze, lang.ir.sectionNodes, lang.ir.walk, features.draft.changedFlows, cli.cli.gitChanges, base.config.toPosix, features.draft.codeToSpec, features.stats.updateStats, features.stats.addDrafts, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal
-    - fn [cmdDraftLayout](../../src/cli.ts#L457) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, base.config.loadConfig, map.analyze.analyze, base.config.configToJson, base.config.guessLayers, features.draft.draftRules, check.scc.stronglyConnected, base.config.toPosix, features.stats.updateStats, features.stats.addDrafts, features.proposals.proposalProblem, features.proposals.writeProposal
-    - fn [cmdWire](../../src/cli.ts#L520) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, map.analyze.analyze, base.diag.isError, base.diag.formatDiagnostic, check.wiring.collectWiring, base.config.toPosix, map.wire-gen.generateWire
-    - fn [cmdDoctor](../../src/cli.ts#L553) () → Promise<number> <!-- internal -->
+    - fn [cmdDraft](../../src/cli.ts#L305) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      - calls cli.cli.cmdDraftLayout, map.analyze.analyze, map.analyze.findRoot, features.draft.draftFlow, base.config.toPosix, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
+    - fn [cmdSpecToCode](../../src/cli.ts#L353) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+      - calls map.analyze.analyze, map.analyze.findRoot, features.spec-to-code.specToCode, base.config.toPosix, features.proposals.lineDiff, check.assess.sameFinding, check.verdict.formatVerdict, base.diag.formatDiagnostic, features.proposals.codeProposalProblem, features.proposals.writeProposal, base.safe-write.safeWriteAll
+    - fn [cmdCodeToSpec](../../src/cli.ts#L396) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
+      - calls map.analyze.findRoot, map.analyze.analyze, lang.ir.sectionNodes, lang.ir.walk, features.draft.changedFlows, cli.cli.gitChanges, base.config.toPosix, features.draft.codeToSpec, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
+    - fn [countProposed](../../src/cli.ts#L467) (root: string, counts: Record<string, number>) → void <!-- internal -->
+      - calls features.stats.updateStats, features.stats.addDrafts
+    - fn [cmdDraftLayout](../../src/cli.ts#L475) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      - calls map.analyze.findRoot, map.analyze.analyze, base.config.configToJson, base.config.loadConfig, base.config.guessLayers, features.draft.draftRules, check.scc.stronglyConnected, base.config.toPosix, features.proposals.proposalProblem, features.draft.withRules, features.proposals.writeProposal, cli.cli.countProposed
+    - fn [cmdWire](../../src/cli.ts#L539) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls map.analyze.findRoot, base.config.toPosix, base.safe-write.writeProblem, map.analyze.analyze, cli.cli.wiringErrors, base.diag.formatDiagnostic, check.wiring.collectWiring, map.wire-gen.generateWire, base.safe-write.safeWrite
+    - fn [wiringErrors](../../src/cli.ts#L578) (analysis: Analysis) → Diagnostic[] <!-- internal -->
+      - calls base.diag.isError
+    - fn [cmdDoctor](../../src/cli.ts#L591) () → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, base.config.loadConfig
-    - fn [cmdTracePlan](../../src/cli.ts#L575) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L630) (flow: string | undefined) → Promise<number> <!-- internal -->
       - calls map.trace-plan.tracePlan, base.config.loadConfig, map.analyze.findRoot
-    - fn [needPaths](../../src/cli.ts#L582) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L586) (dir: string) → Promise<number> <!-- internal -->
-      - calls base.config.loadConfig, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdMap](../../src/cli.ts#L604) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
-      - calls map.analyze.analyze, base.config.toPosix, map.map.diffMap, map.map.writeMap
-    - fn [cmdParse](../../src/cli.ts#L643) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L637) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L641) (dir: string) → Promise<number> <!-- internal -->
+      - calls base.config.loadConfig, base.config.guessLayout, base.config.configToJson, cli.cli.cmdMap
+    - fn [cmdMap](../../src/cli.ts#L662) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls map.analyze.analyze, map.map.diffMap, base.config.toPosix, map.map.writeMap
+    - fn [cmdParse](../../src/cli.ts#L701) (paths: string[], json: boolean) → number <!-- internal -->
       - calls lang.files.load, lang.files.collectMdFiles, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L654) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L712) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L697) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L755) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       - calls base.span.compareText
-    - fn [writeCheck](../../src/cli.ts#L731) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
-      - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleText](../../src/cli.ts#L774) (id: string) → string <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L789) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+      - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
+    - fn [ruleOf](../../src/cli.ts#L834) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L846) (id: string) → string <!-- internal -->
       - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L780) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L784) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L852) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L856) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L788) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L865) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L809) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L901) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L817) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L909) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
-    - fn [gitChanges](../../src/cli.ts#L830) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L922) (root: string, ref: string) → ChangedLines <!-- internal -->
       - calls features.draft.diffHunks
   - module [index](../../src/index.ts#L1)
     - diag base.diag
@@ -143,32 +151,33 @@
     - lsp-features features.lsp-features
     - type [Rpc](../../src/lsp.ts#L17) <!-- internal -->
     - fn [serveLsp](../../src/lsp.ts#L30) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<number>
-      - calls cli.lsp.Server, cli.lsp.Server.reject, cli.lsp.Server.receive, cli.lsp.Server.drain
-    - module [Server](../../src/lsp.ts#L75) <!-- internal -->
-      - fn [constructor](../../src/lsp.ts#L94) (send: (message: Rpc) => void)
-      - fn [reject](../../src/lsp.ts#L98) (id: number | string | null, code: number, message: string) → void
-      - fn [receive](../../src/lsp.ts#L102) (message: Rpc) → void
+      - calls cli.lsp.Server, cli.lsp.Server.drain, cli.lsp.Server.reject, cli.lsp.Server.receive
+    - module [Server](../../src/lsp.ts#L77) <!-- internal -->
+      - fn [constructor](../../src/lsp.ts#L98) (send: (message: Rpc) => void)
+      - fn [reject](../../src/lsp.ts#L102) (id: number | string | null, code: number, message: string) → void
+      - fn [receive](../../src/lsp.ts#L106) (message: Rpc) → void
         - calls cli.lsp.Server.notify, cli.lsp.Server.request
-      - fn [drain](../../src/lsp.ts#L133) () → Promise<void>
-      - fn [notify](../../src/lsp.ts#L138) (method: string, params: Record<string, unknown>) → void <!-- internal -->
+      - fn [drain](../../src/lsp.ts#L137) () → Promise<void>
+      - fn [notify](../../src/lsp.ts#L142) (method: string, params: Record<string, unknown>) → void <!-- internal -->
         - calls cli.lsp.filePath, cli.lsp.Server.changed
-      - fn [changed](../../src/lsp.ts#L178) () → void <!-- internal -->
+      - fn [changed](../../src/lsp.ts#L182) () → void <!-- internal -->
         - calls cli.lsp.Server.publish
-      - fn [analysis](../../src/lsp.ts#L187) () → Promise<Analysis> <!-- internal -->
-        - calls map.analyze.analyze
-      - fn [current](../../src/lsp.ts#L196) () → Promise<Workspace> <!-- internal -->
+      - fn [analysis](../../src/lsp.ts#L191) () → Promise<Analysis> <!-- internal -->
+        - calls map.analyze.analyze, cli.lsp.Server.report
+      - fn [current](../../src/lsp.ts#L207) () → Promise<Workspace> <!-- internal -->
         - calls cli.lsp.Server.analysis, features.lsp-features.workspace
-      - fn [publish](../../src/lsp.ts#L204) () → Promise<void> <!-- internal -->
+      - fn [publish](../../src/lsp.ts#L215) () → Promise<void> <!-- internal -->
         - calls cli.lsp.Server.current, features.lsp-features.diagnosticsFor, cli.lsp.Server.relative
-      - fn [relative](../../src/lsp.ts#L228) (abs: string) → string <!-- internal -->
-        - calls base.config.toPosix
-      - fn [request](../../src/lsp.ts#L232) (method: string, params: Record<string, unknown>) → Promise<unknown> <!-- internal -->
+      - fn [relative](../../src/lsp.ts#L239) (abs: string) → string <!-- internal -->
+        - calls base.config.toPosix, map.analyze.within
+      - fn [report](../../src/lsp.ts#L244) (message: string) → void <!-- internal -->
+      - fn [request](../../src/lsp.ts#L251) (method: string, params: Record<string, unknown>) → Promise<unknown> <!-- internal -->
         - calls cli.lsp.Server.initialize, cli.lsp.LspError, cli.lsp.filePath, cli.lsp.Server.relative, features.lsp-features.diagnosticsFor, cli.lsp.Server.current, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references, features.lsp-features.documentSymbols, features.lsp-features.completions, features.lsp-features.signatureHelp, features.lsp-features.codeLenses
-      - fn [initialize](../../src/lsp.ts#L273) (params: Record<string, unknown>) → unknown <!-- internal -->
+      - fn [initialize](../../src/lsp.ts#L292) (params: Record<string, unknown>) → unknown <!-- internal -->
         - calls cli.lsp.filePath, map.analyze.findRoot
-    - module [LspError](../../src/lsp.ts#L303) <!-- internal -->
-      - fn [constructor](../../src/lsp.ts#L305) (code: number, message: string)
-    - fn [filePath](../../src/lsp.ts#L311) (uri: string) → string <!-- internal -->
+    - module [LspError](../../src/lsp.ts#L323) <!-- internal -->
+      - fn [constructor](../../src/lsp.ts#L325) (code: number, message: string)
+    - fn [filePath](../../src/lsp.ts#L331) (uri: string) → string <!-- internal -->
   - module [mcp](../../src/mcp.ts#L1)
     - modelcontextprotocol-sdk external.modelcontextprotocol-sdk
     - node external.node
@@ -178,12 +187,16 @@
     - config base.config
     - explain-llm features.explain-llm
     - explain-node features.explain-node
+    - files lang.files
     - ir lang.ir
+    - map map.map
     - proposals features.proposals
-    - type [ToolResult](../../src/mcp.ts#L22) <!-- internal -->
-    - fn [json](../../src/mcp.ts#L24) (value: unknown) → ToolResult <!-- internal -->
-    - fn [failure](../../src/mcp.ts#L25) (message: string) → ToolResult <!-- internal -->
-    - fn [mcpServer](../../src/mcp.ts#L27) (root: string, version: string) → McpServer
-      - calls map.analyze.analyze, cli.mcp.json, features.explain-node.summarizeNode, cli.mcp.failure, lang.ir.sectionNodes, lang.ir.walk, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, features.proposals.writeProposal, features.proposals.lineDiff
-    - fn [serveMcp](../../src/mcp.ts#L168) (root: string, version: string) → Promise<number>
+    - type [ToolResult](../../src/mcp.ts#L25) <!-- internal -->
+    - fn [json](../../src/mcp.ts#L27) (value: unknown) → ToolResult <!-- internal -->
+    - fn [failure](../../src/mcp.ts#L28) (message: string) → ToolResult <!-- internal -->
+    - fn [currentAnalysis](../../src/mcp.ts#L39) (root: string) → () => Promise<Analysis>
+      - calls base.config.loadConfig, map.map.generateMap, lang.files.collectMdFiles, base.config.evidenceFiles, map.analyze.analyze
+    - fn [mcpServer](../../src/mcp.ts#L58) (root: string, version: string) → McpServer
+      - calls cli.mcp.currentAnalysis, lang.ir.sectionNodes, lang.ir.walk, cli.mcp.json, features.explain-node.summarizeNode, cli.mcp.failure, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, features.proposals.writeProposal, features.proposals.lineDiff
+    - fn [serveMcp](../../src/mcp.ts#L211) (root: string, version: string) → Promise<number>
       - calls cli.mcp.mcpServer
