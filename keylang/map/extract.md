@@ -146,7 +146,7 @@
     - fn [surrogatePairs](../../src/extract/treesitter.ts#L114) (src: string) → number[] <!-- internal -->
     - fn [firstAtOrAfter](../../src/extract/treesitter.ts#L121) (sorted: readonly number[], value: number) → number <!-- internal -->
     - fn [errorLine](../../src/extract/treesitter.ts#L133) (node: Node) → number
-    - fn [fingerprint](../../src/extract/treesitter.ts#L147) (node: Node) → string
+    - fn [fingerprint](../../src/extract/treesitter.ts#L148) (node: Node) → string
   - module [ts](../../src/extract/ts.ts#L1)
     - node external.node
     - facts extract.facts

@@ -21,7 +21,7 @@
       - calls lang.fmt.formatDocument
     - fn [specDigest](../../src/agent-context.ts#L139) (analysis: Analysis) → string <!-- internal -->
       - calls lang.fmt.formatDocument
-    - fn [snapshotSource](../../src/agent-context.ts#L151) (analysis: Analysis, file: string) → string | null <!-- internal -->
+    - fn [snapshotSource](../../src/agent-context.ts#L151) (analysis: Analysis, file: string) → string | null
     - fn [contextText](../../src/agent-context.ts#L160) (pack: ContextPack) → string
   - module [check-results](../../src/check-results.ts#L1)
     - node external.node
@@ -93,27 +93,28 @@
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-llm](../../src/explain-llm.ts#L1)
     - node external.node
+    - agent-context features.agent-context
     - analyze map.analyze
     - explain-node features.explain-node
     - llm features.llm
     - lsp-features features.lsp-features
     - safe-write base.safe-write
-    - type [Explanation](../../src/explain-llm.ts#L16)
-    - fn [explanationFile](../../src/explain-llm.ts#L31) (root: string, id: string) → string
-    - fn [readExplanation](../../src/explain-llm.ts#L35) (root: string, id: string) → Explanation | null
+    - type [Explanation](../../src/explain-llm.ts#L17)
+    - fn [explanationFile](../../src/explain-llm.ts#L32) (root: string, id: string) → string
+    - fn [readExplanation](../../src/explain-llm.ts#L36) (root: string, id: string) → Explanation | null
       - calls features.explain-llm.explanationFile
-    - fn [writeExplanation](../../src/explain-llm.ts#L45) (root: string, id: string, e: Explanation) → void
+    - fn [writeExplanation](../../src/explain-llm.ts#L46) (root: string, id: string, e: Explanation) → void
       - calls base.safe-write.safeWrite
-    - fn [explainedIds](../../src/explain-llm.ts#L50) (root: string) → string[]
-    - fn [currentBaseline](../../src/explain-llm.ts#L63) (analysis: Analysis, id: string) → string | null
+    - fn [explainedIds](../../src/explain-llm.ts#L51) (root: string) → string[]
+    - fn [currentBaseline](../../src/explain-llm.ts#L64) (analysis: Analysis, id: string) → string | null
       - calls features.lsp-features.plannedDecl
-    - fn [isStale](../../src/explain-llm.ts#L79) (analysis: Analysis, id: string, e: Explanation) → boolean
+    - fn [isStale](../../src/explain-llm.ts#L80) (analysis: Analysis, id: string, e: Explanation) → boolean
       - calls features.explain-llm.currentBaseline
-    - fn [unknownIds](../../src/explain-llm.ts#L87) (analysis: Analysis, text: string) → string[]
+    - fn [unknownIds](../../src/explain-llm.ts#L88) (analysis: Analysis, text: string) → string[]
       - calls features.lsp-features.plannedDecl
-    - fn [explanationRequest](../../src/explain-llm.ts#L102) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: "short" | "full" }) → LlmRequest
-      - calls features.explain-llm.sourceLines, features.explain-node.formatSummary
-    - fn [sourceLines](../../src/explain-llm.ts#L128) (root: string, file: string, from: number, to: number) → string | null <!-- internal -->
+    - fn [explanationRequest](../../src/explain-llm.ts#L103) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: "short" | "full" }) → LlmRequest
+      - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary
+    - fn [sourceLines](../../src/explain-llm.ts#L132) (text: string, from: number, to: number) → string <!-- internal -->
   - module [explain-node](../../src/explain-node.ts#L1)
     - analyze map.analyze
     - ir lang.ir
@@ -151,10 +152,10 @@
     - fn [llmClient](../../src/llm.ts#L40) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
       - calls features.llm.timeoutMs, features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
     - fn [timeoutMs](../../src/llm.ts#L67) (env: Env) → number | string <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L73) (client: Anthropic, model: string, request: LlmRequest) → Promise<string> <!-- internal -->
-    - fn [openrouterComplete](../../src/llm.ts#L92) (base: string, key: string, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L73) (client: Anthropic, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L103) (base: string, key: string, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
       - calls features.llm.parseJson
-    - fn [parseJson](../../src/llm.ts#L145) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/llm.ts#L156) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -322,17 +323,17 @@
       - calls features.voice.modelsDir
     - fn [voiceEngine](../../src/voice.ts#L50) (config: VoiceConfig, localAvailable: boolean, env: Env = process.env, home: string = homedir()) → VoiceEngine
       - calls features.keys.readKey, features.voice.localModel, features.voice.modelsDir
-    - fn [wav](../../src/voice.ts#L63) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Buffer
-    - fn [windows](../../src/voice.ts#L83) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Int16Array[]
-    - fn [seamWord](../../src/voice.ts#L100) (word: string) → string <!-- internal -->
-    - fn [joinWindows](../../src/voice.ts#L105) (texts: readonly string[]) → string
-    - fn [glossary](../../src/voice.ts#L132) (analysis: Analysis, path: string, text: string, line: number) → string[]
+    - fn [wav](../../src/voice.ts#L66) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Buffer
+    - fn [windows](../../src/voice.ts#L86) (pcm: Int16Array, rate: number = SAMPLE_RATE) → Int16Array[]
+    - fn [seamWord](../../src/voice.ts#L103) (word: string) → string <!-- internal -->
+    - fn [joinWindows](../../src/voice.ts#L108) (texts: readonly string[]) → string
+    - fn [glossary](../../src/voice.ts#L135) (analysis: Analysis, path: string, text: string, line: number) → string[]
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
-    - fn [spoken](../../src/voice.ts#L156) (id: string) → string <!-- internal -->
-    - fn [matchId](../../src/voice.ts#L172) (words: string, ids: readonly string[]) → string | null
+    - fn [spoken](../../src/voice.ts#L159) (id: string) → string <!-- internal -->
+    - fn [matchId](../../src/voice.ts#L175) (words: string, ids: readonly string[]) → string | null
       - calls features.voice.spoken
-    - fn [speechToSpec](../../src/voice.ts#L189) (text: string, ids: readonly string[], indent = "") → string
+    - fn [speechToSpec](../../src/voice.ts#L192) (text: string, ids: readonly string[], indent = "") → string
       - calls features.voice.matchId
-    - fn [transcriptOf](../../src/voice.ts#L201) (reply: string) → string <!-- internal -->
-    - fn [transcribeOpenRouter](../../src/voice.ts#L216) (engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]) → Promise<string>
+    - fn [transcriptOf](../../src/voice.ts#L204) (reply: string) → string <!-- internal -->
+    - fn [transcribeOpenRouter](../../src/voice.ts#L219) (engine: Extract<VoiceEngine, { kind: "openrouter" }>, pcm: Int16Array, terms: readonly string[]) → Promise<string>
       - calls features.voice.windows, features.voice.wav, features.voice.transcriptOf, features.voice.joinWindows

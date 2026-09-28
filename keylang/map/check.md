@@ -134,25 +134,25 @@
       - calls check.rules.plannedKind, check.rules.collectRules, check.rules.hashText, check.rules.evaluateOnSnapshot
     - fn [evaluateOnSnapshot](../../src/rules.ts#L100) (rules: Collected, index: Index, snapshot: SnapshotView, planned: readonly string[]) → RuleReport <!-- internal -->
       - calls check.rules.base, check.rules.specific, check.rules.layerViolation, base.diag.diagnostic, check.rules.pointAt, check.resolve.Index.lookup, check.scc.stronglyConnected, check.scc.cycleThrough
-    - fn [layerViolation](../../src/rules.ts#L380) (rules: Collected, fromLayer: string, toLayer: string) → string | null <!-- internal -->
-    - fn [scopeDepth](../../src/rules.ts#L389) (id: string) → number
-    - fn [specific](../../src/rules.ts#L398) (rules: Collected, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L389) (rules: Collected, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [scopeDepth](../../src/rules.ts#L398) (id: string) → number
+    - fn [specific](../../src/rules.ts#L407) (rules: Collected, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       - calls check.rules.scopeDepth
-    - type [Collected](../../src/rules.ts#L416) <!-- internal -->
-    - fn [collectRules](../../src/rules.ts#L437) (docs: readonly Document[], kindOf: (id: string) => string | undefined) → Collected <!-- internal -->
+    - type [Collected](../../src/rules.ts#L425) <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L446) (docs: readonly Document[], kindOf: (id: string) => string | undefined) → Collected <!-- internal -->
       - calls lang.ir.sectionNodes, check.rules.isRuleNode, check.rules.layerChain, base.diag.diagnostic, check.rules.combineOrders
-    - fn [layerChain](../../src/rules.ts#L516) (file: string, node: Node, diagnostics: Diagnostic[]) → LayerOrder | null <!-- internal -->
+    - fn [layerChain](../../src/rules.ts#L525) (file: string, node: Node, diagnostics: Diagnostic[]) → LayerOrder | null <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [combineOrders](../../src/rules.ts#L539) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L548) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       - calls base.diag.diagnostic, check.rules.transitive
-    - fn [transitive](../../src/rules.ts#L569) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
-    - fn [plannedKind](../../src/rules.ts#L585) (docs: readonly Document[], id: string) → string <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L578) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [plannedKind](../../src/rules.ts#L594) (docs: readonly Document[], id: string) → string <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [pointAt](../../src/rules.ts#L601) (line: number, col: number) → Span <!-- internal -->
-    - fn [base](../../src/rules.ts#L606) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L610) (line: number, col: number) → Span <!-- internal -->
+    - fn [base](../../src/rules.ts#L615) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       - calls check.rules.hashText
-    - fn [hashText](../../src/rules.ts#L610) (text: string) → string <!-- internal -->
-    - fn [isRuleNode](../../src/rules.ts#L614) (n: Node) → boolean
+    - fn [hashText](../../src/rules.ts#L619) (text: string) → string <!-- internal -->
+    - fn [isRuleNode](../../src/rules.ts#L623) (n: Node) → boolean
   - module [scc](../../src/scc.ts#L1)
     - fn [stronglyConnected](../../src/scc.ts#L4) (adj: ReadonlyMap<string, ReadonlySet<string>>) → string[][]
       - calls check.scc.components
@@ -232,15 +232,16 @@
     - type [WireDep](../../src/wiring.ts#L12)
     - type [Wire](../../src/wiring.ts#L24)
     - type [WiringView](../../src/wiring.ts#L32)
-    - type [WireImport](../../src/wiring.ts#L41)
-    - fn [collectWiring](../../src/wiring.ts#L49) (docs: readonly Document[]) → { wires: Wire[]; diagnostics: Diagnostic[] }
+    - type [WireImport](../../src/wiring.ts#L45)
+    - fn [collectWiring](../../src/wiring.ts#L54) (docs: readonly Document[]) → { wires: Wire[]; diagnostics: Diagnostic[] }
       - calls lang.ir.sectionNodes, check.wiring.conditionText, base.diag.diagnostic
-    - fn [conditionText](../../src/wiring.ts#L87) (tokens: readonly Token[]) → string <!-- internal -->
-    - type [WireOrder](../../src/wiring.ts#L99) = { order: string[] } | { cycle: string[] }
-    - fn [wireOrder](../../src/wiring.ts#L105) (wires: readonly Wire[]) → WireOrder
-    - fn [wireImport](../../src/wiring.ts#L139) (view: WiringView, id: string) → WireImport | { problem: string }
-      - calls base.languages.languageOf
-    - fn [checkWiring](../../src/wiring.ts#L158) (docs: readonly Document[], view: WiringView | null) → Diagnostic[]
+    - fn [conditionText](../../src/wiring.ts#L92) (tokens: readonly Token[]) → string <!-- internal -->
+    - type [WireOrder](../../src/wiring.ts#L104) = { order: string[] } | { cycle: string[] }
+    - fn [wireOrder](../../src/wiring.ts#L110) (wires: readonly Wire[]) → WireOrder
+    - fn [wireImport](../../src/wiring.ts#L144) (view: WiringView, id: string) → WireImport | { problem: string }
+      - calls base.languages.languageOf, check.wiring.exportedAs
+    - fn [exportedAs](../../src/wiring.ts#L164) (view: WiringView, id: string) → string | null <!-- internal -->
+    - fn [checkWiring](../../src/wiring.ts#L177) (docs: readonly Document[], view: WiringView | null) → Diagnostic[]
       - calls check.wiring.collectWiring, base.diag.diagnostic, check.wiring.wireOrder, check.wiring.useProblem, check.rules.denyingRule
-    - fn [useProblem](../../src/wiring.ts#L203) (view: WiringView, id: string, role: string) → string | null <!-- internal -->
+    - fn [useProblem](../../src/wiring.ts#L222) (view: WiringView, id: string, role: string) → string | null <!-- internal -->
       - calls check.wiring.wireImport

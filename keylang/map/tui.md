@@ -259,6 +259,7 @@
   - module [disk](../../src/tui/disk.ts#L1)
     - node external.node
     - analyze map.analyze
+    - safe-write base.safe-write
     - type [Eol](../../src/tui/disk.ts#L10) = "\n" | "\r\n"
     - fn [readText](../../src/tui/disk.ts#L12) (abs: string) → string | null
     - fn [lf](../../src/tui/disk.ts#L20) (text: string) → string
@@ -266,16 +267,15 @@
       - calls tui.disk.lf
     - fn [withEol](../../src/tui/disk.ts#L35) (text: string, eol: Eol) → string
     - fn [landingPath](../../src/tui/disk.ts#L44) (abs: string) → string
-      - calls tui.disk.parts
-    - fn [parts](../../src/tui/disk.ts#L71) (abs: string) → string[] <!-- internal -->
-    - type [WriteOptions](../../src/tui/disk.ts#L80)
-    - fn [destination](../../src/tui/disk.ts#L85) (abs: string, options: WriteOptions) → string <!-- internal -->
+      - calls base.safe-write.landing
+    - type [WriteOptions](../../src/tui/disk.ts#L55)
+    - fn [destination](../../src/tui/disk.ts#L60) (abs: string, options: WriteOptions) → string <!-- internal -->
       - calls tui.disk.landingPath
-    - fn [leavesBoundary](../../src/tui/disk.ts#L90) (boundary: string, abs: string, options: WriteOptions = {}) → string | null
+    - fn [leavesBoundary](../../src/tui/disk.ts#L65) (boundary: string, abs: string, options: WriteOptions = {}) → string | null
       - calls map.analyze.within, tui.disk.destination, tui.disk.landingPath
-    - fn [writeInside](../../src/tui/disk.ts#L100) (boundary: string, abs: string, text: string, options: WriteOptions = {}) → void
-      - calls tui.disk.leavesBoundary, tui.disk.destination
-    - fn [removeInside](../../src/tui/disk.ts#L120) (boundary: string, abs: string, options: WriteOptions = {}) → void
+    - fn [writeInside](../../src/tui/disk.ts#L75) (boundary: string, abs: string, text: string, options: WriteOptions = {}) → void
+      - calls tui.disk.leavesBoundary, base.safe-write.writeAtomic, tui.disk.destination
+    - fn [removeInside](../../src/tui/disk.ts#L83) (boundary: string, abs: string, options: WriteOptions = {}) → void
       - calls tui.disk.leavesBoundary, tui.disk.destination
   - module [evidence](../../src/tui/evidence.ts#L1)
     - analyze map.analyze
