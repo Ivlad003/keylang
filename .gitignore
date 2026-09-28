@@ -4,3 +4,12 @@ dist/
 *.tgz
 # джерельне відео (22 МБ) не в репозиторії
 clip_*.mp4
+# локальне для агентів і інструментів, не частина проєкту:
+# лог opencode (містить пароль сервера), скіли Claude Code, трекер тікетів
+# (docs/agents/issue-tracker.md: тікети живуть локально) і вказівки до нього
+.ocs.log
+.claude/
+.scratch/
+docs/agents/
+.cache/
+.local/
