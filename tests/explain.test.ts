@@ -157,6 +157,68 @@ test("explain --llm through openrouter: streamed SSE deltas are joined into one 
   assert.match(o.stdout, /^Builds an order and saves it\.\n\nopenrouter:some\/model · \d{4}-\d{2}-\d{2} · fresh$/m);
 });
 
+/** An OpenRouter stand-in whose handler writes the response as given. */
+async function mockOpenRouter(t: TestContext, respond: (res: import("node:http").ServerResponse) => void): Promise<string> {
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => respond(res));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+test("explain --llm: an answer without text, an OpenRouter error as plain JSON, broken SSE or a stalled stream is exit 2 with the provider named; nothing is saved", async (t) => {
+  const dir = copy(t);
+  withAgent(dir);
+  const mock = await mockAnthropic(t);
+  mock.reply = "";
+  const empty = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "k", HOME: dir });
+  assert.equal(empty.status, 2, empty.stdout);
+  assert.match(empty.stderr, /claude-opus-5 answered without text/);
+
+  const file = join(dir, "keylang.json");
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
+  const env = { OPENROUTER_API_KEY: "or-key", HOME: dir };
+  const cases: [string, (res: import("node:http").ServerResponse) => void, RegExp][] = [
+    ["JSON error", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m],
+    ["broken SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end("data: {not json\n\n"), /^keylang: openrouter: invalid JSON in the stream: \{not json$/m],
+    ["stalled stream", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Build" } }] })}\n\n`), /^keylang: openrouter: no answer within 300 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m],
+  ];
+  for (const [what, respond, message] of cases) {
+    const url = await mockOpenRouter(t, respond);
+    const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url, KEYLANG_LLM_TIMEOUT_MS: "300" });
+    assert.equal(o.status, 2, `${what}: ${o.stdout}${o.stderr}`);
+    assert.match(o.stderr, message, what);
+  }
+  assert.ok(!existsSync(join(dir, ".keylang/explain")), "no empty explanation is kept as fresh");
+  const bad = keylang(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, KEYLANG_LLM_TIMEOUT_MS: "soon" });
+  assert.match(bad.stderr, /KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds/);
+});
+
+test("explain --llm: a module's explanation goes stale when a member changes; code in backticks is not an unknown id; an empty key is no key", async (t) => {
+  const dir = copy(t);
+  withAgent(dir);
+  const mock = await mockAnthropic(t);
+  mock.reply = "Orders: `domain.order.createOrder` totals with `domain.order.total`; it reads `process.env` nowhere.";
+  const env = { ANTHROPIC_BASE_URL: mock.url, ANTHROPIC_API_KEY: "k", HOME: dir };
+  const first = await keylangAsync(dir, ["explain", "domain.order", "--llm"], env);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, / · fresh$/m);
+  assert.doesNotMatch(first.stdout, /unknown ids/);
+  const order = join(dir, "src/domain/order.ts");
+  writeFileSync(order, readFileSync(order, "utf8").replace("a + b, 0", "a + b, 1"));
+  assert.match(keylang(dir, ["explain", "domain.order"], env).stdout, / · stale$/m);
+  assert.match(keylang(dir, ["explain", "--stale"]).stdout, /^domain\.order: stale/m);
+
+  const noKey = keylang(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: undefined, HOME: dir, ANTHROPIC_BASE_URL: "http://127.0.0.1:9" });
+  assert.equal(noKey.status, 0);
+  assert.match(noKey.stderr, /no Anthropic credentials/);
+});
+
 test("doctor: reports what is set up and what is optional, exit 0, nothing written", (t) => {
   const dir = copy(t);
   const o = keylang(dir, ["doctor"], { HOME: dir, OPENROUTER_API_KEY: undefined, ANTHROPIC_API_KEY: undefined, ANTHROPIC_AUTH_TOKEN: undefined });

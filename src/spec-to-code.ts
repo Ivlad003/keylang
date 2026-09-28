@@ -15,13 +15,16 @@ import { globPrefix } from "./glob.ts";
 import { placeFile } from "./graph.ts";
 import { sectionNodes, walk } from "./ir.ts";
 import { plannedDecl } from "./lsp-features.ts";
+import { codeProposalProblem } from "./proposals.ts";
 import { blocksDependency } from "./rules.ts";
+import { allCrlf } from "./safe-write.ts";
 import type { LlmClient } from "./llm.ts";
 import type { Verdict } from "./verdict.ts";
 
 export interface FileCandidate {
   /** POSIX, relative to the root. */
   file: string;
+  /** The file as the candidate was built from it; a write refuses a file that no longer holds it. */
   before: string | null;
   after: string;
 }
@@ -32,7 +35,7 @@ export interface CodeCandidate extends FileCandidate {
   tests: FileCandidate[];
   /** `test` entries left to the person, each with the reason. */
   testNotes: string[];
-  /** What `check` says about the ID with the candidate in place: its verdicts and diagnostics. */
+  /** What the candidate changes in `check`: every verdict and diagnostic it has that the code without it does not. */
   verdicts: Verdict[];
   diagnostics: Diagnostic[];
 }
@@ -52,6 +55,9 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
     throw new Error(`\`${id}\` is neither planned nor in the code: fix the reference${near ? ` (did you mean \`${near}\`?)` : ""}, or declare \`planned fn ${id} <signature>\` first`);
   }
   if (plan.kind !== "fn") throw new Error(`\`${id}\` is a planned ${plan.kind}; spec-to-code builds planned fns`);
+  // A second run would add a second function of the same name.
+  const implemented = analysis.snapshot?.nodes[id];
+  if (implemented) throw new Error(`\`${id}\` is already implemented (${implemented.file ?? "?"}:${implemented.line ?? 1}); \`keylang check\` says whether the \`planned\` declaration can go (K202)`);
   // A stub the flow could never reach would contradict the rules it is checked by.
   for (const caller of callersInFlows(analysis, id)) {
     if (blocksDependency(analysis.docs, caller, id)) throw new Error(`\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first`);
@@ -63,22 +69,30 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const file = into ?? (existing?.kind === "module" && existing.file ? existing.file : newModuleFile(config, moduleId));
   const placed = placeFile(config, file);
   if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) throw new Error(`${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module`);
+  // The rules of a code proposal, before the file is read: inside the repository, not generated (`keylang.gen.ts`).
+  const problem = codeProposalProblem(config.root, file);
+  if (problem) throw new Error(`${file}: ${problem}`);
   const abs = join(config.root, file);
   const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
-  const stub = model ? await modelBody(analysis, model, file, name, id, plan.signature, before) : stubFor(file, name, id, plan.signature);
-  const after = before === null || before.trim() === "" ? stub : `${before.replace(/\n*$/, "")}\n\n${stub}`;
-  // The candidate is checked as the code it would be, without touching the disk.
+  const lf = before?.replace(/\r\n/g, "\n") ?? null;
+  const stub = model ? await modelBody(analysis, model, file, name, id, plan.signature, lf) : stubFor(file, name, id, plan.signature, lf === null);
+  const joined = lf === null || lf.trim() === "" ? stub : `${lf.replace(/\n*$/, "")}\n\n${stub}`;
+  // A file with CRLF on every line keeps it.
+  const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
+  // The candidate is checked as the code it would be, without touching the disk, against the code without it.
   const next = await analyze({ root: config.root, overlay: new Map([[abs, after]]), withoutEvidence: true });
-  const lines = new Set<string>();
-  for (const doc of next.docs) {
-    for (const section of doc.sections) for (const top of sectionNodes(section)) walk(top, (node) => {
-      if (node.refs.some((ref) => ref.target === id) || node.id === id) lines.add(`${doc.path}:${node.span.start.line}`);
-    });
-  }
-  const verdicts = next.verdicts.filter((v) => v.area === id);
-  const diagnostics = next.diagnostics.filter((d) => lines.has(`${d.file}:${d.span.start.line}`));
+  const { verdicts, diagnostics } = introduced(analysis, next);
   const { tests, notes } = await testCandidates(analysis, id, file, after, model);
   return { id, file, before, after, verdicts, diagnostics, tests, testNotes: notes };
+}
+
+/** Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too). */
+function introduced(base: Analysis, next: Analysis): { verdicts: Verdict[]; diagnostics: Diagnostic[] } {
+  const diagnosticKey = (d: Diagnostic): string => [d.code, d.file, d.span.start.line, d.span.start.col, d.message].join("\u0000");
+  const verdictKey = (v: Verdict): string => [v.criterion, v.verdict, v.area, v.file, v.line, v.col, v.message].join("\u0000");
+  const knownDiagnostics = new Set(base.diagnostics.map(diagnosticKey));
+  const knownVerdicts = new Set(base.verdicts.map(verdictKey));
+  return { verdicts: next.verdicts.filter((v) => !knownVerdicts.has(verdictKey(v))), diagnostics: next.diagnostics.filter((d) => !knownDiagnostics.has(diagnosticKey(d))) };
 }
 
 const TEST_EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs)$/;
@@ -113,6 +127,12 @@ async function testCandidates(analysis: Analysis, id: string, codeFile: string, 
   const notes: string[] = [];
   for (const t of flowTests(analysis, id)) {
     const label = `test ${t.file} "${t.name}"`;
+    // Checked before the path is even looked at: a spec can name `../elsewhere` or a link out.
+    const problem = codeProposalProblem(root, t.file);
+    if (problem) {
+      notes.push(`${label}: ${problem}; nothing proposed for it`);
+      continue;
+    }
     if (existsSync(join(root, t.file))) {
       if (!readFileSync(join(root, t.file), "utf8").includes(t.name)) notes.push(`${label}: ${t.file} exists without it; add it there`);
       continue;
@@ -188,15 +208,20 @@ function newModuleFile(config: Config, moduleId: string): string {
   return `${prefixes[0] ? `${prefixes[0]}/` : ""}${segments.join("/")}${ext}`;
 }
 
-/** `(order: Order) → Promise<Refund>` → a function of that signature that fails until written. */
-function stubFor(file: string, name: string, id: string, signature: string | null): string {
+/**
+ * `(order: Order) → Promise<Refund>` → a function of that signature that
+ * fails until written; the declared parameters and result are kept as
+ * written, so the stub's own signature matches the plan (no K201).
+ */
+function stubFor(file: string, name: string, id: string, signature: string | null, newFile: boolean): string {
   const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
   const params = m?.[1]?.trim() ?? "";
   const result = m?.[2]?.trim() ?? null;
   const message = JSON.stringify(`not implemented: ${id}`);
   if (file.endsWith(".py")) {
-    const names = params.split(",").map((p) => p.trim().split(/[:=\s]/)[0]).filter((p) => p !== "");
-    return `def ${name}(${names.join(", ")}):\n    raise NotImplementedError(${message})\n`;
+    // Annotations name types the new file does not import: postponed, they are not evaluated when it loads.
+    const future = newFile && (params.includes(":") || result !== null) ? "from __future__ import annotations\n\n\n" : "";
+    return `${future}def ${name}(${params})${result ? ` -> ${result}` : ""}:\n    raise NotImplementedError(${message})\n`;
   }
   if (file.endsWith(".rs")) return `pub fn ${name}(${params})${result ? ` -> ${result}` : ""} {\n    todo!(${message})\n}\n`;
   const isAsync = result !== null && /^Promise</.test(result);

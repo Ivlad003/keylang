@@ -4,8 +4,9 @@
 // read specs and snapshot nodes only; the generated code is checked as code.
 
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { sectionNodes, type Document } from "./ir.ts";
-import { blocksDependency } from "./rules.ts";
+import { sectionNodes, type Document, type Token } from "./ir.ts";
+import { languageOf } from "./languages.ts";
+import { denyingRule } from "./rules.ts";
 import type { Span } from "./span.ts";
 
 export interface WireDep {
@@ -27,8 +28,20 @@ export interface Wire {
   span: Span;
 }
 
-/** The kind of a snapshot node, for the target check; null without a snapshot. */
-export type NodeKinds = ReadonlyMap<string, string> | null;
+/** What the wiring checks read of the snapshot; `check` does not import `map`. */
+export interface WiringView {
+  /** The kind of every node, a class told apart as `class`. */
+  kinds: ReadonlyMap<string, string>;
+  nodes: Readonly<Record<string, { file: string | null }>>;
+  /** The public exports table: `symbol` is the ID an exported name stands for. */
+  exports: readonly { module: string; name: string; symbol: string | null; form?: string }[];
+}
+
+/** How the generated file imports a factory: from its file, by its exported name (`default` for a default export). */
+export interface WireImport {
+  file: string;
+  name: string;
+}
 
 const CONDITION = /^env\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\S+)$/;
 
@@ -52,7 +65,7 @@ export function collectWiring(docs: readonly Document[]): { wires: Wire[]; diagn
             if (!optionTarget) continue;
             if (option.kind === "compose") dep.compose.push({ target: optionTarget, span: option.span });
             if (option.kind !== "when") continue;
-            const m = CONDITION.exec(option.text?.value.trim() ?? "");
+            const m = CONDITION.exec(conditionText(option.tokens));
             if (m) dep.when.push({ env: m[1]!, value: m[2]!, target: optionTarget, span: option.span });
             else diagnostics.push(diagnostic("K005", doc.path, option.text?.span ?? option.span, "a wiring condition must be `env.NAME = value`"));
           }
@@ -63,6 +76,24 @@ export function collectWiring(docs: readonly Document[]): { wires: Wire[]; diagn
     }
   }
   return { wires, diagnostics };
+}
+
+/**
+ * The condition of `- when <condition> → <id>` as written: the tokens between
+ * the keyword and the arrow, touching ones joined. The IR's canonical text
+ * puts a space after a comma, but the value is compared with the variable
+ * as it is: `env.DB = a,b` means the value `a,b`.
+ */
+function conditionText(tokens: readonly Token[]): string {
+  const arrow = tokens.findIndex((t) => t.text === "→" || t.text === "->");
+  let out = "";
+  let previous: Token | undefined;
+  for (const t of tokens.slice(1, arrow === -1 ? tokens.length : arrow)) {
+    if (previous !== undefined && previous.span.end.offset !== t.span.start.offset) out += " ";
+    out += t.text;
+    previous = t;
+  }
+  return out;
 }
 
 export type WireOrder = { order: string[] } | { cycle: string[] };
@@ -99,37 +130,81 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
   return { order };
 }
 
-/** K301 for a cycle, K302 for a factory that is not a fn or class, K102 for a dependency `deny` forbids. */
-export function checkWiring(docs: readonly Document[], kinds: NodeKinds): Diagnostic[] {
+/**
+ * The import the generated file needs for `id`, read from the exports table;
+ * a reason instead when no import can reach it: code of a language `wire`
+ * does not generate for, a method (static or not, the snapshot does not
+ * say), a name its module does not export.
+ */
+export function wireImport(view: WiringView, id: string): WireImport | { problem: string } {
+  const file = view.nodes[id]?.file ?? null;
+  if (file === null) return { problem: "has no source file" };
+  const language = languageOf(file);
+  if (language !== "typescript" && language !== "javascript") return { problem: `is ${language ?? "not TS/JS"} code (${file}); \`keylang wire\` generates TypeScript and imports TS/JS only` };
+  const parent = id.slice(0, id.lastIndexOf("."));
+  if (view.kinds.get(parent) === "class") return { problem: `is a method of the class \`${parent}\`; wire a module-level fn or the class` };
+  const own = id.slice(id.lastIndexOf(".") + 1);
+  const rows = view.exports.filter((row) => row.module === parent && row.symbol === id);
+  const row = rows.find((r) => r.form === undefined && r.name === own) ?? rows.find((r) => r.form === "alias") ?? rows.find((r) => r.form === "default");
+  if (!row) return { problem: `is not exported by ${file}; the generated file cannot import it` };
+  return { file, name: row.form === "default" ? "default" : row.name };
+}
+
+/**
+ * K301 for a cycle; K302 for a factory that is not a fn or class, a decorator
+ * that is not a fn, or one the generated file cannot import; K002 for a
+ * dependency name given twice; K102 for a dependency `deny` forbids.
+ */
+export function checkWiring(docs: readonly Document[], view: WiringView | null): Diagnostic[] {
   const { wires, diagnostics } = collectWiring(docs);
   if (wires.length === 0) return diagnostics;
   const seen = new Set<string>();
   for (const w of wires) {
     if (seen.has(w.target)) diagnostics.push(diagnostic("K002", w.file, w.span, `\`${w.target}\` is wired twice`));
     seen.add(w.target);
+    const names = new Set<string>();
+    for (const d of w.deps) {
+      // The argument object would have the key twice: the second silently wins.
+      if (names.has(d.name)) diagnostics.push(diagnostic("K002", w.file, d.span, `dependency \`${d.name}\` of \`${w.target}\` is named twice`));
+      names.add(d.name);
+    }
   }
   const order = wireOrder(wires);
   if ("cycle" in order) {
     const first = wires.find((w) => w.target === order.cycle[0])!;
     diagnostics.push(diagnostic("K301", first.file, first.span, `wiring cycle ${order.cycle.join(" → ")}: a factory would get a dependency that is not built yet`));
   }
-  const factories = (w: Wire): { id: string; span: Span; role: string }[] => [
+  const uses = (w: Wire): { id: string; span: Span; role: string }[] => [
     { id: w.target, span: w.span, role: "wire" },
-    ...w.deps.flatMap((d) => [{ id: d.target, span: d.span, role: "dependency" }, ...d.when.map((c) => ({ id: c.target, span: c.span, role: "dependency" }))]),
+    ...w.deps.flatMap((d) => [
+      { id: d.target, span: d.span, role: "dependency" },
+      ...d.when.map((c) => ({ id: c.target, span: c.span, role: "dependency" })),
+      ...d.compose.map((c) => ({ id: c.target, span: c.span, role: "compose" })),
+    ]),
   ];
   for (const w of wires) {
-    if (kinds) {
-      for (const f of factories(w)) {
-        const kind = kinds.get(f.id);
-        // A missing ID is K001 from the resolver; a class is a module node in the snapshot.
-        if (kind !== undefined && kind !== "fn" && kind !== "class") diagnostics.push(diagnostic("K302", w.file, f.span, `${f.role} \`${f.id}\` is a ${kind}; a factory must be a fn or a class`));
+    if (view) {
+      for (const use of uses(w)) {
+        const problem = useProblem(view, use.id, use.role);
+        if (problem !== null) diagnostics.push(diagnostic("K302", w.file, use.span, `${use.role} \`${use.id}\` ${problem}`));
       }
     }
     for (const d of w.deps) {
       for (const target of [d.target, ...d.when.map((c) => c.target), ...d.compose.map((c) => c.target)]) {
-        if (blocksDependency(docs, w.target, target)) diagnostics.push(diagnostic("K102", w.file, d.span, `divergence: wiring \`${w.target}\` depends on \`${target}\`, which is denied`));
+        const rule = denyingRule(docs, w.target, target);
+        if (rule) diagnostics.push(diagnostic("K102", w.file, d.span, `divergence: wiring \`${w.target}\` depends on \`${target}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.line})`));
       }
     }
   }
   return diagnostics;
+}
+
+/** Why the generated file could not build or apply `id` in this role, or null; a missing ID is K001 from the resolver. */
+function useProblem(view: WiringView, id: string, role: string): string | null {
+  const kind = view.kinds.get(id);
+  if (kind === undefined) return null;
+  if (role === "compose" && kind !== "fn") return `is a ${kind}; a decorator must be a fn of one argument`;
+  if (kind !== "fn" && kind !== "class") return `is a ${kind}; a factory must be a fn or a class`;
+  const found = wireImport(view, id);
+  return "problem" in found ? found.problem : null;
 }

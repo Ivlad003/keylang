@@ -4,11 +4,12 @@
 // `spec-to-code` proposes code and its tests; only the TUI MERGE (or an
 // explicit CLI apply) changes the file itself.
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { within } from "./analyze.ts";
 import { languageOf } from "./languages.ts";
 import { parse } from "./parser.ts";
+import { landing, safeWrite } from "./safe-write.ts";
 import { WIRE_MARKER } from "./wire-gen.ts";
 
 export const PROPOSALS_DIR = ".keylang/proposals";
@@ -28,11 +29,13 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   if (specDir === ".." || specDir.startsWith("../")) return "the spec directory is outside the repository";
   if (specDir !== "" && !path.startsWith(`${specDir}/`)) return `outside ${specDir}/: a proposal changes specs only`;
   if (path.startsWith(`${specDir === "" ? "" : `${specDir}/`}map/`)) return "a generated map file: change the code or the rules, then run `keylang map`";
-  const abs = resolve(root, path);
-  if (existsSync(abs) && parse(path, readFileSync(abs, "utf8")).generated !== null) return "a generated file: it is written by `keylang map` only";
   if (generated(path)) return "a generated file: it is written by `keylang map` only";
+  // Links first: nothing outside the spec directory is read, not even to see whether it is generated.
+  const abs = resolve(root, path);
   const specRoot = resolve(root, specDir);
-  if (!within(realPrefix(abs), existsSync(specRoot) ? realpathSync(specRoot) : specRoot)) return `leads out of ${specDir || "."}/ through a link`;
+  const lands = landing(abs);
+  if (lands === null || !within(lands, existsSync(specRoot) ? realpathSync(specRoot) : specRoot)) return `leads out of ${specDir || "."}/ through a link`;
+  if (existsSync(lands) && parse(path, readFileSync(lands, "utf8")).generated !== null) return "a generated file: it is written by `keylang map` only";
   return null;
 }
 
@@ -46,31 +49,20 @@ export function codeProposalProblem(root: string, path: string): string | null {
   if (languageOf(path) === undefined) return "not a source file of a language keylang reads";
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return "not a plain relative path";
   if (path.split("/").slice(0, -1).some((part) => part.startsWith(".") || part === "node_modules" || part === "target")) return "in a directory sources are not read from";
-  const abs = resolve(root, path);
-  if (existsSync(abs) && readFileSync(abs, "utf8").startsWith(WIRE_MARKER)) return "a generated file: it is written by `keylang wire` only";
-  if (!within(realPrefix(abs), realpathSync(root))) return "leads out of the repository through a link";
+  // Links first (one whose target does not exist yet too): nothing outside the repository is read.
+  const lands = landing(resolve(root, path));
+  if (lands === null || !within(lands, realpathSync(root))) return "leads out of the repository through a link";
+  if (existsSync(lands) && readFileSync(lands, "utf8").startsWith(WIRE_MARKER)) return "a generated file: it is written by `keylang wire` only";
   return null;
 }
 
-/** Writes the proposal for `path` (relative, POSIX) and returns its file. */
+/**
+ * Writes the proposal for `path` (relative, POSIX) atomically and returns its
+ * file; `.keylang/proposals/` is keylang's own store, so a link there that
+ * leads elsewhere is refused like any other.
+ */
 export function writeProposal(root: string, path: string, text: string): string {
-  const abs = join(root, PROPOSALS_DIR, path);
-  mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, text);
-  return abs;
-}
-
-/** `abs` with the part that exists resolved through links: where a new file would really land. */
-export function realPrefix(abs: string): string {
-  let dir = abs;
-  const rest: string[] = [];
-  while (!existsSync(dir)) {
-    const parent = dirname(dir);
-    if (parent === dir) return abs;
-    rest.unshift(relative(parent, dir));
-    dir = parent;
-  }
-  return join(realpathSync(dir), ...rest);
+  return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true });
 }
 
 /** `-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes. */

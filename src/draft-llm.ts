@@ -1,17 +1,20 @@
 // `draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow
 // from a compact map, the flow grammar and flows of this repository; an ID
 // that is neither in the snapshot nor declared `planned` sends the draft
-// back once with the nearest real IDs. `hybrid` then reconciles every step
-// with the algo projection and adds what the model missed. Each step line
-// carries its provenance: `<!-- keylang:llm model=… status=… -->`.
+// back once with the nearest real IDs. The answer is reconciled on the parsed
+// flow, not on its lines: an item that does not parse where it stands is
+// dropped, every trigger and step is judged against the algo projection with
+// its nesting, and `hybrid` puts what the model missed under its caller.
+// Each step line carries its provenance: `<!-- keylang:llm model=… status=… -->`.
 
 import type { Analysis } from "./analyze.ts";
 import { assess } from "./assess.ts";
 import { parseConfig } from "./config.ts";
 import { draftFlow } from "./draft.ts";
-import { sectionNodes, walk, type Document } from "./ir.ts";
+import { formatDocument } from "./fmt.ts";
+import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import type { LlmClient } from "./llm.ts";
-import { parse } from "./parser.ts";
+import { isId, parse } from "./parser.ts";
 
 export type DraftStatus = "agree" | "llm-only" | "algo-only" | "conflict";
 
@@ -22,6 +25,8 @@ export interface ModelDraft {
   /** IDs still unknown after the second round: they stay K001 in `check`. */
   unknown: string[];
   rounds: number;
+  /** Items of the answer left out because they do not parse where they stand: `- line: why`. */
+  dropped: string[];
 }
 
 const GRAMMAR = `A flow is Markdown:
@@ -54,7 +59,7 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
     ...(context ? [`Context chosen by the developer:\n${context}`] : []),
   ].join("\n\n");
   let text = flowText(await client.complete({ system, prompt, maxTokens: 4096 }), algo.name);
-  let unknown = unknownIn(analysis, text);
+  const unknown = unknownIn(analysis, text);
   let rounds = 1;
   if (unknown.length > 0) {
     // One round back to the model, then the result is shown as it is (design §5.1 p.3).
@@ -64,47 +69,132 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
     });
     const retry = `${prompt}\n\nYour draft:\n\`\`\`markdown\n${text}\`\`\`\n\nProblems:\n${problems.join("\n")}\n\nAnswer with the corrected flow only.`;
     text = flowText(await client.complete({ system, prompt: retry, maxTokens: 4096 }), algo.name);
-    unknown = unknownIn(analysis, text);
     rounds = 2;
   }
-  return { name: algo.name, ...reconcile(analysis, text, algo.steps, mode, client.agent), unknown, rounds };
+  const reconciled = reconcile(analysis, text, algo, trigger, mode, client.agent);
+  return { name: algo.name, text: reconciled.text, counts: reconciled.counts, unknown: unknownIn(analysis, reconciled.text), rounds, dropped: reconciled.dropped };
 }
 
-/** Status of each step line against the algo projection; `hybrid` appends the steps only algo has. */
-function reconcile(analysis: Analysis, text: string, algoSteps: readonly string[], mode: "llm" | "hybrid", agent: string): { text: string; counts: Record<DraftStatus, number> } {
+/**
+ * The model's flow judged on its IR. An item with a parse error other than
+ * indentation (a step under an `invariant`, an unknown keyword) is dropped;
+ * the requested trigger is added when the answer lacks it. A trigger or step
+ * is `conflict` when it names no fn, `agree` when the algo projection has it
+ * and its parent reaches it through resolved calls (nesting included),
+ * `llm-only` otherwise. `hybrid` adds each algo step the model missed under
+ * the nearest of its algo callers the draft has.
+ */
+function reconcile(analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string): { text: string; counts: Record<DraftStatus, number>; dropped: string[] } {
   const nodes = analysis.snapshot!.nodes;
   const counts: Record<DraftStatus, number> = { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 };
-  const seen = new Set<string>();
-  const lines = text.replace(/\n+$/, "").split("\n").map((line) => {
-    const m = /^(\s*- (?:trigger|step) )(\S+)(.*)$/.exec(line);
-    if (!m) return line;
-    const id = m[2]!;
-    seen.add(id);
-    const node = nodes[id];
-    // A step names something that runs; a module or a type contradicts the snapshot.
-    const status: DraftStatus = node !== undefined && node.kind !== "fn" ? "conflict" : algoSteps.includes(id) ? "agree" : "llm-only";
-    counts[status]++;
-    const rest = m[3]!.replace(/\s*<!--.*-->\s*$/, "");
-    return `${m[1]}${id}${rest} <!-- keylang:llm model=${agent} status=${status} -->`;
-  });
+  const doc = parse("draft.md", text);
+  const section = doc.sections.find((s) => s.kind === "flow")!;
+  const lines = text.split("\n");
+  const broken = new Map<number, string>();
+  for (const d of doc.diagnostics) if (d.severity === "error" && d.code !== "K003" && !broken.has(d.span.start.line)) broken.set(d.span.start.line, d.message);
+  const dropped: string[] = [];
+  const keep = (node: Node): boolean => {
+    const why = broken.get(node.span.start.line) ?? (node.kind === "unknown" ? "not a flow item" : null);
+    if (why === null) {
+      node.children = node.children.filter(keep);
+      return true;
+    }
+    dropped.push(`${lines[node.span.start.line - 1]!.trim()}: ${why}`);
+    return false;
+  };
+  section.items = section.items.filter((item) => item.type !== "node" || keep(item));
+  // Where each ID first stands in the draft: the anchor an algo step goes under.
+  const placed = new Map<string, Node>();
+  const reach = reachability(nodes);
+  const judge = (node: Node, parent: string | null): void => {
+    const id = node.kind === "trigger" || node.kind === "step" ? node.refs[0]?.target : undefined;
+    if (id !== undefined) {
+      const kind = nodes[id]?.kind;
+      // A step names something that runs; a module or a type contradicts the snapshot.
+      const status: DraftStatus = kind !== undefined && kind !== "fn" ? "conflict" : algo.steps.includes(id) && (parent === null ? id === trigger : reach(parent, id)) ? "agree" : "llm-only";
+      counts[status]++;
+      node.comment = { value: `<!-- keylang:llm model=${agent} status=${status} -->`, span: node.span };
+      if (!placed.has(id)) placed.set(id, node);
+    }
+    for (const child of node.children) judge(child, id ?? parent);
+  };
+  const top = sectionNodes(section);
+  const head = top.find((node) => node.kind === "trigger" && node.refs[0]?.target === trigger);
+  // A step beside the trigger has the trigger as its parent (format §7).
+  for (const node of top) judge(node, node === head ? null : trigger);
+  if (!head) {
+    const added = { type: "node" as const, ...algoItem("trigger", trigger) };
+    const first = section.items.findIndex((item) => item.type === "node");
+    section.items.splice(first === -1 ? section.items.length : first, 0, added);
+    placed.set(trigger, added);
+    counts["algo-only"]++;
+  }
   if (mode === "hybrid") {
-    for (const id of algoSteps) {
-      if (seen.has(id)) continue;
+    for (const [id, callers] of algoCallers(algo.text)) {
+      if (placed.has(id)) continue;
+      const anchor = callers.map((caller) => placed.get(caller)).find((node) => node !== undefined) ?? placed.get(trigger)!;
+      const step = algoItem("step", id);
+      anchor.children.push(step);
+      placed.set(id, step);
       counts["algo-only"]++;
-      lines.push(`  - step ${id} <!-- keylang:algo status=algo-only -->`);
     }
   }
-  return { text: `${lines.join("\n")}\n`, counts };
+  return { text: formatDocument(doc), counts, dropped };
 }
 
-/** The flow section of an answer: the first fenced block (or the whole answer), under the requested heading. */
+/** One provenance-marked item of the algo projection, as the parser reads it. */
+function algoItem(kind: "trigger" | "step", id: string): Node {
+  const section = parse("algo.md", `# flow algo\n\n- ${kind} ${id} <!-- keylang:algo status=algo-only -->\n`).sections[0]!;
+  return sectionNodes(section)[0]!;
+}
+
+/** Each step of the algo draft (preorder) with its callers there, nearest first. */
+function algoCallers(text: string): [string, string[]][] {
+  const out: [string, string[]][] = [];
+  const visit = (node: Node, path: string[]): void => {
+    const id = node.refs[0]?.target;
+    if (id === undefined) return;
+    if (node.kind === "step") out.push([id, [...path].reverse()]);
+    for (const child of node.children) visit(child, [...path, id]);
+  };
+  for (const section of parse("algo.md", text).sections) for (const node of sectionNodes(section)) visit(node, []);
+  return out;
+}
+
+/** Whether `from` reaches `to` through resolved calls of the snapshot, as a static step proof would. */
+function reachability(nodes: NonNullable<Analysis["snapshot"]>["nodes"]): (from: string, to: string) => boolean {
+  const memo = new Map<string, Set<string>>();
+  return (from, to) => {
+    let reached = memo.get(from);
+    if (!reached) {
+      reached = new Set<string>();
+      const queue = [...(nodes[from]?.calls ?? [])];
+      while (queue.length > 0) {
+        const id = queue.pop()!;
+        if (reached.has(id)) continue;
+        reached.add(id);
+        queue.push(...(nodes[id]?.calls ?? []));
+      }
+      memo.set(from, reached);
+    }
+    return reached.has(to);
+  };
+}
+
+/**
+ * The flow section of an answer: the first fenced block (or the whole
+ * answer), under the requested heading. An ID written as code in an item
+ * (`` - step `a.b` ``, which the prompt's own examples invite) is the ID.
+ */
 function flowText(answer: string, name: string): string {
   const fenced = /```(?:markdown|md)?\n([\s\S]*?)```/.exec(answer);
   const body = (fenced ? fenced[1]! : answer).trim().split("\n");
   const start = body.findIndex((line) => /^# flow\b/.test(line));
   const section = start === -1 ? body : body.slice(start + 1);
   const end = section.findIndex((line) => /^# /.test(line));
-  const lines = (end === -1 ? section : section.slice(0, end)).filter((line, i, all) => line.trim() !== "" || (i > 0 && all[i - 1]!.trim() !== ""));
+  const lines = (end === -1 ? section : section.slice(0, end))
+    .filter((line, i, all) => line.trim() !== "" || (i > 0 && all[i - 1]!.trim() !== ""))
+    .map((line) => (/^\s*- /.test(line) ? line.replace(/`([^`\s]+)`/g, (whole, inner: string) => (isId(inner) ? inner : whole)) : line));
   return `# flow ${name}\n\n${lines.join("\n").trim()}\n`;
 }
 

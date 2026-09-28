@@ -1,9 +1,9 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix } from "./config.ts";
 import { sameFinding } from "./assess.ts";
@@ -11,7 +11,7 @@ import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
-import { analyze, findRoot, within } from "./analyze.ts";
+import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { diffMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
@@ -20,11 +20,12 @@ import { currentBaseline, explainedIds, explanationRequest, isStale, readExplana
 import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
-import { changedFlows, codeToSpec, diffHunks, draftFlow, draftRules, withFlow, type ChangedLines, type FlowDraft } from "./draft.ts";
+import { changedFlows, codeToSpec, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
 import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
+import { safeWrite, safeWriteAll, writeProblem } from "./safe-write.ts";
 import { specToCode } from "./spec-to-code.ts";
-import { addDrafts, updateStats } from "./stats.ts";
+import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { collectWiring } from "./wiring.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
@@ -78,8 +79,9 @@ Commands:
                             (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, apply_diff (proposals only; nothing is merged)
-  wire [--check] [--out f]  Generate keylang.gen.ts (or f) from \`# wiring\`: a typed wire()
-                            that builds each factory once, dependencies first
+  wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
+                            the root, inside it) from \`# wiring\`: a typed wire() that builds
+                            each factory once, dependencies first
                             (--check: fail if the file is stale; writes nothing)
   trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
@@ -314,6 +316,7 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
   }
   let draft: { name: string; text: string; steps?: string[] } = draftFlow(analysis.snapshot, trigger, opts.name !== undefined ? { name: opts.name } : {});
   let summary = `${draft.steps!.length} step(s)`;
+  let counts: Record<string, number> | null = null;
   if (opts.mode !== "algo") {
     const { llmClient } = await import("./llm.ts");
     const setup = llmClient(analysis.config.agent);
@@ -326,7 +329,8 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
       draft = model;
       summary = Object.entries(model.counts).filter(([, n]) => n > 0).map(([status, n]) => `${n} ${status}`).join(", ");
       if (model.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")} (K001 after the merge unless declared planned)\n`);
-      updateStats(analysis.config.root, (stats) => addDrafts(stats, model.counts, "proposed"));
+      for (const line of model.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
+      counts = model.counts;
     }
   }
   if (opts.print) {
@@ -341,6 +345,7 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
   const abs = join(root, target);
   const proposal = withFlow(existsSync(abs) ? readFileSync(abs, "utf8") : null, draft);
   const file = writeProposal(root, target, proposal);
+  if (counts) countProposed(root, counts);
   process.stdout.write(`${toPosix(relative(process.cwd(), file))}: proposed flow \`${draft.name}\` for ${target} (${summary}); merge it with \`m\` in \`keylang\`\n`);
   return 0;
 }
@@ -360,7 +365,8 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
   }
   const c = await specToCode(analysis, id, opts.into === undefined ? undefined : toPosix(opts.into), model);
   process.stdout.write(`${c.file}${c.before === null ? " (new file)" : ""}\n${lineDiff(c.before ?? "", c.after)}\n\nwith the candidate in place:\n`);
-  for (const v of c.verdicts) process.stdout.write(`${formatVerdict(v)}\n`);
+  // A finding the diagnostics already name is printed once, as in `check`.
+  for (const v of c.verdicts) if (!sameFinding(v, c.diagnostics)) process.stdout.write(`${formatVerdict(v)}\n`);
   for (const d of c.diagnostics) process.stdout.write(`${formatDiagnostic(d)}\n`);
   for (const t of c.tests) process.stdout.write(`\n${t.file} (new file)\n${lineDiff("", t.after)}\n`);
   for (const note of c.testNotes) process.stderr.write(`keylang: ${note}\n`);
@@ -369,21 +375,19 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
     process.stderr.write(`keylang: nothing written; without --print the files become proposals, --apply writes them\n`);
     return 0;
   }
+  const root = analysis.config.root;
+  // The rules of a code proposal hold for --apply too: inside the repository through links, never `keylang.gen.ts`.
+  for (const f of files) {
+    const problem = codeProposalProblem(root, f.file);
+    if (problem) throw new Error(`spec-to-code: ${f.file}: ${problem}`);
+  }
   if (!opts.apply) {
-    const root = analysis.config.root;
-    for (const f of files) {
-      const problem = codeProposalProblem(root, f.file);
-      if (problem) throw new Error(`spec-to-code: ${f.file}: ${problem}`);
-    }
     for (const f of files) writeProposal(root, f.file, f.after);
     process.stderr.write(`keylang: proposed ${files.map((f) => `${PROPOSALS_DIR}/${f.file}`).join(", ")}; merge them hunk by hunk with \`m\` in \`keylang\` (--apply writes the files directly)\n`);
     return 0;
   }
-  for (const f of files) {
-    const abs = join(analysis.config.root, f.file);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, f.after);
-  }
+  // Each file must still be what the candidate was built from: an edit made meanwhile (during a model call) is never overwritten.
+  safeWriteAll(root, files.map((f) => ({ path: f.file, text: f.after, options: { expect: f.before } })));
   const next = opts.mode === "llm" ? "review the body and the tests, then run them" : "write the body and its tests";
   process.stderr.write(`keylang: ${files.map((f) => f.file).join(", ")} written; run \`keylang map\`, then ${next}\n`);
   return 0;
@@ -420,6 +424,7 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
     ({ name, drafts: algo } = codeToSpec(analysis.snapshot, file, m[2] === undefined ? null : Number(m[2])));
   }
   let drafts: { name: string; text: string }[] = algo;
+  let counts: Record<string, number> | null = null;
   if (opts.mode !== "algo") {
     if (opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`code-to-spec: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
     const { llmClient } = await import("./llm.ts");
@@ -431,10 +436,12 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
       const { draftFlowWithModel } = await import("./draft-llm.ts");
       const mode = opts.mode;
       drafts = [];
+      counts = {};
       for (const d of algo) {
-        const model = await draftFlowWithModel(analysis, d.steps[0]!, setup.client, mode);
+        const model = await draftFlowWithModel(analysis, d.steps[0]!, setup.client, mode, d.name);
         if (model.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}\n`);
-        updateStats(analysis.config.root, (stats) => addDrafts(stats, model.counts, "proposed"));
+        for (const line of model.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
+        for (const [status, n] of Object.entries(model.counts)) counts[status] = (counts[status] ?? 0) + n;
         drafts.push(model);
       }
     }
@@ -451,8 +458,18 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
   let text = existsSync(abs) ? readFileSync(abs, "utf8") : null;
   for (const draft of drafts) text = withFlow(text, draft);
   const proposal = writeProposal(root, target, text!);
+  if (counts) countProposed(root, counts);
   process.stdout.write(`${toPosix(relative(process.cwd(), proposal))}: proposed ${drafts.map((d) => `\`${d.name}\``).join(", ")} for ${target}; merge it with \`m\` in \`keylang\`\n`);
   return 0;
+}
+
+/** The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the command. */
+function countProposed(root: string, counts: Record<string, number>): void {
+  try {
+    updateStats(root, (stats) => addDrafts(stats, counts, "proposed"));
+  } catch (e) {
+    process.stderr.write(`keylang: ${STATS_FILE} not updated: ${e instanceof Error ? e.message : String(e)}\n`);
+  }
 }
 
 async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }): Promise<number> {
@@ -492,6 +509,7 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
   for (const [id, node] of Object.entries(analysis.snapshot.nodes)) if (node.kind === "module") adj.set(id, new Set((node.deps ?? []).filter((d) => analysis.snapshot!.nodes[d]?.layer !== "external")));
   const algo = draftRules(analysis.snapshot, stronglyConnected(adj).length > 0);
   let text = algo;
+  let counts: Record<string, number> | null = null;
   const client = await model();
   const specDirEarly = toPosix(relative(root, resolve(root, analysis.config.dir)));
   if (client) {
@@ -499,7 +517,7 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
     const drafted = await draftRulesWithModel(analysis, client, opts.mode as "llm" | "hybrid", algo, toPosix(opts.into ?? `${specDirEarly}/rules.md`));
     text = drafted.text;
     for (const conflict of drafted.conflicts) process.stderr.write(`keylang: conflict: ${conflict}\n`);
-    updateStats(root, (stats) => addDrafts(stats, drafted.counts, "proposed"));
+    counts = drafted.counts;
   }
   if (opts.print) {
     process.stdout.write(text);
@@ -510,20 +528,24 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
   const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
   if (problem) throw new Error(`draft: ${target}: ${problem}`);
   const abs = join(root, target);
-  const existing = existsSync(abs) ? readFileSync(abs, "utf8") : null;
-  // An existing rules file keeps its text; the draft's rules follow it.
-  const proposal = existing === null ? text : `${existing.replace(/\n*$/, "")}\n${text.split("\n").slice(2).join("\n")}`;
+  // An existing file keeps its text; the draft's rules join its `# rules` section.
+  const proposal = withRules(existsSync(abs) ? readFileSync(abs, "utf8") : null, text);
   const file = writeProposal(root, target, proposal);
+  if (counts) countProposed(root, counts);
   process.stdout.write(`${toPosix(relative(process.cwd(), file))}: proposed rules for ${target}; merge it with \`m\` in \`keylang\`\n`);
   return 0;
 }
 
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   const root = findRoot(process.cwd());
+  const outPosix = toPosix(out);
+  // The path policy of every write, checked before anything is read: plain, relative to the root, inside it through links.
+  if (!/\.(ts|mts|cts)$/.test(outPosix)) throw new Error(`wire: --out must name a TypeScript file (.ts, .mts or .cts), got \`${out}\``);
+  const problem = writeProblem(root, outPosix, { generated: true });
+  if (problem) throw new Error(`wire: --out ${outPosix}: ${problem}`);
   const analyzed = await analyze({ root, withoutEvidence: true });
   if (!analyzed.snapshot) throw new Error("wire: no supported source files; run `keylang init`");
-  const wiringCodes = new Set(["K001", "K002", "K005", "K102", "K301", "K302"]);
-  const blocking = analyzed.diagnostics.filter((d) => isError(d) && wiringCodes.has(d.code) && analyzed.docs.some((doc) => doc.path === d.file && doc.sections.some((s) => s.kind === "wiring")));
+  const blocking = wiringErrors(analyzed);
   for (const d of blocking) process.stdout.write(`${formatDiagnostic(d)}\n`);
   if (blocking.length > 0) {
     process.stderr.write(`wire: ${blocking.length} error(s) in wiring; nothing written\n`);
@@ -531,24 +553,38 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   }
   const { wires } = collectWiring(analyzed.docs);
   if (wires.length === 0) throw new Error(`wire: no \`# wiring\` section under ${analyzed.config.dir}/`);
-  const outPosix = toPosix(out);
   const text = generateWire({ root, out: outPosix, wires, snapshot: analyzed.snapshot });
-  const file = join(root, out);
+  const file = join(root, outPosix);
   const current = existsSync(file) ? readFileSync(file, "utf8") : null;
   if (current !== null && !current.startsWith(WIRE_MARKER)) {
     process.stdout.write(`${outPosix}: manual file without keylang:generated marker\n`);
     return 1;
   }
+  // A checkout that turned LF into CRLF holds the same file.
+  const same = current !== null && current.replace(/\r\n/g, "\n") === text;
   if (checkOnly) {
-    if (current === text) return 0;
+    if (same) return 0;
     process.stdout.write(`${outPosix}: stale, run \`keylang wire\`\n`);
     return 1;
   }
-  if (current !== text) {
-    writeFileSync(file, text);
+  if (!same) {
+    safeWrite(root, outPosix, text, { generated: true, expect: current });
     process.stdout.write(`${outPosix}: written\n`);
   }
   return 0;
+}
+
+/** Error diagnostics on the lines of a `# wiring` section, whatever their code: any of them can change what is generated. */
+function wiringErrors(analysis: Analysis): Diagnostic[] {
+  const ranges = new Map<string, [number, number][]>();
+  for (const doc of analysis.docs) {
+    const heads = doc.sections.map((section) => section.heading?.span.start.line ?? 1);
+    doc.sections.forEach((section, i) => {
+      if (section.kind !== "wiring") return;
+      ranges.set(doc.path, [...(ranges.get(doc.path) ?? []), [heads[i]!, i + 1 < heads.length ? heads[i + 1]! - 1 : Number.POSITIVE_INFINITY]]);
+    });
+  }
+  return analysis.diagnostics.filter((d) => isError(d) && (ranges.get(d.file) ?? []).some(([from, to]) => d.span.start.line >= from && d.span.start.line <= to));
 }
 
 /** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: §12, code 0. */
@@ -871,13 +907,16 @@ function printNode(n: Node, depth: number): void {
 /** The lines changed since `ref` in the working tree, and the files git does not track yet, relative to `root`. */
 function gitChanges(root: string, ref: string): ChangedLines {
   const git = (args: string[]): string => {
-    const out = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    // Paths as they are, not C-quoted octal escapes, whatever the user's `core.quotePath`.
+    const out = spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
     if (out.error) throw new Error(`code-to-spec --since: git is not available (${out.error.message})`);
     if (out.status !== 0) throw new Error(`code-to-spec --since: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
     return out.stdout;
   };
   // `--relative`: paths from `root` and only files under it, whatever the repository's top level.
-  const changed: Map<string, readonly (readonly [number, number])[] | "all"> = diffHunks(git(["diff", "--relative", "--unified=0", "--no-color", "--no-ext-diff", ref, "--"]));
-  for (const file of git(["ls-files", "--others", "--exclude-standard"]).split("\n")) if (file !== "") changed.set(file, "all");
+  // `--no-renames`: a moved file is all new lines (its fns have new IDs); fixed prefixes, whatever `diff.mnemonicPrefix` says.
+  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", ref, "--"]);
+  const changed: Map<string, readonly (readonly [number, number])[] | "all"> = diffHunks(diff);
+  for (const file of git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0")) if (file !== "") changed.set(file, "all");
   return changed;
 }

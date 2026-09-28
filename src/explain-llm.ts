@@ -4,18 +4,20 @@
 // of the node when it was written — never in the map or the specs, and never
 // in a verdict.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Analysis } from "./analyze.ts";
 import { formatSummary, type NodeSummary } from "./explain-node.ts";
 import type { LlmRequest } from "./llm.ts";
 import { plannedDecl } from "./lsp-features.ts";
+import { safeWrite } from "./safe-write.ts";
 
 export interface Explanation {
   agent: string;
   /** `YYYY-MM-DD`. */
   date: string;
-  /** `closure.fingerprint` of the node when explained; "" for a planned node. */
+  /** `currentBaseline` of the node when explained: its `closure.fingerprint`; "" for a planned node. */
   closure: string;
   lang: string;
   detail: "short" | "full";
@@ -24,8 +26,10 @@ export interface Explanation {
 
 const HEADER = /^<!-- keylang:explain agent=(\S+) date=(\S+) closure=(\S*) lang=(\S+) detail=(short|full) -->\n/;
 
+const EXPLAIN_DIR = ".keylang/explain";
+
 export function explanationFile(root: string, id: string): string {
-  return join(root, ".keylang/explain", `${id}.md`);
+  return join(root, EXPLAIN_DIR, `${id}.md`);
 }
 
 export function readExplanation(root: string, id: string): Explanation | null {
@@ -39,9 +43,7 @@ export function readExplanation(root: string, id: string): Explanation | null {
 }
 
 export function writeExplanation(root: string, id: string, e: Explanation): void {
-  const file = explanationFile(root, id);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `<!-- keylang:explain agent=${e.agent} date=${e.date} closure=${e.closure} lang=${e.lang} detail=${e.detail} -->\n${e.text}\n`);
+  safeWrite(root, `${EXPLAIN_DIR}/${id}.md`, `<!-- keylang:explain agent=${e.agent} date=${e.date} closure=${e.closure} lang=${e.lang} detail=${e.detail} -->\n${e.text}\n`, { under: EXPLAIN_DIR });
 }
 
 /** IDs of every explanation written under `.keylang/explain/`, sorted. */
@@ -51,22 +53,43 @@ export function explainedIds(root: string): string[] {
   return readdirSync(dir).filter((name) => name.endsWith(".md")).map((name) => name.slice(0, -3)).sort();
 }
 
-/** The baseline an explanation of `id` is compared with now; "" for a planned node, null when the id is gone. */
+/**
+ * The baseline an explanation of `id` is compared with now: the closure
+ * fingerprint of a fn or type; for a module, class or layer, which has no
+ * closure of its own, a hash of its dependencies and of the closures of every
+ * node under it, so a change inside makes its explanation stale. "" for a
+ * planned node (or a node with nothing to hash), null when the id is gone.
+ */
 export function currentBaseline(analysis: Analysis, id: string): string | null {
-  const node = analysis.snapshot?.nodes[id];
-  if (node) return node.closure?.fingerprint ?? "";
-  return plannedDecl(analysis.docs, id) ? "" : null;
+  const nodes = analysis.snapshot?.nodes ?? {};
+  const node = nodes[id];
+  if (!node) return plannedDecl(analysis.docs, id) ? "" : null;
+  if (node.closure) return node.closure.fingerprint;
+  const parts = Object.entries(nodes)
+    .filter(([other]) => other.startsWith(`${id}.`))
+    .flatMap(([other, n]) => {
+      const print = n.closure?.fingerprint ?? n.fingerprint;
+      return print === undefined ? [] : [`${other} ${print}`];
+    })
+    .sort();
+  if (parts.length === 0 && (node.deps ?? []).length === 0) return "";
+  return createHash("sha256").update([`deps ${(node.deps ?? []).join(",")}`, ...parts].join("\n")).digest("hex");
 }
 
 export function isStale(analysis: Analysis, id: string, e: Explanation): boolean {
   return currentBaseline(analysis, id) !== e.closure;
 }
 
-/** `` `a.b.c` `` in the answer that are neither snapshot IDs nor declared `planned`. */
+/**
+ * `` `a.b.c` `` in the answer that are neither snapshot IDs nor declared
+ * `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
+ */
 export function unknownIds(analysis: Analysis, text: string): string[] {
+  const layers = new Set([...analysis.config.layers.keys(), ...Object.keys(analysis.snapshot?.nodes ?? {}).map((id) => id.split(".")[0]!)]);
   const out = new Set<string>();
   for (const m of text.matchAll(/`([\p{L}_$][\p{L}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{N}_$-]*)+)`/gu)) {
     const id = m[1]!;
+    if (!layers.has(id.split(".")[0]!)) continue;
     if (analysis.snapshot?.nodes[id] === undefined && plannedDecl(analysis.docs, id) === null) out.add(id);
   }
   return [...out].sort();

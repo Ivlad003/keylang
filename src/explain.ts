@@ -74,9 +74,10 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     fix: "Break the cycle in code: pass a callback or an event, or move what both need into a third factory.",
   },
   K302: {
-    cause: "A `wire` target or dependency names something that cannot build a value: a module, a layer or a type.",
-    example: "`wire application.purchase` where `purchase` is a file module, not its factory.",
-    fix: "Name the factory function or the class: `wire application.purchase.createPurchase`.",
+    cause:
+      "A `wire` target, dependency or `compose` names something the generated file cannot import or call: a module, a layer or a type (a decorator must be a fn), a method of a class, a name its module does not export, or code in a language other than TS/JS.",
+    example: "`wire application.purchase` where `purchase` is a file module, not its factory; `compose infra.db.Db` where `Db` is a type.",
+    fix: "Name an exported factory function or class: `wire application.purchase.createPurchase`; export it if it is not.",
   },
 };
 

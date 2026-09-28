@@ -63,8 +63,14 @@ export function checkRules(docs: readonly Document[], index: Index, snapshot: Sn
 
 /** Whether `from` depending on `to` is forbidden by the most specific deny rule. */
 export function blocksDependency(docs: readonly Document[], from: string, to: string): boolean {
+  return denyingRule(docs, from, to) !== null;
+}
+
+/** The most specific rule when it forbids `from` depending on `to`: its text, file and line, as K102 names it; null otherwise. */
+export function denyingRule(docs: readonly Document[], from: string, to: string): { text: string; file: string; line: number } | null {
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
-  return specific(collectRules(docs, () => undefined), from, to, within)?.kind === "deny";
+  const match = specific(collectRules(docs, () => undefined), from, to, within);
+  return match?.kind === "deny" ? { text: match.rule.text, file: match.rule.file, line: match.rule.span.start.line } : null;
 }
 
 export function evaluateRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null): RuleReport {

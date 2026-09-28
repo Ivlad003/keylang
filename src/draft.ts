@@ -5,6 +5,9 @@
 // cycle ends. A call keylang did not resolve is a comment on its caller,
 // never a step: the draft claims only what the edges show.
 
+import { sectionNodes } from "./ir.ts";
+import { parse, renderTokens } from "./parser.ts";
+import { allCrlf } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 
 export interface FlowDraft {
@@ -47,17 +50,97 @@ export function draftFlow(snapshot: AnalysisSnapshot, trigger: string, options: 
   return { name, text: `${lines.join("\n")}\n`, steps };
 }
 
-/** A spec with the draft added: a section of the same flow is replaced, otherwise the draft is appended. */
+/**
+ * A spec with the draft added: the section of the same flow is replaced,
+ * whatever follows the name on its heading line, otherwise the draft is
+ * appended. Sections come from the parser, so a `# ` line in a code block is
+ * not a heading. A file with CRLF on every line keeps CRLF.
+ */
 export function withFlow(existing: string | null, draft: Pick<FlowDraft, "name" | "text">): string {
   if (existing === null || existing.trim() === "") return draft.text;
-  const lines = existing.replace(/\n*$/, "").split("\n");
-  const start = lines.findIndex((line) => line.trim() === `# flow ${draft.name}`);
-  if (start === -1) return `${lines.join("\n")}\n\n${draft.text}`;
-  let end = lines.findIndex((line, i) => i > start && /^# /.test(line));
-  if (end === -1) end = lines.length;
-  const before = lines.slice(0, start);
-  const after = lines.slice(end);
-  return `${[...before, ...draft.text.trimEnd().split("\n"), ...(after.length > 0 ? ["", ...after] : [])].join("\n")}\n`;
+  const text = existing.replace(/\r\n/g, "\n");
+  const lines = text.replace(/\n*$/, "").split("\n");
+  const sections = parse("spec.md", text).sections;
+  const index = sections.findIndex((section) => section.kind === "flow" && section.name?.value === draft.name);
+  let out: string;
+  if (index === -1) {
+    out = `${lines.join("\n")}\n\n${draft.text}`;
+  } else {
+    const start = sections[index]!.heading!.span.start.line - 1;
+    const end = nextHeading(sections, index) ?? lines.length;
+    const after = lines.slice(end);
+    out = `${[...lines.slice(0, start), ...draft.text.trimEnd().split("\n"), ...(after.length > 0 ? ["", ...after] : [])].join("\n")}\n`;
+  }
+  return allCrlf(existing) ? out.replace(/\n/g, "\r\n") : out;
+}
+
+/**
+ * `draft rules` into an existing spec: the drafted rules go at the end of its
+ * last `# rules` section, or into a new `# rules` section at the end, never
+ * under a trailing `# flow`. A rule the file already has (comments aside) is
+ * not repeated. A file with CRLF on every line keeps CRLF.
+ */
+export function withRules(existing: string | null, draftText: string): string {
+  if (existing === null || existing.trim() === "") return draftText;
+  const text = existing.replace(/\r\n/g, "\n");
+  const lines = text.replace(/\n*$/, "").split("\n");
+  const sections = parse("rules.md", text).sections;
+  const written = new Set<string>();
+  for (const section of sections) if (section.kind === "rules") for (const node of sectionNodes(section)) written.add(renderTokens(node.tokens));
+  const draftLines = draftText.split("\n");
+  const added: string[] = [];
+  for (const section of parse("draft.md", draftText).sections) {
+    for (const node of sectionNodes(section)) if (!written.has(renderTokens(node.tokens))) added.push(draftLines[node.span.start.line - 1]!);
+  }
+  if (added.length === 0) return existing;
+  const index = sections.findLastIndex((section) => section.kind === "rules" && section.heading !== null);
+  let out: string;
+  if (index === -1) {
+    out = `${lines.join("\n")}\n\n# rules\n\n${added.join("\n")}\n`;
+  } else {
+    let end = nextHeading(sections, index) ?? lines.length;
+    while (end > 0 && lines[end - 1]!.trim() === "") end--;
+    // A list starts on its own paragraph after prose.
+    const gap = /^\s*- /.test(lines[end - 1] ?? "") ? [] : [""];
+    const after = lines.slice(end);
+    while (after[0]?.trim() === "") after.shift();
+    out = `${[...lines.slice(0, end), ...gap, ...added, ...(after.length > 0 ? ["", ...after] : [])].join("\n")}\n`;
+  }
+  return allCrlf(existing) ? out.replace(/\n/g, "\r\n") : out;
+}
+
+/** 0-based line index of the heading after `sections[index]`, or null at the end of the file. */
+function nextHeading(sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number): number | null {
+  const next = sections.slice(index + 1).find((section) => section.heading !== null);
+  return next ? next.heading!.span.start.line - 1 : null;
+}
+
+/**
+ * Flow names that keep drafts apart in one spec: two `save` triggers
+ * (`A.save`, `B.save`) become `A-save` and `B-save`, taking as many trailing
+ * ID segments as it needs.
+ */
+export function distinctNames(drafts: readonly FlowDraft[]): FlowDraft[] {
+  const widths = drafts.map(() => 1);
+  const segments = drafts.map((d) => d.steps[0]!.split("."));
+  const nameOf = (i: number): string => (widths[i] === 1 ? drafts[i]!.name : segments[i]!.slice(-widths[i]!).join("-"));
+  for (let changed = true; changed; ) {
+    changed = false;
+    const byName = new Map<string, number[]>();
+    drafts.forEach((_, i) => byName.set(nameOf(i), [...(byName.get(nameOf(i)) ?? []), i]));
+    for (const indices of byName.values()) {
+      if (indices.length < 2) continue;
+      for (const i of indices) {
+        if (widths[i]! >= segments[i]!.length) continue;
+        widths[i]!++;
+        changed = true;
+      }
+    }
+  }
+  return drafts.map((d, i) => {
+    const name = nameOf(i);
+    return name === d.name ? d : { ...d, name, text: d.text.replace(/^# flow \S+/, `# flow ${name}`) };
+  });
 }
 
 /**
@@ -123,8 +206,13 @@ export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: numbe
   }
   const exported = fns.filter(([, n]) => n.exported === true).map(([id]) => id).sort((a, b) => (snapshot.nodes[a]!.line ?? 0) - (snapshot.nodes[b]!.line ?? 0));
   if (exported.length === 0) throw new Error(`${file}: no exported function; name a line`);
-  const moduleId = exported[0]!.slice(0, exported[0]!.lastIndexOf("."));
-  return { name: moduleId.slice(moduleId.lastIndexOf(".") + 1), drafts: exported.map((id) => draftFlow(snapshot, id)) };
+  // The file's own module names the spec, not the class of its first method.
+  const moduleId =
+    Object.entries(snapshot.nodes)
+      .filter(([, n]) => n.kind === "module" && n.file === file)
+      .map(([id]) => id)
+      .sort((a, b) => a.length - b.length)[0] ?? exported[0]!.slice(0, exported[0]!.lastIndexOf("."));
+  return { name: moduleId.slice(moduleId.lastIndexOf(".") + 1), drafts: distinctNames(exported.map((id) => draftFlow(snapshot, id))) };
 }
 
 /** Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet. */
@@ -139,7 +227,7 @@ export function diffHunks(diff: string): Map<string, [number, number][]> {
   let file: string | null = null;
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++ ")) {
-      file = line === "+++ /dev/null" ? null : line.slice(4).replace(/^b\//, "");
+      file = line === "+++ /dev/null" ? null : gitPath(line.slice(4)).replace(/^b\//, "");
       continue;
     }
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
@@ -151,6 +239,29 @@ export function diffHunks(diff: string): Map<string, [number, number][]> {
     out.set(file, ranges);
   }
   return out;
+}
+
+/** A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte. */
+function gitPath(text: string): string {
+  if (!text.startsWith('"') || !text.endsWith('"')) return text;
+  const escapes: Record<string, number> = { n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11, '"': 34, "\\": 92 };
+  const chars = Array.from(text.slice(1, -1));
+  const bytes: number[] = [];
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]!;
+    if (c !== "\\") {
+      bytes.push(...Buffer.from(c, "utf8"));
+      continue;
+    }
+    const next = chars[++i] ?? "";
+    if (/^[0-7]$/.test(next)) {
+      bytes.push(parseInt(chars.slice(i, i + 3).join(""), 8));
+      i += 2;
+    } else {
+      bytes.push(escapes[next] ?? next.charCodeAt(0));
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
 }
 
 /**
@@ -175,5 +286,5 @@ export function changedFlows(snapshot: AnalysisSnapshot, changed: ChangedLines, 
   for (const d of [...drafts].sort((x, y) => y.steps.length - x.steps.length)) {
     if (![...kept].some((k) => k.steps.includes(d.steps[0]!))) kept.add(d);
   }
-  return { drafts: drafts.filter((d) => kept.has(d)), named: touched.filter((id) => named.has(id)) };
+  return { drafts: distinctNames(drafts.filter((d) => kept.has(d))), named: touched.filter((id) => named.has(id)) };
 }

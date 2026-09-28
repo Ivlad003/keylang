@@ -9,12 +9,13 @@ import { evaluateRules } from "./rules.ts";
 import type { TestCase } from "./test-report.ts";
 import type { TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
-import { checkWiring } from "./wiring.ts";
+import { checkWiring, type WiringView } from "./wiring.ts";
 
 /** The slice of the analysis snapshot that checks read; `check` does not import `map`. */
 export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & {
   nodes: FlowInput["nodes"];
   edges: FlowInput["edges"];
+  exports: WiringView["exports"];
   /** The configured layers, which exist before any module is in them. */
   manifest?: { config: { layers: Record<string, unknown> } };
 };
@@ -52,7 +53,7 @@ export function assess(
           ...(evidence.static ? { static: evidence.static } : {}),
         });
   const planned = plannedIds(docs);
-  const wiring = checkWiring(docs, snapshot === null ? null : nodeKinds(snapshot.nodes));
+  const wiring = checkWiring(docs, snapshot === null ? null : { kinds: nodeKinds(snapshot.nodes), nodes: snapshot.nodes, exports: snapshot.exports });
   const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),

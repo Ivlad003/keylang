@@ -2,8 +2,9 @@
 // (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines,
 // and per kind of suggestion; local, never a verdict. A damaged file starts over.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { safeWrite } from "./safe-write.ts";
 
 export interface Tally {
   proposed: number;
@@ -37,9 +38,7 @@ export function readStats(root: string): Stats {
 export function updateStats(root: string, change: (stats: Stats) => void): void {
   const stats = readStats(root);
   change(stats);
-  const file = join(root, STATS_FILE);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(stats, null, 2)}\n`);
+  safeWrite(root, STATS_FILE, `${JSON.stringify(stats, null, 2)}\n`, { under: ".keylang" });
 }
 
 /** `status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines. */
