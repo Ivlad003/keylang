@@ -258,7 +258,7 @@ export function signatureHelp(ws: Workspace, path: string, position: LspPosition
   const text = ws.text(path);
   if (text === null) return null;
   const line = text.split("\n")[position.line] ?? "";
-  const ids = [...line.slice(0, position.character).matchAll(/[\p{L}_][\p{L}\p{N}_-]*(?:\.[\p{L}_][\p{L}\p{N}_-]*)+/gu)].map((m) => m[0]);
+  const ids = [...line.slice(0, position.character).matchAll(/[\p{L}_$][\p{L}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{N}_$-]*)+/gu)].map((m) => m[0]);
   const id = ids.at(-1);
   const info = id ? describe(ws, id) : null;
   if (!info || !info.signature) return null;

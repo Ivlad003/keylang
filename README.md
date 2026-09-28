@@ -25,15 +25,23 @@
 - `keylang.json` + `keylang/` — keylang описує сам себе; `keylang check` у корені проходить чисто.
 - `bench/` — бенчмарк на 8 репозиторіях, результати в [`bench/results.md`](bench/results.md).
 
+## M4: що зроблено
+
+TUI і браузерний варіант над тим самим `analyze()`, що CLI і LSP (`docs/format.md` §12, [ADR 0001](docs/adr/0001-tui-without-ink.md), [ADR 0002](docs/adr/0002-dependencies-by-value-ws.md)).
+
+- `keylang` у терміналі — сирий Markdown із підсвіткою, жолоб `✓ ✗ ◌ ! ◇` з окремими `ID`/`static`/`tests`/`trace`, hover мишею й `K`, перехід у код (`$EDITOR` або вбудований переглядач), навігація шарів, потоків і правил, читання (`v`), редагування з доповненням і K001 під час набору, `Ctrl+G` text → spec, MERGE пропозицій з `.keylang/proposals/` по шматках (лише для рукописних специфікацій під `keylang/`), `keylang.json` у тому ж редакторі. Знімок будує worker, UI не блокується.
+- `keylang web` — той самий TUI у вкладці браузера через вшитий xterm.js і WebSocket (`ws`), з токеном доступу (далі — cookie), перепідключенням до сесії й передачею її іншій вкладці.
+
 ## Запуск
 
 ```sh
-npm install                      # web-tree-sitter, @vscode/tree-sitter-wasm (+ dev: typescript, @types/node)
+npm install                      # web-tree-sitter, @vscode/tree-sitter-wasm, ws (+ dev: typescript, @types/node, xterm.js)
 
 node bin/keylang.js init path/to/repo    # вгадати шари, записати keylang.json, згенерувати карту
 node bin/keylang.js map                  # оновити keylang/map/*.md і .keylang/index.json
 node bin/keylang.js map --check          # CI: код виходу 1, якщо карта застаріла
 node bin/keylang.js check                # ID + правила по keylang/
+node bin/keylang.js check --static=shape # static-докази лише за записаними викликами (типово behavior: ще й хуки)
 
 node bin/keylang.js parse examples/shop
 node bin/keylang.js parse --json examples/shop/map.md
@@ -44,6 +52,9 @@ node bin/keylang.js check examples/shop-fixed     # код виходу 0
 
 node bin/keylang.js fmt --check examples
 node bin/keylang.js fmt path/to/file.md
+
+node bin/keylang.js                      # TUI у терміналі (? — клавіші, q — вихід)
+node bin/keylang.js web                  # те саме в браузері: відкрийте надрукований URL з токеном
 ```
 
 Або `npm link` і далі просто `keylang …`.
@@ -55,6 +66,6 @@ npm test            # node --test, наскрізні тести CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-Тести наскрізні (`tests/cli.test.ts`): запускають `keylang` на прикладах і фікстурах у `tests/fixtures/` (дослівний Markdown зі слайдів, по одній помилці кожного коду, «брудний» файл для `fmt`, маленький TS-репозиторій `repo/` з очікуваною картою в `repo.expected/` і пробою забороненого імпорту).
+TUI перевіряється без TTY (`tests/tui.test.ts`: сесія з віртуальним терміналом `tests/vt.ts`), `keylang web` — через справжній CLI і WebSocket (`tests/web.test.ts`). Решта тестів наскрізні (`tests/cli.test.ts`): запускають `keylang` на прикладах і фікстурах у `tests/fixtures/` (дослівний Markdown зі слайдів, по одній помилці кожного коду, «брудний» файл для `fmt`, маленький TS-репозиторій `repo/` з очікуваною картою в `repo.expected/` і пробою забороненого імпорту).
 
 Бенчмарк: `bench/clone.sh && bench/run.sh`.
