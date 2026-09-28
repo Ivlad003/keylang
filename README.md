@@ -1,105 +1,136 @@
 # keylang
 
-Мова опису застосунку, прив'язана до репозиторію: карта шарів і модулів, правила залежностей і потоки логіки у звичайному Markdown. Повний дизайн — [`docs/design.md`](docs/design.md), точна граматика — [`docs/format.md`](docs/format.md), огляд наукових статей і порівняння стеків — [`docs/research.md`](docs/research.md).
+**English** · [Українською](README.uk.md)
 
-Стек: Node.js ≥ 22.18 + TypeScript. У репозиторії Node виконує `.ts` напряму (`node bin/keylang.js`). Перед публікацією `prepack` компілює `src/` у `dist/` і переписує відносні імпорти `.ts` → `.js`; встановлений пакет завантажує цей JavaScript і не компілює нічого в користувача. Дистрибуція через npm/npx.
+![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-## M0: що зроблено
+Architecture description that lives in the repository as ordinary Markdown: a generated map of layers and modules, hand-written dependency rules, and logic flows, all checked against the code. The teaching guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). The normative grammar is [`docs/format.md`](docs/format.md) (Ukrainian). The target design is [`docs/design.md`](docs/design.md); the research notes are [`docs/research.md`](docs/research.md).
 
-Перший етап дорожньої карти (design.md §9): специфікація формату, парсер Markdown → IR і `keylang fmt`.
+Stack: Node.js ≥ 22.18 and TypeScript. In this checkout Node runs `.ts` directly (`node bin/keylang.js`). Before publish, `prepack` compiles `src/` to `dist/` and rewrites relative `.ts` imports to `.js`. An installed package loads that JavaScript and compiles nothing on the user's machine. Distribution is npm / npx. No native compilation.
 
-- Ядро мови без tree-sitter і мережевих залежностей: IR (`src/ir.ts`), парсер з позиціями для кожного вузла й посилання (`src/parser.ts`), резолвінг ID між файлами (`src/resolve.ts`), діагностики K001–K006 (`src/diag.ts`), форматер (`src/fmt.ts`); `src/index.ts` — публічний API. Межі шарів — у `keylang.json` і [`keylang/rules.md`](keylang/rules.md); решта `src/` має залежності (див. «Запуск»).
-- `src/cli.ts`, `bin/keylang.js` — CLI `keylang`. У чекауті точка входу вантажить TypeScript; з `node_modules` — зібраний `dist/cli.js`.
-- `docs/format.md` — специфікація формату з рішеннями Р1–Р14.
-- `examples/shop` — приклад зі слайдів з навмисною помилкою `domain.aggregate`; `examples/shop-fixed` — виправлений.
+## What problem it is for
 
-## M1: що зроблено
+A repository already has the structure. What it usually lacks is a short text, reviewed like code, that says which layer may depend on which, and a check that fails when the code drifts. keylang is that text plus the check.
 
-Карта з коду й перевірка правил для TypeScript і JavaScript (ESM і CommonJS).
+| Job | How keylang does it |
+|---|---|
+| See the repository | `keylang map` writes `keylang/map/<layer>.md`: layers, modules, functions, imports and calls, with links to source lines |
+| Forbid a dependency | Hand-written `keylang/rules.md` (`layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles`) is evaluated on the current snapshot |
+| Name a scenario | A `# flow` lists a trigger and steps by stable ids. Each step reports `ID`, `static`, `tests` and `trace` separately |
+| Keep the map honest in CI | `keylang map --check` exits 1 when the committed map is stale. `keylang check` exits 1 on a violation |
+| Let an agent draft, not overwrite | `draft`, `code-to-spec`, `spec-to-code` and the MCP `apply_diff` tool write a proposal under `.keylang/proposals/`. A person merges it hunk by hunk |
+| Jump from the name to the function | The same analysis serves the CLI, the terminal UI, `keylang web`, the LSP server and the MCP server |
 
-- `src/extract/` — факти з коду через `web-tree-sitter` (wasm-граматики з `@vscode/tree-sitter-wasm`): імпорти (`import`, `require`, `const { a } = mod`), оголошення (fn, класи з методами, типи), експорти, виклики.
-- `src/imports.ts` — резолвінг імпортів: відносні шляхи, `tsconfig` `paths`/`baseUrl` з `extends`, `package.json` `imports`, пакети й вбудовані модулі.
-- `src/graph.ts`, `src/emit.ts`, `src/map.ts` — граф модулів → `keylang/map/<шар>.md` (згенеровані, один файл на шар) і `.keylang/index.json` (не комітиться).
-- `src/config.ts` — `keylang.json`; без нього шари вгадуються з дерева каталогів.
-- `src/rules.ts` — `layers`, `allow`/`deny`, `entry`, `exports`, `no-cycles` → K101–K105 (divergence / absence).
-- `keylang.json` + `keylang/` — keylang описує сам себе; `keylang check` у корені проходить чисто.
-- `bench/` — бенчмарк на 8 репозиторіях, результати в [`bench/results.md`](bench/results.md).
+Ids look like `application.purchase.buy`. They are a dotted path from the layer, not a line number, so a spec survives edits that only move lines.
 
-## M2–M3: що зроблено
+## What it does not do
 
-- `# flow` з окремими доказами кроку: `ID`, `static` (виклики й хуки зі знімка), `tests` (JUnit або звіт `node:test`, `check.tests`) і `trace` (JSONL, `check.trace`; адаптер `keylang/trace` для TS/JS); `planned`-вузли (K201/K202). Три значення — `ok`, `fail`, `unverified`; `--strict` блокує `unverified` (`docs/format.md` §7).
-- `analyze()` — один аналіз для CLI, LSP, MCP і TUI з кешем фактів у `.keylang/`; `keylang explain` для кодів діагностик і ID.
-- `keylang lsp` — діагностики й вердикти як у `check`, hover із доказами, definition у код, documentSymbol, доповнення, references, CodeLens; тонкий клієнт VS Code у `editors/vscode/`.
+keylang checks claims about structure and about evidence you attached. It does not decide whether the program is correct, safe, or finished.
 
-## M4: що зроблено
+- Descriptions under a node are prose. They are kept and formatted. They are not proved. A "prose went stale" check is designed and not implemented.
+- A dynamic call, an unknown decorator or attribute macro, `eval`, or a module the frontend could not read is a hole in coverage. The verdict is `unverified`, which is not a pass and not a failure. `--strict` is what turns `unverified` into exit code 1.
+- Rust and Python frontends record imports, calls and re-exports. They do not record type edges. A call whose receiver keylang cannot name stays a hole.
+- Wiring generates a TypeScript `wire()` function. It does not generate Rust, and it does not stop the rest of the program from importing whatever it wants. The dependency rules still have to catch that.
+- An LLM explanation or a drafted flow is provenance. `check` does not treat it as evidence.
+- keylang reads test reports and traces. It does not replace the test runner, the typechecker, or a security review.
+- Languages outside TypeScript, JavaScript, Python and Rust are not indexed. A file in another language is absent from the snapshot, which is not a proof that it has no dependencies.
 
-TUI і браузерний варіант над тим самим `analyze()`, що CLI і LSP (`docs/format.md` §12, [ADR 0001](docs/adr/0001-tui-without-ink.md), [ADR 0002](docs/adr/0002-dependencies-by-value-ws.md)).
+## Strengths and costs
 
-- `keylang` у терміналі — сирий Markdown із підсвіткою, жолоб `✓ ✗ ◌ ! ◇` з окремими `ID`/`static`/`tests`/`trace`, hover мишею й `K`, перехід у код (`$EDITOR` або вбудований переглядач), навігація шарів, потоків і правил, читання (`v`), редагування з доповненням і K001 під час набору, `Ctrl+G` text → spec, MERGE пропозицій з `.keylang/proposals/` по шматках (лише для рукописних специфікацій під `keylang/`), `keylang.json` у тому ж редакторі. Знімок будує worker, UI не блокується.
-- `keylang web` — той самий TUI у вкладці браузера через вшитий xterm.js і WebSocket (`ws`), з токеном доступу (далі — cookie), перепідключенням до сесії й передачею її іншій вкладці.
+**Strengths**
 
-## M5–M7: що зроблено
+- Specs are Markdown. GitHub renders them, and review is a normal diff.
+- The generated map and the hand-written specs are different files. `keylang map` will not overwrite a file that lacks the `keylang:generated` marker.
+- One analysis (`analyze()`) feeds the CLI, LSP, terminal, browser and MCP tools, so a gutter mark and a CI line are the same verdict.
+- Missing evidence stays `unverified`. The tool does not upgrade a gap to "ok".
+- Agent writes land in `.keylang/proposals/` until a person accepts a hunk.
+- Install does not compile native code. Voice support is optional.
 
-- **M5, інші мови.** Rust (крейти з `Cargo.toml`, модулі-файли, `use` і `pub use`) і Python (модулі та пакети з `__init__.py`, `__all__`) — власні extractor-и й резолвери поверх того самого графа; можливості кожної мови явні (`docs/format.md` §11 «Мови»): чого frontend не шукає, того немає у знімку, а не «доведено відсутнім». Trace-адаптери `adapters/python/keylang_trace.py` і `adapters/rust/keylang_trace.rs`, план інструментації — `keylang trace-plan <flow>`.
-- **M6, wiring.** Секція `# wiring` і `keylang wire`: типізований `wire()` у `keylang.gen.ts`, що будує кожну фабрику раз, залежності першими, з async init/dispose і відмовою на циклах ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
-- **M7, співавторство з агентом.** `draft flow|rules|map` (`--mode algo|llm|hybrid`), `code-to-spec`, `spec-to-code`, `explain <id> --llm` — усе як пропозиції в `.keylang/proposals/`, які людина зливає по шматках (`m` у TUI); статус LLM — походження, а не вердикт. `keylang mcp` — MCP-сервер для агентів (пошук, вузли, код, потоки, check, `apply_diff` лише в пропозиції). У TUI — панель контексту агента, ghost-підказки й опційний голосовий ввід (`Ctrl+R`; локальний whisper.cpp або хмарний рушій, `keylang doctor` показує, що налаштовано).
+**Costs**
 
-## Встановлення
+- The grammar is a narrow slice of Markdown. Keywords mean different things depending on the parent line. Full CommonMark nesting (a code fence inside a list item) is not supported.
+- You maintain ids yourself when a module is renamed or moves between layers.
+- The map is a module-and-dependency view. It does not describe deployment, data shapes, or why a decision was made. That belongs in prose or an ADR.
+- Useful flow evidence beyond "this id exists and a static call path reaches it" needs a test report and a trace from the same snapshot. A stale trace is `unverified`, as in the screenshots below.
+- Four languages, each with stated blind spots. Other languages are out of scope.
+- Exit code 0 means "no blocking finding". Without `--strict` it still allows `unverified`.
 
-Потрібен лише Node.js ≥ 22.18; компіляції native-коду немає, голосові модулі опційні.
+## Screenshots
+
+Captured from this repository with `node bin/keylang.js web` on 2026-09-28, plus the CLI on `examples/shop`. The trace and the `node:test` report under `.keylang/` were stale relative to the snapshot, so trace and test evidence are `unverified`. That is the intended result, not a display bug. The status line counts lines (worst mark on the line). `keylang check` counts every evidence result, so the same run prints `0 fail, 22 unverified, 43 ok` while the UI shows `✗ 0  ◌ 22  ✓ 11`.
+
+Rules for this repository, with a passing gutter. The language core (`lang`, `base`) and the checker are not allowed to depend on the extractor or on tree-sitter:
+
+![Rules with a passing gutter and the layer tree](docs/course/images/tui-rules.png)
+
+The `check` flow. The cursor line expands into separate `ID`, `static`, `tests` and `trace` marks. Here the id is exact and there is no static parent to prove; the trace file is from an older snapshot:
+
+![Flow check with the evidence gutter](docs/course/images/tui-flow.png)
+
+`K` (or a mouse hover) shows the signature, the file, the evidence and a few lines of the declaration:
+
+![Hover on cli.cli.main](docs/course/images/tui-hover.png)
+
+The slide example keeps a wrong id on purpose. There is no code snapshot, so the flow cannot be proved either. Exit code is 1:
+
+![check examples/shop reports K001](docs/course/images/cli-shop-k001.png)
+
+More captures (help, generated map, reading mode, code viewer, command palette, file list, `explain`) are in [course lesson 8](docs/course/08-use-cases.md).
+
+## Install and first run
+
+Node.js ≥ 22.18 is enough.
 
 ```sh
-npx keylang init .      # без встановлення: вгадати шари, записати keylang.json і карту
-npx keylang check       # ID + правила по keylang/
-npm i -g keylang        # або глобально, далі просто `keylang …`
+npx keylang init .      # guess layers, write keylang.json, build the map
+npx keylang check       # ids and rules under keylang/
+npm i -g keylang        # then just `keylang …`
 ```
 
-Публікація нової версії (з чистого чекауту):
+From this checkout:
 
 ```sh
-npm login               # один раз; npm whoami показує акаунт
-npm test && npm run typecheck
-npm version patch       # або minor/major: піднімає версію, створює коміт і тег
-npm publish             # prepack збирає dist/; publishConfig робить пакет публічним
-git push --follow-tags
+npm install
+node bin/keylang.js init path/to/repo
+node bin/keylang.js map                  # rewrite keylang/map/*.md and .keylang/index.json
+node bin/keylang.js map --check          # CI: exit 1 when the map is stale
+node bin/keylang.js check                # ids, rules and flows; writes nothing
+node bin/keylang.js check --strict       # unverified becomes a failure
+node bin/keylang.js explain K001         # what a code means and how to fix it
+node bin/keylang.js explain cli.cli.main # what the snapshot says about an id
+node bin/keylang.js                      # terminal UI (? lists keys, q quits)
+node bin/keylang.js web                  # the same UI in a browser; open the printed URL
 ```
 
-Перевірити пакет до публікації: `npm pack` і `npx --package=./keylang-<версія>.tgz -- keylang --version` в іншій теці.
+Exit codes: `0` no blocking finding, `1` a violation (or a stale map with `--check`, or any `unverified` with `--strict`), `2` bad usage or I/O. `parse --json` writes only JSON to stdout. `check` writes findings to stdout and the summary to stderr.
 
-## Запуск
+`examples/shop` is the slide example with the bad id `domain.aggregate`. `examples/shop-fixed` corrects it. Neither directory contains the TypeScript it names, so rules there are `unverified` (`no snapshot`) and a clean id check still exits 0:
 
-```sh
-npm install                      # web-tree-sitter і граматики, ws, MCP і Anthropic SDK, zod, smol-toml, eventsource-parser; опційно whisper.node і decibri (голос)
+![shop-fixed exits 0 with unverified evidence](docs/course/images/cli-shop-fixed.png)
 
-node bin/keylang.js init path/to/repo    # вгадати шари, записати keylang.json, згенерувати карту
-node bin/keylang.js map                  # оновити keylang/map/*.md і .keylang/index.json
-node bin/keylang.js map --check          # CI: код виходу 1, якщо карта застаріла
-node bin/keylang.js check                # ID + правила по keylang/
-node bin/keylang.js check --static=shape # static-докази лише за записаними викликами (типово behavior: ще й хуки)
+The course walks through the language, the rules, the flows and these commands with the screenshots: [docs/course](docs/course/README.md).
 
-node bin/keylang.js parse examples/shop
-node bin/keylang.js parse --json examples/shop/map.md
+## What is implemented
 
-node bin/keylang.js check examples/shop
-# examples/shop/map.md:27:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?)
-node bin/keylang.js check examples/shop-fixed     # код виходу 0
+Milestone detail lives in [`docs/design.md`](docs/design.md) §9 and the normative behavior in [`docs/format.md`](docs/format.md). The short form:
 
-node bin/keylang.js fmt --check examples
-node bin/keylang.js fmt path/to/file.md
+- **M0.** Format, Markdown → IR parser with positions, cross-file id resolution, diagnostics K001–K006, `keylang fmt`. Public API in `src/index.ts`. The language core does not import tree-sitter.
+- **M1.** Map and rule check for TypeScript and JavaScript (ESM and CommonJS). Facts come from `web-tree-sitter` and the wasm grammars in `@vscode/tree-sitter-wasm`. Import resolution covers relative paths, `tsconfig` `paths` / `baseUrl` / `extends`, `package.json` `imports`, packages and Node built-ins. Rules produce K101–K105. This repository describes itself in `keylang.json` and `keylang/`; `keylang check` at the root is clean of violations.
+- **M2–M3.** `# flow` with separate `ID`, `static`, `tests` and `trace` evidence, three verdicts (`ok`, `fail`, `unverified`), `planned` nodes (K201/K202). `analyze()` is shared by the CLI, LSP, MCP and TUI, with a fact cache under `.keylang/`. `keylang lsp` and a thin VS Code client in `editors/vscode/` (not published to the Marketplace, not part of the npm package).
+- **M4.** Terminal UI and `keylang web` (xterm.js over a WebSocket, access token, reconnect). Raw Markdown with a gutter, mouse and `K` hover, jump to code, edit with completion, `Ctrl+G` text → spec, hunk merge of proposals.
+- **M5.** Rust (crates, `use`, `pub use`) and Python (packages, `__all__`) on the same graph, with explicit limits. Trace adapters in `adapters/python` and `adapters/rust`. `keylang trace-plan <flow>` prints what to instrument.
+- **M6.** `# wiring` and `keylang wire`: a typed `wire()` in `keylang.gen.ts` that builds each factory once, dependencies first, with async init/dispose and a hard failure on cycles ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
+- **M7.** `draft`, `code-to-spec`, `spec-to-code`, `explain <id> --llm` as proposals. `keylang mcp` for agents (`apply_diff` writes a proposal only). Optional voice (`Ctrl+R`). `keylang doctor` reports languages, agent credentials and voice without changing anything.
 
-node bin/keylang.js                      # TUI у терміналі (? — клавіші, q — вихід)
-node bin/keylang.js web                  # те саме в браузері: відкрийте надрукований URL з токеном
-```
+`bench/` runs the tool on eight repositories; numbers are in [`bench/results.md`](bench/results.md).
 
-Або `npm link` і далі просто `keylang …`.
-
-## Тести й перевірка типів
+## Tests
 
 ```sh
-npm test            # node --test, наскрізні тести CLI
+npm test            # node:test, CLI end to end
 npm run typecheck   # tsc --noEmit
 ```
 
-TUI перевіряється без TTY (`tests/tui.test.ts`: сесія з віртуальним терміналом `tests/vt.ts`), `keylang web` — через справжній CLI і WebSocket (`tests/web.test.ts`). Решта тестів наскрізні (`tests/cli.test.ts`): запускають `keylang` на прикладах і фікстурах у `tests/fixtures/` (дослівний Markdown зі слайдів, по одній помилці кожного коду, «брудний» файл для `fmt`, маленький TS-репозиторій `repo/` з очікуваною картою в `repo.expected/` і пробою забороненого імпорту).
+The TUI is tested without a TTY (`tests/tui.test.ts`). `keylang web` is tested through the real CLI and a WebSocket (`tests/web.test.ts`).
 
-Бенчмарк: `node bench/clone.ts [--voice-transcriber <шлях>] && node bench/run.ts [--work <тека>]`.
+Publishing a release, from a clean checkout: `npm test && npm run typecheck`, then `npm version patch` (or minor/major) and `npm publish`. `prepack` builds `dist/`. Check the tarball with `npm pack` before publishing.
