@@ -2,10 +2,10 @@
 // with, and writes that never land outside a boundary directory — not through
 // a symbolic link either, including one whose target does not exist yet.
 
-import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, parse, resolve, sep } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { within } from "../analyze.ts";
+import { landing, writeAtomic } from "../safe-write.ts";
 
 export type Eol = "\n" | "\r\n";
 
@@ -39,37 +39,12 @@ export function withEol(text: string, eol: Eol): string {
 /**
  * Where a write to `abs` lands: every symbolic link on the way followed,
  * the last one too when its target does not exist yet (a write would create
- * that target). The part that does not exist is kept as written.
+ * that target). The CLI's write protocol (`safe-write.ts`) decides it the same way.
  */
 export function landingPath(abs: string): string {
-  let done = parse(abs).root;
-  let rest = parts(abs);
-  for (let hops = 0; rest.length > 0; ) {
-    const [part, ...after] = rest as [string, ...string[]];
-    const next = join(done, part);
-    let link: string | null = null;
-    try {
-      const stat = lstatSync(next);
-      if (stat.isSymbolicLink()) link = readlinkSync(next);
-    } catch {
-      // Missing: nothing below it exists either.
-      return join(next, ...after);
-    }
-    if (link === null) {
-      done = next;
-      rest = after;
-      continue;
-    }
-    if (++hops > 40) throw new Error(`${abs}: too many levels of symbolic links`);
-    const target = resolve(done, link);
-    done = parse(target).root;
-    rest = [...parts(target), ...after];
-  }
-  return done;
-}
-
-function parts(abs: string): string[] {
-  return abs.slice(parse(abs).root.length).split(sep).filter((part) => part !== "");
+  const target = landing(abs);
+  if (target === null) throw new Error(`${abs}: too many levels of symbolic links`);
+  return target;
 }
 
 /**
@@ -100,20 +75,8 @@ export function leavesBoundary(boundary: string, abs: string, options: WriteOpti
 export function writeInside(boundary: string, abs: string, text: string, options: WriteOptions = {}): void {
   const problem = leavesBoundary(boundary, abs, options);
   if (problem) throw new Error(`${problem}; nothing written`);
-  const target = destination(abs, options);
-  mkdirSync(dirname(target), { recursive: true });
-  // The new file keeps the permissions of the one it replaces.
-  const mode = existsSync(target) && !lstatSync(target).isSymbolicLink() ? statSync(target).mode & 0o7777 : undefined;
-  // A random name created exclusively: a prepared file or link at that name is never written through.
-  const temporary = `${target}.${randomBytes(6).toString("hex")}.tmp`;
-  try {
-    writeFileSync(temporary, text, { flag: "wx", ...(mode === undefined ? {} : { mode }) });
-    if (mode !== undefined) chmodSync(temporary, mode);
-    renameSync(temporary, target);
-  } catch (error) {
-    rmSync(temporary, { force: true });
-    throw error;
-  }
+  // The one atomic write of the repository: a temporary file renamed over the target, permissions kept.
+  writeAtomic(destination(abs, options), text);
 }
 
 /** Removes the file a write to `abs` would change, when it is inside `boundary`; a missing file is no error. */
