@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
 import { evaluateFlows, type FlowInput, type StaticMode } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
-import { check, refineOpacity, type Index } from "./resolve.ts";
+import { check, type Index } from "./resolve.ts";
 import { evaluateRules } from "./rules.ts";
 import type { TestCase } from "./test-report.ts";
 import type { TraceRun } from "./trace-evidence.ts";
@@ -12,7 +12,12 @@ import type { Verdict } from "./verdict.ts";
 import { checkWiring } from "./wiring.ts";
 
 /** The slice of the analysis snapshot that checks read; `check` does not import `map`. */
-export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & { nodes: FlowInput["nodes"]; edges: FlowInput["edges"] };
+export type SnapshotInput = NonNullable<Parameters<typeof evaluateRules>[2]> & {
+  nodes: FlowInput["nodes"];
+  edges: FlowInput["edges"];
+  /** The configured layers, which exist before any module is in them. */
+  manifest?: { config: { layers: Record<string, unknown> } };
+};
 
 export interface Assessment {
   index: Index;
@@ -25,8 +30,14 @@ export function assess(
   snapshot: SnapshotInput | null,
   evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode } = { tests: null, traces: null },
 ): Assessment {
-  const { index, diagnostics: resolveDiags } = check(docs);
-  const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
+  // The snapshot decides what the map alone cannot: configured layers without modules, and modules it could not read.
+  const nodes = snapshot?.nodes;
+  const members = (id: string): "complete" | "opaque" | undefined => {
+    const node = nodes?.[id];
+    return node?.kind !== "module" ? undefined : node.members === "opaque" ? "opaque" : "complete";
+  };
+  const refined = check(docs, { layers: Object.keys(snapshot?.manifest?.config.layers ?? {}), ...(nodes ? { members } : {}) });
+  const { index, diagnostics: resolveDiags } = refined;
   const rules = evaluateRules(docs, index, snapshot);
   const flows =
     snapshot === null
@@ -42,7 +53,7 @@ export function assess(
         });
   const planned = plannedIds(docs);
   const wiring = checkWiring(docs, snapshot === null ? null : nodeKinds(snapshot.nodes));
-  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics, ...wiring].filter(
+  const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...rules.diagnostics, ...flows.diagnostics, ...wiring].filter(
     // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
     (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );

@@ -276,9 +276,10 @@ class Parser {
 
     const ws = /^[ \t]*/.exec(text)![0];
     const wsLen = ws.length;
-    if (ws.includes("\t")) {
-      this.err("K003", l.span(0, wsLen), "tab in indentation; indent with 2 spaces");
-    }
+    // A tab only matters where indentation decides the tree: items and their descriptions, not prose or fences.
+    const tab = (): void => {
+      if (ws.includes("\t")) this.err("K003", l.span(0, wsLen), "tab in indentation; indent with 2 spaces");
+    };
     let indent = 0;
     for (const c of ws) indent += c === "\t" ? 2 : 1;
     const rest = text.slice(wsLen);
@@ -296,8 +297,10 @@ class Parser {
       }
       this.fence = { marker, lines: [text.trimEnd()] };
     } else if (isBullet(rest)) {
+      tab();
       this.item(l, wsLen, indent);
     } else if (indent >= 2 && this.stack.length > 0) {
+      tab();
       // Description of the deepest open item whose content column fits.
       const depth = Math.min(Math.floor((indent - 2) / 2), this.stack.length - 1);
       const start = wsLen;
@@ -322,22 +325,20 @@ class Parser {
     else known = false;
     let name: Spanned<string> | null = null;
     if (!known) {
-      this.err(
-        "K006",
-        full,
-        `unknown section \`# ${title}\`; expected \`map\`, \`rules\`, \`flow <name>\` or \`wiring\` (treated as map)`,
-      );
-    } else if (tokens[1]) {
+      const what = title === "" ? "section heading without a kind" : `unknown section \`# ${title}\``;
+      this.err("K006", full, `${what}; expected \`map\`, \`rules\`, \`flow <name>\` or \`wiring\` (treated as map)`);
+    } else {
+      // Only a flow has a name (§2); any other word is a mistake, not a name.
+      const named = kind === "flow";
       const t = tokens[1];
-      if (isSegment(t.text)) {
-        name = { value: t.text, span: t.span };
-      } else {
-        this.err("K005", t.span, `invalid section name \`${t.text}\``);
+      if (named && t) {
+        if (isSegment(t.text)) name = { value: t.text, span: t.span };
+        else this.err("K005", t.span, `invalid section name \`${t.text}\``);
+      } else if (named) {
+        this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`");
       }
-      const extra = tokens[2];
-      if (extra) this.err("K005", extra.span, "unexpected words in heading");
-    } else if (kind === "flow") {
-      this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`");
+      const extra = tokens[named ? 2 : 1];
+      if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\` takes a name`);
     }
     this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
   }
@@ -436,7 +437,8 @@ class Parser {
             this.err("K005", t.span, `expected a name, found \`${t.text}\``);
           }
         }
-        if (n.refs.length === 0 && rest.length === 0) {
+        // `- exports ,` lists no name either.
+        if (rest.every((t) => t.kind === "comma")) {
           this.err("K005", n.span, "`exports` needs at least one name");
         }
         break;
@@ -689,7 +691,8 @@ class Parser {
     if (a && b) {
       const s = a.span.start.offset - l.start;
       const e = b.span.end.offset - l.start;
-      n.text = { value: l.text.slice(s, e), span: l.span(s, e) };
+      // Canonical like a signature: `fmt` respaces the line, and the text (a verdict's area and hash) must not change with it.
+      n.text = { value: renderTokens(rest), span: l.span(s, e) };
     } else {
       this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a description`);
     }
@@ -706,10 +709,10 @@ function isBullet(rest: string): boolean {
   return (c0 === "-" || c0 === "*" || c0 === "+") && (c1 === undefined || c1 === " ");
 }
 
-/** A single ID segment: letter or `_`, then letters, digits, `_`, `-`. */
+/** A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`. */
 export function isSegment(s: string): boolean {
-  // `$` keeps JS identifiers apart: `$save` and `_save` are two names.
-  return /^[\p{Alphabetic}_$][\p{Alphabetic}\p{N}_$-]*$/u.test(s);
+  // `$` keeps JS identifiers apart: `$save` and `_save` are two names. `\p{M}`: a decomposed `café` is still letters.
+  return /^[\p{Alphabetic}_$][\p{Alphabetic}\p{M}\p{N}_$-]*$/u.test(s);
 }
 
 /** A dotted ID: `segment(.segment)*`. */

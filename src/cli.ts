@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, configToJson, guessLayers, loadConfig, toPosix } from "./config.ts";
+import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles, load } from "./files.ts";
@@ -595,8 +595,11 @@ async function cmdInit(dir: string): Promise<number> {
   if (existsSync(file)) {
     process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
   } else {
-    writeFileSync(file, configToJson(config));
-    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${[...config.layers.keys()].join(", ")})\n`);
+    // The same guess `loadConfig` made, with a note for every directory whose layer name had to change.
+    const layout = guessLayout(root, config.exclude);
+    for (const note of layout.notes) process.stderr.write(`keylang: note: ${note}\n`);
+    writeFileSync(file, configToJson({ ...config, layers: layout.layers }));
+    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${[...layout.layers.keys()].join(", ")})\n`);
   }
   return cmdMap(dir, false);
 }

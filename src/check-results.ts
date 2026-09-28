@@ -28,8 +28,8 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
   const fromDiags = diags.map((diag): CheckResult => {
     const owner = verdicts.find((verdict) => sameFinding(verdict, [diag]));
     return {
-      criterion: owner?.criterion ?? diag.code,
-      area: owner?.area ?? diag.file,
+      criterion: owner?.criterion ?? diag.criterion ?? diag.code,
+      area: owner?.area ?? diag.area ?? diag.file,
       verdict: isError(diag) ? "fail" : "warning",
       evidence: diag.message,
       snapshotId,

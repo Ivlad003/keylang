@@ -509,11 +509,8 @@ function collectPlanned(docs: readonly Document[], input: FlowInput, diagnostics
         walk(top, (node) => {
           if (node.kind !== "planned" || !node.id) return;
           const span = node.name?.span ?? node.span;
-          const first = planned.get(node.id);
-          if (first) {
-            diagnostics.push(diagnostic("K002", doc.path, node.span, `duplicate planned \`${node.id}\` (first declared at ${first.file}:${first.span.start.line}:${first.span.start.col})`));
-            return;
-          }
+          // A duplicate is K002 of resolution (`resolve.ts`), with or without a snapshot.
+          if (planned.has(node.id)) return;
           const kind = node.label?.value ?? "fn";
           const signature = node.text?.value ?? null;
           const code = input.nodes[node.id];

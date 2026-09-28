@@ -19,7 +19,7 @@ export function formatDocument(doc: Document): string {
   const blocks: string[] = [];
   if (doc.generated !== null) blocks.push(doc.generated);
   for (const section of doc.sections) {
-    if (section.heading) blocks.push(`# ${section.heading.value}${section.comment ? ` ${section.comment.value}` : ""}`.trimEnd());
+    if (section.heading) blocks.push(["#", section.heading.value, section.comment?.value ?? ""].filter((part) => part !== "").join(" "));
     let list = "";
     for (const item of section.items) {
       if (item.type === "node") {

@@ -25,7 +25,7 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
   },
   K005: {
     cause: "A known keyword has the wrong arguments.",
-    example: "`# flow` without a name, or a broken link.",
+    example: "`# flow` without a name, a broken link, `deny` over a fn instead of its module, or one layer twice in `layers`.",
     fix: "Match the form in format.md for that keyword.",
   },
   K006: {

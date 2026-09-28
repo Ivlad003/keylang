@@ -1278,8 +1278,8 @@ test("formats carry fail, warning, unverified, and coverage; --strict exits alik
   assert.equal(k103.verdict, "warning");
   assert.equal(k103.criterion, "entry");
   assert.equal(k103.area, "domain.lonely");
-  const unverified = body.results.find((row) => row.verdict === "unverified");
-  assert.ok(unverified && unverified.criterion === "deny domain infra" && unverified.snapshotId === body.snapshotId, json.stdout);
+  const unverified = body.results.find((row) => row.verdict === "unverified" && row.criterion === "deny domain infra");
+  assert.ok(unverified && unverified.snapshotId === body.snapshotId, json.stdout);
   assert.ok(body.coverage.some((item) => item.reason === "unresolved import `./missing.ts`"));
   for (const format of ["human", "json", "sarif", "github"]) {
     assert.equal(results(["--format", format]).status, 0, format);

@@ -51,6 +51,12 @@ export interface Diagnostic {
   span: Span;
   /** K001: the ID the dangling reference names, so a `planned` declaration matches it exactly. */
   target?: string;
+  /**
+   * The rule a warning-level rule finding belongs to (K103: `entry` and the
+   * module). A warning is not a verdict, so it carries its criterion itself.
+   */
+  criterion?: string;
+  area?: string;
 }
 
 export function diagnostic(code: Code, file: string, span: Span, message: string, target?: string): Diagnostic {

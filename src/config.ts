@@ -35,6 +35,16 @@ export interface Config {
 
 export const CONFIG_FILE = "keylang.json";
 
+/** Layers keylang makes itself: packages outside the repository, and files outside every layer. */
+export const SYNTHETIC_LAYERS = ["external", "unassigned"] as const;
+
+/**
+ * Names a layer cannot have: the synthetic layers (a layer of that name would
+ * merge with them) and the keywords at the top of a map, where the generated
+ * map writes a layer as a bare `- <name>` (`- module` would be a rule).
+ */
+export const RESERVED_LAYER_NAMES: ReadonlySet<string> = new Set([...SYNTHETIC_LAYERS, "layer", "layers", "allow", "deny", "entry", "module", "no-cycles"]);
+
 /** Directories never indexed. */
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", "coverage", "target", "vendor", "__pycache__", "venv", "site-packages"]);
 /** Test and tooling files: kept out of the map (flows reference tests by path, §3.4). */
@@ -135,10 +145,12 @@ export function parseConfig(file: string, text: string): RawConfig {
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.dir !== undefined) {
-    raw.dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
+    const dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
     // `map` writes under `dir`: it must not lead out of the repository.
-    const normal = posix.normalize(raw.dir.replace(/\\/g, "/"));
+    const normal = posix.normalize(dir.replace(/\\/g, "/"));
     if (posix.isAbsolute(normal) || /^[A-Za-z]:/.test(normal) || normal === ".." || normal.startsWith("../")) fail("dir", "a directory inside the repository", value.dir);
+    // `./keylang` and `keylang/` are `keylang`: the spec directory is compared with walked paths as written.
+    raw.dir = normal.replace(/\/+$/, "") || ".";
   }
   if (value.languages !== undefined) {
     const list = value.languages;
@@ -155,6 +167,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     for (const [name, globs] of Object.entries(value.layers)) {
       // A layer is the first segment of every ID under it; `core.domain` would be two.
       if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
+      if (RESERVED_LAYER_NAMES.has(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
       if (typeof globs === "string") layers[name] = validGlob(`layers.${name}`, globs);
       else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = (globs as string[]).map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
       else fail(`layers.${name}`, "a glob or an array of globs", globs);
@@ -319,11 +332,31 @@ function detectLanguages(root: string): Language[] {
  * source files in the repository root the layer `app` (entry scripts).
  */
 export function guessLayers(root: string, exclude: readonly string[]): Map<string, string[]> {
+  return guessLayout(root, exclude).layers;
+}
+
+/**
+ * The guessed layers, and a note for every directory whose layer name had to
+ * change: a reserved name (`src/external/` → `external_`) or one that another
+ * directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
+ */
+export function guessLayout(root: string, exclude: readonly string[]): { layers: Map<string, string[]>; notes: string[] } {
   const srcRoot = ["src", "lib"].find((d) => existsSync(join(root, d)) && statSync(join(root, d)).isDirectory()) ?? "";
   const layers = new Map<string, string[]>();
+  const owners = new Map<string, string>();
+  const notes: string[] = [];
+  const add = (wanted: string, what: string, globs: string[]): void => {
+    const name = freeLayerName(wanted, layers);
+    if (name !== wanted) {
+      const why = RESERVED_LAYER_NAMES.has(wanted) ? reservedReason(wanted) : `\`${wanted}\` is already the layer of ${owners.get(wanted) ?? "another directory"}`;
+      notes.push(`${what} is layer \`${name}\`: ${why}`);
+    }
+    layers.set(name, globs);
+    owners.set(name, what);
+  };
   if (srcRoot) {
-    if (hasRootFiles(root, "", exclude)) layers.set("app", ["*"]);
-    if (existsSync(join(root, "bin")) && hasSource(join(root, "bin"), "bin", exclude)) layers.set("bin", ["bin/**"]);
+    if (hasRootFiles(root, "", exclude)) add("app", "the files in the repository root", ["*"]);
+    if (existsSync(join(root, "bin")) && hasSource(join(root, "bin"), "bin", exclude)) add("bin", "`bin/`", ["bin/**"]);
   }
   const base = srcRoot ? `${srcRoot}/` : "";
   const entries = readdirSync(join(root, srcRoot), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -332,10 +365,26 @@ export function guessLayers(root: string, exclude: readonly string[]): Map<strin
     if (!e.isDirectory() || skipDir(join(root, rel), e.name) || e.name === "keylang") continue;
     if (!srcRoot && (e.name === "bench" || e.name === "examples")) continue;
     if (matchesGlob(rel, "**/{test,tests,e2e,__tests__,__mocks__}")) continue;
-    if (hasSource(join(root, rel), rel, exclude)) layers.set(layerName(e.name), [`${rel}/**`]);
+    if (hasSource(join(root, rel), rel, exclude)) add(layerName(e.name), `\`${rel}/\``, [`${rel}/**`]);
   }
-  if (hasRootFiles(root, srcRoot, exclude)) layers.set(layers.has("main") ? "main_" : "main", [`${base}*`]);
-  return layers;
+  if (hasRootFiles(root, srcRoot, exclude)) add("main", srcRoot ? `the files in \`${srcRoot}/\`` : "the files in the repository root", [`${base}*`]);
+  return { layers, notes };
+}
+
+/** `wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`). */
+function freeLayerName(wanted: string, taken: ReadonlyMap<string, unknown>): string {
+  const first = RESERVED_LAYER_NAMES.has(wanted) ? `${wanted}_` : wanted;
+  if (!taken.has(first)) return first;
+  for (let n = 2; ; n++) {
+    const name = `${wanted}_${n}`;
+    if (!taken.has(name)) return name;
+  }
+}
+
+function reservedReason(name: string): string {
+  if (name === "external") return "`external` is reserved for packages outside the repository";
+  if (name === "unassigned") return "`unassigned` is reserved for files outside every layer";
+  return `\`${name}\` is a keyword at the top of a map`;
 }
 
 function hasRootFiles(root: string, dir: string, exclude: readonly string[]): boolean {
@@ -356,7 +405,8 @@ function hasSource(absDir: string, rel: string, exclude: readonly string[]): boo
 
 /** Make a directory or file name a valid ID segment. */
 export function layerName(name: string): string {
-  let s = name.replace(/[^\p{Alphabetic}\p{N}_$-]/gu, "_");
+  // The same characters as an ID segment (`isSegment`), combining marks included.
+  let s = name.replace(/[^\p{Alphabetic}\p{M}\p{N}_$-]/gu, "_");
   if (!/^[\p{Alphabetic}_$]/u.test(s)) s = `_${s}`;
   return s;
 }
