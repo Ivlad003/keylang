@@ -41,15 +41,17 @@ export function renderMap(snapshot: AnalysisSnapshot, mapDir: string): Map<strin
 export type ExplainNode = (id: string) => NodeExplanation | null;
 
 /**
- * The explained map: the layer files of `renderMap` with a description line
- * under each node that has an explanation, and `README.md` with counts per
- * layer. `mapDir` is the explained map's own directory, so links to code
- * start from there.
+ * The explained map: the tree of `renderMap` for reading on GitHub and in an
+ * editor. Every node has an anchor and, when it has an explanation, the text
+ * on its description line; `calls` and dependency targets link to the anchor
+ * of their node; each layer file opens with its modules, and `README.md` is
+ * the start page with counts per layer and an index of modules and classes.
+ * `mapDir` is the explained map's own directory, so links to code start from there.
  */
 export function renderExplainedMap(snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode): Map<string, string> {
   const children = childrenByParent(snapshot);
   const out = renderLayers({ snapshot, children, mapDir, explain });
-  out.set("README.md", renderReadme(snapshot, explain));
+  out.set("README.md", renderReadme(snapshot, children, explain));
   return out;
 }
 
@@ -64,7 +66,7 @@ interface Render {
 function renderLayers(r: Render): Map<string, string> {
   const out = new Map<string, string>();
   for (const layerId of layerIds(r.snapshot)) {
-    let s = `${GENERATED_MARK}\n\n# map\n\n- ${layerId}\n${describe(r, layerId, 1)}`;
+    let s = `${GENERATED_MARK}\n\n${r.explain ? `${contents(r, layerId)}\n\n` : ""}# map\n\n- ${layerId}\n${describe(r, layerId, 1)}`;
     for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) s += renderModule(r, id, 1);
     out.set(`${layerId}.md`, s);
   }
@@ -75,10 +77,44 @@ function layerIds(snapshot: AnalysisSnapshot): string[] {
   return Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.kind === "layer").sort();
 }
 
-/** The description line of a node at `depth`, or "" (the canonical map, a node without an explanation). */
+/**
+ * The anchor of a node in the explained map: its ID, with every character
+ * other than an ASCII letter, digit, `.`, `_` or `-` written as `~<hex>~` (its
+ * code point). GitHub keeps such an `id` as written, and `~` never occurs in
+ * an ID, so two IDs never share an anchor.
+ */
+export function anchorOf(id: string): string {
+  return [...id].map((ch) => (/[A-Za-z0-9._-]/.test(ch) ? ch : `~${ch.codePointAt(0)!.toString(16)}~`)).join("");
+}
+
+/** A link to the node's anchor in its layer file; the bare ID in the canonical map. */
+function ref(r: Render, id: string): string {
+  if (!r.explain) return id;
+  const layer = r.snapshot.nodes[id]?.layer ?? id.split(".")[0]!;
+  return `[${id}](${layer}.md#${anchorOf(id)})`;
+}
+
+/** The first lines of a layer file: back to the start page, and every module of the layer, in map order. */
+function contents(r: Render, layerId: string): string {
+  const modules: string[] = [];
+  const visit = (id: string): void => {
+    const node = r.snapshot.nodes[id];
+    if (node?.kind !== "module" || node.class) return;
+    modules.push(`[${id.slice(layerId.length + 1)}](#${anchorOf(id)})`);
+    for (const child of sortIds(r.snapshot, r.children.get(id) ?? [])) visit(child);
+  };
+  for (const id of sortIds(r.snapshot, r.children.get(layerId) ?? [])) visit(id);
+  return `[README](README.md)${modules.length > 0 ? ` · modules: ${modules.join(" · ")}` : ""}`;
+}
+
+/**
+ * The description line of a node at `depth`: in the explained map its anchor
+ * and its explanation, if any; nothing in the canonical map.
+ */
 function describe(r: Render, id: string, depth: number): string {
-  const e = r.explain?.(id) ?? null;
-  return e === null ? "" : `${"  ".repeat(depth)}${descriptionText(e)}\n`;
+  if (!r.explain) return "";
+  const e = r.explain(id);
+  return `${"  ".repeat(depth)}<a id="${anchorOf(id)}"></a>${e === null ? "" : descriptionText(e, (other) => (r.snapshot.nodes[other] ? ref(r, other) : null))}\n`;
 }
 
 /**
@@ -86,11 +122,17 @@ function describe(r: Render, id: string, depth: number): string {
  * line of its own, the explanation, and for a brief from a model its origin.
  * The text never starts a block (a list item, a heading, a quote, a fence) and
  * never opens or closes an HTML comment, so the file stays the same keylang.
+ * `link` turns an ID in backticks into a link; one it does not know (a model's
+ * invention) stays plain code.
  */
-export function descriptionText(e: NodeExplanation): string {
+export function descriptionText(e: NodeExplanation, link: (id: string) => string | null = () => null): string {
   let text = e.text.replace(/\s+/g, " ").trim().replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
   if (/^\d+[.)]/.test(text)) text = text.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(text)) text = `\\${text}`;
+  text = text.replace(/`([\p{L}_$][\p{L}\p{M}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{M}\p{N}_$-]*)+)`/gu, (code, id: string) => {
+    const target = link(id);
+    return target === null ? code : target.replace(/^\[([^\]]*)\]/, "[`$1`]");
+  });
   const origin = e.origin === "llm" ? ` _(llm · ${modelName(e.agent ?? "?")} · ${e.date ?? "?"}${e.stale ? " · stale" : ""})_` : "";
   return `<br>${text}${origin}`;
 }
@@ -103,7 +145,8 @@ interface Counts {
   none: number;
 }
 
-function renderReadme(snapshot: AnalysisSnapshot, explain: ExplainNode): string {
+function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode): string {
+  const r: Render = { snapshot, children, mapDir: "", explain };
   const counts = new Map<string, Counts>();
   for (const [id, node] of Object.entries(snapshot.nodes)) {
     if (node.layer === EXTERNAL_LAYER) continue;
@@ -120,7 +163,7 @@ function renderReadme(snapshot: AnalysisSnapshot, explain: ExplainNode): string 
   for (const layer of layerIds(snapshot)) {
     const c = counts.get(layer);
     const e = explain(layer);
-    const text = e === null ? "" : descriptionText(e).slice("<br>".length).replaceAll("|", "\\|");
+    const text = e === null ? "" : descriptionText(e, (id) => (snapshot.nodes[id] ? ref(r, id) : null)).slice("<br>".length).replaceAll("|", "\\|");
     if (!c) {
       rows.push(`| [${layer}](${layer}.md) | ${text} | | | | |`);
       continue;
@@ -140,7 +183,34 @@ function renderReadme(snapshot: AnalysisSnapshot, explain: ExplainNode): string 
     ...rows,
     `| **all** | | ${total.doc} | ${total.llm} | ${total.stale} | ${total.none} |`,
     "",
+    "## Index",
+    "",
+    "Modules and classes by name; the parent ID follows each one.",
+    "",
+    ...index(r),
   ].join("\n");
+}
+
+/** One paragraph per first letter: every module and class of the repository (packages left out), by name. */
+function index(r: Render): string[] {
+  const entries = Object.entries(r.snapshot.nodes)
+    .filter(([, node]) => node.kind === "module" && node.layer !== EXTERNAL_LAYER)
+    .map(([id]) => ({ id, name: nameOf(id), parent: id.slice(0, id.lastIndexOf(".")) }))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "en") || compareIds(a.id, b.id));
+  const groups = new Map<string, string[]>();
+  for (const e of entries) {
+    const letter = [...e.name][0]!.toUpperCase();
+    const layer = r.snapshot.nodes[e.id]!.layer;
+    const line = `[${e.name}](${layer}.md#${anchorOf(e.id)}) (${e.parent})`;
+    const group = groups.get(letter);
+    if (group) group.push(line);
+    else groups.set(letter, [line]);
+  }
+  return [...groups].flatMap(([letter, lines]) => [`**${letter}** · ${lines.join(" · ")}`, ""]);
+}
+
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** Packages; their nodes have no code in the repository to explain. */
@@ -186,7 +256,7 @@ function renderModule(r: Render, id: string, depth: number): string {
   let head = linkedName(mapDir, node, nameOf(id));
   if (node.comment) head += ` <!-- ${node.comment} -->`;
   let s = `${pad}- module ${head}\n${describe(r, id, depth + 1)}`;
-  for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${edge.target}\n`;
+  for (const edge of depsOf(snapshot, id)) s += `${pad}  - ${edge.alias} ${ref(r, edge.target!)}\n`;
   const nested = r.children.get(id) ?? [];
   const body = sortIds(snapshot, nested);
   for (const childId of body) {
@@ -236,6 +306,6 @@ function renderDecl(r: Render, id: string, node: SnapshotNode, depth: number): s
     // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
     .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
-  if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target))].join(", ")}\n`;
+  if (calls.length > 0) s += `${pad}  - calls ${[...new Set(calls.map((c) => c.target!))].map((target) => ref(r, target)).join(", ")}\n`;
   return s;
 }

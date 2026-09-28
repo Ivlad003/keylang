@@ -95,12 +95,14 @@ function configure(dir: string, explain: Record<string, unknown> | undefined): v
   writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-/** The explained map without its description lines: what is left is the canonical map. */
+/** The explained map without its contents line, description lines and links to anchors: what is left is the canonical map. */
 function withoutDescriptions(text: string): string {
   return text
+    .replace(/^\[README\]\(README\.md\).*\n\n/m, "")
     .split("\n")
-    .filter((line) => !/^\s+<br>/.test(line))
-    .join("\n");
+    .filter((line) => !/^\s+<a id="/.test(line))
+    .join("\n")
+    .replace(/\[([^\]]+)\]\([\w-]+\.md#[^)]*\)/g, "$1");
 }
 
 test("map with explain.map: the explained map repeats the map's tree with doc comments; check does not read it", (t) => {
@@ -114,11 +116,11 @@ test("map with explain.map: the explained map repeats the map's tree with doc co
   const explained = readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8");
   const lines = explained.split("\n");
   const after = (head: string): string | undefined => lines[lines.findIndex((line) => line.includes(head)) + 1];
-  assert.equal(after("fn [total]"), "      <br>Sums item prices. The sum calls `items.reduce()` once.");
-  assert.equal(after("module [Ledger]"), "      <br>Keeps orders in memory.");
-  assert.equal(after("type [Money]"), "      <br>Money in cents.");
-  assert.equal(after("module [order]"), "    <br>Orders and their totals. Nothing here does I/O.");
-  assert.equal(after("fn [createOrder]"), "      - calls domain.order.total", "a node without documentation has no text");
+  assert.equal(after("fn [total]"), '      <a id="domain.order.total"></a><br>Sums item prices. The sum calls `items.reduce()` once.');
+  assert.equal(after("module [Ledger]"), '      <a id="domain.order.Ledger"></a><br>Keeps orders in memory.');
+  assert.equal(after("type [Money]"), '      <a id="domain.money.Money"></a><br>Money in cents.');
+  assert.equal(after("module [order]"), '    <a id="domain.order"></a><br>Orders and their totals. Nothing here does I/O.');
+  assert.equal(after("fn [createOrder]"), '      <a id="domain.order.createOrder"></a>', "a node without documentation has only its anchor");
   assert.equal(withoutDescriptions(explained), readFileSync(join(dir, "keylang/map/domain.md"), "utf8"));
   const readme = readFileSync(join(dir, "keylang/map-explained/README.md"), "utf8");
   assert.match(readme, /^\| \[domain\]\(domain\.md\) \|\s*\| 6 \| 0 \| 0 \| 4 \|$/m);
@@ -249,8 +251,8 @@ test("explain --llm --brief: a brief in keylang/explain/brief/ shows in the expl
   assert.equal(keylang(dir, ["map"]).status, 0);
   const map = (): string[] => readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8").split("\n");
   const after = (head: string): string | undefined => map()[map().findIndex((line) => line.includes(head)) + 1];
-  assert.equal(after("fn [createOrder]"), `      <br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today})_`);
-  assert.equal(after("fn [total]"), "      <br>Sums item prices. The sum calls `items.reduce()` once.");
+  assert.equal(after("fn [createOrder]"), `      <a id="domain.order.createOrder"></a><br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today})_`);
+  assert.equal(after("fn [total]"), '      <a id="domain.order.total"></a><br>Sums item prices. The sum calls `items.reduce()` once.');
   assert.match(readFileSync(join(dir, "keylang/map-explained/README.md"), "utf8"), /^\| \[domain\]\(domain\.md\) \|\s*\| 6 \| 1 \| 0 \| 3 \|$/m);
   assert.equal(keylang(dir, ["parse", "keylang/map-explained"]).status, 0);
 
@@ -260,7 +262,7 @@ test("explain --llm --brief: a brief in keylang/explain/brief/ shows in the expl
   assert.equal(check.status, 1);
   assert.match(check.stdout, /^keylang\/map-explained\/domain\.md: stale/m);
   assert.equal(keylang(dir, ["map"]).status, 0);
-  assert.equal(after("fn [createOrder]"), `      <br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today} · stale)_`);
+  assert.equal(after("fn [createOrder]"), `      <a id="domain.order.createOrder"></a><br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today} · stale)_`);
   assert.match(keylang(dir, ["explain", "--stale"]).stdout, /^domain\.order\.createOrder \(brief\): stale \(explained \S+\); run `keylang explain domain\.order\.createOrder --llm --brief`$/m);
 });
 
@@ -276,7 +278,7 @@ test("saved explanations are not specs; the store of keylang 0.1 is named with a
   assert.ok(existsSync(join(dir, "keylang/explain/domain.order.createOrder.md")));
   assert.deepEqual(keylang(dir, ["check"]), before);
   assert.equal(keylang(dir, ["map"]).status, 0);
-  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), /^      <br>\\- Creates an order and returns it\. _\(llm/m);
+  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), /^      <a id="domain\.order\.createOrder"><\/a><br>\\- Creates an order and returns it\. _\(llm/m);
   assert.equal(keylang(dir, ["parse", "keylang/map-explained/domain.md"]).status, 0);
 
   mkdirSync(join(dir, ".keylang/explain"), { recursive: true });
@@ -312,7 +314,7 @@ test("explain --missing --llm: a brief for each node without a doc comment, bott
   assert.match(layer, /^- module `domain\.money`: Brief of domain\.money\.$/m);
   assert.match(layer, /^- module `domain\.order`: Orders and their totals\. Nothing here does I\/O\.$/m);
   assert.equal(keylang(dir, ["map"]).status, 0);
-  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), new RegExp(`^    <br>Brief of domain\\.money\\. _\\(llm · claude-opus-5 · ${today}\\)_$`, "m"));
+  assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), new RegExp(`^    <a id="domain\\.money"></a><br>Brief of domain\\.money\\. _\\(llm · claude-opus-5 · ${today}\\)_$`, "m"));
 
   const again = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
   assert.equal(again.stdout, "nothing to explain\n");
@@ -352,4 +354,51 @@ test("explain --missing --llm: a failed node is named with exit 1 and a rerun as
   const missingKey = keylang(dir, ["explain", "--missing", "--llm"], { ...env, ANTHROPIC_API_KEY: undefined });
   assert.equal(missingKey.status, 2);
   assert.match(missingKey.stderr, /no Anthropic credentials/);
+});
+
+test("explained map navigation: every link to a map file lands on an anchor, code links match the map, odd IDs get stable anchors, the README indexes modules and classes", (t) => {
+  const dir = copy(t);
+  configure(dir, { map: true });
+  writeFileSync(join(dir, "src/app/util.ts"), "/** Saves the cart; see `domain.order.createOrder` and `domain.order.nope`. */\nexport function $save(): void {}\n\nexport function café(): void {}\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const explainedDir = join(dir, "keylang/map-explained");
+  const files = readdirSync(explainedDir);
+  const text = (name: string): string => readFileSync(join(explainedDir, name), "utf8");
+  const anchors = new Map(files.map((name) => [name, new Set([...text(name).matchAll(/<a id="([^"]+)"><\/a>/g)].map((m) => m[1]!))]));
+  let links = 0;
+  for (const name of files) {
+    for (const [, file, anchor] of text(name).matchAll(/\]\(([\w-]*\.md)?(?:#([^)]*))?\)/g)) {
+      const target = file ?? name;
+      assert.ok(anchors.has(target), `${name}: link to a missing file ${target}`);
+      if (anchor !== undefined) assert.ok(anchors.get(target)!.has(anchor), `${name}: #${anchor} is not an anchor of ${target}`);
+      links++;
+    }
+  }
+  assert.ok(links >= 15, `${links} links checked`);
+  // Code links start from the explained map's directory and land on the lines the map links to.
+  const codeLinks = (text: string): string[] => [...text.matchAll(/\]\((\.\.\/[^)]*#L\d+)\)/g)].map((m) => m[1]!).sort();
+  for (const name of ["app.md", "domain.md"]) assert.deepEqual(codeLinks(text(name)), codeLinks(readFileSync(join(dir, "keylang/map", name), "utf8")), name);
+  const app = text("app.md");
+  assert.match(app, /^\[README\]\(README\.md\) · modules: \[checkout\]\(#app\.checkout\) · \[util\]\(#app\.util\)$/m);
+  assert.match(app, /<a id="app\.util\.~24~save"><\/a><br>Saves the cart; see \[`domain\.order\.createOrder`\]\(domain\.md#domain\.order\.createOrder\) and `domain\.order\.nope`\./);
+  assert.match(app, /<a id="app\.util\.caf~e9~"><\/a>/);
+  assert.match(app, /^      - calls \[domain\.order\.createOrder\]\(domain\.md#domain\.order\.createOrder\), /m);
+  assert.match(app, /^    - order \[domain\.order\]\(domain\.md#domain\.order\)$/m);
+  const readme = text("README.md");
+  assert.match(readme, /^\*\*L\*\* · \[Ledger\]\(domain\.md#domain\.order\.Ledger\) \(domain\.order\)$/m);
+  assert.match(readme, /^\*\*U\*\* · \[util\]\(app\.md#app\.util\) \(app\)$/m);
+
+  const parsed = keylang(dir, ["parse", "keylang/map-explained"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  assert.equal(parsed.stderr, "");
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang/map-explained"]).status, 0);
+  configure(dir, undefined);
+  const without = keylang(dir, ["check"]);
+  configure(dir, { map: true });
+  assert.deepEqual(keylang(dir, ["check"]), without);
+
+  writeFileSync(join(explainedDir, "README.md"), readme.replace("## Index", "## Old index"));
+  const stale = keylang(dir, ["map", "--check"]);
+  assert.equal(stale.status, 1);
+  assert.equal(stale.stdout, "keylang/map-explained/README.md: stale, run `keylang map`\n");
 });
