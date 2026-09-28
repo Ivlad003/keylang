@@ -1,8 +1,27 @@
 {
   "name": "keylang",
   "version": "0.1.0",
-  "description": "keylang: architecture description bound to a repository",
+  "description": "Architecture description in Markdown, bound to the repository: map, rules, flows, checked against the code",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ivlad003/keylang.git"
+  },
+  "homepage": "https://github.com/Ivlad003/keylang#readme",
+  "bugs": "https://github.com/Ivlad003/keylang/issues",
+  "keywords": [
+    "architecture",
+    "markdown",
+    "dependency-rules",
+    "code-map",
+    "tree-sitter",
+    "cli",
+    "mcp"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "bin": {
     "keylang": "./bin/keylang.js"

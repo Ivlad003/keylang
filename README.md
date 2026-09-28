@@ -44,6 +44,28 @@ TUI і браузерний варіант над тим самим `analyze()`,
 - **M6, wiring.** Секція `# wiring` і `keylang wire`: типізований `wire()` у `keylang.gen.ts`, що будує кожну фабрику раз, залежності першими, з async init/dispose і відмовою на циклах ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7, співавторство з агентом.** `draft flow|rules|map` (`--mode algo|llm|hybrid`), `code-to-spec`, `spec-to-code`, `explain <id> --llm` — усе як пропозиції в `.keylang/proposals/`, які людина зливає по шматках (`m` у TUI); статус LLM — походження, а не вердикт. `keylang mcp` — MCP-сервер для агентів (пошук, вузли, код, потоки, check, `apply_diff` лише в пропозиції). У TUI — панель контексту агента, ghost-підказки й опційний голосовий ввід (`Ctrl+R`; локальний whisper.cpp або хмарний рушій, `keylang doctor` показує, що налаштовано).
 
+## Встановлення
+
+Потрібен лише Node.js ≥ 22.18; компіляції native-коду немає, голосові модулі опційні.
+
+```sh
+npx keylang init .      # без встановлення: вгадати шари, записати keylang.json і карту
+npx keylang check       # ID + правила по keylang/
+npm i -g keylang        # або глобально, далі просто `keylang …`
+```
+
+Публікація нової версії (з чистого чекауту):
+
+```sh
+npm login               # один раз; npm whoami показує акаунт
+npm test && npm run typecheck
+npm version patch       # або minor/major: піднімає версію, створює коміт і тег
+npm publish             # prepack збирає dist/; publishConfig робить пакет публічним
+git push --follow-tags
+```
+
+Перевірити пакет до публікації: `npm pack` і `npx --package=./keylang-<версія>.tgz -- keylang --version` в іншій теці.
+
 ## Запуск
 
 ```sh
