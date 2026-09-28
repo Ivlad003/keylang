@@ -12,6 +12,7 @@
     "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts"]
   },
   "exclude": ["bench/**", "examples/**", "design/**", "slides/**", "scripts/**", "editors/**"],
+  "explain": { "map": true },
   "check": {
     "tests": ".keylang/reports/*.json",
     "trace": ".keylang/trace/*.jsonl"
