@@ -442,6 +442,8 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   // A scan back from the cursor, not `/[^\s,]*$/`, which retries from every column of a long line.
   let wordStart = before.length;
   while (wordStart > 0 && !/[\s,]/.test(before[wordStart - 1]!)) wordStart--;
+  // In a link reference `[id](href)` the ID starts after the `[`.
+  if (before[wordStart] === "[") wordStart++;
   const typed = before.slice(wordStart);
   const range: LspRange = { start: { line: position.line, character: position.character - typed.length }, end: { line: position.line, character: position.character } };
   const replacing = (label: string): Pick<CompletionItem, "filterText" | "textEdit"> => ({ filterText: label, textEdit: { range, newText: label } });

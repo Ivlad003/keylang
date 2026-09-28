@@ -40,7 +40,7 @@
     - type [Planned](../../src/flows.ts#L70) <!-- internal -->
     - type [Channel](../../src/flows.ts#L79) = "ID" | "static" | "tests" | "trace" <!-- internal -->
     - fn [evaluateFlows](../../src/flows.ts#L81) (docs: readonly Document[], index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
-      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, lang.ir.sectionNodes, check.flows.refOf, check.trace-evidence.traceFlow, lang.parser.renderTokens, check.flows.idVerdict, check.flows.reachability, check.flows.traceProvenance, check.flows.claimArea, check.flows.quantitative, check.test-report.matchTest
+      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, lang.ir.sectionNodes, check.flows.refOf, check.trace-evidence.traceFlow, lang.parser.renderMeaning, check.flows.idVerdict, check.flows.reachability, check.flows.traceProvenance, check.flows.claimArea, check.flows.quantitative, check.test-report.matchTest
     - fn [refOf](../../src/flows.ts#L195) (node: Node) → string | null <!-- internal -->
     - fn [claimArea](../../src/flows.ts#L199) (node: Node) → string <!-- internal -->
     - fn [traceProvenance](../../src/flows.ts#L204) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->

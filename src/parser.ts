@@ -496,7 +496,8 @@ class Parser {
         break;
       case "then": {
         const t = rest[0];
-        if (rest.length === 1 && t && t.kind === "word" && t.text.includes(".") && isId(t.text)) {
+        const id = t?.kind === "link" ? parseLink(t).text : t?.kind === "word" ? t.text : "";
+        if (rest.length === 1 && id.includes(".") && isId(id)) {
           this.oneRef(n, rest);
         } else {
           this.freeText(n, l, rest);
@@ -611,17 +612,7 @@ class Parser {
       this.err("K005", t.span, msg);
       return;
     }
-    // For a link, point at the link text, i.e. just after `[`.
-    const nameSpan: Span = link
-      ? {
-          start: { offset: t.span.start.offset + 1, line: t.span.start.line, col: t.span.start.col + 1 },
-          end: {
-            offset: t.span.start.offset + 1 + name.length,
-            line: t.span.start.line,
-            col: t.span.start.col + 1 + codePoints(name),
-          },
-        }
-      : t.span;
+    const nameSpan = link ? linkTextSpan(t) : t.span;
     n.id = n.kind === "layer" ? name : parentId === null ? null : `${parentId}.${name}`;
     n.name = { value: name, span: nameSpan };
     n.link = link;
@@ -638,11 +629,20 @@ class Parser {
     }
   }
 
+  /** A bare ID, or `[id](href)`: the link text is the ID, the target is kept and never checked. */
   private makeRef(t: Token): Ref | null {
     if (t.kind === "word" && isId(t.text)) {
       return { text: t.text, target: t.text, span: t.span };
     }
-    this.err("K005", t.span, `expected an ID, found \`${t.text}\``);
+    if (t.kind === "link") {
+      const link = parseLink(t);
+      if (isId(link.text)) return { text: link.text, target: link.text, span: linkTextSpan(t), link };
+      this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``);
+      return null;
+    }
+    // `[](x)` and `[a.b](x` are words to the lexer: a link with no text or no closing `)`.
+    const msg = t.text.startsWith("[") ? "malformed link, expected `[id](href)`" : `expected an ID, found \`${t.text}\``;
+    this.err("K005", t.span, msg);
     return null;
   }
 
@@ -718,6 +718,13 @@ export function isSegment(s: string): boolean {
 /** A dotted ID: `segment(.segment)*`. */
 export function isId(s: string): boolean {
   return s.split(".").every(isSegment);
+}
+
+/** The text of a link token `[text](…)`, i.e. from just after `[`. */
+function linkTextSpan(t: Token): Span {
+  const text = parseLink(t).text;
+  const { offset, line, col } = t.span.start;
+  return { start: { offset: offset + 1, line, col: col + 1 }, end: { offset: offset + 1 + text.length, line, col: col + 1 + codePoints(text) } };
 }
 
 function parseLink(t: Token): Link {
@@ -819,6 +826,16 @@ function linkEnd(s: string, i: number): number | null {
   if (end === -1) return null;
   const target = s.slice(close + 2, end);
   return close > i + 1 && target.length > 0 && !/\s/.test(target) ? end + 1 : null;
+}
+
+/**
+ * What an item's head says, for comparing meaning (a verdict's `specHash`, a
+ * rule already written): canonical tokens, with a reference written as a link
+ * `[id](href)` counted as its ID, so linking a reference changes nothing.
+ */
+export function renderMeaning(node: Node): string {
+  const linked = new Map(node.refs.flatMap((ref) => (ref.link ? [[ref.link.span.start.offset, ref.link.text] as const] : [])));
+  return renderTokens(node.tokens.map((t) => (t.kind === "link" && linked.has(t.span.start.offset) ? { ...t, text: linked.get(t.span.start.offset)! } : t)));
 }
 
 /** Canonical rendering of head tokens: single spaces, `a, b` for commas. */

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { constructorName } from "./languages.ts";
-import { renderTokens } from "./parser.ts";
+import { renderMeaning } from "./parser.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
@@ -131,7 +131,7 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
         input.traces === null ? null : traceFlow(input.traces, flow, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
 
       const visit = (node: Node, parent: string | null, claim: Node | null): void => {
-        spec = `${flow}\0${node.kind} ${renderTokens(node.tokens)}`;
+        spec = `${flow}\0${node.kind} ${renderMeaning(node)}`;
         const nodeKey = keys.get(node);
         const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
         if (node.kind === "step" || node.kind === "trigger") {

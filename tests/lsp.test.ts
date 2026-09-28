@@ -462,6 +462,34 @@ test("lsp: a completion replaces the whole dotted prefix, which editors split at
   assert.equal(trigger?.textEdit?.newText, "trigger");
 });
 
+test("lsp: hover, definition, references and completion work on the ID inside a link reference", async (t) => {
+  const flow = "# flow link\n\n- trigger [app.checkout.checkout](../map/app.md#app.checkout.checkout)\n  - step [domain.order.createOrder](../map/domain.md#domain.order.createOrder)\n";
+  const dir = fixture(t, { "keylang/flows/link.md": flow });
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/link.md");
+  const step = lineOf(flow, "step [domain");
+  const onId = { textDocument: { uri: flowUri }, position: { line: step, character: charOf(flow, step, "createOrder") } };
+  const shown = await s.request<{ contents: { value: string } }>("textDocument/hover", onId);
+  assert.match(shown.contents.value, /\*\*fn\*\* `domain\.order\.createOrder`/);
+  const def = await s.request<{ uri: string; range: { start: { line: number } } }>("textDocument/definition", onId);
+  assert.equal(def.uri, uri(dir, "src/domain/order.ts"));
+  assert.equal(def.range.start.line, 9);
+  const refs = await s.request<{ uri: string; range: { start: { line: number; character: number } } }[]>("textDocument/references", onId);
+  const where = refs.map((ref) => `${ref.uri.slice(pathToFileURL(dir).href.length + 1)}:${ref.range.start.line + 1}:${ref.range.start.character + 1}`);
+  assert.ok(where.includes(`keylang/flows/link.md:${step + 1}:${charOf(flow, step, "[domain") + 2}`), where.join("\n"));
+  // The target of the link is not an ID.
+  const onHref = await s.request<unknown>("textDocument/hover", { textDocument: { uri: flowUri }, position: { line: step, character: charOf(flow, step, "../map") } });
+  assert.equal(onHref, null);
+  type Completion = { items: { label: string; textEdit?: { range: { start: { character: number } }; newText: string } }[] };
+  const typed = `${flow}  - step [domain.or`;
+  const last = typed.split("\n").length - 1;
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ text: typed }] });
+  const list = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: last, character: "  - step [domain.or".length } });
+  const total = list.items.find((item) => item.label === "domain.order.total");
+  assert.ok(total, JSON.stringify(list.items.map((item) => item.label)));
+  assert.equal(total.textEdit?.range.start.character, "  - step [".length, "the `[` stays");
+});
+
 test("lsp: references find the flow and rules lines; code lens names the flows; signature help", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);
