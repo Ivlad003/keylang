@@ -135,14 +135,17 @@ export interface Link {
 }
 
 export interface Ref {
-  /** As written. */
+  /** As written; for a link, its text. */
   text: string;
   /**
    * Absolute ID to resolve (differs from `text` for relative names such as
    * `exports buy` under `module application.purchase`).
    */
   target: string;
+  /** Of the ID: inside `[…]` when the reference is a link. */
   span: Span;
+  /** The reference written as a Markdown link `[id](href)`: `text` is the ID, the target is kept and never checked. */
+  link?: Link;
 }
 
 export type TokenKind = "word" | "link" | "quoted" | "comma";

@@ -96,6 +96,15 @@ test("static: every step is reachable from its parent, siblings need no path", (
   }
 });
 
+test("static: a trigger and steps written as links give the verdicts, positions and hashes of the bare IDs", (t) => {
+  const linked = CHECKOUT_FLOW.replace(/(trigger|step) ([\w.]+)/g, (_, keyword: string, id: string) => `${keyword} [${id}](../map/${id.split(".")[0]}.md#${id})`);
+  assert.notEqual(linked, CHECKOUT_FLOW);
+  const bare = results(repo(t, CHECKOUT, { "flows/checkout.md": CHECKOUT_FLOW })).rows;
+  const link = results(repo(t, CHECKOUT, { "flows/checkout.md": linked })).rows;
+  assert.equal(row(link, "static", "application.purchase.buy")?.verdict, "ok");
+  assert.deepEqual(link, bare);
+});
+
 test("static: a removed step is K001 without a second static failure", (t) => {
   const dir = repo(t, { ...CHECKOUT, "src/infrastructure/store.ts": "export const marker = 1;\n", "src/application/purchase.ts": CHECKOUT["src/application/purchase.ts"]!.replace(/.*save.*\n/g, "") }, { "flows/checkout.md": CHECKOUT_FLOW });
   const o = keylang(dir, ["check"]);

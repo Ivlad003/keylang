@@ -77,7 +77,7 @@
     - fn [withFlow](../../src/draft.ts#L59) (existing: string | null, draft: Pick<FlowDraft, "name" | "text">) → string
       - calls lang.parser.parse, features.draft.nextHeading, base.safe-write.allCrlf
     - fn [withRules](../../src/draft.ts#L83) (existing: string | null, draftText: string) → string
-      - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderTokens, features.draft.nextHeading, base.safe-write.allCrlf
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.parser.renderMeaning, features.draft.nextHeading, base.safe-write.allCrlf
     - fn [nextHeading](../../src/draft.ts#L113) (sections: readonly { heading: { span: { start: { line: number } } } | null }[], index: number) → number | null <!-- internal -->
     - fn [distinctNames](../../src/draft.ts#L123) (drafts: readonly FlowDraft[]) → FlowDraft[]
     - fn [draftRules](../../src/draft.ts#L153) (snapshot: AnalysisSnapshot, cyclic: boolean) → string
@@ -215,15 +215,15 @@
     - type [CompletionItem](../../src/lsp-features.ts#L404)
     - fn [completions](../../src/lsp-features.ts#L431) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, features.lsp-features.moduleAround, check.rules.blocksDependency, features.lsp-features.nodesOf
-    - fn [sectionAt](../../src/lsp-features.ts#L479) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L489) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L481) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L491) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L498) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L500) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L511) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L513) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L526) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L532) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L528) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L534) (ws: Workspace, path: string) → CodeLens[]
       - calls features.lsp-features.flowsUsing, features.lsp-features.lspPoint
   - module [proposals](../../src/proposals.ts#L1)
     - node external.node

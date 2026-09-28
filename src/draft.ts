@@ -6,7 +6,7 @@
 // never a step: the draft claims only what the edges show.
 
 import { sectionNodes } from "./ir.ts";
-import { parse, renderTokens } from "./parser.ts";
+import { parse, renderMeaning } from "./parser.ts";
 import { allCrlf } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 
@@ -86,11 +86,11 @@ export function withRules(existing: string | null, draftText: string): string {
   const lines = text.replace(/\n*$/, "").split("\n");
   const sections = parse("rules.md", text).sections;
   const written = new Set<string>();
-  for (const section of sections) if (section.kind === "rules") for (const node of sectionNodes(section)) written.add(renderTokens(node.tokens));
+  for (const section of sections) if (section.kind === "rules") for (const node of sectionNodes(section)) written.add(renderMeaning(node));
   const draftLines = draftText.split("\n");
   const added: string[] = [];
   for (const section of parse("draft.md", draftText).sections) {
-    for (const node of sectionNodes(section)) if (!written.has(renderTokens(node.tokens))) added.push(draftLines[node.span.start.line - 1]!);
+    for (const node of sectionNodes(section)) if (!written.has(renderMeaning(node))) added.push(draftLines[node.span.start.line - 1]!);
   }
   if (added.length === 0) return existing;
   const index = sections.findLastIndex((section) => section.kind === "rules" && section.heading !== null);

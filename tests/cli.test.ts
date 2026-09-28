@@ -138,6 +138,55 @@ test("fmt over a directory formats every file it can and names each one it canno
   assert.equal(o.stdout, "a.md: formatted\nc.md: formatted\n");
 });
 
+// An astral letter (two UTF-16 code units, one code point) in the IDs and before the link.
+const LINKED_MAP = "# map\n\n- layer 𝒳\n  - module a\n    - fn go\n      - calls 𝒳.a.b, [𝒳.a.go](𝒳.md#𝒳.a.go)\n    - fn b\n";
+
+test("a reference written as a Markdown link resolves by its text; the span is the ID inside the brackets", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-link-ref-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "map.md"), LINKED_MAP);
+  const rules = "# rules\n\n- deny [𝒳.a](x.md) [𝒳.zz](y.md#𝒳.zz)\n- allow [](x) 𝒳\n- allow [не id](x) 𝒳\n- allow [𝒳.a](x 𝒳\n";
+  writeFileSync(join(dir, "rules.md"), rules);
+
+  const parsed = keylang(dir, ["parse", "--json", "map.md"]);
+  assert.equal(parsed.status, 0, parsed.stdout + parsed.stderr);
+  const calls = JSON.parse(parsed.stdout)[0].sections[0].items[0].children[0].children[0].children[0];
+  assert.equal(calls.kind, "calls");
+  const [bare, linked] = calls.refs;
+  const line = LINKED_MAP.split("\n")[5]!;
+  const lineStart = LINKED_MAP.indexOf(line);
+  const colOf = (needle: string): number => [...line.slice(0, line.indexOf(needle))].length + 1;
+  assert.deepEqual(bare.span.start, { offset: lineStart + line.indexOf("𝒳.a.b"), line: 6, col: colOf("𝒳.a.b") });
+  assert.equal(bare.link, undefined);
+  assert.equal(linked.text, "𝒳.a.go");
+  assert.equal(linked.target, "𝒳.a.go");
+  assert.equal(linked.link.target, "𝒳.md#𝒳.a.go");
+  assert.equal(linked.link.path, "𝒳.md");
+  const start = lineStart + line.indexOf("[𝒳.a.go]") + 1;
+  assert.deepEqual(linked.span, {
+    start: { offset: start, line: 6, col: colOf("[𝒳.a.go]") + 1 },
+    end: { offset: start + "𝒳.a.go".length, line: 6, col: colOf("[𝒳.a.go]") + 1 + [..."𝒳.a.go"].length },
+  });
+
+  const o = keylang(dir, ["check", "."]);
+  const found = o.stdout.split("\n").filter((l) => / K\d{3} /.test(l));
+  assert.deepEqual(found.map((l) => l.replace(/ K(\d{3}) .*/, " K$1")), ["rules.md:3:21: K001", "rules.md:4:9: K005", "rules.md:5:9: K005", "rules.md:6:9: K005"], o.stdout);
+  assert.match(o.stdout, /rules\.md:3:21: K001 dangling reference `𝒳\.zz`/);
+  assert.match(o.stdout, /rules\.md:4:9: K005 malformed link, expected `\[id\]\(href\)`/);
+  assert.match(o.stdout, /rules\.md:5:9: K005 expected an ID as the link text, found `не id`/);
+  assert.match(o.stdout, /rules\.md:6:9: K005 malformed link, expected `\[id\]\(href\)`/);
+});
+
+test("fmt keeps a link reference a link and a bare ID bare, idempotently", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-link-fmt-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "map.md"), LINKED_MAP.replace("calls 𝒳.a.b, [", "calls   𝒳.a.b ,["));
+  assert.equal(keylang(dir, ["fmt", "--check", "map.md"]).status, 1);
+  assert.equal(keylang(dir, ["fmt", "map.md"]).status, 0);
+  assert.equal(readFileSync(join(dir, "map.md"), "utf8"), LINKED_MAP);
+  assert.equal(keylang(dir, ["fmt", "--check", "map.md"]).status, 0);
+});
+
 test("fmt refuses bad indentation", () => {
   const o = keylang(root, ["fmt", "--check", "tests/fixtures/diagnostics/indent.md"]);
   assert.equal(o.status, 1);
