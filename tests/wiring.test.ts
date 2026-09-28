@@ -181,6 +181,47 @@ test("wire: a default export, an alias, IDs that collapse to one name (`memory-d
   assert.equal(keylang(dir, ["wire", "--check"]).status, 0);
 });
 
+test("wire: a static method is a factory or a decorator called on its class, a default-exported class included; the file type-checks and runs", (t) => {
+  const dir = copy(t);
+  writeFileSync(
+    join(dir, "src/infra/pool.ts"),
+    [
+      'import { log, type Db } from "./db.ts";',
+      "",
+      "export default class Pool {",
+      "  static open(): Db {",
+      '    log.push("init pool");',
+      '    return { query: (sql) => `pool(${sql})`, dispose: () => void log.push("dispose pool") };',
+      "  }",
+      "",
+      "  static wrap(inner: Db): Db {",
+      "    return { query: (sql) => `pooled(${inner.query(sql)})`, dispose: () => inner.dispose() };",
+      "  }",
+      "",
+      "  constructor() {",
+      '    log.push("new pool");',
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(dir, "keylang/wiring.md"),
+    ["# wiring", "", "- wire app.purchase.createPurchase", "  - store domain.store.Store", "- wire domain.store.Store", "  - db infra.pool.Pool.open", "    - compose infra.pool.Pool.wrap", "- wire infra.pool.Pool", ""].join("\n"),
+  );
+  assert.equal(keylang(dir, ["check"]).status, 0);
+  const o = keylang(dir, ["wire"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  const text = readFileSync(join(dir, "keylang.gen.ts"), "utf8");
+  assert.match(text, /^import infra_pool_Pool, \{ default as infra_pool_Pool_open, default as infra_pool_Pool_wrap \} from "\.\/src\/infra\/pool\.ts";$/m);
+  assert.match(text, /track\(await infra_pool_Pool_open\.open\(\)\)/);
+  assert.match(text, /infra_pool_Pool_wrap\.wrap\(await build_infra_pool_Pool_open\(\)\)/);
+  const types = run(dir, tsc, ["-p", "."]);
+  assert.equal(types.status, 0, types.stdout);
+  writeFileSync(join(dir, "run.ts"), RUNNER);
+  assert.equal(run(dir, "run.ts", []).stdout.trim(), "init pool → init store → new pool → pooled(pool(insert)) → dispose pool");
+});
+
 test("wire: under nodenext a JS source keeps `.js` and `.mts` becomes `.mjs`; the emitted file loads in Node", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "keylang-wiring-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -240,7 +281,7 @@ test("wiring: K302 for compose on a module, a type or a class, a method, an unex
   assert.match(o.stdout, /wiring\.md:10:5: K302 compose `domain\.store\.Store` is a class; a decorator must be a fn of one argument/);
   assert.match(o.stdout, /wiring\.md:11:1: K302 wire `infra\.hidden\.hidden` is not exported by src\/infra\/hidden\.ts/);
   assert.match(o.stdout, /wiring\.md:12:1: K302 wire `infra\.py_db\.create_db` is python code \(src\/infra\/py_db\.py\); `keylang wire` generates TypeScript/);
-  assert.match(o.stdout, /wiring\.md:13:1: K302 wire `domain\.store\.Store\.save` is a method of the class `domain\.store\.Store`/);
+  assert.match(o.stdout, /wiring\.md:13:1: K302 wire `domain\.store\.Store\.save` is an instance method of the class `domain\.store\.Store`/);
   assert.match(o.stdout, /wiring\.md:7:3: K102 divergence: wiring `domain\.store\.Store` depends on `infra\.db\.createDb`, which is denied by `deny domain infra` \(keylang\/rules\.md:3\)/);
   const w = keylang(dir, ["wire"]);
   assert.equal(w.status, 1);

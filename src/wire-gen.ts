@@ -49,13 +49,18 @@ export function generateWire(input: WireInput): string {
   const ext = importExtension(input.root);
   const lines: string[] = [WIRE_MARKER, ""];
   const byFile = new Map<string, { default: string | null; named: { name: string; local: string }[] }>();
+  // A static method is called on its class, under the method's own local name for the class.
+  const members = new Map<string, string>();
+  const callee = (id: string): string => `${name(id).local}${members.has(id) ? memberAccess(members.get(id)!) : ""}`;
   for (const id of imports) {
     if (!snapshot.nodes[id]?.file) throw new Error(`\`${id}\` is not in the snapshot`);
     // `check` reports the same as K302: the generator never writes an import that cannot load.
     const found = wireImport(view, id);
     if ("problem" in found) throw new Error(`\`${id}\` ${found.problem}`);
+    if (found.member !== undefined) members.set(id, found.member);
     const entry = byFile.get(found.file) ?? { default: null, named: [] };
-    if (found.name === "default") entry.default = name(id).local;
+    // One default binding per import line; a second one (a class and its static method) is `default as`.
+    if (found.name === "default" && entry.default === null) entry.default = name(id).local;
     else entry.named.push({ name: found.name, local: name(id).local });
     byFile.set(found.file, entry);
   }
@@ -100,8 +105,8 @@ export function generateWire(input: WireInput): string {
   for (const id of order.order) {
     const w = byId.get(id);
     const n = name(id);
-    const args = w && w.deps.length > 0 ? `{ ${w.deps.map((d) => `${key(d.name)}: ${depValue(d, name)}`).join(", ")} }` : "";
-    const call = classes.has(id) ? `new ${n.local}(${args})` : `${n.local}(${args})`;
+    const args = w && w.deps.length > 0 ? `{ ${w.deps.map((d) => `${key(d.name)}: ${depValue(d, name, callee)}`).join(", ")} }` : "";
+    const call = classes.has(id) ? `new ${n.local}(${args})` : `${callee(id)}(${args})`;
     lines.push(`  let ${n.cell}: ReturnType<typeof ${n.build}> | undefined;`);
     lines.push(`  const ${n.build} = async () => track(await ${call});`);
     lines.push(`  const ${n.builder} = () => (${n.cell} ??= ${n.build}());`);
@@ -127,12 +132,17 @@ export function generateWire(input: WireInput): string {
 }
 
 /** The value of one dependency: a `when` branch chosen from `env` (else the default), wrapped by `compose` innermost first. */
-function depValue(d: WireDep, name: (id: string) => Names): string {
+function depValue(d: WireDep, name: (id: string) => Names, callee: (id: string) => string): string {
   let value = `await ${name(d.target).builder}()`;
   for (const c of [...d.when].reverse()) value = `env[${JSON.stringify(c.env)}] === ${JSON.stringify(c.value)} ? await ${name(c.target).builder}() : ${value}`;
   if (d.when.length > 0) value = `(${value})`;
-  for (const c of d.compose) value = `${name(c.target).local}(${value})`;
+  for (const c of d.compose) value = `${callee(c.target)}(${value})`;
   return value;
+}
+
+/** `.name`, or `["name"]` for a member name that is not an identifier. */
+function memberAccess(member: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(member) ? `.${member}` : `[${JSON.stringify(member)}]`;
 }
 
 /** A class is a module node with the class marker. */

@@ -32,15 +32,20 @@ export interface Wire {
 export interface WiringView {
   /** The kind of every node, a class told apart as `class`. */
   kinds: ReadonlyMap<string, string>;
-  nodes: Readonly<Record<string, { file: string | null }>>;
+  nodes: Readonly<Record<string, { file: string | null; static?: true; name?: string }>>;
   /** The public exports table: `symbol` is the ID an exported name stands for. */
   exports: readonly { module: string; name: string; symbol: string | null; form?: string }[];
 }
 
-/** How the generated file imports a factory: from its file, by its exported name (`default` for a default export). */
+/**
+ * How the generated file imports a factory: from its file, by its exported
+ * name (`default` for a default export). A static method is called on its
+ * imported class: `member` is its name as written.
+ */
 export interface WireImport {
   file: string;
   name: string;
+  member?: string;
 }
 
 const CONDITION = /^env\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\S+)$/;
@@ -142,12 +147,26 @@ export function wireImport(view: WiringView, id: string): WireImport | { problem
   const language = languageOf(file);
   if (language !== "typescript" && language !== "javascript") return { problem: `is ${language ?? "not TS/JS"} code (${file}); \`keylang wire\` generates TypeScript and imports TS/JS only` };
   const parent = id.slice(0, id.lastIndexOf("."));
-  if (view.kinds.get(parent) === "class") return { problem: `is a method of the class \`${parent}\`; wire a module-level fn or the class` };
   const own = id.slice(id.lastIndexOf(".") + 1);
-  const rows = view.exports.filter((row) => row.module === parent && row.symbol === id);
+  if (view.kinds.get(parent) === "class") {
+    // A static method is a factory called on its class; an instance method needs an instance nobody built.
+    if (view.nodes[id]?.static !== true) return { problem: `is an instance method of the class \`${parent}\`; wire a module-level fn, a static method or the class` };
+    const cls = exportedAs(view, parent);
+    if (cls === null) return { problem: `is a static method of \`${parent}\`, which ${file} does not export; the generated file cannot import it` };
+    return { file, name: cls, member: view.nodes[id]?.name ?? own };
+  }
+  const name = exportedAs(view, id);
+  if (name === null) return { problem: `is not exported by ${file}; the generated file cannot import it` };
+  return { file, name };
+}
+
+/** The name a symbol is imported by from its own module (`default` for a default export), or null when it is not exported. */
+function exportedAs(view: WiringView, id: string): string | null {
+  const module = id.slice(0, id.lastIndexOf("."));
+  const own = id.slice(id.lastIndexOf(".") + 1);
+  const rows = view.exports.filter((row) => row.module === module && row.symbol === id);
   const row = rows.find((r) => r.form === undefined && r.name === own) ?? rows.find((r) => r.form === "alias") ?? rows.find((r) => r.form === "default");
-  if (!row) return { problem: `is not exported by ${file}; the generated file cannot import it` };
-  return { file, name: row.form === "default" ? "default" : row.name };
+  return row === undefined ? null : row.form === "default" ? "default" : row.name;
 }
 
 /**
