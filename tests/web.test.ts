@@ -366,3 +366,92 @@ test("web: Ctrl+R records from the browser's microphone over the same socket; th
   assert.equal(heard[0]!.format, "wav");
   assert.equal(heard[0]!.bytes, 44 + 3200 * 2 * 2, "a WAV header and both chunks");
 });
+
+// ---------- review 2026-09-28 (full, session): web ----------
+
+/** A raw HTTP exchange: what a client that does not speak through `URL` sends, and the status line it gets back. */
+function rawRequest(url: URL, text: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(Number(url.port), url.hostname, () => socket.write(text));
+    let answer = "";
+    socket.on("data", (chunk: Buffer) => (answer += chunk.toString()));
+    socket.on("end", () => resolve(answer.split("\r\n")[0] ?? ""));
+    socket.on("error", reject);
+  });
+}
+
+test("web: a request whose target is no URL gets 400, and the server keeps running", async (t) => {
+  const repo = checkoutRepo(t);
+  const { url, child } = await startWeb(t, repo);
+  assert.equal(await rawRequest(url, `GET //[ HTTP/1.1\r\nHost: ${url.host}\r\nConnection: close\r\n\r\n`), "HTTP/1.1 400 Bad Request");
+  const upgrade = `GET //[ HTTP/1.1\r\nHost: ${url.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: keylang, keylang.t.${tokenOf(url)}\r\n\r\n`;
+  assert.equal(await rawRequest(url, upgrade), "HTTP/1.1 400 Bad Request");
+  await new Promise((done) => setTimeout(done, 100));
+  assert.equal(child.exitCode, null, "the server is still running");
+  assert.equal((await status(url, "/")).status, 200);
+});
+
+test("web: a megabyte input frame in one session leaves the server answering the others", async (t) => {
+  const repo = checkoutRepo(t);
+  const { url } = await startWeb(t, repo);
+  const flood = new Client(url, "session-flood", 100, 24);
+  const other = new Client(url, "session-other", 100, 24);
+  t.after(() => flood.close());
+  t.after(() => other.close());
+  await Promise.all([flood.opened, other.opened]);
+  await waitFor(() => /✗ 0 /.test(flood.vt.lines().at(-1) ?? "") && /✗ 0 /.test(other.vt.lines().at(-1) ?? ""), "the first analysis of both");
+  // Within the 1 MiB message limit: a million keys typed in the view, the frame the review sent.
+  const frames = other.raw.length;
+  flood.input("a".repeat(1_000_000));
+  const started = Date.now();
+  other.input(KEY.down);
+  await waitFor(() => other.raw.length > frames, "a frame for the other session");
+  await waitFor(() => flood.vt.text().includes("paste: press i to edit first"), "the flooding session's answer");
+  assert.ok(Date.now() - started < 10000, `the server answered after ${Date.now() - started} ms`);
+});
+
+test("web: a session that cannot be opened says so and closes with 4001", async (t) => {
+  const repo = checkoutRepo(t);
+  const server = await serveWeb({
+    root: repo,
+    port: 0,
+    analyzer: () => {
+      throw new Error("no analysis here");
+    },
+  });
+  t.after(() => server.close());
+  const client = new Client(new URL(server.url), "session-broken", 80, 24);
+  t.after(() => client.close());
+  await client.opened;
+  await waitFor(() => client.closed, "the close");
+  assert.equal(client.closeCode, 4001);
+  assert.match(client.vt.text(), /keylang: cannot open a session: no analysis here/);
+});
+
+test("web: a tab closed while it records ends the recording instead of leaving it waiting", async (t) => {
+  const repo = checkoutRepo(t);
+  const config = join(repo, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), voice: { engine: "openrouter" } }));
+  const saved = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test";
+  t.after(() => {
+    if (saved === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = saved;
+  });
+  const server = await serveWeb({ root: repo, port: 0 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const first = new Client(url, "session-mic-close", 120, 30);
+  await first.opened;
+  await waitFor(() => /✗ 0 /.test(first.vt.lines().at(-1) ?? ""), "the first analysis");
+  first.input("i");
+  first.input("\x12");
+  await waitFor(() => first.controls.some((message) => message.type === "mic" && message.on === true), "the page asked for the microphone");
+  // The tab goes away without `audio-end`.
+  first.close();
+  await waitFor(() => first.closed, "the close");
+  const again = new Client(url, "session-mic-close", 120, 30);
+  t.after(() => again.close());
+  await again.opened;
+  await waitFor(() => again.vt.text().includes("voice: the page closed during the recording"), "the recording ended");
+});

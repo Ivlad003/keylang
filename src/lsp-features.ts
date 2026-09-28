@@ -439,7 +439,10 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   const indent = (item?.[1] ?? argument?.[1] ?? /^(\s*)/.exec(before)?.[1] ?? "").length;
   const parent = enclosing(doc, position.line + 1, indent + 1);
   // What is typed of the word under completion: back to a space or a comma, dots included.
-  const typed = /[^\s,]*$/.exec(before)?.[0] ?? "";
+  // A scan back from the cursor, not `/[^\s,]*$/`, which retries from every column of a long line.
+  let wordStart = before.length;
+  while (wordStart > 0 && !/[\s,]/.test(before[wordStart - 1]!)) wordStart--;
+  const typed = before.slice(wordStart);
   const range: LspRange = { start: { line: position.line, character: position.character - typed.length }, end: { line: position.line, character: position.character } };
   const replacing = (label: string): Pick<CompletionItem, "filterText" | "textEdit"> => ({ filterText: label, textEdit: { range, newText: label } });
   if (item) {

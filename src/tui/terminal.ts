@@ -1,11 +1,15 @@
 // `keylang` in a terminal: raw stdin, the alternate screen, SGR mouse, and
 // `$VISUAL` / `$EDITOR` for jumps into code. The screen is restored on every
-// exit path, including a crash.
+// exit path, including a crash, and `runTerminal` then returns a contract
+// exit code to `main` (0 for a quit or a signal, 2 for a crash); it never
+// ends the process itself. While the screen belongs to someone else — a
+// terminal `$EDITOR`, or the shell after `Ctrl+Z` — the session's surface is
+// detached, so neither a finished analysis nor a resize draws over it.
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { App } from "./app.ts";
+import { App, type Surface } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { analyze } from "../analyze.ts";
 import { ENTER, LEAVE } from "./screen.ts";
@@ -52,106 +56,169 @@ export function splitCommand(value: string, exists: (path: string) => boolean = 
   return words;
 }
 
-/** Exit codes after a signal follow the shell: 128 + its number. */
-const SIGNAL_NUMBER: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGTERM: 15 };
+/** The terminal's input: a TTY in raw mode, or a stand-in in a test. */
+export interface TerminalInput {
+  readonly isTTY?: boolean;
+  setRawMode?(raw: boolean): unknown;
+  setEncoding(encoding: BufferEncoding): unknown;
+  on(event: "data", listener: (chunk: string) => void): unknown;
+  off(event: "data", listener: (chunk: string) => void): unknown;
+  pause(): unknown;
+  resume(): unknown;
+}
 
-export async function runTerminal(root: string): Promise<number> {
-  const stdin = process.stdin;
-  const stdout = process.stdout;
+export interface TerminalOutput {
+  readonly columns?: number;
+  readonly rows?: number;
+  write(text: string): unknown;
+  on(event: "resize", listener: () => void): unknown;
+  off(event: "resize", listener: () => void): unknown;
+}
+
+export type TerminalSignal = "SIGTERM" | "SIGHUP" | "SIGINT" | "SIGQUIT" | "SIGTSTP" | "SIGCONT";
+
+/** What the terminal session needs from its process; `processHost()` is the real one. */
+export interface TerminalHost {
+  stdin: TerminalInput;
+  stdout: TerminalOutput;
+  stderr(text: string): void;
+  env: NodeJS.ProcessEnv;
+  /** Delivers signals and crashes (an uncaught exception or rejection) until the returned function is called. */
+  listen(onSignal: (signal: TerminalSignal) => void, onCrash: (error: unknown) => void): () => void;
+  /** Stops the process until SIGCONT: what `Ctrl+Z` does once the screen is restored. */
+  suspend(): void;
+}
+
+const SIGNALS: readonly TerminalSignal[] = ["SIGTERM", "SIGHUP", "SIGINT", "SIGQUIT", "SIGTSTP", "SIGCONT"];
+
+export function processHost(): TerminalHost {
+  return {
+    stdin: process.stdin,
+    stdout: process.stdout,
+    stderr: (text) => process.stderr.write(text),
+    env: process.env,
+    listen: (onSignal, onCrash) => {
+      for (const signal of SIGNALS) process.on(signal, onSignal);
+      process.on("uncaughtException", onCrash);
+      process.on("unhandledRejection", onCrash);
+      return () => {
+        for (const signal of SIGNALS) process.off(signal, onSignal);
+        process.off("uncaughtException", onCrash);
+        process.off("unhandledRejection", onCrash);
+      };
+    },
+    suspend: () => process.kill(process.pid, "SIGSTOP"),
+  };
+}
+
+export async function runTerminal(root: string, host: TerminalHost = processHost()): Promise<number> {
+  const { stdin, stdout } = host;
   const worker = new SnapshotWorker();
   let finish: (code: number) => void = () => {};
   const done = new Promise<number>((resolve) => (finish = resolve));
-  const restore = (): void => {
-    stdout.write(LEAVE);
-    if (stdin.isTTY) stdin.setRawMode(false);
+  let finished = false;
+  const end = (code: number): void => {
+    if (finished) return;
+    finished = true;
+    finish(code);
   };
+  const size = (): [number, number] => [stdout.columns ?? 80, stdout.rows ?? 24];
   const app = new App({
     root,
-    cols: stdout.columns ?? 80,
-    rows: stdout.rows ?? 24,
+    cols: size()[0],
+    rows: size()[1],
     analyzer: (request) => analyze({ ...request, generate: worker.generate }),
-    onQuit: () => finish(0),
+    onQuit: () => end(0),
   });
   const onData = (chunk: string): void => app.input(chunk);
-  const onResize = (): void => app.resize(stdout.columns ?? 80, stdout.rows ?? 24);
-  const onCrash = (error: unknown): void => {
-    restore();
-    process.stderr.write(`keylang: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
-    process.exit(2);
+  const onResize = (): void => app.resize(...size());
+
+  /** Whether the TUI has the screen: raw mode, the alternate screen, the mouse. */
+  let shown = false;
+  const enter = (): void => {
+    if (stdin.isTTY) stdin.setRawMode?.(true);
+    stdout.write(ENTER);
+    shown = true;
+  };
+  const leave = (): void => {
+    if (!shown) return;
+    stdout.write(LEAVE);
+    if (stdin.isTTY) stdin.setRawMode?.(false);
+    shown = false;
+  };
+  // `$EDITOR` or a stop has the screen: nothing is read (a flowing stdin would take the editor's keys)
+  // and nothing is drawn; taking it back repaints the whole frame at the current size.
+  let away: "editor" | "stopped" | null = null;
+  const handOver = (reason: "editor" | "stopped"): void => {
+    away = reason;
+    app.detach();
+    stdin.off("data", onData);
+    stdin.pause();
+    leave();
+  };
+  const takeBack = (): void => {
+    away = null;
+    enter();
+    stdin.on("data", onData);
+    stdin.resume();
+    app.attach(surface, ...size());
   };
   const openEditor = async (abs: string, line: number): Promise<void> => {
-    const command = editorCommand(process.env, abs, line);
+    const command = editorCommand(host.env, abs, line);
     if (!command) return;
     if (!command.wait) {
       spawn(command.command, command.args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
       return;
     }
-    // Removing the listener is not enough: a flowing stdin keeps reading and
-    // would take keys meant for the editor. Paused, it leaves the TTY alone.
-    stdin.off("data", onData);
-    stdin.pause();
-    restore();
-    editing = true;
+    if (away !== null || finished) return;
+    handOver("editor");
     await new Promise<void>((resolve) => {
       const child = spawn(command.command, command.args, { stdio: "inherit" });
       child.on("exit", () => resolve());
       child.on("error", () => resolve());
     });
-    editing = false;
-    if (finished) return;
-    enter();
-    stdin.on("data", onData);
-    stdin.resume();
+    if (finished || away !== "editor") return;
+    takeBack();
   };
-  const enter = (): void => {
-    if (stdin.isTTY) stdin.setRawMode(true);
-    stdout.write(ENTER);
+  const surface: Surface = { kind: "terminal", write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}) };
+
+  const onSignal = (signal: TerminalSignal): void => {
+    if (signal === "SIGTSTP") {
+      // With the editor in front, it stops along with keylang and the screen is the editor's to restore.
+      if (away === null) handOver("stopped");
+      host.suspend();
+      return;
+    }
+    if (signal === "SIGCONT") {
+      if (away === "stopped" && !finished) takeBack();
+      return;
+    }
+    // Ctrl+C and Ctrl+\ typed in the editor reach this process too: they belong to the editor.
+    if (away === "editor" && (signal === "SIGINT" || signal === "SIGQUIT")) return;
+    // A deliberate stop (kill, a closed terminal): the screen is restored below and the session ends like `q`.
+    end(0);
   };
-  // A signal must not leave the terminal in raw mode on the alternate screen.
-  const onTerminate = (signal: NodeJS.Signals): void => {
-    restore();
-    worker.close();
-    process.exit(128 + (SIGNAL_NUMBER[signal] ?? 15));
+  const onCrash = (error: unknown): void => {
+    // Leave first, so the message lands on the normal screen, not on the alternate one that disappears.
+    leave();
+    host.stderr(`keylang: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
+    end(2);
   };
-  const onStop = (): void => {
-    restore();
-    process.once("SIGCONT", onContinue);
-    process.kill(process.pid, "SIGSTOP");
-  };
-  const onContinue = (): void => {
-    if (editing || finished) return;
-    enter();
-    app.redraw();
-  };
-  let editing = false;
-  let finished = false;
+
   stdin.setEncoding("utf8");
   enter();
-  process.on("uncaughtException", onCrash);
-  process.on("unhandledRejection", onCrash);
-  process.on("SIGTERM", onTerminate);
-  process.on("SIGHUP", onTerminate);
-  process.on("SIGQUIT", onTerminate);
-  process.on("SIGINT", onTerminate);
-  process.on("SIGTSTP", onStop);
+  const unlisten = host.listen(onSignal, onCrash);
   stdin.on("data", onData);
   stdout.on("resize", onResize);
   stdin.resume();
-  app.attach({ kind: "terminal", write: (ansi) => stdout.write(ansi), ...(editorCommand(process.env, "", 1) ? { openEditor } : {}) }, stdout.columns ?? 80, stdout.rows ?? 24);
+  app.attach(surface, ...size());
   const code = await done;
-  finished = true;
-  process.off("SIGTERM", onTerminate);
-  process.off("SIGHUP", onTerminate);
-  process.off("SIGQUIT", onTerminate);
-  process.off("SIGINT", onTerminate);
-  process.off("SIGTSTP", onStop);
-  process.off("SIGCONT", onContinue);
+  unlisten();
   stdin.off("data", onData);
   stdout.off("resize", onResize);
-  process.off("uncaughtException", onCrash);
-  process.off("unhandledRejection", onCrash);
   stdin.pause();
-  restore();
+  app.close();
+  leave();
   worker.close();
   return code;
 }

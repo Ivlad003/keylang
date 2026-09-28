@@ -32,6 +32,8 @@ export interface Buffer {
   /** Parsed `text`, for highlighting and positions while the analysis catches up. */
   doc: Document | null;
   undo: { text: string; cursor: Cursor }[];
+  /** Bumped by every change of `text` (`setText`): work that finishes later checks it is still the text it was made for. */
+  version: number;
 }
 
 export interface Hover {
@@ -57,12 +59,19 @@ export interface MergeState {
   path: string;
   /** `proposal`: a spec under `.keylang/proposals/`; `code`: a source file there (`spec-to-code`); `text-to-spec`: from `Ctrl+G`. */
   origin: "proposal" | "code" | "text-to-spec";
+  /** The mode the merge was started from; `w` and `Esc` return there. */
+  from: Mode;
   base: string[];
   /**
    * `proposal`: the file on disk when the merge began (null: it did not
    * exist). A different file at `w` is a concurrent change; nothing is written.
    */
   disk: string | null;
+  /**
+   * The proposal file when the merge began: its identity. A different file at
+   * `w` was rewritten meanwhile (by an agent); nothing is written. Null for `Ctrl+G`.
+   */
+  proposal: string | null;
   hunks: Hunk[];
   decisions: Decision[];
   /** Decisions in the order they were made, with the one each replaced, for `u`. */
@@ -78,8 +87,12 @@ export interface LastMerge {
   after: string;
   /** Disk text before the merge (null: no file) and after it, when the merge wrote the disk. */
   disk: { before: string | null; after: string } | null;
-  /** The consumed proposal, restored by `u`. */
-  proposal: { abs: string; text: string } | null;
+  /**
+   * The proposal file before the merge and what the merge left there (null:
+   * removed, every hunk decided). `u` restores `before` only while the file
+   * is still `after`; a newer proposal written since is kept.
+   */
+  proposal: { abs: string; before: string; after: string | null } | null;
   /** A source file: no buffer holds it, so `u` checks the disk only. */
   code?: true;
 }
@@ -130,8 +143,11 @@ export interface State {
   lastMerge: LastMerge | null;
   /** `shown`: ms timestamp, for the time to a decision in `.keylang/stats.json`. */
   completion: { items: CompletionItem[]; index: number; from: number; shown?: number } | null;
-  /** A grey next line from the agent on `line`: `Tab` takes `variants[index]`, `Alt+]` the next, `Esc` drops it. */
-  ghost: { line: number; variants: string[]; index: number; shown: number } | null;
+  /**
+   * A grey next line from the agent on `line` of the buffer `path` at `version`:
+   * `Tab` takes `variants[index]` while that text is still there, `Alt+]` the next, `Esc` drops it.
+   */
+  ghost: { path: string; version: number; line: number; variants: string[]; index: number; shown: number } | null;
   /** Lines selected with Shift+arrows in the editor: anchor line. */
   selection: number | null;
   prompt: Prompt | null;

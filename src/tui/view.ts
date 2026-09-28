@@ -6,13 +6,14 @@ import { contextPack } from "../agent-context.ts";
 import { explainCode } from "../explain.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
-import { renderMarkdown } from "./markdown.ts";
+import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { Buffer, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
-import { graphemes, padWidth, stringWidth } from "./width.ts";
+import { bufferLines, lineLayout } from "./buffer.ts";
+import { clusters, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
 
 export interface Rect {
   x: number;
@@ -55,7 +56,7 @@ export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showN
 export type EditorRow = { kind: "line"; line: number } | { kind: "detail"; line: number };
 
 export function lineCount(buffer: Buffer): number {
-  return buffer.text.split("\n").length;
+  return bufferLines(buffer).length;
 }
 
 export function gutterWidth(buffer: Buffer): number {
@@ -74,20 +75,39 @@ export function editorRows(state: State, buffer: Buffer, height: number): Editor
   return rows;
 }
 
-/** Draws `text` from grapheme `from`; a cluster (a letter with its marks, a ZWJ emoji) takes the style of its first code point. */
-function drawRuns(grid: Grid, x: number, y: number, width: number, text: string, runs: readonly Run[], from: number, base: Style): void {
-  const clusters = graphemes(text);
+/**
+ * Draws clusters with their code-point positions until `width` cells are
+ * used; a cluster (a letter with its marks, a ZWJ emoji) takes the style of
+ * its first code point. Only what fits is visited, however long the line.
+ */
+function drawRuns(grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style): void {
   let col = x;
+  for (const { cluster, point } of clusters) {
+    if (col >= x + width) break;
+    let style = base;
+    for (const run of runs) if (point >= run.start && point < run.end) style = { ...base, ...run.style };
+    col += grid.write(col, y, cluster, style, x + width - col);
+  }
+}
+
+/** The clusters of a laid-out line from cluster `from` on. */
+function* fromLayout(line: LineLayout, from: number): Generator<{ cluster: string; point: number }> {
+  for (let i = from; i < line.clusters.length; i++) yield { cluster: line.clusters[i]!, point: line.points[i]! };
+}
+
+/** The clusters of `text` from the start, segmented only as far as they are read. */
+function* fromText(text: string): Generator<{ cluster: string; point: number }> {
   let point = 0;
-  for (let i = 0; i < clusters.length && col < x + width; i++) {
-    const cluster = clusters[i]!;
-    if (i >= from) {
-      let style = base;
-      for (const run of runs) if (point >= run.start && point < run.end) style = { ...base, ...run.style };
-      col += grid.write(col, y, cluster, style, x + width - col);
-    }
+  for (const cluster of clusters(text)) {
+    yield { cluster, point };
     point += [...cluster].length;
   }
+}
+
+/** Cells between clusters `from` and `to` of a laid-out line (0 when `to` is before `from`). */
+function cellsBetween(line: LineLayout, from: number, to: number): number {
+  const n = line.clusters.length;
+  return Math.max(0, line.cells[Math.min(to, n)]! - line.cells[Math.min(from, n)]!);
 }
 
 function markCell(item: LineEvidence | undefined, stale: boolean): { glyph: string; style: Style } {
@@ -163,7 +183,6 @@ function runsOf(buffer: Buffer, layers: readonly string[]): Map<number, Run[]> {
 function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
-  const lines = buffer.text.split("\n");
   const layers = state.analysis ? [...state.analysis.config.layers.keys()] : [];
   const runs = runsOf(buffer, layers);
   const gutter = gutterWidth(buffer);
@@ -187,31 +206,42 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
     const mark = markCell(evidence.get(row.line + 1), stale);
     grid.write(rect.x, y, mark.glyph, { ...base, ...mark.style });
     grid.write(rect.x + 2, y, String(row.line + 1).padStart(numberWidth), { ...base, fg: THEME.lineNumber.fg! });
-    drawRuns(grid, rect.x + gutter, y, rect.width - gutter, lines[row.line] ?? "", runs.get(row.line + 1) ?? [], state.left, base);
+    drawRuns(grid, rect.x + gutter, y, rect.width - gutter, fromLayout(lineLayout(buffer, row.line), state.left), runs.get(row.line + 1) ?? [], base);
   });
-  if (state.ghost && state.mode === "edit") {
+  if (state.ghost && state.mode === "edit" && state.ghost.path === buffer.path) {
     const rowIndex = state.ghost.line - state.top;
-    const typed = graphemes(lines[state.ghost.line] ?? "");
-    const rest = graphemes(state.ghost.variants[state.ghost.index] ?? "").slice(typed.length).join("");
-    const x = rect.x + gutter + stringWidth(typed.slice(state.left).join(""));
+    const typed = lineLayout(buffer, state.ghost.line);
+    const rest = graphemes(state.ghost.variants[state.ghost.index] ?? "").slice(typed.clusters.length).join("");
+    const x = rect.x + gutter + cellsBetween(typed, state.left, typed.clusters.length);
     const more = state.ghost.variants.length > 1 ? `  (${state.ghost.index + 1}/${state.ghost.variants.length}, Alt+])` : "";
     if (rowIndex >= 0 && rowIndex < rect.height) grid.write(x, rect.y + rowIndex, `${rest}${more}`, { ...THEME.text, ...THEME.cursorLine, fg: 242, italic: true }, rect.x + rect.width - x);
   }
   if (state.mode === "edit" && state.focus === "editor") {
     const rowIndex = state.cursor.line - state.top;
-    const line = graphemes(lines[state.cursor.line] ?? "");
-    const x = rect.x + gutter + stringWidth(line.slice(state.left, state.cursor.col).join(""));
+    const x = rect.x + gutter + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, state.cursor.col);
     if (rowIndex >= 0 && rowIndex < rect.height && x < rect.x + rect.width) grid.cursor = { x, y: rect.y + rowIndex };
   }
+}
+
+/** Reading mode: the rendered rows, the row of the cursor line, and the first row shown. */
+function readRows(state: State, buffer: Buffer, rect: Rect): { rows: ReadRow[]; cursorRow: number; top: number } {
+  const rows = renderMarkdown(buffer.text, rect.width - 3);
+  const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
+  const cursorRow = at === -1 ? rows.length - 1 : at;
+  const top = Math.max(0, Math.min(cursorRow - Math.floor(rect.height / 3), rows.length - rect.height));
+  return { rows, cursorRow, top };
+}
+
+/** The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there. */
+export function readCursorRow(state: State, buffer: Buffer, rect: Rect): number {
+  const { cursorRow, top } = readRows(state, buffer, rect);
+  return Math.max(0, cursorRow - top);
 }
 
 function drawRead(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
-  const rows = renderMarkdown(buffer.text, rect.width - 3);
-  const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
-  const cursorRow = at === -1 ? rows.length - 1 : at;
-  const top = Math.max(0, Math.min(cursorRow - Math.floor(rect.height / 3), rows.length - rect.height));
+  const { rows, top } = readRows(state, buffer, rect);
   for (let i = 0; i < rect.height && top + i < rows.length; i++) {
     const row = rows[top + i]!;
     const y = rect.y + i;
@@ -245,7 +275,7 @@ function drawCode(grid: Grid, state: State, rect: Rect): void {
     grid.fill(rect.x, y, rect.width, 1, base);
     grid.write(rect.x, y, target ? "▶" : " ", { ...base, fg: 75 });
     grid.write(rect.x + 2, y, String(index + 1).padStart(numberWidth), { ...base, fg: THEME.lineNumber.fg! });
-    drawRuns(grid, rect.x + numberWidth + 3, y, rect.width - numberWidth - 3, code.lines[index]!, runs[index] ?? [], 0, base);
+    drawRuns(grid, rect.x + numberWidth + 3, y, rect.width - numberWidth - 3, fromText(code.lines[index]!), runs[index] ?? [], base);
   }
 }
 
@@ -315,7 +345,12 @@ function drawContext(grid: Grid, state: State, rect: Rect): void {
     text: `${item.kind.padEnd(8)} ${item.label} · ${item.tokens}`,
     mark: item.planned ? { glyph: "◇", style: { fg: 141 } } : item.incomplete ? { glyph: "?", style: { fg: 179 } } : null,
   }));
-  drawPanelList(grid, rect, pack ? `CONTEXT · ${pack.tokens} tok · @ add · x drop` : "CONTEXT · analyzing…", entries, state.context.index, state.focus === "context", Math.max(0, state.context.index - rect.height + 2));
+  drawPanelList(grid, rect, pack ? `CONTEXT · ${pack.tokens} tok · @ add · x drop` : "CONTEXT · analyzing…", entries, state.context.index, state.focus === "context", contextTop(state.context.index, rect));
+}
+
+/** First item shown in the context panel: the list scrolls to keep the selected item in view. A click maps rows the same way. */
+export function contextTop(index: number, rect: Rect): number {
+  return Math.max(0, index - rect.height + 2);
 }
 
 function drawFiles(grid: Grid, state: State, rect: Rect): void {
@@ -352,8 +387,7 @@ function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer):
   const visible = completion.items.slice(Math.max(0, completion.index - 7), Math.max(0, completion.index - 7) + 8);
   const offset = Math.max(0, completion.index - 7);
   const width = Math.min(editor.width - 4, Math.max(20, ...visible.map((item) => stringWidth(item.label) + stringWidth(item.detail ?? "") + 5)), 70);
-  const line = graphemes(buffer.text.split("\n")[state.cursor.line] ?? "");
-  const x = Math.min(editor.x + gutterWidth(buffer) + stringWidth(line.slice(state.left, completion.from).join("")), editor.x + editor.width - width);
+  const x = Math.min(editor.x + gutterWidth(buffer) + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, completion.from), editor.x + editor.width - width);
   const rowY = editor.y + state.cursor.line - state.top;
   const height = visible.length + 2;
   const y = rowY + 1 + height <= editor.y + editor.height ? rowY + 1 : Math.max(editor.y, rowY - height);

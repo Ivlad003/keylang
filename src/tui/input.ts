@@ -131,6 +131,9 @@ export class InputDecoder {
     if (first === "\x7f" || first === "\b") return { length: 1, event: key("backspace") };
     if (code === 0) return { length: 1, event: key("space", { ctrl: true }) };
     if (code < 0x20) return { length: 1, event: key(String.fromCharCode(code + 96), { ctrl: true }) };
+    // Printable ASCII before ASCII (or the end) is a cluster of its own: a megabyte typed without
+    // bracketed paste is decoded without segmenting anything.
+    if (code < 0x7f && (text.length === 1 || text.charCodeAt(1) < 0x7f)) return { length: 1, event: key(first === " " ? "space" : first, { shift: first !== first.toLowerCase() }, first) };
     // Only the head is segmented: the whole rest of a long paste on every key would be quadratic.
     const head = text.slice(0, 64);
     const cluster = graphemes(head)[0]!;

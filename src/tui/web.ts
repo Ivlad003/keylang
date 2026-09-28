@@ -181,31 +181,45 @@ export async function serveWeb(options: { root: string; port: number; host?: str
   };
   const authorized = (request: IncomingMessage): boolean => sameSecret(offeredToken(request), token);
 
-  const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
-    const url = new URL(request.url ?? "/", "http://localhost");
+  const serve = (request: IncomingMessage, response: ServerResponse): void => {
+    // A request line the socket accepts may still be no URL (`GET //[`): that is the client's error, not the server's end.
+    const path = pathOf(request.url);
+    if (path === null) return reply(response, 400, "text/plain", "bad request\n");
     if (!allowedHost(request.headers.host)) return reply(response, 421, "text/plain", "unknown host\n");
-    if (url.pathname.startsWith("/assets/")) {
-      const name = url.pathname.slice("/assets/".length) as AssetName;
+    if (path.startsWith("/assets/")) {
+      const name = path.slice("/assets/".length) as AssetName;
       const file = Object.hasOwn(ASSETS, name) ? assetPath(name) : null;
       if (!file) return reply(response, 404, "text/plain", "not found\n");
       return reply(response, 200, ASSETS[name].type, readFileSync(file));
     }
-    if (url.pathname !== "/") return reply(response, 404, "text/plain", "not found\n");
+    if (path !== "/") return reply(response, 404, "text/plain", "not found\n");
     // The page is static and holds no data; everything goes through the socket, which needs the token.
     response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://${request.headers.host}; img-src 'self' data:`);
     return reply(response, 200, "text/html; charset=utf-8", page());
+  };
+
+  const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    // One request failing (an asset that cannot be read) answers 500; the server and its sessions go on.
+    try {
+      serve(request, response);
+    } catch (error) {
+      process.stderr.write(`keylang web: ${error instanceof Error ? error.message : String(error)}\n`);
+      if (!response.headersSent) reply(response, 500, "text/plain", "server error\n");
+      else response.destroy();
+    }
   });
 
-  const reject = (socket: Duplex): void => {
-    socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+  const refuse = (socket: Duplex, status = "403 Forbidden"): void => {
+    socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
   };
 
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     // A reset from the client must not become an uncaught error of the server.
     socket.on("error", () => socket.destroy());
-    const url = new URL(request.url ?? "/", "http://localhost");
+    const path = pathOf(request.url);
+    if (path === null) return refuse(socket, "400 Bad Request");
     const origin = request.headers.origin;
-    if (url.pathname !== "/ws" || !authorized(request) || !allowedHost(request.headers.host) || (origin !== undefined && origin !== `http://${request.headers.host}`)) return reject(socket);
+    if (path !== "/ws" || !authorized(request) || !allowedHost(request.headers.host) || (origin !== undefined && origin !== `http://${request.headers.host}`)) return refuse(socket);
     wss.handleUpgrade(request, socket, head, (connection) => connect(connection));
   });
 
@@ -234,7 +248,14 @@ export async function serveWeb(options: { root: string; port: number; host?: str
       const cols = clampSize(message.cols, 80, MAX_COLS);
       const rows = clampSize(message.rows, 24, MAX_ROWS);
       if (message.type === "hello" && session === null) {
-        session = hello(connection, message.session, cols, rows);
+        try {
+          session = hello(connection, message.session, cols, rows);
+        } catch (error) {
+          // No session could be opened: the tab says why instead of staying blank.
+          const reason = error instanceof Error ? error.message : String(error);
+          connection.send(`\x1b[0m\x1b[2J\x1b[H keylang: cannot open a session: ${reason.replace(/[\x00-\x1f\x7f]/g, " ")}\r\n`);
+          connection.close(CLOSE_ENDED, "no session");
+        }
         return;
       }
       // A connection whose session moved to another tab no longer drives it.
@@ -257,6 +278,9 @@ export async function serveWeb(options: { root: string; port: number; host?: str
       if (!current || current.connection !== connection) return;
       current.connection = null;
       current.app.detach();
+      // A tab closed while it recorded sends no `audio-end`: the recording ends here, not never.
+      current.audio?.end(new Error("voice: the page closed during the recording"));
+      current.audio = null;
       current.timer = setTimeout(() => {
         current.app.close();
         for (const [id, value] of sessions) if (value === current) sessions.delete(id);
@@ -290,7 +314,8 @@ export async function serveWeb(options: { root: string; port: number; host?: str
           const queue = new AudioQueue();
           current.audio = queue;
           socket.send(control({ type: "mic", on: true }));
-          return { chunks: queue.chunks(), stop: () => current.connection?.send(control({ type: "mic", on: false })) };
+          // The page answers "mic off" with `audio-end`; without a page there is nobody to wait for.
+          return { chunks: queue.chunks(), stop: () => (current.connection ? current.connection.send(control({ type: "mic", on: false })) : queue.end()) };
         },
       });
       found = { app, connection: null, timer: null, audio: null };
@@ -347,6 +372,15 @@ export async function serveWeb(options: { root: string; port: number; host?: str
       await closed;
     },
   };
+}
+
+/** The path of a request target, or null when it is not a URL at all. */
+function pathOf(target: string | undefined): string | null {
+  try {
+    return new URL(target ?? "/", "http://localhost").pathname;
+  } catch {
+    return null;
+  }
 }
 
 function reply(response: ServerResponse, status: number, type: string, body: string | Buffer): void {
@@ -440,8 +474,12 @@ function page(): string {
   };
   // Voice (Ctrl+R): 16 kHz mono PCM from getUserMedia, as base64 s16le in "audio" messages.
   let mic = null;
+  // Every "mic" message starts a new generation: a microphone granted after "mic off" (or after a newer
+  // "mic on") belongs to an older one and is released at once instead of recording on.
+  let micGeneration = 0;
   const onControl = async (message) => {
     if (message.type !== "mic") return;
+    const generation = ++micGeneration;
     if (!message.on) {
       if (mic) {
         mic.node.disconnect();
@@ -454,6 +492,10 @@ function page(): string {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+      if (generation !== micGeneration) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const context = new AudioContext({ sampleRate: 16000 });
       const source = context.createMediaStreamSource(stream);
       const node = context.createScriptProcessor(4096, 1, 1);
@@ -470,7 +512,7 @@ function page(): string {
       node.connect(context.destination);
       mic = { stream, context, node };
     } catch (error) {
-      send({ type: "audio-error", data: String(error) });
+      if (generation === micGeneration) send({ type: "audio-error", data: String(error) });
     }
   };
   term.onData((data) => send({ type: "input", data }));

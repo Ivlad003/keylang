@@ -12,6 +12,11 @@ export function graphemes(text: string): string[] {
   return out;
 }
 
+/** The same clusters, segmented only as far as they are read: drawing a long line stops at the screen's edge. */
+export function* clusters(text: string): Generator<string> {
+  for (const { segment } of segmenter.segment(text)) yield segment;
+}
+
 const WIDE: readonly (readonly [number, number])[] = [
   [0x1100, 0x115f],
   [0x2e80, 0x303e],
@@ -84,6 +89,65 @@ export function padWidth(text: string, width: number): string {
   if (w <= width) return text + " ".repeat(width - w);
   const cut = fitWidth(text, width - 1);
   return cut + "…" + " ".repeat(width - 1 - stringWidth(cut));
+}
+
+/** Cells a cluster takes in a `Grid`: a tab is drawn as one blank cell. */
+export function cellWidth(cluster: string): number {
+  return cluster === "\t" ? 1 : graphemeWidth(cluster);
+}
+
+/**
+ * One line cut into clusters once, with prefix sums: the cells, code points
+ * and UTF-16 units before each cluster (index `clusters.length` is the whole
+ * line). Scrolling, drawing and hit-testing then take constant or
+ * logarithmic time per question instead of segmenting the line again.
+ */
+export interface LineLayout {
+  readonly clusters: readonly string[];
+  readonly cells: Uint32Array;
+  readonly points: Uint32Array;
+  readonly units: Uint32Array;
+}
+
+export function layoutLine(line: string): LineLayout {
+  const clusters = graphemes(line);
+  const cells = new Uint32Array(clusters.length + 1);
+  const points = new Uint32Array(clusters.length + 1);
+  const units = new Uint32Array(clusters.length + 1);
+  for (let i = 0; i < clusters.length; i++) {
+    const cluster = clusters[i]!;
+    cells[i + 1] = cells[i]! + cellWidth(cluster);
+    points[i + 1] = points[i]! + [...cluster].length;
+    units[i + 1] = units[i]! + cluster.length;
+  }
+  return { clusters, cells, points, units };
+}
+
+/** The smallest first cluster from `left` on such that clusters `[first, col)` fit in `width` cells. */
+export function scrollToFit(layout: LineLayout, left: number, col: number, width: number): number {
+  let lo = Math.min(left, col);
+  let hi = col;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (layout.cells[col]! - layout.cells[mid]! > width) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** The cluster under cell `x` of a line drawn from cluster `left`; past the end, the end. */
+export function clusterAtCell(layout: LineLayout, left: number, x: number): number {
+  const n = layout.clusters.length;
+  const base = layout.cells[Math.min(left, n)]!;
+  // The first cluster from `left` whose right edge is past `x`.
+  let lo = Math.min(left, n);
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (layout.cells[mid + 1]! - base > x) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
 }
 
 /** Grapheme index of a code-point column in `line` (a column inside a cluster maps to that cluster). */
