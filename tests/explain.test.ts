@@ -199,6 +199,28 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
   assert.match(bad.stderr, /KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds/);
 });
 
+test("explain --llm: an Anthropic request that never answers ends within KEYLANG_LLM_TIMEOUT_MS, retries included", async (t) => {
+  const dir = copy(t);
+  withAgent(dir);
+  let requests = 0;
+  // Accepts the request and never answers: every SDK attempt times out, and the SDK would retry twice.
+  const server = createServer(() => void requests++);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const started = performance.now();
+  const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "k", HOME: dir, KEYLANG_LLM_TIMEOUT_MS: "400" });
+  const elapsed = performance.now() - started;
+  assert.equal(o.status, 2, o.stdout);
+  assert.match(o.stderr, /^keylang: anthropic: no answer within 400 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m);
+  assert.ok(requests >= 1);
+  // Three attempts with back-off between them would take well over a second.
+  assert.ok(elapsed < 1400 + 600, `took ${Math.round(elapsed)} ms`);
+});
+
 test("explain --llm: a module's explanation goes stale when a member changes; code in backticks is not an unknown id; an empty key is no key", async (t) => {
   const dir = copy(t);
   withAgent(dir);

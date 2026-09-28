@@ -52,7 +52,7 @@ export function llmClient(agent: string | null, env: Env = process.env, home: st
     const profile = fromEnv("ANTHROPIC_AUTH_TOKEN") !== undefined || existsSync(join(home, ".config/anthropic"));
     if (key === undefined && !profile) return { missing: "no Anthropic credentials: set ANTHROPIC_API_KEY, write ~/.config/keylang/anthropic.key (mode 0600), or run `ant auth login`" };
     const client = new Anthropic({ timeout, ...(key !== undefined ? { apiKey: key } : {}), ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}) });
-    return { client: { agent, model, complete: (request) => anthropicComplete(client, model, request) } };
+    return { client: { agent, model, complete: (request) => anthropicComplete(client, model, request, timeout) } };
   }
   if (provider === "openrouter") {
     const key = fromEnv("OPENROUTER_API_KEY") ?? readKey(home, "openrouter");
@@ -70,16 +70,27 @@ function timeoutMs(env: Env): number | string {
   return /^[1-9]\d*$/.test(raw) ? Number(raw) : `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
 }
 
-async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest): Promise<string> {
+async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, timeout: number): Promise<string> {
   const fallbacks = FALLBACK_MODELS.test(model);
-  const response = await client.beta.messages.create({
-    model,
-    max_tokens: request.maxTokens,
-    system: request.system,
-    messages: [{ role: "user", content: request.prompt }],
-    // A declined request is re-run server-side on a model chosen for the refusal category.
-    ...(fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-  });
+  // The client's `timeout` bounds one attempt and the SDK retries; the signal bounds the whole call.
+  const signal = AbortSignal.timeout(timeout);
+  let response: Awaited<ReturnType<typeof client.beta.messages.create>>;
+  try {
+    response = await client.beta.messages.create(
+      {
+        model,
+        max_tokens: request.maxTokens,
+        system: request.system,
+        messages: [{ role: "user", content: request.prompt }],
+        // A declined request is re-run server-side on a model chosen for the refusal category.
+        ...(fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+      },
+      { signal },
+    );
+  } catch (error) {
+    if (signal.aborted) throw new Error(`anthropic: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
+    throw error;
+  }
   if (response.stop_reason === "refusal") throw new Error(`${model} declined the request${response.stop_details?.category ? ` (${response.stop_details.category})` : ""}`);
   const text = response.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
