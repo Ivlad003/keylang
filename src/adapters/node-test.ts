@@ -21,6 +21,9 @@ interface TestEvent {
 
 export default async function* keylangReporter(source: AsyncIterable<TestEvent>): AsyncGenerator<string> {
   const root = findRoot(process.cwd());
+  const snapshotOf = async (): Promise<string> => (await generateMap(loadConfig(root))).index.snapshotId;
+  // Taken when the run starts and again when it ends: code changed in between binds the results to no snapshot.
+  const before = snapshotOf();
   const tests: JsonReport["tests"] = [];
   // Suites currently open in each file, by nesting level.
   const open = new Map<string, string[]>();
@@ -40,8 +43,8 @@ export default async function* keylangReporter(source: AsyncIterable<TestEvent>)
     const status: TestStatus = data.skip || data.todo ? "skip" : event.type === "test:pass" ? "pass" : "fail";
     tests.push({ file, ...(suites.length > 0 ? { suite: suites.join(" > ") } : {}), name: data.name, status });
   }
-  // The snapshot of the code the tests ran against; tests do not change sources.
-  const snapshotId = (await generateMap(loadConfig(root))).index.snapshotId;
+  const first = await before;
+  const snapshotId = first === (await snapshotOf()) ? first : null;
   const report: JsonReport = { schemaVersion: REPORT_SCHEMA, snapshotId, runId: runId(), tests };
   const out = resolve(root, process.env.KEYLANG_TEST_REPORT ?? ".keylang/reports/node-test.json");
   mkdirSync(dirname(out), { recursive: true });

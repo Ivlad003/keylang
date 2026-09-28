@@ -1,7 +1,7 @@
 // End-to-end tests: run the `keylang` CLI on examples and fixtures.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -370,7 +370,7 @@ test("snapshot edges name type targets, ambiguity, and unsupported constructs", 
   for (const item of holes) assert.ok(item.line >= 1 && item.col >= 1 && item.endLine >= item.line && item.endCol >= 1);
 });
 
-test("packed tarball runs the CLI from node_modules", (t) => {
+test("packed tarball runs the CLI from node_modules", async (t) => {
   const pack = spawnSync("npm", ["pack", "--json"], { cwd: root, encoding: "utf8" });
   assert.equal(pack.status, 0, pack.stderr);
   const packed = JSON.parse(pack.stdout) as { filename: string }[];
@@ -393,6 +393,8 @@ test("packed tarball runs the CLI from node_modules", (t) => {
   assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-tsx.wasm")));
   assert.ok(names.some((n) => n.endsWith("/dist/wasm/tree-sitter-javascript.wasm")));
   assert.ok(names.some((n) => n.endsWith("/bin/keylang.js")));
+  for (const asset of ["xterm.js", "xterm.css", "addon-fit.js", "xterm.LICENSE"]) assert.ok(names.some((n) => n.endsWith(`/dist/web/${asset}`)), asset);
+  assert.ok(names.some((n) => n.endsWith("/dist/tui/analysis-worker.js")));
   assert.equal(names.some((n) => n.includes("/src/")), false);
   const published = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string; files: string[] };
   assert.ok(published.files.includes("bin"));
@@ -411,6 +413,10 @@ test("packed tarball runs the CLI from node_modules", (t) => {
   assert.equal(version.stdout, `keylang ${published.version}\n`);
   const help = spawnSync(process.execPath, [installedBin, "--help"], { cwd: tmp, encoding: "utf8" });
   assert.equal(help.stdout, keylang(root, ["--help"]).stdout);
+  // The library entry the README documents: `import { parse } from "keylang"`.
+  const api = spawnSync(process.execPath, ["--input-type=module", "-e", 'const k = await import("keylang"); console.log(typeof k.parse)'], { cwd: tmp, encoding: "utf8" });
+  assert.equal(api.stdout, "function\n", api.stderr);
+  assert.doesNotMatch(listing.stdout, /dist\/tui\/websocket\.js/, "prepack starts from an empty dist/");
 
   const localParse = keylang(localRepo, ["parse", "--json", "keylang/rules.md"]);
   const packedParse = spawnSync(process.execPath, [installedBin, "parse", "--json", "keylang/rules.md"], {
@@ -434,6 +440,30 @@ test("packed tarball runs the CLI from node_modules", (t) => {
   const packedIndex = JSON.parse(readFileSync(join(packedRepo, ".keylang/index.json"), "utf8"));
   assert.equal(packedIndex.snapshotId, localIndex.snapshotId);
   assert.equal(packedIndex.schema, localIndex.schema);
+
+  // `keylang web` from the package: xterm.js from dist/web, the snapshot from the dist worker.
+  const web = spawn(process.execPath, [installedBin, "web", "--port", "0"], { cwd: packedRepo, stdio: ["ignore", "pipe", "pipe"] });
+  t.after(() => web.kill("SIGINT"));
+  let out = "";
+  web.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+  const started = Date.now();
+  while (!/keylang web: (\S+)/.test(out)) {
+    assert.ok(Date.now() - started < 10000, "keylang web did not print its URL");
+    await new Promise((done) => setTimeout(done, 20));
+  }
+  const url = new URL(/keylang web: (\S+)/.exec(out)![1]!);
+  const asset = await fetch(new URL("/assets/xterm.js", url));
+  assert.equal(asset.status, 200);
+  assert.ok((await asset.text()).length > 100000);
+  const frames: string[] = [];
+  const socket = new WebSocket(`ws://${url.host}/ws`, ["keylang", `keylang.t.${new URLSearchParams(url.hash.slice(1)).get("t")}`]);
+  socket.onmessage = (event) => frames.push(String(event.data));
+  socket.onopen = () => socket.send(JSON.stringify({ type: "hello", session: "packed-session", cols: 100, rows: 24 }));
+  while (!/✗ 0/.test(frames.join(""))) {
+    assert.ok(Date.now() - started < 20000, `no analysis over the socket: ${frames.join("").slice(-400)}`);
+    await new Promise((done) => setTimeout(done, 20));
+  }
+  socket.close();
 });
 
 test("an incompatible index is rebuilt without a diagnostic", (t) => {
@@ -655,6 +685,146 @@ test("a local binding in any enclosing scope hides the module function", (t) => 
   assert.ok(reasons.includes("domain.order.a8 shadowed by local `save`"), reasons.join("\n"));
   // A method call on a parameter is a call through a local value, not shadowing.
   assert.ok(reasons.includes("domain.order.a5 call through a local value `xs.forEach`"), reasons.join("\n"));
+});
+
+interface IndexEdge {
+  kind: string;
+  source: string;
+  target: string | null;
+  resolution: string;
+  text: string;
+  via?: string;
+  closure?: boolean;
+}
+
+function mapIndex(dir: string): { nodes: Record<string, { kind: string; calls?: string[]; escapes?: { reason: string } }>; edges: IndexEdge[]; coverage: { reason: string; text: string }[] } {
+  const r = keylang(dir, ["map"]);
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8"));
+}
+
+test("class members: arrow fields are fns, field initializers run in the constructor or the static initializer, computed keys are unsupported", (t) => {
+  const code = [
+    'import { later, boot, init, make, hidden, count } from "./lib.ts";',
+    "export class Implicit {",
+    "  private readonly parts = make();",
+    "  static registry = boot();",
+    "  static {",
+    "    init();",
+    "  }",
+    "  handler = () => later();",
+    "  readonly generate = (n: number): number => count(n);",
+    "  [Symbol.iterator]() {",
+    "    return hidden();",
+    "  }",
+    "  get size(): number {",
+    "    return count(1);",
+    "  }",
+    "}",
+    "export class Explicit {",
+    "  private readonly parts = make();",
+    "  handler = () => later();",
+    "  constructor() {",
+    "    init();",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+  const lib = "export function later(): void {}\nexport function boot(): void {}\nexport function init(): void {}\nexport function make(): void {}\nexport function hidden(): void {}\nexport function count(n: number): number { return n; }\n";
+  const dir = mainRepo(t, { "src/a.ts": code, "src/lib.ts": lib }, "- layers main\n");
+  const index = mapIndex(dir);
+  const calls = (id: string): string[] => [...(index.nodes[id]?.calls ?? [])].sort();
+  // No `constructor` in the code: the class still constructs, and the map says what that runs.
+  assert.deepEqual(calls("main.a.Implicit.constructor"), ["main.lib.make"]);
+  assert.deepEqual(calls("main.a.Implicit.static"), ["main.lib.boot", "main.lib.init"]);
+  assert.deepEqual(calls("main.a.Implicit.handler"), ["main.lib.later"]);
+  assert.deepEqual(calls("main.a.Implicit.generate"), ["main.lib.count"]);
+  assert.deepEqual(calls("main.a.Implicit.size"), ["main.lib.count"]);
+  assert.equal(index.nodes["main.a.Implicit.size"]?.escapes?.reason, "an accessor runs on property access");
+  assert.equal(Object.keys(index.nodes).some((id) => id.startsWith("main.a.Implicit._")), false);
+  assert.ok(index.coverage.some((item) => item.reason === "unsupported construct `computed class member`" && item.text.startsWith("[Symbol.iterator]")));
+  // An explicit constructor runs the initializers, never an arrow field's body.
+  assert.deepEqual(calls("main.a.Explicit.constructor"), ["main.lib.init", "main.lib.make"]);
+  assert.deepEqual(calls("main.a.Explicit.handler"), ["main.lib.later"]);
+  const map = readFileSync(join(dir, "keylang/map/main.md"), "utf8");
+  assert.match(map, /- fn \[constructor\]\(\.\.\/\.\.\/src\/a\.ts#L3\)\n\s+- calls main\.lib\.make\n/);
+  assert.match(map, /- fn \[handler\]\(\.\.\/\.\.\/src\/a\.ts#L8\) \(\)\n\s+- calls main\.lib\.later\n/);
+  // A static ok from the constructor to an arrow field's call would be false.
+  writeFileSync(join(dir, "keylang/flows.md"), "# flow build\n\n- trigger main.a.Explicit.constructor\n  - step main.lib.make\n  - step main.lib.later\n");
+  const checked = keylang(dir, ["check"]);
+  assert.match(checked.stdout, /static ok main\.lib\.make: called from main\.a\.Explicit\.constructor/);
+  assert.match(checked.stdout, /static fail main\.lib\.later: absence: no call path from main\.a\.Explicit\.constructor/);
+});
+
+test("a field or a local of a known class resolves its method calls; any other receiver stays a hole", (t) => {
+  const code = [
+    'import { Decoder } from "./decoder.ts";',
+    "export class App {",
+    "  private readonly decoder = new Decoder();",
+    "  private readonly typed: Decoder;",
+    "  private loose: { feed(s: string): void } = { feed() {} };",
+    "  private readonly cache = new Map<string, number>();",
+    "  constructor(private readonly given: Decoder) {",
+    "    this.typed = given;",
+    "  }",
+    "  input(s: string): void {",
+    "    this.decoder.feed(s);",
+    "    this.typed.flush();",
+    "    this.given.reset();",
+    "    this.loose.feed(s);",
+    "    this.cache.get(s);",
+    "  }",
+    "}",
+    "export function run(d: Decoder): void {",
+    "  const local = new Decoder();",
+    "  local.flush();",
+    "  d.reset();",
+    "}",
+    "",
+  ].join("\n");
+  const decoder = "export class Decoder {\n  feed(s: string): void {}\n  flush(): void {}\n  reset(): void {}\n}\n";
+  const index = mapIndex(mainRepo(t, { "src/app.ts": code, "src/decoder.ts": decoder }, "- layers main\n"));
+  const resolved = (source: string): string[] => index.edges.filter((e) => e.kind === "call" && e.source === source && e.resolution === "resolved").map((e) => `${e.text} ${e.target}`).sort();
+  assert.deepEqual(resolved("main.app.App.input"), ["this.decoder.feed main.decoder.Decoder.feed", "this.given.reset main.decoder.Decoder.reset", "this.typed.flush main.decoder.Decoder.flush"]);
+  assert.deepEqual(resolved("main.app.run"), ["Decoder main.decoder.Decoder", "d.reset main.decoder.Decoder.reset", "local.flush main.decoder.Decoder.flush"]);
+  assert.ok(index.edges.some((e) => e.source === "main.app.App.input" && e.text === "this.loose.feed" && e.resolution === "unresolved"));
+  // A method of a global class is an external call, not a hole.
+  assert.equal(index.edges.some((e) => e.text === "this.cache.get"), false);
+});
+
+test("a worker loaded by URL is a module edge, and deleting the worker is reported", (t) => {
+  const files = {
+    "src/cli.ts": 'import { start } from "./pool.ts";\nexport function main(): void {\n  start();\n}\n',
+    "src/pool.ts": [
+      'import { Worker } from "node:worker_threads";',
+      "export function start(): Worker {",
+      '  return new Worker(new URL(import.meta.url.endsWith(".ts") ? "./worker.ts" : "./worker.js", import.meta.url));',
+      "}",
+      "",
+    ].join("\n"),
+    "src/worker.ts": 'import { parentPort } from "node:worker_threads";\nparentPort?.on("message", () => {});\n',
+    "src/hooks.ts": "export async function load(url: string, context: unknown, next: (u: string, c: unknown) => unknown): Promise<unknown> {\n  return next(url, context);\n}\n",
+    "src/trace.ts": 'import { register } from "node:module";\nconst hooks = import.meta.url.endsWith(".ts") ? "./hooks.ts" : "./hooks.js";\nregister(hooks, { parentURL: import.meta.url });\n',
+  };
+  // The worker runs in its own thread, so it stays an entry; the edge now backs the entry.
+  const dir = mainRepo(t, files, "- layers main\n- entry\n  - main.cli\n  - main.trace\n  - main.worker\n");
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const map = readFileSync(join(dir, "keylang/map/main.md"), "utf8");
+  assert.match(map, /- module \[pool\][^\n]*\n(\s+- [^\n]*\n)*?\s+- worker main\.worker\n/);
+  assert.match(map, /- module \[trace\][^\n]*\n(\s+- [^\n]*\n)*?\s+- hooks main\.hooks\n/);
+  const ok = keylang(dir, ["check", "--strict"]);
+  assert.equal(ok.status, 0, ok.stdout);
+  rmSync(join(dir, "src/worker.ts"));
+  const gone = keylang(dir, ["check"]);
+  assert.equal(gone.status, 1, gone.stdout);
+  assert.match(gone.stdout, /keylang\/rules\.md:7:5: K001 dangling reference `main\.worker`/);
+  const mapped = keylang(dir, ["map"]);
+  assert.match(mapped.stderr, /src\/pool\.ts:3: unresolved import `\.\/worker\.ts`/);
+  // Without the entry line the gap still blocks a clean `--strict`: the missing module may be anything.
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- layers main\n- deny main.pool main.cli\n");
+  const strict = keylang(dir, ["check", "--strict"]);
+  assert.equal(strict.status, 1, strict.stdout);
+  assert.match(strict.stdout, /rules\.md:4:1: unverified unresolved import `\.\/worker\.(ts|js)` \(src\/pool\.ts:3:21\)/);
 });
 
 test("exports lists extra public names and a missing one", (t) => {
@@ -964,6 +1134,28 @@ test("@flow check: check reports a denied import without writing the map", (t) =
   }
 });
 
+// The TUI flow of `keylang/flows/tui.md`: one F5 in a session wired as
+// `keylang` wires it, so the snapshot comes from `SnapshotWorker`.
+test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
+  const dir = repoCopy();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const trace = join(root, ".keylang/trace/tui.jsonl");
+  rmSync(trace, { force: true });
+  const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), join(root, "tests/fixtures/tui-session/session.ts"), dir], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "tui", KEYLANG_TRACE_TEST: "tests/cli.test.ts > @flow tui", KEYLANG_TRACE_ROOT: root },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^[0-9a-f]{64}\n$/, "the session got a snapshot");
+  const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
+  assert.equal(events.at(-1)?.event, "run");
+  assert.equal(events.at(-1)?.complete, true);
+  for (const id of ["tui.app.App.input", "tui.input.InputDecoder.feed", "tui.app.App.handle", "tui.app.App.reanalyze", "map.analyze.analyze", "tui.background.SnapshotWorker.generate"]) {
+    assert.ok(events.some((event) => event.event === "start" && event.symbolId === id), id);
+  }
+});
+
 test("the in-repo check flow reports ID, static, tests, and trace separately", () => {
   const checked = keylang(root, ["check", "--format", "json"]);
   const rows = (JSON.parse(checked.stdout) as { results: { criterion: string; area: string; verdict: string; evidence: string }[] }).results;
@@ -975,6 +1167,10 @@ test("the in-repo check flow reports ID, static, tests, and trace separately", (
   }
   // The trace of the @flow test above belongs to this snapshot.
   for (const id of steps) assert.equal(rows.find((row) => row.criterion === "trace" && row.area === id)?.verdict, "ok", id);
+  // The TUI flow: `this.decoder.feed`, the `analyzer` hook's default, and the injected `generate` are static paths.
+  for (const id of ["tui.input.InputDecoder.feed", "tui.app.App.handle", "tui.app.App.reanalyze", "tui.background.SnapshotWorker.generate"]) {
+    assert.equal(rows.find((row) => row.criterion === "static" && row.area === id)?.verdict, "ok", id);
+  }
   assert.ok(rows.some((row) => row.criterion === "tests" && row.area.startsWith("invariant a denied import")));
   const again = keylang(root, ["check", "--format", "json"]);
   assert.equal(again.stdout, checked.stdout);

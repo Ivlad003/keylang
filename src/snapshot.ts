@@ -11,7 +11,7 @@ import type { Gap, Graph, Module } from "./graph.ts";
 
 export const SNAPSHOT_SCHEMA = 4;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.3";
+export const EXTRACTOR_VERSION = "m1.6";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -37,6 +37,19 @@ export interface SnapshotEdge {
   resolution: Resolution;
   provenance: Provenance;
   reason?: string;
+  /**
+   * A call edge that is not a call written in the code: `default` — the default
+   * of a hook (`request.generate ?? generateMap`); `injected` — a value a
+   * resolved caller passes for that hook, at `site`. `keylang check
+   * --static=shape` does not follow them; rules do not see `injected`.
+   */
+  via?: "default" | "injected";
+  /** The local, parameter or field the hook call goes through. */
+  hook?: string;
+  /** `file:line:col` of the call that passes the injected value. */
+  site?: string;
+  /** The call sits in a closure of `source`: whoever holds that function value may run it. */
+  closure?: true;
 }
 
 export interface SnapshotExport {
@@ -82,6 +95,8 @@ export interface SnapshotNode {
   dependents?: string[];
   calls?: string[];
   callers?: string[];
+  /** A fn that code may call without naming it in a call: read as a value, an accessor, or called implicitly. */
+  escapes?: { file: string; line: number; col: number; reason: string };
 }
 
 export interface AnalysisSnapshot {
@@ -136,6 +151,8 @@ export function buildSnapshot(
       grammars,
       config: manifestConfig,
       files: manifestFiles,
+      // `paths`, `references` and declared packages decide edges as much as the sources do.
+      resolution: [...graph.resolverInputs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, text]) => [path, text === null ? null : sha256(text)]),
     }),
   );
 
@@ -159,23 +176,24 @@ export function buildSnapshot(
       const fn: SnapshotNode = {
         kind: "fn",
         layer: m.layer,
-        file: m.path,
+        file: f.file ?? m.path,
         line: f.line,
         col: f.col,
         endLine: f.endLine,
         endCol: f.endCol,
         signature: f.signature,
         exported: f.exported,
-        calls: f.calls.map((c) => c.target),
+        calls: f.calls.filter((c) => c.via !== "injected").map((c) => c.target),
         callers: [],
       };
+      if (f.escapes) fn.escapes = f.escapes;
       nodes[f.id] = fn;
     }
     for (const t of m.types) {
       nodes[t.id] = {
         kind: "type",
         layer: m.layer,
-        file: m.path,
+        file: t.file ?? m.path,
         line: t.line,
         col: t.col,
         endLine: t.endLine,
@@ -213,7 +231,7 @@ export function buildSnapshot(
         source: m.id,
         target: d.target,
         alias: d.alias,
-        file: m.path,
+        file: d.file,
         line: d.line,
         col: d.col,
         endLine: d.endLine,
@@ -229,7 +247,7 @@ export function buildSnapshot(
           kind: "call",
           source: f.id,
           target: c.target,
-          file: m.path,
+          file: f.file ?? m.path,
           line: c.line,
           col: c.col,
           endLine: c.endLine,
@@ -237,6 +255,10 @@ export function buildSnapshot(
           text: c.text,
           resolution: "resolved",
           provenance: "syntactic",
+          ...(c.via ? { via: c.via } : {}),
+          ...(c.hook ? { hook: c.hook } : {}),
+          ...(c.site ? { site: c.site } : {}),
+          ...(c.closure ? { closure: true as const } : {}),
         });
       }
     }
@@ -373,15 +395,16 @@ function cmp(a: string, b: string): number {
 
 export function grammarVersions(): Record<string, string> {
   const require = createRequire(import.meta.url);
-  const version = (name: string): string => {
+  // Literal specifiers: the import graph sees which packages the snapshot id depends on.
+  const version = (load: () => unknown): string => {
     try {
-      return (require(`${name}/package.json`) as { version?: string }).version ?? "unknown";
+      return (load() as { version?: string }).version ?? "unknown";
     } catch {
       return "unknown";
     }
   };
   return {
-    "web-tree-sitter": version("web-tree-sitter"),
-    "@vscode/tree-sitter-wasm": version("@vscode/tree-sitter-wasm"),
+    "web-tree-sitter": version(() => require("web-tree-sitter/package.json")),
+    "@vscode/tree-sitter-wasm": version(() => require("@vscode/tree-sitter-wasm/package.json")),
   };
 }

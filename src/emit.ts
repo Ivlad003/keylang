@@ -7,7 +7,7 @@ export const GENERATED_MARK = "<!-- keylang:generated — не редагува�
 
 /** True when the first non-empty line is a generator marker. The text after `keylang:generated` may vary. */
 export function isGeneratedMap(text: string): boolean {
-  const line = text.split(/\r?\n/).find((l) => l.trim() !== "");
+  const line = text.replace(/^\uFEFF/, "").split(/\r?\n/).find((l) => l.trim() !== "");
   return line !== undefined && line.startsWith("<!--") && line.includes("keylang:generated");
 }
 
@@ -107,7 +107,8 @@ function renderDecl(snapshot: AnalysisSnapshot, mapDir: string, id: string, node
   if (node.exported === false) head += " <!-- internal -->";
   let s = `${pad}- ${keyword} ${head}\n`;
   const calls = snapshot.edges
-    .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target)
+    // An injected value is the caller's choice, not this function's code; a self-call is not a dependency.
+    .filter((e) => e.source === id && e.kind === "call" && e.resolution === "resolved" && e.target && e.target !== id && e.via !== "injected")
     .sort((a, b) => a.line - b.line);
   if (calls.length > 0) s += `${pad}  - calls ${calls.map((c) => c.target).join(", ")}\n`;
   return s;

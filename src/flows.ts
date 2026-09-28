@@ -8,7 +8,7 @@ import { diagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { renderTokens } from "./parser.ts";
 import type { Index } from "./resolve.ts";
-import type { Span } from "./span.ts";
+import { compareText, type Span } from "./span.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
 import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
@@ -24,12 +24,40 @@ interface SnapshotEdge {
   col: number;
   reason?: string;
   text?: string;
+  via?: "default" | "injected";
+  hook?: string;
+  site?: string;
+  closure?: true;
 }
+
+interface SnapshotNodeView {
+  kind: string;
+  layer?: string;
+  members?: string;
+  signature?: string | null;
+  file: string | null;
+  line: number | null;
+  endLine?: number;
+  escapes?: { file: string; line: number; col: number; reason: string };
+}
+
+/**
+ * Which call edges prove a static path. `shape`: calls written in the code.
+ * `behavior`: also the default of a hook and values resolved callers inject
+ * for it — what runs, not only what is written.
+ */
+export type StaticMode = "shape" | "behavior";
+
+export const STATIC_MODES: readonly StaticMode[] = ["behavior", "shape"];
 
 export interface FlowInput {
   snapshotId: string | null;
-  nodes: Record<string, { kind: string; members?: string; signature?: string | null; file: string | null; line: number | null }>;
+  nodes: Record<string, SnapshotNodeView>;
   edges: SnapshotEdge[];
+  /** Constructs the snapshot does not turn into edges (`eval`, computed members, …). */
+  coverage?: { kind: string; file: string; line: number; col: number; reason: string; text?: string }[];
+  /** Default `behavior`. */
+  static?: StaticMode;
   /** Test cases from `check.tests`; null when it is not configured. */
   tests: TestCase[] | null;
   /** Trace runs from `check.trace`; null when it is not configured. */
@@ -51,7 +79,7 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
   const planned = collectPlanned(docs, input, diagnostics);
-  const graph = callGraph(input.edges);
+  const graph = callGraph(input);
   // The spec line a verdict is about, for its hash: set while a node is visited.
   let spec = "";
   const verdict = (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string, evidence?: Verdict["evidence"]): void => {
@@ -195,34 +223,116 @@ function idVerdict(
   return say("fail", "K001 dangling reference");
 }
 
-interface CallGraph {
-  resolved: Map<string, string[]>;
-  /** Unresolved and ambiguous call edges by source function. */
-  open: Map<string, SnapshotEdge[]>;
+interface Step {
+  from: string;
+  to: string;
+  edge: SnapshotEdge;
 }
 
-function callGraph(edges: readonly SnapshotEdge[]): CallGraph {
-  const resolved = new Map<string, string[]>();
+interface CallGraph {
+  /** Resolved call edges by source; `to` is a class's constructor for `new X()`. */
+  resolved: Map<string, Step[]>;
+  /** Unresolved and ambiguous call edges by source function. */
+  open: Map<string, SnapshotEdge[]>;
+  /** Every known caller of a fn: resolved edges of both kinds and ambiguous candidates. */
+  callers: Map<string, Step[]>;
+  /** Fns by the name code calls them (`callName`), for calls whose receiver is unknown. */
+  byName: Map<string, string[]>;
+  /** Unsupported constructs by file. */
+  unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
+  /** A module keylang has not read (excluded, unparsed): its calls are unknown. */
+  opaque: string | null;
+}
+
+function callGraph(input: FlowInput): CallGraph {
+  const resolved = new Map<string, Step[]>();
   const open = new Map<string, SnapshotEdge[]>();
-  for (const edge of edges) {
+  const callers = new Map<string, Step[]>();
+  const add = <T>(map: Map<string, T[]>, key: string, item: T): void => {
+    const list = map.get(key) ?? [];
+    list.push(item);
+    map.set(key, list);
+  };
+  // `new X()` names the class; what runs is its constructor.
+  const callable = (id: string): string => (input.nodes[id]?.kind !== "fn" && input.nodes[`${id}.constructor`]?.kind === "fn" ? `${id}.constructor` : id);
+  for (const edge of input.edges) {
     if (edge.kind !== "call") continue;
     if (edge.resolution === "resolved" && edge.target) {
-      const list = resolved.get(edge.source) ?? [];
-      list.push(edge.target);
-      resolved.set(edge.source, list);
+      const step = { from: edge.source, to: callable(edge.target), edge };
+      add(resolved, edge.source, step);
+      add(callers, step.to, step);
     } else {
-      const list = open.get(edge.source) ?? [];
-      list.push(edge);
-      open.set(edge.source, list);
+      add(open, edge.source, edge);
+      for (const candidate of edge.candidates ?? []) add(callers, callable(candidate), { from: edge.source, to: callable(candidate), edge });
     }
   }
-  return { resolved, open };
+  const byName = new Map<string, string[]>();
+  for (const [id, node] of Object.entries(input.nodes)) if (node.kind === "fn") add(byName, callName(id), id);
+  const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
+  for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
+  const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external")?.[0] ?? null;
+  return { resolved, open, callers, byName, unsupported, opaque };
+}
+
+function lastSegment(text: string): string {
+  return text.slice(text.lastIndexOf(".") + 1);
 }
 
 /**
- * Possible reachability of `target` from `parent` over resolved calls. A route
- * through an unresolved call, an ambiguous call, or an opaque module is
- * unverified with that construct as the reason; so is plain absence of a path.
+ * The name code calls a fn by: `m` for `X.m` and `X.m-static`, `#go` for
+ * `X.go-private` (§11: a member that shares its name with another gets a suffix).
+ */
+function callName(id: string): string {
+  const segment = lastSegment(id);
+  const suffix = /-(static-private|private|static)$/.exec(segment);
+  if (!suffix) return segment;
+  const name = segment.slice(0, suffix.index);
+  return suffix[1] === "static" ? name : `#${name}`;
+}
+
+/** Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member whose ID has no suffix. */
+function namedLike(graph: CallGraph, name: string): string[] {
+  const plain = graph.byName.get(name) ?? [];
+  return name.startsWith("#") ? [...plain, ...(graph.byName.get(name.slice(1)) ?? [])] : plain;
+}
+
+function describeVia(edge: SnapshotEdge): string {
+  return edge.via === "injected" ? `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}` : `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
+}
+
+function describeHole(edge: SnapshotEdge, target: string): string {
+  if (edge.resolution === "ambiguous") return `ambiguous call \`${edge.text ?? edge.source}\` [${(edge.candidates ?? []).join(", ")}]`;
+  if (edge.resolution === "resolved") {
+    if (edge.via) return `${describeVia(edge)} (not followed with --static=shape)`;
+    return `\`${edge.text ?? ""}\` may dispatch to another \`${lastSegment(edge.text ?? callName(target))}\``;
+  }
+  return edge.reason ?? `unresolved call \`${edge.text ?? ""}\``;
+}
+
+function at(edge: SnapshotEdge): string {
+  return `${edge.file}:${edge.line}:${edge.col}`;
+}
+
+/**
+ * Static reachability of `target` from `parent`.
+ *
+ * `ok`: a path over resolved calls outside closures (in `behavior` mode also
+ * hook defaults and injected values). Otherwise the question is whether code
+ * keylang cannot follow could still reach the target:
+ * - a call with an unknown receiver (`x.feed()`, `cb()`) may run any fn of the
+ *   same name, so the search goes on through every fn named like it; so does
+ *   a resolved method call (an override may run instead), an ambiguous call
+ *   (every candidate), a call in a closure (it runs only if that value is
+ *   called), and a hook edge in `shape` mode. A path found this way is
+ *   `unverified`, naming its first such call.
+ * - a fn on some route to the target that escapes (read as a value, an
+ *   accessor, an implicit method, called from a closure, from module-level
+ *   code or by a base class keylang has not read) may be run by any code
+ *   holding it; `eval`, `new Function`, a computed call in code a proven or
+ *   possible route reaches, a computed member or a namespace that mentions
+ *   such a fn, and a module keylang has not read are the same: `unverified`.
+ * - otherwise the target is reachable only by name and no name matches:
+ *   `fail`, a confirmed absence.
  */
 function reachability(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
   if (parent === null) return { verdict: "unverified", message: "no trigger to reach it from" };
@@ -231,35 +341,148 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
   if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
-  const previous = new Map<string, string>();
-  const seen = new Set<string>([parent]);
+  const behavior = (input.static ?? "behavior") === "behavior";
+  // A call in a closure runs only when that function value is called: it is a possible route, not a proof.
+  const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
+
+  // 1. A proof: breadth-first over the edges this mode follows.
+  const previous = new Map<string, Step>();
+  const depth = new Map<string, number>([[parent, 0]]);
   const queue = [parent];
   while (queue.length > 0) {
     const id = queue.shift()!;
-    for (const next of graph.resolved.get(id) ?? []) {
-      if (next === target) {
-        previous.set(next, id);
-        const route = [next];
-        for (let at = id; at !== parent; at = previous.get(at)!) route.unshift(at);
-        route.unshift(parent);
-        return { verdict: "ok", message: route.length === 2 ? `called from ${parent}` : `reachable from ${parent} via ${route.slice(1, -1).join(" → ")}` };
+    for (const step of graph.resolved.get(id) ?? []) {
+      if (!proves(step)) continue;
+      // A step that is its own parent is reached by recursion.
+      if (step.to === target) {
+        previous.set(target, step);
+        return { verdict: "ok", message: routeMessage(parent, target, previous) };
       }
-      if (seen.has(next)) continue;
-      seen.add(next);
-      previous.set(next, id);
-      queue.push(next);
+      if (depth.has(step.to)) continue;
+      depth.set(step.to, depth.get(id)! + 1);
+      previous.set(step.to, step);
+      queue.push(step.to);
     }
   }
-  const holes = [...seen]
-    .sort()
-    .flatMap((id) => graph.open.get(id) ?? [])
-    .sort((a, b) => ((a.file ?? "") < (b.file ?? "") ? -1 : (a.file ?? "") > (b.file ?? "") ? 1 : a.line - b.line || a.col - b.col));
-  const hole = holes.find((edge) => edge.resolution === "ambiguous" && edge.candidates?.includes(target)) ?? holes[0];
-  if (hole) {
-    const what = hole.resolution === "ambiguous" ? `ambiguous call \`${hole.text ?? hole.source}\` [${(hole.candidates ?? []).join(", ")}]` : (hole.reason ?? `unresolved call \`${hole.text ?? ""}\``);
-    return { verdict: "unverified", message: `no resolved path from ${parent}; ${what} at ${hole.file}:${hole.line}:${hole.col} may reach it` };
+
+  // 2. A possible route through calls keylang cannot pin to one target.
+  const { edge: uncertain, seen: possible } = possibleRoute(graph, input, parent, target, proves);
+  const holes = [...depth.keys()].flatMap((id) => (graph.open.get(id) ?? []).map((edge) => ({ edge, depth: depth.get(id)! })));
+  const more = (shown: SnapshotEdge): string => {
+    const others = holes.filter((hole) => hole.edge !== shown).length;
+    return others > 0 ? ` (and ${others} more unresolved call${others === 1 ? "" : "s"} in reachable code)` : "";
+  };
+  if (uncertain?.closure && uncertain.resolution === "resolved" && !uncertain.via) {
+    return { verdict: "unverified", message: `no resolved path from ${parent}; reached only through a closure of ${uncertain.source}: \`${uncertain.text ?? ""}\` at ${at(uncertain)} runs only when that function value is called${more(uncertain)}` };
   }
-  return { verdict: "unverified", message: `no call path from ${parent} in the static graph` };
+  if (uncertain) return { verdict: "unverified", message: `no resolved path from ${parent}; ${describeHole(uncertain, target)} at ${at(uncertain)} may reach it${more(uncertain)}` };
+
+  // 3. Code that may run a fn without naming it.
+  const routes = callersOf(graph, target);
+  // `eval` and computed calls count in code reached by a possible route too, not only by a proof.
+  const blocker = escapeOf(graph, input, routes, new Set([...depth.keys(), ...possible]));
+  if (blocker) {
+    const best = bestHole(holes, target);
+    const lead = best ? `no resolved path from ${parent}; ${describeHole(best, target)} at ${at(best)} may reach it${more(best)}` : `no call path from ${parent} in the static graph`;
+    return { verdict: "unverified", message: `${lead}; ${blocker}` };
+  }
+  const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
+  if (unseen) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; \`${unseen}\` is opaque and may call it` };
+  return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them` };
+}
+
+function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
+  const steps: Step[] = [];
+  // do-while: a recursive step (target = parent) still has its route.
+  let id = target;
+  do {
+    const step = previous.get(id)!;
+    steps.unshift(step);
+    id = step.from;
+  } while (id !== parent);
+  const notes = steps.filter((step) => step.edge.via).map((step) => (steps.length === 1 ? describeVia(step.edge) : `${step.from} → ${step.to}: ${describeVia(step.edge)}`));
+  if (steps.length === 1) return `called from ${parent}${notes.length > 0 ? ` through ${notes[0]}` : ""}`;
+  const through = notes.length > 0 ? ` (${notes.join("; ")})` : "";
+  return `reachable from ${parent} via ${steps.slice(0, -1).map((step) => step.to).join(" → ")}${through}`;
+}
+
+/**
+ * Breadth-first search that also follows calls with more than one possible
+ * target and calls in closures. Returns the first such call on the shortest
+ * route (null when there is none) and every fn the search reached.
+ */
+function possibleRoute(graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean): { edge: SnapshotEdge | null; seen: Set<string> } {
+  const first = new Map<string, SnapshotEdge | null>([[parent, null]]);
+  const queue = [parent];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const lead = first.get(id) ?? null;
+    const next: { to: string; edge: SnapshotEdge | null }[] = [];
+    for (const step of graph.resolved.get(id) ?? []) {
+      next.push({ to: step.to, edge: proves(step) ? null : step.edge });
+      // A method call may run an override of the same name.
+      if (step.edge.text?.includes(".") && !step.edge.via) for (const other of namedLike(graph, callName(step.to))) if (other !== step.to) next.push({ to: other, edge: step.edge });
+    }
+    for (const edge of graph.open.get(id) ?? []) {
+      const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []) : namedLike(graph, lastSegment(edge.text ?? ""));
+      for (const other of names) next.push({ to: input.nodes[other]?.kind === "fn" ? other : `${other}.constructor`, edge });
+    }
+    for (const item of next) {
+      if (first.has(item.to)) continue;
+      const via = lead ?? item.edge;
+      if (item.to === target) return { edge: via, seen: new Set(first.keys()) };
+      first.set(item.to, via);
+      queue.push(item.to);
+    }
+  }
+  return { edge: null, seen: new Set(first.keys()) };
+}
+
+/** Every fn with a resolved or candidate route to `target`, the target included. */
+function callersOf(graph: CallGraph, target: string): Set<string> {
+  const seen = new Set([target]);
+  const stack = [target];
+  while (stack.length > 0) {
+    for (const step of graph.callers.get(stack.pop()!) ?? []) {
+      if (seen.has(step.from)) continue;
+      seen.add(step.from);
+      stack.push(step.from);
+    }
+  }
+  return seen;
+}
+
+/** Why code keylang cannot follow may still run a fn of `routes`; null when every route is by name. */
+function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>): string | null {
+  for (const id of [...routes].sort()) {
+    const escapes = input.nodes[id]?.escapes;
+    if (escapes) return `${escapes.reason} at ${escapes.file}:${escapes.line}:${escapes.col}, so code keylang cannot follow may call \`${id}\``;
+  }
+  for (const id of [...routes].sort()) {
+    const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
+    if (closure) return `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`;
+  }
+  const names = [...routes].map((id) => callName(id).replace(/^#/, ""));
+  for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const item of items) {
+      // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
+      const inReachable = [...reachable].some((id) => {
+        const node = input.nodes[id];
+        return node?.file === file && node.line !== null && item.line >= node.line && item.line <= (node.endLine ?? node.line);
+      });
+      const mentions = item.text !== undefined && names.some((name) => new RegExp(`\\b${name.replace(/[$]/g, "\\$")}\\b`).test(item.text!));
+      if (inReachable || mentions) return `${item.reason} at ${file}:${item.line}:${item.col} may call it`;
+    }
+  }
+  return null;
+}
+
+/** The hole most likely to be the missing link: named like the target, then nearest the parent, then by position. */
+function bestHole(holes: { edge: SnapshotEdge; depth: number }[], target: string): SnapshotEdge | null {
+  const name = callName(target).replace(/^#/, "");
+  const rank = (hole: { edge: SnapshotEdge; depth: number }): number => (hole.edge.resolution === "ambiguous" && hole.edge.candidates?.includes(target) ? 0 : lastSegment(hole.edge.text ?? "").replace(/^#/, "") === name ? 1 : 2);
+  const sorted = [...holes].sort((a, b) => rank(a) - rank(b) || a.depth - b.depth || compareText(a.edge.file ?? "", b.edge.file ?? "") || a.edge.line - b.edge.line || a.edge.col - b.edge.col);
+  return sorted[0]?.edge ?? null;
 }
 
 function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opaque" | null {

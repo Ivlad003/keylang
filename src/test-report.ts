@@ -106,13 +106,19 @@ export interface TestEvidence {
 
 /**
  * Match `test <file> "<name>"`. The name may carry suites as `Suite > name`.
- * Identity is file, suite, and name; several matches are ambiguous.
+ * Identity is file, suite, and name: an exact match wins, a bare name also
+ * matches a test inside a suite. Several current matches are ambiguous.
  */
 export function matchTest(cases: readonly TestCase[] | null, file: string, name: string, snapshotId: string | null): TestEvidence {
   if (cases === null) return { verdict: "unverified", message: "no report (check.tests is not configured)", runId: null };
   const inFile = cases.filter((item) => item.file === file);
-  const hits = inFile.filter((item) => item.name === name || (item.suite !== "" && `${item.suite} > ${item.name}` === name));
-  if (hits.length === 0) return { verdict: "unverified", message: "no report", runId: null };
+  // An exact identity wins: `works` is the top-level test, `S > works` the one in suite S.
+  const exact = inFile.filter((item) => (item.suite === "" ? item.name : `${item.suite} > ${item.name}`) === name);
+  const all = exact.length > 0 ? exact : inFile.filter((item) => item.name === name);
+  if (all.length === 0) return { verdict: "unverified", message: "no report", runId: null };
+  // Results of other snapshots are history, not rivals: only a current result can be ambiguous.
+  const current = all.filter((item) => item.snapshotId !== null && item.snapshotId === snapshotId);
+  const hits = current.length > 0 ? current : all;
   if (hits.length > 1) {
     const where = [...new Set(hits.map((hit) => (hit.suite ? `${hit.suite} > ${hit.name}` : `${hit.name} (${hit.report})`)))].sort();
     return { verdict: "unverified", message: `ambiguous: ${where.join(", ")}`, runId: null };

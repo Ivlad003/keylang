@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
-import { evaluateFlows, type FlowInput } from "./flows.ts";
+import { evaluateFlows, type FlowInput, type StaticMode } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { check, refineOpacity, type Index } from "./resolve.ts";
 import { evaluateRules } from "./rules.ts";
@@ -19,17 +19,30 @@ export interface Assessment {
   verdicts: Verdict[];
 }
 
-export function assess(docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null } = { tests: null, traces: null }): Assessment {
+export function assess(
+  docs: readonly Document[],
+  snapshot: SnapshotInput | null,
+  evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode } = { tests: null, traces: null },
+): Assessment {
   const { index, diagnostics: resolveDiags } = check(docs);
   const refined = refineOpacity(docs, index, snapshot?.nodes ?? null);
   const rules = evaluateRules(docs, index, snapshot);
   const flows =
     snapshot === null
       ? { diagnostics: [] as Diagnostic[], verdicts: [] as Verdict[] }
-      : evaluateFlows(docs, index, { snapshotId: snapshot.snapshotId, nodes: snapshot.nodes, edges: snapshot.edges, tests: evidence.tests, traces: evidence.traces });
+      : evaluateFlows(docs, index, {
+          snapshotId: snapshot.snapshotId,
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          coverage: snapshot.coverage,
+          tests: evidence.tests,
+          traces: evidence.traces,
+          ...(evidence.static ? { static: evidence.static } : {}),
+        });
   const planned = plannedIds(docs);
   const diagnostics = [...docs.flatMap((doc) => doc.diagnostics), ...resolveDiags, ...refined.added, ...rules.diagnostics, ...flows.diagnostics].filter(
-    (diag) => diag.code !== "K001" || ![...planned].some((id) => diag.message.includes(`\`${id}\``)),
+    // A `planned` declaration answers a dangling reference to exactly its ID, not any message that mentions it.
+    (diag) => diag.code !== "K001" || diag.target === undefined || !planned.has(diag.target),
   );
   diagnostics.sort(compareDiagnostics);
   // A flow step reports its own ID verdict for the same reference.
@@ -53,7 +66,7 @@ export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]
   return diagnostics.some((diag) => {
     if (diag.file !== verdict.file || diag.span.start.line !== verdict.line) return false;
     if (diag.message === verdict.message || verdict.message.includes(diag.message)) return true;
-    return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.message.includes(`\`${verdict.area}\``);
+    return verdict.criterion === "ID" && verdict.verdict === "fail" && diag.code === "K001" && diag.target === verdict.area;
   });
 }
 

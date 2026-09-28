@@ -14,8 +14,10 @@ export function parse(path: string, src: string): Document {
   let lineNo = 0;
   for (const raw of splitInclusive(src)) {
     lineNo += 1;
-    const text = raw.replace(/[\r\n]+$/, "");
-    p.line(new Line(lineNo, offset, text));
+    // A UTF-8 BOM is not text: the first line starts after it, offsets still count it.
+    const bom = lineNo === 1 && raw.startsWith("\uFEFF") ? 1 : 0;
+    const text = raw.slice(bom).replace(/[\r\n]+$/, "");
+    p.line(new Line(lineNo, offset + bom, text));
     offset += raw.length;
   }
   return p.finish();
@@ -310,7 +312,7 @@ class Parser {
   private heading(l: Line): void {
     this.flushProse();
     this.closeList(0);
-    const { tokens } = lex(l, 1, []);
+    const { tokens, comment } = lex(l, 1, []);
     const title = renderTokens(tokens);
     const full = l.span(0, l.text.trimEnd().length);
     const first = tokens[0]?.text;
@@ -337,7 +339,7 @@ class Parser {
     } else if (kind === "flow") {
       this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`");
     }
-    this.doc.sections.push({ kind, heading: { value: title, span: full }, name, items: [] });
+    this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
   }
 
   private item(l: Line, wsLen: number, indent: number): void {
@@ -706,7 +708,8 @@ function isBullet(rest: string): boolean {
 
 /** A single ID segment: letter or `_`, then letters, digits, `_`, `-`. */
 export function isSegment(s: string): boolean {
-  return /^[\p{Alphabetic}_][\p{Alphabetic}\p{N}_-]*$/u.test(s);
+  // `$` keeps JS identifiers apart: `$save` and `_save` are two names.
+  return /^[\p{Alphabetic}_$][\p{Alphabetic}\p{N}_$-]*$/u.test(s);
 }
 
 /** A dotted ID: `segment(.segment)*`. */

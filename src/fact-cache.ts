@@ -33,12 +33,19 @@ function storedFiles(value: unknown, version: string): Stored["files"] {
   for (const [path, entry] of Object.entries(value.files)) {
     if (!isRecord(entry) || typeof entry.sha256 !== "string" || !isRecord(entry.facts)) continue;
     const facts = entry.facts;
-    const arrays = ["imports", "decls", "exports", "reexportsAll", "exportRows", "unsupported"] as const;
+    const arrays = ["imports", "decls", "exports", "reexportsAll", "exportRows", "unsupported", "valueRefs", "moduleCalls"] as const;
     if (facts.path !== path || !arrays.every((key) => Array.isArray(facts[key])) || (facts.completeness !== "complete" && facts.completeness !== "opaque")) continue;
     if (!(facts.exports as unknown[]).every((name) => typeof name === "string")) continue;
+    // The shapes the graph walks: a damaged entry is extracted again, never trusted or thrown on.
+    if (!(facts.imports as unknown[]).every((item) => isRecord(item) && typeof item.source === "string" && Array.isArray(item.bindings))) continue;
+    if (!(facts.decls as unknown[]).every(validDecl)) continue;
     files[path] = { sha256: entry.sha256, facts: facts as unknown as StoredFacts };
   }
   return files;
+}
+
+function validDecl(value: unknown): boolean {
+  return isRecord(value) && typeof value.name === "string" && typeof value.kind === "string" && Array.isArray(value.calls) && Array.isArray(value.types) && Array.isArray(value.members) && value.members.every(validDecl);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

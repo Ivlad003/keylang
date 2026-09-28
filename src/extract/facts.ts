@@ -18,6 +18,18 @@ export interface FileFacts {
   /** Constructs the extractor does not turn into edges, each with the source fragment. */
   unsupported: UnsupportedFact[];
   /**
+   * Names read as values rather than called — `later(save)`, `{ save }`,
+   * `obj.save` without a call, `class B extends A` — first position of each.
+   * A function named so may be called by code that holds the value.
+   */
+  valueRefs: ValueRefFact[];
+  /**
+   * Calls outside every declaration body: module top level, object-literal
+   * methods, function values wrapped in a call (`cache(() => …)`). They run
+   * when the module loads, or when code holding that value calls it.
+   */
+  moduleCalls: CallFact[];
+  /**
    * `complete`: the declaration list is exhaustive and may be empty.
    * `opaque`: a syntax error or an unparsed file; a missing name is not evidence it does not exist.
    */
@@ -65,17 +77,72 @@ export interface DeclFact {
   types: TypeRefFact[];
   /** Methods for classes. */
   members: DeclFact[];
+  /** A getter or setter: property access runs it without a call expression. */
+  accessor?: true;
+  /** A `static` class member. */
+  static?: true;
+  /** An ECMAScript private member (`#name`); `name` is written without `#`. */
+  hash?: true;
+  /** Classes: the `extends` expression as written (`Readable`, `React.Component`). */
+  base?: string;
 }
 
 export interface CallFact {
   /** `f()` → `f`; `a.b()` → `a.b`; `this.m()` → `this.m`; `new X()` → `X`. */
   callee: string;
-  /** The head of the callee is bound in a scope between the call and the module. */
+  /** The head of the callee is bound in a scope between the call and the module; for `this.m`, `this` is not the class. */
   bound?: "parameter" | "local";
+  /**
+   * Class of the receiver when the syntax names it: `this.decoder.feed()` with a
+   * field `decoder: InputDecoder` or `= new InputDecoder()`, `worker.generate()`
+   * with `const worker = new SnapshotWorker()` or a parameter `worker: SnapshotWorker`.
+   */
+  receiver?: string;
+  /** The callee is a hook with a default: `const generate = request.generate ?? generateMap; generate()`. */
+  hook?: HookFact;
+  /** Function values the call passes: `analyze({ generate: worker.generate })`, `later(save)`. */
+  passes?: PassFact[];
+  /** The call sits in a function nested in the declaration: it runs when that value is called. */
+  closure?: true;
   line: number;
   col: number;
   endLine: number;
   endCol: number;
+}
+
+/**
+ * A callable chosen at run time with a default written next to it. `param` and
+ * `path` say where a caller injects the value: `analyze({ generate })` is
+ * parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
+ */
+export interface HookFact {
+  /** Local, parameter or field the call goes through. */
+  name: string;
+  /** Callee text of the default: `generateMap`, `this.run`. */
+  fallback: string;
+  /** Parameter index of the function that receives the injected value; null when it is not a parameter. */
+  param: number | null;
+  path: string;
+  /** `self`: a parameter of the declaration itself; `constructor`: a field set from a constructor parameter. */
+  owner: "self" | "constructor";
+}
+
+/** A function value in the arguments of a call: argument index, property path ("" for the argument itself). */
+export interface PassFact {
+  arg: number;
+  path: string;
+  callee: string;
+  bound?: "parameter" | "local";
+  receiver?: string;
+}
+
+export interface ValueRefFact {
+  /** `save`, or `mod.save` for a module import; the member name for a property read. */
+  name: string;
+  /** A property read (`obj.save`, `const { save } = obj`): it can hold a method, not a module function. */
+  member?: true;
+  line: number;
+  col: number;
 }
 
 /** A type name in type position. `text` is the source fragment. */

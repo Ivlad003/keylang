@@ -14,6 +14,8 @@ export type Grammar = "typescript" | "tsx" | "javascript";
 let ready: Promise<void> | null = null;
 const languages = new Map<Grammar, Promise<Language>>();
 const queries = new Map<string, Query>();
+/** One parser per grammar: parsing is synchronous, and a parser per call leaks WASM heap. */
+const parsers = new Map<Grammar, Parser>();
 
 function wasmDir(): string {
   // prepack copies grammars next to the compiled extractor (`dist/wasm`).
@@ -32,13 +34,25 @@ export function loadLanguage(g: Grammar): Promise<Language> {
   return l;
 }
 
-export async function parseSource(g: Grammar, src: string): Promise<{ tree: Tree; language: Language }> {
+/**
+ * Parse `src` and run `use` on the tree, which is freed afterwards: a tree
+ * lives in the WASM heap, so nothing `use` returns may hold a node.
+ */
+export async function withTree<T>(g: Grammar, src: string, use: (tree: Tree, language: Language) => T): Promise<T> {
   const language = await loadLanguage(g);
-  const parser = new Parser();
-  parser.setLanguage(language);
+  let parser = parsers.get(g);
+  if (!parser) {
+    parser = new Parser();
+    parser.setLanguage(language);
+    parsers.set(g, parser);
+  }
   const tree = parser.parse(src);
   if (!tree) throw new Error("tree-sitter: parse returned null");
-  return { tree, language };
+  try {
+    return use(tree, language);
+  } finally {
+    tree.delete();
+  }
 }
 
 /** Compile a query once per (grammar, source). */
@@ -58,4 +72,4 @@ export function grammarFor(path: string): Grammar {
   return "javascript";
 }
 
-export type { Node, Tree };
+export type { Language, Node, Tree };

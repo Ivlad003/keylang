@@ -11,31 +11,44 @@ export function stronglyConnected(adj: ReadonlyMap<string, ReadonlySet<string>>)
   const nodes = new Set<string>(adj.keys());
   for (const targets of adj.values()) for (const target of targets) nodes.add(target);
 
-  const visit = (node: string): void => {
-    indices.set(node, index);
-    low.set(node, index);
-    index += 1;
-    stack.push(node);
-    onStack.add(node);
-    for (const next of adj.get(node) ?? []) {
-      if (!indices.has(next)) {
-        visit(next);
-        low.set(node, Math.min(low.get(node) ?? 0, low.get(next) ?? 0));
-      } else if (onStack.has(next)) {
-        low.set(node, Math.min(low.get(node) ?? 0, indices.get(next) ?? 0));
+  // Tarjan with an explicit stack: a chain of thousands of modules must not overflow the call stack.
+  // Each frame walks its successors in the same order the recursive form would.
+  const visit = (root: string): void => {
+    const frames: { node: string; next: Iterator<string> }[] = [];
+    const enter = (node: string): void => {
+      indices.set(node, index);
+      low.set(node, index);
+      index += 1;
+      stack.push(node);
+      onStack.add(node);
+      frames.push({ node, next: (adj.get(node) ?? new Set<string>()).values() });
+    };
+    enter(root);
+    while (frames.length > 0) {
+      const frame = frames.at(-1)!;
+      const step = frame.next.next();
+      if (!step.done) {
+        const next = step.value;
+        if (!indices.has(next)) enter(next);
+        else if (onStack.has(next)) low.set(frame.node, Math.min(low.get(frame.node) ?? 0, indices.get(next) ?? 0));
+        continue;
       }
+      frames.pop();
+      const node = frame.node;
+      const parent = frames.at(-1);
+      if (parent) low.set(parent.node, Math.min(low.get(parent.node) ?? 0, low.get(node) ?? 0));
+      if (low.get(node) !== indices.get(node)) continue;
+      const component: string[] = [];
+      for (;;) {
+        const item = stack.pop();
+        if (item === undefined) break;
+        onStack.delete(item);
+        component.push(item);
+        if (item === node) break;
+      }
+      const self = component.length === 1 && (adj.get(component[0] ?? "")?.has(component[0] ?? "") ?? false);
+      if (component.length > 1 || self) components.push(component.sort());
     }
-    if (low.get(node) !== indices.get(node)) return;
-    const component: string[] = [];
-    for (;;) {
-      const item = stack.pop();
-      if (item === undefined) break;
-      onStack.delete(item);
-      component.push(item);
-      if (item === node) break;
-    }
-    const self = component.length === 1 && (adj.get(component[0] ?? "")?.has(component[0] ?? "") ?? false);
-    if (component.length > 1 || self) components.push(component.sort());
   };
 
   for (const node of [...nodes].sort()) if (!indices.has(node)) visit(node);

@@ -3,8 +3,8 @@
 // (`keylang init` writes that guess down so it can be edited).
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
-import { globPrefix, matchesGlob } from "./glob.ts";
+import { join, posix, relative } from "node:path";
+import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 
 export type Language = "typescript" | "javascript";
 
@@ -113,11 +113,24 @@ export function parseConfig(file: string, text: string): RawConfig {
   const fail = (field: string, expected: string, got: unknown): never => {
     throw new Error(`${file}: \`${field}\` must be ${expected}, got ${JSON.stringify(got)}`);
   };
+  const validGlob = (field: string, glob: string): string => {
+    try {
+      globToRegExp(glob);
+    } catch (e) {
+      throw new Error(`${file}: \`${field}\`: invalid glob ${JSON.stringify(glob)}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return glob;
+  };
   if (!isObject(value)) return fail("(root)", "an object", value);
   const known = new Set(["$schema", "dir", "languages", "module", "layers", "exclude", "check"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
-  if (value.dir !== undefined) raw.dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
+  if (value.dir !== undefined) {
+    raw.dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
+    // `map` writes under `dir`: it must not lead out of the repository.
+    const normal = posix.normalize(raw.dir.replace(/\\/g, "/"));
+    if (posix.isAbsolute(normal) || /^[A-Za-z]:/.test(normal) || normal === ".." || normal.startsWith("../")) fail("dir", "a directory inside the repository", value.dir);
+  }
   if (value.languages !== undefined) {
     const list = value.languages;
     if (!Array.isArray(list)) return fail("languages", "an array", list);
@@ -131,15 +144,17 @@ export function parseConfig(file: string, text: string): RawConfig {
     if (!isObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
     const layers: Record<string, string | string[]> = {};
     for (const [name, globs] of Object.entries(value.layers)) {
-      if (typeof globs === "string") layers[name] = globs;
-      else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = globs as string[];
+      // A layer is the first segment of every ID under it; `core.domain` would be two.
+      if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
+      if (typeof globs === "string") layers[name] = validGlob(`layers.${name}`, globs);
+      else if (Array.isArray(globs) && globs.every((glob) => typeof glob === "string")) layers[name] = (globs as string[]).map((glob, i) => validGlob(`layers.${name}[${i}]`, glob));
       else fail(`layers.${name}`, "a glob or an array of globs", globs);
     }
     raw.layers = layers;
   }
   if (value.exclude !== undefined) {
     if (!Array.isArray(value.exclude) || !value.exclude.every((glob) => typeof glob === "string")) return fail("exclude", "an array of globs", value.exclude);
-    raw.exclude = value.exclude as string[];
+    raw.exclude = (value.exclude as string[]).map((glob, i) => validGlob(`exclude[${i}]`, glob));
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
@@ -301,7 +316,7 @@ function hasSource(absDir: string, rel: string, exclude: readonly string[]): boo
 
 /** Make a directory or file name a valid ID segment. */
 export function layerName(name: string): string {
-  let s = name.replace(/[^\p{Alphabetic}\p{N}_-]/gu, "_");
-  if (!/^[\p{Alphabetic}_]/u.test(s)) s = `_${s}`;
+  let s = name.replace(/[^\p{Alphabetic}\p{N}_$-]/gu, "_");
+  if (!/^[\p{Alphabetic}_$]/u.test(s)) s = `_${s}`;
   return s;
 }

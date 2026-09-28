@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { excludedSourceFiles, sourceFiles, type Config } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
 import { extractTs } from "./extract/ts.ts";
@@ -39,7 +40,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   }
   const skipped = config.guessed ? all.filter((p) => placeFile(config, p) === null) : [];
   const skippedSet = new Set(skipped);
-  const cache = FactCache.open(config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, grammars: grammarVersions() }));
+  const cache = FactCache.open(config.root, JSON.stringify({ extractor: EXTRACTOR_VERSION, code: extractorCode(), grammars: grammarVersions() }));
   const facts: FileFacts[] = [];
   for (const p of all) {
     if (skippedSet.has(p)) continue;
@@ -66,7 +67,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
 }
 
 function opaqueFacts(path: string): FileFacts {
-  return { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], completeness: "opaque", parseError: null };
+  return { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "opaque", parseError: null };
 }
 
 export interface MapDiff {
@@ -137,4 +138,19 @@ export function diffMap(config: Config, r: MapResult): MapDiff {
     }
   }
   return { conflicts, stale };
+}
+
+let extractorHash: string | null = null;
+
+/**
+ * A hash of the extractor's own code. Facts cached by a changed extractor are
+ * stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same
+ * files are the built `.js`.
+ */
+function extractorCode(): string {
+  if (extractorHash !== null) return extractorHash;
+  const dir = fileURLToPath(new URL("./extract/", import.meta.url));
+  const files = readdirSync(dir).filter((name) => /\.(ts|js)$/.test(name)).sort();
+  extractorHash = sha256(files.map((name) => `${name}\0${readFileSync(join(dir, name), "utf8")}`).join("\0"));
+  return extractorHash;
 }

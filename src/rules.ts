@@ -13,8 +13,8 @@ import type { Verdict } from "./verdict.ts";
 /** The slice of the snapshot rules need. Kept here so `check` does not import `map`. */
 interface SnapshotView {
   snapshotId: string;
-  nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string }[];
+  nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string }>;
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -96,6 +96,8 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   for (const edge of snapshot.edges) {
     if (edge.kind !== "import" && edge.kind !== "reexport" && edge.kind !== "call" && edge.kind !== "type") continue;
     if (!edge.target || !edge.file) continue;
+    // An injected hook value is the injector's dependency, which has its own edge to it.
+    if (edge.via === "injected") continue;
     const from = moduleOf(edge.source);
     const to = moduleOf(edge.target);
     if (from && from === to && edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved") selfLoops.add(from);
@@ -137,11 +139,20 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
 
   const reported = new Set<string>();
   const failedDenies = new Set<Rule>();
+  /** A `deny` whose edges a more specific rule decided, with those rules. */
+  const overridden = new Map<Rule, Set<string>>();
   for (const edge of edges) {
     if (edge.resolution !== "resolved") continue;
     const key = `${edge.from}\0${edge.to}`;
     if (reported.has(key)) continue;
     const match = specific(rules, edge, within);
+    for (const deny of rules.denies) {
+      if (match && match.rule !== deny && within(edge.from, deny.a) && deny.b.some((target) => within(edge.to, target))) {
+        const winners = overridden.get(deny) ?? new Set<string>();
+        winners.add(match.rule.text);
+        overridden.set(deny, winners);
+      }
+    }
     const verdict = match?.kind ?? null;
     if (match?.kind === "deny") {
       reported.add(key);
@@ -174,13 +185,21 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     if (failedDenies.has(deny)) continue;
     const area = modules.size === 0 ? deny.a : [...modules].filter((id) => within(id, deny.a)).join(",");
     const hole = [...modules].filter((id) => within(id, deny.a)).map(dependencyHoleIn).find((item) => item !== null) ?? null;
+    const winners = overridden.get(deny);
     if (hole) pushUnverified(deny.file, deny.span.start.line, deny.span.start.col, deny.text, area || deny.a, hole);
+    else if (winners) verdicts.push(base(snapshot, deny.text, area || deny.a, "ok", deny.file, deny.span.start.line, deny.span.start.col, null, `convergence: the edges from \`${deny.a}\` to ${deny.b.map((b) => `\`${b}\``).join(", ")} are decided by more specific rules (${[...winners].sort().map((text) => `\`${text}\``).join(", ")}); no other edge and no dependency hole in the area`));
     else verdicts.push(base(snapshot, deny.text, area || deny.a, "ok", deny.file, deny.span.start.line, deny.span.start.col, null, `convergence: no edge from \`${deny.a}\` to ${deny.b.map((b) => `\`${b}\``).join(", ")} and no dependency hole in the area`));
   }
 
   if (rules.entries.length > 0) {
     const reachable = new Set<string>();
-    const stack = rules.entries.map((id) => moduleOf(id) ?? id);
+    // An entry naming a layer or a directory seeds every module under it; it is not itself a module.
+    const stack = rules.entries.flatMap((id) => {
+      const module = moduleOf(id);
+      if (module) return [module];
+      const under = [...modules].filter((candidate) => within(candidate, id));
+      return under.length > 0 ? under : [id];
+    });
     const forward = new Map<string, UseEdge[]>();
     for (const edge of edges) {
       if (edge.resolution !== "resolved") continue;
@@ -227,7 +246,13 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, `exports ${rule.module}`, rule.module);
     }
     const missing = [...rule.names].sort().filter((name) => !names.has(name));
-    if (!unknown) {
+    // An opaque module (excluded, or with a syntax error) may export what the table does not show.
+    const opaque = Object.entries(snapshot.nodes).find(([id, node]) => (id === rule.module || id.startsWith(`${rule.module}.`)) && node.kind === "module" && node.members === "opaque");
+    if (opaque && missing.length > 0 && !failed) {
+      pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, `exports ${rule.module}`, rule.module, `opaque module \`${opaque[0]}\` may export ${missing.map((name) => `\`${name}\``).join(", ")}`);
+      continue;
+    }
+    if (!unknown && !opaque) {
       for (const name of missing) {
         failed = true;
         pushFail("K104", rule.file, rule.span.start.line, rule.span.start.col, `absence: \`${rule.module}\` does not export \`${name}\``, `exports ${rule.module}`, rule.module);
@@ -250,6 +275,13 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     const components = stronglyConnected(adj);
     for (const rule of rules.noCycles) {
       const relevant = components.filter((component) => rule.under === null || component.some((id) => within(id, rule.under ?? "")));
+      // A cycle may run through an import keylang could not resolve.
+      const scope = [...modules].filter((id) => rule.under === null || within(id, rule.under));
+      const hole = relevant.length === 0 ? (scope.sort().map(dependencyHoleIn).find((item) => item !== null) ?? null) : null;
+      if (hole) {
+        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${hole}`);
+        continue;
+      }
       if (relevant.length === 0) {
         verdicts.push(base(snapshot, "no-cycles", rule.under ?? "*", "ok", rule.file, rule.span.start.line, rule.span.start.col, null, `convergence: no import cycle${rule.under ? ` through \`${rule.under}\`` : ""}`, `no-cycles ${rule.under ?? "*"}`));
         continue;

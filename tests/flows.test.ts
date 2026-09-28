@@ -114,13 +114,143 @@ test("static: a step reached only through a callback is unverified with the call
   assert.equal(strict.status, 1);
 });
 
-test("static: no path in a fully resolved graph is unverified, not fail; a module step is not callable", (t) => {
+test("static: no path in a fully resolved graph is unverified while the step is read as a value; a module step is not callable", (t) => {
   const dir = repo(t, CHECKOUT, { "flows/odd.md": "# flow odd\n\n- trigger domain.order.create\n- step infrastructure.store.save\n- step application.purchase\n" });
   const { status, rows } = results(dir);
   assert.equal(status, 0);
   assert.equal(row(rows, "static", "infrastructure.store.save")?.verdict, "unverified");
-  assert.match(row(rows, "static", "infrastructure.store.save")!.evidence, /no call path from domain\.order\.create in the static graph/);
+  // `later(save)` hands `save` to code that may call it.
+  assert.match(row(rows, "static", "infrastructure.store.save")!.evidence, /no call path from domain\.order\.create in the static graph; `save` is read as a value at src\/application\/purchase\.ts:13:9/);
   assert.match(row(rows, "static", "application.purchase")!.evidence, /is a module, not a callable/);
+});
+
+// A step that only its own name can reach: a call whose receiver keylang does
+// not know can still be it when the method name matches, never otherwise.
+const BY_NAME: Record<string, string> = {
+  "src/domain/order.ts": "export function create(): void {}\nexport function other(x: { sell(): void }): void {\n  x.sell();\n}\nexport function poke(x: { buy(): void }): void {\n  x.buy();\n}\n",
+  "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nexport function buy(): void {\n  create();\n}\n',
+  "src/presentation/terminal.ts": 'import { buy } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n}\n',
+};
+
+test("static: a step no call can reach is a confirmed absence; a call with the step's name keeps it unverified", (t) => {
+  const flow = "# flow by-name\n\n- trigger domain.order.create\n- step application.purchase.buy\n";
+  const dir = repo(t, BY_NAME, { "flows/a.md": flow, "flows/b.md": flow.replace("by-name", "other").replace("create", "other"), "flows/c.md": flow.replace("by-name", "poke").replace("create", "poke") });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  // No call at all from `create`, none named `buy` from `other`: `buy` is called only by name.
+  assert.match(o.stdout, /flows\/a\.md:4:1: static fail application\.purchase\.buy: absence: no call path from domain\.order\.create; `application\.purchase\.buy` and its callers are called only by name/);
+  assert.match(o.stdout, /flows\/b\.md:4:1: static fail application\.purchase\.buy: absence: no call path from domain\.order\.other/);
+  assert.match(o.stdout, /flows\/c\.md:4:1: static unverified application\.purchase\.buy: no resolved path from domain\.order\.poke; call through a local value `x\.buy` at src\/domain\/order\.ts:6:3 may reach it/);
+  assert.match(o.stderr, /^2 fail, /m);
+  // Once `buy` is read as a value, any code holding it may call it.
+  writeFileSync(join(dir, "src/presentation/terminal.ts"), `${BY_NAME["src/presentation/terminal.ts"]}export const actions = [buy];\n`);
+  const escaped = results(dir).rows.filter((r) => r.criterion === "static" && r.area === "application.purchase.buy");
+  assert.deepEqual(escaped.map((r) => r.verdict), ["unverified", "unverified", "unverified"]);
+  assert.match(escaped[0]!.evidence, /`buy` is read as a value at src\/presentation\/terminal\.ts:5:25/);
+});
+
+test("static: the hole named is the one with the step's name nearest the parent, not the first file", (t) => {
+  const files = {
+    ...CHECKOUT,
+    "src/application/aaa.ts": "export function helper(name: string): boolean {\n  return name.startsWith(\"x\");\n}\n",
+    "src/presentation/app.ts": [
+      'import { helper } from "../application/aaa.ts";',
+      "export function input(decoder: { save(): void }): void {",
+      '  helper("a");',
+      "  decoder.save();",
+      "}",
+      "",
+    ].join("\n"),
+    // `save` is read as a value in purchase.ts, so the missing path stays unverified.
+  };
+  const dir = repo(t, files, { "flows/app.md": "# flow app\n\n- trigger presentation.app.input\n- step infrastructure.store.save\n" });
+  const evidence = row(results(dir).rows, "static", "infrastructure.store.save")!.evidence;
+  assert.match(evidence, /no resolved path from presentation\.app\.input; call through a local value `decoder\.save` at src\/presentation\/app\.ts:4:3 may reach it \(and 1 more unresolved call in reachable code\)/);
+  assert.doesNotMatch(evidence, /startsWith/);
+});
+
+test("static: recursion, direct or mutual, is a path from a function to itself", (t) => {
+  const code = { "src/domain/walk.ts": "export function f(n: number): void {\n  if (n > 0) g(n);\n}\nfunction g(n: number): void {\n  f(n - 1);\n}\nexport function h(): void {\n  h();\n}\n" };
+  const dir = repo(t, code, { "flows/walk.md": "# flow walk\n\n- trigger domain.walk.f\n  - step domain.walk.f\n- trigger domain.walk.h\n  - step domain.walk.h\n" });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /static ok domain\.walk\.f: reachable from domain\.walk\.f via domain\.walk\.g/);
+  assert.match(o.stdout, /static ok domain\.walk\.h: called from domain\.walk\.h/);
+  // The map does not list a function among its own calls.
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.doesNotMatch(readFileSync(join(dir, "keylang/map/domain.md"), "utf8"), /calls domain\.walk\.h/);
+});
+
+// A hook with a default: the code calls what it is given, or its default.
+const HOOKS: Record<string, string> = {
+  "src/domain/build.ts": "export function build(): void {}\n",
+  "src/application/analyze.ts": [
+    'import { build } from "../domain/build.ts";',
+    "export function analyze(request: { generate?: () => void }): void {",
+    "  const generate = request.generate ?? build;",
+    "  generate();",
+    "}",
+    "export function run(step = build): void {",
+    "  step();",
+    "}",
+    "export class Session {",
+    "  private readonly analyzer: (request: { generate?: () => void }) => void;",
+    "  constructor(options: { analyzer?: (request: { generate?: () => void }) => void }) {",
+    "    this.analyzer = options.analyzer ?? analyze;",
+    "  }",
+    "  refresh(): void {",
+    "    this.analyzer({});",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
+  "src/presentation/worker.ts": [
+    'import { analyze } from "../application/analyze.ts";',
+    "export class Worker {",
+    "  readonly generate = (): void => {};",
+    "}",
+    "export function main(): void {",
+    "  const worker = new Worker();",
+    "  analyze({ generate: worker.generate });",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+const HOOK_FLOW = `# flow hooks
+
+- trigger application.analyze.analyze
+  - step domain.build.build
+  - step presentation.worker.Worker.generate
+`;
+
+test("static: --static=behavior follows a hook's default and an injected value; shape follows only written calls", (t) => {
+  const dir = repo(t, HOOKS, {
+    "flows/hooks.md": HOOK_FLOW,
+    "flows/run.md": "# flow run\n\n- trigger application.analyze.run\n  - step domain.build.build\n",
+    "flows/session.md": "# flow session\n\n- trigger application.analyze.Session.refresh\n  - step application.analyze.analyze\n",
+  });
+  const behavior = keylang(dir, ["check", "--strict"]);
+  assert.equal(behavior.status, 0, behavior.stdout);
+  assert.match(behavior.stdout, /static ok domain\.build\.build: called from application\.analyze\.analyze through the default of the hook `generate`/);
+  assert.match(behavior.stdout, /static ok presentation\.worker\.Worker\.generate: called from application\.analyze\.analyze through `generate` injected at src\/presentation\/worker\.ts:7:3/);
+  assert.match(behavior.stdout, /static ok domain\.build\.build: called from application\.analyze\.run through the default of the hook `step`/);
+  assert.match(behavior.stdout, /static ok application\.analyze\.analyze: called from application\.analyze\.Session\.refresh through the default of the hook `analyzer`/);
+  assert.deepEqual(keylang(dir, ["check", "--strict", "--static", "behavior"]).stdout, behavior.stdout);
+  const shape = keylang(dir, ["check", "--static=shape"]);
+  assert.equal(shape.status, 0, shape.stdout);
+  assert.match(shape.stdout, /static unverified domain\.build\.build: no resolved path from application\.analyze\.analyze; the default of the hook `generate` \(not followed with --static=shape\) at src\/application\/analyze\.ts:4:3 may reach it/);
+  assert.match(shape.stdout, /static unverified presentation\.worker\.Worker\.generate: no resolved path from application\.analyze\.analyze; `generate` injected at src\/presentation\/worker\.ts:7:3 \(not followed with --static=shape\)/);
+  assert.equal(keylang(dir, ["check", "--static=shape", "--strict"]).status, 1);
+  const bad = keylang(dir, ["check", "--static=runtime"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /unknown --static `runtime`; expected behavior, shape/);
+  // Rules do not see the injected value: the dependency is the injector's.
+  assert.doesNotMatch(behavior.stdout, /K10/);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const map = readFileSync(join(dir, "keylang/map/application.md"), "utf8");
+  assert.match(map, /- fn \[analyze\].*\n\s+- calls domain\.build\.build\n/);
+  assert.doesNotMatch(map, /calls .*presentation\.worker/);
 });
 
 // ---------- 17: test reports ----------
@@ -334,7 +464,7 @@ test("trace: a when branch that did not run is unverified and its steps are not 
   assert.equal(row(rows, "trace", "when the item is out of stock")?.verdict, "unverified");
   assert.match(row(rows, "trace", "when the item is out of stock")!.evidence, /branch not exercised/);
   assert.match(row(rows, "trace", "application.purchase.later")!.evidence, /branch not exercised/);
-  assert.equal(rows.some((r) => r.verdict === "fail"), false);
+  assert.equal(rows.some((r) => r.criterion === "trace" && r.verdict === "fail"), false);
 });
 
 test("trace: a count or a negation needs its own predicate", (t) => {
@@ -420,10 +550,11 @@ test("planned: an implemented intention is checked as code and hints to remove t
   const code = { ...CHECKOUT, "src/application/purchase.ts": `${CHECKOUT["src/application/purchase.ts"]}export function refund(order: string): void {}\n` };
   const dir = repo(t, code, { "flows/refund.md": flow });
   const o = keylang(dir, ["check"]);
-  assert.equal(o.status, 0, o.stdout);
+  assert.equal(o.status, 1, o.stdout);
   assert.match(o.stdout, /keylang\/flows\/refund\.md:3:1: K202 planned fn `application\.purchase\.refund` is implemented \(src\/application\/purchase\.ts:\d+\); remove the declaration/);
   assert.match(o.stdout, /ID ok application\.purchase\.refund: exact/);
-  assert.match(o.stdout, /static unverified application\.purchase\.refund: no call path from presentation\.terminal\.checkout/);
+  // Implemented and checked as code: nothing calls `refund`, and nothing could.
+  assert.match(o.stdout, /static fail application\.purchase\.refund: absence: no call path from presentation\.terminal\.checkout/);
   writeFileSync(join(dir, "keylang/flows/refund.md"), flow.replace("(order: string) → void", "(order: number) → void"));
   const signature = keylang(dir, ["check"]);
   assert.equal(signature.status, 1);

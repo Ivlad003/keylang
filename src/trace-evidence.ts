@@ -81,11 +81,15 @@ export function loadTraces(root: string, files: readonly string[]): TraceRun[] {
         if (!Array.isArray(links) || !links.every((link) => typeof link === "string")) throw new Error(`${at}: \`links\` must be an array of span ids`);
         const parent = event.parentSpanId;
         if (parent !== undefined && parent !== null && typeof parent !== "string") throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
-        run.spans.push({ spanId: str("spanId"), parentSpanId: parent ?? null, symbolId: str("symbolId"), links: links as string[], start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
+        const spanId = str("spanId");
+        // Two starts of one span id would let one process's steps nest under another's trigger.
+        if (run.spans.some((item) => item.spanId === spanId)) throw new Error(`${at}: span \`${spanId}\` started twice in run \`${run.runId}\``);
+        run.spans.push({ spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links: links as string[], start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
       } else if (kind === "end") {
         const spanId = str("spanId");
         const span = run.spans.find((item) => item.spanId === spanId);
         if (!span) throw new Error(`${at}: end of unknown span \`${spanId}\``);
+        if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
         span.end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
       } else if (kind === "run") {
         run.complete = event.complete === true;

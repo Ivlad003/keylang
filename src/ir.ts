@@ -25,6 +25,8 @@ export interface Section {
   heading: Spanned<string> | null;
   /** Second heading word, e.g. the flow name. */
   name: Spanned<string> | null;
+  /** `<!-- … -->` after the heading words, kept by `fmt`. */
+  comment?: Spanned<string>;
   items: Item[];
 }
 

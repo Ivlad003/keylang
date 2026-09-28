@@ -1,7 +1,7 @@
 // File discovery and loading.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname, join, resolve } from "node:path";
 import type { Document } from "./ir.ts";
 import { parse } from "./parser.ts";
 
@@ -21,7 +21,14 @@ export function collectMdFiles(paths: readonly string[]): string[] {
     if (st.isDirectory()) walkDir(p, out);
     else out.push(p);
   }
-  return out;
+  // `check d ./d/a.md` names one file twice; it is one document, not a duplicate declaration.
+  const seen = new Set<string>();
+  return out.filter((file) => {
+    const key = resolve(file);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function walkDir(dir: string, out: string[]): void {

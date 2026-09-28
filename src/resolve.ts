@@ -141,7 +141,7 @@ export function refineOpacity(
               const suggestion = index.suggest(ref.target);
               if (suggestion !== undefined) msg += ` (did you mean \`${suggestion}\`?)`;
               msg += "; declare `planned` if this is an intention";
-              added.push(diagnostic("K001", doc.path, ref.span, msg));
+              added.push(diagnostic("K001", doc.path, ref.span, msg, ref.target));
             }
           }
         });
@@ -181,7 +181,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[])
       const s = index.suggest(r.target);
       if (s !== undefined) msg += ` (did you mean \`${s}\`?)`;
       msg += "; declare `planned` if this is an intention";
-      diags.push(diagnostic("K001", doc.path, r.span, msg));
+      diags.push(diagnostic("K001", doc.path, r.span, msg, r.target));
     }
   }
   for (const child of node.children) {

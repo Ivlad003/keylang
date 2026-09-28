@@ -1,4 +1,4 @@
-// `keylang` command line: init, map, check, parse, fmt.
+// `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -13,16 +13,22 @@ import { kindLabel, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within } from "./analyze.ts";
 import { diffMap, writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
+import { STATIC_MODES } from "./flows.ts";
 import { serveLsp } from "./lsp.ts";
+import { runTerminal } from "./tui/terminal.ts";
+import { serveWeb } from "./tui/web.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
-Usage: keylang <command> [options] [paths…]
+Usage: keylang                      Open the TUI in this terminal (needs a TTY)
+       keylang <command> [options] [paths…]
 
 Commands:
+  web [--port N] [--host H] The TUI in a browser tab: serves http://localhost:7070
+                            with a one-time token (localhost only by default)
   init [dir]                Detect languages and layers, write keylang.json, build the map
   map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json
                             (--check: fail if the committed map is stale)
@@ -38,6 +44,12 @@ Options:
   -V, --version             Show version
   --strict                  Exit 1 when a required result is unverified
   --format <name>           check output: human (default), json, sarif, github
+  --static <mode>           check: which calls prove a flow step statically:
+                            behavior (default) also follows a hook's default
+                            (\`x ?? f\`, \`g = f\`) and values callers inject for it;
+                            shape follows only calls written in the code
+  --port <n>                web: port (default 7070; 0 picks a free one)
+  --host <addr>             web: address to listen on (default 127.0.0.1)
   --explain-edge <a> <b>    Print snapshot edges between ids a and b (a → b, then b → a),
                             or the unresolved constructs in a that could form one;
                             writes nothing
@@ -68,9 +80,12 @@ async function run(argv: readonly string[]): Promise<number> {
       check: { type: "boolean" },
       strict: { type: "boolean" },
       format: { type: "string" },
+      static: { type: "string" },
       "explain-edge": { type: "boolean" },
       // Language clients pass `--stdio` to name the transport; stdio is the only one.
       stdio: { type: "boolean" },
+      port: { type: "string" },
+      host: { type: "string" },
     },
   });
   if (values.help) {
@@ -84,8 +99,12 @@ async function run(argv: readonly string[]): Promise<number> {
   }
   const [cmd, ...paths] = positionals;
   if (cmd === undefined) {
-    process.stderr.write(USAGE);
-    return 2;
+    // Without a terminal there is nothing to draw on: usage, as before the TUI.
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      process.stderr.write(USAGE);
+      return 2;
+    }
+    return runTerminal(findRoot(process.cwd()));
   }
   switch (cmd) {
     case "init":
@@ -93,11 +112,13 @@ async function run(argv: readonly string[]): Promise<number> {
     case "map":
       return cmdMap(paths[0] ?? ".", values.check === true);
     case "check":
-      return cmdCheck(paths, { strict: values.strict === true, format: values.format ?? "human", explain: values["explain-edge"] === true });
+      return cmdCheck(paths, { strict: values.strict === true, format: values.format ?? "human", explain: values["explain-edge"] === true, static: values.static ?? "behavior" });
     case "explain":
       return cmdExplain(paths[0]);
     case "lsp":
       return serveLsp();
+    case "web":
+      return cmdWeb(values.port ?? "7070", values.host ?? "127.0.0.1");
     case "parse":
       needPaths(cmd, paths);
       return cmdParse(paths, values.json === true);
@@ -107,6 +128,36 @@ async function run(argv: readonly string[]): Promise<number> {
     default:
       throw new Error(`unknown command \`${cmd}\`; see --help`);
   }
+}
+
+async function cmdWeb(portText: string, host: string): Promise<number> {
+  const port = Number(portText);
+  if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
+  const server = await serveWeb({ root: findRoot(process.cwd()), port, host });
+  process.stdout.write(`keylang web: ${server.url}\n`);
+  process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
+  await new Promise<void>((resolve) => {
+    // Ctrl+C with unsaved buffers in a session asks once more, like `q` in the TUI; SIGTERM always stops.
+    let armed = false;
+    const onInterrupt = (): void => {
+      const unsaved = server.unsaved();
+      if (unsaved.length > 0 && !armed) {
+        armed = true;
+        process.stderr.write(`keylang web: unsaved changes in ${unsaved.join(", ")}; Ctrl+C again stops the server and drops them\n`);
+        return;
+      }
+      stop();
+    };
+    const stop = (): void => {
+      process.off("SIGINT", onInterrupt);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.on("SIGINT", onInterrupt);
+    process.on("SIGTERM", stop);
+  });
+  await server.close();
+  return 0;
 }
 
 function cmdExplain(code: string | undefined): number {
@@ -122,12 +173,13 @@ function needPaths(cmd: string, paths: string[]): void {
 }
 
 async function cmdInit(dir: string): Promise<number> {
-  const root = join(process.cwd(), dir);
+  const root = resolve(process.cwd(), dir);
   const file = join(root, CONFIG_FILE);
   const config = loadConfig(root);
   if (config.languages.length === 0) {
+    // Nothing to describe is a usage error (like `map`), not a finding.
     process.stderr.write(`keylang: no supported source files found under ${dir} (TypeScript, JavaScript)\n`);
-    return 1;
+    return 2;
   }
   if (existsSync(file)) {
     process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
@@ -139,7 +191,7 @@ async function cmdInit(dir: string): Promise<number> {
 }
 
 async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
-  const root = join(process.cwd(), dir);
+  const root = resolve(process.cwd(), dir);
   // `map --check` only reads; `map` also leaves the fact cache for the next run.
   const analyzed = await analyze({ root, specs: [], withoutEvidence: true, persistFacts: !checkOnly });
   const config = analyzed.config;
@@ -188,10 +240,12 @@ function cmdParse(paths: string[], json: boolean): number {
 
 const FORMATS = ["human", "json", "sarif", "github"] as const;
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string }): Promise<number> {
   if (!FORMATS.includes(opts.format as (typeof FORMATS)[number])) {
     throw new Error(`unknown --format \`${opts.format}\`; expected ${FORMATS.join(", ")}`);
   }
+  const staticMode = STATIC_MODES.find((mode) => mode === opts.static);
+  if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
   const cwd = process.cwd();
   if (opts.explain) {
     const analyzed = await analyze({ root: findRoot(cwd), specs: [] });
@@ -208,6 +262,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     root,
     specs,
     display: (abs) => toPosix(relative(cwd, abs)),
+    static: staticMode,
     ...(inRepo ? {} : { withoutCode: true }),
   });
   const diags = analyzed.diagnostics;
@@ -245,8 +300,9 @@ function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
     .sort((a, b) => Number(!forward(a)) - Number(!forward(b)) || compareText(a.kind, b.kind) || compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || compareText(a.source, b.source));
   for (const edge of hits) {
     const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
+    const hook = edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)` : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})` : "";
     const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
-    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${edge.reason ? ` (${edge.reason})` : ""}\n`);
+    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${edge.reason ? ` (${edge.reason})` : ""}\n`);
   }
   if (hits.length > 0) return 0;
   const holes = snapshot.coverage

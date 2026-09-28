@@ -2,7 +2,12 @@
 // Node API). Supports `**`, `*`, `?` and `{a,b}`; paths are POSIX-relative.
 
 export function globToRegExp(glob: string): RegExp {
-  let re = "^";
+  return new RegExp(`^${source(glob)}$`);
+}
+
+/** The regex body of a glob; each `{a,b}` alternative is a glob itself (`{src/**,lib/*.ts}`). */
+function source(glob: string): string {
+  let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
     if (c === "*") {
@@ -20,23 +25,48 @@ export function globToRegExp(glob: string): RegExp {
     } else if (c === "?") {
       re += "[^/]";
     } else if (c === "{") {
-      const close = glob.indexOf("}", i);
+      const close = closingBrace(glob, i);
       if (close === -1) {
         re += "\\{";
       } else {
-        const alts = glob.slice(i + 1, close).split(",").map(escape);
-        re += `(?:${alts.join("|")})`;
+        re += `(?:${splitAlternatives(glob.slice(i + 1, close)).map(source).join("|")})`;
         i = close;
       }
     } else {
       re += escape(c);
     }
   }
-  return new RegExp(`${re}$`);
+  return re;
+}
+
+function closingBrace(glob: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < glob.length; i++) {
+    if (glob[i] === "{") depth++;
+    else if (glob[i] === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/** Top-level commas of a brace body: `a,{b,c}` → `a`, `{b,c}`. */
+function splitAlternatives(body: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === "{") depth++;
+    else if (body[i] === "}") depth--;
+    else if (body[i] === "," && depth === 0) {
+      out.push(body.slice(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(body.slice(from));
+  return out;
 }
 
 function escape(s: string): string {
-  return s.replace(/[.+^$()|[\]\\]/g, "\\$&");
+  return s.replace(/[.+^$()|[\]\\{}]/g, "\\$&");
 }
 
 export function matchesGlob(path: string, glob: string): boolean {

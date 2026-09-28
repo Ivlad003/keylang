@@ -24,7 +24,7 @@ interface Rpc {
   error?: { code: number; message: string };
 }
 
-const ERRORS = { methodNotFound: -32601, internal: -32603, cancelled: -32800 } as const;
+const ERRORS = { parse: -32700, invalidRequest: -32600, methodNotFound: -32601, internal: -32603, cancelled: -32800 } as const;
 /** Changes that arrive together are analysed once. */
 const SETTLE_MS = 60;
 
@@ -40,13 +40,29 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
       const headerEnd = buffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) break;
       const match = /Content-Length: (\d+)/i.exec(buffer.subarray(0, headerEnd).toString("utf8"));
-      if (!match?.[1]) return 1;
+      if (!match?.[1]) {
+        // Without a length the stream cannot be framed again; say why instead of exiting silently.
+        process.stderr.write("keylang lsp: a message header without Content-Length; the stream cannot continue\n");
+        return 1;
+      }
       const start = headerEnd + 4;
       const length = Number(match[1]);
       if (buffer.length < start + length) break;
       const body = buffer.subarray(start, start + length).toString("utf8");
       buffer = buffer.subarray(start + length);
-      server.receive(JSON.parse(body) as Rpc);
+      // One malformed message is answered as an error; the session goes on.
+      let message: unknown;
+      try {
+        message = JSON.parse(body);
+      } catch (error) {
+        server.reject(null, ERRORS.parse, `parse error: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+      if (typeof message !== "object" || message === null || Array.isArray(message)) {
+        server.reject(null, ERRORS.invalidRequest, "a message must be a JSON object");
+        continue;
+      }
+      server.receive(message as Rpc);
       if (server.exitCode !== null) {
         await server.drain();
         return server.exitCode;
@@ -80,11 +96,20 @@ class Server {
     this.send = send;
   }
 
+  reject(id: number | string | null, code: number, message: string): void {
+    this.send({ jsonrpc: "2.0", id, error: { code, message } });
+  }
+
   receive(message: Rpc): void {
     // A response to one of our requests (`workspace/diagnostic/refresh`) needs nothing.
-    if (!message.method) return;
+    if (typeof message.method !== "string") return;
     if (message.id === undefined || message.id === null) {
-      this.notify(message.method, message.params ?? {});
+      // A notification has no reply channel: a failure (a URI that is not a local file) is logged.
+      try {
+        this.notify(message.method, message.params ?? {});
+      } catch (error) {
+        process.stderr.write(`keylang lsp: ${message.method}: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
       return;
     }
     const id = message.id;
@@ -207,6 +232,8 @@ class Server {
 
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
     if (method === "initialize") return this.initialize(params);
+    // After `shutdown` the only valid message is `exit`.
+    if (this.shutdown) throw new LspError(ERRORS.invalidRequest, `\`${method}\` after shutdown`);
     if (method === "shutdown") {
       this.shutdown = true;
       return null;

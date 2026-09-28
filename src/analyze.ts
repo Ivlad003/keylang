@@ -9,6 +9,7 @@ import { assess, type Assessment } from "./assess.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix, type Config } from "./config.ts";
 import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
+import type { StaticMode } from "./flows.ts";
 import type { Document } from "./ir.ts";
 import { generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
@@ -31,6 +32,10 @@ export interface AnalysisRequest {
   withoutEvidence?: boolean;
   /** Write the fact cache for the next process (`keylang map`). */
   persistFacts?: boolean;
+  /** Builds the snapshot; the TUI passes one that runs in a worker thread. Default: `generateMap`. */
+  generate?: (config: Config, options: { persist: boolean; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
+  /** Which call edges prove a flow step statically. Default: `behavior`. */
+  static?: StaticMode;
 }
 
 export interface Analysis extends Assessment {
@@ -45,7 +50,9 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const config = loadConfig(root);
   const display = request.display ?? ((abs: string) => toPosix(relative(root, abs)));
   const overlay = request.overlay ?? new Map<string, string>();
-  const map = config.languages.length > 0 && request.withoutCode !== true ? await generateMap(config, { persist: request.persistFacts === true, overlay }) : null;
+  const options = { persist: request.persistFacts === true, overlay };
+  const generate = request.generate ?? generateMap;
+  const map = config.languages.length > 0 && request.withoutCode !== true ? await generate(config, options) : null;
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
@@ -75,6 +82,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const assessment = assess(docs, snapshot, {
     tests: testFiles === null ? null : loadReports(root, testFiles),
     traces: traceFiles === null ? null : loadTraces(root, traceFiles),
+    ...(request.static ? { static: request.static } : {}),
   });
   return { ...assessment, config, map, snapshot, docs };
 }

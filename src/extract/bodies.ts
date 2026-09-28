@@ -2,7 +2,7 @@
 // Positions match the declaration ranges of `FileFacts` (1-based line/col of
 // the declaring node); offsets index the JS string (UTF-16 code units).
 
-import { grammarFor, parseSource, type Node } from "./treesitter.ts";
+import { grammarFor, withTree, type Node } from "./treesitter.ts";
 
 export interface FunctionBody {
   /** Offset of the body: after `{` for a block, the expression start otherwise. */
@@ -18,8 +18,11 @@ export interface FunctionBody {
 const FUNCTIONS = new Set(["function_declaration", "generator_function_declaration", "function_expression", "function", "generator_function", "arrow_function", "method_definition"]);
 
 /** `line:col` of each declaring node → the body of its function. */
-export async function functionBodies(path: string, src: string): Promise<Map<string, FunctionBody>> {
-  const { tree } = await parseSource(grammarFor(path), src);
+export function functionBodies(path: string, src: string): Promise<Map<string, FunctionBody>> {
+  return withTree(grammarFor(path), src, (tree) => bodiesOf(tree.rootNode));
+}
+
+function bodiesOf(root: Node): Map<string, FunctionBody> {
   const out = new Map<string, FunctionBody>();
   const add = (declaring: Node, fn: Node): void => {
     const body = fn.childForFieldName("body");
@@ -37,12 +40,13 @@ export async function functionBodies(path: string, src: string): Promise<Map<str
   };
   const visit = (node: Node): void => {
     if (FUNCTIONS.has(node.type)) add(node, node);
-    if (node.type === "variable_declarator") {
+    // `const f = () => …` and a class field `handler = () => …` are declared by the declarator or the field.
+    if (node.type === "variable_declarator" || node.type === "public_field_definition" || node.type === "field_definition") {
       const value = node.childForFieldName("value");
       if (value && FUNCTIONS.has(value.type)) add(node, value);
     }
     for (const child of node.namedChildren) visit(child);
   };
-  visit(tree.rootNode);
+  visit(root);
   return out;
 }

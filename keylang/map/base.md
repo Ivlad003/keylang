@@ -14,47 +14,51 @@
     - fn [loadConfig](../../src/config.ts#L80) (root: string) → Config
       - calls base.config.parseConfig, base.config.detectLanguages, base.config.guessLayers
     - fn [parseConfig](../../src/config.ts#L106) (file: string, text: string) → RawConfig
-      - calls base.config.isObject
-    - fn [isObject](../../src/config.ts#L157) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [configToJson](../../src/config.ts#L162) (c: Config) → string
-    - fn [sourceFiles](../../src/config.ts#L175) (c: Config) → string[]
+      - calls base.glob.globToRegExp, base.config.isObject, base.config.layerName
+    - fn [isObject](../../src/config.ts#L172) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [configToJson](../../src/config.ts#L177) (c: Config) → string
+    - fn [sourceFiles](../../src/config.ts#L190) (c: Config) → string[]
       - calls base.config.walkSources, base.config.isExcluded
-    - fn [excludedSourceFiles](../../src/config.ts#L180) (c: Config) → string[]
+    - fn [excludedSourceFiles](../../src/config.ts#L195) (c: Config) → string[]
       - calls base.config.walkSources, base.config.isExcluded
-    - fn [walkSources](../../src/config.ts#L185) (c: Config, keep: (rel: string) => boolean) → string[] <!-- internal -->
+    - fn [walkSources](../../src/config.ts#L200) (c: Config, keep: (rel: string) => boolean) → string[] <!-- internal -->
       - calls base.config.toPosix, base.config.skipDir, base.config.languageOf
-    - fn [evidenceFiles](../../src/config.ts#L212) (c: Config, field: "tests" | "trace") → string[] | null
+    - fn [evidenceFiles](../../src/config.ts#L227) (c: Config, field: "tests" | "trace") → string[] | null
       - calls base.glob.globPrefix, base.config.toPosix, base.glob.matchesGlob
-    - fn [isExcluded](../../src/config.ts#L234) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L249) (rel: string, extra: readonly string[]) → boolean
       - calls base.glob.matchesGlob
-    - fn [toPosix](../../src/config.ts#L238) (p: string) → string
-    - fn [detectLanguages](../../src/config.ts#L242) (root: string) → Language[] <!-- internal -->
+    - fn [toPosix](../../src/config.ts#L253) (p: string) → string
+    - fn [detectLanguages](../../src/config.ts#L257) (root: string) → Language[] <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf
-    - fn [guessLayers](../../src/config.ts#L266) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L281) (root: string, exclude: readonly string[]) → Map<string, string[]>
       - calls base.config.hasRootFiles, base.config.hasSource, base.config.skipDir, base.glob.matchesGlob, base.config.layerName
-    - fn [hasRootFiles](../../src/config.ts#L286) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L301) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.languageOf, base.config.isExcluded
-    - fn [hasSource](../../src/config.ts#L290) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L305) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.config.languageOf, base.config.isExcluded
-    - fn [layerName](../../src/config.ts#L303) (name: string) → string
+    - fn [layerName](../../src/config.ts#L318) (name: string) → string
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
     - type [Severity](../../src/diag.ts#L35) = "error" | "warning"
     - fn [severityOf](../../src/diag.ts#L37) (code: Code) → Severity
     - type [Diagnostic](../../src/diag.ts#L41)
-    - fn [diagnostic](../../src/diag.ts#L49) (code: Code, file: string, span: Span, message: string) → Diagnostic
+    - fn [diagnostic](../../src/diag.ts#L51) (code: Code, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L53) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L58) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L63) (a: Diagnostic, b: Diagnostic) → number
+    - fn [isError](../../src/diag.ts#L55) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L60) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L65) (a: Diagnostic, b: Diagnostic) → number
   - module [glob](../../src/glob.ts#L1)
     - fn [globToRegExp](../../src/glob.ts#L4) (glob: string) → RegExp
-      - calls base.glob.escape
-    - fn [escape](../../src/glob.ts#L38) (s: string) → string <!-- internal -->
-    - fn [matchesGlob](../../src/glob.ts#L42) (path: string, glob: string) → boolean
+      - calls base.glob.source
+    - fn [source](../../src/glob.ts#L9) (glob: string) → string <!-- internal -->
+      - calls base.glob.closingBrace, base.glob.splitAlternatives, base.glob.escape
+    - fn [closingBrace](../../src/glob.ts#L42) (glob: string, open: number) → number <!-- internal -->
+    - fn [splitAlternatives](../../src/glob.ts#L52) (body: string) → string[] <!-- internal -->
+    - fn [escape](../../src/glob.ts#L68) (s: string) → string <!-- internal -->
+    - fn [matchesGlob](../../src/glob.ts#L72) (path: string, glob: string) → boolean
       - calls base.glob.globToRegExp
-    - fn [globPrefix](../../src/glob.ts#L47) (glob: string) → string
+    - fn [globPrefix](../../src/glob.ts#L77) (glob: string) → string
   - module [span](../../src/span.ts#L1)
     - type [Pos](../../src/span.ts#L9)
     - type [Span](../../src/span.ts#L16)

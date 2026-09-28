@@ -9,6 +9,7 @@
 // ended (an async continuation) carries a link to the parent.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { register } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -33,15 +34,23 @@ const root = resolve(process.env.KEYLANG_TRACE_ROOT ?? process.cwd());
 const { port1, port2 } = new MessageChannel();
 const hooks = import.meta.url.endsWith(".ts") ? "./trace-hooks.ts" : "./trace-hooks.js";
 register(hooks, { parentURL: import.meta.url, data: { root, flow, port: port2 }, transferList: [port2] });
-let plan: TracePlanMessage | null = null;
-const planned = (): TracePlanMessage | null => {
-  plan ??= (receiveMessageOnPort(port1)?.message as TracePlanMessage | undefined) ?? null;
+let plan: Extract<TracePlanMessage, { kind: "plan" }> | null = null;
+const loaded = new Set<string>();
+/** Reads what the hooks thread sent so far: the plan, then the files it was applied to. */
+const planned = (): typeof plan => {
+  for (;;) {
+    const message = receiveMessageOnPort(port1)?.message as TracePlanMessage | undefined;
+    if (!message) break;
+    if (message.kind === "plan") plan = message;
+    else for (const id of message.ids) loaded.add(id);
+  }
   return plan;
 };
 port1.unref();
 
 const context = new AsyncLocalStorage<Span>();
-const clockId = `pid-${process.pid}`;
+// Span ids are unique across the processes of one run: several may share KEYLANG_TRACE_RUN.
+const clockId = `pid-${process.pid}-${randomBytes(4).toString("hex")}`;
 const lines: string[] = [];
 const open = new Set<string>();
 let seq = 0;
@@ -53,7 +62,7 @@ const write = (event: Record<string, unknown>): void => {
 
 const start = (symbolId: string): Span => {
   const parent = context.getStore() ?? null;
-  const span: Span = { spanId: `s${++spans}`, ended: false };
+  const span: Span = { spanId: `${clockId}:s${++spans}`, ended: false };
   write({ event: "start", spanId: span.spanId, parentSpanId: parent?.spanId ?? null, symbolId, clockId, seq: ++seq, ts: performance.now(), ...(parent?.ended ? { links: [parent.spanId] } : {}) });
   open.add(span.spanId);
   return span;
@@ -92,13 +101,18 @@ const finish = (span: Span, outcome: "ok" | "error"): void => {
   },
 };
 
-process.on("exit", () => {
+// A process that crashed did not run the flow to its end: its spans are not complete evidence.
+// A non-zero exit code alone is not a crash (`keylang check` exits 1 on findings); it is recorded.
+let crashed = false;
+process.on("uncaughtExceptionMonitor", () => (crashed = true));
+process.on("exit", (code) => {
   const info = planned();
   write({
     event: "run",
-    complete: info !== null && !info.error && open.size === 0,
+    complete: info !== null && !info.error && open.size === 0 && !crashed,
     dropped: 0,
-    instrumented: info?.instrumented ?? [],
+    instrumented: (info?.planned ?? []).filter((id) => loaded.has(id)),
+    ...(code !== 0 ? { exitCode: code } : {}),
     open: [...open],
     ...(info?.error ? { error: info.error } : {}),
   });
