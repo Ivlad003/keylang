@@ -10,6 +10,8 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { contextPack } from "../src/agent-context.ts";
 import { analyze } from "../src/analyze.ts";
+import { explanationRequest } from "../src/explain-llm.ts";
+import { summarizeNode } from "../src/explain-node.ts";
 import { ghostSuggestions } from "../src/ghost.ts";
 import type { LlmClient } from "../src/llm.ts";
 
@@ -48,6 +50,21 @@ test("context pack: code that changed on disk after the snapshot is left out and
   assert.equal(pack.items.find((i) => i.key === "node:app.checkout.checkout")?.incomplete, true);
   // Code that still matches is sent.
   assert.equal(contextPack(analysis, { ...input, line: 3 }).items.some((i) => i.key === "code:domain.order.createOrder"), true);
+});
+
+test("explain request: the code comes from the bytes the snapshot read; a file changed since is left out and the prompt says so", async (t) => {
+  const dir = copy(t);
+  const analysis = await analyze({ root: dir, withoutEvidence: true });
+  const result = summarizeNode(analysis, "app.checkout.checkout");
+  assert.ok("summary" in result);
+  const options = { lang: "en", detail: "short" } as const;
+  assert.match(explanationRequest(analysis, result.summary, options).prompt, /export function checkout/);
+  const file = join(dir, "src/app/checkout.ts");
+  writeFileSync(file, readFileSync(file, "utf8").replace("db.save(order);", "db.save(order); // edited"));
+  const prompt = explanationRequest(analysis, result.summary, options).prompt;
+  assert.doesNotMatch(prompt, /\/\/ edited/);
+  assert.doesNotMatch(prompt, /export function checkout/);
+  assert.match(prompt, /Code: not shown — src\/app\/checkout\.ts changed after the analysis read it\./);
 });
 
 test("ghost: a suggestion is checked where it would stand — a step under an `invariant` is dropped, the same step as a sibling is kept", async (t) => {

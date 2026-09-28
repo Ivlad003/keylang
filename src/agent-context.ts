@@ -148,7 +148,7 @@ function specDigest(analysis: Analysis): string {
 }
 
 /** The text of a source file when it still has the bytes the snapshot hashed; null otherwise. */
-function snapshotSource(analysis: Analysis, file: string): string | null {
+export function snapshotSource(analysis: Analysis, file: string): string | null {
   const abs = join(analysis.config.root, file);
   const expected = analysis.snapshot?.manifest.files.find((f) => f.path === file)?.sha256;
   if (expected === undefined || !existsSync(abs)) return null;

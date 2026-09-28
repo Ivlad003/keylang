@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { snapshotSource } from "./agent-context.ts";
 import type { Analysis } from "./analyze.ts";
 import { formatSummary, type NodeSummary } from "./explain-node.ts";
 import type { LlmRequest } from "./llm.ts";
@@ -103,10 +104,13 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
   const nodes = analysis.snapshot?.nodes ?? {};
   const signature = (id: string): string => `${id}${nodes[id]?.signature ? ` ${nodes[id]!.signature}` : ""}`;
   const node = nodes[summary.id];
-  const code = node?.file && node.line !== null ? sourceLines(analysis.config.root, node.file, node.line, node.endLine ?? node.line) : null;
+  // The code as the snapshot read it: a file changed since is left out, and the prompt says so.
+  const source = node?.file ? snapshotSource(analysis, node.file) : null;
+  const code = source !== null && node?.line !== null && node?.line !== undefined ? sourceLines(source, node.line, node.endLine ?? node.line) : null;
   const parts = [
     `Node:\n${formatSummary(summary)}`,
     ...(code ? [`Code (${node!.file}:${node!.line}):\n\`\`\`\n${code}\n\`\`\``] : []),
+    ...(node?.file && source === null ? [`Code: not shown — ${node.file} changed after the analysis read it.`] : []),
     ...(summary.calls.length > 0 ? [`It calls:\n${summary.calls.map(signature).join("\n")}`] : []),
     ...(summary.callers.length > 0 ? [`Called by:\n${summary.callers.map(signature).join("\n")}`] : []),
     `Layer: ${summary.id.split(".")[0]}`,
@@ -125,10 +129,8 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
   return { system, prompt: parts.join("\n\n"), maxTokens: options.detail === "short" ? 1024 : 4096 };
 }
 
-function sourceLines(root: string, file: string, from: number, to: number): string | null {
-  const abs = join(root, file);
-  if (!existsSync(abs)) return null;
+function sourceLines(text: string, from: number, to: number): string {
   // A long body is cut, and the prompt says so: the summary and signatures carry the rest.
-  const lines = readFileSync(abs, "utf8").split("\n").slice(from - 1, to);
+  const lines = text.split("\n").slice(from - 1, to);
   return lines.length > 200 ? `${lines.slice(0, 200).join("\n")}\n… (${lines.length - 200} more lines not shown)` : lines.join("\n");
 }
