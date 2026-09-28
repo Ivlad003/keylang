@@ -336,11 +336,11 @@
     - type [Segment](../../src/tui/markdown.ts#L11)
     - type [ReadRow](../../src/tui/markdown.ts#L16)
     - fn [inline](../../src/tui/markdown.ts#L24) (written: string, base: Style) → Segment[]
-    - fn [wrap](../../src/tui/markdown.ts#L42) (segments: Segment[], width: number, hang: number, source: number) → ReadRow[] <!-- internal -->
+    - fn [wrap](../../src/tui/markdown.ts#L44) (segments: Segment[], width: number, hang: number, source: number) → ReadRow[] <!-- internal -->
       - calls tui.width.stringWidth
-    - fn [tableRows](../../src/tui/markdown.ts#L63) (block: { text: string; line: number }[], width: number) → ReadRow[] <!-- internal -->
+    - fn [tableRows](../../src/tui/markdown.ts#L65) (block: { text: string; line: number }[], width: number) → ReadRow[] <!-- internal -->
       - calls tui.width.stringWidth
-    - fn [renderMarkdown](../../src/tui/markdown.ts#L83) (text: string, width: number) → ReadRow[]
+    - fn [renderMarkdown](../../src/tui/markdown.ts#L85) (text: string, width: number) → ReadRow[]
       - calls tui.markdown.tableRows, tui.markdown.wrap, tui.markdown.inline
   - module [merge-session](../../src/tui/merge-session.ts#L1)
     - node external.node

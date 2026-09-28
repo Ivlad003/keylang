@@ -22,15 +22,15 @@
       - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
     <a id="extract.doc-comments"></a><br>Documentation comments without their syntax. Frontends decide which comment documents what; this module only turns comment source into text, lines kept, so the brief rule (`src/brief.ts`) can find the first paragraph.
-    - fn [isLicense](../../src/extract/doc-comments.ts#L6) (text: string) → boolean
-      <a id="extract.doc-comments.isLicense"></a>
-    - fn [blockCommentBody](../../src/extract/doc-comments.ts#L11) (text: string) → string
+    - fn [isLicense](../../src/extract/doc-comments.ts#L10) (text: string) → boolean
+      <a id="extract.doc-comments.isLicense"></a><br>A license or copyright notice: a comment that starts with one (`SPDX-…`, `Copyright …`, `(c) 2024`, `© …`) or carries an SPDX identifier. A comment that only mentions copyright is documentation.
+    - fn [blockCommentBody](../../src/extract/doc-comments.ts#L16) (text: string) → string
       <a id="extract.doc-comments.blockCommentBody"></a><br>`/** … *\/`, `/*! … *\/` or `/* … *\/` without delimiters and the ` * ` that starts each line.
-    - fn [lineCommentsBody](../../src/extract/doc-comments.ts#L21) (lines: readonly string[], marker: RegExp) → string
+    - fn [lineCommentsBody](../../src/extract/doc-comments.ts#L26) (lines: readonly string[], marker: RegExp) → string
       <a id="extract.doc-comments.lineCommentsBody"></a><br>Consecutive line comments (`//`, `///`, `//!`, `#`) as lines of text, one comment marker and one space removed from each.
-    - fn [jsdocDescription](../../src/extract/doc-comments.ts#L29) (body: string) → string
+    - fn [jsdocDescription](../../src/extract/doc-comments.ts#L34) (body: string) → string
       <a id="extract.doc-comments.jsdocDescription"></a><br>JSDoc text: the description before the first block tag (`@param`, `@returns`, …), with inline `x` as `x` and `label` / `label` as `label`.
-    - fn [nonEmpty](../../src/extract/doc-comments.ts#L39) (text: string) → string | null
+    - fn [nonEmpty](../../src/extract/doc-comments.ts#L44) (text: string) → string | null
       <a id="extract.doc-comments.nonEmpty"></a><br>Text of the whole comment, or null when it has none: an empty comment, only tags, a directive.
   - module [facts](../../src/extract/facts.ts#L1)
     <a id="extract.facts"></a><br>Language-independent facts extracted from one source file. Everything the map and the index need; nothing about layers or IDs yet.

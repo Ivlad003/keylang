@@ -25,47 +25,48 @@
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - explanations map.explanations
+    - graph map.graph
+    - span base.span
     - snapshot map.snapshot
-    - fn [isGeneratedMap](../../src/emit.ts#L11) (text: string) → boolean
-    - fn [codeHref](../../src/emit.ts#L22) (mapDir: string, filePath: string, line: number) → string
+    - fn [isGeneratedMap](../../src/emit.ts#L13) (text: string) → boolean
+    - fn [codeHref](../../src/emit.ts#L24) (mapDir: string, filePath: string, line: number) → string
       - calls map.emit.encodeSegment
-    - fn [encodeSegment](../../src/emit.ts#L31) (seg: string) → string <!-- internal -->
-    - fn [renderMap](../../src/emit.ts#L36) (snapshot: AnalysisSnapshot, mapDir: string) → Map<string, string>
+    - fn [encodeSegment](../../src/emit.ts#L33) (seg: string) → string <!-- internal -->
+    - fn [renderMap](../../src/emit.ts#L38) (snapshot: AnalysisSnapshot, mapDir: string) → Map<string, string>
       - calls map.emit.renderLayers, map.emit.childrenByParent
-    - type [ExplainNode](../../src/emit.ts#L41) = (id: string) => NodeExplanation | null
-    - fn [renderExplainedMap](../../src/emit.ts#L51) (snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode) → Map<string, string>
+    - type [ExplainNode](../../src/emit.ts#L43) = (id: string) => NodeExplanation | null
+    - fn [renderExplainedMap](../../src/emit.ts#L53) (snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode) → Map<string, string>
       - calls map.emit.childrenByParent, map.emit.renderLayers, map.emit.renderReadme
-    - type [Render](../../src/emit.ts#L58) <!-- internal -->
-    - fn [renderLayers](../../src/emit.ts#L66) (r: Render) → Map<string, string> <!-- internal -->
+    - type [Render](../../src/emit.ts#L60) <!-- internal -->
+    - fn [renderLayers](../../src/emit.ts#L68) (r: Render) → Map<string, string> <!-- internal -->
       - calls map.emit.layerIds, map.emit.contents, map.emit.describe, map.emit.sortIds, map.emit.renderModule
-    - fn [layerIds](../../src/emit.ts#L76) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
-    - fn [anchorOf](../../src/emit.ts#L86) (id: string) → string
-    - fn [ref](../../src/emit.ts#L91) (r: Render, id: string) → string <!-- internal -->
+    - fn [layerIds](../../src/emit.ts#L78) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [anchorOf](../../src/emit.ts#L88) (id: string) → string
+    - fn [ref](../../src/emit.ts#L93) (r: Render, id: string) → string <!-- internal -->
       - calls map.emit.anchorOf
-    - fn [contents](../../src/emit.ts#L98) (r: Render, layerId: string) → string <!-- internal -->
+    - fn [contents](../../src/emit.ts#L100) (r: Render, layerId: string) → string <!-- internal -->
       - calls map.emit.anchorOf, map.emit.sortIds
-    - fn [describe](../../src/emit.ts#L114) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [describe](../../src/emit.ts#L116) (r: Render, id: string, depth: number) → string <!-- internal -->
       - calls map.emit.anchorOf, map.emit.descriptionText, map.emit.ref
-    - fn [descriptionText](../../src/emit.ts#L128) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
+    - fn [descriptionText](../../src/emit.ts#L131) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
       - calls map.explanations.modelName
-    - type [Counts](../../src/emit.ts#L141) <!-- internal -->
-    - fn [renderReadme](../../src/emit.ts#L148) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
+    - type [Counts](../../src/emit.ts#L149) <!-- internal -->
+    - fn [renderReadme](../../src/emit.ts#L156) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
       - calls map.emit.layerIds, map.emit.descriptionText, map.emit.ref, map.emit.index
-    - fn [index](../../src/emit.ts#L195) (r: Render) → string[] <!-- internal -->
-      - calls map.emit.nameOf, map.emit.compareIds, map.emit.anchorOf
-    - fn [compareIds](../../src/emit.ts#L212) (a: string, b: string) → number <!-- internal -->
-    - fn [childrenByParent](../../src/emit.ts#L219) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
-    - fn [sortIds](../../src/emit.ts#L232) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+    - fn [index](../../src/emit.ts#L203) (r: Render) → string[] <!-- internal -->
+      - calls map.emit.nameOf, base.span.compareText, map.emit.anchorOf
+    - fn [childrenByParent](../../src/emit.ts#L222) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L235) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
       - calls map.emit.nameOf
-    - fn [nameOf](../../src/emit.ts#L242) (id: string) → string <!-- internal -->
-    - fn [linkedName](../../src/emit.ts#L246) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+    - fn [nameOf](../../src/emit.ts#L245) (id: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L249) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
       - calls map.emit.codeHref
-    - fn [renderModule](../../src/emit.ts#L251) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [renderModule](../../src/emit.ts#L254) (r: Render, id: string, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf, map.emit.describe, map.emit.depsOf, map.emit.ref, map.emit.sortIds, map.emit.renderDecl
-    - fn [edgesFrom](../../src/emit.ts#L274) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
-    - fn [depsOf](../../src/emit.ts#L289) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [edgesFrom](../../src/emit.ts#L277) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
+    - fn [depsOf](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
       - calls map.emit.edgesFrom
-    - fn [renderDecl](../../src/emit.ts#L297) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L300) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf, map.emit.describe, map.emit.edgesFrom, map.emit.ref
   - module [explanations](../../src/explanations.ts#L1)
     - node external.node
@@ -74,23 +75,24 @@
     - snapshot map.snapshot
     - type [ExplanationDetail](../../src/explanations.ts#L14) = "short" | "full" | "brief"
     - type [StoredExplanation](../../src/explanations.ts#L17)
-    - fn [parseStoredExplanation](../../src/explanations.ts#L31) (text: string) → StoredExplanation | null
-    - fn [formatStoredExplanation](../../src/explanations.ts#L37) (e: StoredExplanation) → string
-    - fn [explainDir](../../src/explanations.ts#L42) (config: Config) → string
-    - fn [explanationPath](../../src/explanations.ts#L50) (config: Config, id: string, detail: ExplanationDetail) → string
+    - fn [isStoredExplanation](../../src/explanations.ts#L31) (text: string) → boolean
+    - fn [parseStoredExplanation](../../src/explanations.ts#L36) (text: string) → StoredExplanation | null
+    - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
+    - fn [explainDir](../../src/explanations.ts#L47) (config: Config) → string
+    - fn [explanationPath](../../src/explanations.ts#L55) (config: Config, id: string, detail: ExplanationDetail) → string
       - calls map.explanations.explainDir
-    - fn [readStoredExplanation](../../src/explanations.ts#L54) (root: string, rel: string) → StoredExplanation | null
+    - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null
       - calls map.explanations.parseStoredExplanation
-    - fn [storedIds](../../src/explanations.ts#L60) (root: string, dir: string) → string[]
-    - fn [loadBriefs](../../src/explanations.ts#L70) (config: Config) → Map<string, StoredExplanation>
+    - fn [storedIds](../../src/explanations.ts#L65) (root: string, dir: string) → string[]
+    - fn [loadBriefs](../../src/explanations.ts#L75) (config: Config) → Map<string, StoredExplanation>
       - calls map.explanations.explainDir, map.explanations.storedIds, map.explanations.readStoredExplanation
-    - fn [snapshotBaseline](../../src/explanations.ts#L90) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [snapshotBaseline](../../src/explanations.ts#L95) (snapshot: AnalysisSnapshot, id: string) → string | null
       - calls map.explanations.lowerBound
-    - fn [lowerBound](../../src/explanations.ts#L112) (sorted: readonly string[], key: string) → number <!-- internal -->
-    - type [NodeExplanation](../../src/explanations.ts#L124)
-    - fn [explanationOf](../../src/explanations.ts#L140) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
+    - fn [lowerBound](../../src/explanations.ts#L117) (sorted: readonly string[], key: string) → number <!-- internal -->
+    - type [NodeExplanation](../../src/explanations.ts#L129)
+    - fn [explanationOf](../../src/explanations.ts#L145) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
       - calls base.brief.briefOf, map.explanations.snapshotBaseline
-    - fn [modelName](../../src/explanations.ts#L151) (agent: string) → string
+    - fn [modelName](../../src/explanations.ts#L156) (agent: string) → string
   - module [exports](../../src/exports.ts#L1)
     - type [ExportKind](../../src/exports.ts#L10) = "fn" | "class" | "type" | "value"
     - type [ExportForm](../../src/exports.ts#L11) = "alias" | "default" | "reexport" | "namespace"
@@ -375,11 +377,12 @@
     - map map.map
     - parser lang.parser
     - snapshot map.snapshot
-    - type [TracePlan](../../src/trace-plan.ts#L15)
-    - fn [tracePlan](../../src/trace-plan.ts#L23) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
+    - explanations map.explanations
+    - type [TracePlan](../../src/trace-plan.ts#L16)
+    - fn [tracePlan](../../src/trace-plan.ts#L24) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
       - calls map.trace-plan.flowSymbols, map.map.generateMap
-    - fn [flowSymbols](../../src/trace-plan.ts#L40) (root: string, dir: string, flow: string) → Set<string> | null
-      - calls lang.files.collectMdFiles, lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
+      - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
   - module [wire-gen](../../src/wire-gen.ts#L1)
     - node external.node
     - imports map.imports

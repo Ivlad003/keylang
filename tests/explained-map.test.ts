@@ -280,6 +280,14 @@ test("saved explanations are not specs; the store of keylang 0.1 is named with a
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.match(readFileSync(join(dir, "keylang/map-explained/domain.md"), "utf8"), /^      <a id="domain\.order\.createOrder"><\/a><br>\\- Creates an order and returns it\. _\(llm/m);
   assert.equal(keylang(dir, ["parse", "keylang/map-explained/domain.md"]).status, 0);
+  // `fmt` and `parse` leave the model's text alone: formatting it would change a saved answer.
+  const saved = readFileSync(join(dir, "keylang/explain/brief/domain.order.createOrder.md"), "utf8");
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang"]).status, 0);
+  assert.equal(keylang(dir, ["fmt", "keylang"]).status, 0);
+  assert.equal(readFileSync(join(dir, "keylang/explain/brief/domain.order.createOrder.md"), "utf8"), saved);
+  const parsed = keylang(dir, ["parse", "keylang"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  assert.match(parsed.stderr, /note: keylang\/explain\/brief\/domain\.order\.createOrder\.md: a saved explanation, not keylang Markdown; skipped/);
 
   mkdirSync(join(dir, ".keylang/explain"), { recursive: true });
   writeFileSync(join(dir, ".keylang/explain/app.checkout.md"), "<!-- keylang:explain agent=a:b date=2026-01-01 closure= lang=en detail=short -->\nOld.\n");
@@ -359,7 +367,19 @@ test("explain --missing --llm: a failed node is named with exit 1 and a rerun as
 test("explained map navigation: every link to a map file lands on an anchor, code links match the map, odd IDs get stable anchors, the README indexes modules and classes", (t) => {
   const dir = copy(t);
   configure(dir, { map: true });
-  writeFileSync(join(dir, "src/app/util.ts"), "/** Saves the cart; see `domain.order.createOrder` and `domain.order.nope`. */\nexport function $save(): void {}\n\nexport function café(): void {}\n");
+  writeFileSync(
+    join(dir, "src/app/util.ts"),
+    [
+      "/** Saves the cart; see `domain.order.createOrder` and `domain.order.nope`. */",
+      "export function $save(): void {}",
+      "",
+      "export function café(): void {}",
+      "",
+      "/** Reads the copyright line of a package and returns Promise<void>, typed `Promise<void>`; <details> is a word here. */",
+      "export function copyrightLine(): void {}",
+      "",
+    ].join("\n"),
+  );
   assert.equal(keylang(dir, ["map"]).status, 0);
   const explainedDir = join(dir, "keylang/map-explained");
   const files = readdirSync(explainedDir);
@@ -382,6 +402,8 @@ test("explained map navigation: every link to a map file lands on an anchor, cod
   assert.match(app, /^\[README\]\(README\.md\) · modules: \[checkout\]\(#app\.checkout\) · \[util\]\(#app\.util\)$/m);
   assert.match(app, /<a id="app\.util\.~24~save"><\/a><br>Saves the cart; see \[`domain\.order\.createOrder`\]\(domain\.md#domain\.order\.createOrder\) and `domain\.order\.nope`\./);
   assert.match(app, /<a id="app\.util\.caf~e9~"><\/a>/);
+  // A comment that mentions copyright is no license; HTML outside code is text, inside code it stays code.
+  assert.match(app, /<a id="app\.util\.copyrightLine"><\/a><br>Reads the copyright line of a package and returns Promise&lt;void>, typed `Promise<void>`; &lt;details> is a word here\.$/m);
   assert.match(app, /^      - calls \[domain\.order\.createOrder\]\(domain\.md#domain\.order\.createOrder\), /m);
   assert.match(app, /^    - order \[domain\.order\]\(domain\.md#domain\.order\)$/m);
   const readme = text("README.md");

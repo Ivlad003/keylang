@@ -27,6 +27,11 @@ export interface StoredExplanation {
 
 const HEADER = /^<!-- keylang:explain agent=(\S+) date=(\S+) closure=(\S*) lang=(\S+) detail=(short|full|brief) -->\r?\n/;
 
+/** A file `explain --llm` wrote: the model's text under keylang's header, not keylang Markdown to parse or format. */
+export function isStoredExplanation(text: string): boolean {
+  return HEADER.test(text);
+}
+
 /** The saved form; null for a file keylang did not write, which is not an explanation it can date. */
 export function parseStoredExplanation(text: string): StoredExplanation | null {
   const m = HEADER.exec(text);

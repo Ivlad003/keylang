@@ -175,7 +175,7 @@
     - fn [decodeLinkPath](../../src/parser.ts#L749) (path: string) → string <!-- internal -->
       <a id="lang.parser.decodeLinkPath"></a><br>Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source.
     - fn [lex](../../src/parser.ts#L763) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
-      <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `&lt;!-- … --&gt;` ends the head and is returned separately.
+      <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `<!-- … -->` ends the head and is returned separately.
       - calls [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.linkEnd](lang.md#lang.parser.linkEnd)
     - fn [linkEnd](../../src/parser.ts#L822) (s: string, i: number) → number | null <!-- internal -->
       <a id="lang.parser.linkEnd"></a>

@@ -13,11 +13,11 @@
     - fn [bodiesOf](../../src/extract/bodies.ts#L30) (root: Node) → Map<string, FunctionBody> <!-- internal -->
       - calls extract.treesitter.startCol
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
-    - fn [isLicense](../../src/extract/doc-comments.ts#L6) (text: string) → boolean
-    - fn [blockCommentBody](../../src/extract/doc-comments.ts#L11) (text: string) → string
-    - fn [lineCommentsBody](../../src/extract/doc-comments.ts#L21) (lines: readonly string[], marker: RegExp) → string
-    - fn [jsdocDescription](../../src/extract/doc-comments.ts#L29) (body: string) → string
-    - fn [nonEmpty](../../src/extract/doc-comments.ts#L39) (text: string) → string | null
+    - fn [isLicense](../../src/extract/doc-comments.ts#L10) (text: string) → boolean
+    - fn [blockCommentBody](../../src/extract/doc-comments.ts#L16) (text: string) → string
+    - fn [lineCommentsBody](../../src/extract/doc-comments.ts#L26) (lines: readonly string[], marker: RegExp) → string
+    - fn [jsdocDescription](../../src/extract/doc-comments.ts#L34) (body: string) → string
+    - fn [nonEmpty](../../src/extract/doc-comments.ts#L44) (text: string) → string | null
   - module [facts](../../src/extract/facts.ts#L1)
     - type [FileFacts](../../src/extract/facts.ts#L4)
     - type [ImportFact](../../src/extract/facts.ts#L42)

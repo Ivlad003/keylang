@@ -8,13 +8,13 @@
   <a id="base"></a>
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
-    - fn [briefOf](../../src/brief.ts#L16) (text: string, sentences = 2) → string | null
-      <a id="base.brief.briefOf"></a><br>The first paragraph of `text` with whitespace collapsed, cut to its first `sentences` sentences and to about `BRIEF_MAX` characters; null when nothing is left. A sentence ends at `.`, `!` or `?` (closing quotes and brackets after it included) before whitespace and an uppercase…
-      - calls [base.brief.capped](base.md#base.brief.capped), [base.brief.firstSentences](base.md#base.brief.firstSentences)
+    - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
+      <a id="base.brief.briefOf"></a><br>The first paragraph of `text` with whitespace collapsed, cut to its first two sentences and to about `BRIEF_MAX` characters; null when nothing is left. A sentence ends at `.`, `!` or `?` (closing quotes and brackets after it included) before whitespace and an uppercase letter…
+      - calls [base.brief.capText](base.md#base.brief.capText), [base.brief.firstSentences](base.md#base.brief.firstSentences)
     - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
       <a id="base.brief.firstSentences"></a>
-    - fn [capped](../../src/brief.ts#L37) (text: string, max: number) → string <!-- internal -->
-      <a id="base.brief.capped"></a><br>At most `max` code points: cut at the last space before the limit, then `…`.
+    - fn [capText](../../src/brief.ts#L37) (text: string, max: number) → string
+      <a id="base.brief.capText"></a><br>At most `max` code points: cut at the last space before the limit, then `…`.
   - module [config](../../src/config.ts#L1)
     <a id="base.config"></a><br>`keylang.json`: what to index, how files map to layers, where specs live. Without a config file the layout is guessed from the directory tree (`keylang init` writes that guess down so it can be edited).
     - node [external.node](external.md#external.node)
@@ -154,7 +154,7 @@
       <a id="base.safe-write.writeAtomic"></a><br>A temporary file in the target's directory renamed over the target, so a crash never leaves half a file; missing directories are created. The new file keeps the permissions of the one it replaces, and CRLF when that one has CRLF on every line. `abs` is where the bytes land: not…
       - calls [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
     - fn [isGeneratedText](../../src/safe-write.ts#L103) (text: string) → boolean
-      <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker (`&lt;!-- … --&gt;` of a map file, `// …` of `keylang wire`).
+      <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker (`<!-- … -->` of a map file, `// …` of `keylang wire`).
     - fn [allCrlf](../../src/safe-write.ts#L109) (text: string) → boolean
       <a id="base.safe-write.allCrlf"></a><br>Every line ends with CRLF (at least one does): the file keeps them when it is rewritten.
     - fn [landing](../../src/safe-write.ts#L119) (abs: string, hops = 0) → string | null

@@ -3,6 +3,8 @@
 
 import { posix } from "node:path";
 import { modelName, type NodeExplanation } from "./explanations.ts";
+import { EXTERNAL } from "./graph.ts";
+import { compareText } from "./span.ts";
 import type { AnalysisSnapshot, SnapshotEdge, SnapshotNode } from "./snapshot.ts";
 
 export const GENERATED_MARK = "<!-- keylang:generated — не редагувати, `keylang map` -->";
@@ -120,13 +122,19 @@ function describe(r: Render, id: string, depth: number): string {
 /**
  * The text of a description line: `<br>` so a Markdown viewer starts it on a
  * line of its own, the explanation, and for a brief from a model its origin.
- * The text never starts a block (a list item, a heading, a quote, a fence) and
- * never opens or closes an HTML comment, so the file stays the same keylang.
- * `link` turns an ID in backticks into a link; one it does not know (a model's
- * invention) stays plain code.
+ * The text never starts a block (a list item, a heading, a quote, a fence),
+ * and `<` outside code is `&lt;`, so no HTML in it (`Promise<void>`, a stray
+ * `<details>`, `<!--`) hides text or opens a comment: the file stays the same
+ * keylang and GitHub shows the words written. `link` turns an ID in backticks
+ * into a link; one it does not know (a model's invention) stays plain code.
  */
 export function descriptionText(e: NodeExplanation, link: (id: string) => string | null = () => null): string {
-  let text = e.text.replace(/\s+/g, " ").trim().replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
+  let text = e.text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(`[^`]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replaceAll("<", "&lt;").replaceAll("-->", "--&gt;")))
+    .join("");
   if (/^\d+[.)]/.test(text)) text = text.replace(/^(\d+)([.)])/, "$1\\$2");
   else if (/^(?:[-*+_=#>|]|~~~|```)/.test(text)) text = `\\${text}`;
   text = text.replace(/`([\p{L}_$][\p{L}\p{M}\p{N}_$-]*(?:\.[\p{L}_$][\p{L}\p{M}\p{N}_$-]*)+)`/gu, (code, id: string) => {
@@ -149,7 +157,7 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
   const r: Render = { snapshot, children, mapDir: "", explain };
   const counts = new Map<string, Counts>();
   for (const [id, node] of Object.entries(snapshot.nodes)) {
-    if (node.layer === EXTERNAL_LAYER) continue;
+    if (node.layer === EXTERNAL) continue;
     let c = counts.get(node.layer);
     if (!c) counts.set(node.layer, (c = { doc: 0, llm: 0, stale: 0, none: 0 }));
     const e = explain(id);
@@ -194,9 +202,10 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
 /** One paragraph per first letter: every module and class of the repository (packages left out), by name. */
 function index(r: Render): string[] {
   const entries = Object.entries(r.snapshot.nodes)
-    .filter(([, node]) => node.kind === "module" && node.layer !== EXTERNAL_LAYER)
+    .filter(([, node]) => node.kind === "module" && node.layer !== EXTERNAL)
     .map(([id]) => ({ id, name: nameOf(id), parent: id.slice(0, id.lastIndexOf(".")) }))
-    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), "en") || compareIds(a.id, b.id));
+    // Code-unit order of the lowercase names: the same on every Node, whatever its ICU.
+    .sort((a, b) => compareText(a.name.toLowerCase(), b.name.toLowerCase()) || compareText(a.id, b.id));
   const groups = new Map<string, string[]>();
   for (const e of entries) {
     const letter = [...e.name][0]!.toUpperCase();
@@ -209,12 +218,6 @@ function index(r: Render): string[] {
   return [...groups].flatMap(([letter, lines]) => [`**${letter}** · ${lines.join(" · ")}`, ""]);
 }
 
-function compareIds(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-/** Packages; their nodes have no code in the repository to explain. */
-const EXTERNAL_LAYER = "external";
 
 function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
   const children = new Map<string, string[]>();

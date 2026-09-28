@@ -506,13 +506,13 @@
       <a id="tui.markdown.ReadRow"></a>
     - fn [inline](../../src/tui/markdown.ts#L24) (written: string, base: Style) → Segment[]
       <a id="tui.markdown.inline"></a>
-    - fn [wrap](../../src/tui/markdown.ts#L42) (segments: Segment[], width: number, hang: number, source: number) → ReadRow[] <!-- internal -->
+    - fn [wrap](../../src/tui/markdown.ts#L44) (segments: Segment[], width: number, hang: number, source: number) → ReadRow[] <!-- internal -->
       <a id="tui.markdown.wrap"></a><br>Word-wraps segments to `width` cells; continuation rows start with `hang` spaces.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [tableRows](../../src/tui/markdown.ts#L63) (block: { text: string; line: number }[], width: number) → ReadRow[] <!-- internal -->
+    - fn [tableRows](../../src/tui/markdown.ts#L65) (block: { text: string; line: number }[], width: number) → ReadRow[] <!-- internal -->
       <a id="tui.markdown.tableRows"></a>
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [renderMarkdown](../../src/tui/markdown.ts#L83) (text: string, width: number) → ReadRow[]
+    - fn [renderMarkdown](../../src/tui/markdown.ts#L85) (text: string, width: number) → ReadRow[]
       <a id="tui.markdown.renderMarkdown"></a>
       - calls [tui.markdown.tableRows](tui.md#tui.markdown.tableRows), [tui.markdown.wrap](tui.md#tui.markdown.wrap), [tui.markdown.inline](tui.md#tui.markdown.inline)
   - module [merge-session](../../src/tui/merge-session.ts#L1)

@@ -149,62 +149,64 @@
     - config [base.config](base.md#base.config)
     - explain-node [features.explain-node](features.md#features.explain-node)
     - explanations [map.explanations](map.md#map.explanations)
+    - graph [map.graph](map.md#map.graph)
     - llm [features.llm](features.md#features.llm)
     - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - type [Explanation](../../src/explain-llm.ts#L19) = StoredExplanation
+    - span [base.span](base.md#base.span)
+    - type [Explanation](../../src/explain-llm.ts#L21) = StoredExplanation
       <a id="features.explain-llm.Explanation"></a>
-    - fn [readExplanation](../../src/explain-llm.ts#L22) (config: Config, id: string, detail: ExplanationDetail = "short") → Explanation | null
+    - fn [readExplanation](../../src/explain-llm.ts#L24) (config: Config, id: string, detail: ExplanationDetail = "short") → Explanation | null
       <a id="features.explain-llm.readExplanation"></a><br>The saved explanation of `id` at this detail: `short` and `full` share `<id>.md`, a brief has its own file.
       - calls [map.explanations.readStoredExplanation](map.md#map.explanations.readStoredExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
-    - fn [writeExplanation](../../src/explain-llm.ts#L27) (config: Config, id: string, e: Explanation) → void
+    - fn [writeExplanation](../../src/explain-llm.ts#L29) (config: Config, id: string, e: Explanation) → void
       <a id="features.explain-llm.writeExplanation"></a>
       - calls [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [map.explanations.formatStoredExplanation](map.md#map.explanations.formatStoredExplanation), [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [explainedIds](../../src/explain-llm.ts#L32) (config: Config, kind: "answers" | "briefs") → string[]
+    - fn [explainedIds](../../src/explain-llm.ts#L34) (config: Config, kind: "answers" | "briefs") → string[]
       <a id="features.explain-llm.explainedIds"></a><br>IDs of every saved explanation (`answers`) or brief, sorted.
       - calls [map.explanations.storedIds](map.md#map.explanations.storedIds), [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [oldExplanations](../../src/explain-llm.ts#L37) (root: string) → number
+    - fn [oldExplanations](../../src/explain-llm.ts#L39) (root: string) → number
       <a id="features.explain-llm.oldExplanations"></a><br>Explanation files in the store of keylang 0.1, which is not read any more.
-    - fn [moveHint](../../src/explain-llm.ts#L43) (config: Config, count: number) → string
+    - fn [moveHint](../../src/explain-llm.ts#L45) (config: Config, count: number) → string
       <a id="features.explain-llm.moveHint"></a><br>How to move the store of keylang 0.1 to where explanations live now.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [currentBaseline](../../src/explain-llm.ts#L51) (analysis: Analysis, id: string) → string | null
+    - fn [currentBaseline](../../src/explain-llm.ts#L53) (analysis: Analysis, id: string) → string | null
       <a id="features.explain-llm.currentBaseline"></a><br>The baseline an explanation of `id` is compared with now (`snapshotBaseline`): "" for a planned node, which has no code yet; null when the id is gone.
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [isStale](../../src/explain-llm.ts#L56) (analysis: Analysis, id: string, e: Explanation) → boolean
+    - fn [isStale](../../src/explain-llm.ts#L58) (analysis: Analysis, id: string, e: Explanation) → boolean
       <a id="features.explain-llm.isStale"></a>
       - calls [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline)
-    - fn [briefText](../../src/explain-llm.ts#L61) (answer: string) → string
+    - fn [briefText](../../src/explain-llm.ts#L63) (answer: string) → string
       <a id="features.explain-llm.briefText"></a><br>A model's brief as saved: one or two sentences in one paragraph, cut by the rule doc comments follow.
       - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [unknownIds](../../src/explain-llm.ts#L69) (analysis: Analysis, text: string) → string[]
+    - fn [unknownIds](../../src/explain-llm.ts#L71) (analysis: Analysis, text: string) → string[]
       <a id="features.explain-llm.unknownIds"></a><br>`` `a.b.c` `` in the answer that are neither snapshot IDs nor declared `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [explanationRequest](../../src/explain-llm.ts#L84) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs?: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [explanationRequest](../../src/explain-llm.ts#L86) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.explanationRequest"></a><br>The request: the node's summary, its code, the signatures around it, and the words of the specs that mention it (layer, flows, rules). Not the repository.
-      - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [members](../../src/explain-llm.ts#L124) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+      - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members)
+    - fn [members](../../src/explain-llm.ts#L126) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       <a id="features.explain-llm.members"></a><br>The members right under a module, class or layer with their explanations (doc comments, briefs): a layer is explained through its modules, a module through its functions and types.
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [sourceLines](../../src/explain-llm.ts#L140) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [sourceLines](../../src/explain-llm.ts#L142) (text: string, from: number, to: number) → string <!-- internal -->
       <a id="features.explain-llm.sourceLines"></a>
-    - type [BriefBatch](../../src/explain-llm.ts#L147) = "missing" | "stale"
+    - type [BriefBatch](../../src/explain-llm.ts#L149) = "missing" | "stale"
       <a id="features.explain-llm.BriefBatch"></a><br>Which briefs a batch writes: nodes with no explanation or a stale brief (`missing`), or only stale briefs (`stale`).
-    - type [BriefLevel](../../src/explain-llm.ts#L150) = "fn/type" | "class/module" | "layer"
+    - type [BriefLevel](../../src/explain-llm.ts#L152) = "fn/type" | "class/module" | "layer"
       <a id="features.explain-llm.BriefLevel"></a><br>Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs.
-    - type [PlannedBrief](../../src/explain-llm.ts#L152)
+    - type [PlannedBrief](../../src/explain-llm.ts#L154)
       <a id="features.explain-llm.PlannedBrief"></a>
-    - fn [planBriefs](../../src/explain-llm.ts#L165) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [planBriefs](../../src/explain-llm.ts#L167) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers. A node with a doc comment is never asked about: the code already says what it does.
-      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline)
-    - fn [estimateTokens](../../src/explain-llm.ts#L183) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [base.span.compareText](base.md#base.span.compareText)
+    - fn [estimateTokens](../../src/explain-llm.ts#L185) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       <a id="features.explain-llm.estimateTokens"></a><br>A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out.
       - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
-    - type [BatchResult](../../src/explain-llm.ts#L194)
+    - type [BatchResult](../../src/explain-llm.ts#L196)
       <a id="features.explain-llm.BatchResult"></a>
-    - fn [runBriefs](../../src/explain-llm.ts#L204) ( analysis: Analysis, client: LlmClient, plan: readonly PlannedBrief[], options: { jobs: number; briefs: Map<string, StoredExplanation>; progress: (done: number, total: number, id: string, failed: string | null) => void }, ) → Promise<BatchResult>
+    - fn [runBriefs](../../src/explain-llm.ts#L206) ( analysis: Analysis, client: LlmClient, plan: readonly PlannedBrief[], options: { jobs: number; briefs: Map<string, StoredExplanation>; progress: (done: number, total: number, id: string, failed: string | null) => void }, ) → Promise<BatchResult>
       <a id="features.explain-llm.runBriefs"></a><br>Ask for every planned brief, `jobs` at a time within a wave, and save each one as soon as it arrives: an interrupted or failed batch keeps what it got, and the next run asks only for the rest. A failure of one node does not stop the others.
-      - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.briefText](features.md#features.explain-llm.briefText), [features.explain-llm.writeExplanation](features.md#features.explain-llm.writeExplanation)
+      - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.briefText](features.md#features.explain-llm.briefText), [features.explain-llm.writeExplanation](features.md#features.explain-llm.writeExplanation), [base.span.compareText](base.md#base.span.compareText)
   - module [explain-node](../../src/explain-node.ts#L1)
     <a id="features.explain-node"></a><br>`keylang explain <id>` without a model: what the snapshot and the specs say about one node. Deterministic and offline; the LLM explanation (§5.4) builds on it and falls back to it.
     - analyze [map.analyze](map.md#map.analyze)
@@ -276,6 +278,7 @@
     - config [base.config](base.md#base.config)
     - diag [base.diag](base.md#base.diag)
     - emit [map.emit](map.md#map.emit)
+    - brief [base.brief](base.md#base.brief)
     - explanations [map.explanations](map.md#map.explanations)
     - ir [lang.ir](lang.md#lang.ir)
     - map [map.map](map.md#map.map)
@@ -284,119 +287,117 @@
     - rules [check.rules](check.md#check.rules)
     - span [base.span](base.md#base.span)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [LspPosition](../../src/lsp-features.ts#L22)
+    - type [LspPosition](../../src/lsp-features.ts#L23)
       <a id="features.lsp-features.LspPosition"></a>
-    - type [LspRange](../../src/lsp-features.ts#L27)
+    - type [LspRange](../../src/lsp-features.ts#L28)
       <a id="features.lsp-features.LspRange"></a>
-    - type [Location](../../src/lsp-features.ts#L32)
+    - type [Location](../../src/lsp-features.ts#L33)
       <a id="features.lsp-features.Location"></a>
-    - type [Workspace](../../src/lsp-features.ts#L38)
+    - type [Workspace](../../src/lsp-features.ts#L39)
       <a id="features.lsp-features.Workspace"></a><br>What features read: the analysis, the root, and the text of any document.
-    - fn [workspace](../../src/lsp-features.ts#L45) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
+    - fn [workspace](../../src/lsp-features.ts#L46) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
       <a id="features.lsp-features.workspace"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.lsp-features.readOrNull](features.md#features.lsp-features.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [lineStarts](../../src/lsp-features.ts#L84) (text: string) → number[] <!-- internal -->
+    - fn [lineStarts](../../src/lsp-features.ts#L85) (text: string) → number[] <!-- internal -->
       <a id="features.lsp-features.lineStarts"></a>
-    - fn [lspPoint](../../src/lsp-features.ts#L94) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
+    - fn [lspPoint](../../src/lsp-features.ts#L95) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
       <a id="features.lsp-features.lspPoint"></a><br>A 1-based line and column in code points — the unit of IR spans and of snapshot positions in code alike — as an LSP position (UTF-16).
-    - fn [fromPos](../../src/lsp-features.ts#L100) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
+    - fn [fromPos](../../src/lsp-features.ts#L101) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
       <a id="features.lsp-features.fromPos"></a>
       - calls [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - fn [fromSpan](../../src/lsp-features.ts#L104) (text: string | null, span: Span) → LspRange <!-- internal -->
+    - fn [fromSpan](../../src/lsp-features.ts#L105) (text: string | null, span: Span) → LspRange <!-- internal -->
       <a id="features.lsp-features.fromSpan"></a>
       - calls [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos)
-    - fn [lineRange](../../src/lsp-features.ts#L109) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
+    - fn [lineRange](../../src/lsp-features.ts#L110) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
       <a id="features.lsp-features.lineRange"></a><br>A 1-based line and a column in code points, to the end of that line.
-    - fn [toOffset](../../src/lsp-features.ts#L115) (text: string, position: LspPosition) → number <!-- internal -->
+    - fn [toOffset](../../src/lsp-features.ts#L116) (text: string, position: LspPosition) → number <!-- internal -->
       <a id="features.lsp-features.toOffset"></a>
       - calls [features.lsp-features.lineStarts](features.md#features.lsp-features.lineStarts)
-    - fn [uriOf](../../src/lsp-features.ts#L119) (root: string, path: string) → string <!-- internal -->
+    - fn [uriOf](../../src/lsp-features.ts#L120) (root: string, path: string) → string <!-- internal -->
       <a id="features.lsp-features.uriOf"></a>
-    - type [Target](../../src/lsp-features.ts#L125) <!-- internal -->
+    - type [Target](../../src/lsp-features.ts#L126) <!-- internal -->
       <a id="features.lsp-features.Target"></a>
-    - fn [nodesOf](../../src/lsp-features.ts#L127) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
+    - fn [nodesOf](../../src/lsp-features.ts#L128) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
       <a id="features.lsp-features.nodesOf"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [targetAt](../../src/lsp-features.ts#L140) (doc: Document, offset: number) → Target | null
+    - fn [targetAt](../../src/lsp-features.ts#L141) (doc: Document, offset: number) → Target | null
       <a id="features.lsp-features.targetAt"></a><br>The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains)
-    - fn [docOf](../../src/lsp-features.ts#L155) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [docOf](../../src/lsp-features.ts#L156) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.docOf"></a>
       - calls [features.lsp-features.readingDoc](features.md#features.lsp-features.readingDoc)
-    - fn [readOrNull](../../src/lsp-features.ts#L159) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/lsp-features.ts#L160) (abs: string) → string | null <!-- internal -->
       <a id="features.lsp-features.readOrNull"></a>
-    - fn [readingDoc](../../src/lsp-features.ts#L175) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [readingDoc](../../src/lsp-features.ts#L176) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.readingDoc"></a><br>A file of the explained map. The analysis does not check it (it is no spec), but its IDs and code links lead where the map's do: hover, definition and Enter in the TUI work there too.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [at](../../src/lsp-features.ts#L186) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
+    - fn [at](../../src/lsp-features.ts#L187) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
       <a id="features.lsp-features.at"></a>
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset)
-    - type [LspDiagnostic](../../src/lsp-features.ts#L195)
+    - type [LspDiagnostic](../../src/lsp-features.ts#L196)
       <a id="features.lsp-features.LspDiagnostic"></a>
-    - fn [diagnosticsFor](../../src/lsp-features.ts#L205) (ws: Workspace, path: string) → LspDiagnostic[]
+    - fn [diagnosticsFor](../../src/lsp-features.ts#L206) (ws: Workspace, path: string) → LspDiagnostic[]
       <a id="features.lsp-features.diagnosticsFor"></a><br>Diagnostics and verdicts of one document, as `check --format json` reports them.
       - calls [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange)
-    - type [Described](../../src/lsp-features.ts#L223) <!-- internal -->
+    - type [Described](../../src/lsp-features.ts#L224) <!-- internal -->
       <a id="features.lsp-features.Described"></a>
-    - fn [describe](../../src/lsp-features.ts#L233) (ws: Workspace, id: string) → Described | null <!-- internal -->
+    - fn [describe](../../src/lsp-features.ts#L234) (ws: Workspace, id: string) → Described | null <!-- internal -->
       <a id="features.lsp-features.describe"></a>
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [plannedDecl](../../src/lsp-features.ts#L247) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
+    - fn [plannedDecl](../../src/lsp-features.ts#L248) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
       <a id="features.lsp-features.plannedDecl"></a>
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [flowsUsing](../../src/lsp-features.ts#L256) (docs: readonly Document[], id: string) → string[]
+    - fn [flowsUsing](../../src/lsp-features.ts#L257) (docs: readonly Document[], id: string) → string[]
       <a id="features.lsp-features.flowsUsing"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [hover](../../src/lsp-features.ts#L271) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
+    - fn [hover](../../src/lsp-features.ts#L272) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
       <a id="features.lsp-features.hover"></a>
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [definition](../../src/lsp-features.ts#L292) (ws: Workspace, path: string, position: LspPosition) → Location | null
+    - fn [definition](../../src/lsp-features.ts#L293) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a>
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
-    - fn [signatureHelp](../../src/lsp-features.ts#L306) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
+    - fn [signatureHelp](../../src/lsp-features.ts#L307) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
       <a id="features.lsp-features.signatureHelp"></a>
       - calls [features.lsp-features.describe](features.md#features.lsp-features.describe)
-    - fn [references](../../src/lsp-features.ts#L320) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L321) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       <a id="features.lsp-features.references"></a><br>Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [SymbolInformation](../../src/lsp-features.ts#L336)
+    - type [SymbolInformation](../../src/lsp-features.ts#L337)
       <a id="features.lsp-features.SymbolInformation"></a>
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L356) (ws: Workspace, query: string) → SymbolInformation[]
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L357) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
-      - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [features.lsp-features.shorten](features.md#features.lsp-features.shorten), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
-    - fn [symbolKind](../../src/lsp-features.ts#L372) (kind: string) → number <!-- internal -->
+      - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
+    - fn [symbolKind](../../src/lsp-features.ts#L373) (kind: string) → number <!-- internal -->
       <a id="features.lsp-features.symbolKind"></a>
-    - fn [symbolLocation](../../src/lsp-features.ts#L381) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+    - fn [symbolLocation](../../src/lsp-features.ts#L382) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       <a id="features.lsp-features.symbolLocation"></a>
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - fn [shorten](../../src/lsp-features.ts#L397) (text: string, max: number) → string <!-- internal -->
-      <a id="features.lsp-features.shorten"></a><br>At most `max` code points, cut at a word, with `…`.
-    - type [DocumentSymbol](../../src/lsp-features.ts#L407)
+    - type [DocumentSymbol](../../src/lsp-features.ts#L402)
       <a id="features.lsp-features.DocumentSymbol"></a>
-    - fn [statusOf](../../src/lsp-features.ts#L420) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [statusOf](../../src/lsp-features.ts#L415) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
       <a id="features.lsp-features.statusOf"></a><br>Worst verdict on a line of this document: `fail` > `unverified` > `ok`.
-    - fn [documentSymbols](../../src/lsp-features.ts#L429) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [documentSymbols](../../src/lsp-features.ts#L424) (ws: Workspace, path: string) → DocumentSymbol[]
       <a id="features.lsp-features.documentSymbols"></a>
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [CompletionItem](../../src/lsp-features.ts#L514)
+    - type [CompletionItem](../../src/lsp-features.ts#L509)
       <a id="features.lsp-features.CompletionItem"></a>
-    - fn [completions](../../src/lsp-features.ts#L541) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - fn [completions](../../src/lsp-features.ts#L536) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [sectionAt](../../src/lsp-features.ts#L591) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L586) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a>
-    - fn [enclosing](../../src/lsp-features.ts#L601) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L596) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L610) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L605) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a>
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L623) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L618) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L638) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L633) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a>
-    - fn [codeLenses](../../src/lsp-features.ts#L644) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L639) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [node-search](../../src/node-search.ts#L1)
@@ -404,23 +405,22 @@
     - analyze [map.analyze](map.md#map.analyze)
     - explanations [map.explanations](map.md#map.explanations)
     - ir [lang.ir](lang.md#lang.ir)
-    - type [NodeHit](../../src/node-search.ts#L8)
+    - span [base.span](base.md#base.span)
+    - type [NodeHit](../../src/node-search.ts#L9)
       <a id="features.node-search.NodeHit"></a>
-    - type [NodeQuery](../../src/node-search.ts#L21)
+    - type [NodeQuery](../../src/node-search.ts#L22)
       <a id="features.node-search.NodeQuery"></a>
-    - fn [searchNodes](../../src/node-search.ts#L39) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>, q: NodeQuery) → NodeHit[]
+    - fn [searchNodes](../../src/node-search.ts#L40) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>, q: NodeQuery) → NodeHit[]
       <a id="features.node-search.searchNodes"></a><br>Nodes of the snapshot and `planned` intentions of the specs matching the query, case-insensitive: first those whose ID or name matches (for `fuzzy`, the exact name, then a name prefix, a name part, an ID part, then a subsequence of the name and of the ID; shorter IDs first…
-      - calls [features.node-search.candidates](features.md#features.node-search.candidates), [features.node-search.idRank](features.md#features.node-search.idRank), [features.node-search.compare](features.md#features.node-search.compare)
-    - fn [candidates](../../src/node-search.ts#L53) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
+      - calls [features.node-search.candidates](features.md#features.node-search.candidates), [features.node-search.idRank](features.md#features.node-search.idRank), [base.span.compareText](base.md#base.span.compareText)
+    - fn [candidates](../../src/node-search.ts#L55) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
       <a id="features.node-search.candidates"></a>
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [idRank](../../src/node-search.ts#L75) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
+    - fn [idRank](../../src/node-search.ts#L77) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
       <a id="features.node-search.idRank"></a><br>How well the ID or its last segment matches, lower is better; null when it does not.
       - calls [features.node-search.subsequence](features.md#features.node-search.subsequence)
-    - fn [subsequence](../../src/node-search.ts#L89) (query: string, text: string) → boolean <!-- internal -->
+    - fn [subsequence](../../src/node-search.ts#L91) (query: string, text: string) → boolean <!-- internal -->
       <a id="features.node-search.subsequence"></a><br>Every code point of `query` appears in `text` in order.
-    - fn [compare](../../src/node-search.ts#L96) (a: string, b: string) → number <!-- internal -->
-      <a id="features.node-search.compare"></a>
   - module [proposals](../../src/proposals.ts#L1)
     <a id="features.proposals"></a><br>Proposals (CONTEXT.md): the full proposed text of one hand-written spec or source file, kept in `.keylang/proposals/<path>` until a person merges it hunk by hunk. `draft`, `code-to-spec` and MCP `apply_diff` propose specs, `spec-to-code` proposes code and its tests; only the…
     - node [external.node](external.md#external.node)

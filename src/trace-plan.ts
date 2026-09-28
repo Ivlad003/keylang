@@ -11,6 +11,7 @@ import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
 import { parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
+import { isStoredExplanation } from "./explanations.ts";
 
 export interface TracePlan {
   schemaVersion: 1;
@@ -41,7 +42,10 @@ export function flowSymbols(root: string, dir: string, flow: string): Set<string
   let found = false;
   const out = new Set<string>();
   for (const file of collectMdFiles([join(root, dir)])) {
-    const doc = parse(file, readFileSync(file, "utf8"));
+    const text = readFileSync(file, "utf8");
+    // A saved explanation is the model's text: a `# flow` in it declares nothing.
+    if (isStoredExplanation(text)) continue;
+    const doc = parse(file, text);
     for (const section of doc.sections) {
       if (section.kind !== "flow" || section.name?.value !== flow) continue;
       found = true;

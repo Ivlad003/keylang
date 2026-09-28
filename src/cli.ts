@@ -8,7 +8,8 @@ import { parseArgs } from "node:util";
 import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
-import { collectMdFiles, load } from "./files.ts";
+import { collectMdFiles } from "./files.ts";
+import { parse } from "./parser.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
@@ -17,7 +18,7 @@ import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
-import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
+import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
@@ -282,11 +283,11 @@ interface ExplainOptions {
 async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Promise<number> {
   if (opts.full && opts.brief) throw new Error("explain: --full and --brief are two details; pass one");
   if (opts.missing && opts.stale) throw new Error("explain: --missing already includes stale briefs; pass one of --missing and --stale");
-  if (opts.missing || (opts.stale && (opts.llm || opts.dryRun))) {
+  if (opts.missing || (opts.stale && (opts.llm || opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined))) {
     if (subject !== undefined) throw new Error(`explain ${opts.missing ? "--missing" : "--stale"} explains every node it finds; it takes no id`);
     return cmdExplainBatch(opts.missing ? "missing" : "stale", opts);
   }
-  if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs go with --missing or --stale");
+  if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs need --missing or --stale");
   if (opts.stale) {
     const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
     noteOldExplanations(analysis.config);
@@ -347,7 +348,7 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
     }
     return 0;
   }
-  const answer = await setup.client.complete(explanationRequest(analysis, result.summary, { lang, detail }));
+  const answer = await setup.client.complete(explanationRequest(analysis, result.summary, { lang, detail, briefs: loadBriefs(config) }));
   const text = detail === "brief" ? briefText(answer) : answer;
   const e: Explanation = { agent: setup.client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analysis, subject) ?? "", lang, detail, text };
   writeExplanation(config, subject, e);
@@ -811,8 +812,25 @@ async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   return 0;
 }
 
+/** Markdown files under `paths` that are keylang: a saved explanation is the model's text, named in a note and left out. */
+function keylangFiles(paths: readonly string[]): { file: string; text: string }[] {
+  const out: { file: string; text: string }[] = [];
+  for (const file of collectMdFiles(paths)) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      out.push({ file, text: "" });
+      continue;
+    }
+    if (isStoredExplanation(text)) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
+    else out.push({ file, text });
+  }
+  return out;
+}
+
 function cmdParse(paths: string[], json: boolean): number {
-  const docs = load(collectMdFiles(paths));
+  const docs = keylangFiles(paths).map(({ file, text }) => parse(file, text));
   if (json) process.stdout.write(`${JSON.stringify(docs, null, 2)}\n`);
   else for (const d of docs) printTree(d);
   const diags = docs.flatMap((d) => d.diagnostics);
@@ -991,6 +1009,8 @@ function cmdFmt(paths: string[], checkOnly: boolean): number {
       fail(file, "read", error);
       continue;
     }
+    // The model's text is kept as it was written: formatting it would change a saved answer.
+    if (isStoredExplanation(src)) continue;
     const r = formatSource(file, src);
     if (!r.ok) {
       findings = true;

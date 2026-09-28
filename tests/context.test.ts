@@ -57,7 +57,7 @@ test("explain request: the code comes from the bytes the snapshot read; a file c
   const analysis = await analyze({ root: dir, withoutEvidence: true });
   const result = summarizeNode(analysis, "app.checkout.checkout");
   assert.ok("summary" in result);
-  const options = { lang: "en", detail: "short" } as const;
+  const options = { lang: "en", detail: "short", briefs: new Map() } as const;
   assert.match(explanationRequest(analysis, result.summary, options).prompt, /export function checkout/);
   const file = join(dir, "src/app/checkout.ts");
   writeFileSync(file, readFileSync(file, "utf8").replace("db.save(order);", "db.save(order); // edited"));

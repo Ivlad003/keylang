@@ -4,6 +4,7 @@
 import type { Analysis } from "./analyze.ts";
 import { explanationOf, type NodeExplanation, type StoredExplanation } from "./explanations.ts";
 import { sectionNodes, walk } from "./ir.ts";
+import { compareText } from "./span.ts";
 
 export interface NodeHit {
   id: string;
@@ -45,8 +46,9 @@ export function searchNodes(analysis: Analysis, briefs: ReadonlyMap<string, Stor
     if (rank !== null) byId.push({ hit, rank });
     else if (hit.explanation?.text.toLowerCase().includes(query)) byText.push({ ...hit, by: "explanation" });
   }
-  byId.sort((a, b) => a.rank - b.rank || a.hit.id.length - b.hit.id.length || compare(a.hit.id, b.hit.id));
-  byText.sort((a, b) => compare(a.id, b.id));
+  // An empty query lists by ID; otherwise better ranks first, and shorter IDs within one rank.
+  byId.sort((a, b) => (query === "" ? 0 : a.rank - b.rank || a.hit.id.length - b.hit.id.length) || compareText(a.hit.id, b.hit.id));
+  byText.sort((a, b) => compareText(a.id, b.id));
   return [...byId.map((x) => x.hit), ...byText].slice(0, q.limit);
 }
 
@@ -91,8 +93,4 @@ function subsequence(query: string, text: string): boolean {
   let at = 0;
   for (const ch of text) if (ch === wanted[at] && ++at === wanted.length) return true;
   return wanted.length === 0;
-}
-
-function compare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

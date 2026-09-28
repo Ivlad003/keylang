@@ -23,7 +23,9 @@ const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|_([^_]+)_/gu
 
 export function inline(written: string, base: Style): Segment[] {
   // Anchors and line breaks written as HTML (the explained map's) show nothing, as on GitHub.
-  const text = written.replace(/<a\s[^>]*><\/a>|<br\s*\/?>/gi, "");
+  const text = written
+    .replace(/<a\s[^>]*><\/a>|<br\s*\/?>/gi, "")
+    .replace(/&(lt|gt|amp);/g, (_, name: string) => (name === "lt" ? "<" : name === "gt" ? ">" : "&"));
   const out: Segment[] = [];
   let at = 0;
   for (const match of text.matchAll(INLINE)) {

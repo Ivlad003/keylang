@@ -10,7 +10,8 @@ import { sameFinding } from "./assess.ts";
 import { CONFIG_FILE } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isGeneratedMap } from "./emit.ts";
-import { loadBriefs } from "./explanations.ts";
+import { capText } from "./brief.ts";
+import type { StoredExplanation } from "./explanations.ts";
 import { sectionNodes, walk, type Document, type Node, type Section } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
@@ -353,16 +354,16 @@ const CONTAINER_BRIEF = 80;
  * its line in `keylang.json`; `containerName` is the parent ID, and after it
  * the brief when only the explanation matched. A package has no place to point at.
  */
-export function workspaceSymbols(ws: Workspace, query: string): SymbolInformation[] {
+export function workspaceSymbols(ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string): SymbolInformation[] {
   const { analysis } = ws;
   const out: SymbolInformation[] = [];
-  for (const hit of searchNodes(analysis, loadBriefs(analysis.config), { query, limit: Infinity, fuzzy: true })) {
+  for (const hit of searchNodes(analysis, briefs, { query, limit: Infinity, fuzzy: true })) {
     if (out.length === MAX_WORKSPACE_SYMBOLS) break;
     const location = symbolLocation(ws, hit);
     if (location === null) continue;
     const dot = hit.id.lastIndexOf(".");
     const parent = dot === -1 ? "" : hit.id.slice(0, dot);
-    const brief = hit.by === "explanation" && hit.explanation ? shorten(hit.explanation.text, CONTAINER_BRIEF) : null;
+    const brief = hit.by === "explanation" && hit.explanation ? capText(hit.explanation.text, CONTAINER_BRIEF) : null;
     const container = [parent, brief].filter((part) => part !== null && part !== "").join(" — ");
     out.push({ name: hit.id.slice(dot + 1), kind: symbolKind(hit.kind), location, ...(container !== "" ? { containerName: container } : {}) });
   }
@@ -383,7 +384,9 @@ function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
     // A layer is a key of `layers` in keylang.json.
     const text = ws.text(CONFIG_FILE);
     if (text === null) return null;
-    const at = text.split("\n").findIndex((line) => line.includes(JSON.stringify(hit.id)));
+    // The key of the layer (`"app": […]`), not the same word as a value elsewhere (`"module": "app"`).
+    const key = new RegExp(`^\\s*${JSON.stringify(hit.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
+    const at = text.split("\n").findIndex((line) => key.test(line));
     const line = at === -1 ? 1 : at + 1;
     return { uri: uriOf(ws.root, CONFIG_FILE), range: lineRange(text, line, 1) };
   }
@@ -393,14 +396,6 @@ function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
   return { uri: uriOf(ws.root, hit.file), range: { start, end: start } };
 }
 
-/** At most `max` code points, cut at a word, with `…`. */
-function shorten(text: string, max: number): string {
-  const chars = [...text];
-  if (chars.length <= max) return text;
-  const head = chars.slice(0, max - 1).join("");
-  const space = head.lastIndexOf(" ");
-  return `${space > 0 ? head.slice(0, space) : head}…`;
-}
 
 // ---------- document symbols ----------
 

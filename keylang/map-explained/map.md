@@ -35,72 +35,72 @@
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
     - node [external.node](external.md#external.node)
     - explanations [map.explanations](map.md#map.explanations)
+    - graph [map.graph](map.md#map.graph)
+    - span [base.span](base.md#base.span)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - fn [isGeneratedMap](../../src/emit.ts#L11) (text: string) → boolean
+    - fn [isGeneratedMap](../../src/emit.ts#L13) (text: string) → boolean
       <a id="map.emit.isGeneratedMap"></a><br>True when the first non-empty line is a generator marker. The text after `keylang:generated` may vary.
-    - fn [codeHref](../../src/emit.ts#L22) (mapDir: string, filePath: string, line: number) → string
+    - fn [codeHref](../../src/emit.ts#L24) (mapDir: string, filePath: string, line: number) → string
       <a id="map.emit.codeHref"></a><br>Markdown link target relative to a map file. `mapDir` and `filePath` are POSIX paths from the repository root (`keylang/map`, `src/a.ts`). Each segment except `.` and `..` is percent-encoded so `(`, `)`, spaces and `#` survive round-trip. `encodeURIComponent` leaves…
       - calls [map.emit.encodeSegment](map.md#map.emit.encodeSegment)
-    - fn [encodeSegment](../../src/emit.ts#L31) (seg: string) → string <!-- internal -->
+    - fn [encodeSegment](../../src/emit.ts#L33) (seg: string) → string <!-- internal -->
       <a id="map.emit.encodeSegment"></a>
-    - fn [renderMap](../../src/emit.ts#L36) (snapshot: AnalysisSnapshot, mapDir: string) → Map<string, string>
+    - fn [renderMap](../../src/emit.ts#L38) (snapshot: AnalysisSnapshot, mapDir: string) → Map<string, string>
       <a id="map.emit.renderMap"></a><br>One Markdown document per layer, keyed by file name (`domain.md`). `mapDir` is where those files are written, relative to the repo root.
       - calls [map.emit.renderLayers](map.md#map.emit.renderLayers), [map.emit.childrenByParent](map.md#map.emit.childrenByParent)
-    - type [ExplainNode](../../src/emit.ts#L41) = (id: string) => NodeExplanation | null
+    - type [ExplainNode](../../src/emit.ts#L43) = (id: string) => NodeExplanation | null
       <a id="map.emit.ExplainNode"></a><br>A node's explanation for the explained map; null leaves the node without text.
-    - fn [renderExplainedMap](../../src/emit.ts#L51) (snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode) → Map<string, string>
+    - fn [renderExplainedMap](../../src/emit.ts#L53) (snapshot: AnalysisSnapshot, mapDir: string, explain: ExplainNode) → Map<string, string>
       <a id="map.emit.renderExplainedMap"></a><br>The explained map: the tree of `renderMap` for reading on GitHub and in an editor. Every node has an anchor and, when it has an explanation, the text on its description line; `calls` and dependency targets link to the anchor of their node; each layer file opens with its…
       - calls [map.emit.childrenByParent](map.md#map.emit.childrenByParent), [map.emit.renderLayers](map.md#map.emit.renderLayers), [map.emit.renderReadme](map.md#map.emit.renderReadme)
-    - type [Render](../../src/emit.ts#L58) <!-- internal -->
+    - type [Render](../../src/emit.ts#L60) <!-- internal -->
       <a id="map.emit.Render"></a>
-    - fn [renderLayers](../../src/emit.ts#L66) (r: Render) → Map<string, string> <!-- internal -->
+    - fn [renderLayers](../../src/emit.ts#L68) (r: Render) → Map<string, string> <!-- internal -->
       <a id="map.emit.renderLayers"></a>
       - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.contents](map.md#map.emit.contents), [map.emit.describe](map.md#map.emit.describe), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderModule](map.md#map.emit.renderModule)
-    - fn [layerIds](../../src/emit.ts#L76) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
+    - fn [layerIds](../../src/emit.ts#L78) (snapshot: AnalysisSnapshot) → string[] <!-- internal -->
       <a id="map.emit.layerIds"></a>
-    - fn [anchorOf](../../src/emit.ts#L86) (id: string) → string
+    - fn [anchorOf](../../src/emit.ts#L88) (id: string) → string
       <a id="map.emit.anchorOf"></a><br>The anchor of a node in the explained map: its ID, with every character other than an ASCII letter, digit, `.`, `_` or `-` written as `~<hex>~` (its code point). GitHub keeps such an `id` as written, and `~` never occurs in an ID, so two IDs never share an anchor.
-    - fn [ref](../../src/emit.ts#L91) (r: Render, id: string) → string <!-- internal -->
+    - fn [ref](../../src/emit.ts#L93) (r: Render, id: string) → string <!-- internal -->
       <a id="map.emit.ref"></a><br>A link to the node's anchor in its layer file; the bare ID in the canonical map.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf)
-    - fn [contents](../../src/emit.ts#L98) (r: Render, layerId: string) → string <!-- internal -->
+    - fn [contents](../../src/emit.ts#L100) (r: Render, layerId: string) → string <!-- internal -->
       <a id="map.emit.contents"></a><br>The first lines of a layer file: back to the start page, and every module of the layer, in map order.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf), [map.emit.sortIds](map.md#map.emit.sortIds)
-    - fn [describe](../../src/emit.ts#L114) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [describe](../../src/emit.ts#L116) (r: Render, id: string, depth: number) → string <!-- internal -->
       <a id="map.emit.describe"></a><br>The description line of a node at `depth`: in the explained map its anchor and its explanation, if any; nothing in the canonical map.
       - calls [map.emit.anchorOf](map.md#map.emit.anchorOf), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref)
-    - fn [descriptionText](../../src/emit.ts#L128) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
-      <a id="map.emit.descriptionText"></a><br>The text of a description line: `<br>` so a Markdown viewer starts it on a line of its own, the explanation, and for a brief from a model its origin. The text never starts a block (a list item, a heading, a quote, a fence) and never opens or closes an HTML comment, so the file…
+    - fn [descriptionText](../../src/emit.ts#L131) (e: NodeExplanation, link: (id: string) => string | null = () => null) → string
+      <a id="map.emit.descriptionText"></a><br>The text of a description line: `<br>` so a Markdown viewer starts it on a line of its own, the explanation, and for a brief from a model its origin. The text never starts a block (a list item, a heading, a quote, a fence), and `<` outside code is `&lt;`, so no HTML in it…
       - calls [map.explanations.modelName](map.md#map.explanations.modelName)
-    - type [Counts](../../src/emit.ts#L141) <!-- internal -->
+    - type [Counts](../../src/emit.ts#L149) <!-- internal -->
       <a id="map.emit.Counts"></a><br>Explanation counts of the nodes of one layer (the layer included).
-    - fn [renderReadme](../../src/emit.ts#L148) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
+    - fn [renderReadme](../../src/emit.ts#L156) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
       <a id="map.emit.renderReadme"></a>
       - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref), [map.emit.index](map.md#map.emit.index)
-    - fn [index](../../src/emit.ts#L195) (r: Render) → string[] <!-- internal -->
+    - fn [index](../../src/emit.ts#L203) (r: Render) → string[] <!-- internal -->
       <a id="map.emit.index"></a><br>One paragraph per first letter: every module and class of the repository (packages left out), by name.
-      - calls [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.compareIds](map.md#map.emit.compareIds), [map.emit.anchorOf](map.md#map.emit.anchorOf)
-    - fn [compareIds](../../src/emit.ts#L212) (a: string, b: string) → number <!-- internal -->
-      <a id="map.emit.compareIds"></a>
-    - fn [childrenByParent](../../src/emit.ts#L219) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+      - calls [map.emit.nameOf](map.md#map.emit.nameOf), [base.span.compareText](base.md#base.span.compareText), [map.emit.anchorOf](map.md#map.emit.anchorOf)
+    - fn [childrenByParent](../../src/emit.ts#L222) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
       <a id="map.emit.childrenByParent"></a>
-    - fn [sortIds](../../src/emit.ts#L232) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L235) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
       <a id="map.emit.sortIds"></a>
       - calls [map.emit.nameOf](map.md#map.emit.nameOf)
-    - fn [nameOf](../../src/emit.ts#L242) (id: string) → string <!-- internal -->
+    - fn [nameOf](../../src/emit.ts#L245) (id: string) → string <!-- internal -->
       <a id="map.emit.nameOf"></a>
-    - fn [linkedName](../../src/emit.ts#L246) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L249) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
       <a id="map.emit.linkedName"></a>
       - calls [map.emit.codeHref](map.md#map.emit.codeHref)
-    - fn [renderModule](../../src/emit.ts#L251) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [renderModule](../../src/emit.ts#L254) (r: Render, id: string, depth: number) → string <!-- internal -->
       <a id="map.emit.renderModule"></a>
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.depsOf](map.md#map.emit.depsOf), [map.emit.ref](map.md#map.emit.ref), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderDecl](map.md#map.emit.renderDecl)
-    - fn [edgesFrom](../../src/emit.ts#L274) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
+    - fn [edgesFrom](../../src/emit.ts#L277) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
       <a id="map.emit.edgesFrom"></a>
-    - fn [depsOf](../../src/emit.ts#L289) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [depsOf](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
       <a id="map.emit.depsOf"></a><br>One line per dependency alias: an import and a re-export of one module are one dependency with two edges.
       - calls [map.emit.edgesFrom](map.md#map.emit.edgesFrom)
-    - fn [renderDecl](../../src/emit.ts#L297) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L300) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       <a id="map.emit.renderDecl"></a>
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.edgesFrom](map.md#map.emit.edgesFrom), [map.emit.ref](map.md#map.emit.ref)
   - module [explanations](../../src/explanations.ts#L1)
@@ -113,34 +113,36 @@
       <a id="map.explanations.ExplanationDetail"></a><br>`short` and `full` answer `explain <id> --llm`; `brief` is the one or two sentences of the explained map.
     - type [StoredExplanation](../../src/explanations.ts#L17)
       <a id="map.explanations.StoredExplanation"></a><br>An explanation a model wrote, with the header it is saved under.
-    - fn [parseStoredExplanation](../../src/explanations.ts#L31) (text: string) → StoredExplanation | null
+    - fn [isStoredExplanation](../../src/explanations.ts#L31) (text: string) → boolean
+      <a id="map.explanations.isStoredExplanation"></a><br>A file `explain --llm` wrote: the model's text under keylang's header, not keylang Markdown to parse or format.
+    - fn [parseStoredExplanation](../../src/explanations.ts#L36) (text: string) → StoredExplanation | null
       <a id="map.explanations.parseStoredExplanation"></a><br>The saved form; null for a file keylang did not write, which is not an explanation it can date.
-    - fn [formatStoredExplanation](../../src/explanations.ts#L37) (e: StoredExplanation) → string
+    - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
       <a id="map.explanations.formatStoredExplanation"></a>
-    - fn [explainDir](../../src/explanations.ts#L42) (config: Config) → string
+    - fn [explainDir](../../src/explanations.ts#L47) (config: Config) → string
       <a id="map.explanations.explainDir"></a><br>Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map.
-    - fn [explanationPath](../../src/explanations.ts#L50) (config: Config, id: string, detail: ExplanationDetail) → string
+    - fn [explanationPath](../../src/explanations.ts#L55) (config: Config, id: string, detail: ExplanationDetail) → string
       <a id="map.explanations.explanationPath"></a><br>File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [readStoredExplanation](../../src/explanations.ts#L54) (root: string, rel: string) → StoredExplanation | null
+    - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null
       <a id="map.explanations.readStoredExplanation"></a>
       - calls [map.explanations.parseStoredExplanation](map.md#map.explanations.parseStoredExplanation)
-    - fn [storedIds](../../src/explanations.ts#L60) (root: string, dir: string) → string[]
+    - fn [storedIds](../../src/explanations.ts#L65) (root: string, dir: string) → string[]
       <a id="map.explanations.storedIds"></a><br>IDs with a saved file in `dir` (relative to the root), sorted.
-    - fn [loadBriefs](../../src/explanations.ts#L70) (config: Config) → Map<string, StoredExplanation>
+    - fn [loadBriefs](../../src/explanations.ts#L75) (config: Config) → Map<string, StoredExplanation>
       <a id="map.explanations.loadBriefs"></a><br>Briefs saved under `<dir>/explain/brief/`, by ID. A file without keylang's header is not one.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir), [map.explanations.storedIds](map.md#map.explanations.storedIds), [map.explanations.readStoredExplanation](map.md#map.explanations.readStoredExplanation)
-    - fn [snapshotBaseline](../../src/explanations.ts#L90) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [snapshotBaseline](../../src/explanations.ts#L95) (snapshot: AnalysisSnapshot, id: string) → string | null
       <a id="map.explanations.snapshotBaseline"></a><br>The baseline an explanation of `id` is compared with: the closure fingerprint of a fn or type; for a module, class or layer, which has no closure of its own, a hash of its dependencies and of the closures of every node under it, so a change inside makes its explanation stale.…
       - calls [map.explanations.lowerBound](map.md#map.explanations.lowerBound)
-    - fn [lowerBound](../../src/explanations.ts#L112) (sorted: readonly string[], key: string) → number <!-- internal -->
+    - fn [lowerBound](../../src/explanations.ts#L117) (sorted: readonly string[], key: string) → number <!-- internal -->
       <a id="map.explanations.lowerBound"></a>
-    - type [NodeExplanation](../../src/explanations.ts#L124)
+    - type [NodeExplanation](../../src/explanations.ts#L129)
       <a id="map.explanations.NodeExplanation"></a><br>What a node is, in plain words, and where the words come from.
-    - fn [explanationOf](../../src/explanations.ts#L140) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
+    - fn [explanationOf](../../src/explanations.ts#L145) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
       <a id="map.explanations.explanationOf"></a><br>The explanation of a node: its documentation comment, else its saved brief (fresh or stale), else null. Never a `short` or `full` explanation: those answer a question about one node, not a line of the map.
       - calls [base.brief.briefOf](base.md#base.brief.briefOf), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline)
-    - fn [modelName](../../src/explanations.ts#L151) (agent: string) → string
+    - fn [modelName](../../src/explanations.ts#L156) (agent: string) → string
       <a id="map.explanations.modelName"></a><br>The model of an agent, as the map shows it: `claude-sonnet-5` for `anthropic:claude-sonnet-5`.
   - module [exports](../../src/exports.ts#L1)
     <a id="map.exports"></a><br>Export tables: the symbol each public name of a module stands for, following aliases, re-export chains, namespaces and `export *`. Plain data in and out: the graph builds the rows from facts, call resolution and the snapshot's `exports` read the result, so both see the same…
@@ -588,14 +590,15 @@
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [TracePlan](../../src/trace-plan.ts#L15)
+    - explanations [map.explanations](map.md#map.explanations)
+    - type [TracePlan](../../src/trace-plan.ts#L16)
       <a id="map.trace-plan.TracePlan"></a>
-    - fn [tracePlan](../../src/trace-plan.ts#L23) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
+    - fn [tracePlan](../../src/trace-plan.ts#L24) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
       <a id="map.trace-plan.tracePlan"></a>
       - calls [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [map.map.generateMap](map.md#map.map.generateMap)
-    - fn [flowSymbols](../../src/trace-plan.ts#L40) (root: string, dir: string, flow: string) → Set<string> | null
+    - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
       <a id="map.trace-plan.flowSymbols"></a><br>`trigger` and `step` IDs of the flow; null when no spec declares it.
-      - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+      - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
   - module [wire-gen](../../src/wire-gen.ts#L1)
     <a id="map.wire-gen"></a><br>`keylang wire`: `# wiring` + the snapshot → `keylang.gen.ts` (ADR 0003). One memoized builder per factory: a builder awaits its dependencies, then calls the factory (`new` for a class) with them, so every node is built once per `wire()` call, after what it needs, and only when…
     - node [external.node](external.md#external.node)

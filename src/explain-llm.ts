@@ -11,10 +11,12 @@ import type { Analysis } from "./analyze.ts";
 import { briefOf } from "./brief.ts";
 import type { Config } from "./config.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
-import { explainDir, explanationOf, explanationPath, formatStoredExplanation, loadBriefs, OLD_EXPLAIN_DIR, readStoredExplanation, snapshotBaseline, storedIds, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
+import { explainDir, explanationOf, explanationPath, formatStoredExplanation, OLD_EXPLAIN_DIR, readStoredExplanation, snapshotBaseline, storedIds, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
+import { EXTERNAL } from "./graph.ts";
 import type { LlmClient, LlmRequest } from "./llm.ts";
 import { plannedDecl } from "./lsp-features.ts";
 import { safeWrite } from "./safe-write.ts";
+import { compareText } from "./span.ts";
 
 export type Explanation = StoredExplanation;
 
@@ -81,7 +83,7 @@ export function unknownIds(analysis: Analysis, text: string): string[] {
  * The request: the node's summary, its code, the signatures around it, and
  * the words of the specs that mention it (layer, flows, rules). Not the repository.
  */
-export function explanationRequest(analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs?: ReadonlyMap<string, StoredExplanation> }): LlmRequest {
+export function explanationRequest(analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }): LlmRequest {
   const nodes = analysis.snapshot?.nodes ?? {};
   const signature = (id: string): string => `${id}${nodes[id]?.signature ? ` ${nodes[id]!.signature}` : ""}`;
   const node = nodes[summary.id];
@@ -94,7 +96,7 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     ...(node?.file && source === null ? [`Code: not shown — ${node.file} changed after the analysis read it.`] : []),
     ...(summary.calls.length > 0 ? [`It calls:\n${summary.calls.map(signature).join("\n")}`] : []),
     ...(summary.callers.length > 0 ? [`Called by:\n${summary.callers.map(signature).join("\n")}`] : []),
-    ...members(analysis, summary.id, options.briefs ?? loadBriefs(analysis.config)),
+    ...members(analysis, summary.id, options.briefs),
     `Layer: ${summary.id.split(".")[0]}`,
   ];
   const detail =
@@ -167,7 +169,7 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
   if (!snapshot) return [];
   const out: PlannedBrief[] = [];
   for (const [id, node] of Object.entries(snapshot.nodes)) {
-    if (node.layer === "external" || node.doc) continue;
+    if (node.layer === EXTERNAL || node.doc) continue;
     const brief = briefs.get(id);
     const stale = brief !== undefined && snapshotBaseline(snapshot, id) !== brief.closure;
     if (batch === "stale" ? !stale : brief !== undefined && !stale) continue;
@@ -176,7 +178,7 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
     else if (node.kind === "module") out.push({ id, level: "class/module", wave: 1000 - depth });
     else out.push({ id, level: "layer", wave: 1000 });
   }
-  return out.sort((a, b) => a.wave - b.wave || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return out.sort((a, b) => a.wave - b.wave || compareText(a.id, b.id));
 }
 
 /** A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out. */
@@ -234,6 +236,6 @@ export async function runBriefs(
     });
     await Promise.all(workers);
   }
-  result.failed.sort((a, b) => (a.id < b.id ? -1 : 1));
+  result.failed.sort((a, b) => compareText(a.id, b.id));
   return result;
 }

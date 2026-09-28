@@ -2,9 +2,14 @@
 // documents what; this module only turns comment source into text, lines kept,
 // so the brief rule (`src/brief.ts`) can find the first paragraph.
 
-/** A license or copyright notice: never documentation, wherever it stands. */
+/**
+ * A license or copyright notice: a comment that starts with one (`SPDX-…`,
+ * `Copyright …`, `(c) 2024`, `© …`) or carries an SPDX identifier. A
+ * comment that only mentions copyright is documentation.
+ */
 export function isLicense(text: string): boolean {
-  return /SPDX-|copyright|\(c\)\s*\d|©/i.test(text);
+  const body = text.replace(/^[\s/*!#]+/, "");
+  return /^(?:SPDX-|copyright\b|\(c\)\s*\d|©)/i.test(body) || text.includes("SPDX-License-Identifier");
 }
 
 /** `/** … *\/`, `/*! … *\/` or `/* … *\/` without delimiters and the ` * ` that starts each line. */
