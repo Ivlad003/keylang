@@ -12,7 +12,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { toPosix } from "./config.ts";
-import { codeLenses, completions, definition, diagnosticsFor, documentSymbols, hover, references, signatureHelp, workspace, type LspPosition, type Workspace } from "./lsp-features.ts";
+import { codeLenses, completions, definition, diagnosticsFor, documentSymbols, hover, references, signatureHelp, workspace, workspaceSymbols, type LspPosition, type Workspace } from "./lsp-features.ts";
 
 interface Rpc {
   jsonrpc?: string;
@@ -284,6 +284,8 @@ class Server {
         return position ? signatureHelp(await this.current(), path, position) : null;
       case "textDocument/codeLens":
         return codeLenses(await this.current(), path);
+      case "workspace/symbol":
+        return workspaceSymbols(await this.current(), typeof params.query === "string" ? params.query : "");
       default:
         throw new LspError(ERRORS.methodNotFound, `unsupported method \`${method}\``);
     }
@@ -311,6 +313,7 @@ class Server {
         definitionProvider: true,
         referencesProvider: true,
         documentSymbolProvider: true,
+        workspaceSymbolProvider: true,
         completionProvider: { triggerCharacters: [" ", "."] },
         signatureHelpProvider: { triggerCharacters: [" ", "("] },
         codeLensProvider: { resolveProvider: false },

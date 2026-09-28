@@ -114,10 +114,10 @@ async function open(t: { after: (f: () => void) => void }, dir: string, capabili
   return session;
 }
 
-function fixture(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}): string {
+function fixture(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}, source = "repo"): string {
   const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+  cpSync(join(root, "tests/fixtures", source), dir, { recursive: true });
   for (const [path, text] of Object.entries(extra)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
@@ -514,4 +514,48 @@ test("lsp: references find the flow and rules lines; code lens names the flows; 
   s.notify("textDocument/didOpen", { textDocument: { uri: sigUri, languageId: "markdown", version: 1, text } });
   const help = await s.request<{ signatures: { label: string }[] }>("textDocument/signatureHelp", { textDocument: { uri: sigUri }, position: { line: 2, character: text.split("\n")[2]!.length } });
   assert.equal(help.signatures[0]?.label, "domain.order.createOrder (id: string, items: number[]) → Order");
+});
+
+interface WorkspaceSymbol {
+  name: string;
+  kind: number;
+  location: { uri: string; range: { start: { line: number; character: number } } };
+  containerName?: string;
+}
+
+test("lsp: workspace symbols find nodes by name and by what their explanation says; code, spec and keylang.json locations", async (t) => {
+  const refund = "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n";
+  const dir = fixture(t, { "keylang/flows/refund.md": refund }, "explained");
+  const session = new Session(dir);
+  t.after(() => session.close());
+  const init = await session.request<{ capabilities: { workspaceSymbolProvider?: boolean } }>("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  assert.equal(init.capabilities.workspaceSymbolProvider, true);
+  session.notify("initialized", {});
+  const symbols = (query: string): Promise<WorkspaceSymbol[]> => session.request<WorkspaceSymbol[]>("workspace/symbol", { query });
+  const order = readFileSync(join(dir, "src/domain/order.ts"), "utf8");
+
+  const [create] = await symbols("creat");
+  const at = { line: lineOf(order, "export function createOrder"), character: charOf(order, lineOf(order, "export function createOrder"), "function createOrder") };
+  assert.deepEqual(create, { name: "createOrder", kind: 12, location: { uri: uri(dir, "src/domain/order.ts"), range: { start: at, end: at } }, containerName: "domain.order" });
+  assert.equal((await symbols("crtOrd"))[0]?.name, "createOrder", "a subsequence of the name");
+
+  // "memory" is only in the class's JSDoc: the brief says why it matched.
+  const memory = await symbols("memory");
+  assert.deepEqual(memory.map((s) => [s.name, s.kind, s.containerName]), [["Ledger", 5, "domain.order — Keeps orders in memory."]]);
+  assert.equal(memory[0]?.location.range.start.line, lineOf(order, "export class Ledger"));
+
+  const money = await symbols("money");
+  assert.deepEqual(money.slice(0, 2).map((s) => [s.name, s.kind]), [["money", 2], ["Money", 11]]);
+
+  const [planned] = await symbols("refund");
+  assert.equal(planned?.kind, 12);
+  assert.equal(planned?.location.uri, uri(dir, "keylang/flows/refund.md"));
+  assert.equal(planned?.location.range.start.line, 2);
+
+  const all = await symbols("");
+  assert.ok(all.length > 0 && all.length <= 200);
+  const layer = all.find((s) => s.name === "domain");
+  assert.equal(layer?.kind, 2);
+  assert.equal(layer?.location.uri, uri(dir, "keylang.json"));
+  assert.equal(layer?.location.range.start.line, lineOf(readFileSync(join(dir, "keylang.json"), "utf8"), '"domain"'));
 });

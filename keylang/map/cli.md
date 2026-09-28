@@ -179,12 +179,12 @@
         - calls base.config.toPosix, map.analyze.within
       - fn [report](../../src/lsp.ts#L244) (message: string) → void <!-- internal -->
       - fn [request](../../src/lsp.ts#L251) (method: string, params: Record<string, unknown>) → Promise<unknown> <!-- internal -->
-        - calls cli.lsp.Server.initialize, cli.lsp.LspError, cli.lsp.filePath, cli.lsp.Server.relative, features.lsp-features.diagnosticsFor, cli.lsp.Server.current, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references, features.lsp-features.documentSymbols, features.lsp-features.completions, features.lsp-features.signatureHelp, features.lsp-features.codeLenses
-      - fn [initialize](../../src/lsp.ts#L292) (params: Record<string, unknown>) → unknown <!-- internal -->
+        - calls cli.lsp.Server.initialize, cli.lsp.LspError, cli.lsp.filePath, cli.lsp.Server.relative, features.lsp-features.diagnosticsFor, cli.lsp.Server.current, features.lsp-features.hover, features.lsp-features.definition, features.lsp-features.references, features.lsp-features.documentSymbols, features.lsp-features.completions, features.lsp-features.signatureHelp, features.lsp-features.codeLenses, features.lsp-features.workspaceSymbols
+      - fn [initialize](../../src/lsp.ts#L294) (params: Record<string, unknown>) → unknown <!-- internal -->
         - calls cli.lsp.filePath, map.analyze.findRoot
-    - module [LspError](../../src/lsp.ts#L323) <!-- internal -->
-      - fn [constructor](../../src/lsp.ts#L325) (code: number, message: string)
-    - fn [filePath](../../src/lsp.ts#L331) (uri: string) → string <!-- internal -->
+    - module [LspError](../../src/lsp.ts#L326) <!-- internal -->
+      - fn [constructor](../../src/lsp.ts#L328) (code: number, message: string)
+    - fn [filePath](../../src/lsp.ts#L334) (uri: string) → string <!-- internal -->
   - module [mcp](../../src/mcp.ts#L1)
     - modelcontextprotocol-sdk external.modelcontextprotocol-sdk
     - node external.node
@@ -194,16 +194,19 @@
     - config base.config
     - explain-llm features.explain-llm
     - explain-node features.explain-node
+    - explanations map.explanations
     - files lang.files
     - ir lang.ir
     - map map.map
+    - node-search features.node-search
     - proposals features.proposals
-    - type [ToolResult](../../src/mcp.ts#L25) <!-- internal -->
-    - fn [json](../../src/mcp.ts#L27) (value: unknown) → ToolResult <!-- internal -->
-    - fn [failure](../../src/mcp.ts#L28) (message: string) → ToolResult <!-- internal -->
-    - fn [currentAnalysis](../../src/mcp.ts#L39) (root: string) → () => Promise<Analysis>
+    - type [ToolResult](../../src/mcp.ts#L27) <!-- internal -->
+    - fn [json](../../src/mcp.ts#L29) (value: unknown) → ToolResult <!-- internal -->
+    - fn [failure](../../src/mcp.ts#L30) (message: string) → ToolResult <!-- internal -->
+    - fn [currentAnalysis](../../src/mcp.ts#L41) (root: string) → () => Promise<Analysis>
       - calls base.config.loadConfig, map.map.generateMap, lang.files.collectMdFiles, base.config.evidenceFiles, map.analyze.analyze
-    - fn [mcpServer](../../src/mcp.ts#L58) (root: string, version: string) → McpServer
-      - calls cli.mcp.currentAnalysis, lang.ir.sectionNodes, lang.ir.walk, cli.mcp.json, features.explain-node.summarizeNode, cli.mcp.failure, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, features.proposals.writeProposal, features.proposals.lineDiff
-    - fn [serveMcp](../../src/mcp.ts#L211) (root: string, version: string) → Promise<number>
+    - fn [explanationJson](../../src/mcp.ts#L61) (e: NodeExplanation | null) → { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null <!-- internal -->
+    - fn [mcpServer](../../src/mcp.ts#L66) (root: string, version: string) → McpServer
+      - calls cli.mcp.currentAnalysis, features.node-search.searchNodes, map.explanations.loadBriefs, cli.mcp.json, cli.mcp.explanationJson, features.explain-node.summarizeNode, cli.mcp.failure, map.explanations.explanationOf, lang.ir.sectionNodes, lang.ir.walk, features.check-results.checkResults, features.explain-llm.readExplanation, features.explain-llm.isStale, base.config.toPosix, features.proposals.proposalProblem, features.proposals.writeProposal, features.proposals.lineDiff
+    - fn [serveMcp](../../src/mcp.ts#L204) (root: string, version: string) → Promise<number>
       - calls cli.mcp.mcpServer

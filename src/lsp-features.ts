@@ -7,10 +7,13 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Analysis } from "./analyze.ts";
 import { sameFinding } from "./assess.ts";
+import { CONFIG_FILE } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isGeneratedMap } from "./emit.ts";
+import { loadBriefs } from "./explanations.ts";
 import { sectionNodes, walk, type Document, type Node, type Section } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
+import { searchNodes, type NodeHit } from "./node-search.ts";
 import { keywordsAt, parse } from "./parser.ts";
 import { blocksDependency } from "./rules.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
@@ -328,6 +331,77 @@ export function references(ws: Workspace, path: string, position: LspPosition, i
   return out;
 }
 
+// ---------- workspace symbols ----------
+
+export interface SymbolInformation {
+  name: string;
+  kind: number;
+  location: Location;
+  containerName?: string;
+}
+
+/** Most symbols one `workspace/symbol` answer carries; an empty query lists the first ones by ID. */
+const MAX_WORKSPACE_SYMBOLS = 200;
+
+/** A brief in `containerName` is cut to about this many characters: it says why the node matched, not all of it. */
+const CONTAINER_BRIEF = 80;
+
+/**
+ * Nodes of the snapshot and planned intentions matching `query` (`searchNodes`,
+ * fuzzy): by name and ID first, then by the text of their explanation. Each
+ * points at its code, a planned one at its declaration in the spec, a layer at
+ * its line in `keylang.json`; `containerName` is the parent ID, and after it
+ * the brief when only the explanation matched. A package has no place to point at.
+ */
+export function workspaceSymbols(ws: Workspace, query: string): SymbolInformation[] {
+  const { analysis } = ws;
+  const out: SymbolInformation[] = [];
+  for (const hit of searchNodes(analysis, loadBriefs(analysis.config), { query, limit: Infinity, fuzzy: true })) {
+    if (out.length === MAX_WORKSPACE_SYMBOLS) break;
+    const location = symbolLocation(ws, hit);
+    if (location === null) continue;
+    const dot = hit.id.lastIndexOf(".");
+    const parent = dot === -1 ? "" : hit.id.slice(0, dot);
+    const brief = hit.by === "explanation" && hit.explanation ? shorten(hit.explanation.text, CONTAINER_BRIEF) : null;
+    const container = [parent, brief].filter((part) => part !== null && part !== "").join(" — ");
+    out.push({ name: hit.id.slice(dot + 1), kind: symbolKind(hit.kind), location, ...(container !== "" ? { containerName: container } : {}) });
+  }
+  return out;
+}
+
+function symbolKind(kind: string): number {
+  const base = kind.replace(/^planned /, "");
+  if (base === "class") return SYMBOL.class;
+  if (base === "fn") return SYMBOL.function;
+  if (base === "type") return SYMBOL.interface;
+  if (base === "event") return SYMBOL.event;
+  return SYMBOL.module;
+}
+
+function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
+  if (hit.kind === "layer") {
+    // A layer is a key of `layers` in keylang.json.
+    const text = ws.text(CONFIG_FILE);
+    if (text === null) return null;
+    const at = text.split("\n").findIndex((line) => line.includes(JSON.stringify(hit.id)));
+    const line = at === -1 ? 1 : at + 1;
+    return { uri: uriOf(ws.root, CONFIG_FILE), range: lineRange(text, line, 1) };
+  }
+  if (hit.file === null || hit.line === null) return null;
+  const col = ws.analysis.snapshot?.nodes[hit.id]?.col ?? plannedDecl(ws.analysis.docs, hit.id)?.col ?? 1;
+  const start = lspPoint(ws.text(hit.file), hit.line, col);
+  return { uri: uriOf(ws.root, hit.file), range: { start, end: start } };
+}
+
+/** At most `max` code points, cut at a word, with `…`. */
+function shorten(text: string, max: number): string {
+  const chars = [...text];
+  if (chars.length <= max) return text;
+  const head = chars.slice(0, max - 1).join("");
+  const space = head.lastIndexOf(" ");
+  return `${space > 0 ? head.slice(0, space) : head}…`;
+}
+
 // ---------- document symbols ----------
 
 export interface DocumentSymbol {
@@ -340,7 +414,7 @@ export interface DocumentSymbol {
 }
 
 // LSP SymbolKind values.
-const SYMBOL = { module: 2, namespace: 3, property: 7, function: 12, event: 24, struct: 23, key: 20 } as const;
+const SYMBOL = { module: 2, namespace: 3, class: 5, property: 7, interface: 11, function: 12, event: 24, struct: 23, key: 20 } as const;
 
 /** Worst verdict on a line of this document: `fail` > `unverified` > `ok`. */
 function statusOf(verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number): string | undefined {
