@@ -53,7 +53,8 @@ function isStoredFacts(value: unknown): value is StoredFacts {
     every(value.valueRefs, (r) => isRecord(r) && typeof r.name === "string" && optionalTrue(r.member) && isPosition(r.line) && isPosition(r.col)) &&
     every(value.moduleCalls, isCall) &&
     (value.completeness === "complete" || value.completeness === "opaque") &&
-    (value.parseError === null || (isRecord(value.parseError) && isPosition(value.parseError.line) && typeof value.parseError.reason === "string"))
+    (value.parseError === null || (isRecord(value.parseError) && isPosition(value.parseError.line) && typeof value.parseError.reason === "string")) &&
+    optional(value.doc, isString)
   );
 }
 
@@ -85,7 +86,8 @@ function isDecl(value: unknown): boolean {
     optionalTrue(value.static) &&
     optionalTrue(value.hash) &&
     optionalTrue(value.implicit) &&
-    optional(value.base, isString)
+    optional(value.base, isString) &&
+    optional(value.doc, isString)
   );
 }
 

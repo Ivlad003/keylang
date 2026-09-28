@@ -6,11 +6,12 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
+import { briefOf } from "./brief.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
 import { constructorName } from "./languages.ts";
 import { components } from "./scc.ts";
 
-export const SNAPSHOT_SCHEMA = 6;
+export const SNAPSHOT_SCHEMA = 7;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
 export const EXTRACTOR_VERSION = "m1.8";
 
@@ -114,6 +115,8 @@ export interface SnapshotNode {
   members?: "complete" | "opaque";
   /** Generator comment, such as an external package name or `internal` on a class. */
   comment?: string;
+  /** Brief of the documentation comment in the code (`src/brief.ts`); null without one, and for a layer. */
+  doc: string | null;
   deps?: string[];
   dependents?: string[];
   calls?: string[];
@@ -197,6 +200,7 @@ export function buildSnapshot(
       line: m.line,
       col: m.col,
       members: m.members,
+      doc: docBrief(m.doc),
       deps: [...new Set(m.deps.map((d) => d.target))],
       dependents: [],
     };
@@ -217,6 +221,7 @@ export function buildSnapshot(
         exported: f.exported,
         ...(f.static ? { static: true as const } : {}),
         ...(f.written !== undefined ? { name: f.written } : {}),
+        doc: docBrief(f.doc),
         calls: [...new Set(f.calls.filter((c) => c.via !== "injected").map((c) => c.target))],
         callers: [],
       };
@@ -235,13 +240,14 @@ export function buildSnapshot(
         endCol: t.endCol,
         signature: t.signature,
         exported: t.exported,
+        doc: docBrief(t.doc),
         ...(t.fingerprint !== undefined ? { fingerprint: sha256(t.fingerprint) } : {}),
       };
     }
     for (const c of m.children) visit(c);
   };
   for (const l of graph.layers) {
-    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null };
+    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: null };
     for (const m of l.modules) visit(m);
   }
   for (const [id, n] of Object.entries(nodes)) {
@@ -405,6 +411,10 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
       if (node) node.closure = closure;
     }
   }
+}
+
+function docBrief(doc: string | null | undefined): string | null {
+  return doc ? briefOf(doc) : null;
 }
 
 /** A row of the graph's export table, with its fields in a fixed order. */

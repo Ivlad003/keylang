@@ -6,6 +6,7 @@
 // through a value, never dropped.
 
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import { blockCommentBody, isLicense, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
 /** Macros of `std` and common logging: they expand to calls keylang need not follow. */
@@ -76,7 +77,8 @@ function extractTree(path: string, root: Node): FileFacts {
         if (!name) break;
         const kind = TYPE_ITEMS[node.type]!;
         const at = located(node);
-        facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], fingerprint: fingerprint(node) });
+        const doc = itemDoc(node);
+        facts.decls.push({ kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: exported(node), calls: [], types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) });
         if (exported(node)) exportRow(facts, name, kind === "class" ? "class" : "type");
         // A trait's default methods are not indexed; any impl may run them.
         if (node.type === "trait_item") for (const item of members(node)) if (item.type === "function_item") detached(item.childForFieldName("body"), null);
@@ -131,6 +133,8 @@ function extractTree(path: string, root: Node): FileFacts {
     }
   }
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(items, names, facts)].sort((a, b) => a.line - b.line || a.col - b.col);
+  const doc = moduleDoc(root);
+  if (doc !== undefined) facts.doc = doc;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
@@ -143,6 +147,41 @@ function extractTree(path: string, root: Node): FileFacts {
 
 function isComment(node: Node): boolean {
   return node.type === "line_comment" || node.type === "block_comment";
+}
+
+/** `///` (not `////`) or `/** … *\/` (not `/**\/`): outer documentation of the item after it. */
+function outerDoc(node: Node): boolean {
+  return node.type === "line_comment" ? /^\/\/\/(?!\/)/.test(node.text) : node.type === "block_comment" && /^\/\*\*(?![*/])/.test(node.text);
+}
+
+/** `//!` or `/*! … *\/`: documentation of the module it is written in. */
+function innerDoc(node: Node): boolean {
+  return node.type === "line_comment" ? node.text.startsWith("//!") : node.type === "block_comment" && node.text.startsWith("/*!");
+}
+
+/** Text of doc comments in source order: line comments without `///`/`//!`, blocks without delimiters. */
+function docText(comments: readonly Node[]): string | undefined {
+  const text = comments.map((c) => (c.type === "line_comment" ? lineCommentsBody([c.text], /^\/\/[/!]/) : blockCommentBody(c.text))).join("\n");
+  return isLicense(text) ? undefined : nonEmpty(text) ?? undefined;
+}
+
+/**
+ * The item's documentation: its outer doc comments, attributes and plain
+ * comments between them allowed. `#[doc = "…"]` is an attribute keylang does
+ * not read, so an item documented only by it has none.
+ */
+function itemDoc(node: Node): string | undefined {
+  const docs: Node[] = [];
+  for (let prev = node.previousNamedSibling; prev && (prev.type === "attribute_item" || isComment(prev)); prev = prev.previousNamedSibling) {
+    if (innerDoc(prev)) break;
+    if (outerDoc(prev)) docs.unshift(prev);
+  }
+  return docText(docs);
+}
+
+/** The module's documentation: the `//!` and `/*! … *\/` comments of the file (`mod.rs` for a directory). */
+function moduleDoc(root: Node): string | undefined {
+  return docText(root.namedChildren.filter(innerDoc));
 }
 
 function exported(node: Node): boolean {
@@ -253,7 +292,8 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
   const self = takesSelf(params);
   const body = node.childForFieldName("body");
   const calls = body ? bodyCalls(body, { owner, self, bound: boundNames(node), names, imports: true }, facts) : [];
-  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], fingerprint: fingerprint(node) };
+  const doc = itemDoc(node);
+  const decl: DeclFact = { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
   // An associated function without `self` is called on the type: `S::new()`.
   if (owner !== null && !self) decl.static = true;
   return decl;

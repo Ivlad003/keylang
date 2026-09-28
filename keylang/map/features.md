@@ -120,10 +120,10 @@
     - ir lang.ir
     - lsp-features features.lsp-features
     - type [NodeSummary](../../src/explain-node.ts#L9)
-    - type [ExplainResult](../../src/explain-node.ts#L30)
-    - fn [summarizeNode](../../src/explain-node.ts#L32) (analysis: Analysis, id: string) → ExplainResult
+    - type [ExplainResult](../../src/explain-node.ts#L32)
+    - fn [summarizeNode](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → ExplainResult
       - calls features.lsp-features.plannedDecl, lang.ir.sectionNodes, lang.ir.walk, features.lsp-features.flowsUsing
-    - fn [formatSummary](../../src/explain-node.ts#L83) (s: NodeSummary) → string
+    - fn [formatSummary](../../src/explain-node.ts#L86) (s: NodeSummary) → string
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
     - fn [explainCode](../../src/explain.ts#L84) (code: string) → string | null

@@ -3,6 +3,11 @@
 # map
 
 - base
+  - module [brief](../../src/brief.ts#L1)
+    - fn [briefOf](../../src/brief.ts#L16) (text: string, sentences = 2) → string | null
+      - calls base.brief.capped, base.brief.firstSentences
+    - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
+    - fn [capped](../../src/brief.ts#L37) (text: string, max: number) → string <!-- internal -->
   - module [config](../../src/config.ts#L1)
     - node external.node
     - glob base.glob

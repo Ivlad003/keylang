@@ -77,6 +77,8 @@ export interface Module {
   class: boolean;
   /** Original package name for external modules. */
   comment: string | null;
+  /** Documentation comment of the module's file (its index file for a directory) or of the class; null without one. */
+  doc: string | null;
   deps: Dep[];
   fns: Fn[];
   types: TypeNode[];
@@ -120,6 +122,8 @@ export interface Fn {
   calls: Call[];
   /** Code may call the function without naming it: it is read as a value, is an accessor, or is called implicitly. */
   escapes?: Escape;
+  /** Documentation comment of the first declaration that has one (overloads share a node). */
+  doc?: string;
 }
 
 export interface Escape {
@@ -161,6 +165,7 @@ export interface TypeNode {
   signature: string | null;
   exported: boolean;
   fingerprint?: string;
+  doc?: string;
 }
 
 export interface Stats {
@@ -241,7 +246,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     }
     const dot = id.lastIndexOf(".");
     const name = id.slice(dot + 1);
-    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, class: false, comment: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
+    m = { id, layer, name, path, line, col: line === null ? null : 1, endLine: null, endCol: null, synthetic, class: false, comment: null, doc: null, deps: [], fns: [], types: [], children: [], members: layer === EXTERNAL ? "opaque" : "complete", starSources: [] };
     modules.set(id, m);
     const parentId = id.slice(0, dot);
     const parentDir = dir === null ? null : posix.dirname(dir);
@@ -255,6 +260,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     m.col = 1;
     m.endLine = f.endLine;
     m.endCol = f.endCol;
+    m.doc = f.doc ?? null;
   };
 
   // 1. Files → modules.
@@ -1019,6 +1025,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
       decls.ids.set(d, existing);
       const fn = decls.fns.get(existing)!;
       if (fn.fingerprint !== undefined && d.fingerprint !== undefined) fn.fingerprint = `${fn.fingerprint}:${d.fingerprint}`;
+      if (fn.doc === undefined && d.doc !== undefined) fn.doc = d.doc;
       return;
     }
     // `interface Foo` and `class Foo` merge in TypeScript: the value (class or
@@ -1033,7 +1040,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   }
   if (d.kind === "class") {
     const id = `${module.id}.${name}`;
-    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
+    const cls: Module = { id, layer: module.layer, name, path: file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, synthetic: false, class: true, comment: d.exported ? null : "internal", doc: d.doc ?? null, deps: [], fns: [], types: [], children: [], members: "complete", starSources: [] };
     module.children.push(cls);
     names.set(key, id);
     decls.ids.set(d, id);
@@ -1066,12 +1073,13 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
       ...(d.name !== name ? { written: d.name } : {}),
       calls: [],
       ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}),
+      ...(d.doc !== undefined ? { doc: d.doc } : {}),
     };
     module.fns.push(fn);
     decls.fns.set(id, fn);
     stats.fns++;
   } else {
-    module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}) });
+    module.types.push({ id, name, file, line: d.line, col: d.col, endLine: d.endLine, endCol: d.endCol, signature: d.signature, exported: d.exported, ...(d.fingerprint !== undefined ? { fingerprint: d.fingerprint } : {}), ...(d.doc !== undefined ? { doc: d.doc } : {}) });
     decls.types.add(id);
     stats.types++;
   }

@@ -385,6 +385,67 @@ test("rust: the library and each binary are separate crate roots; `crate::`, `se
   assert.ok(!index.coverage.some((c) => c.reason.includes("`tests`")), "`#[cfg(all(test, …))]` is test code");
 });
 
+/** Map files of `dir` with code line numbers removed: added comments move lines, nothing else. */
+function mapWithoutLines(dir: string, name: string): string {
+  return readFileSync(join(dir, "keylang/map", name), "utf8").replace(/#L\d+/g, "");
+}
+
+function docs(dir: string): Record<string, string | null> {
+  const nodes = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, { doc: string | null }> }).nodes;
+  return Object.fromEntries(Object.entries(nodes).filter(([id]) => !id.startsWith("external")).map(([id, n]) => [id, n.doc]));
+}
+
+test("rust: `///`, `/** */`, `//!` and `/*! */` document items and modules; `#[doc = …]` gives none; the map does not change", (t) => {
+  const dir = copy(t, "rust-shop");
+  assert.equal(keylang(dir, ["init"]).status, 0);
+  const before = mapWithoutLines(dir, "domain.md");
+  writeFileSync(join(dir, "src/domain/mod.rs"), "/*! The shop's domain: orders and their totals. */\npub mod order;\n");
+  const order = readFileSync(join(dir, "src/domain/order.rs"), "utf8")
+    .replace("use crate", "//! Orders and how they are placed.\nuse crate")
+    .replace("pub struct Order", "/// An order with its total.\n///\n/// Later paragraphs stay out of the brief.\n#[derive(Debug)]\npub struct Order")
+    .replace("    pub fn new()", "    /// Creates an empty order.\n    pub fn new()")
+    .replace("    pub fn total(", "    /** The total in cents. */\n    pub fn total(")
+    .replace("pub fn place()", "// A note, not documentation.\npub fn place()")
+    .replace("fn helper()", "#[doc = \"Written as an attribute.\"]\nfn helper()");
+  writeFileSync(join(dir, "src/domain/order.rs"), order);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const d = docs(dir);
+  assert.equal(d["domain.mod"], "The shop's domain: orders and their totals.");
+  assert.equal(d["domain.order"], "Orders and how they are placed.");
+  assert.equal(d["domain.order.Order"], "An order with its total.");
+  assert.equal(d["domain.order.Order.new"], "Creates an empty order.");
+  assert.equal(d["domain.order.Order.total"], "The total in cents.");
+  assert.equal(d["domain.order.place"], null);
+  assert.equal(d["domain.order.helper"], null);
+  assert.equal(mapWithoutLines(dir, "domain.md"), before);
+});
+
+test("python: docstrings of a package, module, class and def are `doc`; an f-string is none; the map does not change", (t) => {
+  const dir = copy(t, "py-shop");
+  assert.equal(keylang(dir, ["init"]).status, 0);
+  const before = mapWithoutLines(dir, "shop.md");
+  writeFileSync(join(dir, "shop/domain/__init__.py"), `"""The shop's domain."""\n`);
+  const order = readFileSync(join(dir, "shop/domain/order.py"), "utf8")
+    .replace("from ..infra", '"""Orders and how they are placed.\n\nMore about orders.\n"""\nfrom ..infra')
+    .replace("class Order:\n", 'class Order:\n    r"""An order with an amount.\n\n    Details stay out.\n    """\n\n')
+    .replace("    def total(self):\n", '    def total(self):\n        """The amount. Same as `self.amount`."""\n')
+    .replace("    def paid(self):\n", '    def paid(self):\n        f"""Paid {self.amount}."""\n')
+    .replace("def place():\n", 'def place():\n    # A comment is not a docstring.\n    """Places an order and stores it."""\n')
+    .replace("def _helper():\n", "def _helper():\n    'One line, single quotes.'\n");
+  writeFileSync(join(dir, "shop/domain/order.py"), order);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const d = docs(dir);
+  assert.equal(d["shop.domain"], "The shop's domain.");
+  assert.equal(d["shop.domain.order"], "Orders and how they are placed.");
+  assert.equal(d["shop.domain.order.Order"], "An order with an amount.");
+  assert.equal(d["shop.domain.order.Order.total"], "The amount. Same as `self.amount`.");
+  assert.equal(d["shop.domain.order.Order.paid"], null);
+  assert.equal(d["shop.domain.order.place"], "Places an order and stores it.");
+  assert.equal(d["shop.domain.order._helper"], "One line, single quotes.");
+  assert.equal(d["shop.main.main"], null);
+  assert.equal(mapWithoutLines(dir, "shop.md"), before);
+});
+
 test("rust and python: a re-exported name has form `reexport`, its symbol and its source module", (t) => {
   const dir = repo(t, {
     "Cargo.toml": cargoToml,

@@ -3,6 +3,7 @@
 
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
 
 // Every call and `new`, whatever its callee: each becomes an edge or a hole, never nothing.
@@ -59,11 +60,80 @@ function parentIndex(root: Node): Map<number, Node> {
 
 function extractTree(path: string, root: Node, language: Language, g: Grammar): FileFacts {
   parents = parentIndex(root);
+  const head = moduleHeader(root);
+  header = head.nodes;
   try {
-    return extractIndexed(path, root, language, g);
+    const facts = extractIndexed(path, root, language, g);
+    if (head.doc !== null) facts.doc = head.doc;
+    return facts;
   } finally {
     parents = null;
+    header = new Set();
   }
+}
+
+/** Comments of the file's header, which document the module and never a declaration. Set while `extractTree` runs. */
+let header: ReadonlySet<number> = new Set();
+
+/** Statements a declaration sits in: a comment above any of them documents it. */
+const DOC_WRAPPERS = new Set(["export_statement", "lexical_declaration", "variable_declaration", "variable_declarator", "ambient_declaration", "expression_statement", "assignment_expression"]);
+
+const JSDOC = /^\/\*\*(?!\/)/;
+
+/**
+ * The declaration's JSDoc: the nearest `/** … *\/` right above it or above the
+ * statements that wrap it (`export`, `const x =`), with decorators and line
+ * comments between them allowed. A line comment is a note, not documentation;
+ * other code in between, the file's header and a license document nothing.
+ */
+function docOf(node: Node): string | undefined {
+  for (let at: Node | null = node; at; ) {
+    for (let prev = at.previousNamedSibling; prev; prev = prev.previousNamedSibling) {
+      if (prev.type === "decorator") continue;
+      if (prev.type !== "comment" || header.has(prev.id)) return undefined;
+      if (!JSDOC.test(prev.text)) continue;
+      if (isLicense(prev.text)) return undefined;
+      return nonEmpty(jsdocDescription(blockCommentBody(prev.text))) ?? undefined;
+    }
+    const parent = parentOf(at);
+    at = parent && DOC_WRAPPERS.has(parent.type) ? parent : null;
+  }
+  return undefined;
+}
+
+/**
+ * The module's documentation: the first block of comments in the file (after
+ * `#!`; license notices, `/// <reference>` directives and blocks without text
+ * skipped), unless it sits right above the first statement that is not an
+ * import or a directive (`"use strict"`): then it documents that statement. Comments on adjacent lines are one block.
+ */
+function moduleHeader(root: Node): { doc: string | null; nodes: Set<number> } {
+  const leading: Node[] = [];
+  let first: Node | null = null;
+  for (const child of root.namedChildren) {
+    if (child.type === "hash_bang_line") continue;
+    if (child.type !== "comment") {
+      first = child;
+      break;
+    }
+    leading.push(child);
+  }
+  const blocks: Node[][] = [];
+  for (const comment of leading) {
+    const last = blocks.at(-1)?.at(-1);
+    if (last && comment.startPosition.row <= last.endPosition.row + 1) blocks.at(-1)!.push(comment);
+    else blocks.push([comment]);
+  }
+  for (const [i, block] of blocks.entries()) {
+    const text = block.map((c) => c.text).join("\n");
+    if (isLicense(text) || block.every((c) => c.text.startsWith("/// <"))) continue;
+    const doc = nonEmpty(jsdocDescription(block.map((c) => (c.text.startsWith("//") ? lineCommentsBody([c.text], /^\/\/[/!]?/) : blockCommentBody(c.text))).join("\n")));
+    if (doc === null) continue;
+    const end = block.at(-1)!.endPosition.row;
+    const own = i < blocks.length - 1 || first === null || first.startPosition.row > end + 1 || first.type === "import_statement" || (first.type === "expression_statement" && first.namedChildren[0]?.type === "string");
+    return own ? { doc, nodes: new Set(block.map((c) => c.id)) } : { doc: null, nodes: new Set() };
+  }
+  return { doc: null, nodes: new Set() };
 }
 
 function extractIndexed(path: string, root: Node, language: Language, g: Grammar): FileFacts {
@@ -317,7 +387,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
   const at = located(node);
-  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, fingerprint: fingerprint(node) };
+  const doc = docOf(node);
+  return { kind, name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported, calls, types, members, fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
 }
 
 function boundCall(call: CallFact, bound: "parameter" | "local" | null): CallFact {

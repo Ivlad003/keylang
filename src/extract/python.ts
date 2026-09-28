@@ -6,6 +6,7 @@
 // is a call through a value, never dropped.
 
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
+import { isLicense, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
 
 /** Decorators that keep the function a plain function (or method) of that name. */
@@ -63,6 +64,8 @@ function extractTree(path: string, root: Node): FileFacts {
   facts.moduleCalls = moduleCalls(root);
   facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names)].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
+  const doc = docstring(root);
+  if (doc !== undefined) facts.doc = doc;
   const end = located(root);
   facts.endLine = end.endLine;
   facts.endCol = end.endCol;
@@ -180,7 +183,8 @@ function classDecl(def: Node, name: string, symbol: string, topLevel: boolean, f
     noteDecorators(item, path, true, facts);
   }
   const base = def.childForFieldName("superclasses")?.namedChildren[0]?.text;
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, fingerprint: fingerprint(def), ...(base ? { base } : {}) };
+  const doc = docstring(def.childForFieldName("body"));
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: false, calls: [], types: [], members, fingerprint: fingerprint(def), ...(base ? { base } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /** The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver. */
@@ -201,7 +205,31 @@ function fnDecl(node: Node, name: string, owner: Owner | null): DeclFact {
   const receiver = owner?.receiver && firstName ? firstName : null;
   const body = node.childForFieldName("body");
   const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node) }) : [];
-  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], fingerprint: fingerprint(node) };
+  const doc = docstring(body);
+  return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
+}
+
+/**
+ * The docstring of a module, class or function body: its first statement when
+ * that is a lone string literal. An f-string, a bytes literal or concatenated
+ * strings are code, not documentation, and give none.
+ */
+function docstring(body: Node | null): string | undefined {
+  const first = body?.namedChildren.find((c) => c.type !== "comment");
+  const literal = first?.type === "expression_statement" && first.namedChildren.length === 1 ? first.namedChildren[0] : undefined;
+  if (literal?.type !== "string") return undefined;
+  const match = /^([rRuU]?)("""|\'\'\'|"|')([\s\S]*)\2$/.exec(literal.text);
+  if (!match) return undefined;
+  const text = cleandoc(match[3] ?? "");
+  return isLicense(text) ? undefined : nonEmpty(text) ?? undefined;
+}
+
+/** `inspect.cleandoc`: the first line stripped, the rest dedented by their common indentation. */
+function cleandoc(text: string): string {
+  const [head = "", ...rest] = text.replace(/\t/g, "        ").split("\n");
+  const indents = rest.filter((line) => line.trim() !== "").map((line) => line.length - line.trimStart().length);
+  const cut = indents.length > 0 ? Math.min(...indents) : 0;
+  return [head.trim(), ...rest.map((line) => line.slice(cut).trimEnd())].join("\n").trim();
 }
 
 /** Parameter and assigned names in a function: a call through one of them is a call through a value. */

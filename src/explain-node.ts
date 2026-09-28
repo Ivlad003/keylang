@@ -11,6 +11,8 @@ export interface NodeSummary {
   /** `fn`, `type`, `module`, `class`, `layer`, `planned fn`, … */
   kind: string;
   signature: string | null;
+  /** Brief of the documentation comment in the code. */
+  doc: string | null;
   /** `file:line`, null for a layer or an external package. */
   at: string | null;
   exported: boolean | null;
@@ -57,6 +59,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
         id,
         kind: isClass ? "class" : node.kind,
         signature: node.signature ?? null,
+        doc: node.doc ?? null,
         at: node.file ? `${node.file}:${node.line ?? 1}` : null,
         exported: node.exported ?? null,
         calls: node.calls ?? [],
@@ -73,7 +76,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   }
   if (plan) {
     return {
-      summary: { id, kind: `planned ${plan.kind}`, signature: plan.signature, at: `${plan.file}:${plan.line}`, exported: null, calls: [], callers: [], deps: [], dependents: [], flows, rules: rules.sort(), holes: {}, fingerprint: null, planned: true },
+      summary: { id, kind: `planned ${plan.kind}`, signature: plan.signature, doc: null, at: `${plan.file}:${plan.line}`, exported: null, calls: [], callers: [], deps: [], dependents: [], flows, rules: rules.sort(), holes: {}, fingerprint: null, planned: true },
     };
   }
   return { unknown: id, suggestion: analysis.index.suggest(id) ?? null };
@@ -85,6 +88,7 @@ export function formatSummary(s: NodeSummary): string {
   const where = [s.at, s.exported === true ? "exported" : s.exported === false ? "internal" : null, s.planned && !s.kind.startsWith("planned") ? "planned, implemented" : null, s.kind.startsWith("planned") ? "planned, not implemented" : null];
   const whereText = where.filter((x) => x !== null).join(" · ");
   if (whereText) lines.push(whereText);
+  if (s.doc) lines.push(`doc: ${s.doc}`);
   const list = (label: string, items: readonly string[]): void => {
     if (items.length > 0) lines.push(`${label}: ${items.join(", ")}`);
   };
