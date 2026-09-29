@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [ghost](#features.ghost) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -24,19 +24,68 @@
       <a id="features.agent-context.ContextInput"></a>
     - fn [estimateTokens](../../src/agent-context.ts#L51) (text: string) → number
       <a id="features.agent-context.estimateTokens"></a><br>Roughly four characters a token: an estimate for the person, not a bill.
-    - fn [contextPack](../../src/agent-context.ts#L61) (analysis: Analysis, input: ContextInput) → ContextPack
+    - fn [contextForIds](../../src/agent-context.ts#L61) (analysis: Analysis, ids: readonly string[]) → ContextPack
+      <a id="features.agent-context.contextForIds"></a><br>The bundle for a list of ids: each node and its neighbors, the flows and rules that name it, its code, and the e2e tests of those flows. A planned id that is not implemented is marked planned and incomplete.
+      - calls [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems), [features.agent-context.packOf](features.md#features.agent-context.packOf)
+    - fn [contextPack](../../src/agent-context.ts#L73) (analysis: Analysis, input: ContextInput) → ContextPack
       <a id="features.agent-context.contextPack"></a>
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.agent-context.specDigest](features.md#features.agent-context.specDigest), [features.agent-context.estimateTokens](features.md#features.agent-context.estimateTokens), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.agent-context.sectionText](features.md#features.agent-context.sectionText)
-    - fn [sectionText](../../src/agent-context.ts#L134) (doc: Document, section: Section) → string <!-- internal -->
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.agent-context.specDigest](features.md#features.agent-context.specDigest), [features.agent-context.estimateTokens](features.md#features.agent-context.estimateTokens), [features.agent-context.addIdItems](features.md#features.agent-context.addIdItems)
+    - fn [packOf](../../src/agent-context.ts#L112) (items: ContextItem[], keySource: string) → ContextPack <!-- internal -->
+      <a id="features.agent-context.packOf"></a>
+    - fn [addIdItems](../../src/agent-context.ts#L117) (analysis: Analysis, ids: readonly string[], removed: ReadonlySet<string>, items: ContextItem[]) → void <!-- internal -->
+      <a id="features.agent-context.addIdItems"></a><br>Nodes, neighbors, code, flows, rules and tests for `ids`. `add` is the TUI pack's adder; a fresh list is built when `items` is empty and `removed` is empty.
+      - calls [features.agent-context.estimateTokens](features.md#features.agent-context.estimateTokens), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.agent-context.sectionText](features.md#features.agent-context.sectionText)
+    - fn [sectionText](../../src/agent-context.ts#L162) (doc: Document, section: Section) → string <!-- internal -->
       <a id="features.agent-context.sectionText"></a><br>A section as the analysis read it (an unsaved buffer included), in canonical form.
       - calls [lang.fmt.formatDocument](lang.md#lang.fmt.formatDocument)
-    - fn [specDigest](../../src/agent-context.ts#L139) (analysis: Analysis) → string <!-- internal -->
+    - fn [specDigest](../../src/agent-context.ts#L167) (analysis: Analysis) → string <!-- internal -->
       <a id="features.agent-context.specDigest"></a><br>What every hand-written spec of the analysis says: part of the pack key, so a changed rule or flow elsewhere is a new pack.
       - calls [lang.fmt.formatDocument](lang.md#lang.fmt.formatDocument)
-    - fn [snapshotSource](../../src/agent-context.ts#L151) (analysis: Analysis, file: string) → string | null
+    - fn [snapshotSource](../../src/agent-context.ts#L179) (analysis: Analysis, file: string) → string | null
       <a id="features.agent-context.snapshotSource"></a><br>The text of a source file when it still has the bytes the snapshot hashed; null otherwise.
-    - fn [contextText](../../src/agent-context.ts#L160) (pack: ContextPack) → string
+    - fn [contextText](../../src/agent-context.ts#L188) (pack: ContextPack) → string
       <a id="features.agent-context.contextText"></a><br>The pack as the prompt text a model gets.
+  - module [baseline](../../src/baseline.ts#L1)
+    <a id="features.baseline"></a><br>`keylang/rules.baseline.md`: deny rules for the dependencies the current graph does not have, so a new edge between layers or a new package is K102. The grammar is the ordinary `deny` / `allow`.
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - fn [baselineText](../../src/baseline.ts#L20) (snapshot: AnalysisSnapshot) → string
+      <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
+      - calls [features.baseline.externalModule](features.md#features.baseline.externalModule)
+    - fn [externalModule](../../src/baseline.ts#L57) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+      <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
+  - module [changed](../../src/changed.ts#L1)
+    <a id="features.changed"></a><br>`check --changed` keeps the full analysis and drops findings that do not touch the changed files: a changed spec (every finding in that file), a rule whose scope contains a changed module, and a flow with a step whose code is in a changed file. `hook stop` maps the fails that…
+    - assess [check.assess](check.md#check.assess)
+    - diag [base.diag](base.md#base.diag)
+    - ir [lang.ir](lang.md#lang.ir)
+    - verdict [check.verdict](check.md#check.verdict)
+    - type [ChangedInput](../../src/changed.ts#L12)
+      <a id="features.changed.ChangedInput"></a>
+    - type [HookFail](../../src/changed.ts#L19)
+      <a id="features.changed.HookFail"></a>
+    - type [RuleHit](../../src/changed.ts#L25) <!-- internal -->
+      <a id="features.changed.RuleHit"></a>
+    - fn [filterChanged](../../src/changed.ts#L39) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      <a id="features.changed.filterChanged"></a><br>Diagnostics and verdicts that touch `changed` (paths as check prints them). `deleted` are module ids whose file git removed: the node is gone, so a flow step that named it is still in the report. Order is preserved.
+      - calls [features.changed.collectRules](features.md#features.changed.collectRules), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
+    - fn [hookFails](../../src/changed.ts#L58) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+      <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
+      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
+    - fn [hookDecision](../../src/changed.ts#L69) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+      <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
+    - fn [parseHookEvent](../../src/changed.ts#L76) (text: string) → { stop_hook_active?: boolean }
+      <a id="features.changed.parseHookEvent"></a><br>The object on stdin. Empty stdin is an event with no `stop_hook_active`.
+    - fn [covers](../../src/changed.ts#L91) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+      <a id="features.changed.covers"></a>
+    - fn [collectRules](../../src/changed.ts#L96) (docs: readonly Document[]) → RuleHit[] <!-- internal -->
+      <a id="features.changed.collectRules"></a>
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.changed.addRule](features.md#features.changed.addRule)
+    - fn [addRule](../../src/changed.ts#L107) (hits: RuleHit[], file: string, node: Node, under: string | null) → void <!-- internal -->
+      <a id="features.changed.addRule"></a>
+    - fn [flowLinesTouching](../../src/changed.ts#L126) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+      <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
   - module [check-results](../../src/check-results.ts#L1)
     <a id="features.check-results"></a><br>The results of `keylang check --format json`: diagnostics and verdicts in one list, a diagnostic joined with the verdict it explains. Shared by the CLI and the MCP server, so an agent sees exactly what CI sees.
     - node [external.node](external.md#external.node)
@@ -135,9 +184,12 @@
     - fn [diffHunks](../../src/draft.ts#L225) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L245) (text: string) → string <!-- internal -->
+    - fn [deletedDiffPaths](../../src/draft.ts#L248) (diff: string) → string[]
+      <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
+      - calls [features.draft.gitPath](features.md#features.draft.gitPath)
+    - fn [gitPath](../../src/draft.ts#L262) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L273) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-llm](../../src/explain-llm.ts#L1)
@@ -226,6 +278,29 @@
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L84) (code: string) → string | null
       <a id="features.explain.explainCode"></a>
+  - module [feature-status](../../src/feature-status.ts#L1)
+    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step in it is static ok, and no rule fail exists in any spec. Tests and trace are reported and do not block.
+    - assess [check.assess](check.md#check.assess)
+    - diag [base.diag](base.md#base.diag)
+    - ir [lang.ir](lang.md#lang.ir)
+    - span [base.span](base.md#base.span)
+    - verdict [check.verdict](check.md#check.verdict)
+    - type [Gap](../../src/feature-status.ts#L12)
+      <a id="features.feature-status.Gap"></a>
+    - type [FeatureInfo](../../src/feature-status.ts#L21)
+      <a id="features.feature-status.FeatureInfo"></a>
+    - type [FeatureReport](../../src/feature-status.ts#L30)
+      <a id="features.feature-status.FeatureReport"></a>
+    - type [FeatureInput](../../src/feature-status.ts#L36)
+      <a id="features.feature-status.FeatureInput"></a>
+    - fn [idsIn](../../src/feature-status.ts#L48) (doc: Document) → string[]
+      <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+    - fn [featureStatus](../../src/feature-status.ts#L65) (input: FeatureInput, slug: string) → FeatureReport | null
+      <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.feature-status.finding](features.md#features.feature-status.finding), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.span.compareText](base.md#base.span.compareText)
+    - fn [finding](../../src/feature-status.ts#L124) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+      <a id="features.feature-status.finding"></a>
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
     - analyze [map.analyze](map.md#map.analyze)
@@ -462,27 +537,27 @@
     - fn [specToCode](../../src/spec-to-code.ts#L50) (analysis: Analysis, id: string, into?: string, model?: LlmClient) → Promise<CodeCandidate>
       <a id="features.spec-to-code.specToCode"></a><br>`model`: the body comes from the model instead of the stub — the whole function with the declared signature, in one fenced block — and is analyzed the same way before anything is written.
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [features.spec-to-code.newModuleFile](features.md#features.spec-to-code.newModuleFile), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
-    - fn [introduced](../../src/spec-to-code.ts#L90) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
+    - fn [introduced](../../src/spec-to-code.ts#L91) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
       <a id="features.spec-to-code.introduced"></a><br>Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too).
-    - fn [flowTests](../../src/spec-to-code.ts#L101) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
+    - fn [flowTests](../../src/spec-to-code.ts#L102) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
       <a id="features.spec-to-code.flowTests"></a><br>The `test` entries of the flows that name `id`: flow name, test file and test name.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [testCandidates](../../src/spec-to-code.ts#L124) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+    - fn [testCandidates](../../src/spec-to-code.ts#L125) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
       <a id="features.spec-to-code.testCandidates"></a><br>One new file per test path the flows name and the disk lacks. A test in an existing file, or in a language without a `node:test` shape, is a note: editing someone's test file is theirs to do.
       - calls [features.spec-to-code.flowTests](features.md#features.spec-to-code.flowTests), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [base.config.toPosix](base.md#base.config.toPosix), [features.spec-to-code.modelTest](features.md#features.spec-to-code.modelTest), [features.spec-to-code.testStub](features.md#features.spec-to-code.testStub)
-    - fn [testStub](../../src/spec-to-code.ts#L159) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L160) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       <a id="features.spec-to-code.testStub"></a>
-    - fn [modelTest](../../src/spec-to-code.ts#L167) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L168) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelTest"></a><br>The e2e test file from the model; each declared test name must be in it verbatim.
-    - fn [callersInFlows](../../src/spec-to-code.ts#L184) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L185) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.spec-to-code.callersInFlows"></a><br>IDs directly above `id` in flows: the trigger or step each of its steps is nested under.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [newModuleFile](../../src/spec-to-code.ts#L201) (config: Config, moduleId: string) → string <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L202) (config: Config, moduleId: string) → string <!-- internal -->
       <a id="features.spec-to-code.newModuleFile"></a><br>`<layer glob prefix>/<segments>.<ext>`; one prefix per layer, or the path is ambiguous.
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix)
-    - fn [stubFor](../../src/spec-to-code.ts#L216) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L217) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
       <a id="features.spec-to-code.stubFor"></a><br>`(order: Order) → Promise<Refund>` → a function of that signature that fails until written; the declared parameters and result are kept as written, so the stub's own signature matches the plan (no K201).
-    - fn [modelBody](../../src/spec-to-code.ts#L232) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L233) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function from the model, with its declared name; the rest of its answer is dropped.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
   - module [stats](../../src/stats.ts#L1)

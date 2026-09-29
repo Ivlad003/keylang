@@ -85,6 +85,10 @@ Adapters, all optional:
 
 A step that names a `planned fn` is not K001. `ID` and `static` are `unverified` with reason `planned`. Trace is not required for it. When the symbol appears in code with the same kind and the same signature (whitespace ignored, `->` and `→` equivalent), the declaration warns with K202. A mismatch is K201.
 
+The same declaration can live in `keylang/features/<slug>.md`. `check` reads that file like any other spec. `keylang feature <slug>` is done when every `planned` in it is implemented (K202, and not K201), every step of its flows is static `ok`, and no rule `fail` remains anywhere, including `rules.baseline.md`. Tests and traces are printed and do not block that answer.
+
+A package the code does not import yet is `planned module external.<pkg>`, with a step from the module that will import it. Until that import exists, `ID` and `static` stay `unverified`. When the parent step's own module imports the package, the declaration is K202 and the step is static `ok` (`imported by`). An import from a different module can still produce K202, and this step stays `unverified` (`no import of … from …`). `feature` then reports a static gap.
+
 `spec-to-code <id>` builds a stub that throws `not implemented`, plus a failing `node:test` for each missing test file the flows name, as proposals. After you accept them, the id check can pass and K202 suggests deleting `planned`. The tests are `fail` until someone writes them. That is intentional: a generated stub is not a passing scenario.
 
 ## How a line gets its mark

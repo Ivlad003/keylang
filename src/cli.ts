@@ -1,9 +1,13 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
+import { detectHarnesses, HARNESS_PATHS, parseAgents, planHarness, skillFile, type HarnessPlan, type HarnessSelection } from "./adapters/harness.ts";
+import { baselineText } from "./baseline.ts";
+import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
+import { featureStatus } from "./feature-status.ts";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config } from "./config.ts";
 import { sameFinding } from "./assess.ts";
@@ -22,7 +26,8 @@ import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./expla
 import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
-import { changedFlows, codeToSpec, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
+import { changedFlows, codeToSpec, deletedDiffPaths, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
+import { placeFile } from "./graph.ts";
 import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 import { safeWrite, safeWriteAll, writeProblem } from "./safe-write.ts";
@@ -44,7 +49,25 @@ Usage: keylang                      Open the TUI in this terminal (needs a TTY)
 Commands:
   web [--port N] [--host H] The TUI in a browser tab: serves http://localhost:7070
                             with a one-time token (localhost only by default)
-  init [dir]                Detect languages and layers, write keylang.json, build the map
+  init [dir] [--agents=LIST] [--check]
+                            Detect languages and layers, write keylang.json, build the map,
+                            write rules.baseline.md, and install harness files
+                            (AGENTS.md, MCP, skill, hooks). --agents is
+                            claude,codex,opencode,cursor or none (no harness files
+                            outside keylang/). --check writes nothing and fails when a
+                            managed block, MCP command, skill, or baseline is stale
+  agents [--agents=LIST] [--check]
+                            Install the same harness files on an initialized repo
+  baseline [--check]        Write <dir>/rules.baseline.md from the current layer graph
+                            (--check: fail when it does not match; says to run
+                            \`keylang baseline\`; writes nothing)
+  feature <slug> [--format json]
+                            Whether <dir>/features/<slug>.md is done: every planned
+                            id is implemented (K202, not K201), every flow step is
+                            static ok, and no rule fail remains. 0 done, 1 gaps,
+                            2 missing file or bad invocation
+  hook stop                 Read a harness Stop event (JSON) from stdin, run
+                            check --changed, and print a JSON decision. Writes nothing
   map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json;
                             with "explain": {"map": true} in keylang.json also the
                             explained map keylang/map-explained/ (a brief under each
@@ -93,15 +116,19 @@ Commands:
   doctor                    What is set up: languages, the agent's credentials, voice
                             (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
-                            check, explain, apply_diff (proposals only; nothing is merged)
+                            check, explain, context, validate_spec, scaffold,
+                            feature_status, apply_diff (proposals only; nothing else is written)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
                             (--check: fail if the file is stale; writes nothing)
   trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
-  check [paths…]            Resolve IDs and check rules (default: ./keylang)
-                            Rebuilds the analysis in memory; does not write the map
+  check [paths…] [--changed] [--since <ref>]
+                            Resolve IDs and check rules (default: ./keylang)
+                            Rebuilds the analysis in memory; does not write the map.
+                            --changed reports only findings that touch files changed
+                            since <ref> (default HEAD) plus untracked files
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only);
                             a file it cannot read or write is named and the rest are done (exit 2)
@@ -168,6 +195,8 @@ async function run(argv: readonly string[]): Promise<number> {
       port: { type: "string" },
       host: { type: "string" },
       since: { type: "string" },
+      agents: { type: "string" },
+      changed: { type: "boolean" },
     },
   });
   if (values.help) {
@@ -190,11 +219,26 @@ async function run(argv: readonly string[]): Promise<number> {
   }
   switch (cmd) {
     case "init":
-      return cmdInit(paths[0] ?? ".");
+      return cmdInit(paths[0] ?? ".", { agents: values.agents, check: values.check === true });
+    case "agents":
+      return cmdAgents(values.agents, values.check === true);
+    case "baseline":
+      return cmdBaseline(findRoot(process.cwd()), values.check === true);
+    case "feature":
+      return cmdFeature(paths[0], values.format ?? "human");
+    case "hook":
+      return cmdHook(paths[0]);
     case "map":
       return cmdMap(paths[0] ?? ".", values.check === true);
     case "check":
-      return cmdCheck(paths, { strict: values.strict === true, format: values.format ?? "human", explain: values["explain-edge"] === true, static: values.static ?? "behavior" });
+      return cmdCheck(paths, {
+        strict: values.strict === true,
+        format: values.format ?? "human",
+        explain: values["explain-edge"] === true,
+        static: values.static ?? "behavior",
+        changed: values.changed === true,
+        since: values.since,
+      });
     case "explain":
       return cmdExplain(paths[0], {
         llm: values.llm === true,
@@ -752,7 +796,7 @@ function needPaths(cmd: string, paths: string[]): void {
   if (paths.length === 0) throw new Error(`${cmd}: at least one path is required`);
 }
 
-async function cmdInit(dir: string): Promise<number> {
+async function cmdInit(dir: string, opts: { agents: string | undefined; check: boolean }): Promise<number> {
   const root = resolve(process.cwd(), dir);
   const file = join(root, CONFIG_FILE);
   const config = loadConfig(root);
@@ -760,6 +804,13 @@ async function cmdInit(dir: string): Promise<number> {
     // Nothing to describe is a usage error (like `map`), not a finding.
     process.stderr.write(`keylang: no supported source files found under ${dir} (TypeScript, JavaScript, Python, Rust)\n`);
     return 2;
+  }
+  // A broken harness file fails before any write, including keylang.json.
+  const plan = harnessPlan(root, opts.agents);
+  if (opts.check) {
+    const agents = applyHarness(root, plan, true);
+    const baseline = await cmdBaseline(root, true);
+    return agents === 0 && baseline === 0 ? 0 : 1;
   }
   if (existsSync(file)) {
     process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
@@ -770,7 +821,175 @@ async function cmdInit(dir: string): Promise<number> {
     writeFileSync(file, configToJson({ ...config, layers: layout.layers }));
     process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${[...layout.layers.keys()].join(", ")})\n`);
   }
-  return cmdMap(dir, false);
+  const mapCode = await cmdMap(dir, false);
+  const baseline = await cmdBaseline(root, false);
+  const agents = applyHarness(root, plan, false);
+  if (mapCode !== 0) return mapCode;
+  if (baseline !== 0) return baseline;
+  return agents;
+}
+
+function cmdAgents(agents: string | undefined, checkOnly: boolean): number {
+  return applyHarness(findRoot(process.cwd()), harnessPlan(findRoot(process.cwd()), agents), checkOnly);
+}
+
+async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
+  const analyzed = await analyze({ root, specs: [], withoutEvidence: true });
+  if (!analyzed.snapshot) throw new Error("baseline: no supported source files; run `keylang init`");
+  const text = baselineText(analyzed.snapshot);
+  const rel = `${analyzed.config.dir}/rules.baseline.md`;
+  const current = existsSync(join(root, rel)) ? readFileSync(join(root, rel), "utf8") : null;
+  const same = current !== null && current.replace(/\r\n/g, "\n") === text;
+  if (checkOnly) {
+    if (same) return 0;
+    process.stdout.write(`${rel}: stale, run \`keylang baseline\`\n`);
+    return 1;
+  }
+  if (!same) {
+    safeWrite(root, rel, text, { generated: true });
+    process.stdout.write(`${rel}: written\n`);
+  }
+  return 0;
+}
+
+async function cmdFeature(slug: string | undefined, format: string): Promise<number> {
+  if (!slug) throw new Error("feature: a slug is required");
+  if (format !== "human" && format !== "json") throw new Error(`feature: unknown --format \`${format}\`; expected human, json`);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug)) throw new Error(`feature: invalid slug \`${slug}\``);
+  const root = findRoot(process.cwd());
+  const config = loadConfig(root);
+  const rel = `${config.dir}/features/${slug}.md`;
+  if (!existsSync(join(root, rel))) throw new Error(`feature: ${rel}: not found`);
+  const analyzed = await analyze({ root });
+  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, slug);
+  if (report === null) throw new Error(`feature: ${rel}: not a spec keylang read`);
+  if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  else for (const gap of report.gaps) process.stdout.write(`${gap.file}:${gap.line}:${gap.col}: ${gap.kind} ${gap.id}: ${gap.reason}\n`);
+  process.stderr.write(report.done ? "done\n" : `${report.gaps.length} gap(s)\n`);
+  return report.done ? 0 : 1;
+}
+
+async function cmdHook(name: string | undefined): Promise<number> {
+  if (name !== "stop") throw new Error("hook: expected `stop`");
+  const event = parseHookEvent(await readStdin());
+  if (event.stop_hook_active === true) {
+    process.stdout.write(hookDecision(event, []));
+    return 0;
+  }
+  const root = findRoot(process.cwd());
+  const analyzed = await analyze({ root });
+  const gitChanged = gitChangedFiles(root, "HEAD");
+  const changed = changedPathSet(root, gitChanged.paths, process.cwd());
+  const filtered = filterChanged(
+    { docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
+    changed,
+    deletedModuleIds(analyzed.config, gitChanged.deleted),
+  );
+  process.stdout.write(hookDecision(event, hookFails(filtered)));
+  return 0;
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function packageVersion(): string {
+  return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+}
+
+function harnessPlan(root: string, flag: string | undefined): HarnessPlan {
+  const selection: HarnessSelection = flag !== undefined ? parseAgents(flag) : { harnesses: detectHarnesses({ exists: (path) => harnessPresent(root, path), list: (path) => listDir(root, path) }), instructions: true };
+  const files = new Map<string, string | null>(HARNESS_PATHS.map((path) => [path, existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : null]));
+  const skill = selection.instructions && selection.harnesses.length > 0 ? readFileSync(skillFile(), "utf8") : "";
+  const plan = planHarness({ selection, version: packageVersion(), skill, files });
+  if (plan.error) throw new Error(`${plan.error.file}: ${plan.error.message}`);
+  return plan;
+}
+
+/** `.claude` and the other harness directories are directories; opencode is a file. */
+function harnessPresent(root: string, path: string): boolean {
+  try {
+    const stat = statSync(join(root, path));
+    return path.endsWith(".json") || path.endsWith(".jsonc") ? stat.isFile() : stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function listDir(root: string, path: string): string[] | null {
+  try {
+    const stat = statSync(join(root, path));
+    if (!stat.isDirectory()) return null;
+    return readdirSync(join(root, path));
+  } catch {
+    return null;
+  }
+}
+
+function applyHarness(root: string, plan: HarnessPlan, checkOnly: boolean): number {
+  const stale: string[] = [];
+  const writes: { path: string; text: string | null }[] = [];
+  for (const file of plan.files) {
+    const abs = join(root, file.path);
+    const current = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+    if (current === null && file.text === null) continue;
+    if (current !== null && file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n")) continue;
+    if (checkOnly) stale.push(file.path);
+    else writes.push(file);
+  }
+  if (checkOnly) {
+    for (const path of stale) process.stdout.write(`${path}: stale, run \`keylang agents\`\n`);
+    return stale.length === 0 ? 0 : 1;
+  }
+  for (const file of writes) {
+    if (file.text === null) {
+      rmSync(join(root, file.path), { force: true });
+      process.stdout.write(`${file.path}: removed\n`);
+      continue;
+    }
+    safeWrite(root, file.path, file.text);
+    process.stdout.write(`${file.path}: written\n`);
+  }
+  return 0;
+}
+
+/** Git paths are relative to `root`; check prints spec paths relative to `cwd`. Both forms match. */
+function changedPathSet(root: string, files: ReadonlySet<string>, cwd: string): Set<string> {
+  const changed = new Set<string>();
+  for (const file of files) {
+    changed.add(file);
+    changed.add(toPosix(relative(cwd, join(root, file))));
+  }
+  return changed;
+}
+
+/** Files changed since `ref` in the working tree, plus files git does not track yet. `deleted` are paths removed versus `ref`. Paths are relative to `root`. */
+function gitChangedFiles(root: string, ref: string): { paths: Set<string>; deleted: string[] } {
+  const git = (args: string[]): string => {
+    const out = spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    if (out.error) throw new Error(`check --changed: git is not available (${out.error.message})`);
+    if (out.status !== 0) throw new Error(`check --changed: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
+    return out.stdout;
+  };
+  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", ref, "--"]);
+  const deleted = deletedDiffPaths(diff);
+  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
+  for (const file of git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0")) if (file !== "") paths.add(file);
+  return { paths, deleted };
+}
+
+/** Module id a deleted source file had, so a flow step that named it is still "changed". */
+function deletedModuleIds(config: Config, files: readonly string[]): string[] {
+  const ids: string[] = [];
+  for (const file of files) {
+    const placed = placeFile(config, file);
+    if (placed === null) continue;
+    const id = [placed.layer, ...placed.segments].filter((part) => part !== "").join(".");
+    if (id !== "") ids.push(id);
+  }
+  return ids;
 }
 
 async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
@@ -840,12 +1059,14 @@ function cmdParse(paths: string[], json: boolean): number {
 
 const FORMATS = ["human", "json", "sarif", "github"] as const;
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string; changed: boolean; since: string | undefined }): Promise<number> {
   if (!FORMATS.includes(opts.format as (typeof FORMATS)[number])) {
     throw new Error(`unknown --format \`${opts.format}\`; expected ${FORMATS.join(", ")}`);
   }
   const staticMode = STATIC_MODES.find((mode) => mode === opts.static);
   if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
+  if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
+  if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
   if (opts.explain) {
     const analyzed = await analyze({ root: findRoot(cwd), specs: [] });
@@ -866,9 +1087,13 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(inRepo ? {} : { withoutCode: true }),
   });
   for (const path of analyzed.notSpecs) process.stderr.write(`keylang: note: ${path}: the explained map and saved explanations are not specs; skipped\n`);
-  const diags = analyzed.diagnostics;
+  const gitChanged = opts.changed ? gitChangedFiles(root, opts.since ?? "HEAD") : null;
+  const changed = gitChanged === null ? null : changedPathSet(root, gitChanged.paths, cwd);
+  const deleted = gitChanged === null ? [] : deletedModuleIds(config, gitChanged.deleted);
+  const filtered = changed === null ? null : filterChanged({ docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
+  const diags = filtered?.diagnostics ?? analyzed.diagnostics;
   const snapshot = analyzed.snapshot;
-  const channel = analyzed.verdicts;
+  const channel = filtered?.verdicts ?? analyzed.verdicts;
   const unverified = channel.filter((verdict) => verdict.verdict === "unverified");
   const oks = channel.filter((verdict) => verdict.verdict === "ok").length;
   const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameFinding(verdict, diags)).length;

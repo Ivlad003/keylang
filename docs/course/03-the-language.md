@@ -59,7 +59,7 @@ A declaration's id is the path of ancestors: layer, module, then `fn`, `type`, `
     - order domain.orderAggregate
 ```
 
-The link is the binding to a source line. Generated maps compute it relative to the map file and encode characters that would break a Markdown link, including parentheses in a Next.js route group. You rarely write these links by hand: `keylang map` does.
+The link is the binding to a source line. Generated maps compute it relative to the map file and encode characters that would break a Markdown link, including parentheses in a Next.js route group. You rarely write these links by hand: `keylang map` does. In a flow or a rule you may write the id as a link (`step [buy](../map/application.md#application.purchase.buy)`). The check uses the id inside the brackets. The verdicts, positions and hashes are the ones of the bare id.
 
 Resolution is global across every `*.md` under the directory you checked (hidden directories, `node_modules` and `target` skipped). A exact declared id wins. Otherwise the longest declared prefix is used. With a snapshot, a module whose members are `complete` yields K001 for an unknown member, and a module whose members are `opaque` yields `unverified`. Without a snapshot, a module that lists no members is opaque, which is why the slide form `infrastructure.config.log` can be a legal alias target. A layer is never opaque, so `domain.aggregate` in the shop example is K001 rather than an unknown member of an opaque module.
 
@@ -166,7 +166,7 @@ Purchase from the terminal, through to a stored order.
 - planned fn application.purchase.refund (id: OrderId) → Promise<void>
 ```
 
-It lives at the top of a flow. References to it are not K001. It adds no edge.
+It lives at the top of a flow, or in `keylang/features/<slug>.md`, which `check` reads like any other spec. References to it are not K001. It adds no edge. A package the code does not import yet is `planned module external.<pkg>`. When the parent step's module imports that package, the declaration is K202 and the step is static `ok`. An import from a different module does not make that step `ok`.
 
 ## Diagnostics you hit while writing
 

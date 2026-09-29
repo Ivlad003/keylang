@@ -52,6 +52,18 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * The bundle for a list of ids: each node and its neighbors, the flows and
+ * rules that name it, its code, and the e2e tests of those flows. A planned
+ * id that is not implemented is marked planned and incomplete. The TUI panel
+ * and MCP `context` both use this.
+ */
+export function contextForIds(analysis: Analysis, ids: readonly string[]): ContextPack {
+  const items: ContextItem[] = [];
+  addIdItems(analysis, ids, new Set(), items);
+  return packOf(items, ids.join(","));
+}
+
 /** Packs of one analysis by key, oldest first; a new analysis (every overlay change makes one) starts empty. */
 const cache = new WeakMap<Analysis, Map<string, ContextPack>>();
 /** Buffer states kept per analysis: typing between two analyses makes a new one each key press. */
@@ -90,16 +102,36 @@ export function contextPack(analysis: Analysis, input: ContextInput): ContextPac
     items.push({ ...item, tokens: estimateTokens(item.text) });
   };
   add({ key: `buffer:${input.path}`, kind: "buffer", label: input.path, text: input.text });
+  addIdItems(analysis, ids, input.removed, items);
+  const pack = { items, tokens: items.reduce((sum, i) => sum + i.tokens, 0), key };
+  packs.set(key, pack);
+  while (packs.size > PACKS_PER_ANALYSIS) packs.delete(packs.keys().next().value!);
+  return pack;
+}
+
+function packOf(items: ContextItem[], keySource: string): ContextPack {
+  return { items, tokens: items.reduce((sum, item) => sum + item.tokens, 0), key: createHash("sha256").update(keySource).digest("hex") };
+}
+
+/** Nodes, neighbors, code, flows, rules and tests for `ids`. `add` is the TUI pack's adder; a fresh list is built when `items` is empty and `removed` is empty. */
+function addIdItems(analysis: Analysis, ids: readonly string[], removed: ReadonlySet<string>, items: ContextItem[]): void {
+  const add = (item: Omit<ContextItem, "tokens">): void => {
+    if (removed.has(item.key) || items.some((i) => i.key === item.key)) return;
+    items.push({ ...item, tokens: estimateTokens(item.text) });
+  };
   const nodes = analysis.snapshot?.nodes ?? {};
-  for (const id of ids) {
+  const idList = [...ids];
+  for (const id of idList) {
     const result = summarizeNode(analysis, id);
     if ("unknown" in result) continue;
     const s = result.summary;
     const node = nodes[id];
     const source = node?.file && node.line !== null ? snapshotSource(analysis, node.file) : null;
+    // A planned id is not code yet: the model should see that the picture is incomplete.
+    const plannedOnly = s.kind.startsWith("planned");
     // Code that changed on disk after the snapshot is left out: its lines no longer match the facts.
-    const incomplete = node?.members === "opaque" || node?.closure?.complete === false || (Boolean(node?.file) && node?.line !== null && source === null);
-    add({ key: `node:${id}`, kind: "node", label: id, text: formatSummary(s), ...(s.kind.startsWith("planned") ? { planned: true as const } : {}), ...(incomplete ? { incomplete: true as const } : {}) });
+    const incomplete = plannedOnly || node?.members === "opaque" || node?.closure?.complete === false || (Boolean(node?.file) && node?.line !== null && source === null);
+    add({ key: `node:${id}`, kind: "node", label: id, text: formatSummary(s), ...(plannedOnly ? { planned: true as const } : {}), ...(incomplete ? { incomplete: true as const } : {}) });
     for (const other of [...s.calls, ...s.callers]) add({ key: `neighbor:${other}`, kind: "neighbor", label: other, text: `${nodes[other]?.kind ?? "fn"} ${other}${nodes[other]?.signature ? ` ${nodes[other]!.signature}` : ""}` });
     if (source !== null && node?.file && node.line !== null) {
       const code = source.split("\n").slice(node.line - 1, node.endLine ?? node.line).join("\n");
@@ -114,7 +146,7 @@ export function contextPack(analysis: Analysis, input: ContextInput): ContextPac
       const tests: string[] = [];
       for (const top of sectionNodes(section)) {
         walk(top, (node) => {
-          if (node.refs.some((ref) => ids.includes(ref.target)) || (node.id !== null && ids.includes(node.id))) named = true;
+          if (node.refs.some((ref) => idList.includes(ref.target)) || (node.id !== null && idList.includes(node.id))) named = true;
           if (node.kind === "test" && node.text) tests.push(`${node.text.value}${node.label ? ` "${node.label.value}"` : ""}`);
         });
       }
@@ -124,10 +156,6 @@ export function contextPack(analysis: Analysis, input: ContextInput): ContextPac
       for (const t of tests) add({ key: `test:${t}`, kind: "test", label: t, text: t });
     }
   }
-  const pack = { items, tokens: items.reduce((sum, i) => sum + i.tokens, 0), key };
-  packs.set(key, pack);
-  while (packs.size > PACKS_PER_ANALYSIS) packs.delete(packs.keys().next().value!);
-  return pack;
 }
 
 /** A section as the analysis read it (an unsaved buffer included), in canonical form. */

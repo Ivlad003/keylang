@@ -7,15 +7,15 @@ The tree of the map with a brief under each node: the documentation comment from
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
 | [base](base.md) |  | 40 | 0 | 0 | 32 |
-| [check](check.md) |  | 76 | 0 | 0 | 78 |
-| [cli](cli.md) |  | 29 | 0 | 0 | 57 |
+| [check](check.md) |  | 78 | 0 | 0 | 78 |
+| [cli](cli.md) |  | 45 | 0 | 0 | 88 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 109 | 0 | 0 | 64 |
-| [features](features.md) |  | 117 | 0 | 0 | 83 |
+| [features](features.md) |  | 132 | 0 | 0 | 95 |
 | [lang](lang.md) |  | 27 | 0 | 0 | 43 |
 | [map](map.md) |  | 100 | 0 | 0 | 127 |
 | [tui](tui.md) |  | 151 | 0 | 0 | 176 |
-| **all** | | 649 | 0 | 0 | 660 |
+| **all** | | 682 | 0 | 0 | 703 |
 
 ## Index
 
@@ -23,17 +23,19 @@ Modules and classes by name; the parent ID follows each one.
 
 **A** · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
 
-**B** · [background](tui.md#tui.background) (tui) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
+**B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
 
-**C** · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
+**C** · [changed](features.md#features.changed) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
 
 **D** · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 
 **E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
 
-**F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [files](lang.md#lang.files) (lang) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
+**F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 
 **G** · [ghost](features.md#features.ghost) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
+
+**H** · [harness](cli.md#cli.harness) (cli)
 
 **I** · [ImportResolver](map.md#map.imports.ImportResolver) (map.imports) · [imports](map.md#map.imports) (map) · [Index](check.md#check.resolve.Index) (check.resolve) · [index](cli.md#cli.index) (cli) · [input](tui.md#tui.input) (tui) · [InputDecoder](tui.md#tui.input.InputDecoder) (tui.input) · [ir](lang.md#lang.ir) (lang)
 

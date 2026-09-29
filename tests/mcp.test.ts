@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -15,7 +15,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
 const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
 
-async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }> }> {
+async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }>; list(): Promise<string[]> }> {
   const dir = mkdtempSync(join(tmpdir(), "keylang-mcp-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(join(root, "tests/fixtures", fixture), dir, { recursive: true });
@@ -30,7 +30,24 @@ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string;
       const r = (await client.callTool({ name, arguments: args })) as { content: { type: string; text: string }[]; isError?: boolean };
       return { text: r.content.map((c) => c.text).join(""), isError: r.isError === true };
     },
+    async list() {
+      const listed = await client.listTools();
+      return listed.tools.map((tool) => tool.name);
+    },
   };
+}
+
+function treeBytes(dir: string): string {
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    for (const name of readdirSync(join(dir, rel))) {
+      const path = rel === "" ? name : `${rel}/${name}`;
+      if (statSync(join(dir, path)).isDirectory()) walk(path);
+      else out.push(`${path}\0${readFileSync(join(dir, path))}`);
+    }
+  };
+  walk("");
+  return out.sort().join("\n");
 }
 
 test("mcp: node gives signature, edges, flows and evidence; search, code and flows answer from the fresh analysis", async (t) => {
@@ -152,4 +169,50 @@ test("mcp: explain gives the offline summary without a model", async (t) => {
   const r = JSON.parse((await mcp.call("explain", { id: "domain.order.total" })).text) as { summary: { kind: string }; explanation: unknown };
   assert.equal(r.summary.kind, "fn");
   assert.equal(r.explanation, null);
+});
+
+test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
+  const mcp = await connect(t);
+  const names = await mcp.list();
+  for (const name of ["search", "node", "code", "flows", "check", "explain", "apply_diff", "context", "validate_spec", "scaffold", "feature_status"]) {
+    assert.ok(names.includes(name), name);
+  }
+  mkdirSync(join(mcp.dir, "keylang/features"), { recursive: true });
+  writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
+  const pack = JSON.parse((await mcp.call("context", { id: "domain.order.refund" })).text) as { items: { kind: string; planned?: true; incomplete?: true; label: string }[] };
+  const node = pack.items.find((item) => item.kind === "node" && item.label === "domain.order.refund");
+  assert.equal(node?.planned, true);
+  assert.equal(node?.incomplete, true);
+  const feature = JSON.parse((await mcp.call("context", { feature: "refund" })).text) as { items: { label: string }[] };
+  assert.ok(feature.items.some((item) => item.label === "domain.order.refund"));
+  assert.ok(feature.items.some((item) => item.label === "app.checkout.checkout"));
+
+  const disk = treeBytes(mcp.dir);
+  const spec = "# flow broken\n\n- trigger app.checkout.missingFn\n";
+  const validated = await mcp.call("validate_spec", { path: "keylang/flows/broken.md", text: spec });
+  assert.equal(validated.isError, false, validated.text);
+  const report = JSON.parse(validated.text) as { diagnostics: { code: string; line: number; col: number }[] };
+  const k001 = report.diagnostics.find((diag) => diag.code === "K001");
+  assert.ok(k001, validated.text);
+  assert.equal(k001.line, 3);
+  assert.equal(k001.col, 11);
+  assert.equal(existsSync(join(mcp.dir, "keylang/flows/broken.md")), false);
+  assert.equal(treeBytes(mcp.dir), disk);
+
+  const scaffold = await mcp.call("scaffold", { id: "domain.order.refund" });
+  assert.equal(scaffold.isError, false, scaffold.text);
+  const printed = spawnSync(process.execPath, [bin, "spec-to-code", "domain.order.refund", "--print"], { cwd: mcp.dir, encoding: "utf8" });
+  assert.equal(printed.status, 0, printed.stderr);
+  const body = JSON.parse(scaffold.text) as { diff: string; stub: string };
+  assert.ok(printed.stdout.includes(body.diff), printed.stdout);
+  assert.match(body.stub, /not implemented: domain\.order\.refund/);
+  assert.equal(treeBytes(mcp.dir), disk);
+  const implemented = await mcp.call("scaffold", { id: "domain.order.total" });
+  assert.equal(implemented.isError, true);
+  assert.match(implemented.text, /already implemented \(src\/domain\/order\.ts:\d+\)/);
+
+  const status = JSON.parse((await mcp.call("feature_status", { slug: "refund" })).text) as { done: boolean; gaps: { kind: string }[] };
+  assert.equal(status.done, false);
+  assert.ok(status.gaps.some((gap) => gap.kind === "planned"));
+  assert.equal(treeBytes(mcp.dir), disk);
 });

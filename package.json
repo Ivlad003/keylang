@@ -30,7 +30,8 @@
     "adapters",
     "bin",
     "dist",
-    "dist/wasm"
+    "dist/wasm",
+    "resources"
   ],
   "engines": {
     "node": ">=22.18"

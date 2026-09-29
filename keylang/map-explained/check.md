@@ -96,37 +96,42 @@
       <a id="check.flows.at"></a>
     - fn [reachability](../../src/flows.ts#L378) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.reachability"></a><br>Static reachability of `target` from `parent`.
-      - calls [check.flows.search](check.md#check.flows.search), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.possibleRoute](check.md#check.flows.possibleRoute), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.callersOf](check.md#check.flows.callersOf), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.holeNear](check.md#check.flows.holeNear)
-    - fn [search](../../src/flows.ts#L435) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+      - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.search](check.md#check.flows.search), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.possibleRoute](check.md#check.flows.possibleRoute), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.callersOf](check.md#check.flows.callersOf), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.holeNear](check.md#check.flows.holeNear)
+    - fn [search](../../src/flows.ts#L438) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
       <a id="check.flows.search"></a><br>Breadth-first from `parent` over the steps `follow` accepts: the route to `target` (null when there is none) and the depth of every fn reached. The search stops at the target, so `depth` is complete only without a route.
-    - fn [routeSteps](../../src/flows.ts#L458) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L461) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
       <a id="check.flows.routeSteps"></a><br>The steps of a route from `parent` to `target`, in call order.
-    - fn [routeMessage](../../src/flows.ts#L470) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L474) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+      <a id="check.flows.fileModule"></a><br>The file module of a fn: the nearest module that is not a class.
+    - fn [externalImport](../../src/flows.ts#L486) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      <a id="check.flows.externalImport"></a><br>Static proof for `external.<pkg>`: a resolved import from the parent fn's own module.
+      - calls [check.flows.fileModule](check.md#check.flows.fileModule)
+    - fn [routeMessage](../../src/flows.ts#L496) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       <a id="check.flows.routeMessage"></a>
       - calls [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.describeVia](check.md#check.flows.describeVia)
-    - fn [possibleRoute](../../src/flows.ts#L483) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L509) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       <a id="check.flows.possibleRoute"></a><br>Breadth-first search that also follows calls with more than one possible target and calls in closures. Returns the first such call on the shortest route (null when there is none) and every fn the search reached.
       - calls [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.callName](check.md#check.flows.callName), [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [callersOf](../../src/flows.ts#L511) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L537) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
       <a id="check.flows.callersOf"></a><br>Every fn with a resolved or candidate route to `target`, the target included.
-    - fn [escapeOf](../../src/flows.ts#L529) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L555) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       <a id="check.flows.escapeOf"></a><br>Why code keylang cannot follow may still run a fn of `routes`, and the fn whose code hands that fn on (null when it is not in a fn: module level, an unsupported construct); null when every route is by name.
       - calls [check.flows.fnAt](check.md#check.flows.fnAt), [check.flows.at](check.md#check.flows.at), [check.flows.callName](check.md#check.flows.callName), [base.span.compareText](base.md#base.span.compareText)
-    - fn [identifierPattern](../../src/flows.ts#L555) (name: string) → RegExp <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L581) (name: string) → RegExp <!-- internal -->
       <a id="check.flows.identifierPattern"></a><br>`name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit.
-    - fn [fnAt](../../src/flows.ts#L560) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L586) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
       <a id="check.flows.fnAt"></a><br>The innermost fn whose declaration holds `file:line`.
-    - fn [holeNear](../../src/flows.ts#L574) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L600) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       <a id="check.flows.holeNear"></a><br>The unresolved call in reachable code nearest `from` among the fns `from` calls, itself included: where a value handed on by `from` may be called. Null when no hole is downstream of it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [moduleMembers](../../src/flows.ts#L590) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L616) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
       <a id="check.flows.moduleMembers"></a>
-    - fn [collectPlanned](../../src/flows.ts#L606) (docs: readonly Document[], input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L632) (docs: readonly Document[], input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       <a id="check.flows.collectPlanned"></a><br>`planned` declarations. A duplicate is K002.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature)
-    - fn [normalizeSignature](../../src/flows.ts#L637) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L663) (text: string) → string <!-- internal -->
       <a id="check.flows.normalizeSignature"></a>
-    - fn [specHash](../../src/flows.ts#L641) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L667) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a>
   - module [resolve](../../src/resolve.ts#L1)
     <a id="check.resolve"></a><br>Cross-file ID resolution: builds the declaration index and reports duplicate declarations (K002) and dangling references (K001).

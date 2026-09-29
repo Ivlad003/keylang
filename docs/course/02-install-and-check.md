@@ -5,24 +5,31 @@
 You need Node.js ≥ 22.18. The package does not compile native addons. Optional voice modules (`@fugood/whisper.node`, `decibri`) install when the platform has a prebuilt binary and can be omitted.
 
 ```sh
-npx keylang init .     # guess layers, write keylang.json, generate the map
+npx keylang init .     # layers, keylang.json, the map, a baseline, harness files
 npx keylang check      # resolve ids and evaluate rules under keylang/
 npm i -g keylang       # afterwards: keylang check
 ```
 
 In this checkout the entry point is `node bin/keylang.js`, which loads TypeScript directly. An install from npm loads `dist/`. `npm link` gives you the `keylang` command while you work on the tool.
 
-`init` writes `keylang.json` and a map. Layer names are one id segment. Names the tool reserves (`external`, `unassigned`, and the map keywords `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`) are renamed with a trailing `_`, and `init` says so on stderr. Without `keylang.json`, later commands guess layers from the directory tree.
+`init` writes `keylang.json`, the map, and `keylang/rules.baseline.md`. The baseline is generated rules: each layer is denied the layers it does not already depend on, and a layer that already imports packages is allowed those packages and denied the rest of `external`. A later import across a gap is K102 until you change the rule or run `keylang baseline` again. Right after `init` the baseline adds no new `fail`, because it describes the graph it just saw.
+
+Unless you pass `--agents=none`, `init` also writes a managed block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Text outside the markers is left byte for byte. If `.claude/`, `.codex/`, `.cursor/` or `opencode.json` is already there, the same run registers an MCP server named `keylang` (`npx -y keylang@<version> mcp`, the version of the package that ran `init`), copies the `keylang-feature` skill, and, for Claude and Codex, a Stop hook. The skill directory keylang itself creates under `.claude/skills/` does not count as "Claude is installed", so a second `init` does not grow new adapters. `keylang agents` repeats that install on a repository that already has `keylang.json`. `--check` on `init`, `agents` or `baseline` writes nothing and exits 1 when the generated text is stale.
+
+Layer names are one id segment. Names the tool reserves (`external`, `unassigned`, and the map keywords `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`) are renamed with a trailing `_`, and `init` says so on stderr. Without `keylang.json`, later commands guess layers from the directory tree.
 
 ## The commands you use first
 
 | Command | Writes files? | What you read |
 |---|---|---|
-| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr |
-| `keylang map [dir]` | `keylang/map/*.md` and `.keylang/index.json` | The generated map. Refuses to overwrite a map file that has no `keylang:generated` marker |
+| `keylang check [paths…]` | No | Findings on stdout, `N fail, M unverified, K ok` on stderr. `--changed` keeps only findings that touch files changed since `HEAD` (or `--since`), plus untracked files, including a deleted file whose ids a flow still names |
+| `keylang baseline` | `keylang/rules.baseline.md` | The generated deny/allow frame. `--check` exits 1 and names `keylang baseline` when the file no longer matches the graph |
+| `keylang feature <slug>` | No | Whether `keylang/features/<slug>.md` is done. Exit 0 done, 1 gaps, 2 missing file. `--format json` is only JSON on stdout |
+| `keylang agents` | Harness files outside `keylang/` | The same adapters as `init`. `--agents=none` removes that install and leaves the baseline |
+| `keylang map [dir]` | `keylang/map/*.md`, `.keylang/index.json`, and `keylang/map-explained/` when `explain.map` is on | The generated map. Refuses to overwrite a map file that has no `keylang:generated` marker |
 | `keylang map --check` | No | Exit 1 when the committed map does not match a fresh render, or when a map file lacks the marker |
 | `keylang explain K001` | No | Why the code exists, a short example, and a fix |
-| `keylang explain <id>` | No | Kind, signature, file, calls, callers, flows and rules that name the id |
+| `keylang explain <id>` | No | Kind, signature, file, calls, callers, flows and rules that name the id, and `fresh` or `stale` for a saved explanation |
 | `keylang explain <id> --llm` | `keylang/explain/<id>.md` (committed; `--brief`: `keylang/explain/brief/<id>.md`) | A prose explanation from the configured agent. Does not change any verdict |
 | `keylang fmt <file>` | The file, in canonical form | Exit 1 when the file had diagnostics or, with `--check`, when it was not canonical |
 | `keylang parse <file>` | No | A text dump of the IR. `--json` is machine-readable and is the only thing on stdout |
@@ -35,7 +42,7 @@ Exit codes, for every command that follows them:
 | Code | Meaning |
 |---|---|
 | 0 | No blocking finding |
-| 1 | A violation, a stale map under `--check`, or any `unverified` when you passed `--strict` |
+| 1 | A violation, a stale map, baseline or harness install under `--check`, or any `unverified` when you passed `--strict` |
 | 2 | Bad arguments, unknown command, or an I/O error. The message names the file and, for config, the field |
 
 `--format` does not change the exit code. `human` is the default. `json`, `sarif` and `github` are for CI. `json` is a single object on stdout (`snapshotId`, `results`, `coverage`).
@@ -103,7 +110,8 @@ A reference to a `planned` id is not K001. Its `ID` evidence is `unverified` wit
 | `dir` | Spec directory, default `keylang` |
 | `check.tests` | Path or glob of a keylang JSON report or JUnit XML |
 | `check.trace` | Path or glob of trace JSONL |
-| `agent` | Optional. `anthropic:<model>` or `openrouter:<model>`, used by `explain --llm` and drafts |
+| `agent` | Optional. `anthropic:<model>` or `openrouter:<model>`, used by `explain --llm` and drafts. The harness MCP server does not call it |
+| `explain.map` | Optional. `true` also renders `keylang/map-explained/` from doc comments and saved briefs. `check` does not read that directory |
 
 `check.tests` and `check.trace` are how a flow learns about a run. Without them, those evidence kinds are not printed and do not affect `--strict`. This repository sets both to globs under `.keylang/`, which is gitignored. CI that wants trace evidence has to produce the files in the job.
 

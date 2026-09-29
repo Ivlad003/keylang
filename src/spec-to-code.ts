@@ -50,7 +50,8 @@ const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js
 export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient): Promise<CodeCandidate> {
   const plan = plannedDecl(analysis.docs, id);
   if (!plan) {
-    if (analysis.snapshot?.nodes[id]) throw new Error(`\`${id}\` is already in the code; spec-to-code builds planned nodes only`);
+    const present = analysis.snapshot?.nodes[id];
+    if (present) throw new Error(`\`${id}\` is already implemented (${present.file ?? "?"}:${present.line ?? 1}); spec-to-code builds planned nodes only`);
     const near = analysis.index.suggest(id);
     throw new Error(`\`${id}\` is neither planned nor in the code: fix the reference${near ? ` (did you mean \`${near}\`?)` : ""}, or declare \`planned fn ${id} <signature>\` first`);
   }

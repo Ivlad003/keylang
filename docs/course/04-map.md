@@ -65,8 +65,16 @@ Test files follow each language's defaults (`test_*.py`, `*_test.py`, `conftest.
 
 Every call the frontend saw becomes an edge or a coverage record. The record names the construct and the position: unresolved import, dynamic call, syntax error, skipped file, unsupported construct (namespace, `eval`, computed class member, a module-id collision). Rules consult these records. A `deny` with a hole in its area is `unverified`, not `ok`, even when every resolved edge is legal. `check --format json` includes the coverage list. The terminal UI does not draw a separate coverage browser; the verdict text names the hole.
 
-`.keylang/index.json` is schema 6 of the snapshot. `snapshotId` is a hash of the schema, the extractor and grammar versions, the config, and the contents of every indexed file. The `generated` timestamp is not in the hash. Two runs on the same bytes produce the same id, which is how a trace file proves it belongs to this tree. You do not edit the index. A broken file is replaced on the next `map`.
+`.keylang/index.json` is schema 7 of the snapshot. `snapshotId` is a hash of the schema, the extractor and grammar versions, the config, and the contents of every indexed file. The `generated` timestamp is not in the hash. Two runs on the same bytes produce the same id, which is how a trace file proves it belongs to this tree. You do not edit the index. A broken file is replaced on the next `map`.
 
 `keylang map` checks every target file before it writes or deletes anything. A map file without the marker is a conflict: exit 1, nothing written, nothing deleted. An extra file is removed only when it carries the marker. The render is stable: the same sources and config produce the same Markdown.
 
-Next: [rules](05-rules.md), which are the part you write by hand on top of this map.
+## The map with the words
+
+`"explain": {"map": true}` in `keylang.json` asks `keylang map` for a second directory, `keylang/map-explained/`. Each layer file has the same tree, signatures, dependencies and calls as `keylang/map/`. Under a node sits one line: the doc comment from the code, or a saved brief from `explain --llm` when the code has none. A model line ends with `_(llm · model · date)_`, and with `stale` when the closure has moved since the brief was written. A doc comment is the author's text and is never marked stale.
+
+`check` does not read `map-explained/`. The directory is a reading aid, and it carries the same generated marker as the map, so a hand-written file in its place blocks `map`. `map --check` compares both directories. With the option off, `map` removes the generated files there. `keylang map` does not call a model.
+
+In the UI, `t` on a layer file switches between the two maps and leaves the cursor on the same node. With the option off, the status line says how to turn it on, and the next `F5` picks the change up. `s` finds a node by id or by words in its explanation. Those words belong to the node, so the search works when the explained map is off.
+
+Next: [rules](05-rules.md), the lines you write by hand, and the baseline `init` generates from this map.

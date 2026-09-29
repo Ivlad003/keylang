@@ -79,11 +79,13 @@ The UI's `✓` on a rule line means every criterion reported on that line is `ok
 
 ## A practical order
 
-1. `keylang init` or write `layers` in `keylang.json` so the groups match how you already talk about the code.
+1. `keylang init` writes `keylang.json`, the map and `keylang/rules.baseline.md`. You can also write `layers` in `keylang.json` so the groups match how you already talk about the code. The baseline denies each layer the layers it does not already depend on, and allows only the packages that layer already imports. Right after `init` it adds no new `fail`. A later import across that gap is K102 until you add an `allow` in `rules.md` or run `keylang baseline` again.
 2. `keylang draft rules` proposes a `layers` line from the edges that exist today, plus `no-cycles` when the graph has none. It writes a proposal, not the spec. Read it. A proposal that only restates the current accidents of the code is a weak rule.
-3. Add the `deny` lines you actually mean. Prefer a few layer-level denies over a deny per pair of files.
+3. Add the `deny` lines you actually mean, in the hand-written `rules.md`. The baseline is the frame of today's graph. The lines you write are the decision. Prefer a few layer-level denies over a deny per pair of files.
 4. List real processes as `entry`: CLI, server, workers, test hooks you intend to keep.
-5. Put `keylang check` and `keylang map --check` in CI. Add `--strict` only after the unverified lines are either fixed or accepted as out of scope.
+5. Put `keylang check`, `keylang map --check` and `keylang baseline --check` in CI. Add `--strict` only after the unverified lines are either fixed or accepted as out of scope.
+
+An agent does not edit either rules file in place. Claude and Codex are denied Edit and Write of `rules.md` and `rules.baseline.md`. A change to the hand-written file is a proposal (`apply_diff`), which you merge. The baseline carries the generated marker, so the editor and `apply_diff` refuse it. `keylang baseline` rewrites it from the graph.
 
 `draft rules --mode llm` asks the configured model for rules and then checks each proposed rule on its own. The comment on the line is `agree`, `conflict` or `llm-only`. `hybrid` appends the algorithmic rules the model left out. A conflict is printed with the K101 or K102 it would create. The model does not get the last word: `check` does, after you merge.
 

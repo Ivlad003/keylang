@@ -12,8 +12,11 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
+import { contextForIds } from "./agent-context.ts";
 import { analyze, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
+import { featureStatus, idsIn } from "./feature-status.ts";
+import { specToCode } from "./spec-to-code.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
@@ -195,6 +198,93 @@ export function mcpServer(root: string, version: string): McpServer {
       const before = existsSync(abs) ? readFileSync(abs, "utf8") : "";
       writeProposal(root, target, text);
       return json({ status: "pending", proposal: `${PROPOSALS_DIR}/${target}`, diff: lineDiff(before, text) });
+    },
+  );
+
+  server.registerTool(
+    "context",
+    {
+      description:
+        "The context bundle the keylang TUI shows for one id, or for every id named in keylang/features/<slug>.md: the node and its neighbors, the flows and rules that name it, code fragments, e2e tests, and a token estimate. A planned id is marked planned and incomplete.",
+      inputSchema: { id: z.string().min(1).optional(), feature: z.string().min(1).optional() },
+    },
+    async ({ id, feature }) => {
+      if ((id === undefined) === (feature === undefined)) return failure("pass exactly one of id or feature");
+      const analysis = await fresh();
+      if (feature !== undefined) {
+        const path = `${analysis.config.dir}/features/${feature}.md`;
+        const doc = analysis.docs.find((item) => item.path === path);
+        if (!doc) return failure(`no feature \`${feature}\``);
+        return json(contextForIds(analysis, idsIn(doc)));
+      }
+      const result = summarizeNode(analysis, id!);
+      if ("unknown" in result) return failure(`unknown id \`${id}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
+      return json(contextForIds(analysis, [id!]));
+    },
+  );
+
+  server.registerTool(
+    "validate_spec",
+    {
+      description:
+        "Parse text as the spec at path, replacing that file in the current snapshot, and return the diagnostics and check verdicts for that file only. Nothing is written.",
+      inputSchema: { path: z.string().min(1), text: z.string() },
+    },
+    async ({ path, text }) => {
+      const abs = resolve(root, path);
+      const rel = toPosix(relative(root, abs));
+      if (rel.startsWith("..") || rel === "") return failure(`${path}: outside the repository`);
+      const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
+      const diagnostics = analysis.diagnostics
+        .filter((diag) => diag.file === rel)
+        .map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message }));
+      const verdicts = analysis.verdicts
+        .filter((verdict) => verdict.file === rel)
+        .map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, area: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message }));
+      return json({ file: rel, diagnostics, verdicts });
+    },
+  );
+
+  server.registerTool(
+    "scaffold",
+    {
+      description:
+        "The template spec-to-code result for a planned fn: target path, stub, failing tests, and what the candidate adds to check. No model call and no write. An id that is already implemented is an error naming where.",
+      inputSchema: { id: z.string().min(1), into: z.string().min(1).optional() },
+    },
+    async ({ id, into }) => {
+      const analysis = await fresh();
+      try {
+        const candidate = await specToCode(analysis, id, into);
+        return json({
+          id: candidate.id,
+          file: candidate.file,
+          newFile: candidate.before === null,
+          diff: lineDiff(candidate.before ?? "", candidate.after),
+          stub: candidate.after,
+          tests: candidate.tests.map((test) => ({ file: test.file, diff: lineDiff("", test.after), text: test.after })),
+          testNotes: candidate.testNotes,
+          verdicts: candidate.verdicts.map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message })),
+          diagnostics: candidate.diagnostics.map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message })),
+        });
+      } catch (error) {
+        return failure(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "feature_status",
+    {
+      description:
+        "Whether keylang/features/<slug>.md is done: every planned id is implemented (K202, not K201), every flow step is static ok, and no rule fail remains. Gaps are planned, static, or rule. Tests and trace are informational and do not block.",
+      inputSchema: { slug: z.string().min(1) },
+    },
+    async ({ slug }) => {
+      const analysis = await fresh();
+      const report = featureStatus({ dir: analysis.config.dir, docs: analysis.docs, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts }, slug);
+      if (report === null) return failure(`no feature \`${slug}\``);
+      return json(report);
     },
   );
 

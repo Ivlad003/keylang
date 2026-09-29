@@ -15,14 +15,45 @@
     - type [ContextPack](../../src/agent-context.ts#L34)
     - type [ContextInput](../../src/agent-context.ts#L41)
     - fn [estimateTokens](../../src/agent-context.ts#L51) (text: string) → number
-    - fn [contextPack](../../src/agent-context.ts#L61) (analysis: Analysis, input: ContextInput) → ContextPack
-      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk, features.agent-context.specDigest, features.agent-context.estimateTokens, features.explain-node.summarizeNode, features.agent-context.snapshotSource, features.explain-node.formatSummary, features.agent-context.sectionText
-    - fn [sectionText](../../src/agent-context.ts#L134) (doc: Document, section: Section) → string <!-- internal -->
+    - fn [contextForIds](../../src/agent-context.ts#L61) (analysis: Analysis, ids: readonly string[]) → ContextPack
+      - calls features.agent-context.addIdItems, features.agent-context.packOf
+    - fn [contextPack](../../src/agent-context.ts#L73) (analysis: Analysis, input: ContextInput) → ContextPack
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk, features.agent-context.specDigest, features.agent-context.estimateTokens, features.agent-context.addIdItems
+    - fn [packOf](../../src/agent-context.ts#L112) (items: ContextItem[], keySource: string) → ContextPack <!-- internal -->
+    - fn [addIdItems](../../src/agent-context.ts#L117) (analysis: Analysis, ids: readonly string[], removed: ReadonlySet<string>, items: ContextItem[]) → void <!-- internal -->
+      - calls features.agent-context.estimateTokens, features.explain-node.summarizeNode, features.agent-context.snapshotSource, features.explain-node.formatSummary, lang.ir.sectionNodes, lang.ir.walk, features.agent-context.sectionText
+    - fn [sectionText](../../src/agent-context.ts#L162) (doc: Document, section: Section) → string <!-- internal -->
       - calls lang.fmt.formatDocument
-    - fn [specDigest](../../src/agent-context.ts#L139) (analysis: Analysis) → string <!-- internal -->
+    - fn [specDigest](../../src/agent-context.ts#L167) (analysis: Analysis) → string <!-- internal -->
       - calls lang.fmt.formatDocument
-    - fn [snapshotSource](../../src/agent-context.ts#L151) (analysis: Analysis, file: string) → string | null
-    - fn [contextText](../../src/agent-context.ts#L160) (pack: ContextPack) → string
+    - fn [snapshotSource](../../src/agent-context.ts#L179) (analysis: Analysis, file: string) → string | null
+    - fn [contextText](../../src/agent-context.ts#L188) (pack: ContextPack) → string
+  - module [baseline](../../src/baseline.ts#L1)
+    - snapshot map.snapshot
+    - span base.span
+    - fn [baselineText](../../src/baseline.ts#L20) (snapshot: AnalysisSnapshot) → string
+      - calls features.baseline.externalModule
+    - fn [externalModule](../../src/baseline.ts#L57) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+  - module [changed](../../src/changed.ts#L1)
+    - assess check.assess
+    - diag base.diag
+    - ir lang.ir
+    - verdict check.verdict
+    - type [ChangedInput](../../src/changed.ts#L12)
+    - type [HookFail](../../src/changed.ts#L19)
+    - type [RuleHit](../../src/changed.ts#L25) <!-- internal -->
+    - fn [filterChanged](../../src/changed.ts#L39) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+      - calls features.changed.collectRules, features.changed.covers, features.changed.flowLinesTouching, check.assess.sameFinding
+    - fn [hookFails](../../src/changed.ts#L58) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+      - calls check.assess.sameFinding
+    - fn [hookDecision](../../src/changed.ts#L69) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+    - fn [parseHookEvent](../../src/changed.ts#L76) (text: string) → { stop_hook_active?: boolean }
+    - fn [covers](../../src/changed.ts#L91) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [collectRules](../../src/changed.ts#L96) (docs: readonly Document[]) → RuleHit[] <!-- internal -->
+      - calls lang.ir.sectionNodes, features.changed.addRule
+    - fn [addRule](../../src/changed.ts#L107) (hits: RuleHit[], file: string, node: Node, under: string | null) → void <!-- internal -->
+    - fn [flowLinesTouching](../../src/changed.ts#L126) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
   - module [check-results](../../src/check-results.ts#L1)
     - node external.node
     - assess check.assess
@@ -88,8 +119,10 @@
     - type [ChangedLines](../../src/draft.ts#L219)
     - fn [diffHunks](../../src/draft.ts#L225) (diff: string) → Map<string, [number, number][]>
       - calls features.draft.gitPath
-    - fn [gitPath](../../src/draft.ts#L245) (text: string) → string <!-- internal -->
-    - fn [changedFlows](../../src/draft.ts#L273) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [deletedDiffPaths](../../src/draft.ts#L248) (diff: string) → string[]
+      - calls features.draft.gitPath
+    - fn [gitPath](../../src/draft.ts#L262) (text: string) → string <!-- internal -->
+    - fn [changedFlows](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
   - module [explain-llm](../../src/explain-llm.ts#L1)
     - node external.node
@@ -149,6 +182,21 @@
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
     - fn [explainCode](../../src/explain.ts#L84) (code: string) → string | null
+  - module [feature-status](../../src/feature-status.ts#L1)
+    - assess check.assess
+    - diag base.diag
+    - ir lang.ir
+    - span base.span
+    - verdict check.verdict
+    - type [Gap](../../src/feature-status.ts#L12)
+    - type [FeatureInfo](../../src/feature-status.ts#L21)
+    - type [FeatureReport](../../src/feature-status.ts#L30)
+    - type [FeatureInput](../../src/feature-status.ts#L36)
+    - fn [idsIn](../../src/feature-status.ts#L48) (doc: Document) → string[]
+      - calls lang.ir.sectionNodes, lang.ir.walk
+    - fn [featureStatus](../../src/feature-status.ts#L65) (input: FeatureInput, slug: string) → FeatureReport | null
+      - calls lang.ir.sectionNodes, lang.ir.walk, features.feature-status.finding, base.diag.isError, check.assess.sameFinding, base.span.compareText
+    - fn [finding](../../src/feature-status.ts#L124) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context
@@ -309,19 +357,19 @@
     - type [CodeCandidate](../../src/spec-to-code.ts#L32) extends FileCandidate
     - fn [specToCode](../../src/spec-to-code.ts#L50) (analysis: Analysis, id: string, into?: string, model?: LlmClient) → Promise<CodeCandidate>
       - calls features.lsp-features.plannedDecl, features.spec-to-code.callersInFlows, check.rules.blocksDependency, features.spec-to-code.newModuleFile, map.graph.placeFile, features.proposals.codeProposalProblem, features.spec-to-code.modelBody, features.spec-to-code.stubFor, base.safe-write.allCrlf, map.analyze.analyze, features.spec-to-code.introduced, features.spec-to-code.testCandidates
-    - fn [introduced](../../src/spec-to-code.ts#L90) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
-    - fn [flowTests](../../src/spec-to-code.ts#L101) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
+    - fn [introduced](../../src/spec-to-code.ts#L91) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
+    - fn [flowTests](../../src/spec-to-code.ts#L102) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [testCandidates](../../src/spec-to-code.ts#L124) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+    - fn [testCandidates](../../src/spec-to-code.ts#L125) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
       - calls features.spec-to-code.flowTests, features.proposals.codeProposalProblem, base.config.toPosix, features.spec-to-code.modelTest, features.spec-to-code.testStub
-    - fn [testStub](../../src/spec-to-code.ts#L159) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
-    - fn [modelTest](../../src/spec-to-code.ts#L167) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
-    - fn [callersInFlows](../../src/spec-to-code.ts#L184) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L160) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L168) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L185) (analysis: Analysis, id: string) → string[] <!-- internal -->
       - calls lang.ir.sectionNodes
-    - fn [newModuleFile](../../src/spec-to-code.ts#L201) (config: Config, moduleId: string) → string <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L202) (config: Config, moduleId: string) → string <!-- internal -->
       - calls base.glob.globPrefix
-    - fn [stubFor](../../src/spec-to-code.ts#L216) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
-    - fn [modelBody](../../src/spec-to-code.ts#L232) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L217) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L233) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
   - module [stats](../../src/stats.ts#L1)
     - node external.node

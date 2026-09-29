@@ -1427,3 +1427,377 @@ test("keylang.json errors name the file and the field, exit 2", (t) => {
   assert.match(broken.stderr, /keylang\.json: invalid JSON/);
 });
 
+function tempDir(t: { after: (fn: () => void) => void }, prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+function writeTree(dir: string, files: Record<string, string>): void {
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(dir, dirname(path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+}
+
+/** Relative paths and their bytes, so a command that must not write can be compared. */
+function treeBytes(dir: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (rel: string): void => {
+    let names: string[];
+    try {
+      names = readdirSync(join(dir, rel));
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const path = rel === "" ? name : `${rel}/${name}`;
+      if (statSync(join(dir, path)).isDirectory()) walk(path);
+      else out.set(path, readFileSync(join(dir, path), "utf8"));
+    }
+  };
+  walk("");
+  return out;
+}
+
+function git(dir: string, args: string[]): void {
+  const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: dir, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(r.stderr || r.stdout);
+}
+
+const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
+const LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"] } };
+const PAY = "export function charge(): number {\n  return 1;\n}\n";
+const ORDER = "export function price(): number {\n  return 2;\n}\n";
+
+test("help lists agents, feature, baseline, check --changed and hook stop", () => {
+  const help = keylang(root, ["--help"]);
+  assert.equal(help.status, 0);
+  for (const phrase of ["agents", "--agents", "feature", "baseline", "--changed", "hook stop"]) assert.match(help.stdout, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("init: managed AGENTS.md block keeps foreign CRLF text, is idempotent, and baseline adds no fail", (t) => {
+  const foreign = "Чужий заголовок\r\n\r\nНе чіпати.\r\n";
+  const make = (): string => {
+    const dir = tempDir(t, "keylang-launch-");
+    writeTree(dir, {
+      "package.json": `${JSON.stringify({ name: "shop", private: true, dependencies: { stripe: "1.0.0" } })}\n`,
+      "src/domain/order.ts": ORDER,
+      "src/app/pay.ts": 'import { price } from "../domain/order.ts";\nimport Stripe from "stripe";\nexport function charge(): number {\n  return price() + (Stripe ? 1 : 0);\n}\n',
+      "AGENTS.md": foreign,
+    });
+    mkdirSync(join(dir, ".claude"));
+    return dir;
+  };
+  const run = (dir: string): string => {
+    const init = keylang(dir, ["init"]);
+    assert.equal(init.status, 0, init.stderr);
+    const check = keylang(dir, ["check"]);
+    assert.equal(check.status, 0, check.stdout);
+    assert.doesNotMatch(check.stdout, /rules\.baseline\.md:\d+:\d+: K102/);
+    const agents = keylang(dir, ["agents", "--check"]);
+    assert.equal(agents.status, 0, agents.stdout);
+    const block = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    assert.ok(block.startsWith(foreign), "foreign text is a byte prefix");
+    assert.match(block, /<!-- keylang:begin -->/);
+    assert.match(block, /<!-- keylang:end -->/);
+    assert.ok(block.includes("\r\n"));
+    assert.ok(Buffer.byteLength(block.slice(block.indexOf("<!-- keylang:begin -->"), block.indexOf("<!-- keylang:end -->") + "<!-- keylang:end -->".length)) <= 4096);
+    return block;
+  };
+  const first = run(make());
+  const secondDir = make();
+  const once = run(secondDir);
+  const again = keylang(secondDir, ["init"]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(readFileSync(join(secondDir, "AGENTS.md"), "utf8"), once);
+  assert.equal(once.replace(/\r\n/g, "\n"), first.replace(/\r\n/g, "\n"));
+});
+
+test("agents: --agents=none writes no harness files; unknown name and broken markers write nothing", (t) => {
+  const dir = tempDir(t, "keylang-none-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  const none = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(none.status, 0, none.stderr);
+  assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+  assert.equal(existsSync(join(dir, "CLAUDE.md")), false);
+  assert.equal(existsSync(join(dir, ".mcp.json")), false);
+  assert.equal(existsSync(join(dir, ".agents/skills/keylang-feature/SKILL.md")), false);
+  assert.ok(existsSync(join(dir, "keylang.json")));
+  assert.ok(existsSync(join(dir, "keylang/rules.baseline.md")));
+  const check = keylang(dir, ["check"]);
+  assert.equal(check.status, 0, check.stdout);
+
+  const bad = tempDir(t, "keylang-agents-bad-");
+  writeTree(bad, { "src/app/pay.ts": PAY });
+  const before = treeBytes(bad);
+  const unknown = keylang(bad, ["init", "--agents=nope"]);
+  assert.equal(unknown.status, 2);
+  assert.match(unknown.stderr, /claude, codex, opencode, cursor, or none/);
+  assert.deepEqual(treeBytes(bad), before);
+
+  writeTree(bad, { "AGENTS.md": "<!-- keylang:begin -->\nнемає кінця\n" });
+  const marked = readFileSync(join(bad, "AGENTS.md"), "utf8");
+  const broken = keylang(bad, ["agents"]);
+  assert.equal(broken.status, 2);
+  assert.match(broken.stderr, /AGENTS\.md: broken markers/);
+  assert.equal(readFileSync(join(bad, "AGENTS.md"), "utf8"), marked);
+  assert.equal(existsSync(join(bad, "keylang.json")), false);
+});
+
+test("agents: MCP servers, skill copies, Claude deny and a stale --check that writes nothing", (t) => {
+  const dir = tempDir(t, "keylang-mcp-cfg-");
+  writeTree(dir, {
+    "src/app/pay.ts": PAY,
+    ".mcp.json": `${JSON.stringify({ mcpServers: { other: { command: "echo", args: ["hi"] } }, keep: true }, null, 2)}\n`,
+    ".claude/settings.json": `${JSON.stringify({ permissions: { allow: ["Bash"], deny: ["Read(secret)"] }, hooks: { PostToolUse: [{ hooks: [{ type: "command", command: "echo kept" }] }] } }, null, 2)}\n`,
+    "opencode.json": `${JSON.stringify({ mcp: { other: { type: "local", command: ["echo"] } } }, null, 2)}\n`,
+  });
+  mkdirSync(join(dir, ".codex"));
+  mkdirSync(join(dir, ".cursor"));
+  const init = keylang(dir, ["init", "--agents=claude,codex,opencode,cursor"]);
+  assert.equal(init.status, 0, init.stderr);
+  const mcp = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")) as { keep: boolean; mcpServers: Record<string, { command: string; args?: string[] }> };
+  assert.equal(mcp.keep, true);
+  assert.deepEqual(mcp.mcpServers.other, { command: "echo", args: ["hi"] });
+  assert.deepEqual(mcp.mcpServers.keylang, { command: "npx", args: ["-y", `keylang@${VERSION}`, "mcp"] });
+  const cursor = JSON.parse(readFileSync(join(dir, ".cursor/mcp.json"), "utf8")) as { mcpServers: { keylang: { args: string[] } } };
+  assert.deepEqual(cursor.mcpServers.keylang.args, ["-y", `keylang@${VERSION}`, "mcp"]);
+  const toml = readFileSync(join(dir, ".codex/config.toml"), "utf8");
+  assert.match(toml, /keylang@/);
+  assert.match(toml, new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")}`));
+  const open = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8")) as { mcp: Record<string, { type?: string; command?: string[] }> };
+  assert.deepEqual(open.mcp.other, { type: "local", command: ["echo"] });
+  assert.equal(open.mcp.keylang?.type, "local");
+  assert.deepEqual(open.mcp.keylang?.command, ["npx", "-y", `keylang@${VERSION}`, "mcp"]);
+  const skillA = readFileSync(join(dir, ".agents/skills/keylang-feature/SKILL.md"), "utf8");
+  const skillC = readFileSync(join(dir, ".claude/skills/keylang-feature/SKILL.md"), "utf8");
+  assert.equal(skillA, skillC);
+  assert.match(skillA, /^---\nname: keylang-feature\n/);
+  assert.match(skillA, /^description: /m);
+  assert.equal(statSync(join(dir, ".claude/skills/keylang-feature/SKILL.md")).isSymbolicLink(), false);
+  const settings = JSON.parse(readFileSync(join(dir, ".claude/settings.json"), "utf8")) as {
+    permissions: { allow: string[]; deny: string[] };
+    hooks: { PostToolUse: unknown[]; Stop: { hooks: { command: string }[] }[] };
+  };
+  assert.deepEqual(settings.permissions.allow, ["Bash"]);
+  for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
+  assert.ok(settings.permissions.deny.includes("Read(secret)"));
+  assert.equal(settings.hooks.PostToolUse.length, 1);
+  assert.match(JSON.stringify(settings.hooks.Stop), new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")} hook stop`));
+  assert.match(readFileSync(join(dir, ".codex/hooks.json"), "utf8"), /hook stop/);
+  assert.match(readFileSync(join(dir, "AGENTS.md"), "utf8"), /trusted project/);
+
+  mcp.mcpServers.keylang.args = ["-y", "keylang@0.0.0", "mcp"];
+  writeFileSync(join(dir, ".mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`);
+  writeFileSync(join(dir, ".claude/skills/keylang-feature/SKILL.md"), skillC.replace("keylang", "keylang-edited"));
+  const held = treeBytes(dir);
+  const stale = keylang(dir, ["agents", "--check"]);
+  assert.equal(stale.status, 1, stale.stdout);
+  assert.match(stale.stdout, /\.mcp\.json: stale/);
+  assert.match(stale.stdout, /SKILL\.md: stale/);
+  assert.deepEqual(treeBytes(dir), held);
+  assert.equal(keylang(dir, ["agents", "--check", "--agents=none"]).status, 1);
+});
+
+test("agents: invalid JSON or TOML exits 2 and writes nothing", (t) => {
+  const dir = tempDir(t, "keylang-bad-json-");
+  writeTree(dir, { "src/app/pay.ts": PAY, ".mcp.json": "{ not json\n", ".codex/config.toml": "mcp_servers = [\n" });
+  mkdirSync(join(dir, ".claude"));
+  const before = treeBytes(dir);
+  const json = keylang(dir, ["agents", "--agents=claude"]);
+  assert.equal(json.status, 2);
+  assert.match(json.stderr, /\.mcp\.json: invalid JSON/);
+  assert.deepEqual(treeBytes(dir), before);
+  const toml = keylang(dir, ["agents", "--agents=codex"]);
+  assert.equal(toml.status, 2);
+  assert.match(toml.stderr, /\.codex\/config\.toml: invalid TOML/);
+  assert.deepEqual(treeBytes(dir), before);
+});
+
+test("baseline: a new cross-layer import or package is K102; an allowed package is not; --check writes nothing", (t) => {
+  const dir = tempDir(t, "keylang-baseline-");
+  writeTree(dir, { "package.json": `${JSON.stringify({ name: "shop", private: true, dependencies: { stripe: "1.0.0" } })}\n`, "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  const text = readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8");
+  assert.match(text, /keylang:generated/);
+  assert.match(text, /deny app domain, external, unassigned/);
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  assert.equal(readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8"), text);
+  assert.equal(keylang(dir, ["baseline", "--check"]).status, 0);
+  writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n');
+  const drifted = keylang(dir, ["baseline", "--check"]);
+  assert.equal(drifted.status, 1);
+  assert.match(drifted.stdout, /keylang baseline/);
+  assert.equal(readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8"), text);
+  const denied = keylang(dir, ["check"]);
+  assert.equal(denied.status, 1, denied.stdout);
+  assert.match(denied.stdout, /K102 divergence: `app\.pay` depends on `domain\.order`/);
+  assert.match(denied.stdout, /rules\.baseline\.md/);
+  writeFileSync(join(dir, "src/app/pay.ts"), 'import Stripe from "stripe";\nexport function charge(): number {\n  return Stripe ? 1 : 0;\n}\n');
+  const pkg = keylang(dir, ["check"]);
+  assert.match(pkg.stdout, /K102 divergence: `app\.pay` depends on `external\.stripe`/);
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  const allowed = keylang(dir, ["check"]);
+  assert.doesNotMatch(allowed.stdout, /external\.stripe/);
+  assert.equal(allowed.status, 0, allowed.stdout);
+});
+
+test("feature: planned, static and rule gaps, then done; JSON is the only stdout", (t) => {
+  const dir = tempDir(t, "keylang-feature-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    "keylang/features/pay.md": "# flow pay\n\n- planned fn app.pay.refund (n: number) → number\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step domain.order.price\n",
+  });
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  const gap = keylang(dir, ["feature", "pay", "--format", "json"]);
+  assert.equal(gap.status, 1, gap.stdout);
+  const body = JSON.parse(gap.stdout) as { done: boolean; gaps: { kind: string; id: string }[] };
+  assert.equal(body.done, false);
+  assert.ok(body.gaps.some((item) => item.kind === "planned" && item.id === "app.pay.refund"));
+  assert.ok(body.gaps.some((item) => item.kind === "static" && item.id === "domain.order.price"));
+  assert.equal(gap.stdout.trimEnd() + "\n", gap.stdout);
+  const missing = keylang(dir, ["feature", "nope"]);
+  assert.equal(missing.status, 2);
+  writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return refund(price());\n}\nexport function refund(n: number): number {\n  return n;\n}\n');
+  const ruled = keylang(dir, ["feature", "pay", "--format", "json"]);
+  assert.equal(ruled.status, 1, ruled.stdout);
+  const ruledBody = JSON.parse(ruled.stdout) as { gaps: { kind: string }[] };
+  assert.ok(ruledBody.gaps.some((item) => item.kind === "rule"));
+  assert.match(keylang(dir, ["check"]).stdout, /K102/);
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  const done = keylang(dir, ["feature", "pay", "--format", "json"]);
+  assert.equal(done.status, 0, done.stdout + done.stderr);
+  assert.equal((JSON.parse(done.stdout) as { done: boolean }).done, true);
+});
+
+test("check --changed filters to the touched files; hook stop blocks once and writes nothing", (t) => {
+  const dir = tempDir(t, "keylang-changed-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    "keylang/flows/old.md": "# flow old\n\n- planned fn domain.order.later (n: number) → number\n- trigger domain.order.price\n  - step domain.order.later\n",
+  });
+  assert.equal(keylang(dir, ["baseline"]).status, 0);
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const plain = keylang(dir, ["check", "--changed"]);
+  assert.equal(plain.status, 0, plain.stdout);
+  assert.doesNotMatch(plain.stdout, /domain\.order\.later/);
+  writeFileSync(join(dir, "src/app/pay.ts"), 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n');
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, /K102/);
+  assert.doesNotMatch(changed.stdout, /domain\.order\.later/);
+  writeFileSync(join(dir, "keylang/flows/old.md"), "# flow old\n\n- trigger domain.order.missing\n");
+  const spec = keylang(dir, ["check", "--changed"]);
+  assert.match(spec.stdout, /K001 dangling reference `domain\.order\.missing`/);
+  const bare = tempDir(t, "keylang-nogit-");
+  writeTree(bare, { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/pay.ts": PAY, "keylang/rules.md": "# rules\n\n- deny app domain\n" });
+  assert.notEqual(keylang(bare, ["check"]).status, 2);
+  const noGit = keylang(bare, ["check", "--changed"]);
+  assert.equal(noGit.status, 2);
+  assert.match(noGit.stderr, /git/);
+
+  const event = JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false });
+  const hook = (input: string): { status: number | null; stdout: string } => {
+    const r = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input, encoding: "utf8" });
+    return { status: r.status, stdout: r.stdout };
+  };
+  const dirty = treeBytes(dir);
+  const blocked = hook(event);
+  const again = hook(event);
+  assert.equal(blocked.status, 0, blocked.stdout);
+  assert.equal(again.stdout, blocked.stdout);
+  const decision = JSON.parse(blocked.stdout) as { decision: string; reason: string };
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason, /src\/app\/pay\.ts:\d+/);
+  const skipped = hook(JSON.stringify({ stop_hook_active: true }));
+  assert.equal(skipped.status, 0);
+  assert.equal(JSON.parse(skipped.stdout).decision, undefined);
+  assert.deepEqual(treeBytes(dir), dirty);
+  writeFileSync(join(dir, "src/app/pay.ts"), PAY);
+  writeFileSync(join(dir, "keylang/flows/old.md"), "# flow old\n\n- planned fn domain.order.later (n: number) → number\n- trigger domain.order.price\n  - step domain.order.later\n");
+  const clean = hook(event);
+  assert.equal(clean.status, 0, clean.stdout);
+  JSON.parse(clean.stdout);
+  assert.notEqual(JSON.parse(clean.stdout).decision, "block");
+});
+
+test("planned module external.<pkg> is static ok only from the importing parent module", (t) => {
+  const feature = "# flow pay\n\n- planned module external.stripe\n- trigger app.pay.charge\n  - step external.stripe\n";
+  const dir = tempDir(t, "keylang-external-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "package.json": "{}\n",
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    "keylang/features/pay.md": feature,
+  });
+  const before = keylang(dir, ["check"]);
+  assert.match(before.stdout, /unverified external\.stripe: planned module/);
+  assert.match(before.stdout, /static unverified external\.stripe: planned module, not implemented/);
+  writeFileSync(join(dir, "package.json"), `${JSON.stringify({ dependencies: { stripe: "1.0.0" } })}\n`);
+  writeFileSync(join(dir, "src/domain/order.ts"), 'import Stripe from "stripe";\nexport function price(): number {\n  return Stripe ? 2 : 0;\n}\n');
+  const other = keylang(dir, ["check"]);
+  assert.match(other.stdout, /K202 planned module `external\.stripe`/);
+  assert.match(other.stdout, /static unverified external\.stripe: no import of `external\.stripe` from `app\.pay`/);
+  const status = JSON.parse(keylang(dir, ["feature", "pay", "--format", "json"]).stdout) as { gaps: { kind: string; id: string; line: number }[] };
+  assert.ok(status.gaps.some((gap) => gap.kind === "static" && gap.id === "external.stripe" && gap.line === 5));
+  writeFileSync(join(dir, "src/domain/order.ts"), ORDER);
+  writeFileSync(join(dir, "src/app/pay.ts"), 'import Stripe from "stripe";\nexport function charge(): number {\n  return Stripe ? 1 : 0;\n}\n');
+  const own = keylang(dir, ["check"]);
+  assert.match(own.stdout, /K202 planned module `external\.stripe`/);
+  assert.match(own.stdout, /static ok external\.stripe: imported by `app\.pay`/);
+});
+
+test("init: the keylang skill under .claude is not a Claude harness, so a second init adds no Claude adapters", (t) => {
+  const dir = tempDir(t, "keylang-skill-claude-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  mkdirSync(join(dir, ".cursor"));
+  assert.equal(keylang(dir, ["init"]).status, 0);
+  assert.equal(existsSync(join(dir, ".claude/skills/keylang-feature/SKILL.md")), true);
+  assert.equal(existsSync(join(dir, "CLAUDE.md")), false);
+  assert.equal(existsSync(join(dir, ".mcp.json")), false);
+  assert.equal(existsSync(join(dir, ".claude/settings.json")), false);
+  assert.equal(keylang(dir, ["init"]).status, 0);
+  assert.equal(keylang(dir, ["agents"]).status, 0);
+  assert.equal(existsSync(join(dir, "CLAUDE.md")), false);
+  assert.equal(existsSync(join(dir, ".mcp.json")), false);
+  assert.equal(existsSync(join(dir, ".claude/settings.json")), false);
+  assert.ok(existsSync(join(dir, ".cursor/mcp.json")));
+});
+
+test("check --changed and hook stop report K001 when the step's source file was deleted", (t) => {
+  const dir = tempDir(t, "keylang-deleted-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    "keylang/flows/price.md": "# flow price\n\n- trigger app.pay.charge\n  - step domain.order.price\n",
+  });
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  rmSync(join(dir, "src/domain/order.ts"));
+  const full = keylang(dir, ["check"]);
+  assert.equal(full.status, 1, full.stdout);
+  assert.match(full.stdout, /K001 dangling reference `domain\.order\.price`/);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, /K001 dangling reference `domain\.order\.price`/);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], {
+    cwd: dir,
+    input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+    encoding: "utf8",
+  });
+  assert.equal(hook.status, 0, hook.stderr);
+  const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
+  assert.equal(decision.decision, "block");
+  assert.match(decision.reason ?? "", /keylang\/flows\/price\.md:\d+/);
+});
+

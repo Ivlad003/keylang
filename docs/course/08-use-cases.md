@@ -122,7 +122,15 @@ A first session on an unfamiliar checkout:
 
    ![Help](images/tui-help.png)
 
-From there the edits are ordinary. `i` to change a rule, `Ctrl+S` to write it, `F5` if you want an analysis immediately rather than waiting for the debounce. An agent that should help drafts into `.keylang/proposals/` via `draft`, `code-to-spec`, or MCP `apply_diff`. You merge with `m`. The spec does not change on the agent's write.
+From there the edits are ordinary. `i` to change a rule, `Ctrl+S` to write it, `F5` if you want an analysis immediately rather than waiting for the debounce. `keylang init` on a checkout the agent has not seen writes the baseline and, where a harness is already present, the MCP server and the skill. keylang does not launch the agent. Drafts of specs still land in `.keylang/proposals/` via `draft`, `code-to-spec`, or MCP `apply_diff`, and you merge with `m`. The spec does not change on the agent's write. `rules.baseline.md` is generated: the UI and `apply_diff` refuse it, and `keylang baseline` rewrites it after the graph changes.
+
+## 5. Words on the map, and a feature that is not done
+
+This session has no screenshot.
+
+Turn on `"explain": {"map": true}`, run `keylang map`, open a layer file and press `t`. You are looking at the same tree, with a doc comment or a saved brief under each node. `s` finds a node by its id or by those words. `check` does not read `keylang/map-explained/`. A green run is not a claim that the paragraph is true. A saved explanation prints `fresh` or `stale`. A description you typed under a spec node still has no such mark.
+
+A piece of work that is not in the code yet is `keylang/features/<slug>.md`: `planned` ids and a flow. An integration nobody imports is `planned module external.<pkg>` and a step from the module that will import it. `keylang feature <slug>` is done when those declarations are implemented, the steps are static `ok`, and no rule fails, the baseline included. The tests and the trace are listed beside that answer. They do not decide it.
 
 ## When to leave it alone
 
@@ -131,7 +139,7 @@ keylang earns its keep when a repository has layers people already argue about, 
 - The codebase is one layer, or the boundaries move every week and nobody will update ids.
 - The bugs you care about are behavioral, numerical, or security issues that never show up as an import or a call between modules.
 - You need a language the frontends do not parse. An unindexed file is a hole, and a project made entirely of holes will report `unverified` forever.
-- You want the prose in the spec to be checked against the code. That check is not implemented. The bullets are what `check` reads.
+- You want the prose in the spec to be checked against the code. That check is not implemented. The bullets are what `check` reads. A saved explanation can say `stale`, and that line is still not a verdict on the paragraph.
 - You want a runtime dependency injector for Rust, or request-scoped lifetimes. `keylang wire` emits one TypeScript composition root.
 
 A small adoption that still pays off is `keylang.json` plus a short `rules.md` with `layers` and two or three `deny` lines, `check` and `map --check` in CI, and no flows until a scenario is worth a trace. Flows are worth it when you already have an end-to-end test and you want the test's name tied to the functions it is supposed to reach.

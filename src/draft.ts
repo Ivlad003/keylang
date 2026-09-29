@@ -241,6 +241,23 @@ export function diffHunks(diff: string): Map<string, [number, number][]> {
   return out;
 }
 
+/**
+ * Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks`
+ * follows the new side, so a deletion has no hunk to land on.
+ */
+export function deletedDiffPaths(diff: string): string[] {
+  const out: string[] = [];
+  const lines = diff.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.startsWith("--- ")) continue;
+    if (!(lines[i + 1] ?? "").startsWith("+++ /dev/null")) continue;
+    const path = gitPath(line.slice(4)).replace(/^a\//, "");
+    if (path !== "" && path !== "/dev/null") out.push(path);
+  }
+  return out;
+}
+
 /** A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte. */
 function gitPath(text: string): string {
   if (!text.startsWith('"') || !text.endsWith('"')) return text;

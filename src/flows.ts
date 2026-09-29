@@ -381,6 +381,9 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
   if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
   const to = input.nodes[target];
+  // A step to a package is the import from the parent fn's module, not a call.
+  // An import in some other module does not prove this step.
+  if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
   if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
   const behavior = (input.static ?? "behavior") === "behavior";
   // A call in a closure runs only when that function value is called: it is a possible route, not a proof.
@@ -465,6 +468,29 @@ function routeSteps(parent: string, target: string, previous: Map<string, Step>)
     id = step.from;
   } while (id !== parent);
   return steps;
+}
+
+/** The file module of a fn: the nearest module that is not a class. */
+function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
+  let cur = id;
+  for (;;) {
+    const dot = cur.lastIndexOf(".");
+    if (dot === -1) return null;
+    cur = cur.slice(0, dot);
+    const node = nodes[cur];
+    if (node?.kind === "module" && node.class !== true) return cur;
+  }
+}
+
+/** Static proof for `external.<pkg>`: a resolved import from the parent fn's own module. */
+function externalImport(input: FlowInput, parent: string, target: string): { verdict: Verdict["verdict"]; message: string } {
+  const moduleId = fileModule(input.nodes, parent);
+  if (moduleId === null) return { verdict: "unverified", message: `no module of \`${parent}\` imports \`${target}\`` };
+  const edge = input.edges.find(
+    (item) => (item.kind === "import" || item.kind === "reexport") && item.resolution === "resolved" && item.source === moduleId && item.target === target,
+  );
+  if (edge) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
+  return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`` };
 }
 
 function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {

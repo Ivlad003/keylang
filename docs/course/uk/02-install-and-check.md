@@ -5,24 +5,31 @@
 Потрібен Node.js ≥ 22.18. Пакет не компілює native-додатки. Опційні голосові модулі (`@fugood/whisper.node`, `decibri`) ставляться, коли для платформи є готовий бінарник, і їх можна не ставити.
 
 ```sh
-npx keylang init .     # вгадати шари, записати keylang.json, згенерувати карту
+npx keylang init .     # шари, keylang.json, карта, baseline, файли харнеса
 npx keylang check      # резолвити ID і перевірити правила в keylang/
 npm i -g keylang       # далі: keylang check
 ```
 
 У цьому чекауті точка входу — `node bin/keylang.js`: вона вантажить TypeScript напряму. Встановлення з npm вантажить `dist/`. `npm link` дає команду `keylang`, поки ви працюєте над інструментом.
 
-`init` пише `keylang.json` і карту. Ім'я шару — один сегмент ID. Імена, які інструмент резервує (`external`, `unassigned` і ключові слова карти `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`), перейменовуються з суфіксом `_`, і `init` пише про це в stderr. Без `keylang.json` подальші команди вгадують шари з дерева каталогів.
+`init` пише `keylang.json`, карту і `keylang/rules.baseline.md`. Baseline — згенеровані правила: кожному шару заборонені шари, від яких він ще не залежить, а шар, що вже імпортує пакети, отримує `allow` на ці пакети і `deny` на решту `external`. Пізніший імпорт через прогалину — K102, доки ви не зміните правило або не запустите `keylang baseline` знову. Одразу після `init` baseline не додає нового `fail`: він описує граф, який щойно побачив.
+
+Без `--agents=none` `init` також пише керований блок в `AGENTS.md` між `<!-- keylang:begin -->` і `<!-- keylang:end -->`. Текст поза маркерами лишається байт у байт. Якщо вже є `.claude/`, `.codex/`, `.cursor/` або `opencode.json`, той самий запуск реєструє сервер MCP `keylang` (`npx -y keylang@<version> mcp`, версія пакета, що виконав `init`), копіює skill `keylang-feature` і, для Claude та Codex, хук Stop. Каталог skill, який сам keylang створює в `.claude/skills/`, не означає «Claude встановлено», тож другий `init` не дорощує нові адаптери. `keylang agents` повторює це встановлення на репозиторії, де `keylang.json` уже є. `--check` для `init`, `agents` і `baseline` нічого не пише і дає код 1, коли згенерований текст застарів.
+
+Ім'я шару — один сегмент ID. Імена, які інструмент резервує (`external`, `unassigned` і ключові слова карти `layer`, `allow`, `deny`, `entry`, `module`, `no-cycles`), перейменовуються з суфіксом `_`, і `init` пише про це в stderr. Без `keylang.json` подальші команди вгадують шари з дерева каталогів.
 
 ## Команди, з яких починають
 
 | Команда | Пише файли? | Що читати |
 |---|---|---|
-| `keylang check [шляхи…]` | Ні | Знахідки в stdout, `N fail, M unverified, K ok` у stderr |
-| `keylang map [тека]` | `keylang/map/*.md` і `.keylang/index.json` | Згенерована карта. Відмовляється перезаписати файл карти без маркера `keylang:generated` |
+| `keylang check [шляхи…]` | Ні | Знахідки в stdout, `N fail, M unverified, K ok` у stderr. `--changed` лишає лише знахідки, що зачіпають файли, змінені від `HEAD` (або `--since`), плюс невідстежені, включно з видаленим файлом, чиї ID ще називає потік |
+| `keylang baseline` | `keylang/rules.baseline.md` | Згенерована рамка deny/allow. `--check` дає код 1 і називає `keylang baseline`, коли файл більше не збігається з графом |
+| `keylang feature <slug>` | Ні | Чи готовий `keylang/features/<slug>.md`. Код 0 — готово, 1 — прогалини, 2 — немає файла. `--format json` — лише JSON у stdout |
+| `keylang agents` | Файли харнеса поза `keylang/` | Ті самі адаптери, що й `init`. `--agents=none` знімає це встановлення і лишає baseline |
+| `keylang map [тека]` | `keylang/map/*.md`, `.keylang/index.json` і, коли ввімкнено `explain.map`, `keylang/map-explained/` | Згенерована карта. Відмовляється перезаписати файл карти без маркера `keylang:generated` |
 | `keylang map --check` | Ні | Код 1, коли закомічена карта не збігається зі свіжим рендером або у файла карти немає маркера |
 | `keylang explain K001` | Ні | Чому код існує, короткий приклад і виправлення |
-| `keylang explain <id>` | Ні | Вид, сигнатура, файл, виклики, хто викликає, потоки й правила, що називають ID |
+| `keylang explain <id>` | Ні | Вид, сигнатура, файл, виклики, хто викликає, потоки й правила, що називають ID, і `fresh` або `stale` для збереженого пояснення |
 | `keylang explain <id> --llm` | `keylang/explain/<id>.md` (у git; `--brief`: `keylang/explain/brief/<id>.md`) | Прозове пояснення від налаштованого агента. Жодного вердикту не змінює |
 | `keylang fmt <файл>` | Файл у канонічній формі | Код 1, якщо були діагностики або, з `--check`, файл не був канонічним |
 | `keylang parse <файл>` | Ні | Текстовий дамп IR. `--json` придатний для машини і є єдиним, що лежить у stdout |
@@ -35,7 +42,7 @@ npm i -g keylang       # далі: keylang check
 | Код | Значення |
 |---|---|
 | 0 | Немає блокувальної знахідки |
-| 1 | Порушення, застаріла карта з `--check`, або будь-який `unverified`, якщо передано `--strict` |
+| 1 | Порушення, застаріла карта, baseline або встановлення харнеса з `--check`, або будь-який `unverified`, якщо передано `--strict` |
 | 2 | Хибні аргументи, невідома команда або помилка I/O. Повідомлення називає файл і, для конфігурації, поле |
 
 `--format` не змінює код виходу. `human` — типово. `json`, `sarif` і `github` — для CI. `json` — один об'єкт у stdout (`snapshotId`, `results`, `coverage`).
@@ -103,7 +110,8 @@ npm i -g keylang       # далі: keylang check
 | `dir` | Каталог специфікацій, типово `keylang` |
 | `check.tests` | Шлях або глоб звіту JSON keylang чи JUnit XML |
 | `check.trace` | Шлях або глоб trace JSONL |
-| `agent` | Необов'язково. `anthropic:<model>` або `openrouter:<model>`, для `explain --llm` і чернеток |
+| `agent` | Необов'язково. `anthropic:<model>` або `openrouter:<model>`, для `explain --llm` і чернеток. MCP-сервер харнеса його не викликає |
+| `explain.map` | Необов'язково. `true` також малює `keylang/map-explained/` з коментарів документації і збережених brief-ів. `check` цю теку не читає |
 
 `check.tests` і `check.trace` — те, як потік дізнається про запуск. Без них ці види доказів не друкуються і не впливають на `--strict`. Цей репозиторій ставить обидва на глоби в `.keylang/`, і цей каталог у gitignore. CI, якому потрібен доказ trace, має створити файли в джобі.
 
