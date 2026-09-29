@@ -375,6 +375,33 @@ test("lsp: format 2 completion hides a symbol an incomparable deny wins over", a
   assert.equal(format2.includes("domain.order.total"), false, format2.join(" "));
 });
 
+test("lsp: completion still offers a fn a member deny cannot scope", async (t) => {
+  const dir = fixture(t);
+  const mapPath = join(dir, "keylang/map/app.md");
+  const map = readFileSync(mapPath, "utf8");
+  const moduleLine = lineOf(map, "module [checkout]");
+  assert.ok(moduleLine >= 0, map);
+  const lines = map.split("\n");
+  const pad = lines[moduleLine]!.match(/^ */)?.[0] ?? "";
+  lines.splice(moduleLine + 1, 0, `${pad}  - calls `);
+  const edited = lines.join("\n");
+  const ask = async (rules: string): Promise<string[]> => {
+    writeFileSync(join(dir, "keylang/rules.md"), rules);
+    const s = await open(t, dir);
+    const mapUri = uri(dir, "keylang/map/app.md");
+    s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: edited } });
+    const listed = await s.request<{ items: { label: string }[] }>("textDocument/completion", {
+      textDocument: { uri: mapUri },
+      position: { line: moduleLine + 1, character: `${pad}  - calls `.length },
+    });
+    return listed.items.map((item) => item.label);
+  };
+  const member = await ask("# rules\n\n- deny app infra.db.save\n");
+  assert.ok(member.includes("infra.db.save"), member.join(" "));
+  const module = await ask("# rules\n\n- deny app infra.db\n");
+  assert.equal(module.includes("infra.db.save"), false, module.join(" "));
+});
+
 test("lsp: hover on a flow step shows the signature and each kind of evidence; planned says so", async (t) => {
   const dir = fixture(t, { "keylang/flows/buy.md": FLOW });
   const s = await open(t, dir);

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -45,6 +45,7 @@ interface Row {
   file: string;
   line: number;
   code: string | null;
+  reason?: string;
 }
 
 function check(dir: string, args: string[] = []): { status: number | null; stderr: string; stdout: string; results: Row[] } {
@@ -446,6 +447,46 @@ test("a declared package is not K001 when its only importer is excluded, and it 
     mapText = "";
   }
   assert.doesNotMatch(mapText, /external\.pg/);
+});
+
+test("a declared package with no import anywhere is not K001 and adds no snapshot node", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
+    "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/infra/db.ts": "export function db(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- allow infra external.pg\n",
+  });
+  const quiet = check(dir);
+  assert.equal(quiet.status, 0, quiet.stdout);
+  assert.ok(!quiet.results.some((row) => row.code === "K001"), quiet.stdout);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { nodes: Record<string, unknown> };
+  assert.equal(index.nodes["external.pg"], undefined);
+  const mapFile = join(dir, "keylang/map/external.md");
+  const mapText = existsSync(mapFile) ? readFileSync(mapFile, "utf8") : "";
+  assert.doesNotMatch(mapText, /external\.pg/);
+});
+
+test("a type or a planned event on deny is K005 scope and applies nowhere", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),
+    "src/app/main.ts": "export function main(): void {}\n",
+    "src/domain/order.ts": "export interface Order {\n  id: string;\n}\nexport function make(): void {}\n",
+    "keylang/flows/paid.md": "# flow paid\n\n- planned event domain.order.paid\n",
+    "keylang/rules.md": "# rules\n\n- deny app domain.order.Order\n- deny app domain.order.paid\n",
+    "keylang/wiring.md": "# wiring\n\n- wire app.main\n  - order domain.order.make\n",
+  });
+  const found = check(dir);
+  assert.equal(found.status, 1, found.stdout);
+  const scoped = found.results.filter((row) => row.code === "K005");
+  assert.equal(scoped.length, 2, found.stdout);
+  assert.ok(scoped.every((row) => row.reason === "scope"), JSON.stringify(scoped));
+  assert.ok(scoped.some((row) => row.evidence.includes("`domain.order.Order` is a type")), found.stdout);
+  assert.ok(scoped.some((row) => row.evidence.includes("`domain.order.paid` is a planned event")), found.stdout);
+  assert.ok(!found.results.some((row) => row.code === "K102"), found.stdout);
+  const wire = keylang(dir, ["wire", "--check"]);
+  assert.doesNotMatch(`${wire.stdout}\n${wire.stderr}`, /denied by/);
 });
 
 test("a fn deny applies nowhere: check, wire, and a deeper module deny still does", (t) => {

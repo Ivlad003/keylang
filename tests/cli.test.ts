@@ -58,6 +58,26 @@ test("check diagnostics fixture", () => {
   assert.equal(o.stdout, readFileSync(join(root, "tests/fixtures/diagnostics.expected"), "utf8"));
 });
 
+test("deferred flow properties and a query rule stay K004, and help has no migrate", (t) => {
+  const dir = tempDir(t, "keylang-deferred-");
+  writeTree(dir, {
+    "keylang/flows/pay.md": "# flow pay\n\n- never app.pay.charge\n- at-most 1 app.pay.charge\n- never app.pay.save before app.pay.charge\n",
+    "keylang/rules.md": "# rules\n\n- query depends(X, Y)\n",
+  });
+  const flowWords = "kind, trigger, step, reads, emits, calls, invariant, when, test, planned";
+  const flow = keylang(dir, ["check", "keylang/flows/pay.md"]);
+  assert.equal(flow.status, 1, flow.stdout);
+  assert.match(flow.stdout, new RegExp(`pay\\.md:3:3: K004 unknown keyword \`never\` here; expected one of: ${flowWords}`));
+  assert.match(flow.stdout, new RegExp(`pay\\.md:4:3: K004 unknown keyword \`at-most\` here; expected one of: ${flowWords}`));
+  assert.match(flow.stdout, new RegExp(`pay\\.md:5:3: K004 unknown keyword \`never\` here; expected one of: ${flowWords}`));
+  const rules = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.equal(rules.status, 1, rules.stdout);
+  assert.match(rules.stdout, /rules\.md:3:3: K004 unknown keyword `query` here; expected one of: layers, allow, deny, entry, module, no-cycles/);
+  const help = keylang(root, ["--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.doesNotMatch(help.stdout, /\bmigrate\b/);
+});
+
 test("parse --json shop", () => {
   const o = keylang(root, ["parse", "--json", "examples/shop"]);
   assert.equal(o.status, 0, o.stderr);
@@ -1811,6 +1831,12 @@ test("planned module external.<pkg> is static ok only from the importing parent 
   assert.match(before.stdout, /unverified external\.stripe: planned module/);
   assert.match(before.stdout, /static unverified external\.stripe: planned module, not implemented/);
   writeFileSync(join(dir, "package.json"), `${JSON.stringify({ dependencies: { stripe: "1.0.0" } })}\n`);
+  // Declared in the manifest, not yet imported: still a planned module, not K202.
+  const declared = keylang(dir, ["check"]);
+  assert.equal(declared.status, 0, declared.stdout + declared.stderr);
+  assert.match(declared.stdout, /unverified external\.stripe: planned module/);
+  assert.match(declared.stdout, /static unverified external\.stripe: planned module, not implemented/);
+  assert.doesNotMatch(declared.stdout, /K202|K002/);
   writeFileSync(join(dir, "src/domain/order.ts"), 'import Stripe from "stripe";\nexport function price(): number {\n  return Stripe ? 2 : 0;\n}\n');
   const other = keylang(dir, ["check"]);
   assert.match(other.stdout, /K202 planned module `external\.stripe`/);

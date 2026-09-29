@@ -275,6 +275,43 @@ test("spec-to-code: a reference that is not planned gets no code; a stub its flo
   assert.ok(!existsSync(join(dir, "src/app/refund.ts")));
 });
 
+test("spec-to-code: a deny over a planned fn is K005 and does not refuse the stub", (t) => {
+  const dir = copy(t);
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/refund.md"), "# flow refund\n\n- planned fn app.refund.refund (order: Order) → Order\n- trigger domain.order.createOrder\n  - step app.refund.refund\n");
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain app.refund.refund\n");
+  const member = keylang(dir, ["spec-to-code", "app.refund.refund"]);
+  assert.equal(member.status, 0, member.stderr);
+  assert.doesNotMatch(member.stderr, /`deny` forbids/);
+  assert.match(member.stderr, /proposed \.keylang\/proposals\/src\/app\/refund\.ts/);
+  assert.ok(!existsSync(join(dir, "src/app/refund.ts")));
+});
+
+test("spec-to-code: format 2 denies an incomparable pair that format 1 allows", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-draft-format-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const tree = (format: number): void => {
+    mkdirSync(join(dir, "src/app/x"), { recursive: true });
+    mkdirSync(join(dir, "src/domain"), { recursive: true });
+    mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+    writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ format, languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"] } })}\n`);
+    writeFileSync(join(dir, "src/app/x/y.ts"), "export function make(): number { return 1; }\n");
+    writeFileSync(join(dir, "keylang/flows/item.md"), "# flow item\n\n- planned fn domain.storefront.item () → number\n- trigger app.x.y.make\n  - step domain.storefront.item\n");
+    writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- allow app.x.y domain\n- deny app domain.storefront\n");
+  };
+  tree(2);
+  const denied = keylang(dir, ["spec-to-code", "domain.storefront.item"]);
+  assert.equal(denied.status, 2, denied.stderr);
+  assert.match(denied.stderr, /`deny` forbids `app\.x\.y\.make` → `domain\.storefront\.item`/);
+  assert.ok(!existsSync(join(dir, "src/domain/storefront.ts")));
+  tree(1);
+  const allowed = keylang(dir, ["spec-to-code", "domain.storefront.item"]);
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.doesNotMatch(allowed.stderr, /`deny` forbids/);
+  assert.match(allowed.stderr, /proposed \.keylang\/proposals\/src\/domain\/storefront\.ts/);
+  assert.ok(!existsSync(join(dir, "src/domain/storefront.ts")));
+});
+
 test("spec-to-code --mode llm: the model's body is analyzed as a new snapshot before anything is written; a wrong function is refused", async (t) => {
   const dir = copy(t);
   const config = join(dir, "keylang.json");
