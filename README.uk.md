@@ -21,6 +21,7 @@
 | Тримати карту чесною в CI | `keylang map --check` дає код 1, коли закомічена карта застаріла. `keylang check` дає код 1 на порушенні |
 | Дати агенту чернетку, а не перезапис | `draft`, `code-to-spec`, `spec-to-code` і MCP-інструмент `apply_diff` пишуть пропозицію в `.keylang/proposals/`. Людина зливає її по шматках |
 | Перейти від імені до функції | Той самий аналіз обслуговує CLI, термінал, `keylang web`, LSP і MCP |
+| Навести агента на репозиторій | `keylang init` пише ще й згенерований `keylang/rules.baseline.md` і керований блок у `AGENTS.md` та реєструє сервер MCP для Claude Code, Codex, Cursor чи opencode. Файл у `keylang/features/` каже, що будувати. `keylang feature <slug>` каже, коли це готово |
 
 ID має вигляд `application.purchase.buy`. Це крапковий шлях від шару, а не номер рядка, тож специфікація переживає правки, які лише зсувають рядки.
 
@@ -155,6 +156,7 @@ node bin/keylang.js web                  # той самий UI в браузе�
 - **M5.** Rust (крейти, `use`, `pub use`) і Python (пакети, `__all__`) на тому самому графі, з явними межами. Trace-адаптери в `adapters/python` і `adapters/rust`. `keylang trace-plan <flow>` друкує, що інструментувати.
 - **M6.** `# wiring` і `keylang wire`: типізований `wire()` у `keylang.gen.ts`, що будує кожну фабрику раз, залежності першими, з async init/dispose і відмовою на циклах ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code`, `explain <id> --llm` як пропозиції. `keylang mcp` для агентів (`apply_diff` пише лише пропозицію). Опційний голос (`Ctrl+R`). `keylang doctor` звітує мови, облікові дані агента й голос і нічого не змінює.
+- **M8.** Харнеси агентів ([ADR 0005](docs/adr/0005-harness-integration.md)). `init` і `keylang agents` ставлять керований блок в `AGENTS.md`, запис сервера MCP, skill і, де харнес це вміє, хук `Stop` для Claude Code, Codex, Cursor і opencode. `keylang baseline` пише `keylang/rules.baseline.md`, що забороняє залежності між шарами, яких у графі ще немає. `keylang feature <slug>` оцінює файл у `keylang/features/`. `check --changed` і `keylang hook stop` блокують хід лише на нових порушеннях. MCP отримав `context`, `validate_spec`, `scaffold` і `feature_status`. Покрито тестами CLI і MCP; наскрізно з Claude Code і Codex на чужому репозиторії ще не перевірено.
 
 `bench/` ганяє інструмент на восьми репозиторіях; числа — у [`bench/results.md`](bench/results.md).
 

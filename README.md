@@ -21,6 +21,7 @@ A repository already has the structure. What it usually lacks is a short text, r
 | Keep the map honest in CI | `keylang map --check` exits 1 when the committed map is stale. `keylang check` exits 1 on a violation |
 | Let an agent draft, not overwrite | `draft`, `code-to-spec`, `spec-to-code` and the MCP `apply_diff` tool write a proposal under `.keylang/proposals/`. A person merges it hunk by hunk |
 | Jump from the name to the function | The same analysis serves the CLI, the terminal UI, `keylang web`, the LSP server and the MCP server |
+| Point a coding agent at the repository | `keylang init` also writes a generated `keylang/rules.baseline.md` and a managed block in `AGENTS.md`, and registers the MCP server for Claude Code, Codex, Cursor or opencode. A file in `keylang/features/` says what to build. `keylang feature <slug>` says when it is done |
 
 Ids look like `application.purchase.buy`. They are a dotted path from the layer, not a line number, so a spec survives edits that only move lines.
 
@@ -155,6 +156,7 @@ Milestone detail lives in [`docs/design.md`](docs/design.md) §9 and the normati
 - **M5.** Rust (crates, `use`, `pub use`) and Python (packages, `__all__`) on the same graph, with explicit limits. Trace adapters in `adapters/python` and `adapters/rust`. `keylang trace-plan <flow>` prints what to instrument.
 - **M6.** `# wiring` and `keylang wire`: a typed `wire()` in `keylang.gen.ts` that builds each factory once, dependencies first, with async init/dispose and a hard failure on cycles ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code`, `explain <id> --llm` as proposals. `keylang mcp` for agents (`apply_diff` writes a proposal only). Optional voice (`Ctrl+R`). `keylang doctor` reports languages, agent credentials and voice without changing anything.
+- **M8.** Coding-agent harnesses ([ADR 0005](docs/adr/0005-harness-integration.md)). `init` and `keylang agents` install a managed block in `AGENTS.md`, the MCP server entry, a skill and, where the harness supports it, a Stop hook for Claude Code, Codex, Cursor and opencode. `keylang baseline` writes `keylang/rules.baseline.md`, which denies layer dependencies the graph does not have yet. `keylang feature <slug>` judges a file in `keylang/features/`. `check --changed` and `keylang hook stop` block a turn only on new violations. MCP adds `context`, `validate_spec`, `scaffold` and `feature_status`. Covered by the CLI and MCP tests; not yet tried end to end with Claude Code and Codex on an outside repository.
 
 `bench/` runs the tool on eight repositories; numbers are in [`bench/results.md`](bench/results.md).
 
