@@ -4,24 +4,24 @@
 
 A keylang file is a Markdown file with a small extra grammar. GitHub shows it as headings, lists and paragraphs. The parser reads the same bytes with stricter rules, so what GitHub shows and what `check` believes stay aligned after `fmt`.
 
-This lesson is enough to write the three file kinds. The exhaustive keyword table, the recovery rules and the snapshot schema are in [`docs/format.md`](../format.md) §§1–8 and §11.
+This lesson is enough to write a map, a rules file and a flow. The full keyword table is in [`docs/format.md`](../format.md).
 
 ## Lines
 
-The parser classifies each line in order:
+The parser looks at each line in this order:
 
 | If the line is… | It becomes |
 |---|---|
-| Inside a code fence | A code block, kept verbatim |
-| Empty | Ends a prose paragraph. It does not end a list |
-| The first non-empty line, an HTML comment containing `keylang:generated` | The generated-file marker |
+| Inside a code fence | A code block, kept as written |
+| Empty | Ends a paragraph. It does not end a list |
+| The first non-empty line, an HTML comment with `keylang:generated` | The "do not edit" mark |
 | Column 0, `#`, then a space or the end | A section heading |
-| A fence (` ``` ` or `~~~`) at indent under 4, or at any indent under an open list | A code block, and it closes the open list |
+| A fence (` ``` ` or `~~~`) at indent under 4, or at any indent under an open list | A code block, and it closes the list |
 | A `-`, `*` or `+` after the indent | A node |
 | Indented at least two spaces under an open node | That node's description |
 | Anything else | Prose, and it closes the list |
 
-`##` headings, tables, quotes and numbered lists are prose. They round-trip through `fmt`. They do not declare anything.
+`##` headings, tables, quotes and numbered lists are prose. `fmt` keeps them. They declare nothing.
 
 A heading is `#`, a space, a kind, and for a flow a name:
 
@@ -32,21 +32,15 @@ A heading is `#`, a space, a kind, and for a flow a name:
 # wiring
 ```
 
-An unknown top-level heading (`# Shop`) is warning K006 and the section is treated as a map. Extra words on `# rules` or `# map` are K005. `# flow` without a name is K005. Two flows with the same name are K002. A flow name does not collide with a map id.
+An unknown heading (`# Shop`) is warning K006, and the section is read as a map. Extra words on `# rules` or `# map` are K005. `# flow` without a name is K005. Two flows with the same name are K002.
 
 ## Indent and ids
 
-Depth is the indent divided by 2. Indents are spaces. A child is exactly one level deeper than its parent. An odd indent, a jump of more than one level, a tab in that indent, or an empty item is K003. `fmt` refuses the file.
+Depth is the indent divided by 2. Use spaces. A child is exactly one level deeper than its parent. An odd indent, a jump of more than one level, a tab, or an empty item is K003. `fmt` refuses the file.
 
-An id is segments joined by `.`:
+An id is segments joined by `.`. A segment starts with a letter, `_` or `$`, then letters, marks, digits, `_`, `$` or `-`. `http-retry` and `$save` are legal and different. Ids in specs are absolute (`application.purchase.buy`). Names in an `exports` list are the module's public export names, not map ids.
 
-```text
-segment := (letter | "_" | "$") (letter | mark | digit | "_" | "$" | "-")*
-```
-
-Letters are Unicode. `http-retry` and `$save` are legal and distinct. Ids in specs are absolute from the root (`application.purchase.buy`), except names in an `exports` list, which are public export names of that module.
-
-A declaration's id is the path of ancestors: layer, module, then `fn`, `type`, `event`, or a dependency alias. So this map declares `domain.orderAggregate`, `domain.orderAggregate.create`, and the alias `application.purchase.order`:
+This map declares `domain.orderAggregate`, `domain.orderAggregate.create`, and the alias `application.purchase.order`:
 
 ```markdown
 # map
@@ -59,15 +53,13 @@ A declaration's id is the path of ancestors: layer, module, then `fn`, `type`, `
     - order domain.orderAggregate
 ```
 
-The link is the binding to a source line. Generated maps compute it relative to the map file and encode characters that would break a Markdown link, including parentheses in a Next.js route group. You rarely write these links by hand: `keylang map` does. In a flow or a rule you may write the id as a link (`step [buy](../map/application.md#application.purchase.buy)`). The check uses the id inside the brackets. The verdicts, positions and hashes are the ones of the bare id.
+The link points at a source line. `keylang map` writes these. You rarely write them by hand. In a flow you may write `step [buy](../map/application.md#application.purchase.buy)`. The check uses the id inside the brackets.
 
-Resolution is global across every `*.md` under the directory you checked (hidden directories, `node_modules` and `target` skipped). A exact declared id wins. Otherwise the longest declared prefix is used. With a snapshot, a module whose members are `complete` yields K001 for an unknown member, and a module whose members are `opaque` yields `unverified`. Without a snapshot, a module that lists no members is opaque, which is why the slide form `infrastructure.config.log` can be a legal alias target. A layer is never opaque, so `domain.aggregate` in the shop example is K001 rather than an unknown member of an opaque module.
+Names are resolved across every `*.md` you checked (hidden directories, `node_modules` and `target` are skipped). An exact id wins. Otherwise the longest declared prefix is used. If the module's members were fully read, an unknown member is K001. If the module is opaque, the member is `unverified`. A layer is never opaque, so `domain.aggregate` in the shop is K001, not "maybe inside an unknown module."
 
-## Keywords depend on the parent
+## The word depends on the parent
 
-The first word is a keyword only when that position allows it. Anywhere else it is an ordinary name, or a K004 if the position requires a keyword.
-
-The positions you write constantly:
+The first word is a keyword only where that position allows it. Anywhere else it is an ordinary name, or K004 if a keyword was required.
 
 | Where | You can write | With no keyword |
 |---|---|---|
@@ -81,13 +73,13 @@ The positions you write constantly:
 | Under a flow step or trigger | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant` | K004 |
 | Under a rules `module <id>` | `exports`, `no-cycles` | K004 |
 
-`test` under a module is a dependency alias, because `test` is reserved only in flows. You cannot name a dependency `fn`, `type`, `event` or `module`. The generator suffixes a colliding alias (`type` becomes `type2`).
+`test` under a module is a nickname for a dependency, because `test` is reserved only in flows. You cannot name a dependency `fn`, `type`, `event` or `module`.
 
-Commas are their own token. `a,b` and `a , b` mean `a, b`. A trailing HTML comment on the line is stored and ignored by the semantics. Quotes that are not closed are K005.
+`a,b` and `a , b` both mean `a, b`. A trailing HTML comment is kept and ignored. A quote that is not closed is K005.
 
-## A shop, written out
+## The shop, written out
 
-This is the shape of `examples/shop-fixed`, condensed. The real files keep the slide prose.
+This is `examples/shop-fixed`, shortened. The real files keep the slide prose.
 
 ```markdown
 # map
@@ -114,7 +106,7 @@ This is the shape of `examples/shop-fixed`, condensed. The real files keep the s
     - checkout application.purchase
 ```
 
-The rules are a separate claim. They do not redeclare the modules:
+The rules are a separate claim. They do not declare the modules again:
 
 ```markdown
 # rules
@@ -133,11 +125,11 @@ The rules are a separate claim. They do not redeclare the modules:
   - no-cycles
 ```
 
-`layers domain < application < presentation` reads as "domain is below application is below presentation". A dependency may point downward. `application` may use `domain`. `domain` may not use `application` (K101). `infrastructure` is nested under the `layers` line, so it is outside the order: edges into it are free unless a `deny` says otherwise, and edges out of it into an ordered layer need an `allow`. The `allow` above is that permission for `infrastructure` → `presentation`.
+Read `layers domain < application < presentation` as "domain is below application is below presentation." A need may point down. `application` may use `domain`. `domain` may not use `application` (K101). `infrastructure` sits under the `layers` line, outside the order. Needs into it are free unless a `deny` says otherwise. Needs out of it into an ordered layer need an `allow`. The `allow` above is that permission.
 
-A description is the indented text under a node, with no bullet. `fmt` moves it to sit directly under the node. `check` does not interpret it.
+A description is indented text under a node, with no bullet. `fmt` moves it to sit directly under the node. `check` does not interpret it.
 
-The flow names the scenario. Steps under a step are nested calls. Sibling steps are a sequence:
+The flow names the scenario. A step under a step is a call inside the parent. Sibling steps are "this, then that":
 
 ```markdown
 # flow checkout
@@ -158,29 +150,29 @@ Purchase from the terminal, through to a stored order.
   - test tests/purchase.test.ts "rejects out of stock"
 ```
 
-`kind` is `business` or `technical`. `trigger` and `step` take one id. `reads` and `calls` take one or more ids. `emits` takes an event name; the optional word `event` is not checked against the map. `invariant` and `when` take free text. `then` is a reference when its only token is an id that contains a dot, and free text otherwise. `test` takes a path and an optional quoted name.
+`kind` is `business` or `technical`. `trigger` and `step` take one id. `reads` and `calls` take one or more. `emits` takes an event name. The optional word `event` is not checked against the map. `invariant` and `when` are free text. `then` is a reference when its only token is an id with a dot, and text otherwise. `test` takes a path and an optional quoted name.
 
-`planned` is an intention, not a snapshot fact:
+`planned` is an intention, not a fact in the snapshot:
 
 ```markdown
 - planned fn application.purchase.refund (id: OrderId) → Promise<void>
 ```
 
-It lives at the top of a flow, or in `keylang/features/<slug>.md`, which `check` reads like any other spec. References to it are not K001. It adds no edge. A package the code does not import yet is `planned module external.<pkg>`. When the parent step's module imports that package, the declaration is K202 and the step is static `ok`. An import from a different module does not make that step `ok`.
+It lives at the top of a flow, or in `keylang/features/<slug>.md`. A reference to it is not K001. It adds no edge. A package the code does not import yet is `planned module external.<pkg>`. When the parent step's own module imports that package, the declaration is K202 and the step is static `ok`. An import from a different module does not make that step `ok`.
 
-## Diagnostics you hit while writing
+## Codes you hit while writing
 
 | Code | Level | You wrote |
 |---|---|---|
 | K001 | error | An id that is not declared |
-| K002 | error | The same id twice, or the same flow name twice. A layer may continue across files; almost nothing else may |
+| K002 | error | The same id twice, or the same flow name twice |
 | K003 | error | Indent, a tab, or an empty item. `fmt` stops |
 | K004 | error | A keyword this position does not allow |
-| K005 | error | The keyword is known and the arguments are wrong, including a bad id, link or quote |
-| K006 | warning | A heading that is not `map`, `rules`, `flow` or `wiring`. The check still passes |
+| K005 | error | The keyword is known and the arguments are wrong |
+| K006 | warning | A heading that is not `map`, `rules`, `flow` or `wiring` |
 
-K001 includes `did you mean …` when a neighbor is close, and it tells you about `planned` when the id might be an intention. Warnings do not fail `check`.
+K001 includes `did you mean …` when a neighbor is close, and it mentions `planned` when the id might be an intention. Warnings do not fail `check`.
 
-`keylang fmt --check` is the way to keep a spec canonical in CI without writing it. Semantic errors do not block formatting. Structural errors do.
+`keylang fmt --check` keeps a spec canonical in CI without writing it. A wrong id does not block formatting. A bad indent does.
 
-Next: [how the map is generated](04-map.md), then [rules](05-rules.md) and [flows](06-flows.md) as checks rather than syntax.
+Next: [the map](04-map.md).
