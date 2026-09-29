@@ -297,6 +297,19 @@ test("check.static in keylang.json is the mode; --static overrides it and names 
   assert.equal(overridden.status, 0, overridden.stdout + overridden.stderr);
   assert.equal(overridden.stdout, untouched.stdout);
 
+  // An unborn repository treats every file as changed, so --changed still names the config.
+  assert.equal(spawnSync("git", ["init"], { cwd: shaped, encoding: "utf8" }).status, 0);
+  const changed = keylang(shaped, ["check", "--changed"]);
+  assert.match(changed.stdout, /not followed in static mode shape, set by keylang\.json check\.static/);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], {
+    cwd: shaped,
+    input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+    encoding: "utf8",
+  });
+  assert.equal(hook.status, 0, hook.stderr);
+  // The shape verdict is unverified, not a fail, so the stop hook does not block.
+  assert.equal(hook.stdout, "{}\n", hook.stdout);
+
   mkdirSync(join(shaped, "keylang/features"), { recursive: true });
   writeFileSync(join(shaped, "keylang/features/hooks.md"), HOOK_FLOW);
   const feature = keylang(shaped, ["feature", "hooks"]);

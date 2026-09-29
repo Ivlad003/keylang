@@ -10,6 +10,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -140,6 +141,33 @@ test("mcp: each call sees sources, specs and evidence changed since the last one
   const broken = await mcp.call("check");
   assert.equal(broken.isError, true);
   assert.match(broken.text, /run\.json: invalid JSON report/);
+});
+
+test("mcp: check.static shape matches check, and editing the field is seen without a restart", async (t) => {
+  const mcp = await connect(t);
+  const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
+  const config = join(mcp.dir, "keylang.json");
+  writeFileSync(config, `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+  for (const [path, text] of Object.entries(HOOKS)) {
+    mkdirSync(dirname(join(mcp.dir, path)), { recursive: true });
+    writeFileSync(join(mcp.dir, path), text);
+  }
+  writeFileSync(join(mcp.dir, "keylang/rules.md"), "# rules\n");
+  writeFileSync(join(mcp.dir, "keylang/flows/hooks.md"), HOOK_FLOW);
+  rmSync(join(mcp.dir, "keylang/flows/checkout.md"));
+  type Row = { criterion: string; verdict: string; evidence: string; area: string };
+  const listed = async (): Promise<Row[]> => (JSON.parse((await mcp.call("check")).text) as { results: Row[] }).results;
+  const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: mcp.dir, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  const viaCli = (JSON.parse(cli.stdout) as { results: Row[] }).results;
+  const stamp = (row: Row): string => `${row.criterion}\t${row.verdict}\t${row.area}\t${row.evidence}`;
+  assert.deepEqual((await listed()).map(stamp), viaCli.map(stamp));
+  assert.ok(viaCli.some((row) => row.criterion === "static" && row.verdict === "unverified" && row.evidence.includes("set by keylang.json check.static")), viaCli.map(stamp).join("\n"));
+
+  writeFileSync(config, `${JSON.stringify({ languages: ["typescript"], layers }, null, 2)}\n`);
+  const behavior = await listed();
+  assert.ok(behavior.some((row) => row.criterion === "static" && row.area === "domain.build.build" && row.verdict === "ok"), behavior.map(stamp).join("\n"));
+  assert.ok(!behavior.some((row) => row.evidence.includes("check.static")), behavior.map(stamp).join("\n"));
 });
 
 test("mcp: check returns the results of `check --format json`", async (t) => {

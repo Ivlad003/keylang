@@ -9,14 +9,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import xterm from "@xterm/headless";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { App } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
 import { checkoutRepo, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -152,6 +154,38 @@ test("web: the socket needs the token, which never leaves the fragment; xterm.js
   assert.equal(accepted.status, 101);
   assert.equal(accepted.headers["sec-websocket-protocol"], "keylang", "the token is not echoed back");
   assert.equal((await status(url, "/", { Host: `evil.example:${url.port}` })).status, 421);
+});
+
+test("web: check.static shape is the same unverified step the terminal shows", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-web-static-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+  for (const [path, text] of Object.entries({ ...HOOKS, "keylang/flows/hooks.md": HOOK_FLOW, "keylang/rules.md": "# rules\n" })) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  const cols = 240;
+  const rows = 24;
+  const terminal = new VirtualTerminal(cols, rows);
+  const app = new App({ root: dir, cols, rows });
+  t.after(() => app.close());
+  app.attach({ kind: "terminal", write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  await app.idle();
+  for (let i = 0; i < 8 && !terminal.text().includes("keylang.json check.static"); i++) app.input(KEY.down);
+  assert.match(terminal.text(), /not followed in static mode shape, set by keylang\.json check\.static/);
+
+  const { url } = await startWeb(t, dir);
+  const client = new Client(url, "static-shape", cols, rows);
+  t.after(() => client.close());
+  await client.opened;
+  await waitFor(() => client.vt.text().includes("domain.build.build") && !/updating|analyzing/.test(client.vt.text()), "the first analysis");
+  for (let i = 0; i < 8 && !client.vt.text().includes("keylang.json check.static"); i++) {
+    const before = client.raw.length;
+    client.input(KEY.down);
+    await waitFor(() => client.raw.length > before, "the cursor moved");
+  }
+  assert.match(client.vt.text(), /not followed in static mode shape, set by keylang\.json check\.static/);
 });
 
 test("web: flow → hover a step → go to the code gives the terminal's screen", async (t) => {
