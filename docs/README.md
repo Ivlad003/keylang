@@ -11,6 +11,7 @@ The guide is the [course](course/README.md). English and Ukrainian say the same 
 | [course/pre/](course/pre/README.md) | The shop, the words and the decisions, before any command |
 | [course/](course/README.md) | How to use the language, with screenshots |
 | [course/uk/](course/uk/README.md) | The same course in Ukrainian |
+<<<<<<< HEAD
 | [course/existing/](course/existing/README.md) | Add a feature or a package to a repository that already exists |
 | [course/from-scratch/](course/from-scratch/README.md) | A Telegram bot, a Python CRUD, and a NestJS app |
 | [format.md](format.md) | Exact grammar and current behavior |
@@ -18,4 +19,5 @@ The guide is the [course](course/README.md). English and Ukrainian say the same 
 | [design.md](design.md) | Target design, including what is not built yet |
 | [research.md](research.md) | Papers and a stack comparison |
 | [research-pl.md](research-pl.md) | keylang through programming-language theory (Ukrainian) |
+| [talk-ai-development-problems.md](talk-ai-development-problems.md) | Slides and proofread transcript of the talk that motivates an executable architecture spec (Russian) |
 | [adr/](adr/) | Accepted decisions |
