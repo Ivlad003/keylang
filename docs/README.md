@@ -15,4 +15,5 @@ The user guide is the [course](course/README.md). English is the language of tha
 | [design.md](design.md) | Target design, including the roadmap |
 | [research.md](research.md) | Papers and stack comparison |
 | [research-pl.md](research-pl.md) | keylang through programming-language theory: category, analogues, review, recommendations, reading list (Ukrainian) |
+| [talk-ai-development-problems.md](talk-ai-development-problems.md) | Slides and proofread transcript of the talk that motivates an executable architecture spec (Russian) |
 | [adr/](adr/) | Accepted decisions (TUI without Ink, the `ws` dependency, wiring lifecycle) |
