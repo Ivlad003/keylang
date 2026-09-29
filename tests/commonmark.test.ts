@@ -326,7 +326,80 @@ test("multiline HTML blocks of types 1–5 are prose, and a rule after them is s
   assert.equal(keylang(dir, ["fmt", "pre.md"]).status, 0);
   assert.equal(readFileSync(join(dir, "pre.md"), "utf8"), pre);
   assert.equal(keylang(dir, ["fmt", "--check", "pre.md"]).status, 0);
+
+  // Types 1–5. A `- deny` and a heading inside the block are not nodes; a rule after the block is.
+  const blocks: [string, string][] = [
+    ["<script>", "</script>"],
+    ["<style>", "</style>"],
+    ["<textarea>", "</textarea>"],
+    ["<?php", "?>"],
+    ["<!DOCTYPE", ">"],
+    ["<![CDATA[", "]]>"],
+  ];
+  for (const [open, close] of blocks) {
+    const text = `# rules\n\n${open}\n- deny a b\n# flow x\n${close}\n\n- deny c d\n`;
+    writeFileSync(join(dir, "keylang/rules.md"), text);
+    const hidden = keylang(dir, ["check", "keylang/rules.md"]);
+    assert.equal(hidden.status, 1, `${open}\n${hidden.stdout}${hidden.stderr}`);
+    assert.match(hidden.stdout, /keylang\/rules\.md:8:8: K001/, open);
+    assert.match(hidden.stdout, /keylang\/rules\.md:8:10: K001/, open);
+    assert.doesNotMatch(hidden.stdout, /:4:/, open);
+    assert.doesNotMatch(hidden.stdout, /:5:/, open);
+    const doc = (JSON.parse(keylang(dir, ["parse", "--json", "keylang/rules.md"]).stdout) as KlDoc[])[0]!;
+    assert.ok(doc.sections.every((s) => s.kind !== "flow"), open);
+    const nodes = doc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));
+    assert.deepEqual(nodes.map((n) => n.span.start.line), [8], open);
+    const prose = doc.sections.flatMap((s) => s.items.filter((i) => i.type === "prose"));
+    assert.ok(prose.some((i) => i.type === "prose" && i.lines.includes("- deny a b")), open);
+  }
 });
+
+test("a type-1 HTML block ends on any of the four end tags, and the following rule is checked", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-html-end-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang"));
+
+  // `</pre>` ends `<script>`: CommonMark's end tag need not match the opener.
+  const crossed = "# rules\n\n<script>\n</pre>\n- deny a b\n</script>\n";
+  writeFileSync(join(dir, "keylang/rules.md"), crossed);
+  const check = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.equal(check.status, 1, check.stdout + check.stderr);
+  assert.match(check.stdout, /keylang\/rules\.md:5:8: K001/);
+  assert.match(check.stdout, /keylang\/rules\.md:5:10: K001/);
+  assert.doesNotMatch(check.stderr, /^0 fail, 0 unverified, 0 ok$/m);
+  const nodes = nodesOf(dir, "keylang/rules.md");
+  assert.deepEqual(nodes.map((n) => n.span.start.line), [5]);
+
+  // A space before `>` is not the end tag, so the rule stays inside the block.
+  const spaced = "# rules\n\n<script>\n</script >\n- deny a b\n</script>\n";
+  writeFileSync(join(dir, "keylang/rules.md"), spaced);
+  const inside = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.equal(inside.status, 0, inside.stdout + inside.stderr);
+  assert.equal(inside.stdout, "");
+  assert.equal(nodesOf(dir, "keylang/rules.md").length, 0);
+
+  // Case does not matter, and `<PRE>` ends on `</TEXTAREA>`.
+  const upper = "# rules\n\n<PRE>\n</TEXTAREA>\n- deny a b\n";
+  writeFileSync(join(dir, "keylang/rules.md"), upper);
+  const upperCheck = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.equal(upperCheck.status, 1, upperCheck.stdout + upperCheck.stderr);
+  assert.match(upperCheck.stdout, /keylang\/rules\.md:5:8: K001/);
+  assert.match(upperCheck.stdout, /keylang\/rules\.md:5:10: K001/);
+
+  // A heading after the end tag opens a flow; it is not swallowed with the block.
+  const flow = "# rules\n\n<style>\n</script>\n# flow pay\n- trigger save\n</style>\n";
+  writeFileSync(join(dir, "keylang/rules.md"), flow);
+  const flowDoc = (JSON.parse(keylang(dir, ["parse", "--json", "keylang/rules.md"]).stdout) as KlDoc[])[0]!;
+  assert.ok(flowDoc.sections.some((s) => s.kind === "flow"));
+  const flowCheck = keylang(dir, ["check", "keylang/rules.md"]);
+  assert.doesNotMatch(flowCheck.stderr, /^0 fail, 0 unverified, 0 ok$/m);
+});
+
+function nodesOf(dir: string, file: string): KlNode[] {
+  const parsed = keylang(dir, ["parse", "--json", file]);
+  const doc = (JSON.parse(parsed.stdout) as KlDoc[])[0]!;
+  return doc.sections.flatMap((s) => s.items.filter((i): i is KlNode => i.type === "node"));
+}
 
 function codeValues(text: string): string[] {
   const out: string[] = [];

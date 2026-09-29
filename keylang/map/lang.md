@@ -111,21 +111,21 @@
       - calls lang.parser.leadingWhitespace
     - fn [dedentFenceLines](../../src/parser.ts#L829) (lines: string[]) → string[]
       - calls lang.parser.openFence, lang.parser.closesFence
-    - fn [htmlBlockStart](../../src/parser.ts#L844) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
-    - fn [isBullet](../../src/parser.ts#L858) (rest: string) → boolean <!-- internal -->
-    - fn [isSegment](../../src/parser.ts#L865) (s: string) → boolean
-    - fn [isId](../../src/parser.ts#L871) (s: string) → boolean
-    - fn [linkTextSpan](../../src/parser.ts#L877) (t: Token) → Span
+    - fn [htmlBlockStart](../../src/parser.ts#L850) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L861) (rest: string) → boolean <!-- internal -->
+    - fn [isSegment](../../src/parser.ts#L868) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L874) (s: string) → boolean
+    - fn [linkTextSpan](../../src/parser.ts#L880) (t: Token) → Span
       - calls lang.parser.parseLink, lang.parser.codePoints
-    - fn [parseLink](../../src/parser.ts#L883) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L886) (t: Token) → Link <!-- internal -->
       - calls lang.parser.decodeLinkPath
-    - fn [decodeLinkPath](../../src/parser.ts#L902) (path: string) → string <!-- internal -->
-    - fn [lex](../../src/parser.ts#L916) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L905) (path: string) → string <!-- internal -->
+    - fn [lex](../../src/parser.ts#L919) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       - calls lang.parser.Line.span, lang.parser.linkEnd
-    - fn [linkEnd](../../src/parser.ts#L975) (s: string, i: number) → number | null <!-- internal -->
-    - fn [renderMeaning](../../src/parser.ts#L989) (node: Node) → string
+    - fn [linkEnd](../../src/parser.ts#L978) (s: string, i: number) → number | null <!-- internal -->
+    - fn [renderMeaning](../../src/parser.ts#L992) (node: Node) → string
       - calls lang.parser.renderTokens
-    - fn [renderTokens](../../src/parser.ts#L995) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L998) (tokens: readonly Token[]) → string
   - module [spec-ir](../../src/spec-ir.ts#L1)
     - config base.config
     - diag base.diag

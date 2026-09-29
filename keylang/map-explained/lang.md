@@ -181,31 +181,31 @@
     - fn [dedentFenceLines](../../src/parser.ts#L829) (lines: string[]) → string[]
       <a id="lang.parser.dedentFenceLines"></a><br>Drop the indent `fmt` owes a fence that was written under a list item. The opener and the closer lose all of their indent; each body line loses as many spaces as the opener had, and never more than it has.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.closesFence](lang.md#lang.parser.closesFence)
-    - fn [htmlBlockStart](../../src/parser.ts#L844) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [htmlBlockStart](../../src/parser.ts#L850) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
       <a id="lang.parser.htmlBlockStart"></a><br>Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line.
-    - fn [isBullet](../../src/parser.ts#L858) (rest: string) → boolean <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L861) (rest: string) → boolean <!-- internal -->
       <a id="lang.parser.isBullet"></a>
-    - fn [isSegment](../../src/parser.ts#L865) (s: string) → boolean
+    - fn [isSegment](../../src/parser.ts#L868) (s: string) → boolean
       <a id="lang.parser.isSegment"></a><br>A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`.
-    - fn [isId](../../src/parser.ts#L871) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L874) (s: string) → boolean
       <a id="lang.parser.isId"></a><br>A dotted ID: `segment(.segment)*`.
-    - fn [linkTextSpan](../../src/parser.ts#L877) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L880) (t: Token) → Span
       <a id="lang.parser.linkTextSpan"></a><br>The span of the text inside `[…]`, the same span a link reference uses.
       - calls [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.codePoints](lang.md#lang.parser.codePoints)
-    - fn [parseLink](../../src/parser.ts#L883) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L886) (t: Token) → Link <!-- internal -->
       <a id="lang.parser.parseLink"></a>
       - calls [lang.parser.decodeLinkPath](lang.md#lang.parser.decodeLinkPath)
-    - fn [decodeLinkPath](../../src/parser.ts#L902) (path: string) → string <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L905) (path: string) → string <!-- internal -->
       <a id="lang.parser.decodeLinkPath"></a><br>Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source.
-    - fn [lex](../../src/parser.ts#L916) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [lex](../../src/parser.ts#L919) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `<!-- … -->` ends the head and is returned separately.
       - calls [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.linkEnd](lang.md#lang.parser.linkEnd)
-    - fn [linkEnd](../../src/parser.ts#L975) (s: string, i: number) → number | null <!-- internal -->
+    - fn [linkEnd](../../src/parser.ts#L978) (s: string, i: number) → number | null <!-- internal -->
       <a id="lang.parser.linkEnd"></a>
-    - fn [renderMeaning](../../src/parser.ts#L989) (node: Node) → string
+    - fn [renderMeaning](../../src/parser.ts#L992) (node: Node) → string
       <a id="lang.parser.renderMeaning"></a><br>What an item's head says, for comparing meaning (a verdict's `specHash`, a rule already written): canonical tokens, with a reference written as a link `[id](href)` counted as its ID, so linking a reference changes nothing.
       - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-    - fn [renderTokens](../../src/parser.ts#L995) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L998) (tokens: readonly Token[]) → string
       <a id="lang.parser.renderTokens"></a><br>Canonical rendering of head tokens: single spaces, `a, b` for commas.
   - module [spec-ir](../../src/spec-ir.ts#L1)
     <a id="lang.spec-ir"></a><br>SpecIR: typed assertions compiled from the text IR. `compileSpec` checks assertion form (a layer order, a wiring condition). Checks that need the snapshot still run later.

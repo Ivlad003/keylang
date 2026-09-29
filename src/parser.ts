@@ -840,13 +840,16 @@ export function dedentFenceLines(lines: string[]): string[] {
   });
 }
 
+/**
+ * Type 1 ends when a line contains `</pre>`, `</script>`, `</style>`, or `</textarea>`.
+ * The tag need not match the opener, case does not matter, and `>` comes straight after the name.
+ */
+const HTML_TYPE1_END = /<\/(?:pre|script|style|textarea)>/i;
+
 /** Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line. */
 function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null {
-  const type1 = /^<(pre|script|style|textarea)(?:[ \t]|>|$)/i.exec(rest);
-  if (type1) {
-    const name = type1[1]!.toLowerCase();
-    const re = new RegExp(`</${name}[ \\t\\n\\f\\r]*>`, "i");
-    return { end: (line) => re.test(line) };
+  if (/^<(?:pre|script|style|textarea)(?:[ \t]|>|$)/i.test(rest)) {
+    return { end: (line) => HTML_TYPE1_END.test(line) };
   }
   if (rest.startsWith("<!--")) return { end: (line) => line.includes("-->") };
   if (rest.startsWith("<?")) return { end: (line) => line.includes("?>") };
