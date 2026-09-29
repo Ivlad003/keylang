@@ -967,13 +967,17 @@ function changedPathSet(root: string, files: ReadonlySet<string>, cwd: string): 
 
 /** Files changed since `ref` in the working tree, plus files git does not track yet. `deleted` are paths removed versus `ref`. Paths are relative to `root`. */
 function gitChangedFiles(root: string, ref: string): { paths: Set<string>; deleted: string[] } {
-  const git = (args: string[]): string => {
-    const out = spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const run = (args: string[], input?: string) => spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, input, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const git = (args: string[], input?: string): string => {
+    const out = run(args, input);
     if (out.error) throw new Error(`check --changed: git is not available (${out.error.message})`);
     if (out.status !== 0) throw new Error(`check --changed: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
     return out.stdout;
   };
-  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", ref, "--"]);
+  // Before the first commit there is no HEAD and every file is new: compare with the empty tree.
+  const unborn = ref === "HEAD" && run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0;
+  const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"], "").trim() : ref;
+  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base, "--"]);
   const deleted = deletedDiffPaths(diff);
   const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
   for (const file of git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0")) if (file !== "") paths.add(file);

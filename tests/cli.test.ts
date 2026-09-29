@@ -1728,6 +1728,27 @@ test("check --changed filters to the touched files; hook stop blocks once and wr
   assert.notEqual(JSON.parse(clean.stdout).decision, "block");
 });
 
+test("check --changed and hook stop in a repository without commits: every file is changed, not a git error", (t) => {
+  const dir = tempDir(t, "keylang-unborn-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n',
+    "src/domain/order.ts": ORDER,
+    "keylang/rules.md": "# rules\n\n- deny app domain\n",
+  });
+  git(dir, ["init"]);
+  const untracked = keylang(dir, ["check", "--changed"]);
+  assert.equal(untracked.status, 1, untracked.stderr);
+  assert.match(untracked.stdout, /K102/);
+  git(dir, ["add", "."]);
+  const staged = keylang(dir, ["check", "--changed"]);
+  assert.equal(staged.status, 1, staged.stderr);
+  assert.match(staged.stdout, /K102/);
+  const hook = spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }), encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.equal(JSON.parse(hook.stdout).decision, "block");
+});
+
 test("planned module external.<pkg> is static ok only from the importing parent module", (t) => {
   const feature = "# flow pay\n\n- planned module external.stripe\n- trigger app.pay.charge\n  - step external.stripe\n";
   const dir = tempDir(t, "keylang-external-");

@@ -197,33 +197,33 @@
       - calls base.config.toPosix
     - fn [gitChangedFiles](../../src/cli.ts#L969) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
       - calls features.draft.deletedDiffPaths, features.draft.diffHunks
-    - fn [deletedModuleIds](../../src/cli.ts#L984) (config: Config, files: readonly string[]) → string[] <!-- internal -->
+    - fn [deletedModuleIds](../../src/cli.ts#L988) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       - calls map.graph.placeFile
-    - fn [cmdMap](../../src/cli.ts#L995) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L999) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.map.diffMap, base.config.toPosix, map.map.writeMap
-    - fn [keylangFiles](../../src/cli.ts#L1035) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+    - fn [keylangFiles](../../src/cli.ts#L1039) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation
-    - fn [cmdParse](../../src/cli.ts#L1051) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1055) (paths: string[], json: boolean) → number <!-- internal -->
       - calls cli.cli.keylangFiles, lang.parser.parse, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1062) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1066) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, cli.cli.gitChangedFiles, cli.cli.changedPathSet, cli.cli.deletedModuleIds, features.changed.filterChanged, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L1112) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1116) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       - calls base.span.compareText
-    - fn [writeCheck](../../src/cli.ts#L1146) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1150) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleOf](../../src/cli.ts#L1191) (result: CheckResult) → string <!-- internal -->
-    - fn [ruleText](../../src/cli.ts#L1203) (id: string) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1195) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1207) (id: string) → string <!-- internal -->
       - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L1209) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L1213) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1213) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1217) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L1222) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1226) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L1260) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1264) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L1268) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1272) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
-    - fn [gitChanges](../../src/cli.ts#L1281) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1285) (root: string, ref: string) → ChangedLines <!-- internal -->
       - calls features.draft.diffHunks
   - module [index](../../src/index.ts#L1)
     - diag base.diag
