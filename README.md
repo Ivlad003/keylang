@@ -4,7 +4,7 @@
 
 ![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-Architecture description that lives in the repository as ordinary Markdown: a generated map of layers and modules, hand-written dependency rules, and logic flows, all checked against the code. The teaching guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). If the architecture words are new, start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The normative grammar is [`docs/format.md`](docs/format.md) (Ukrainian). The target design is [`docs/design.md`](docs/design.md); the research notes are [`docs/research.md`](docs/research.md).
+Architecture description that lives in the repository as ordinary Markdown: a generated map of layers and modules, hand-written dependency rules, and logic flows, all checked against the code. The teaching guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). If the architecture words are new, start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The normative grammar is [`docs/format.md`](docs/format.md) (Ukrainian). The target design is [`docs/design.md`](docs/design.md); the research notes are [`docs/research.md`](docs/research.md), and the language-theory review is [`docs/research-pl.md`](docs/research-pl.md) (Ukrainian).
 
 Stack: Node.js ≥ 22.18 and TypeScript. In this checkout Node runs `.ts` directly (`node bin/keylang.js`). Before publish, `prepack` compiles `src/` to `dist/` and rewrites relative `.ts` imports to `.js`. An installed package loads that JavaScript and compiles nothing on the user's machine. Distribution is npm / npx. No native compilation.
 
@@ -55,6 +55,39 @@ keylang checks claims about structure and about evidence you attached. It does n
 - Useful flow evidence beyond "this id exists and a static call path reaches it" needs a test report and a trace from the same snapshot. A stale trace is `unverified`, as in the screenshots below.
 - Four languages, each with stated blind spots. Other languages are out of scope.
 - Exit code 0 means "no blocking finding". Without `--strict` it still allows `unverified`.
+
+## What kind of language it is
+
+keylang is a declarative, external domain-specific language, not a programming language. It has no variables, functions, loops or expressions, so every spec is finite and can be analyzed completely. Its host is a narrow slice of Markdown: a list nested by two-space indentation, where a first-level heading names the kind of section. By family it is an architecture description language for the module-and-dependency view, joined to architecture conformance checking in the reflexion-model tradition, plus scenarios bound to tests. It grew out of the Markdown form of Timur Shemsedinov's architecture language.
+
+Features in programming-language terms:
+
+| Feature | In keylang |
+|---|---|
+| Contextual keywords | A word is a keyword only where its parent allows it. Under a module, `test` is a dependency alias |
+| Error-recovering parser | A bad line becomes an `unknown` node with a K-code, and parsing goes on |
+| IR with exact spans | Every keyword, name and reference has a span: UTF-16 offsets, columns in code points |
+| Static, global name resolution | Absolute dotted ids across files. No scopes or shadowing. A miss says `did you mean` |
+| Typed holes | `planned fn … (order: Order) → Promise<Refund>` declares a gap. K201/K202 check how it was filled |
+| Three-valued semantics | `ok`, `fail`, `unverified`. Missing evidence is never promoted to `ok` |
+| Relational rules | A partial order of layers, the most specific `allow` / `deny`, reachability from `entry`, strongly connected components for `no-cycles` |
+| Tree patterns over calls | A flow's nested steps are matched against the call graph (`static`) and one test's call tree (`trace`) |
+| Canonical form | `keylang fmt` is idempotent. It refuses to reformat a file whose nesting it cannot trust |
+| Stable diagnostic codes | K001–K302, each explained by `keylang explain` |
+| Code generation | `# wiring` compiles to a typed TypeScript `wire()` |
+
+Closest relatives:
+
+| Tool or language | Shared | Different |
+|---|---|---|
+| import-linter (Python), dependency-cruiser (JS/TS) | Layer, forbidden-dependency and cycle rules on the import graph | Rules live in a config file for one ecosystem. keylang keeps them in reviewable Markdown next to a generated map, across four languages, and adds flows |
+| ArchUnit (Java) | Layered-architecture and cycle checks | An embedded DSL: the rules are Java test code |
+| Structurizr DSL, LikeC4 (C4 model) | Architecture as text under version control | They describe the intended architecture for diagrams. keylang generates the map from code and checks the rules against it |
+| Gherkin / Cucumber | Plain-text scenarios tied to tests | A keylang step is a function id checked against the call graph and a trace, not text matched to a step definition |
+| Reflexion models, DCL, Dicto (research) | A model, a mapping and code facts; the convergence / divergence / absence vocabulary | Research prototypes. keylang adds the editor, CI and agent loop |
+| Starlark, Dhall, CUE | Deliberately limited declarative languages with static name resolution | A different job (configuration). Related by design philosophy, not by subject |
+
+The review behind this section, the open problems in the semantics, recommended next steps and a reading list are in [`docs/research-pl.md`](docs/research-pl.md) (Ukrainian).
 
 ## Screenshots
 

@@ -14,4 +14,5 @@ The user guide is the [course](course/README.md). English is the language of tha
 | [format.md](format.md) | Normative grammar and current behavior |
 | [design.md](design.md) | Target design, including the roadmap |
 | [research.md](research.md) | Papers and stack comparison |
+| [research-pl.md](research-pl.md) | keylang through programming-language theory: category, analogues, review, recommendations, reading list (Ukrainian) |
 | [adr/](adr/) | Accepted decisions (TUI without Ink, the `ws` dependency, wiring lifecycle) |
