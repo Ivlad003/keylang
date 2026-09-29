@@ -13,9 +13,9 @@ The tree of the map with a brief under each node: the documentation comment from
 | [extract](extract.md) |  | 109 | 0 | 0 | 64 |
 | [features](features.md) |  | 137 | 0 | 0 | 95 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
-| [map](map.md) |  | 104 | 0 | 0 | 129 |
+| [map](map.md) |  | 105 | 0 | 0 | 130 |
 | [tui](tui.md) |  | 151 | 0 | 0 | 176 |
-| **all** | | 725 | 0 | 0 | 752 |
+| **all** | | 726 | 0 | 0 | 753 |
 
 ## Index
 

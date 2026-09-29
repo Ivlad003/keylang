@@ -36,19 +36,25 @@
     - node [external.node](external.md#external.node)
     - smol-toml [external.smol-toml](external.md#external.smol-toml)
     - config [base.config](base.md#base.config)
-    - fn [declaredExternalIds](../../src/declared-packages.ts#L11) (root: string) → ReadonlySet<string>
+    - fn [declaredExternalIds](../../src/declared-packages.ts#L16) (root: string) → ReadonlySet<string>
       <a id="map.declared-packages.declaredExternalIds"></a><br>`external.<segment>` for every package declared in a JS or Rust manifest under `root`.
       - calls [base.config.layerName](base.md#base.config.layerName), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.readText](map.md#map.declared-packages.readText), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates)
-    - fn [readText](../../src/declared-packages.ts#L35) (path: string) → string | null <!-- internal -->
-      <a id="map.declared-packages.readText"></a>
-    - fn [isRecord](../../src/declared-packages.ts#L43) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [readText](../../src/declared-packages.ts#L41) (path: string, rel: string) → string <!-- internal -->
+      <a id="map.declared-packages.readText"></a><br>The file is there but cannot be read. That is not the same error as invalid contents.
+    - fn [isRecord](../../src/declared-packages.ts#L50) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.declared-packages.isRecord"></a>
-    - fn [addPackages](../../src/declared-packages.ts#L48) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L54) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
+      <a id="map.declared-packages.table"></a>
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
+    - fn [addPackages](../../src/declared-packages.ts#L61) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
       <a id="map.declared-packages.addPackages"></a><br>`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`.
-      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
-    - fn [addCrates](../../src/declared-packages.ts#L65) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table)
+    - fn [addCrates](../../src/declared-packages.ts#L77) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
       <a id="map.declared-packages.addCrates"></a><br>`[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`.
-      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table), [map.declared-packages.crateTables](map.md#map.declared-packages.crateTables)
+    - fn [crateTables](../../src/declared-packages.ts#L100) (rel: string, source: Record<string, unknown>, prefix: string) → Record<string, unknown>[] <!-- internal -->
+      <a id="map.declared-packages.crateTables"></a>
+      - calls [map.declared-packages.table](map.md#map.declared-packages.table)
   - module [emit](../../src/emit.ts#L1)
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
     - node [external.node](external.md#external.node)

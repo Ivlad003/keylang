@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -246,6 +246,151 @@ test("specHash is the rule line, and one hash for a connected order", (t) => {
   const changed = check(bare).results.find((row) => row.evidence === "no snapshot");
   assert.notEqual(changed?.specHash, snap?.specHash);
   assert.equal(changed?.specHash, sha("deny app infra"));
+});
+
+test("a layers or entry line hashes its own text; K101, K103, and a module's entry unverified hash every line", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ a: "src/a/**", b: "src/b/**", c: "src/c/**" }),
+    "src/a/x.ts": "export function x(): void {}\n",
+    "src/b/m.ts": "export function m(): void {}\n",
+    "src/c/y.ts": 'import { x } from "../a/x.ts";\nexport function y(): void {\n  x();\n}\n',
+    "keylang/rules.md": "# rules\n\n- layers a < b\n- layers b < c\n",
+  });
+  const down = check(dir);
+  assert.equal(down.status, 0, down.stdout);
+  const ab = down.results.find((row) => row.criterion === "layers a < b");
+  const bc = down.results.find((row) => row.criterion === "layers b < c");
+  assert.equal(ab?.verdict, "ok", down.stdout);
+  assert.equal(bc?.verdict, "ok", down.stdout);
+  assert.equal(ab?.specHash, sha("layers a < b"));
+  assert.equal(bc?.specHash, sha("layers b < c"));
+  assert.notEqual(ab?.specHash, sha("layers a < b\nlayers b < c"));
+
+  write(dir, "keylang.json", config({ a: "src/a/**", b: "src/b/**", c: "src/c/**" }, { exclude: ["src/a/x.ts"] }));
+  const holed = check(dir);
+  const abHole = holed.results.find((row) => row.criterion === "layers a < b");
+  const bcHole = holed.results.find((row) => row.criterion === "layers b < c");
+  assert.equal(abHole?.verdict, "unverified", holed.stdout);
+  assert.equal(bcHole?.verdict, "unverified", holed.stdout);
+  assert.match(abHole?.evidence ?? "", /src\/a\/x\.ts:1:1/);
+  assert.equal(abHole?.specHash, sha("layers a < b"));
+  assert.equal(bcHole?.specHash, sha("layers b < c"));
+
+  write(dir, "keylang.json", config({ a: "src/a/**", b: "src/b/**", c: "src/c/**" }));
+  write(dir, "src/a/x.ts", 'import { y } from "../c/y.ts";\nexport function x(): void {\n  y();\n}\n');
+  const up = check(dir);
+  const failures = up.results.filter((row) => row.code === "K101");
+  assert.ok(failures.length > 0, up.stdout);
+  assert.ok(failures.every((row) => row.specHash === sha("layers a < b\nlayers b < c")), up.stdout);
+  assert.ok(!up.results.some((row) => row.criterion.startsWith("layers") && row.verdict === "ok"), up.stdout);
+
+  const entered = repo(t, {
+    "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/domain/d.ts": "export function d(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- entry\n  - app.a\n- entry\n  - domain.d\n",
+  });
+  const reached = check(entered);
+  assert.equal(reached.status, 0, reached.stdout);
+  const appEntry = reached.results.find((row) => row.criterion === "entry" && row.line === 3);
+  const domainEntry = reached.results.find((row) => row.criterion === "entry" && row.line === 5);
+  assert.equal(appEntry?.verdict, "ok", reached.stdout);
+  assert.equal(domainEntry?.verdict, "ok", reached.stdout);
+  assert.equal(appEntry?.specHash, sha("entry app.a"));
+  assert.equal(domainEntry?.specHash, sha("entry domain.d"));
+  assert.notEqual(appEntry?.specHash, sha("entry app.a\nentry domain.d"));
+
+  write(entered, "keylang.json", config({ app: "src/app/**", domain: "src/domain/**", other: "src/other/**" }));
+  write(entered, "src/other/z.ts", "export function z(): void {}\n");
+  write(entered, "keylang/rules.md", "# rules\n\n- layers app < other\n- entry\n  - app.a\n- entry\n  - domain.d\n");
+  const absent = check(entered);
+  const k103 = absent.results.find((row) => row.code === "K103");
+  assert.ok(k103, absent.stdout);
+  assert.equal(k103.file, "src/other/z.ts");
+  assert.equal(k103.specHash, sha("entry app.a\nentry domain.d"));
+  assert.notEqual(k103.specHash, sha("entry app.a"));
+
+  write(entered, "src/app/a.ts", 'import { missing } from "./missing.ts";\nexport function a(): void {}\n');
+  const blocked = check(entered);
+  const moduleHole = blocked.results.find((row) => row.file === "src/other/z.ts" && row.criterion === "entry" && row.verdict === "unverified");
+  assert.ok(moduleHole, blocked.stdout);
+  assert.match(moduleHole.evidence, /not reached, but/);
+  assert.equal(moduleHole.specHash, sha("entry app.a\nentry domain.d"));
+  assert.equal(blocked.results.some((row) => row.code === "K103"), false, blocked.stdout);
+
+  const sealed = repo(t, {
+    "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/domain/d.ts": "export function d(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- entry\n  - app.a\n- entry\n  - domain.d\n",
+  });
+  const hidden = join(sealed, "src/app/sealed");
+  mkdirSync(hidden);
+  chmodSync(hidden, 0);
+  t.after(() => {
+    try {
+      chmodSync(hidden, 0o755);
+    } catch {
+      // The repository copy is already removed.
+    }
+  });
+  const unread = check(sealed);
+  const onEntry = unread.results.filter((row) => row.criterion === "entry" && row.file === "keylang/rules.md");
+  assert.equal(onEntry.length, 2, unread.stdout);
+  assert.ok(onEntry.every((row) => row.verdict === "unverified" && /every known module is reachable/.test(row.evidence)), unread.stdout);
+  assert.equal(onEntry.find((row) => row.line === 3)?.specHash, sha("entry app.a"));
+  assert.equal(onEntry.find((row) => row.line === 5)?.specHash, sha("entry domain.d"));
+  assert.notEqual(onEntry[0]?.specHash, sha("entry app.a\nentry domain.d"));
+  chmodSync(hidden, 0o755);
+});
+
+test("a broken manifest names the file and the field; a missing manifest is not that error", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/a.ts": "export function a(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- module app.a\n",
+    "package.json": "{ not json\n",
+  });
+  const json = keylang(dir, ["check", "keylang"]);
+  assert.equal(json.status, 2, json.stderr);
+  assert.match(json.stderr, /package\.json: invalid JSON/);
+  assert.doesNotMatch(json.stderr, /cannot read/);
+
+  write(dir, "package.json", `${JSON.stringify({ dependencies: "pg" })}\n`);
+  const field = keylang(dir, ["check", "keylang"]);
+  assert.equal(field.status, 2, field.stderr);
+  assert.match(field.stderr, /package\.json: `dependencies` must be an object, got "pg"/);
+
+  rmSync(join(dir, "package.json"));
+  const missing = keylang(dir, ["check", "keylang"]);
+  assert.notEqual(missing.status, 2, missing.stderr);
+  assert.doesNotMatch(missing.stderr, /package\.json/);
+
+  write(dir, "package.json", `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`);
+  write(dir, "Cargo.toml", '[package]\nname = "demo"\nversion = "0.0.0"\n\n[dependencies]\nserde = "1"\n');
+  chmodSync(join(dir, "Cargo.toml"), 0);
+  t.after(() => {
+    try {
+      chmodSync(join(dir, "Cargo.toml"), 0o644);
+    } catch {
+      // The file is already gone when the directory is removed.
+    }
+  });
+  const unread = keylang(dir, ["check", "keylang"]);
+  assert.equal(unread.status, 2, unread.stderr);
+  assert.match(unread.stderr, /Cargo\.toml: cannot read/);
+  assert.doesNotMatch(unread.stderr, /invalid TOML/);
+  chmodSync(join(dir, "Cargo.toml"), 0o644);
+
+  write(dir, "Cargo.toml", "[package\nname = \"demo\"\n");
+  const toml = keylang(dir, ["check", "keylang"]);
+  assert.equal(toml.status, 2, toml.stderr);
+  assert.match(toml.stderr, /Cargo\.toml: invalid TOML/);
+
+  write(dir, "Cargo.toml", 'dependencies = "serde"\n\n[package]\nname = "demo"\nversion = "0.0.0"\n');
+  const crate = keylang(dir, ["check", "keylang"]);
+  assert.equal(crate.status, 2, crate.stderr);
+  assert.match(crate.stderr, /Cargo\.toml: `dependencies` must be a table, got "serde"/);
 });
 
 test("an opaque reference on a deny line shares that line's specHash", (t) => {

@@ -228,67 +228,67 @@
     - fn [evaluateOnSnapshot](../../src/rules.ts#L149) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
       <a id="check.rules.evaluateOnSnapshot"></a>
       - calls [check.rules.base](check.md#check.rules.base), [check.rules.ruleHits](check.md#check.rules.ruleHits), [check.rules.decide](check.md#check.rules.decide), [check.rules.crossRules](check.md#check.rules.crossRules), [check.rules.layerViolation](check.md#check.rules.layerViolation), [check.rules.incomparableAside](check.md#check.rules.incomparableAside), [check.rules.componentSpec](check.md#check.rules.componentSpec), [check.rules.layerComponent](check.md#check.rules.layerComponent), [check.rules.overrideEvidence](check.md#check.rules.overrideEvidence), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.pointAt](check.md#check.rules.pointAt), [check.rules.hashText](check.md#check.rules.hashText), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [check.scc.cycleThrough](check.md#check.scc.cycleThrough)
-    - fn [layerViolation](../../src/rules.ts#L512) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L511) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
       <a id="check.rules.layerViolation"></a><br>Why a dependency between two layers breaks the layer orders, or null.
-    - fn [layerComponent](../../src/rules.ts#L521) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L520) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
       <a id="check.rules.layerComponent"></a><br>Layers joined to `layer` by the undirected partial order, including `layer` itself.
-    - fn [componentSpec](../../src/rules.ts#L535) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L534) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       <a id="check.rules.componentSpec"></a><br>Canonical texts of the `layers` lines in `layer`'s connected order, one hash input.
       - calls [check.rules.layerComponent](check.md#check.rules.layerComponent)
-    - type [RuleHit](../../src/rules.ts#L544) <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L543) <!-- internal -->
       <a id="check.rules.RuleHit"></a>
-    - type [OverrideNote](../../src/rules.ts#L552) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L551) <!-- internal -->
       <a id="check.rules.OverrideNote"></a>
-    - fn [ruleHits](../../src/rules.ts#L562) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L561) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       <a id="check.rules.ruleHits"></a><br>Every allow or deny that matches the edge, scored by the deepest target it names.
       - calls [check.rules.scopeDepth](check.md#check.rules.scopeDepth)
-    - fn [byHit](../../src/rules.ts#L585) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L584) (a: RuleHit, b: RuleHit) → number <!-- internal -->
       <a id="check.rules.byHit"></a>
-    - fn [dominates](../../src/rules.ts#L591) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L590) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.dominates"></a><br>`a` is strictly more specific than `b`: neither of its areas is wider, and one is narrower.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [crossRules](../../src/rules.ts#L598) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L597) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.crossRules"></a><br>One rule is narrower on the source and the other on the target.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [areaWithin](../../src/rules.ts#L606) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L605) (id: string, scope: string) → boolean <!-- internal -->
       <a id="check.rules.areaWithin"></a>
-    - fn [decide](../../src/rules.ts#L614) (hits: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [decide](../../src/rules.ts#L613) (hits: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       <a id="check.rules.decide"></a><br>Format 1: the greatest depth sum, and every `deny` on that sum. Format 2: drop dominated hits; any undominated `deny` wins (deny-overrides).
       - calls [check.rules.dominates](check.md#check.rules.dominates)
-    - fn [incomparableAside](../../src/rules.ts#L627) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L626) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       <a id="check.rules.incomparableAside"></a>
       - calls [check.rules.crossRules](check.md#check.rules.crossRules)
-    - fn [overrideEvidence](../../src/rules.ts#L644) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L643) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
       <a id="check.rules.overrideEvidence"></a>
-    - fn [incomparableWarnings](../../src/rules.ts#L658) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L657) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       <a id="check.rules.incomparableWarnings"></a><br>One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin), [check.rules.scopeDepth](check.md#check.rules.scopeDepth), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [canonicalRuleSpec](../../src/rules.ts#L702) (spec: SpecIR, file: string, line: number) → string | null
-      <a id="check.rules.canonicalRuleSpec"></a><br>Canonical text of the rule line at `file:line`, or null when that line is not a rule. A layers line uses its connected order; an entry line uses every entry line.
-      - calls [check.rules.collectRules](check.md#check.rules.collectRules), [check.rules.componentSpec](check.md#check.rules.componentSpec)
-    - fn [noSnapshotSpec](../../src/rules.ts#L723) (spec: SpecIR) → string
+    - fn [canonicalRuleSpec](../../src/rules.ts#L701) (spec: SpecIR, file: string, line: number) → string | null
+      <a id="check.rules.canonicalRuleSpec"></a><br>Canonical text of the rule line at `file:line`, or null when that line is not a rule. K101, K103, and an unreachable module's entry verdict hash several lines themselves.
+      - calls [check.rules.collectRules](check.md#check.rules.collectRules)
+    - fn [noSnapshotSpec](../../src/rules.ts#L718) (spec: SpecIR) → string
       <a id="check.rules.noSnapshotSpec"></a><br>Every rule line of the specs, valid or not, joined in file and line order. The hash of `no snapshot`.
-    - fn [scopeDepth](../../src/rules.ts#L733) (id: string) → number
+    - fn [scopeDepth](../../src/rules.ts#L728) (id: string) → number
       <a id="check.rules.scopeDepth"></a><br>How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters.
-    - fn [specific](../../src/rules.ts#L744) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [specific](../../src/rules.ts#L739) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       <a id="check.rules.specific"></a><br>The rule that decides `from → to` in format 1: the one whose scopes are deepest in total (`deny app.purchase domain` and `allow app domain.store` both 3), a `deny` on a tie. Format 2 keeps every undominated rule and lets any undominated `deny` win (deny-overrides), so an…
       - calls [check.rules.decide](check.md#check.rules.decide), [check.rules.ruleHits](check.md#check.rules.ruleHits)
-    - type [EvaluatedRules](../../src/rules.ts#L750) <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L745) <!-- internal -->
       <a id="check.rules.EvaluatedRules"></a>
-    - fn [collectRules](../../src/rules.ts#L771) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L766) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       <a id="check.rules.collectRules"></a>
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.combineOrders](check.md#check.rules.combineOrders)
-    - fn [combineOrders](../../src/rules.ts#L829) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L824) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       <a id="check.rules.combineOrders"></a><br>All `layers` lines as one partial order: `a < b` and `b < c` put `c` above `a`, while `a < b` and `c < d` say nothing about `a` and `d`. A line that contradicts the lines before it is K005 and left out.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.transitive](check.md#check.rules.transitive)
-    - fn [transitive](../../src/rules.ts#L859) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L854) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="check.rules.transitive"></a>
-    - fn [pointAt](../../src/rules.ts#L876) (line: number, col: number) → Span <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L871) (line: number, col: number) → Span <!-- internal -->
       <a id="check.rules.pointAt"></a><br>A one-column span at a code position (a rule finding has no source offset).
-    - fn [base](../../src/rules.ts#L881) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L876) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       <a id="check.rules.base"></a><br>`spec` is the rule as written; its hash changes when the rule does.
       - calls [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [hashText](../../src/rules.ts#L885) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L880) (text: string) → string <!-- internal -->
       <a id="check.rules.hashText"></a>
   - module [scc](../../src/scc.ts#L1)
     <a id="check.scc"></a><br>Strongly connected components of a directed module graph. A component is cyclic when it has two or more modules, or a self-loop.

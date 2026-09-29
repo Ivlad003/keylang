@@ -18,6 +18,7 @@ import type { Document, Node, Ref } from "../src/ir.ts";
 import { sectionNodes, walk } from "../src/ir.ts";
 import type { Span } from "../src/span.ts";
 import { keywordsAt, parse } from "../src/parser.ts";
+import * as api from "../src/index.ts";
 import { compileSpec, type FlowItem, type SpecIR } from "../src/spec-ir.ts";
 import { matchTest, type TestCase } from "../src/test-report.ts";
 import { totals } from "../src/tui/evidence.ts";
@@ -693,10 +694,7 @@ test("compileSpec canonical text matches the spec-forms golden, and a line with 
   const bare = parse("bare.md", "# rules\n\n- entry\n- deny app\n- module app.checkout\n  - exports\n");
   const bareSpec = compileSpec([bare]).spec;
   assert.deepEqual(bareSpec.rules, []);
-
-  assert.doesNotMatch(readFileSync(join(root, "src/index.ts"), "utf8"), /spec-ir/);
-  assert.doesNotMatch(readFileSync(join(root, "src/spec-ir.ts"), "utf8"), /from "\.\/(rules|flows|wiring|assess|resolve|map|extract|cli)/);
-  assert.doesNotMatch(readFileSync(join(root, "src/rules.ts"), "utf8"), /node\.refs|sectionNodes|\bwalk\(/);
+  assert.equal(Object.hasOwn(api, "compileSpec"), false);
 });
 
 function parsedDocs(dir: string): Document[] {

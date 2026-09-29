@@ -301,7 +301,6 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     if (order.layers.some((layer) => violated.has(layer))) continue;
     // The area is the whole connected order, plus every layer that is in no order (nested, external, unassigned).
     const component = layerComponent(rules, order.layers[0] ?? "");
-    const spec = componentSpec(rules, order.layers[0] ?? "");
     const area = [...units].filter((id) => {
       const layer = layerOf(id);
       return component.has(layer) || !rules.ordered.has(layer);
@@ -320,8 +319,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       .sort();
     const uniqueAllows = [...new Set(allows)];
     const allowed = uniqueAllows.length > 0 ? ` or is allowed by ${uniqueAllows.map((text) => `\`${text}\``).join(", ")}` : "";
-    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`, spec);
-    else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, spec);
+    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`, order.text);
+    else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, order.text);
   }
 
   for (const deny of rules.denies) {
@@ -394,9 +393,9 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       }
     }
     if (unreached === 0 && unknownModules !== null) {
-      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entrySpec);
+      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entry.text);
     } else if (unreached === 0) {
-      for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entrySpec);
+      for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entry.text);
     }
   }
 
@@ -697,19 +696,15 @@ function incomparableWarnings(rules: EvaluatedRules, format: RuleFormat): Diagno
 
 /**
  * Canonical text of the rule line at `file:line`, or null when that line is not a rule.
- * A layers line uses its connected order; an entry line uses every entry line. One line is itself.
+ * K101, K103, and an unreachable module's entry verdict hash several lines themselves.
  */
 export function canonicalRuleSpec(spec: SpecIR, file: string, line: number): string | null {
   const rules = collectRules(spec, () => undefined);
   const here = (span: Span, path: string): boolean => path === file && span.start.line === line;
-  if (rules.entryNodes.some((entry) => here(entry.span, entry.file))) {
-    return [...rules.entryNodes]
-      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.span.start.line - b.span.start.line))
-      .map((entry) => entry.text)
-      .join("\n");
-  }
+  const entry = rules.entryNodes.find((item) => here(item.span, item.file));
+  if (entry) return entry.text;
   const order = rules.orders.find((item) => here(item.span, item.file));
-  if (order) return componentSpec(rules, order.layers[0] ?? "");
+  if (order) return order.text;
   const rule = [...rules.denies, ...rules.allows].find((item) => here(item.span, item.file));
   if (rule) return rule.text;
   const cycle = rules.noCycles.find((item) => here(item.span, item.file));

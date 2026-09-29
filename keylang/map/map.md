@@ -26,14 +26,18 @@
     - node external.node
     - smol-toml external.smol-toml
     - config base.config
-    - fn [declaredExternalIds](../../src/declared-packages.ts#L11) (root: string) → ReadonlySet<string>
+    - fn [declaredExternalIds](../../src/declared-packages.ts#L16) (root: string) → ReadonlySet<string>
       - calls base.config.layerName, map.declared-packages.addPackages, map.declared-packages.readText, map.declared-packages.addCrates
-    - fn [readText](../../src/declared-packages.ts#L35) (path: string) → string | null <!-- internal -->
-    - fn [isRecord](../../src/declared-packages.ts#L43) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [addPackages](../../src/declared-packages.ts#L48) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+    - fn [readText](../../src/declared-packages.ts#L41) (path: string, rel: string) → string <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L50) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L54) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
       - calls map.declared-packages.isRecord
-    - fn [addCrates](../../src/declared-packages.ts#L65) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
-      - calls map.declared-packages.isRecord
+    - fn [addPackages](../../src/declared-packages.ts#L61) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
+      - calls map.declared-packages.isRecord, map.declared-packages.table
+    - fn [addCrates](../../src/declared-packages.ts#L77) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
+      - calls map.declared-packages.isRecord, map.declared-packages.table, map.declared-packages.crateTables
+    - fn [crateTables](../../src/declared-packages.ts#L100) (rel: string, source: Record<string, unknown>, prefix: string) → Record<string, unknown>[] <!-- internal -->
+      - calls map.declared-packages.table
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - explanations map.explanations
