@@ -4,29 +4,11 @@
 // read specs and snapshot nodes only; the generated code is checked as code.
 
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { sectionNodes, type Document, type Token } from "./ir.ts";
 import { languageOf } from "./languages.ts";
+import type { RuleFormat } from "./config.ts";
 import { denyingRule } from "./rules.ts";
 import type { Span } from "./span.ts";
-
-export interface WireDep {
-  /** Name of the dependency in the factory's argument object. */
-  name: string;
-  /** Default implementation. */
-  target: string;
-  /** `when env.NAME = value → id`, in the order written. */
-  when: { env: string; value: string; target: string; span: Span }[];
-  /** `compose id` decorators, innermost first. */
-  compose: { target: string; span: Span }[];
-  span: Span;
-}
-
-export interface Wire {
-  target: string;
-  deps: WireDep[];
-  file: string;
-  span: Span;
-}
+import { type SpecIR, type Wire } from "./spec-ir.ts";
 
 /** What the wiring checks read of the snapshot; `check` does not import `map`. */
 export interface WiringView {
@@ -48,59 +30,6 @@ export interface WireImport {
   member?: string;
 }
 
-const CONDITION = /^env\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\S+)$/;
-
-/** Wires of every `# wiring` section, with K005 for a malformed `when` condition. */
-export function collectWiring(docs: readonly Document[]): { wires: Wire[]; diagnostics: Diagnostic[] } {
-  const wires: Wire[] = [];
-  const diagnostics: Diagnostic[] = [];
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "wiring") continue;
-      for (const node of sectionNodes(section)) {
-        const target = node.kind === "wire" ? node.refs[0]?.target : undefined;
-        if (!target) continue;
-        const deps: WireDep[] = [];
-        for (const child of node.children) {
-          const depTarget = child.kind === "wire-dep" ? child.refs[0]?.target : undefined;
-          if (!child.name || !depTarget) continue;
-          const dep: WireDep = { name: child.name.value, target: depTarget, when: [], compose: [], span: child.span };
-          for (const option of child.children) {
-            const optionTarget = option.refs[0]?.target;
-            if (!optionTarget) continue;
-            if (option.kind === "compose") dep.compose.push({ target: optionTarget, span: option.span });
-            if (option.kind !== "when") continue;
-            const m = CONDITION.exec(conditionText(option.tokens));
-            if (m) dep.when.push({ env: m[1]!, value: m[2]!, target: optionTarget, span: option.span });
-            else diagnostics.push(diagnostic("K005", doc.path, option.text?.span ?? option.span, "a wiring condition must be `env.NAME = value`"));
-          }
-          deps.push(dep);
-        }
-        wires.push({ target, deps, file: doc.path, span: node.span });
-      }
-    }
-  }
-  return { wires, diagnostics };
-}
-
-/**
- * The condition of `- when <condition> → <id>` as written: the tokens between
- * the keyword and the arrow, touching ones joined. The IR's canonical text
- * puts a space after a comma, but the value is compared with the variable
- * as it is: `env.DB = a,b` means the value `a,b`.
- */
-function conditionText(tokens: readonly Token[]): string {
-  const arrow = tokens.findIndex((t) => t.text === "→" || t.text === "->");
-  let out = "";
-  let previous: Token | undefined;
-  for (const t of tokens.slice(1, arrow === -1 ? tokens.length : arrow)) {
-    if (previous !== undefined && previous.span.end.offset !== t.span.start.offset) out += " ";
-    out += t.text;
-    previous = t;
-  }
-  return out;
-}
-
 export type WireOrder = { order: string[] } | { cycle: string[] };
 
 /**
@@ -108,7 +37,7 @@ export type WireOrder = { order: string[] } | { cycle: string[] };
  * without its own `wire` is a leaf. The first cycle found otherwise.
  */
 export function wireOrder(wires: readonly Wire[]): WireOrder {
-  const byId = new Map(wires.map((w) => [w.target, w]));
+  const byId = new Map(wires.map((w) => [w.target.target, w]));
   const state = new Map<string, "visiting" | "done">();
   const order: string[] = [];
   const path: string[] = [];
@@ -118,7 +47,7 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
     state.set(id, "visiting");
     path.push(id);
     for (const dep of byId.get(id)?.deps ?? []) {
-      for (const target of [dep.target, ...dep.when.map((w) => w.target)]) {
+      for (const target of [dep.target.target, ...dep.when.map((when) => when.target.target)]) {
         const cycle = visit(target);
         if (cycle) return cycle;
       }
@@ -129,7 +58,7 @@ export function wireOrder(wires: readonly Wire[]): WireOrder {
     return null;
   };
   for (const w of wires) {
-    const cycle = visit(w.target);
+    const cycle = visit(w.target.target);
     if (cycle) return { cycle };
   }
   return { order };
@@ -174,31 +103,32 @@ function exportedAs(view: WiringView, id: string): string | null {
  * that is not a fn, or one the generated file cannot import; K002 for a
  * dependency name given twice; K102 for a dependency `deny` forbids.
  */
-export function checkWiring(docs: readonly Document[], view: WiringView | null): Diagnostic[] {
-  const { wires, diagnostics } = collectWiring(docs);
+export function checkWiring(spec: SpecIR, view: WiringView | null, kindOf: (id: string) => string | undefined = () => undefined, format: RuleFormat = 1): Diagnostic[] {
+  const wires = spec.wires;
+  const diagnostics: Diagnostic[] = [];
   if (wires.length === 0) return diagnostics;
   const seen = new Set<string>();
   for (const w of wires) {
-    if (seen.has(w.target)) diagnostics.push(diagnostic("K002", w.file, w.span, `\`${w.target}\` is wired twice`));
-    seen.add(w.target);
+    if (seen.has(w.target.target)) diagnostics.push(diagnostic("K002", w.file, w.span, `\`${w.target.target}\` is wired twice`));
+    seen.add(w.target.target);
     const names = new Set<string>();
     for (const d of w.deps) {
       // The argument object would have the key twice: the second silently wins.
-      if (names.has(d.name)) diagnostics.push(diagnostic("K002", w.file, d.span, `dependency \`${d.name}\` of \`${w.target}\` is named twice`));
+      if (names.has(d.name)) diagnostics.push(diagnostic("K002", w.file, d.span, `dependency \`${d.name}\` of \`${w.target.target}\` is named twice`));
       names.add(d.name);
     }
   }
   const order = wireOrder(wires);
   if ("cycle" in order) {
-    const first = wires.find((w) => w.target === order.cycle[0])!;
-    diagnostics.push(diagnostic("K301", first.file, first.span, `wiring cycle ${order.cycle.join(" → ")}: a factory would get a dependency that is not built yet`));
+    const first = wires.find((w) => w.target.target === order.cycle[0]);
+    if (first) diagnostics.push(diagnostic("K301", first.file, first.span, `wiring cycle ${order.cycle.join(" → ")}: a factory would get a dependency that is not built yet`));
   }
   const uses = (w: Wire): { id: string; span: Span; role: string }[] => [
-    { id: w.target, span: w.span, role: "wire" },
+    { id: w.target.target, span: w.span, role: "wire" },
     ...w.deps.flatMap((d) => [
-      { id: d.target, span: d.span, role: "dependency" },
-      ...d.when.map((c) => ({ id: c.target, span: c.span, role: "dependency" })),
-      ...d.compose.map((c) => ({ id: c.target, span: c.span, role: "compose" })),
+      { id: d.target.target, span: d.span, role: "dependency" },
+      ...d.when.map((c) => ({ id: c.target.target, span: c.span, role: "dependency" })),
+      ...d.compose.map((c) => ({ id: c.target.target, span: c.span, role: "compose" })),
     ]),
   ];
   for (const w of wires) {
@@ -209,9 +139,9 @@ export function checkWiring(docs: readonly Document[], view: WiringView | null):
       }
     }
     for (const d of w.deps) {
-      for (const target of [d.target, ...d.when.map((c) => c.target), ...d.compose.map((c) => c.target)]) {
-        const rule = denyingRule(docs, w.target, target);
-        if (rule) diagnostics.push(diagnostic("K102", w.file, d.span, `divergence: wiring \`${w.target}\` depends on \`${target}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.line})`));
+      for (const target of [d.target.target, ...d.when.map((c) => c.target.target), ...d.compose.map((c) => c.target.target)]) {
+        const rule = denyingRule(spec, w.target.target, target, kindOf, format);
+        if (rule) diagnostics.push(diagnostic("K102", w.file, d.span, `divergence: wiring \`${w.target.target}\` depends on \`${target}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.line})${rule.aside}`));
       }
     }
   }

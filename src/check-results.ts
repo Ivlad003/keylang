@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { sameFinding } from "./assess.ts";
-import { isError, type Diagnostic } from "./diag.ts";
+import { isError, type Diagnostic, type K005Reason } from "./diag.ts";
 import type { Verdict } from "./verdict.ts";
 
 type Provenance = NonNullable<Verdict["evidence"]>["provenance"];
@@ -26,6 +26,8 @@ export interface CheckResult {
   provenance: Provenance;
   runId?: string;
   testId?: string;
+  /** Set on a K005 result only. */
+  reason?: K005Reason;
 }
 
 /** Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance. */
@@ -42,8 +44,9 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       line: diag.span.start.line,
       col: diag.span.start.col,
       code: diag.code,
-      specHash: owner?.specHash ?? createHash("sha256").update(`${diag.code}\0${diag.message}`).digest("hex"),
+      specHash: owner?.specHash ?? diag.specHash ?? createHash("sha256").update(`${diag.code}\0${diag.message}`).digest("hex"),
       ...(owner?.evidence ?? { provenance: "syntactic" }),
+      ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}),
     };
   });
   const fromVerdicts = verdicts

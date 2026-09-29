@@ -3,7 +3,7 @@
 // builds on it and falls back to it.
 
 import type { Analysis } from "./analyze.ts";
-import { sectionNodes, walk } from "./ir.ts";
+import type { Node, Ref } from "./ir.ts";
 import { flowsUsing, plannedDecl } from "./lsp-features.ts";
 
 export interface NodeSummary {
@@ -35,21 +35,30 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   const node = analysis.snapshot?.nodes[id];
   const plan = plannedDecl(analysis.docs, id);
   const within = (scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
+  const skipped = new Set(analysis.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
+  const seen = new Set<Node>();
   const rules: string[] = [];
-  for (const doc of analysis.docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "rules" && section.kind !== "map") continue;
-      if (doc.generated !== null) continue;
-      for (const top of sectionNodes(section)) {
-        walk(top, (n) => {
-          if (n.kind === "deny" || n.kind === "allow" || n.kind === "entry" || n.kind === "rule-module" || n.kind === "ref") {
-            if (n.refs.some((ref) => within(ref.target))) rules.push(`${doc.path}:${n.span.start.line}: ${n.tokens.map((t) => t.text).join(" ")}`.trimEnd());
-          }
-        });
-      }
+  const add = (file: string, node: Node): void => {
+    if (seen.has(node)) return;
+    seen.add(node);
+    rules.push(`${file}:${node.span.start.line}: ${node.tokens.map((token) => token.text).join(" ")}`.trimEnd());
+  };
+  const consider = (file: string, root: Node, refs: readonly Ref[]): void => {
+    if (skipped.has(file)) return;
+    for (const ref of refs) {
+      if (!within(ref.target)) continue;
+      const node = nodeHolding(root, ref);
+      if (node) add(file, node);
     }
+  };
+  for (const rule of analysis.spec.rules) {
+    if (rule.kind === "dependency") consider(rule.file, rule.source, [rule.from, ...rule.to]);
+    else if (rule.kind === "entry") consider(rule.file, rule.source, rule.entries);
+    else if (rule.kind === "layers") consider(rule.file, rule.source, rule.nested);
   }
-  const flows = flowsUsing(analysis.docs, id);
+  for (const line of analysis.spec.rejectedLayers) consider(line.file, line.source, line.nested);
+  for (const mod of analysis.spec.modules) consider(mod.file, mod.source, [mod.target]);
+  const flows = flowsUsing(analysis.spec, id);
   if (node) {
     const holes: Record<string, number> = {};
     for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
@@ -80,6 +89,16 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
     };
   }
   return { unknown: id, suggestion: analysis.index.suggest(id) ?? null };
+}
+
+/** The allow, deny, entry item, nested layer, or module line that holds `ref`. */
+function nodeHolding(root: Node, ref: Ref): Node | null {
+  if (root.refs.includes(ref)) return root;
+  for (const child of root.children) {
+    const found = nodeHolding(child, ref);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** The summary as text: one line per fact, empty facts left out. */

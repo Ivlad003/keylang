@@ -1,0 +1,11 @@
+keylang/wiring.md:4:3: K102 divergence: wiring `app.buy.buy` depends on `domain.order.create`, which is denied by `deny app domain` (keylang/rules.md:5)
+keylang/wiring.md:4:3: K102 divergence: wiring `app.buy.buy` depends on `domain.order.place`, which is denied by `deny app domain` (keylang/rules.md:5)
+keylang/wiring.md:4:3: K102 divergence: wiring `app.buy.buy` depends on `domain.order.place`, which is denied by `deny app domain` (keylang/rules.md:5)
+src/app/buy.ts:1:1: K102 divergence: `app.buy` depends on `domain.order`, which is denied by `deny app domain` (keylang/rules.md:5)
+keylang/flows/buy.md:4:1: ID ok app.buy.buy: exact
+keylang/flows/buy.md:5:3: ID ok domain.order.create: exact
+keylang/flows/buy.md:5:3: static ok domain.order.create: called from app.buy.buy
+keylang/flows/buy.md:6:3: ID ok infra.db.save: exact
+keylang/flows/buy.md:6:3: static ok infra.db.save: called from app.buy.buy
+keylang/flows/buy.md:12:3: ID unverified app.buy.refund: planned fn
+keylang/flows/buy.md:12:3: static unverified app.buy.refund: planned fn, not implemented

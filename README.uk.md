@@ -147,7 +147,7 @@ node bin/keylang.js web                  # той самий UI в браузе�
 
 ## Що реалізовано
 
-Деталі етапів — у [`docs/design.md`](docs/design.md) §9, нормативна поведінка — у [`docs/format.md`](docs/format.md). Коротко:
+Деталі етапів — у [`docs/design.md`](docs/design.md) §9, нормативна поведінка — у [`docs/format.md`](docs/format.md), інструменти — у [`docs/tools.md`](docs/tools.md). Коротко:
 
 - **M0.** Формат, парсер Markdown → IR з позиціями, резолвінг ID між файлами, діагностики K001–K006, `keylang fmt`. Публічний API — `src/index.ts`. Ядро мови не імпортує tree-sitter.
 - **M1.** Карта й перевірка правил для TypeScript і JavaScript (ESM і CommonJS). Факти беруться з `web-tree-sitter` і wasm-граматик `@vscode/tree-sitter-wasm`. Резолвінг імпортів покриває відносні шляхи, `tsconfig` `paths` / `baseUrl` / `extends`, `package.json` `imports`, пакети й вбудовані модулі Node. Правила дають K101–K105. Цей репозиторій описує себе в `keylang.json` і `keylang/`; `keylang check` у корені не має порушень.

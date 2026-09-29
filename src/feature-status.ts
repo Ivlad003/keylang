@@ -7,6 +7,7 @@ import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { compareText } from "./span.ts";
+import { walkFlow, type SpecIR } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
 export interface Gap {
@@ -36,6 +37,7 @@ export interface FeatureReport {
 export interface FeatureInput {
   dir: string;
   docs: readonly Document[];
+  spec: SpecIR;
   diagnostics: readonly Diagnostic[];
   verdicts: readonly Verdict[];
 }
@@ -68,32 +70,31 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   if (doc === undefined) return null;
   const gaps: Gap[] = [];
 
-  for (const section of doc.sections) {
-    for (const top of sectionNodes(section)) {
-      walk(top, (node) => {
-        if (node.kind === "planned" && node.id) {
-          const line = node.span.start.line;
-          const col = node.span.start.col;
-          const mismatch = finding(input.diagnostics, path, line, "K201");
-          const implemented = finding(input.diagnostics, path, line, "K202");
-          if (mismatch) gaps.push({ kind: "planned", id: node.id, file: path, line, col, reason: mismatch.message });
-          else if (!implemented) gaps.push({ kind: "planned", id: node.id, file: path, line, col, reason: `planned \`${node.id}\` is not implemented` });
-        }
-        if (node.kind !== "step") return;
-        const id = node.refs[0]?.target;
-        if (!id) return;
-        const verdict = input.verdicts.find((item) => item.file === path && item.criterion === "static" && item.line === node.span.start.line && item.area === id);
-        if (verdict?.verdict === "ok") return;
-        gaps.push({
-          kind: "static",
-          id,
-          file: path,
-          line: node.span.start.line,
-          col: node.span.start.col,
-          reason: verdict?.message ?? `no static ok for \`${id}\``,
-        });
+  for (const item of input.spec.planned) {
+    if (item.file !== path) continue;
+    const line = item.span.start.line;
+    const col = item.span.start.col;
+    const mismatch = finding(input.diagnostics, path, line, "K201");
+    const implemented = finding(input.diagnostics, path, line, "K202");
+    if (mismatch) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: mismatch.message });
+    else if (!implemented) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: `planned \`${item.id}\` is not implemented` });
+  }
+  for (const flow of input.spec.flows) {
+    if (flow.file !== path) continue;
+    walkFlow(flow, (item) => {
+      if (item.kind !== "step") return;
+      const id = item.target.target;
+      const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === item.span.start.line && entry.area === id);
+      if (verdict?.verdict === "ok") return;
+      gaps.push({
+        kind: "static",
+        id,
+        file: path,
+        line: item.span.start.line,
+        col: item.span.start.col,
+        reason: verdict?.message ?? `no static ok for \`${id}\``,
       });
-    }
+    });
   }
 
   const ruleDiags = input.diagnostics.filter((diag) => isError(diag) && RULE_CODES.has(diag.code));

@@ -16,7 +16,7 @@ The parser classifies each line in order:
 | Empty | Ends a prose paragraph. It does not end a list |
 | The first non-empty line, an HTML comment containing `keylang:generated` | The generated-file marker |
 | Column 0, `#`, then a space or the end | A section heading |
-| A fence (` ``` ` or `~~~`) at any indent | A code block, and it closes the open list |
+| A fence (` ``` ` or `~~~`) at indent under 4, or at any indent under an open list | A code block, and it closes the open list |
 | A `-`, `*` or `+` after the indent | A node |
 | Indented at least two spaces under an open node | That node's description |
 | Anything else | Prose, and it closes the list |

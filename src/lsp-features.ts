@@ -16,7 +16,8 @@ import { sectionNodes, walk, type Document, type Node, type Section } from "./ir
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
 import { keywordsAt, parse } from "./parser.ts";
-import { blocksDependency } from "./rules.ts";
+import { blocksDependency, dependencyKindOf } from "./rules.ts";
+import { walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
 import type { Verdict } from "./verdict.ts";
 
@@ -199,7 +200,7 @@ export interface LspDiagnostic {
   code?: string;
   message: string;
   source: "keylang";
-  data: { verdict: string };
+  data: { verdict: string; reason?: string };
 }
 
 /** Diagnostics and verdicts of one document, as `check --format json` reports them. */
@@ -209,7 +210,14 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
   const items: LspDiagnostic[] = [];
   for (const diag of diagnostics) {
     if (diag.file !== path) continue;
-    items.push({ range: fromSpan(text, diag.span), severity: diag.severity === "error" ? 1 : 2, code: diag.code, message: diag.message, source: "keylang", data: { verdict: diag.severity === "error" ? "fail" : "warning" } });
+    items.push({
+      range: fromSpan(text, diag.span),
+      severity: diag.severity === "error" ? 1 : 2,
+      code: diag.code,
+      message: diag.message,
+      source: "keylang",
+      data: { verdict: diag.severity === "error" ? "fail" : "warning", ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}) },
+    });
   }
   for (const verdict of verdicts) {
     if (verdict.file !== path || sameFinding(verdict, diagnostics)) continue;
@@ -254,17 +262,12 @@ export function plannedDecl(docs: readonly Document[], id: string): { kind: stri
   return null;
 }
 
-export function flowsUsing(docs: readonly Document[], id: string): string[] {
+export function flowsUsing(spec: SpecIR, id: string): string[] {
   const flows = new Set<string>();
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "flow" || !section.name) continue;
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if ((node.kind === "step" || node.kind === "trigger") && node.refs.some((ref) => ref.target === id)) flows.add(section.name!.value);
-        });
-      }
-    }
+  for (const flow of spec.flows) {
+    walkFlow(flow, (item) => {
+      if ((item.kind === "step" || item.kind === "trigger") && item.target.target === id) flows.add(flow.name);
+    });
   }
   return [...flows].sort();
 }
@@ -285,7 +288,7 @@ export function hover(ws: Workspace, path: string, position: LspPosition): { con
     if (!seen.has(text)) lines.push(text);
     seen.add(text);
   }
-  const flows = flowsUsing(ws.analysis.docs, target.id);
+  const flows = flowsUsing(ws.analysis.spec, target.id);
   if (flows.length > 0) lines.push(`flows: ${flows.join(", ")}`);
   return { contents: { kind: "markdown", value: lines.join("\n\n") }, range: fromSpan(ws.text(path), target.span) };
 }
@@ -421,11 +424,31 @@ function statusOf(verdicts: readonly Verdict[], diagnostics: readonly Diagnostic
   return undefined;
 }
 
+/** Written phrase of a trigger, step, when, or then, keyed by its text-IR node. */
+function flowPhrases(spec: SpecIR): Map<Node, string> {
+  const phrases = new Map<Node, string>();
+  for (const flow of spec.flows) {
+    walkFlow(flow, (item) => {
+      const phrase = itemPhrase(item);
+      if (phrase !== null) phrases.set(item.source, phrase);
+    });
+  }
+  return phrases;
+}
+
+function itemPhrase(item: Trigger | FlowItem): string | null {
+  if (item.kind === "trigger" || item.kind === "step") return item.target.target;
+  if (item.kind === "when") return item.condition;
+  if (item.kind === "then") return item.form === "ref" ? item.target.target : item.prose;
+  return null;
+}
+
 export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
   const doc = docOf(ws, path);
   const text = ws.text(path);
   if (!doc) return [];
-  const { verdicts, diagnostics } = ws.analysis;
+  const { verdicts, diagnostics, spec } = ws.analysis;
+  const phrases = flowPhrases(spec);
   const lastLine = (node: Node): Span => {
     let end = node.span;
     walk(node, (child) => {
@@ -467,13 +490,14 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
         return make(node.name?.value ?? "event", SYMBOL.event, node.id ?? undefined);
       case "trigger":
       case "step":
-        return make(`${node.kind} ${node.refs[0]?.target ?? ""}`.trim(), SYMBOL.function);
+        return make(`${node.kind} ${phrases.get(node) ?? ""}`.trim(), SYMBOL.function);
       case "planned":
         return make(`planned ${node.label?.value ?? "fn"} ${node.id ?? ""}`.trim(), SYMBOL.function, "planned");
       case "invariant":
+        return make(`${node.kind} ${node.text?.value ?? ""}`.trim(), SYMBOL.key);
       case "when":
       case "then":
-        return make(`${node.kind} ${node.text?.value ?? node.refs[0]?.target ?? ""}`.trim(), SYMBOL.key);
+        return make(`${node.kind} ${phrases.get(node) ?? ""}`.trim(), SYMBOL.key);
       case "layers":
       case "allow":
       case "deny":
@@ -482,7 +506,7 @@ export function documentSymbols(ws: Workspace, path: string): DocumentSymbol[] {
       case "exports":
         return make(`${node.kind} ${node.refs.map((ref) => ref.text).join(" ")}`.trim(), SYMBOL.property);
       case "rule-module":
-        return make(`module ${node.refs[0]?.target ?? ""}`.trim(), SYMBOL.module);
+        return make(`module ${spec.modules.find((item) => item.source === node)?.target.target ?? ""}`.trim(), SYMBOL.module);
       default:
         return children.length > 0 ? make(node.kind, SYMBOL.key) : null;
     }
@@ -563,22 +587,20 @@ export function completions(ws: Workspace, path: string, position: LspPosition):
   if (!callableOnly && !ID_ARGS.has(keyword)) return [];
   // `allow` / `deny` name the pairs the rules are about, so their targets are not filtered by them.
   const from = keyword === "allow" || keyword === "deny" ? null : moduleAround(ws, doc, parent);
+  const kindOf = dependencyKindOf(ws.analysis.spec, ws.analysis.index, ws.analysis.snapshot?.nodes);
   const labels = new Map<string, CompletionItem>();
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (callableOnly ? node.kind !== "fn" : node.kind !== "module" && node.kind !== "fn" && node.kind !== "type") continue;
-    if (from && blocksDependency(ws.analysis.docs, from, id)) continue;
+    if (from && blocksDependency(ws.analysis.spec, from, id, kindOf, ws.analysis.config.format)) continue;
     const kind = node.kind === "fn" ? COMPLETION.function : node.kind === "type" ? COMPLETION.struct : COMPLETION.module;
     labels.set(id, { label: id, kind, ...(node.signature ? { detail: node.signature } : {}), sortText: `1${id}`, ...replacing(id) });
   }
-  for (const other of ws.analysis.docs) {
-    for (const { node } of nodesOf(other)) {
-      if (node.kind !== "planned" || !node.id || labels.has(node.id)) continue;
-      const plannedKind = node.label?.value ?? "fn";
-      if (callableOnly && plannedKind !== "fn") continue;
-      if (from && blocksDependency(ws.analysis.docs, from, node.id)) continue;
-      const kind = plannedKind === "fn" ? COMPLETION.function : plannedKind === "type" ? COMPLETION.struct : plannedKind === "event" ? COMPLETION.event : COMPLETION.module;
-      labels.set(node.id, { label: node.id, kind, detail: `planned ${plannedKind}${node.text ? ` ${node.text.value}` : ""}`, labelDetails: { description: "planned" }, sortText: `2${node.id}`, ...replacing(node.id) });
-    }
+  for (const item of ws.analysis.spec.planned) {
+    if (labels.has(item.id)) continue;
+    if (callableOnly && item.decl !== "fn") continue;
+    if (from && blocksDependency(ws.analysis.spec, from, item.id, kindOf, ws.analysis.config.format)) continue;
+    const kind = item.decl === "fn" ? COMPLETION.function : item.decl === "type" ? COMPLETION.struct : item.decl === "event" ? COMPLETION.event : COMPLETION.module;
+    labels.set(item.id, { label: item.id, kind, detail: `planned ${item.decl}${item.signature ? ` ${item.signature}` : ""}`, labelDetails: { description: "planned" }, sortText: `2${item.id}`, ...replacing(item.id) });
   }
   return [...labels.values()].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
@@ -641,7 +663,7 @@ export function codeLenses(ws: Workspace, path: string): CodeLens[] {
   const text = ws.text(path);
   for (const [id, node] of Object.entries(ws.analysis.snapshot?.nodes ?? {})) {
     if (node.kind !== "fn" || node.file !== path || node.line === null) continue;
-    const flows = flowsUsing(ws.analysis.docs, id);
+    const flows = flowsUsing(ws.analysis.spec, id);
     if (flows.length === 0) continue;
     const start = lspPoint(text, node.line, node.col ?? 1);
     out.push({ range: { start, end: start }, command: { title: `flows: ${flows.join(", ")}`, command: "keylang.flows", arguments: [flows] } });

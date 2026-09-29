@@ -147,7 +147,7 @@ The course walks through the language, the rules, the flows and these commands w
 
 ## What is implemented
 
-Milestone detail lives in [`docs/design.md`](docs/design.md) §9 and the normative behavior in [`docs/format.md`](docs/format.md). The short form:
+Milestone detail lives in [`docs/design.md`](docs/design.md) §9, the normative behavior in [`docs/format.md`](docs/format.md), and the tools in [`docs/tools.md`](docs/tools.md). The short form:
 
 - **M0.** Format, Markdown → IR parser with positions, cross-file id resolution, diagnostics K001–K006, `keylang fmt`. Public API in `src/index.ts`. The language core does not import tree-sitter.
 - **M1.** Map and rule check for TypeScript and JavaScript (ESM and CommonJS). Facts come from `web-tree-sitter` and the wasm grammars in `@vscode/tree-sitter-wasm`. Import resolution covers relative paths, `tsconfig` `paths` / `baseUrl` / `extends`, `package.json` `imports`, packages and Node built-ins. Rules produce K101–K105. This repository describes itself in `keylang.json` and `keylang/`; `keylang check` at the root is clean of violations.

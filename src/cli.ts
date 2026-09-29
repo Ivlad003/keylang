@@ -9,7 +9,7 @@ import { baselineText } from "./baseline.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { featureStatus } from "./feature-status.ts";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config } from "./config.ts";
+import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles } from "./files.ts";
@@ -23,7 +23,6 @@ import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
-import { STATIC_MODES } from "./flows.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 import { changedFlows, codeToSpec, deletedDiffPaths, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
@@ -33,7 +32,6 @@ import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writePro
 import { safeWrite, safeWriteAll, writeProblem } from "./safe-write.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
-import { collectWiring } from "./wiring.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
@@ -138,8 +136,9 @@ Options:
   -V, --version             Show version
   --strict                  Exit 1 when a required result is unverified
   --format <name>           check output: human (default), json, sarif, github
-  --static <mode>           check: which calls prove a flow step statically:
-                            behavior (default) also follows a hook's default
+  --static <mode>           check: which calls prove a flow step statically.
+                            Precedence: this flag, then keylang.json check.static,
+                            then behavior. behavior also follows a hook's default
                             (\`x ?? f\`, \`g = f\`) and values callers inject for it;
                             shape follows only calls written in the code
   --port <n>                web: port (default 7070; 0 picks a free one)
@@ -235,7 +234,7 @@ async function run(argv: readonly string[]): Promise<number> {
         strict: values.strict === true,
         format: values.format ?? "human",
         explain: values["explain-edge"] === true,
-        static: values.static ?? "behavior",
+        static: values.static,
         changed: values.changed === true,
         since: values.since,
       });
@@ -706,7 +705,7 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
     process.stderr.write(`wire: ${blocking.length} error(s) in wiring; nothing written\n`);
     return 1;
   }
-  const { wires } = collectWiring(analyzed.docs);
+  const wires = analyzed.spec.wires;
   if (wires.length === 0) throw new Error(`wire: no \`# wiring\` section under ${analyzed.config.dir}/`);
   const text = generateWire({ root, out: outPosix, wires, snapshot: analyzed.snapshot });
   const file = join(root, outPosix);
@@ -742,7 +741,7 @@ function wiringErrors(analysis: Analysis): Diagnostic[] {
   return analysis.diagnostics.filter((d) => isError(d) && (ranges.get(d.file) ?? []).some(([from, to]) => d.span.start.line >= from && d.span.start.line <= to));
 }
 
-/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: §12, code 0. */
+/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. */
 async function cmdDoctor(): Promise<number> {
   const root = findRoot(process.cwd());
   const config = loadConfig(root);
@@ -861,7 +860,7 @@ async function cmdFeature(slug: string | undefined, format: string): Promise<num
   const rel = `${config.dir}/features/${slug}.md`;
   if (!existsSync(join(root, rel))) throw new Error(`feature: ${rel}: not found`);
   const analyzed = await analyze({ root });
-  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, slug);
+  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, slug);
   if (report === null) throw new Error(`feature: ${rel}: not a spec keylang read`);
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   else for (const gap of report.gaps) process.stdout.write(`${gap.file}:${gap.line}:${gap.col}: ${gap.kind} ${gap.id}: ${gap.reason}\n`);
@@ -881,7 +880,7 @@ async function cmdHook(name: string | undefined): Promise<number> {
   const gitChanged = gitChangedFiles(root, "HEAD");
   const changed = changedPathSet(root, gitChanged.paths, process.cwd());
   const filtered = filterChanged(
-    { docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
+    { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
@@ -1052,7 +1051,15 @@ function keylangFiles(paths: readonly string[]): { file: string; text: string }[
   return out;
 }
 
+/** `fmt` and `parse` do not validate the rest of `keylang.json`, only which edition it asks for. */
+function assertConfigFormat(): void {
+  const file = join(findRoot(process.cwd()), CONFIG_FILE);
+  if (!existsSync(file)) return;
+  assertFormatOnly(file, readFileSync(file, "utf8"));
+}
+
 function cmdParse(paths: string[], json: boolean): number {
+  assertConfigFormat();
   const docs = keylangFiles(paths).map(({ file, text }) => parse(file, text));
   if (json) process.stdout.write(`${JSON.stringify(docs, null, 2)}\n`);
   else for (const d of docs) printTree(d);
@@ -1063,12 +1070,15 @@ function cmdParse(paths: string[], json: boolean): number {
 
 const FORMATS = ["human", "json", "sarif", "github"] as const;
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string; changed: boolean; since: string | undefined }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }): Promise<number> {
   if (!FORMATS.includes(opts.format as (typeof FORMATS)[number])) {
     throw new Error(`unknown --format \`${opts.format}\`; expected ${FORMATS.join(", ")}`);
   }
-  const staticMode = STATIC_MODES.find((mode) => mode === opts.static);
-  if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
+  let staticMode: StaticMode | undefined;
+  if (opts.static !== undefined) {
+    staticMode = STATIC_MODES.find((mode) => mode === opts.static);
+    if (!staticMode) throw new Error(`unknown --static \`${opts.static}\`; expected ${STATIC_MODES.join(", ")}`);
+  }
   if (opts.since !== undefined && !opts.changed) throw new Error("check: --since requires --changed");
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
@@ -1087,14 +1097,14 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     root,
     specs,
     display: (abs) => toPosix(relative(cwd, abs)),
-    static: staticMode,
+    ...(staticMode ? { static: staticMode } : {}),
     ...(inRepo ? {} : { withoutCode: true }),
   });
   for (const path of analyzed.notSpecs) process.stderr.write(`keylang: note: ${path}: the explained map and saved explanations are not specs; skipped\n`);
   const gitChanged = opts.changed ? gitChangedFiles(root, opts.since ?? "HEAD") : null;
   const changed = gitChanged === null ? null : changedPathSet(root, gitChanged.paths, cwd);
   const deleted = gitChanged === null ? [] : deletedModuleIds(config, gitChanged.deleted);
-  const filtered = changed === null ? null : filterChanged({ docs: analyzed.docs, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
+  const filtered = changed === null ? null : filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
   const diags = filtered?.diagnostics ?? analyzed.diagnostics;
   const snapshot = analyzed.snapshot;
   const channel = filtered?.verdicts ?? analyzed.verdicts;
@@ -1182,7 +1192,15 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
           level: result.verdict === "fail" ? "error" : result.verdict === "warning" ? "warning" : "note",
           message: { text: result.evidence },
           locations: [{ physicalLocation: { artifactLocation: { uri: result.file }, region: { startLine: result.line, startColumn: result.col } } }],
-          properties: { verdict: result.verdict, criterion: result.criterion, area: result.area, snapshotId: result.snapshotId, specHash: result.specHash, provenance: result.provenance },
+          properties: {
+            verdict: result.verdict,
+            criterion: result.criterion,
+            area: result.area,
+            snapshotId: result.snapshotId,
+            specHash: result.specHash,
+            provenance: result.provenance,
+            ...(result.reason !== undefined ? { reason: result.reason } : {}),
+          },
         })),
         properties: { snapshotId },
       },
@@ -1224,6 +1242,7 @@ function githubProperty(text: string): string {
  * otherwise 1 for diagnostics or, with `--check`, an unformatted file.
  */
 function cmdFmt(paths: string[], checkOnly: boolean): number {
+  assertConfigFormat();
   let findings = false;
   let failed = false;
   const fail = (file: string, action: string, error: unknown): void => {

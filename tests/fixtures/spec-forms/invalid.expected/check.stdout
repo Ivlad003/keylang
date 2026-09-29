@@ -1,0 +1,18 @@
+keylang/flows/bad.md:1:12: K005 unexpected words in heading
+keylang/flows/bad.md:3:1: K005 `kind` must be `business` or `technical`
+keylang/flows/bad.md:4:1: K005 `planned` needs `<fn|module|type|event> <id> [signature]`
+keylang/flows/bad.md:5:13: K005 unterminated quote
+keylang/flows/bad.md:5:13: K005 expected `test <file> "<name>"`
+keylang/flows/bad.md:6:13: K005 unterminated quote
+keylang/rules.md:1:9: K005 unexpected words in heading; only `# flow` takes a name
+keylang/rules.md:3:1: K005 `layers domain < app` contradicts an earlier `layers`, which puts `domain` above `app`
+keylang/rules.md:4:5: K005 layer `domain` is both in a `layers` order and unordered under it
+keylang/rules.md:5:5: K005 `layers` lists layers; `app.buy` is not a layer
+keylang/rules.md:6:10: K005 `layers` orders layers; `app.buy` is not a layer
+keylang/rules.md:7:19: K005 layer `domain` appears twice in one order
+keylang/rules.md:8:12: K005 `deny` takes layers, modules and ID prefixes; `domain.order.create` is a fn, name its module `domain.order`
+keylang/rules.md:9:1: K005 `deny` needs at least 2 ID(s)
+keylang/rules.md:10:10: K005 expected an ID as the link text, found `not an id`
+keylang/rules.md:11:10: K005 malformed link, expected `[id](href)`
+keylang/wiring.md:5:12: K005 a wiring condition must be `env.NAME = value`
+src/app/buy.ts:1:1: K101 divergence: `app.buy` depends on `domain.order` (layers say `app < domain`, dependencies must point down)

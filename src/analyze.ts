@@ -6,10 +6,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
-import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix, type Config } from "./config.ts";
+import { declaredExternalIds } from "./declared-packages.ts";
+import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
-import type { StaticMode } from "./flows.ts";
 import type { Document } from "./ir.ts";
 import { EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
@@ -34,7 +34,7 @@ export interface AnalysisRequest {
   persistFacts?: boolean;
   /** Builds the snapshot; the TUI passes one that runs in a worker thread. Default: `generateMap`. */
   generate?: (config: Config, options: { persist: boolean; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
-  /** Which call edges prove a flow step statically. Default: `behavior`. */
+  /** Overrides `config.check.static`. Omitted leaves the config, then `behavior`. */
   static?: StaticMode;
 }
 
@@ -85,11 +85,19 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const evidence = snapshot !== null && request.withoutEvidence !== true;
   const testFiles = evidence ? evidenceFiles(config, "tests") : null;
   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
-  const assessment = assess(docs, snapshot, {
-    tests: testFiles === null ? null : loadReports(root, testFiles),
-    traces: traceFiles === null ? null : loadTraces(root, traceFiles),
-    ...(request.static ? { static: request.static } : {}),
-  });
+  const staticMode = resolveStatic(request.static, config.check.static);
+  const assessment = assess(
+    docs,
+    snapshot,
+    {
+      tests: testFiles === null ? null : loadReports(root, testFiles),
+      traces: traceFiles === null ? null : loadTraces(root, traceFiles),
+      static: staticMode.mode,
+      ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
+      ...(request.withoutCode ? {} : { knownExternal: declaredExternalIds(root) }),
+    },
+    config.format,
+  );
   return { ...assessment, config, map, snapshot, docs, notSpecs };
 }
 

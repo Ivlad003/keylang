@@ -3,7 +3,7 @@
 
 import type { Diagnostic } from "./diag.ts";
 import type { Document, Node } from "./ir.ts";
-import { parse, renderTokens } from "./parser.ts";
+import { dedentFenceLines, parse, renderTokens } from "./parser.ts";
 
 /**
  * Format source text. Returns the structural (K003) diagnostics instead when
@@ -29,7 +29,8 @@ export function formatDocument(doc: Document): string {
           blocks.push(list.trimEnd());
           list = "";
         }
-        blocks.push(item.lines.join("\n"));
+        const lines = item.type === "code" ? dedentFenceLines(item.lines) : item.lines;
+        blocks.push(lines.join("\n"));
       }
     }
     if (list !== "") blocks.push(list.trimEnd());

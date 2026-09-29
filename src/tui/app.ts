@@ -556,6 +556,7 @@ export class App {
     let found: Cursor | null = null;
     forNodes(buffer.doc, (node) => {
       if (found || node.span.start.line !== cursor.line + 1) return;
+      // Cursor navigation: the first ref of this item when the cursor is not already on an id.
       const span = node.refs[0]?.span ?? (node.id && node.name ? node.name.span : null);
       if (span) found = { line: span.start.line - 1, col: clusterAt(this.lines()[span.start.line - 1] ?? "", span.start.col - 1) };
     });

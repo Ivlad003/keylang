@@ -392,7 +392,13 @@ class Matcher {
     const early = pool[0];
     if (early && previous) return this.take(parent, nodes, i, node, early, { verdict: "fail", message: `out of order: starts before \`${previous.symbolId}\``, ...this.base() }, trigger);
     const doubt = this.absenceDoubt(node.id);
-    const missing: Outcome = doubt ? { verdict: "unverified", message: doubt, ...this.base() } : { verdict: "fail", message: `missing step in ${this.run.testId}`, ...this.base() };
+    // A span only in another call tree does not prove the step ran under this parent, and it does not prove it never ran.
+    const outside = !doubt && parent ? this.outsideRoot(parent, node.id) : null;
+    const missing: Outcome = doubt
+      ? { verdict: "unverified", message: doubt, ...this.base() }
+      : outside
+        ? { verdict: "unverified", message: `observed outside \`${parent!.symbolId}\` in another call tree (root \`${outside.symbolId}\`): nesting unknown`, ...this.base() }
+        : { verdict: "fail", message: `missing step in ${this.run.testId}`, ...this.base() };
     const unseen: Outcome = { verdict: "unverified", message: trigger ? "trigger not observed" : `parent step \`${node.id}\` not observed`, ...this.base() };
     return combine(assignment([[node.key, missing], ...keysOf(node.children).map((key): [number, Outcome] => [key, unseen])]), this.list(parent, nodes, i + 1, previous, trigger));
   }
@@ -423,7 +429,52 @@ class Matcher {
     return combine(assignment([[node.key, { verdict: "ok", message: `branch exercised in ${this.run.testId}`, ...this.base() }]]), inside, after);
   }
 
+  /** Root of the `parentSpanId` chain. A span whose parent is missing is its own root. */
+  private rootSpan(span: TraceSpan): TraceSpan {
+    let current = span;
+    const seen = new Set<string>();
+    while (current.parentSpanId && !seen.has(current.spanId)) {
+      seen.add(current.spanId);
+      const parent = this.spans.get(current.parentSpanId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  }
+
+  /**
+   * A span of `id` whose call tree is not the parent's, and which did not start
+   * before the parent image on the same clock. Spans that did start earlier, and
+   * spans in the parent's own tree, stay a confirmed absence.
+   */
+  private outsideRoot(parent: TraceSpan, id: string): TraceSpan | null {
+    const parentRoot = this.rootSpan(parent).spanId;
+    for (const span of this.run.spans) {
+      if (span.symbolId !== id || this.used.has(span.spanId)) continue;
+      const root = this.rootSpan(span);
+      if (root.spanId === parentRoot || startsBefore(span, parent)) continue;
+      return root;
+    }
+    return null;
+  }
+
+  /** `span`'s parent chain passes through `ancestor` (the image of the previous sibling). */
+  private nestedIn(span: TraceSpan, ancestor: TraceSpan): boolean {
+    const seen = new Set<string>();
+    let id = span.parentSpanId;
+    while (id && !seen.has(id)) {
+      if (id === ancestor.spanId) return true;
+      seen.add(id);
+      id = this.spans.get(id)?.parentSpanId ?? null;
+    }
+    return false;
+  }
+
   private orderOutcome(parent: TraceSpan | null, span: TraceSpan, after: TraceSpan | null): Outcome {
+    // A later sibling inside the previous sibling's subtree is not after it. `links` do not repair that.
+    if (after && this.nestedIn(span, after)) {
+      return { verdict: "fail", message: `nested in \`${after.symbolId}\`, not after it`, ...this.base() };
+    }
     // A child that starts after its parent ended ran asynchronously: nesting needs a link.
     if (parent?.end && sameClock(parent.end, span.start) && parent.end.seq < span.start.seq && !span.links.includes(parent.spanId)) {
       return { verdict: "unverified", message: `async step without a link to \`${parent.symbolId}\``, ...this.base() };

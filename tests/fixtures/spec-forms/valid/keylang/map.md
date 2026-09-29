@@ -1,0 +1,3 @@
+# map
+
+- allow domain app

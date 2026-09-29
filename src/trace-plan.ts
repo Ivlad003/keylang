@@ -7,9 +7,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { collectMdFiles } from "./files.ts";
-import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
 import { parse } from "./parser.ts";
+import { compileSpec, walkFlow } from "./spec-ir.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { isStoredExplanation } from "./explanations.ts";
 
@@ -45,15 +45,13 @@ export function flowSymbols(root: string, dir: string, flow: string): Set<string
     const text = readFileSync(file, "utf8");
     // A saved explanation is the model's text: a `# flow` in it declares nothing.
     if (isStoredExplanation(text)) continue;
-    const doc = parse(file, text);
-    for (const section of doc.sections) {
-      if (section.kind !== "flow" || section.name?.value !== flow) continue;
+    const { spec } = compileSpec([parse(file, text)]);
+    for (const item of spec.flows) {
+      if (item.name !== flow) continue;
       found = true;
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind === "trigger" || node.kind === "step") for (const ref of node.refs) out.add(ref.target);
-        });
-      }
+      walkFlow(item, (node) => {
+        if (node.kind === "trigger" || node.kind === "step") out.add(node.target.target);
+      });
     }
   }
   return found ? out : null;

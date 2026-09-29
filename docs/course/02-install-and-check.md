@@ -103,6 +103,7 @@ A reference to a `planned` id is not K001. Its `ID` evidence is `unverified` wit
 
 | Field | Role |
 |---|---|
+| `format` | Language edition. Omitted means edition 1. A directory with no `keylang.json` is read as the current edition, 2. Edition 2 lets an incomparable `deny` win |
 | `languages` | Subset of `javascript`, `typescript`, `python`, `rust`. Omitted: detected from extensions |
 | `module` | `file` (default when languages disagree) or `dir` |
 | `layers` | Layer name → glob list. Order in the file is the order of layer colors and of the navigation tree |

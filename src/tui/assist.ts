@@ -13,7 +13,7 @@ import type { ContextPack } from "../agent-context.ts";
 import { contextText } from "../agent-context.ts";
 import { withFlow } from "../draft.ts";
 import { ghostSignal, ghostSuggestions } from "../ghost.ts";
-import { sectionNodes, walk } from "../ir.ts";
+import { compileSpec } from "../spec-ir.ts";
 import { PROPOSALS_DIR, writeProposal } from "../proposals.ts";
 import { addDrafts, updateStats } from "../stats.ts";
 import { glossary, speechToSpec, transcribeOpenRouter, voiceEngine } from "../voice.ts";
@@ -299,9 +299,11 @@ export class Assist {
     const sections = (doc?.sections ?? []).filter((section) => section.heading !== null);
     const section = sections.filter((s) => s.heading!.span.start.line <= line).at(-1);
     let trigger: string | null = null;
-    if (section?.kind === "flow") for (const top of sectionNodes(section)) walk(top, (node) => {
-      if (trigger === null && node.kind === "trigger") trigger = node.refs[0]?.target ?? null;
-    });
+    if (doc && section?.kind === "flow" && section.name) {
+      const heading = section.name;
+      const flow = compileSpec([doc]).spec.flows.find((item) => item.name === heading.value && item.span.start.offset === heading.span.start.offset);
+      trigger = flow?.triggers[0]?.target.target ?? null;
+    }
     if (!section || section.kind !== "flow" || !section.name || trigger === null) {
       this.state.message = "Ctrl+Space drafts a flow: put the cursor in a `# flow` with a `trigger`";
       return;

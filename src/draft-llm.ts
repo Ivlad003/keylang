@@ -9,12 +9,13 @@
 
 import type { Analysis } from "./analyze.ts";
 import { assess } from "./assess.ts";
-import { parseConfig } from "./config.ts";
+import { parseConfig, resolveStatic } from "./config.ts";
 import { draftFlow } from "./draft.ts";
 import { formatDocument } from "./fmt.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import type { LlmClient } from "./llm.ts";
 import { isId, parse } from "./parser.ts";
+import { compileSpec, type FlowItem, type Trigger } from "./spec-ir.ts";
 
 export type DraftStatus = "agree" | "llm-only" | "algo-only" | "conflict";
 
@@ -106,22 +107,23 @@ function reconcile(analysis: Analysis, text: string, algo: { text: string; steps
   // Where each ID first stands in the draft: the anchor an algo step goes under.
   const placed = new Map<string, Node>();
   const reach = reachability(nodes);
-  const judge = (node: Node, parent: string | null): void => {
-    const id = node.kind === "trigger" || node.kind === "step" ? node.refs[0]?.target : undefined;
+  const flow = compileSpec([doc]).spec.flows.find((item) => item.name === section.name?.value);
+  const judge = (item: Trigger | FlowItem, parent: string | null): void => {
+    const id = item.kind === "trigger" || item.kind === "step" ? item.target.target : undefined;
     if (id !== undefined) {
       const kind = nodes[id]?.kind;
       // A step names something that runs; a module or a type contradicts the snapshot.
       const status: DraftStatus = kind !== undefined && kind !== "fn" ? "conflict" : algo.steps.includes(id) && (parent === null ? id === trigger : reach(parent, id)) ? "agree" : "llm-only";
       counts[status]++;
-      node.comment = { value: `<!-- keylang:llm model=${agent} status=${status} -->`, span: node.span };
-      if (!placed.has(id)) placed.set(id, node);
+      item.source.comment = { value: `<!-- keylang:llm model=${agent} status=${status} -->`, span: item.source.span };
+      if (!placed.has(id)) placed.set(id, item.source);
     }
-    for (const child of node.children) judge(child, id ?? parent);
+    if (item.kind === "test") return;
+    for (const child of item.children) judge(child, id ?? parent);
   };
-  const top = sectionNodes(section);
-  const head = top.find((node) => node.kind === "trigger" && node.refs[0]?.target === trigger);
+  const head = flow?.triggers.find((item) => item.target.target === trigger);
   // A step beside the trigger has the trigger as its parent (format §7).
-  for (const node of top) judge(node, node === head ? null : trigger);
+  if (flow) for (const item of flow.top) judge(item, item === head ? null : trigger);
   if (!head) {
     const added = { type: "node" as const, ...algoItem("trigger", trigger) };
     const first = section.items.findIndex((item) => item.type === "node");
@@ -151,13 +153,14 @@ function algoItem(kind: "trigger" | "step", id: string): Node {
 /** Each step of the algo draft (preorder) with its callers there, nearest first. */
 function algoCallers(text: string): [string, string[]][] {
   const out: [string, string[]][] = [];
-  const visit = (node: Node, path: string[]): void => {
-    const id = node.refs[0]?.target;
-    if (id === undefined) return;
-    if (node.kind === "step") out.push([id, [...path].reverse()]);
-    for (const child of node.children) visit(child, [...path, id]);
+  const visit = (item: Trigger | FlowItem, path: string[]): void => {
+    // A `when` has no id, and the projection does not look through it.
+    if (item.kind !== "trigger" && item.kind !== "step") return;
+    const id = item.target.target;
+    if (item.kind === "step") out.push([id, [...path].reverse()]);
+    for (const child of item.children) visit(child, [...path, id]);
   };
-  for (const section of parse("algo.md", text).sections) for (const node of sectionNodes(section)) visit(node, []);
+  for (const flow of compileSpec([parse("algo.md", text)]).spec.flows) for (const item of flow.top) visit(item, []);
   return out;
 }
 
@@ -319,10 +322,12 @@ function judgeRule(analysis: Analysis, others: readonly Document[], target: stri
     return "conflict";
   }
   const key = (d: { code: string; file: string; span: { start: { line: number; col: number } }; message: string }): string => `${d.code}:${d.file}:${d.span.start.line}:${d.span.start.col}:${d.message}`;
-  const base = assess(others, analysis.snapshot, { tests: null, traces: null });
+  const mode = resolveStatic(undefined, analysis.config.check.static);
+  const evidence = { tests: null as null, traces: null as null, static: mode.mode, ...(mode.setBy ? { staticSetBy: mode.setBy } : {}) };
+  const base = assess(others, analysis.snapshot, evidence, analysis.config.format);
   const known = new Set(base.diagnostics.map(key));
   const knownVerdicts = new Set(base.verdicts.map((v) => `${v.criterion}:${v.file}:${v.line}:${v.message}`));
-  const result = assess([...others, doc], analysis.snapshot, { tests: null, traces: null });
+  const result = assess([...others, doc], analysis.snapshot, evidence, analysis.config.format);
   const added = result.diagnostics.filter((d) => d.severity === "error" && !known.has(key(d)));
   if (added.length > 0) {
     conflicts.push(`${rule} → ${added[0]!.file}:${added[0]!.span.start.line}: ${added[0]!.code} ${added[0]!.message}`);

@@ -4,7 +4,7 @@
 
 The user guide is the [course](course/README.md). English is the language of that guide; the Ukrainian text is a parallel translation, not a second spec.
 
-[`format.md`](format.md) is the normative grammar, written in Ukrainian. The parser, the diagnostics and the CLI flags follow that file. [`design.md`](design.md) is the target design and still describes work that is not in the tool; the course says so when it matters. [`research.md`](research.md) is the reading survey. Decisions that constrain the implementation are the ADRs in [`adr/`](adr/).
+[`format.md`](format.md) is the normative grammar, written in Ukrainian. The parser and the diagnostics follow that file. CLI, MCP, LSP, the TUI and the browser UI are in [`tools.md`](tools.md). [`design.md`](design.md) is the target design and still describes work that is not in the tool; the course says so when it matters. [`research.md`](research.md) is the reading survey. Decisions that constrain the implementation are the ADRs in [`adr/`](adr/).
 
 | Document | Role |
 |---|---|
@@ -12,6 +12,7 @@ The user guide is the [course](course/README.md). English is the language of tha
 | [course/](course/README.md) | How to use the language, what it solves, what it does not, with screenshots |
 | [course/uk/](course/uk/README.md) | The same course in Ukrainian |
 | [format.md](format.md) | Normative grammar and current behavior |
+| [tools.md](tools.md) | CLI, MCP, LSP, TUI and `keylang web` |
 | [design.md](design.md) | Target design, including the roadmap |
 | [research.md](research.md) | Papers and stack comparison |
 | [research-pl.md](research-pl.md) | keylang through programming-language theory: category, analogues, review, recommendations, reading list (Ukrainian) |

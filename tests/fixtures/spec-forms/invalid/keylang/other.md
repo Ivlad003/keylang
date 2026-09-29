@@ -1,0 +1,3 @@
+# rules
+
+- layers app < domain

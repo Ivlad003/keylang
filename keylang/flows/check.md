@@ -10,7 +10,7 @@ Both land in the git-ignored `.keylang/`, so run `npm test` before
 `keylang check --strict`. On a fresh clone, or after any source change
 without `npm test`, exactly these are `unverified` (no report / stale
 report, no trace / stale trace): the `trace` line of the trigger and of each
-of its ten steps, and the `tests` line of both invariants — 13 in all. ID
+of its eleven steps, and the `tests` line of both invariants — 14 in all. ID
 and static evidence does not depend on a run.
 
 - trigger cli.cli.main
@@ -20,6 +20,7 @@ and static evidence does not depend on a run.
         - step map.map.generateMap
         - step lang.parser.parse
         - step check.assess.assess
+          - step lang.spec-ir.compileSpec
           - step check.resolve.check
           - step check.rules.evaluateRules
           - step check.flows.evaluateFlows

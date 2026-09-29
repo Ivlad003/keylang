@@ -237,7 +237,7 @@ export function mcpServer(root: string, version: string): McpServer {
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)
-        .map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message }));
+        .map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message, ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}) }));
       const verdicts = analysis.verdicts
         .filter((verdict) => verdict.file === rel)
         .map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, area: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message }));
@@ -265,7 +265,14 @@ export function mcpServer(root: string, version: string): McpServer {
           tests: candidate.tests.map((test) => ({ file: test.file, diff: lineDiff("", test.after), text: test.after })),
           testNotes: candidate.testNotes,
           verdicts: candidate.verdicts.map((verdict) => ({ criterion: verdict.criterion, verdict: verdict.verdict, file: verdict.file, line: verdict.line, col: verdict.col, message: verdict.message })),
-          diagnostics: candidate.diagnostics.map((diag) => ({ code: diag.code, file: diag.file, line: diag.span.start.line, col: diag.span.start.col, message: diag.message })),
+          diagnostics: candidate.diagnostics.map((diag) => ({
+            code: diag.code,
+            file: diag.file,
+            line: diag.span.start.line,
+            col: diag.span.start.col,
+            message: diag.message,
+            ...(diag.code === "K005" && diag.reason !== undefined ? { reason: diag.reason } : {}),
+          })),
         });
       } catch (error) {
         return failure(error instanceof Error ? error.message : String(error));
@@ -282,7 +289,7 @@ export function mcpServer(root: string, version: string): McpServer {
     },
     async ({ slug }) => {
       const analysis = await fresh();
-      const report = featureStatus({ dir: analysis.config.dir, docs: analysis.docs, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts }, slug);
+      const report = featureStatus({ dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts }, slug);
       if (report === null) return failure(`no feature \`${slug}\``);
       return json(report);
     },

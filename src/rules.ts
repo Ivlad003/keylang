@@ -3,11 +3,12 @@
 // from Markdown.
 
 import { createHash } from "node:crypto";
-import { SYNTHETIC_LAYERS } from "./config.ts";
+import { SYNTHETIC_LAYERS, type RuleFormat } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import type { Document } from "./ir.ts";
 import type { Index } from "./resolve.ts";
 import { cycleThrough, stronglyConnected } from "./scc.ts";
+import { compileSpec, type SpecIR } from "./spec-ir.ts";
 import type { Span } from "./span.ts";
 import type { Verdict } from "./verdict.ts";
 
@@ -58,46 +59,94 @@ export interface RuleReport {
 }
 
 export function checkRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null = null): Diagnostic[] {
-  return evaluateRules(docs, index, snapshot).diagnostics;
+  const compiled = compileSpec(docs);
+  return [...compiled.diagnostics, ...evaluateRules(compiled.spec, index, snapshot, docs).diagnostics];
 }
 
-/** Whether `from` depending on `to` is forbidden by the most specific deny rule. */
-export function blocksDependency(docs: readonly Document[], from: string, to: string): boolean {
-  return denyingRule(docs, from, to) !== null;
+/** Kind of an id the way `evaluateRules` sees it: a fn, type, or event rule applies nowhere. */
+export function dependencyKindOf(
+  source: readonly Document[] | SpecIR,
+  index: Index,
+  nodes: Readonly<Record<string, { kind: string }>> | undefined,
+): (id: string) => string | undefined {
+  const spec = specOf(source);
+  return (id: string): string | undefined => nodes?.[id]?.kind ?? index.decls.get(id)?.kind ?? (index.planned.has(id) ? `planned ${plannedDecl(spec, id)}` : undefined);
 }
 
-/** The most specific rule when it forbids `from` depending on `to`: its text, file and line, as K102 names it; null otherwise. */
-export function denyingRule(docs: readonly Document[], from: string, to: string): { text: string; file: string; line: number } | null {
+/** Whether `from` depending on `to` is forbidden by the deny that wins under `format`. */
+export function blocksDependency(
+  spec: SpecIR,
+  from: string,
+  to: string,
+  kindOf: (id: string) => string | undefined = () => undefined,
+  format: RuleFormat = 1,
+): boolean {
+  return denyingRule(spec, from, to, kindOf, format) !== null;
+}
+
+/**
+ * The deny that wins `from → to`, or null. `aside` is the incomparable allow
+ * a K102 should name: empty when the deny won because it was more specific.
+ */
+export function denyingRule(
+  spec: SpecIR,
+  from: string,
+  to: string,
+  kindOf: (id: string) => string | undefined = () => undefined,
+  format: RuleFormat = 1,
+): { text: string; file: string; line: number; aside: string } | null {
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
-  const match = specific(collectRules(docs, () => undefined), from, to, within);
-  return match?.kind === "deny" ? { text: match.rule.text, file: match.rule.file, line: match.rule.span.start.line } : null;
+  const collected = collectRules(spec, kindOf);
+  const hits = ruleHits(collected, from, to, within);
+  if (format === 1) {
+    const match = specific(collected, from, to, within);
+    if (match?.kind !== "deny") return null;
+    const hit = hits.find((item) => item.rule === match.rule && item.kind === "deny");
+    if (hit === undefined) return null;
+    return { text: match.rule.text, file: match.rule.file, line: match.rule.span.start.line, aside: incomparableAside(hit, hits, 1) };
+  }
+  const decision = decide(hits, format);
+  if (!decision.denyWins) return null;
+  const chosen = [...decision.winners].sort(byHit)[0];
+  if (chosen === undefined || chosen.kind !== "deny") return null;
+  return { text: chosen.rule.text, file: chosen.rule.file, line: chosen.rule.span.start.line, aside: incomparableAside(chosen, hits, format) };
 }
 
-export function evaluateRules(docs: readonly Document[], index: Index, snapshot: SnapshotView | null): RuleReport {
-  const kindOf = (id: string): string | undefined => snapshot?.nodes[id]?.kind ?? index.decls.get(id)?.kind ?? (index.planned.has(id) ? `planned ${plannedKind(docs, id)}` : undefined);
-  const rules = collectRules(docs, kindOf);
+export function evaluateRules(spec: SpecIR, index: Index, snapshot: SnapshotView | null, docs: readonly Document[] = [], format: RuleFormat = 1): RuleReport {
+  const kindOf = (id: string): string | undefined => snapshot?.nodes[id]?.kind ?? index.decls.get(id)?.kind ?? (index.planned.has(id) ? `planned ${plannedDecl(spec, id)}` : undefined);
+  const rules = collectRules(spec, kindOf);
+  const warnings = incomparableWarnings(rules, format);
   if (!snapshot) {
-    if (!rules.any) return { diagnostics: rules.diagnostics, verdicts: [] };
-    const file = docs[0]?.path ?? "keylang";
+    if (!rules.any) return { diagnostics: [...rules.diagnostics, ...warnings], verdicts: [] };
+    const file = docs[0]?.path ?? spec.rules[0]?.file ?? "keylang";
     const verdict: Verdict = {
       verdict: "unverified",
       criterion: "rules",
       area: file,
       snapshotId: null,
-      specHash: hashText("no snapshot"),
+      specHash: hashText(noSnapshotSpec(spec)),
       file,
       line: 1,
       col: 1,
       code: null,
       message: "no snapshot",
     };
-    return { diagnostics: rules.diagnostics, verdicts: [verdict] };
+    return { diagnostics: [...rules.diagnostics, ...warnings], verdicts: [verdict] };
   }
-  const report = evaluateOnSnapshot(rules, index, snapshot, [...index.planned.keys()]);
-  return { diagnostics: [...rules.diagnostics, ...report.diagnostics], verdicts: report.verdicts };
+  const report = evaluateOnSnapshot(rules, index, snapshot, [...index.planned.keys()], format);
+  return { diagnostics: [...rules.diagnostics, ...warnings, ...report.diagnostics], verdicts: report.verdicts };
 }
 
-function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotView, planned: readonly string[]): RuleReport {
+function specOf(source: readonly Document[] | SpecIR): SpecIR {
+  if ("rules" in source) return source;
+  return compileSpec(source).spec;
+}
+
+function plannedDecl(spec: SpecIR, id: string): string {
+  return spec.planned.find((item) => item.id === id)?.decl ?? "fn";
+}
+
+function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat): RuleReport {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
   const within = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
@@ -148,18 +197,20 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     const node = source === null ? undefined : snapshot.nodes[source];
     return node?.kind === "fn" || isClass(source ?? "");
   };
-  const dependencyHoleIn = (moduleId: string): string | null => {
+  const dependencyHoleIn = (moduleId: string, ignore?: ReadonlySet<string>): string | null => {
     const file = snapshot.nodes[moduleId]?.file;
     const hole = snapshot.coverage.find(
       (item) =>
         DEPENDENCY_HOLES.has(item.kind) &&
+        !ignore?.has(item.kind) &&
         item.reason !== "unsupported construct `computed call`" &&
         !(item.kind === "unsupported" && inDeclaration(item.source)) &&
         (item.source === moduleId || item.source?.startsWith(`${moduleId}.`) || (file !== null && file !== undefined && item.file === file)),
     );
     return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
   };
-  const holeAmong = (ids: Iterable<string>): string | null => [...ids].sort().map(dependencyHoleIn).find((item) => item !== null) ?? null;
+  const holeAmong = (ids: Iterable<string>, ignore?: ReadonlySet<string>): string | null =>
+    [...ids].sort().map((id) => dependencyHoleIn(id, ignore)).find((item) => item !== null) ?? null;
   // A hole whose scope has no node — a directory that could not be read — may hide modules of any ID under
   // that scope: it is in the area of a rule over the scope, above it or below it (null: any area).
   const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
@@ -168,9 +219,9 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
   };
 
-  const pushFail = (code: Diagnostic["code"], file: string, line: number, col: number, message: string, criterion: string, area: string): void => {
+  const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion): void => {
     diagnostics.push(diagnostic(code, file, pointAt(line, col), message));
-    verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message));
+    verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message, spec));
   };
   const pushUnverified = (file: string, line: number, col: number, criterion: string, area: string, reason: string, spec = criterion): void => {
     verdicts.push(base(snapshot, criterion, area, "unverified", file, line, col, null, reason, spec));
@@ -182,56 +233,95 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
   // One dependency is one finding per rule, however many edges (import, call, a type of its class) show it.
   const deniedPairs = new Map<Rule, Set<string>>();
   const layeredPairs = new Set<string>();
-  /** Layers named by a K101: their orders are not `ok`. */
+  /** Layers named by a K101, or by an upward edge a `deny` already reported: their orders are not `ok`. */
   const violated = new Set<string>();
   const failedDenies = new Set<Rule>();
-  /** A `deny` whose edges a more specific rule decided, with those rules. */
-  const overridden = new Map<Rule, Set<string>>();
+  /** A `deny` that lost, and the rules that decided its edges. */
+  const overridden = new Map<Rule, OverrideNote[]>();
+  /** Upward pairs an `allow` kept inside the order, and the allow lines that did it. */
+  const allowedUp = new Map<string, Set<string>>();
   for (const edge of edges) {
     if (edge.resolution !== "resolved") continue;
     const pair = `${edge.fromUnit}\0${edge.toUnit}`;
-    const match = specific(rules, edge.from, edge.to, within);
-    for (const deny of rules.denies) {
-      if (match && match.rule !== deny && within(edge.from, deny.a) && deny.b.some((target) => within(edge.to, target))) {
-        const winners = overridden.get(deny) ?? new Set<string>();
-        winners.add(match.rule.text);
-        overridden.set(deny, winners);
+    const hits = ruleHits(rules, edge.from, edge.to, within);
+    const decision = decide(hits, format);
+    const deciders = decision.winners;
+    const denyWins = decision.denyWins;
+    for (const hit of hits) {
+      if (hit.kind !== "deny" || deciders.includes(hit)) continue;
+      const notes = overridden.get(hit.rule) ?? [];
+      for (const winner of deciders) {
+        notes.push({
+          text: winner.rule.text,
+          file: winner.rule.file,
+          line: winner.rule.span.start.line,
+          incomparable: crossRules(hit, winner),
+          winnerScore: winner.score,
+          denyScore: hit.score,
+        });
       }
+      overridden.set(hit.rule, notes);
     }
-    if (match?.kind === "deny") {
-      const rule = match.rule;
-      failedDenies.add(rule);
-      const seen = deniedPairs.get(rule) ?? new Set<string>();
-      deniedPairs.set(rule, seen);
-      if (seen.has(pair)) continue;
-      seen.add(pair);
-      pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`${rule.text}\` (${rule.file}:${rule.span.start.line})`, rule.text, edge.from);
-      continue;
-    }
-    if (match?.kind === "allow") continue;
     const fromLayer = layerOf(edge.fromUnit);
     const toLayer = layerOf(edge.toUnit);
-    if (fromLayer === toLayer) continue;
-    const reason = layerViolation(rules, fromLayer, toLayer);
-    if (!reason) continue;
+    const upward = fromLayer !== toLayer ? layerViolation(rules, fromLayer, toLayer) : null;
+    if (denyWins) {
+      for (const hit of deciders) {
+        failedDenies.add(hit.rule);
+        const seen = deniedPairs.get(hit.rule) ?? new Set<string>();
+        deniedPairs.set(hit.rule, seen);
+        if (seen.has(pair)) continue;
+        seen.add(pair);
+        pushFail("K102", edge.file, edge.line, edge.col, `divergence: \`${edge.from}\` depends on \`${edge.to}\`, which is denied by \`${hit.rule.text}\` (${hit.rule.file}:${hit.rule.span.start.line})${incomparableAside(hit, hits, format)}`, hit.rule.text, edge.from);
+      }
+      // The deny is the finding. The layers line stays without `ok` and without a second K101.
+      if (upward) {
+        violated.add(fromLayer);
+        violated.add(toLayer);
+      }
+      continue;
+    }
+    if (deciders.some((hit) => hit.kind === "allow")) {
+      if (upward) {
+        const noted = allowedUp.get(`${fromLayer}\0${toLayer}`) ?? new Set<string>();
+        for (const hit of deciders) if (hit.kind === "allow") noted.add(hit.rule.text);
+        allowedUp.set(`${fromLayer}\0${toLayer}`, noted);
+      }
+      continue;
+    }
+    if (!upward) continue;
     violated.add(fromLayer);
     violated.add(toLayer);
     if (layeredPairs.has(pair)) continue;
     layeredPairs.add(pair);
-    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\` (${reason})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit);
+    pushFail("K101", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\` (${upward})`, `layers ${fromLayer} ${toLayer}`, edge.fromUnit, componentSpec(rules, toLayer));
   }
 
   for (const order of rules.orders) {
     if (order.layers.some((layer) => violated.has(layer))) continue;
-    // An unknown import of a module in the order, or of one outside every order, could point up.
+    // The area is the whole connected order, plus every layer that is in no order (nested, external, unassigned).
+    const component = layerComponent(rules, order.layers[0] ?? "");
+    const spec = componentSpec(rules, order.layers[0] ?? "");
     const area = [...units].filter((id) => {
       const layer = layerOf(id);
-      return order.layers.includes(layer) || (!rules.ordered.has(layer) && !rules.unordered.has(layer));
+      return component.has(layer) || !rules.ordered.has(layer);
     });
-    const hole = holeAmong(area) ?? orphans.map((item) => layerOf(item.source!)).filter((layer) => order.layers.includes(layer) || (!rules.ordered.has(layer) && !rules.unordered.has(layer))).map(scopeHole)[0] ?? null;
+    const inArea = (layer: string): boolean => component.has(layer) || !rules.ordered.has(layer);
+    const orphan = orphans.find((item) => item.kind !== "unassigned-file" && inArea(layerOf(item.source!)));
+    // `unassigned-file` names a file whose edges are known. Another hole in that file still counts.
+    const hole = holeAmong(area, UNASSIGNED_FILE) ?? (orphan ? `${orphan.reason} (${orphan.file}:${orphan.line}:${orphan.col})` : null);
     const names = order.layers.map((layer) => `\`${layer}\``).join(", ");
-    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`);
-    else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down, and no dependency hole in the area`);
+    const allows = [...allowedUp.entries()]
+      .filter(([key]) => {
+        const [from, to] = key.split("\0");
+        return from !== undefined && to !== undefined && component.has(from) && component.has(to);
+      })
+      .flatMap(([, texts]) => [...texts])
+      .sort();
+    const uniqueAllows = [...new Set(allows)];
+    const allowed = uniqueAllows.length > 0 ? ` or is allowed by ${uniqueAllows.map((text) => `\`${text}\``).join(", ")}` : "";
+    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`, spec);
+    else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, spec);
   }
 
   for (const deny of rules.denies) {
@@ -250,7 +340,7 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
     const winners = overridden.get(deny);
     if (hole) pushUnverified(...at, deny.text, area, hole);
     else if (scope.length === 0) pushOk(deny.file, deny.span, deny.text, area, `convergence: no module under \`${deny.a}\` yet, so no edge to ${targets}`);
-    else if (winners) pushOk(deny.file, deny.span, deny.text, area, `convergence: the edges from \`${deny.a}\` to ${targets} are decided by more specific rules (${[...winners].sort().map((text) => `\`${text}\``).join(", ")}); no other edge and no dependency hole in the area`);
+    else if (winners && winners.length > 0) pushOk(deny.file, deny.span, deny.text, area, overrideEvidence(deny, targets, winners));
     else pushOk(deny.file, deny.span, deny.text, area, `convergence: no edge from \`${deny.a}\` to ${targets} and no dependency hole in the area`);
   }
 
@@ -277,6 +367,10 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       for (const next of forward.get(module) ?? []) stack.push(next);
     }
     // Only an unknown import can lead to a module the known edges do not reach.
+    const entrySpec = [...rules.entryNodes]
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.span.start.line - b.span.start.line))
+      .map((entry) => entry.text)
+      .join("\n");
     const reachableHole = holeAmong(reachable);
     // Modules in a directory keylang could not read may be unreachable too.
     const unknownModules = scopeHole(null);
@@ -293,27 +387,28 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       const line = node?.file ? (node.line ?? 1) : (decl?.span.start.line ?? 1);
       const col = node?.file ? (node.col ?? 1) : (decl?.span.start.col ?? 1);
       if (reachableHole) {
-        pushUnverified(file, line, col, "entry", module, `not reached, but ${reachableHole} may reach it`);
+        pushUnverified(file, line, col, "entry", module, `not reached, but ${reachableHole} may reach it`, entrySpec);
       } else {
         // A warning, not a verdict: it never fails the check, so no consumer may count it as `fail`.
-        diagnostics.push({ ...diagnostic("K103", file, pointAt(line, col), `absence: module \`${module}\` is not reachable from any \`entry\``), criterion: "entry", area: module });
+        diagnostics.push({ ...diagnostic("K103", file, pointAt(line, col), `absence: module \`${module}\` is not reachable from any \`entry\``), criterion: "entry", area: module, specHash: hashText(entrySpec) });
       }
     }
     if (unreached === 0 && unknownModules !== null) {
-      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entry.text);
+      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entrySpec);
     } else if (unreached === 0) {
-      for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entry.text);
+      for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entrySpec);
     }
   }
 
   for (const rule of rules.exportsRules) {
     const criterion = `exports ${rule.module}`;
+    const spec = `${criterion}: ${[...rule.names].sort().join(", ")}`;
     const at = [rule.file, rule.span.start.line, rule.span.start.col] as const;
     const node = snapshot.nodes[rule.module];
     if (node?.kind !== "module") {
       // One that exists only as an intention has no exports to compare yet; an unknown ID is K001 already.
-      if (planned.includes(rule.module)) pushUnverified(...at, criterion, rule.module, `\`${rule.module}\` is planned: no code yet`);
-      else if (index.lookup(rule.module).kind !== "missing") pushUnverified(...at, criterion, rule.module, `\`${rule.module}\` is not a module of the snapshot`);
+      if (planned.includes(rule.module)) pushUnverified(...at, criterion, rule.module, `\`${rule.module}\` is planned: no code yet`, spec);
+      else if (index.lookup(rule.module).kind !== "missing") pushUnverified(...at, criterion, rule.module, `\`${rule.module}\` is not a module of the snapshot`, spec);
       continue;
     }
     // Only the module's own table: `purchase.ts` does not export what `purchase/buy.ts` does.
@@ -326,24 +421,24 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       if (row.name === "*" || rule.names.has(row.name)) continue;
       failed = true;
       const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
-      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module);
+      pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec);
     }
     const missing = [...rule.names].sort().filter((name) => !names.has(name));
     // An opaque module (excluded, or with a syntax error) may export what the table does not show.
     const opaque = node.members === "opaque";
     if (opaque && missing.length > 0 && !failed) {
-      pushUnverified(...at, criterion, rule.module, `opaque module \`${rule.module}\` may export ${missing.map((name) => `\`${name}\``).join(", ")}`);
+      pushUnverified(...at, criterion, rule.module, `opaque module \`${rule.module}\` may export ${missing.map((name) => `\`${name}\``).join(", ")}`, spec);
       continue;
     }
     if (!unknown && !opaque) {
       for (const name of missing) {
         failed = true;
-        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module);
+        pushFail("K104", ...at, `absence: \`${rule.module}\` does not export \`${name}\``, criterion, rule.module, spec);
       }
     }
     if (failed) continue;
-    if (unknown) pushUnverified(...at, criterion, rule.module, unknown.reason ?? "re-export from an opaque module");
-    else pushOk(rule.file, rule.span, criterion, rule.module, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, `${criterion}: ${[...rule.names].sort().join(", ")}`);
+    if (unknown) pushUnverified(...at, criterion, rule.module, unknown.reason ?? "re-export from an opaque module", spec);
+    else pushOk(rule.file, rule.span, criterion, rule.module, `convergence: the export table is exactly ${[...rule.names].sort().join(", ")}`, spec);
   }
 
   if (rules.noCycles.length > 0) {
@@ -362,21 +457,47 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
       const under = rule.under === null ? null : scopeModule === null ? rule.under : unitOf(scopeModule);
       const inScope = (id: string): boolean => under === null || within(id, under);
       const relevant = components.filter((component) => component.some(inScope));
-      // A cycle may run through an import keylang could not resolve.
-      const hole = relevant.length === 0 ? (holeAmong([...units].filter(inScope)) ?? scopeHole(under)) : null;
+      const spec = `no-cycles ${rule.under ?? "*"}`;
+      // A cycle may run through an import keylang could not resolve. Under a module the area is that
+      // module, its submodules, and whatever they reach by import or re-export. `unassigned-file` is not
+      // a hole there: the file's edges are known. A global `no-cycles` still counts it.
+      const reached = new Set<string>();
+      if (under !== null) {
+        const stack = [...units].filter(inScope);
+        while (stack.length > 0) {
+          const id = stack.pop();
+          if (id === undefined || reached.has(id)) continue;
+          reached.add(id);
+          for (const next of adj.get(id) ?? []) stack.push(next);
+        }
+      }
+      const orphanHere = (item: (typeof orphans)[number]): boolean => {
+        if (under !== null && item.kind === "unassigned-file") return false;
+        if (under === null) return true;
+        const source = item.source!;
+        for (const id of reached) if (source === id || within(source, id) || within(id, source)) return true;
+        return false;
+      };
+      const reachedOrphan = orphans.find(orphanHere);
+      const hole =
+        relevant.length === 0
+          ? under === null
+            ? (holeAmong(units) ?? scopeHole(null))
+            : (holeAmong(reached, UNASSIGNED_FILE) ?? (reachedOrphan ? `${reachedOrphan.reason} (${reachedOrphan.file}:${reachedOrphan.line}:${reachedOrphan.col})` : null))
+          : null;
       if (hole) {
-        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${hole}`);
+        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${hole}`, spec);
         continue;
       }
       if (relevant.length === 0) {
-        pushOk(rule.file, rule.span, "no-cycles", rule.under ?? "*", `convergence: no import cycle${rule.under ? ` through \`${rule.under}\`` : ""}`, `no-cycles ${rule.under ?? "*"}`);
+        pushOk(rule.file, rule.span, "no-cycles", rule.under ?? "*", `convergence: no import cycle${rule.under ? ` through \`${rule.under}\`` : ""}`, spec);
         continue;
       }
       for (const component of relevant) {
         const focus = component.find(inScope) ?? component[0] ?? "";
         const cycle = cycleThrough(adj, new Set(component), focus);
         const route = [...cycle, cycle[0]].filter((id) => id !== undefined).join(" → ");
-        pushFail("K105", rule.file, rule.span.start.line, rule.span.start.col, `divergence: dependency cycle ${route}`, "no-cycles", rule.under ?? focus);
+        pushFail("K105", rule.file, rule.span.start.line, rule.span.start.col, `divergence: dependency cycle ${route}`, "no-cycles", rule.under ?? focus, spec);
       }
     }
   }
@@ -384,14 +505,228 @@ function evaluateOnSnapshot(rules: Collected, index: Index, snapshot: SnapshotVi
 }
 
 const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file"]);
+/** A file outside every layer: its edges are known, so a scoped cycle or a layer order does not treat it as a hole. */
+const UNASSIGNED_FILE = new Set(["unassigned-file"]);
 
 /** Why a dependency between two layers breaks the layer orders, or null. */
-function layerViolation(rules: Collected, fromLayer: string, toLayer: string): string | null {
+function layerViolation(rules: EvaluatedRules, fromLayer: string, toLayer: string): string | null {
   if (rules.above.get(fromLayer)?.has(toLayer)) return `layers say \`${fromLayer} < ${toLayer}\`, dependencies must point down`;
   if (!rules.ordered.has(fromLayer) && rules.ordered.has(toLayer) && !rules.unordered.has(toLayer)) {
     return `\`${fromLayer}\` is outside the layer order; add \`allow ${fromLayer} ${toLayer}\` to permit this`;
   }
   return null;
+}
+
+/** Layers joined to `layer` by the undirected partial order, including `layer` itself. */
+function layerComponent(rules: EvaluatedRules, layer: string): Set<string> {
+  const seen = new Set<string>();
+  const stack = [layer];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || seen.has(current)) continue;
+    seen.add(current);
+    for (const up of rules.above.get(current) ?? []) stack.push(up);
+    for (const [lower, ups] of rules.above) if (ups.has(current)) stack.push(lower);
+  }
+  return seen;
+}
+
+/** Canonical texts of the `layers` lines in `layer`'s connected order, one hash input. */
+function componentSpec(rules: EvaluatedRules, layer: string): string {
+  const component = layerComponent(rules, layer);
+  return rules.orders
+    .filter((order) => order.layers.some((item) => component.has(item)))
+    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.span.start.line - b.span.start.line))
+    .map((order) => order.text)
+    .join("\n");
+}
+
+interface RuleHit {
+  kind: "allow" | "deny";
+  score: number;
+  rule: Rule;
+  /** The deepest target of this rule that covers the edge. */
+  target: string;
+}
+
+interface OverrideNote {
+  text: string;
+  file: string;
+  line: number;
+  incomparable: boolean;
+  winnerScore: number;
+  denyScore: number;
+}
+
+/** Every allow or deny that matches the edge, scored by the deepest target it names. */
+function ruleHits(rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean): RuleHit[] {
+  const hits: RuleHit[] = [];
+  const consider = (list: Rule[], kind: "allow" | "deny"): void => {
+    for (const rule of list) {
+      if (!within(from, rule.a)) continue;
+      let score = -1;
+      let target = "";
+      for (const item of rule.b) {
+        if (!within(to, item)) continue;
+        const next = scopeDepth(rule.a) + scopeDepth(item);
+        if (next > score) {
+          score = next;
+          target = item;
+        }
+      }
+      if (score >= 0) hits.push({ kind, score, rule, target });
+    }
+  };
+  consider(rules.denies, "deny");
+  consider(rules.allows, "allow");
+  return hits;
+}
+
+function byHit(a: RuleHit, b: RuleHit): number {
+  if (a.rule.file !== b.rule.file) return a.rule.file < b.rule.file ? -1 : 1;
+  return a.rule.span.start.line - b.rule.span.start.line;
+}
+
+/** `a` is strictly more specific than `b`: neither of its areas is wider, and one is narrower. */
+function dominates(a: RuleHit, b: RuleHit): boolean {
+  const source = areaWithin(a.rule.a, b.rule.a);
+  const target = areaWithin(a.target, b.target);
+  return source && target && (a.rule.a !== b.rule.a || a.target !== b.target);
+}
+
+/** One rule is narrower on the source and the other on the target. */
+function crossRules(a: RuleHit, b: RuleHit): boolean {
+  const sourceA = a.rule.a !== b.rule.a && areaWithin(a.rule.a, b.rule.a);
+  const sourceB = a.rule.a !== b.rule.a && areaWithin(b.rule.a, a.rule.a);
+  const targetA = a.target !== b.target && areaWithin(a.target, b.target);
+  const targetB = a.target !== b.target && areaWithin(b.target, a.target);
+  return (sourceA && targetB) || (sourceB && targetA);
+}
+
+function areaWithin(id: string, scope: string): boolean {
+  return id === scope || id.startsWith(`${scope}.`);
+}
+
+/**
+ * Format 1: the greatest depth sum, and every `deny` on that sum.
+ * Format 2: drop dominated hits; any undominated `deny` wins (deny-overrides).
+ */
+function decide(hits: readonly RuleHit[], format: RuleFormat): { winners: RuleHit[]; denyWins: boolean } {
+  if (format === 1) {
+    const best = hits.reduce((score, hit) => Math.max(score, hit.score), -1);
+    const top = hits.filter((hit) => hit.score === best);
+    const denyWins = top.some((hit) => hit.kind === "deny");
+    return { winners: denyWins ? top.filter((hit) => hit.kind === "deny") : top, denyWins };
+  }
+  const undominated = hits.filter((hit) => !hits.some((other) => other !== hit && dominates(other, hit)));
+  const denies = undominated.filter((hit) => hit.kind === "deny");
+  if (denies.length > 0) return { winners: denies, denyWins: true };
+  return { winners: undominated, denyWins: false };
+}
+
+function incomparableAside(deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat): string {
+  const seen = new Set<Rule>();
+  const parts: string[] = [];
+  const lost = hits
+    .filter((hit) => hit.kind === "allow" && crossRules(deny, hit) && (format === 2 || hit.score <= deny.score))
+    .sort(byHit);
+  for (const allow of lost) {
+    if (seen.has(allow.rule)) continue;
+    seen.add(allow.rule);
+    const loc = `${allow.rule.file}:${allow.rule.span.start.line}`;
+    if (format === 2) parts.push(`; deny-overrides beats incomparable \`${allow.rule.text}\` (${loc})`);
+    else if (allow.score === deny.score) parts.push(`; incomparable \`${allow.rule.text}\` (${loc}) loses on a depth-sum tie`);
+    else parts.push(`; incomparable \`${allow.rule.text}\` (${loc}) loses on depth sum (${deny.score} > ${allow.score})`);
+  }
+  return parts.join("");
+}
+
+function overrideEvidence(deny: Rule, targets: string, notes: readonly OverrideNote[]): string {
+  const specific = [...new Set(notes.filter((note) => !note.incomparable).map((note) => note.text))].sort();
+  const cross = [...new Map(notes.filter((note) => note.incomparable).map((note) => [`${note.file}:${note.line}:${note.text}`, note])).values()].sort((a, b) =>
+    a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0),
+  );
+  const head = `convergence: the edges from \`${deny.a}\` to ${targets} are decided by `;
+  const tail = "; no other edge and no dependency hole in the area";
+  if (cross.length === 0) return `${head}more specific rules (${specific.map((text) => `\`${text}\``).join(", ")})${tail}`;
+  const named = cross.map((note) => `incomparable \`${note.text}\` (${note.file}:${note.line}) on depth sum (${note.winnerScore} > ${note.denyScore})`).join(", ");
+  const extra = specific.length > 0 ? ` and by more specific rules (${specific.map((text) => `\`${text}\``).join(", ")})` : "";
+  return `${head}${named}${extra}${tail}`;
+}
+
+/** One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required. */
+function incomparableWarnings(rules: EvaluatedRules, format: RuleFormat): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const ruleset = [...rules.allows, ...rules.denies];
+  for (const allow of rules.allows) {
+    for (const deny of rules.denies) {
+      let best: { src: string; tgt: string; allowScore: number; denyScore: number } | null = null;
+      for (const allowTarget of allow.b) {
+        for (const denyTarget of deny.b) {
+          const sourceAllow = allow.a !== deny.a && areaWithin(allow.a, deny.a);
+          const sourceDeny = allow.a !== deny.a && areaWithin(deny.a, allow.a);
+          const targetAllow = allowTarget !== denyTarget && areaWithin(allowTarget, denyTarget);
+          const targetDeny = allowTarget !== denyTarget && areaWithin(denyTarget, allowTarget);
+          if (!((sourceAllow && targetDeny) || (sourceDeny && targetAllow))) continue;
+          const allowScore = scopeDepth(allow.a) + scopeDepth(allowTarget);
+          const denyScore = scopeDepth(deny.a) + scopeDepth(denyTarget);
+          if (allowScore <= denyScore) continue;
+          const src = sourceAllow ? allow.a : deny.a;
+          const tgt = targetAllow ? allowTarget : denyTarget;
+          const gap = allowScore - denyScore;
+          const key = `${src} ${tgt}`;
+          if (best === null || gap > best.allowScore - best.denyScore || (gap === best.allowScore - best.denyScore && key < `${best.src} ${best.tgt}`)) {
+            best = { src, tgt, allowScore, denyScore };
+          }
+        }
+      }
+      if (best === null) continue;
+      const { src, tgt, allowScore, denyScore } = best;
+      if (ruleset.some((rule) => rule.a === src && rule.b.length === 1 && rule.b[0] === tgt)) continue;
+      const where = `${deny.file}:${deny.span.start.line}`;
+      const add = `add \`allow ${src} ${tgt}\` or \`deny ${src} ${tgt}\``;
+      const message =
+        format === 1
+          ? `\`${allow.text}\` and \`${deny.text}\` (${where}) are incomparable; allow wins on depth sum (${allowScore} > ${denyScore}); ${add}`
+          : `\`${allow.text}\` and \`${deny.text}\` (${where}) are incomparable; deny wins (deny-overrides); ${add}`;
+      out.push({ ...diagnostic("K106", allow.file, allow.span, message), criterion: allow.text, area: `${src} ${tgt}`, specHash: hashText(allow.text) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Canonical text of the rule line at `file:line`, or null when that line is not a rule.
+ * A layers line uses its connected order; an entry line uses every entry line. One line is itself.
+ */
+export function canonicalRuleSpec(spec: SpecIR, file: string, line: number): string | null {
+  const rules = collectRules(spec, () => undefined);
+  const here = (span: Span, path: string): boolean => path === file && span.start.line === line;
+  if (rules.entryNodes.some((entry) => here(entry.span, entry.file))) {
+    return [...rules.entryNodes]
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.span.start.line - b.span.start.line))
+      .map((entry) => entry.text)
+      .join("\n");
+  }
+  const order = rules.orders.find((item) => here(item.span, item.file));
+  if (order) return componentSpec(rules, order.layers[0] ?? "");
+  const rule = [...rules.denies, ...rules.allows].find((item) => here(item.span, item.file));
+  if (rule) return rule.text;
+  const cycle = rules.noCycles.find((item) => here(item.span, item.file));
+  if (cycle) return `no-cycles ${cycle.under ?? "*"}`;
+  const exported = rules.exportsRules.find((item) => here(item.span, item.file));
+  if (exported) return `exports ${exported.module}: ${[...exported.names].sort().join(", ")}`;
+  return null;
+}
+
+/** Every rule line of the specs, valid or not, joined in file and line order. The hash of `no snapshot`. A `layers` line with no order is left out; a rejected order still counts. */
+export function noSnapshotSpec(spec: SpecIR): string {
+  const lines = [
+    ...spec.rules.filter((rule) => rule.kind !== "layers" || rule.layers.length > 0).map((rule) => ({ file: rule.file, line: rule.span.start.line, text: rule.text })),
+    ...spec.rejectedLayers.filter((line) => line.order.length > 0).map((line) => ({ file: line.file, line: line.span.start.line, text: line.text })),
+  ];
+  lines.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
+  return lines.map((line) => line.text).join("\n");
 }
 
 /** How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters. */
@@ -400,29 +735,19 @@ export function scopeDepth(id: string): number {
 }
 
 /**
- * The rule that decides `from → to`: the one whose scopes are deepest in
- * total (`deny app.purchase domain` and `allow app domain.store` both 3), a
- * `deny` on a tie.
+ * The rule that decides `from → to` in format 1: the one whose scopes are
+ * deepest in total (`deny app.purchase domain` and `allow app domain.store`
+ * both 3), a `deny` on a tie. Format 2 keeps every undominated rule and lets
+ * any undominated `deny` win (deny-overrides), so an incomparable `allow`
+ * with a greater depth sum no longer beats that `deny`.
  */
-function specific(rules: Collected, from: string, to: string, within: (id: string, scope: string) => boolean): { kind: "allow" | "deny"; rule: Rule } | null {
-  const box: { best: { kind: "allow" | "deny"; score: number; rule: Rule } | null } = { best: null };
-  const consider = (list: Rule[], kind: "allow" | "deny"): void => {
-    for (const rule of list) {
-      if (!within(from, rule.a)) continue;
-      for (const target of rule.b) {
-        if (!within(to, target)) continue;
-        const score = scopeDepth(rule.a) + scopeDepth(target);
-        const current = box.best;
-        if (!current || score > current.score || (score === current.score && kind === "deny" && current.kind === "allow")) box.best = { kind, score, rule };
-      }
-    }
-  };
-  consider(rules.denies, "deny");
-  consider(rules.allows, "allow");
-  return box.best === null ? null : { kind: box.best.kind, rule: box.best.rule };
+function specific(rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean): { kind: "allow" | "deny"; rule: Rule } | null {
+  const decision = decide(ruleHits(rules, from, to, within), 1);
+  const winner = [...decision.winners].sort(byHit)[0];
+  return winner === undefined ? null : { kind: winner.kind, rule: winner.rule };
 }
 
-interface Collected {
+interface EvaluatedRules {
   any: boolean;
   /** Valid `layers` lines. */
   orders: LayerOrder[];
@@ -443,101 +768,57 @@ interface Collected {
 /** What `allow` / `deny` cannot scope: a member of a module rather than a layer, a module or a prefix. */
 const MEMBER_KINDS = new Set(["fn", "type", "event", "dep", "planned fn", "planned type", "planned event"]);
 
-function collectRules(docs: readonly Document[], kindOf: (id: string) => string | undefined): Collected {
+function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined): EvaluatedRules {
   const unordered = new Set<string>(UNORDERED_LAYERS);
   const allows: Rule[] = [];
   const denies: Rule[] = [];
   const entries: string[] = [];
-  const entryNodes: Collected["entryNodes"] = [];
-  const noCycles: Collected["noCycles"] = [];
-  const exportsRules: Collected["exportsRules"] = [];
+  const entryNodes: EvaluatedRules["entryNodes"] = [];
+  const noCycles: EvaluatedRules["noCycles"] = [];
+  const exportsRules: EvaluatedRules["exportsRules"] = [];
   const diagnostics: Diagnostic[] = [];
   const chains: LayerOrder[] = [];
   const nested: { file: string; target: string; span: Span }[] = [];
-  let any = false;
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "rules" && section.kind !== "map") continue;
-      for (const node of sectionNodes(section)) {
-        if (isRuleNode(node) || node.kind === "rule-module") any = true;
-        switch (node.kind) {
-          case "layers": {
-            const chain = layerChain(doc.path, node, diagnostics);
-            if (chain) chains.push(chain);
-            for (const child of node.children) {
-              for (const ref of child.refs) {
-                if (ref.target.includes(".")) diagnostics.push(diagnostic("K005", doc.path, ref.span, `\`layers\` lists layers; \`${ref.target}\` is not a layer`));
-                else nested.push({ file: doc.path, target: ref.target, span: ref.span });
-              }
-            }
-            break;
-          }
-          case "allow":
-          case "deny": {
-            const [from, ...to] = node.refs;
-            if (!from || to.length === 0) break;
-            // A rule over a function is not evaluated at that granularity: edges are between modules.
-            const members = node.refs.flatMap((ref) => {
-              const kind = kindOf(ref.target);
-              return kind !== undefined && MEMBER_KINDS.has(kind) ? [{ ref, kind }] : [];
-            });
-            for (const { ref, kind } of members) {
-              const module = ref.target.slice(0, ref.target.lastIndexOf("."));
-              diagnostics.push(diagnostic("K005", doc.path, ref.span, `\`${node.kind}\` takes layers, modules and ID prefixes; \`${ref.target}\` is a ${kind}, name its module \`${module}\``));
-            }
-            if (members.length > 0) break;
-            const rule = { a: from.target, b: to.map((ref) => ref.target), file: doc.path, span: node.span, text: `${node.kind} ${from.target} ${to.map((ref) => ref.target).join(" ")}` };
-            (node.kind === "allow" ? allows : denies).push(rule);
-            break;
-          }
-          case "entry":
-            entryNodes.push({ file: doc.path, span: node.span, text: `entry ${node.children.flatMap((child) => child.refs.map((ref) => ref.target)).join(" ")}` });
-            for (const child of node.children) for (const ref of child.refs) entries.push(ref.target);
-            break;
-          case "no-cycles":
-            noCycles.push({ under: null, file: doc.path, span: node.span });
-            break;
-          case "rule-module": {
-            const target = node.refs[0]?.target;
-            if (!target) break;
-            for (const child of node.children) {
-              if (child.kind === "exports") exportsRules.push({ module: target, names: new Set(child.refs.map((ref) => ref.text)), file: doc.path, span: child.span });
-              if (child.kind === "no-cycles") noCycles.push({ under: target, file: doc.path, span: child.span });
-            }
-            break;
-          }
-          default:
-            break;
-        }
+  const takeNested = (file: string, refs: readonly { target: string; span: Span }[]): void => {
+    for (const ref of refs) {
+      if (ref.target.includes(".")) continue;
+      nested.push({ file, target: ref.target, span: ref.span });
+    }
+  };
+  for (const rule of spec.rules) {
+    if (rule.kind === "layers") {
+      chains.push({ layers: [...rule.layers], file: rule.file, span: rule.span, text: rule.text });
+      takeNested(rule.file, rule.nested);
+    } else if (rule.kind === "dependency") {
+      const refs = [rule.from, ...rule.to];
+      // A rule over a function is not evaluated at that granularity: edges are between modules.
+      const members = refs.flatMap((ref) => {
+        const kind = kindOf(ref.target);
+        return kind !== undefined && MEMBER_KINDS.has(kind) ? [{ ref, kind }] : [];
+      });
+      for (const { ref, kind } of members) {
+        const module = ref.target.slice(0, ref.target.lastIndexOf("."));
+        diagnostics.push(diagnostic("K005", rule.file, ref.span, `\`${rule.effect}\` takes layers, modules and ID prefixes; \`${ref.target}\` is a ${kind}, name its module \`${module}\``, "scope"));
       }
+      if (members.length > 0) continue;
+      const built = { a: rule.from.target, b: rule.to.map((ref) => ref.target), file: rule.file, span: rule.span, text: rule.text };
+      (rule.effect === "allow" ? allows : denies).push(built);
+    } else if (rule.kind === "entry") {
+      entryNodes.push({ file: rule.file, span: rule.span, text: rule.text });
+      for (const ref of rule.entries) entries.push(ref.target);
+    } else if (rule.kind === "no-cycles") {
+      noCycles.push({ under: rule.under?.target ?? null, file: rule.file, span: rule.span });
+    } else {
+      exportsRules.push({ module: rule.module.target, names: new Set(rule.names.map((ref) => ref.text)), file: rule.file, span: rule.span });
     }
   }
-  const { orders, above } = combineOrders(chains, diagnostics);
+  for (const line of spec.rejectedLayers) takeNested(line.file, line.nested);
+  const { orders, above } = combineOrders(chains, []);
   const ordered = new Set(orders.flatMap((order) => order.layers));
   for (const item of nested) {
-    if (ordered.has(item.target)) diagnostics.push(diagnostic("K005", item.file, item.span, `layer \`${item.target}\` is both in a \`layers\` order and unordered under it`));
-    else unordered.add(item.target);
+    if (!ordered.has(item.target)) unordered.add(item.target);
   }
-  return { any, orders, above, ordered, unordered, allows, denies, entries, entryNodes, noCycles, exportsRules, diagnostics };
-}
-
-/** A `layers` line as an order, or null (with K005) when it names a non-layer or one layer twice. */
-function layerChain(file: string, node: Node, diagnostics: Diagnostic[]): LayerOrder | null {
-  const seen = new Set<string>();
-  let valid = node.refs.length > 0;
-  for (const ref of node.refs) {
-    if (ref.target.includes(".")) {
-      diagnostics.push(diagnostic("K005", file, ref.span, `\`layers\` orders layers; \`${ref.target}\` is not a layer`));
-      valid = false;
-    } else if (seen.has(ref.target)) {
-      diagnostics.push(diagnostic("K005", file, ref.span, `layer \`${ref.target}\` appears twice in one order`));
-      valid = false;
-    }
-    seen.add(ref.target);
-  }
-  if (!valid) return null;
-  const layers = node.refs.map((ref) => ref.target);
-  return { layers, file, span: node.span, text: `layers ${layers.join(" < ")}` };
+  return { any: spec.hasRules, orders, above, ordered, unordered, allows, denies, entries, entryNodes, noCycles, exportsRules, diagnostics };
 }
 
 /**
@@ -560,7 +841,7 @@ function combineOrders(chains: readonly LayerOrder[], diagnostics: Diagnostic[])
     }
     if (conflict) {
       const [lower, upper] = conflict;
-      diagnostics.push(diagnostic("K005", chain.file, chain.span, `\`${chain.text}\` contradicts an earlier \`layers\`, which puts \`${lower}\` above \`${upper}\``));
+      diagnostics.push(diagnostic("K005", chain.file, chain.span, `\`${chain.text}\` contradicts an earlier \`layers\`, which puts \`${lower}\` above \`${upper}\``, "layer"));
       continue;
     }
     orders.push(chain);
@@ -591,21 +872,6 @@ function transitive(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<strin
   return out;
 }
 
-function plannedKind(docs: readonly Document[], id: string): string {
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        let kind: string | null = null;
-        walk(top, (node) => {
-          if (kind === null && node.kind === "planned" && node.id === id) kind = node.label?.value ?? "fn";
-        });
-        if (kind !== null) return kind;
-      }
-    }
-  }
-  return "fn";
-}
-
 /** A one-column span at a code position (a rule finding has no source offset). */
 function pointAt(line: number, col: number): Span {
   return { start: { offset: 0, line, col }, end: { offset: 0, line, col: col + 1 } };
@@ -618,8 +884,4 @@ function base(snapshot: SnapshotView, criterion: string, area: string, verdict: 
 
 function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
-}
-
-export function isRuleNode(n: Node): boolean {
-  return n.kind === "layers" || n.kind === "allow" || n.kind === "deny" || n.kind === "entry" || n.kind === "rule-module" || n.kind === "no-cycles";
 }

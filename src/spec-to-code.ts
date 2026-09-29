@@ -13,10 +13,10 @@ import { toPosix, type Config } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { globPrefix } from "./glob.ts";
 import { placeFile } from "./graph.ts";
-import { sectionNodes, walk } from "./ir.ts";
 import { plannedDecl } from "./lsp-features.ts";
 import { codeProposalProblem } from "./proposals.ts";
-import { blocksDependency } from "./rules.ts";
+import { blocksDependency, dependencyKindOf } from "./rules.ts";
+import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { allCrlf } from "./safe-write.ts";
 import type { LlmClient } from "./llm.ts";
 import type { Verdict } from "./verdict.ts";
@@ -61,7 +61,7 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   if (implemented) throw new Error(`\`${id}\` is already implemented (${implemented.file ?? "?"}:${implemented.line ?? 1}); \`keylang check\` says whether the \`planned\` declaration can go (K202)`);
   // A stub the flow could never reach would contradict the rules it is checked by.
   for (const caller of callersInFlows(analysis, id)) {
-    if (blocksDependency(analysis.docs, caller, id)) throw new Error(`\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first`);
+    if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) throw new Error(`\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first`);
   }
   const config = analysis.config;
   const moduleId = id.slice(0, id.lastIndexOf("."));
@@ -101,20 +101,38 @@ const TEST_EXTENSIONS = /\.(ts|mts|cts|js|mjs|cjs)$/;
 /** The `test` entries of the flows that name `id`: flow name, test file and test name. */
 function flowTests(analysis: Analysis, id: string): { flow: string; file: string; name: string }[] {
   const out: { flow: string; file: string; name: string }[] = [];
-  for (const doc of analysis.docs) {
-    if (doc.generated !== null) continue;
-    for (const section of doc.sections) {
-      if (section.kind !== "flow" || !section.name) continue;
-      let mentions = false;
-      const tests: { file: string; name: string }[] = [];
-      for (const top of sectionNodes(section)) walk(top, (node) => {
-        if (node.id === id || node.refs.some((ref) => ref.target === id)) mentions = true;
-        if (node.kind === "test" && node.text && node.label) tests.push({ file: node.text.value, name: node.label.value });
-      });
-      if (mentions) for (const t of tests) out.push({ flow: section.name.value, ...t });
-    }
+  for (const flow of flowsMentioning(analysis, id)) {
+    const tests: { file: string; name: string }[] = [];
+    walkFlow(flow, (item) => {
+      if (item.kind === "test" && item.name !== null) tests.push({ file: item.path, name: item.name });
+    });
+    for (const t of tests) out.push({ flow: flow.name, ...t });
   }
   return out;
+}
+
+/** Hand-written flows whose trigger, step, claim, `then`, or `planned` names `id`. */
+function flowsMentioning(analysis: Analysis, id: string): Flow[] {
+  const skipped = new Set(analysis.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
+  return analysis.spec.flows.filter((flow) => !skipped.has(flow.file) && flowMentions(analysis.spec, flow, id));
+}
+
+function flowMentions(spec: SpecIR, flow: Flow, id: string): boolean {
+  if (spec.planned.some((item) => item.id === id && item.file === flow.file && flowOwns(spec, flow, item.span.start.line))) return true;
+  let hit = false;
+  walkFlow(flow, (item) => {
+    if (hit) return;
+    if ((item.kind === "trigger" || item.kind === "step") && item.target.target === id) hit = true;
+    else if (item.kind === "then" && item.form === "ref" && item.target.target === id) hit = true;
+    else if ((item.kind === "reads" || item.kind === "emits" || item.kind === "invariant") && item.target?.target === id) hit = true;
+  });
+  return hit;
+}
+
+/** `line` sits in this flow: after its heading and before the next flow of the same file. */
+function flowOwns(spec: SpecIR, flow: Flow, line: number): boolean {
+  if (line < flow.span.start.line) return false;
+  return !spec.flows.some((other) => other.file === flow.file && other !== flow && other.span.start.line > flow.span.start.line && other.span.start.line <= line);
 }
 
 /**
@@ -184,17 +202,13 @@ async function modelTest(model: LlmClient, file: string, from: string, name: str
 /** IDs directly above `id` in flows: the trigger or step each of its steps is nested under. */
 function callersInFlows(analysis: Analysis, id: string): string[] {
   const out = new Set<string>();
-  for (const doc of analysis.docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "flow") continue;
-      const visit = (node: (typeof section.items)[number] & { type: "node" }, parent: string | null): void => {
-        const own = node.kind === "trigger" || node.kind === "step" ? (node.refs[0]?.target ?? null) : null;
-        if (own === id && parent !== null) out.add(parent);
-        for (const child of node.children) visit(child as typeof node, own ?? parent);
-      };
-      for (const top of sectionNodes(section)) visit(top as never, null);
-    }
-  }
+  const visit = (item: Trigger | FlowItem, parent: string | null): void => {
+    const own = item.kind === "trigger" || item.kind === "step" ? item.target.target : null;
+    if (own === id && parent !== null) out.add(parent);
+    if (item.kind === "test") return;
+    for (const child of item.children) visit(child, own ?? parent);
+  };
+  for (const flow of analysis.spec.flows) for (const item of flow.top) visit(item, null);
   return [...out].sort();
 }
 
@@ -232,18 +246,7 @@ function stubFor(file: string, name: string, id: string, signature: string | nul
 /** The function from the model, with its declared name; the rest of its answer is dropped. */
 async function modelBody(analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null): Promise<string> {
   const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
-  const flows: string[] = [];
-  for (const doc of analysis.docs) {
-    if (doc.generated !== null) continue;
-    for (const section of doc.sections) {
-      if (section.kind !== "flow") continue;
-      let mentions = false;
-      for (const top of sectionNodes(section)) walk(top, (node) => {
-        if (node.id === id || node.refs.some((ref) => ref.target === id)) mentions = true;
-      });
-      if (mentions && section.heading) flows.push(`# ${section.heading.value}`);
-    }
-  }
+  const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
   const answer = await model.complete({
     system: `You implement one planned function in ${language}. Keep its name \`${name}\` and the signature exactly as declared. Answer with the whole function only, in one fenced code block.`,
     prompt: [

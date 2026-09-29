@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -24,7 +25,7 @@ interface Item {
   severity: number;
   code?: string;
   message: string;
-  data?: { verdict: string };
+  data?: { verdict: string; reason?: string };
 }
 
 class Session {
@@ -104,6 +105,12 @@ class Session {
   close(): void {
     this.child.kill();
   }
+
+  /** End stdin without an `exit` message and wait for the process. */
+  end(): Promise<number | null> {
+    this.child.stdin.end();
+    return this.exited;
+  }
 }
 
 async function open(t: { after: (f: () => void) => void }, dir: string, capabilities: object = {}): Promise<Session> {
@@ -137,6 +144,7 @@ interface CheckRow {
   code: string | null;
   verdict: string;
   evidence: string;
+  reason?: string;
 }
 
 function checkRows(dir: string, file: string): CheckRow[] {
@@ -145,12 +153,100 @@ function checkRows(dir: string, file: string): CheckRow[] {
 }
 
 const sameAs = (row: CheckRow, item: Item): boolean =>
-  (item.code ?? null) === (row.code ?? null) && item.message === row.evidence && item.range.start.line === row.line - 1 && item.range.start.character === row.col - 1 && item.data?.verdict === row.verdict;
+  (item.code ?? null) === (row.code ?? null) &&
+  item.message === row.evidence &&
+  item.range.start.line === row.line - 1 &&
+  item.range.start.character === row.col - 1 &&
+  item.data?.verdict === row.verdict &&
+  item.data?.reason === row.reason;
 
 // ---------- 25 ----------
 
 const RULES = "# rules\n\n- layers domain < app\n  - infra\n- deny domain infra\n- module domain.order\n  - exports Order, total, createOrder, extra\n- entry\n  - app.checkout\n- no-cycles\n";
 const FLOW = "# flow buy\n\n- planned fn domain.order.later (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step domain.order.later\n";
+
+test("lsp: a request before initialize is -32002, and the same request works after it", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-life-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang"), { recursive: true });
+  writeFileSync(join(dir, "keylang/rules.md"), RULES);
+  const session = new Session(dir);
+  t.after(() => session.close());
+  const rulesUri = uri(dir, "keylang/rules.md");
+  const early = await session.response(session.send("textDocument/documentSymbol", { textDocument: { uri: rulesUri } }));
+  assert.equal(early.error?.code, -32002);
+  const shutdown = await session.response(session.send("shutdown", {}));
+  assert.equal(shutdown.error?.code, -32002);
+  await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  const symbols = await session.request<{ name: string }[]>("textDocument/documentSymbol", { textDocument: { uri: rulesUri } });
+  assert.ok(symbols.length > 0, JSON.stringify(symbols));
+});
+
+test("lsp: didOpen before initialize is ignored, so diagnostics follow the file on disk", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-life-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "keylang"), { recursive: true });
+  writeFileSync(join(dir, "keylang/rules.md"), RULES);
+  const session = new Session(dir);
+  t.after(() => session.close());
+  const rulesUri = uri(dir, "keylang/rules.md");
+  session.notify("textDocument/didOpen", { textDocument: { uri: rulesUri, languageId: "markdown", version: 1, text: "# rules\n\n- entry\n  - no.such.module\n" } });
+  await session.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: { textDocument: { diagnostic: {} } } });
+  session.notify("initialized", {});
+  const items = (await session.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: rulesUri } })).items;
+  assert.ok(!items.some((item) => item.message.includes("no.such.module")), JSON.stringify(items));
+});
+
+test("lsp: exit before initialize exits 1; end of stdin exits 0 with or without shutdown", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-life-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const early = new Session(dir);
+  t.after(() => early.close());
+  early.notify("exit", {});
+  assert.equal(await early.exited, 1);
+
+  const openEnded = new Session(dir);
+  t.after(() => openEnded.close());
+  assert.equal(await openEnded.end(), 0);
+
+  const stopped = new Session(dir);
+  t.after(() => stopped.close());
+  await stopped.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  await stopped.request("shutdown", {});
+  assert.equal(await stopped.end(), 0);
+});
+
+test("lsp: check.static shape leaves a hook step unverified, same as check", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-lsp-static-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const layers = Object.fromEntries(["domain", "application", "presentation"].map((layer) => [layer, `src/${layer}/**`]));
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { static: "shape" } }, null, 2)}\n`);
+  for (const [path, text] of Object.entries(HOOKS)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/hooks.md"), HOOK_FLOW);
+  const session = await open(t, dir);
+  const items = (await session.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: uri(dir, "keylang/flows/hooks.md") } })).items;
+  const step = items.find((item) => item.data?.verdict === "unverified" && item.message.includes("domain.build.build"));
+  assert.ok(step, JSON.stringify(items));
+  assert.match(step.message, /not followed in static mode shape, set by keylang\.json check\.static/);
+});
+
+test("lsp: a pulled K005 has data.reason and data.verdict; another code has no data.reason", async (t) => {
+  const dir = fixture(t, { "keylang/flows/bad.md": '# flow bad\n\n- test f.ts "x\n- step domain.order.missingFn\n' });
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/bad.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: readFileSync(join(dir, "keylang/flows/bad.md"), "utf8") } });
+  const pulled = (await s.request<{ items: Item[] }>("textDocument/diagnostic", { textDocument: { uri: flowUri } })).items;
+  const quote = pulled.find((item) => item.code === "K005" && item.message === "unterminated quote");
+  assert.equal(quote?.data?.reason, "quote");
+  assert.equal(quote?.data?.verdict, "fail");
+  const other = pulled.find((item) => item.code === "K001");
+  assert.ok(other, JSON.stringify(pulled));
+  assert.equal(other.data?.reason, undefined);
+});
 
 test("lsp: diagnostics of an open rules.md equal check --format json, pushed and pulled", async (t) => {
   const dir = fixture(t, { "keylang/rules.md": RULES, "keylang/flows/buy.md": FLOW, "src/domain/order.ts": `${readFileSync(join(root, "tests/fixtures/repo/src/domain/order.ts"), "utf8")}import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n` });
@@ -232,6 +328,51 @@ test("lsp: an invalid keylang.json is shown to the client and in stderr; once fi
   assert.ok(pushed.params!.diagnostics!.some((d) => d.code === "K001"), JSON.stringify(pushed));
   // The same failure is not repeated for every change while it lasts.
   assert.equal(s.messages.filter((m) => m.method === "window/showMessage").length, 1);
+});
+
+test("lsp: format 3 is shown to the client and the server stays up", async (t) => {
+  const dir = fixture(t);
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...config, format: 3 })}\n`);
+  const s = await open(t, dir);
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: "# flow draft\n\n- step domain.order.missingFn\n" } });
+  const shown = await s.until(() => s.messages.find((m) => m.method === "window/showMessage"));
+  const message = shown.params as unknown as { type: number; message: string };
+  assert.equal(message.type, 1);
+  assert.match(message.message, /`format` 3 is newer than this keylang reads \(2\)/);
+  assert.equal(await Promise.race([s.exited.then(() => "exited"), new Promise((done) => setTimeout(() => done("up"), 200))]), "up");
+});
+
+test("lsp: format 2 completion hides a symbol an incomparable deny wins over", async (t) => {
+  const dir = fixture(t, {
+    "src/app/x/y.ts": "export function make(): number { return 1; }\n",
+    "keylang/rules.md": "# rules\n\n- allow app.x.y domain\n- deny app domain.order\n",
+  });
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  const mapPath = join(dir, "keylang/map/app.md");
+  const map = readFileSync(mapPath, "utf8");
+  const moduleLine = lineOf(map, "module [y]");
+  assert.ok(moduleLine >= 0, map);
+  const lines = map.split("\n");
+  const pad = lines[moduleLine]!.match(/^ */)?.[0] ?? "";
+  lines.splice(moduleLine + 1, 0, `${pad}  - calls `);
+  const edited = lines.join("\n");
+  const ask = async (format: number | undefined): Promise<string[]> => {
+    writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(format === undefined ? config : { ...config, format })}\n`);
+    const s = await open(t, dir);
+    const mapUri = uri(dir, "keylang/map/app.md");
+    s.notify("textDocument/didOpen", { textDocument: { uri: mapUri, languageId: "markdown", version: 1, text: edited } });
+    const listed = await s.request<{ items: { label: string }[] }>("textDocument/completion", {
+      textDocument: { uri: mapUri },
+      position: { line: moduleLine + 1, character: `${pad}  - calls `.length },
+    });
+    return listed.items.map((item) => item.label);
+  };
+  const format1 = await ask(1);
+  assert.ok(format1.includes("domain.order.total"), format1.join(" "));
+  const format2 = await ask(2);
+  assert.equal(format2.includes("domain.order.total"), false, format2.join(" "));
 });
 
 test("lsp: hover on a flow step shows the signature and each kind of evidence; planned says so", async (t) => {

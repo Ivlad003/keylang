@@ -3,7 +3,7 @@
 // fenced code), so a hand-written parser gives exact spans for every token
 // without mapping back from a CommonMark AST. See `docs/format.md`.
 
-import { diagnostic, type Code } from "./diag.ts";
+import { diagnostic, type Code, type K005Reason } from "./diag.ts";
 import type { Document, Item, Link, Node, NodeKind, Ref, Section, SectionKind, Token, TokenKind } from "./ir.ts";
 import { kindLabel } from "./ir.ts";
 import type { Pos, Span, Spanned } from "./span.ts";
@@ -203,8 +203,13 @@ class Parser {
   /** Open list items; index = depth. */
   private stack: Node[] = [];
   private prose: string[] = [];
-  /** Open code fence: marker and lines. */
-  private fence: { marker: string; lines: string[] } | null = null;
+  /** Open code fence. `spaces` is null when a tab sits in the opener indent (fmt must not dedent it). */
+  private fence: { char: "`" | "~"; len: number; columns: number; spaces: number | null; lines: string[] } | null = null;
+  /**
+   * Open CommonMark HTML block of type 1–5. `desc` set: the lines are descriptions of that
+   * list item and the block ends with the item. Otherwise the lines are prose through EOF.
+   */
+  private html: { end: (line: string) => boolean; desc: { depth: number; contentCol: number } | null } | null = null;
   private seenContent = false;
 
   constructor(path: string) {
@@ -212,8 +217,11 @@ class Parser {
     this.doc = { path, generated: null, sections: [], diagnostics: [] };
   }
 
-  private err(code: Code, span: Span, msg: string): void {
-    this.doc.diagnostics.push(diagnostic(code, this.path, span, msg));
+  private err(code: Exclude<Code, "K005">, span: Span, msg: string): void;
+  private err(code: "K005", span: Span, msg: string, reason: K005Reason): void;
+  private err(code: Code, span: Span, msg: string, reason?: K005Reason): void {
+    if (code === "K005" && reason !== undefined) this.doc.diagnostics.push(diagnostic("K005", this.path, span, msg, reason));
+    else if (code !== "K005") this.doc.diagnostics.push(diagnostic(code, this.path, span, msg));
   }
 
   private section(): Section {
@@ -232,6 +240,14 @@ class Parser {
       this.section().items.push({ type: "prose", lines: this.prose });
       this.prose = [];
     }
+  }
+
+  /** A non-empty line that belongs to an open item as its description (§3). */
+  private pushDescription(l: Line, text: string, lead: Lead, depth: number): void {
+    if (lead.hasTab) this.err("K003", l.span(0, lead.raw.length), "tab in indentation; indent with 2 spaces");
+    const start = lead.raw.length;
+    const end = text.trimEnd().length;
+    this.stack[depth]!.description.push({ value: text.slice(start, end), span: l.span(start, end) });
   }
 
   private closeList(depth: number): void {
@@ -257,10 +273,27 @@ class Parser {
     const text = l.text;
     if (this.fence) {
       this.fence.lines.push(text.trimEnd());
-      if (text.trim() === this.fence.marker) {
+      if (closesFence(text, this.fence)) {
         this.section().items.push({ type: "code", lines: this.fence.lines });
         this.fence = null;
       }
+      return;
+    }
+    if (this.html) {
+      const lead = leadingWhitespace(text);
+      const desc = this.html.desc;
+      // A non-empty line shallower than the item's content column ends the item and this block with it.
+      if (desc && text.trim() !== "" && lead.indent < desc.contentCol) {
+        this.html = null;
+        this.line(l);
+        return;
+      }
+      if (desc) {
+        if (text.trim() !== "") this.pushDescription(l, text, lead, desc.depth);
+      } else {
+        this.prose.push(text.trimEnd());
+      }
+      if (this.html.end(text)) this.html = null;
       return;
     }
     if (text.trim() === "") {
@@ -274,28 +307,42 @@ class Parser {
     }
     this.seenContent = true;
 
-    const ws = /^[ \t]*/.exec(text)![0];
+    const lead = leadingWhitespace(text);
+    const { raw: ws, indent } = lead;
     const wsLen = ws.length;
     // A tab only matters where indentation decides the tree: items and their descriptions, not prose or fences.
     const tab = (): void => {
-      if (ws.includes("\t")) this.err("K003", l.span(0, wsLen), "tab in indentation; indent with 2 spaces");
+      if (lead.hasTab) this.err("K003", l.span(0, wsLen), "tab in indentation; indent with 2 spaces");
     };
-    let indent = 0;
-    for (const c of ws) indent += c === "\t" ? 2 : 1;
     const rest = text.slice(wsLen);
+
+    // A multi-line HTML block (types 1–5) hides the lines GitHub does not show as a list.
+    // A marker that also ends on this line is an ordinary comment, not a block.
+    const html = htmlBlockStart(rest);
+    if (html && !html.end(text)) {
+      const underItem = indent >= 2 && this.stack.length > 0;
+      const depth = underItem ? Math.min(Math.floor((indent - 2) / 2), this.stack.length - 1) : 0;
+      const contentCol = depth * 2 + 2;
+      if (underItem && indent <= contentCol + 3) {
+        this.pushDescription(l, text, lead, depth);
+        this.html = { end: html.end, desc: { depth, contentCol } };
+        return;
+      }
+      if (!underItem && lead.columns <= 3) {
+        this.closeList(0);
+        this.prose.push(text.trimEnd());
+        this.html = { end: html.end, desc: null };
+        return;
+      }
+    }
 
     if (indent === 0 && (rest === "#" || rest.startsWith("# "))) {
       this.heading(l);
-    } else if (rest.startsWith("```") || rest.startsWith("~~~")) {
+    } else if (opensFence(text, this.stack.length > 0)) {
       this.flushProse();
       this.closeList(0);
-      const ch = rest[0]!;
-      let marker = "";
-      for (const c of rest) {
-        if (c !== ch) break;
-        marker += c;
-      }
-      this.fence = { marker, lines: [text.trimEnd()] };
+      const open = openFence(text)!;
+      this.fence = { char: open.char, len: open.len, columns: open.columns, spaces: open.spaces, lines: [text.trimEnd()] };
     } else if (isBullet(rest)) {
       tab();
       this.item(l, wsLen, indent);
@@ -333,12 +380,12 @@ class Parser {
       const t = tokens[1];
       if (named && t) {
         if (isSegment(t.text)) name = { value: t.text, span: t.span };
-        else this.err("K005", t.span, `invalid section name \`${t.text}\``);
+        else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
-        this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`");
+        this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`", "arguments");
       }
       const extra = tokens[named ? 2 : 1];
-      if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\` takes a name`);
+      if (extra) this.err("K005", extra.span, named ? "unexpected words in heading" : `unexpected words in heading; only \`# flow\` takes a name`, "arguments");
     }
     this.doc.sections.push({ kind, heading: { value: title, span: full }, name, ...(comment ? { comment } : {}), items: [] });
   }
@@ -375,7 +422,7 @@ class Parser {
     };
     const errs: [Span, string][] = [];
     const { tokens, comment } = lex(l, head, errs);
-    for (const [span, msg] of errs) this.err("K005", span, msg);
+    for (const [span, msg] of errs) this.err("K005", span, msg, "quote");
     const node: Node = {
       kind: "unknown",
       keyword: null,
@@ -399,7 +446,7 @@ class Parser {
   private interpret(n: Node, l: Line, ctx: Ctx, parent: Parent | undefined): void {
     const first = n.tokens[0];
     if (!first) {
-      this.err("K005", n.span, "item has no content");
+      this.err("K005", n.span, "item has no content", "arguments");
       return;
     }
     const isKw = first.kind === "word" && keywordsOf(ctx).includes(first.text);
@@ -434,12 +481,12 @@ class Parser {
           if (t.kind === "word" && isSegment(t.text)) {
             n.refs.push({ text: t.text, target: base === null ? t.text : `${base}.${t.text}`, span: t.span });
           } else {
-            this.err("K005", t.span, `expected a name, found \`${t.text}\``);
+            this.err("K005", t.span, `expected a name, found \`${t.text}\``, "id");
           }
         }
         // `- exports ,` lists no name either.
         if (rest.every((t) => t.kind === "comma")) {
-          this.err("K005", n.span, "`exports` needs at least one name");
+          this.err("K005", n.span, "`exports` needs at least one name", "arguments");
         }
         break;
       }
@@ -451,7 +498,7 @@ class Parser {
         const t = rest[0];
         if (t) {
           const hint = n.kind === "entry" ? "; list entries as nested items" : "";
-          this.err("K005", t.span, `\`${kindLabel(n.kind)}\` takes no arguments${hint}`);
+          this.err("K005", t.span, `\`${kindLabel(n.kind)}\` takes no arguments${hint}`, "arguments");
         }
         break;
       }
@@ -467,7 +514,7 @@ class Parser {
         if (rest.length === 1 && t && (t.text === "business" || t.text === "technical")) {
           n.text = spanned(t);
         } else {
-          this.err("K005", n.span, "`kind` must be `business` or `technical`");
+          this.err("K005", n.span, "`kind` must be `business` or `technical`", "arguments");
         }
         break;
       }
@@ -475,7 +522,7 @@ class Parser {
         const r = rest[0]?.text === "event" ? rest.slice(1) : rest;
         const t = r[0];
         if (r.length === 1 && t && t.kind === "word") n.text = spanned(t);
-        else this.err("K005", n.span, "expected `emits [event] <name>`");
+        else this.err("K005", n.span, "expected `emits [event] <name>`", "arguments");
         break;
       }
       case "invariant":
@@ -488,7 +535,7 @@ class Parser {
             this.freeText(n, l, rest.slice(0, arrow));
             this.oneRef(n, rest.slice(arrow + 1));
           } else {
-            this.err("K005", n.span, "expected `when <condition> → <id>`");
+            this.err("K005", n.span, "expected `when <condition> → <id>`", "arguments");
           }
         } else {
           this.freeText(n, l, rest);
@@ -509,7 +556,8 @@ class Parser {
         const idTok = rest[1];
         const kinds = new Set(["fn", "module", "type", "event"]);
         if (!kindTok || !idTok || !kinds.has(kindTok.text) || !isId(idTok.text)) {
-          this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`");
+          const badId = kindTok !== undefined && idTok !== undefined && kinds.has(kindTok.text) && !isId(idTok.text);
+          this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
           break;
         }
         n.id = idTok.text;
@@ -531,10 +579,10 @@ class Parser {
           } else if (tail.length === 1 && q && q.kind === "quoted") {
             n.label = { value: q.text.replace(/^"|"$/g, ""), span: q.span };
           } else if (q) {
-            this.err("K005", q.span, 'expected `test <file> "<name>"`');
+            this.err("K005", q.span, 'expected `test <file> "<name>"`', "arguments");
           }
         } else {
-          this.err("K005", n.span, 'expected `test <file> "<name>"`');
+          this.err("K005", n.span, 'expected `test <file> "<name>"`', "arguments");
         }
         break;
       }
@@ -570,7 +618,7 @@ class Parser {
             ctx === "module"
               ? "`fn`, `type`, `event`, `module` or a dependency `<alias> <path>`"
               : "a dependency `<alias> <path>`";
-          this.err("K005", n.span, `expected ${what}`);
+          this.err("K005", n.span, `expected ${what}`, "arguments");
         }
         break;
       }
@@ -597,7 +645,7 @@ class Parser {
   private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean): void {
     const t = rest[0];
     if (!t) {
-      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a name`);
+      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a name`, "arguments");
       return;
     }
     let name = "";
@@ -608,8 +656,9 @@ class Parser {
       name = link.text;
     }
     if (!isSegment(name)) {
-      const msg = t.text.startsWith("[") ? "malformed link, expected `[name](path#Lnn)`" : `invalid name \`${t.text}\``;
-      this.err("K005", t.span, msg);
+      const brokenLink = t.text.startsWith("[");
+      const msg = brokenLink ? "malformed link, expected `[name](path#Lnn)`" : `invalid name \`${t.text}\``;
+      this.err("K005", t.span, msg, brokenLink ? "link" : "id");
       return;
     }
     const nameSpan = link ? linkTextSpan(t) : t.span;
@@ -624,7 +673,7 @@ class Parser {
         n.text = { value: renderTokens(tail), span: { start: first.span.start, end: last.span.end } };
       } else {
         const hint = n.kind === "layer" ? " (a dependency `<alias> <path>` must be nested under a module)" : "";
-        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${hint}`);
+        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${hint}`, "arguments");
       }
     }
   }
@@ -637,12 +686,13 @@ class Parser {
     if (t.kind === "link") {
       const link = parseLink(t);
       if (isId(link.text)) return { text: link.text, target: link.text, span: linkTextSpan(t), link };
-      this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``);
+      this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``, "id");
       return null;
     }
     // `[](x)` and `[a.b](x` are words to the lexer: a link with no text or no closing `)`.
-    const msg = t.text.startsWith("[") ? "malformed link, expected `[id](href)`" : `expected an ID, found \`${t.text}\``;
-    this.err("K005", t.span, msg);
+    const brokenLink = t.text.startsWith("[");
+    const msg = brokenLink ? "malformed link, expected `[id](href)`" : `expected an ID, found \`${t.text}\``;
+    this.err("K005", t.span, msg, brokenLink ? "link" : "id");
     return null;
   }
 
@@ -651,9 +701,9 @@ class Parser {
       const r = this.makeRef(rest[0]!);
       if (r) n.refs.push(r);
     } else if (rest.length === 0) {
-      this.err("K005", n.span, "expected an ID");
+      this.err("K005", n.span, "expected an ID", "arguments");
     } else {
-      this.err("K005", rest[1]!.span, "expected a single ID");
+      this.err("K005", rest[1]!.span, "expected a single ID", "arguments");
     }
   }
 
@@ -666,7 +716,7 @@ class Parser {
       if (r) n.refs.push(r);
     }
     if (count < min) {
-      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs at least ${min} ID(s)`);
+      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs at least ${min} ID(s)`, "arguments");
     }
   }
 
@@ -674,14 +724,14 @@ class Parser {
   private layers(n: Node, rest: Token[]): void {
     rest.forEach((t, i) => {
       if (i % 2 === 1) {
-        if (t.text !== "<") this.err("K005", t.span, `expected \`<\`, found \`${t.text}\``);
+        if (t.text !== "<") this.err("K005", t.span, `expected \`<\`, found \`${t.text}\``, "arguments");
       } else {
         const r = this.makeRef(t);
         if (r) n.refs.push(r);
       }
     });
     if (rest.length === 0 || rest.length % 2 === 0) {
-      this.err("K005", n.span, "expected `layers <a> < <b> …`");
+      this.err("K005", n.span, "expected `layers <a> < <b> …`", "arguments");
     }
   }
 
@@ -694,13 +744,115 @@ class Parser {
       // Canonical like a signature: `fmt` respaces the line, and the text (a verdict's area and hash) must not change with it.
       n.text = { value: renderTokens(rest), span: l.span(s, e) };
     } else {
-      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a description`);
+      this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a description`, "arguments");
     }
   }
 }
 
 function spanned(t: Token): Spanned<string> {
   return { value: t.text, span: t.span };
+}
+
+interface Lead {
+  raw: string;
+  /** Keylang indent: a tab counts as two spaces (§3). */
+  indent: number;
+  /** CommonMark columns: a tab advances to the next multiple of 4. */
+  columns: number;
+  hasTab: boolean;
+}
+
+function leadingWhitespace(text: string): Lead {
+  const raw = /^[ \t]*/.exec(text)![0];
+  let indent = 0;
+  let columns = 0;
+  for (const c of raw) {
+    if (c === "\t") {
+      indent += 2;
+      columns += 4 - (columns % 4);
+    } else {
+      indent += 1;
+      columns += 1;
+    }
+  }
+  return { raw, indent, columns, hasTab: raw.includes("\t") };
+}
+
+interface FenceOpen {
+  char: "`" | "~";
+  len: number;
+  columns: number;
+  /** Leading spaces, or null when a tab is part of the indent. */
+  spaces: number | null;
+}
+
+/** A fence opener, ignoring the indent-of-4 rule. An info string with a backtick is not an opener. */
+function openFence(text: string): FenceOpen | null {
+  const lead = leadingWhitespace(text);
+  const rest = text.slice(lead.raw.length);
+  const ch = rest[0];
+  if (ch !== "`" && ch !== "~") return null;
+  let len = 0;
+  while (rest[len] === ch) len++;
+  if (len < 3) return null;
+  const info = rest.slice(len).trim();
+  if (ch === "`" && info.includes("`")) return null;
+  return { char: ch, len, columns: lead.columns, spaces: lead.hasTab ? null : lead.indent };
+}
+
+/**
+ * CommonMark fence: indent under 4 spaces, or any indent while a list is open (Р9).
+ * A backtick info string that itself contains a backtick is prose.
+ */
+function opensFence(text: string, listOpen: boolean): boolean {
+  const open = openFence(text);
+  return open !== null && (open.columns < 4 || listOpen);
+}
+
+function closesFence(text: string, open: { char: string; len: number; columns: number }): boolean {
+  const lead = leadingWhitespace(text);
+  // A document-level fence closes at indent ≤ 3. A fence opened under a list (Р9) also closes at its own indent.
+  if (lead.columns > Math.max(3, open.columns)) return false;
+  const rest = text.slice(lead.raw.length);
+  if (!rest.startsWith(open.char)) return false;
+  let len = 0;
+  while (rest[len] === open.char) len++;
+  if (len < open.len) return false;
+  return /^[ \t]*$/.test(rest.slice(len));
+}
+
+/**
+ * Drop the indent `fmt` owes a fence that was written under a list item.
+ * The opener and the closer lose all of their indent; each body line loses as many
+ * spaces as the opener had, and never more than it has. A tab in the opener indent stays.
+ */
+export function dedentFenceLines(lines: string[]): string[] {
+  const first = lines[0];
+  if (first === undefined) return lines;
+  const open = openFence(first);
+  if (!open || open.spaces === null || open.spaces === 0) return lines;
+  const spaces = open.spaces;
+  return lines.map((line, i) => {
+    if (i === 0 || (i === lines.length - 1 && closesFence(line, open))) return line.trimStart();
+    let n = 0;
+    while (n < spaces && line[n] === " ") n++;
+    return line.slice(n);
+  });
+}
+
+/** Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line. */
+function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null {
+  const type1 = /^<(pre|script|style|textarea)(?:[ \t]|>|$)/i.exec(rest);
+  if (type1) {
+    const name = type1[1]!.toLowerCase();
+    const re = new RegExp(`</${name}[ \\t\\n\\f\\r]*>`, "i");
+    return { end: (line) => re.test(line) };
+  }
+  if (rest.startsWith("<!--")) return { end: (line) => line.includes("-->") };
+  if (rest.startsWith("<?")) return { end: (line) => line.includes("?>") };
+  if (rest.startsWith("<![CDATA[")) return { end: (line) => line.includes("]]>") };
+  if (/^<![A-Za-z]/.test(rest)) return { end: (line) => line.includes(">") };
+  return null;
 }
 
 function isBullet(rest: string): boolean {
@@ -721,7 +873,8 @@ export function isId(s: string): boolean {
 }
 
 /** The text of a link token `[text](…)`, i.e. from just after `[`. */
-function linkTextSpan(t: Token): Span {
+/** The span of the text inside `[…]`, the same span a link reference uses. */
+export function linkTextSpan(t: Token): Span {
   const text = parseLink(t).text;
   const { offset, line, col } = t.span.start;
   return { start: { offset: offset + 1, line, col: col + 1 }, end: { offset: offset + 1 + text.length, line, col: col + 1 + codePoints(text) } };

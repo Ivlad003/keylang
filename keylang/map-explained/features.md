@@ -59,33 +59,31 @@
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
     - ir [lang.ir](lang.md#lang.ir)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [ChangedInput](../../src/changed.ts#L12)
+    - type [ChangedInput](../../src/changed.ts#L13)
       <a id="features.changed.ChangedInput"></a>
-    - type [HookFail](../../src/changed.ts#L19)
+    - type [HookFail](../../src/changed.ts#L21)
       <a id="features.changed.HookFail"></a>
-    - type [RuleHit](../../src/changed.ts#L25) <!-- internal -->
+    - type [RuleHit](../../src/changed.ts#L27) <!-- internal -->
       <a id="features.changed.RuleHit"></a>
-    - fn [filterChanged](../../src/changed.ts#L39) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
+    - fn [filterChanged](../../src/changed.ts#L41) (input: ChangedInput, changed: ReadonlySet<string>, deleted: readonly string[] = []) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       <a id="features.changed.filterChanged"></a><br>Diagnostics and verdicts that touch `changed` (paths as check prints them). `deleted` are module ids whose file git removed: the node is gone, so a flow step that named it is still in the report. Order is preserved.
-      - calls [features.changed.collectRules](features.md#features.changed.collectRules), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookFails](../../src/changed.ts#L58) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
+      - calls [features.changed.ruleHits](features.md#features.changed.ruleHits), [features.changed.covers](features.md#features.changed.covers), [features.changed.flowLinesTouching](features.md#features.changed.flowLinesTouching), [check.assess.sameFinding](check.md#check.assess.sameFinding)
+    - fn [hookFails](../../src/changed.ts#L60) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       <a id="features.changed.hookFails"></a><br>Error diagnostics, then fail verdicts that are not the same finding.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [hookDecision](../../src/changed.ts#L69) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
+    - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
-    - fn [parseHookEvent](../../src/changed.ts#L76) (text: string) → { stop_hook_active?: boolean }
+    - fn [parseHookEvent](../../src/changed.ts#L78) (text: string) → { stop_hook_active?: boolean }
       <a id="features.changed.parseHookEvent"></a><br>The object on stdin. Empty stdin is an event with no `stop_hook_active`.
-    - fn [covers](../../src/changed.ts#L91) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [covers](../../src/changed.ts#L93) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
       <a id="features.changed.covers"></a>
-    - fn [collectRules](../../src/changed.ts#L96) (docs: readonly Document[]) → RuleHit[] <!-- internal -->
-      <a id="features.changed.collectRules"></a>
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.changed.addRule](features.md#features.changed.addRule)
-    - fn [addRule](../../src/changed.ts#L107) (hits: RuleHit[], file: string, node: Node, under: string | null) → void <!-- internal -->
-      <a id="features.changed.addRule"></a>
-    - fn [flowLinesTouching](../../src/changed.ts#L126) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L99) (spec: SpecIR) → RuleHit[] <!-- internal -->
+      <a id="features.changed.ruleHits"></a><br>Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`.
+    - fn [flowLinesTouching](../../src/changed.ts#L116) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [check-results](../../src/check-results.ts#L1)
     <a id="features.check-results"></a><br>The results of `keylang check --format json`: diagnostics and verdicts in one list, a diagnostic joined with the verdict it explains. Shared by the CLI and the MCP server, so an agent sees exactly what CI sees.
     - node [external.node](external.md#external.node)
@@ -96,7 +94,7 @@
       <a id="features.check-results.Provenance"></a>
     - type [CheckResult](../../src/check-results.ts#L12)
       <a id="features.check-results.CheckResult"></a>
-    - fn [checkResults](../../src/check-results.ts#L32) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
+    - fn [checkResults](../../src/check-results.ts#L34) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
       <a id="features.check-results.checkResults"></a><br>Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.diag.isError](base.md#base.diag.isError)
   - module [draft-llm](../../src/draft-llm.ts#L1)
@@ -109,46 +107,47 @@
     - ir [lang.ir](lang.md#lang.ir)
     - llm [features.llm](features.md#features.llm)
     - parser [lang.parser](lang.md#lang.parser)
-    - type [DraftStatus](../../src/draft-llm.ts#L19) = "agree" | "llm-only" | "algo-only" | "conflict"
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - type [DraftStatus](../../src/draft-llm.ts#L20) = "agree" | "llm-only" | "algo-only" | "conflict"
       <a id="features.draft-llm.DraftStatus"></a>
-    - type [ModelDraft](../../src/draft-llm.ts#L21)
+    - type [ModelDraft](../../src/draft-llm.ts#L22)
       <a id="features.draft-llm.ModelDraft"></a>
-    - fn [draftFlowWithModel](../../src/draft-llm.ts#L46) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string) → Promise<ModelDraft>
+    - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string) → Promise<ModelDraft>
       <a id="features.draft-llm.draftFlowWithModel"></a><br>`context`: the pack from the TUI context panel, sent as it is shown.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft-llm.compactMap](features.md#features.draft-llm.compactMap), [features.draft-llm.similarFlows](features.md#features.draft-llm.similarFlows), [features.draft-llm.flowText](features.md#features.draft-llm.flowText), [features.draft-llm.unknownIn](features.md#features.draft-llm.unknownIn), [features.draft-llm.reconcile](features.md#features.draft-llm.reconcile)
-    - fn [reconcile](../../src/draft-llm.ts#L87) (analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string) → { text: string; counts: Record<DraftStatus, number>; dropped: string[] } <!-- internal -->
+    - fn [reconcile](../../src/draft-llm.ts#L88) (analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string) → { text: string; counts: Record<DraftStatus, number>; dropped: string[] } <!-- internal -->
       <a id="features.draft-llm.reconcile"></a><br>The model's flow judged on its IR. An item with a parse error other than indentation (a step under an `invariant`, an unknown keyword) is dropped; the requested trigger is added when the answer lacks it.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft-llm.reachability](features.md#features.draft-llm.reachability), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.draft-llm.algoItem](features.md#features.draft-llm.algoItem), [features.draft-llm.algoCallers](features.md#features.draft-llm.algoCallers), [lang.fmt.formatDocument](lang.md#lang.fmt.formatDocument)
-    - fn [algoItem](../../src/draft-llm.ts#L146) (kind: "trigger" | "step", id: string) → Node <!-- internal -->
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.draft-llm.reachability](features.md#features.draft-llm.reachability), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [features.draft-llm.algoItem](features.md#features.draft-llm.algoItem), [features.draft-llm.algoCallers](features.md#features.draft-llm.algoCallers), [lang.fmt.formatDocument](lang.md#lang.fmt.formatDocument)
+    - fn [algoItem](../../src/draft-llm.ts#L148) (kind: "trigger" | "step", id: string) → Node <!-- internal -->
       <a id="features.draft-llm.algoItem"></a><br>One provenance-marked item of the algo projection, as the parser reads it.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [algoCallers](../../src/draft-llm.ts#L152) (text: string) → [string, string[]][] <!-- internal -->
+    - fn [algoCallers](../../src/draft-llm.ts#L154) (text: string) → [string, string[]][] <!-- internal -->
       <a id="features.draft-llm.algoCallers"></a><br>Each step of the algo draft (preorder) with its callers there, nearest first.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [reachability](../../src/draft-llm.ts#L165) (nodes: NonNullable<Analysis["snapshot"]>["nodes"]) → (from: string, to: string) => boolean <!-- internal -->
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [reachability](../../src/draft-llm.ts#L168) (nodes: NonNullable<Analysis["snapshot"]>["nodes"]) → (from: string, to: string) => boolean <!-- internal -->
       <a id="features.draft-llm.reachability"></a><br>Whether `from` reaches `to` through resolved calls of the snapshot, as a static step proof would.
-    - fn [flowText](../../src/draft-llm.ts#L189) (answer: string, name: string) → string <!-- internal -->
+    - fn [flowText](../../src/draft-llm.ts#L192) (answer: string, name: string) → string <!-- internal -->
       <a id="features.draft-llm.flowText"></a><br>The flow section of an answer: the first fenced block (or the whole answer), under the requested heading. An ID written as code in an item (`` - step `a.b` ``, which the prompt's own examples invite) is the ID.
       - calls [lang.parser.isId](lang.md#lang.parser.isId)
-    - fn [unknownIn](../../src/draft-llm.ts#L202) (analysis: Analysis, text: string) → string[] <!-- internal -->
+    - fn [unknownIn](../../src/draft-llm.ts#L205) (analysis: Analysis, text: string) → string[] <!-- internal -->
       <a id="features.draft-llm.unknownIn"></a><br>Referenced IDs that are neither snapshot nodes nor `planned` in the draft or the specs.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [compactMap](../../src/draft-llm.ts#L220) (analysis: Analysis, steps: readonly string[]) → string <!-- internal -->
+    - fn [compactMap](../../src/draft-llm.ts#L223) (analysis: Analysis, steps: readonly string[]) → string <!-- internal -->
       <a id="features.draft-llm.compactMap"></a><br>The fns the draft can reach, then the rest of their modules; at most 300 lines, which the prompt says.
-    - fn [similarFlows](../../src/draft-llm.ts#L230) (docs: readonly Document[], steps: readonly string[]) → string[] <!-- internal -->
+    - fn [similarFlows](../../src/draft-llm.ts#L233) (docs: readonly Document[], steps: readonly string[]) → string[] <!-- internal -->
       <a id="features.draft-llm.similarFlows"></a><br>Up to three hand-written flows, those sharing most IDs with the draft first.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.draft-llm.lineTree](features.md#features.draft-llm.lineTree)
-    - fn [lineTree](../../src/draft-llm.ts#L250) (node: { tokens: { text: string }[]; children: unknown[] }, level: number) → string[] <!-- internal -->
+    - fn [lineTree](../../src/draft-llm.ts#L253) (node: { tokens: { text: string }[]; children: unknown[] }, level: number) → string[] <!-- internal -->
       <a id="features.draft-llm.lineTree"></a>
-    - type [RulesDraft](../../src/draft-llm.ts#L256)
+    - type [RulesDraft](../../src/draft-llm.ts#L259)
       <a id="features.draft-llm.RulesDraft"></a>
-    - fn [draftRulesWithModel](../../src/draft-llm.ts#L270) (analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string) → Promise<RulesDraft>
+    - fn [draftRulesWithModel](../../src/draft-llm.ts#L273) (analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string) → Promise<RulesDraft>
       <a id="features.draft-llm.draftRulesWithModel"></a><br>`draft rules --mode llm|hybrid`: the model proposes rules from the layer dependencies; each is checked at once against the current snapshot, alone, as `check` would: `agree` when it holds, `conflict` when the code breaks it (with the edge), `llm-only` when the evidence is not…
       - calls [features.draft-llm.judgeRule](features.md#features.draft-llm.judgeRule)
-    - fn [judgeRule](../../src/draft-llm.ts#L314) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
+    - fn [judgeRule](../../src/draft-llm.ts#L317) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
       <a id="features.draft-llm.judgeRule"></a><br>One rule, checked alone against the snapshot: what it adds to a check without it.
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [check.assess.assess](check.md#check.assess.assess)
-    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L346) (analysis: Analysis, client: LlmClient, files: readonly string[]) → Promise<Record<string, string[]>>
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [base.config.resolveStatic](base.md#base.config.resolveStatic), [check.assess.assess](check.md#check.assess.assess)
+    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L351) (analysis: Analysis, client: LlmClient, files: readonly string[]) → Promise<Record<string, string[]>>
       <a id="features.draft-llm.draftLayoutWithModel"></a><br>`draft map --mode llm|hybrid`: the model proposes layers (name → globs), validated as `keylang.json` would be. Only printed: layers are never assigned without a person (design §5.1 p.4).
       - calls [base.config.parseConfig](base.md#base.config.parseConfig)
   - module [draft](../../src/draft.ts#L1)
@@ -270,13 +269,15 @@
       <a id="features.explain-node.ExplainResult"></a>
     - fn [summarizeNode](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → ExplainResult
       <a id="features.explain-node.summarizeNode"></a>
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing)
-    - fn [formatSummary](../../src/explain-node.ts#L86) (s: NodeSummary) → string
+      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.explain-node.nodeHolding](features.md#features.explain-node.nodeHolding), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing)
+    - fn [nodeHolding](../../src/explain-node.ts#L95) (root: Node, ref: Ref) → Node | null <!-- internal -->
+      <a id="features.explain-node.nodeHolding"></a><br>The allow, deny, entry item, nested layer, or module line that holds `ref`.
+    - fn [formatSummary](../../src/explain-node.ts#L105) (s: NodeSummary) → string
       <a id="features.explain-node.formatSummary"></a><br>The summary as text: one line per fact, empty facts left out.
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
-    - fn [explainCode](../../src/explain.ts#L84) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L104) (code: string) → string | null
       <a id="features.explain.explainCode"></a>
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step in it is static ok, and no rule fail exists in any spec. Tests and trace are reported and do not block.
@@ -284,22 +285,23 @@
     - diag [base.diag](base.md#base.diag)
     - ir [lang.ir](lang.md#lang.ir)
     - span [base.span](base.md#base.span)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Gap](../../src/feature-status.ts#L12)
+    - type [Gap](../../src/feature-status.ts#L13)
       <a id="features.feature-status.Gap"></a>
-    - type [FeatureInfo](../../src/feature-status.ts#L21)
+    - type [FeatureInfo](../../src/feature-status.ts#L22)
       <a id="features.feature-status.FeatureInfo"></a>
-    - type [FeatureReport](../../src/feature-status.ts#L30)
+    - type [FeatureReport](../../src/feature-status.ts#L31)
       <a id="features.feature-status.FeatureReport"></a>
-    - type [FeatureInput](../../src/feature-status.ts#L36)
+    - type [FeatureInput](../../src/feature-status.ts#L37)
       <a id="features.feature-status.FeatureInput"></a>
-    - fn [idsIn](../../src/feature-status.ts#L48) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L50) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L65) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L67) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.feature-status.finding](features.md#features.feature-status.finding), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.span.compareText](base.md#base.span.compareText)
-    - fn [finding](../../src/feature-status.ts#L124) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+      - calls [features.feature-status.finding](features.md#features.feature-status.finding), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.span.compareText](base.md#base.span.compareText)
+    - fn [finding](../../src/feature-status.ts#L125) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a>
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
@@ -360,119 +362,125 @@
     - node-search [features.node-search](features.md#features.node-search)
     - parser [lang.parser](lang.md#lang.parser)
     - rules [check.rules](check.md#check.rules)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - span [base.span](base.md#base.span)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [LspPosition](../../src/lsp-features.ts#L23)
+    - type [LspPosition](../../src/lsp-features.ts#L24)
       <a id="features.lsp-features.LspPosition"></a>
-    - type [LspRange](../../src/lsp-features.ts#L28)
+    - type [LspRange](../../src/lsp-features.ts#L29)
       <a id="features.lsp-features.LspRange"></a>
-    - type [Location](../../src/lsp-features.ts#L33)
+    - type [Location](../../src/lsp-features.ts#L34)
       <a id="features.lsp-features.Location"></a>
-    - type [Workspace](../../src/lsp-features.ts#L39)
+    - type [Workspace](../../src/lsp-features.ts#L40)
       <a id="features.lsp-features.Workspace"></a><br>What features read: the analysis, the root, and the text of any document.
-    - fn [workspace](../../src/lsp-features.ts#L46) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
+    - fn [workspace](../../src/lsp-features.ts#L47) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
       <a id="features.lsp-features.workspace"></a>
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.lsp-features.readOrNull](features.md#features.lsp-features.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [lineStarts](../../src/lsp-features.ts#L85) (text: string) → number[] <!-- internal -->
+    - fn [lineStarts](../../src/lsp-features.ts#L86) (text: string) → number[] <!-- internal -->
       <a id="features.lsp-features.lineStarts"></a>
-    - fn [lspPoint](../../src/lsp-features.ts#L95) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
+    - fn [lspPoint](../../src/lsp-features.ts#L96) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
       <a id="features.lsp-features.lspPoint"></a><br>A 1-based line and column in code points — the unit of IR spans and of snapshot positions in code alike — as an LSP position (UTF-16).
-    - fn [fromPos](../../src/lsp-features.ts#L101) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
+    - fn [fromPos](../../src/lsp-features.ts#L102) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
       <a id="features.lsp-features.fromPos"></a>
       - calls [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - fn [fromSpan](../../src/lsp-features.ts#L105) (text: string | null, span: Span) → LspRange <!-- internal -->
+    - fn [fromSpan](../../src/lsp-features.ts#L106) (text: string | null, span: Span) → LspRange <!-- internal -->
       <a id="features.lsp-features.fromSpan"></a>
       - calls [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos)
-    - fn [lineRange](../../src/lsp-features.ts#L110) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
+    - fn [lineRange](../../src/lsp-features.ts#L111) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
       <a id="features.lsp-features.lineRange"></a><br>A 1-based line and a column in code points, to the end of that line.
-    - fn [toOffset](../../src/lsp-features.ts#L116) (text: string, position: LspPosition) → number <!-- internal -->
+    - fn [toOffset](../../src/lsp-features.ts#L117) (text: string, position: LspPosition) → number <!-- internal -->
       <a id="features.lsp-features.toOffset"></a>
       - calls [features.lsp-features.lineStarts](features.md#features.lsp-features.lineStarts)
-    - fn [uriOf](../../src/lsp-features.ts#L120) (root: string, path: string) → string <!-- internal -->
+    - fn [uriOf](../../src/lsp-features.ts#L121) (root: string, path: string) → string <!-- internal -->
       <a id="features.lsp-features.uriOf"></a>
-    - type [Target](../../src/lsp-features.ts#L126) <!-- internal -->
+    - type [Target](../../src/lsp-features.ts#L127) <!-- internal -->
       <a id="features.lsp-features.Target"></a>
-    - fn [nodesOf](../../src/lsp-features.ts#L128) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
+    - fn [nodesOf](../../src/lsp-features.ts#L129) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
       <a id="features.lsp-features.nodesOf"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [targetAt](../../src/lsp-features.ts#L141) (doc: Document, offset: number) → Target | null
+    - fn [targetAt](../../src/lsp-features.ts#L142) (doc: Document, offset: number) → Target | null
       <a id="features.lsp-features.targetAt"></a><br>The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains)
-    - fn [docOf](../../src/lsp-features.ts#L156) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [docOf](../../src/lsp-features.ts#L157) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.docOf"></a>
       - calls [features.lsp-features.readingDoc](features.md#features.lsp-features.readingDoc)
-    - fn [readOrNull](../../src/lsp-features.ts#L160) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/lsp-features.ts#L161) (abs: string) → string | null <!-- internal -->
       <a id="features.lsp-features.readOrNull"></a>
-    - fn [readingDoc](../../src/lsp-features.ts#L176) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [readingDoc](../../src/lsp-features.ts#L177) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.readingDoc"></a><br>A file of the explained map. The analysis does not check it (it is no spec), but its IDs and code links lead where the map's do: hover, definition and Enter in the TUI work there too.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [at](../../src/lsp-features.ts#L187) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
+    - fn [at](../../src/lsp-features.ts#L188) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
       <a id="features.lsp-features.at"></a>
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset)
-    - type [LspDiagnostic](../../src/lsp-features.ts#L196)
+    - type [LspDiagnostic](../../src/lsp-features.ts#L197)
       <a id="features.lsp-features.LspDiagnostic"></a>
-    - fn [diagnosticsFor](../../src/lsp-features.ts#L206) (ws: Workspace, path: string) → LspDiagnostic[]
+    - fn [diagnosticsFor](../../src/lsp-features.ts#L207) (ws: Workspace, path: string) → LspDiagnostic[]
       <a id="features.lsp-features.diagnosticsFor"></a><br>Diagnostics and verdicts of one document, as `check --format json` reports them.
       - calls [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange)
-    - type [Described](../../src/lsp-features.ts#L224) <!-- internal -->
+    - type [Described](../../src/lsp-features.ts#L232) <!-- internal -->
       <a id="features.lsp-features.Described"></a>
-    - fn [describe](../../src/lsp-features.ts#L234) (ws: Workspace, id: string) → Described | null <!-- internal -->
+    - fn [describe](../../src/lsp-features.ts#L242) (ws: Workspace, id: string) → Described | null <!-- internal -->
       <a id="features.lsp-features.describe"></a>
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [plannedDecl](../../src/lsp-features.ts#L248) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
+    - fn [plannedDecl](../../src/lsp-features.ts#L256) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
       <a id="features.lsp-features.plannedDecl"></a>
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [flowsUsing](../../src/lsp-features.ts#L257) (docs: readonly Document[], id: string) → string[]
+    - fn [flowsUsing](../../src/lsp-features.ts#L265) (spec: SpecIR, id: string) → string[]
       <a id="features.lsp-features.flowsUsing"></a>
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [hover](../../src/lsp-features.ts#L272) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [hover](../../src/lsp-features.ts#L275) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
       <a id="features.lsp-features.hover"></a>
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [definition](../../src/lsp-features.ts#L293) (ws: Workspace, path: string, position: LspPosition) → Location | null
+    - fn [definition](../../src/lsp-features.ts#L296) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a>
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
-    - fn [signatureHelp](../../src/lsp-features.ts#L307) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
+    - fn [signatureHelp](../../src/lsp-features.ts#L310) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
       <a id="features.lsp-features.signatureHelp"></a>
       - calls [features.lsp-features.describe](features.md#features.lsp-features.describe)
-    - fn [references](../../src/lsp-features.ts#L321) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L324) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       <a id="features.lsp-features.references"></a><br>Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [SymbolInformation](../../src/lsp-features.ts#L337)
+    - type [SymbolInformation](../../src/lsp-features.ts#L340)
       <a id="features.lsp-features.SymbolInformation"></a>
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L357) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L360) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
-    - fn [symbolKind](../../src/lsp-features.ts#L373) (kind: string) → number <!-- internal -->
+    - fn [symbolKind](../../src/lsp-features.ts#L376) (kind: string) → number <!-- internal -->
       <a id="features.lsp-features.symbolKind"></a>
-    - fn [symbolLocation](../../src/lsp-features.ts#L382) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+    - fn [symbolLocation](../../src/lsp-features.ts#L385) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       <a id="features.lsp-features.symbolLocation"></a>
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - type [DocumentSymbol](../../src/lsp-features.ts#L402)
+    - type [DocumentSymbol](../../src/lsp-features.ts#L405)
       <a id="features.lsp-features.DocumentSymbol"></a>
-    - fn [statusOf](../../src/lsp-features.ts#L415) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [statusOf](../../src/lsp-features.ts#L418) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
       <a id="features.lsp-features.statusOf"></a><br>Worst verdict on a line of this document: `fail` > `unverified` > `ok`.
-    - fn [documentSymbols](../../src/lsp-features.ts#L424) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [flowPhrases](../../src/lsp-features.ts#L428) (spec: SpecIR) → Map<Node, string> <!-- internal -->
+      <a id="features.lsp-features.flowPhrases"></a><br>Written phrase of a trigger, step, when, or then, keyed by its text-IR node.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.lsp-features.itemPhrase](features.md#features.lsp-features.itemPhrase)
+    - fn [itemPhrase](../../src/lsp-features.ts#L439) (item: Trigger | FlowItem) → string | null <!-- internal -->
+      <a id="features.lsp-features.itemPhrase"></a>
+    - fn [documentSymbols](../../src/lsp-features.ts#L446) (ws: Workspace, path: string) → DocumentSymbol[]
       <a id="features.lsp-features.documentSymbols"></a>
-      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [CompletionItem](../../src/lsp-features.ts#L509)
+      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.flowPhrases](features.md#features.lsp-features.flowPhrases), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - type [CompletionItem](../../src/lsp-features.ts#L533)
       <a id="features.lsp-features.CompletionItem"></a>
-    - fn [completions](../../src/lsp-features.ts#L536) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - fn [completions](../../src/lsp-features.ts#L560) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
-      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [sectionAt](../../src/lsp-features.ts#L586) (doc: Document, line: number) → Section | undefined <!-- internal -->
+      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
+    - fn [sectionAt](../../src/lsp-features.ts#L608) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a>
-    - fn [enclosing](../../src/lsp-features.ts#L596) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L618) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L605) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L627) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a>
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L618) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L640) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L633) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L655) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a>
-    - fn [codeLenses](../../src/lsp-features.ts#L639) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L661) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [node-search](../../src/node-search.ts#L1)
@@ -523,10 +531,10 @@
     - diag [base.diag](base.md#base.diag)
     - glob [base.glob](base.md#base.glob)
     - graph [map.graph](map.md#map.graph)
-    - ir [lang.ir](lang.md#lang.ir)
     - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - proposals [features.proposals](features.md#features.proposals)
     - rules [check.rules](check.md#check.rules)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - llm [features.llm](features.md#features.llm)
     - verdict [check.verdict](check.md#check.verdict)
@@ -536,30 +544,37 @@
       <a id="features.spec-to-code.CodeCandidate"></a>
     - fn [specToCode](../../src/spec-to-code.ts#L50) (analysis: Analysis, id: string, into?: string, model?: LlmClient) → Promise<CodeCandidate>
       <a id="features.spec-to-code.specToCode"></a><br>`model`: the body comes from the model instead of the stub — the whole function with the declared signature, in one fenced block — and is analyzed the same way before anything is written.
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [features.spec-to-code.newModuleFile](features.md#features.spec-to-code.newModuleFile), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
+      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [features.spec-to-code.newModuleFile](features.md#features.spec-to-code.newModuleFile), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
     - fn [introduced](../../src/spec-to-code.ts#L91) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
       <a id="features.spec-to-code.introduced"></a><br>Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too).
     - fn [flowTests](../../src/spec-to-code.ts#L102) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
       <a id="features.spec-to-code.flowTests"></a><br>The `test` entries of the flows that name `id`: flow name, test file and test name.
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [testCandidates](../../src/spec-to-code.ts#L125) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+      - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [flowsMentioning](../../src/spec-to-code.ts#L115) (analysis: Analysis, id: string) → Flow[] <!-- internal -->
+      <a id="features.spec-to-code.flowsMentioning"></a><br>Hand-written flows whose trigger, step, claim, `then`, or `planned` names `id`.
+      - calls [features.spec-to-code.flowMentions](features.md#features.spec-to-code.flowMentions)
+    - fn [flowMentions](../../src/spec-to-code.ts#L120) (spec: SpecIR, flow: Flow, id: string) → boolean <!-- internal -->
+      <a id="features.spec-to-code.flowMentions"></a>
+      - calls [features.spec-to-code.flowOwns](features.md#features.spec-to-code.flowOwns), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [flowOwns](../../src/spec-to-code.ts#L133) (spec: SpecIR, flow: Flow, line: number) → boolean <!-- internal -->
+      <a id="features.spec-to-code.flowOwns"></a><br>`line` sits in this flow: after its heading and before the next flow of the same file.
+    - fn [testCandidates](../../src/spec-to-code.ts#L143) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
       <a id="features.spec-to-code.testCandidates"></a><br>One new file per test path the flows name and the disk lacks. A test in an existing file, or in a language without a `node:test` shape, is a note: editing someone's test file is theirs to do.
       - calls [features.spec-to-code.flowTests](features.md#features.spec-to-code.flowTests), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [base.config.toPosix](base.md#base.config.toPosix), [features.spec-to-code.modelTest](features.md#features.spec-to-code.modelTest), [features.spec-to-code.testStub](features.md#features.spec-to-code.testStub)
-    - fn [testStub](../../src/spec-to-code.ts#L160) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L178) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       <a id="features.spec-to-code.testStub"></a>
-    - fn [modelTest](../../src/spec-to-code.ts#L168) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L186) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelTest"></a><br>The e2e test file from the model; each declared test name must be in it verbatim.
-    - fn [callersInFlows](../../src/spec-to-code.ts#L185) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L203) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.spec-to-code.callersInFlows"></a><br>IDs directly above `id` in flows: the trigger or step each of its steps is nested under.
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [newModuleFile](../../src/spec-to-code.ts#L202) (config: Config, moduleId: string) → string <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L216) (config: Config, moduleId: string) → string <!-- internal -->
       <a id="features.spec-to-code.newModuleFile"></a><br>`<layer glob prefix>/<segments>.<ext>`; one prefix per layer, or the path is ambiguous.
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix)
-    - fn [stubFor](../../src/spec-to-code.ts#L217) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L231) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
       <a id="features.spec-to-code.stubFor"></a><br>`(order: Order) → Promise<Refund>` → a function of that signature that fails until written; the declared parameters and result are kept as written, so the stub's own signature matches the plan (no K201).
-    - fn [modelBody](../../src/spec-to-code.ts#L233) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L247) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function from the model, with its declared name; the rest of its answer is dropped.
-      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+      - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning)
   - module [stats](../../src/stats.ts#L1)
     <a id="features.stats"></a><br>`.keylang/stats.json`: how often people accept what a model proposed (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines, and per kind of suggestion; local, never a verdict.
     - node [external.node](external.md#external.node)

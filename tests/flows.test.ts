@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -66,6 +67,8 @@ interface JsonResult {
   area: string;
   verdict: string;
   evidence: string;
+  file: string;
+  line: number;
   code: string | null;
   provenance?: string;
   runId?: string;
@@ -243,49 +246,6 @@ test("static: recursion, direct or mutual, is a path from a function to itself",
   assert.doesNotMatch(readFileSync(join(dir, "keylang/map/domain.md"), "utf8"), /calls domain\.walk\.h/);
 });
 
-// A hook with a default: the code calls what it is given, or its default.
-const HOOKS: Record<string, string> = {
-  "src/domain/build.ts": "export function build(): void {}\n",
-  "src/application/analyze.ts": [
-    'import { build } from "../domain/build.ts";',
-    "export function analyze(request: { generate?: () => void }): void {",
-    "  const generate = request.generate ?? build;",
-    "  generate();",
-    "}",
-    "export function run(step = build): void {",
-    "  step();",
-    "}",
-    "export class Session {",
-    "  private readonly analyzer: (request: { generate?: () => void }) => void;",
-    "  constructor(options: { analyzer?: (request: { generate?: () => void }) => void }) {",
-    "    this.analyzer = options.analyzer ?? analyze;",
-    "  }",
-    "  refresh(): void {",
-    "    this.analyzer({});",
-    "  }",
-    "}",
-    "",
-  ].join("\n"),
-  "src/presentation/worker.ts": [
-    'import { analyze } from "../application/analyze.ts";',
-    "export class Worker {",
-    "  readonly generate = (): void => {};",
-    "}",
-    "export function main(): void {",
-    "  const worker = new Worker();",
-    "  analyze({ generate: worker.generate });",
-    "}",
-    "",
-  ].join("\n"),
-};
-
-const HOOK_FLOW = `# flow hooks
-
-- trigger application.analyze.analyze
-  - step domain.build.build
-  - step presentation.worker.Worker.generate
-`;
-
 test("static: --static=behavior follows a hook's default and an injected value; shape follows only written calls", (t) => {
   const dir = repo(t, HOOKS, {
     "flows/hooks.md": HOOK_FLOW,
@@ -301,8 +261,8 @@ test("static: --static=behavior follows a hook's default and an injected value; 
   assert.deepEqual(keylang(dir, ["check", "--strict", "--static", "behavior"]).stdout, behavior.stdout);
   const shape = keylang(dir, ["check", "--static=shape"]);
   assert.equal(shape.status, 0, shape.stdout);
-  assert.match(shape.stdout, /static unverified domain\.build\.build: no resolved path from application\.analyze\.analyze; the default of the hook `generate` \(not followed with --static=shape\) at src\/application\/analyze\.ts:4:3 may reach it/);
-  assert.match(shape.stdout, /static unverified presentation\.worker\.Worker\.generate: no resolved path from application\.analyze\.analyze; `generate` injected at src\/presentation\/worker\.ts:7:3 \(not followed with --static=shape\)/);
+  assert.match(shape.stdout, /static unverified domain\.build\.build: no resolved path from application\.analyze\.analyze; the default of the hook `generate` \(not followed in static mode shape, set by --static\) at src\/application\/analyze\.ts:4:3 may reach it/);
+  assert.match(shape.stdout, /static unverified presentation\.worker\.Worker\.generate: no resolved path from application\.analyze\.analyze; `generate` injected at src\/presentation\/worker\.ts:7:3 \(not followed in static mode shape, set by --static\)/);
   assert.equal(keylang(dir, ["check", "--static=shape", "--strict"]).status, 1);
   const bad = keylang(dir, ["check", "--static=runtime"]);
   assert.equal(bad.status, 2);
@@ -313,6 +273,54 @@ test("static: --static=behavior follows a hook's default and an injected value; 
   const map = readFileSync(join(dir, "keylang/map/application.md"), "utf8");
   assert.match(map, /- fn \[analyze\].*\n\s+- calls domain\.build\.build\n/);
   assert.doesNotMatch(map, /calls .*presentation\.worker/);
+});
+
+test("check.static in keylang.json is the mode; --static overrides it and names itself in the evidence", (t) => {
+  const flow = { "flows/hooks.md": HOOK_FLOW };
+  const shaped = repo(t, HOOKS, flow, { static: "shape" });
+  const flagged = repo(t, HOOKS, flow);
+  const plain = repo(t, HOOKS, flow);
+
+  const stamp = (row: JsonResult): string => `${row.criterion}\t${row.verdict}\t${row.file}\t${row.line}`;
+  const fromConfig = results(shaped);
+  const fromFlag = results(flagged, ["--static=shape"]);
+  assert.deepEqual(fromConfig.rows.map(stamp), fromFlag.rows.map(stamp));
+  assert.match(fromConfig.rows.find((row) => row.evidence.includes("not followed"))!.evidence, /not followed in static mode shape, set by keylang\.json check\.static/);
+  assert.match(fromFlag.rows.find((row) => row.evidence.includes("not followed"))!.evidence, /not followed in static mode shape, set by --static/);
+  assert.doesNotMatch(JSON.stringify(fromConfig.rows), /not followed with --static=shape/);
+  const sarif = keylang(shaped, ["check", "--format", "sarif"]);
+  assert.match(sarif.stdout, /not followed in static mode shape, set by keylang\.json check\.static/);
+  assert.equal(keylang(shaped, ["check", "--strict"]).status, 1);
+
+  const overridden = keylang(shaped, ["check", "--static=behavior"]);
+  const untouched = keylang(plain, ["check"]);
+  assert.equal(overridden.status, 0, overridden.stdout + overridden.stderr);
+  assert.equal(overridden.stdout, untouched.stdout);
+
+  mkdirSync(join(shaped, "keylang/features"), { recursive: true });
+  writeFileSync(join(shaped, "keylang/features/hooks.md"), HOOK_FLOW);
+  const feature = keylang(shaped, ["feature", "hooks"]);
+  assert.equal(feature.status, 1, feature.stdout + feature.stderr);
+  assert.match(feature.stdout, /static domain\.build\.build/);
+
+  for (const bad of ["runtime", 1]) {
+    const dir = repo(t, HOOKS, { "flows/hooks.md": HOOK_FLOW });
+    const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as { check: { static: unknown } };
+    config.check = { static: bad };
+    writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(config)}\n`);
+    for (const command of ["check", "map"]) {
+      const out = keylang(dir, [command]);
+      assert.equal(out.status, 2, `${command} ${JSON.stringify(bad)}: ${out.stderr}`);
+      assert.match(out.stderr, /keylang\.json/);
+      assert.match(out.stderr, new RegExp("`check\\.static` must be \"behavior\" or \"shape\", got " + JSON.stringify(bad).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+  }
+  const unknown = keylang(plain, ["check", "--static=runtime"]);
+  assert.equal(unknown.status, 2);
+  assert.match(unknown.stderr, /unknown --static `runtime`; expected behavior, shape/);
+  const help = keylang(plain, ["--help"]);
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /--static <mode>[\s\S]*?this flag, then keylang\.json check\.static,\n\s*then behavior/);
 });
 
 // ---------- 17: test reports ----------
@@ -539,8 +547,11 @@ test("trace: overlapping siblings are parallel, an async child needs a link, one
   assert.equal(row(rows, "trace", SAVE)?.verdict, "ok");
   const twice = CHECKOUT_FLOW.replace("  - step infrastructure.store.save\n", "  - step infrastructure.store.save\n  - step infrastructure.store.save\n");
   const again = traced(t, twice);
-  const both = again.write(traceRun(again.snapshot, "checkout", nested(), { instrumented: ALL })).filter((r) => r.criterion === "trace" && r.area === SAVE);
+  const twiceRows = again.write(traceRun(again.snapshot, "checkout", nested(), { instrumented: ALL }));
+  const both = twiceRows.filter((r) => r.criterion === "trace" && r.area === SAVE);
   assert.deepEqual(both.map((r) => r.verdict), ["ok", "fail"]);
+  // One call satisfies both siblings statically: order and multiplicity are trace concerns.
+  assert.deepEqual(twiceRows.filter((r) => r.criterion === "static" && r.area === SAVE).map((r) => r.verdict), ["ok", "ok"]);
 });
 
 test("trace: a when branch that did not run is unverified and its steps are not required", (t) => {
@@ -869,4 +880,200 @@ test("planned: fmt canonicalizes the line and parse --json gives its own node ki
   assert.equal(node.id, "domain.x.y");
   assert.equal(node.label.value, "fn");
   assert.equal(node.text.value, "(a: A)→B");
+});
+
+// ---------- inclusion: recursion, interleaving, foreign trees, later triggers, nested siblings ----------
+
+const H = "domain.walk.h";
+
+test("trace: a recursive step needs its own nested span", (t) => {
+  const code = { "src/domain/walk.ts": "export function h(): void {\n  h();\n}\n" };
+  const one = "# flow rec\n\n- trigger domain.walk.h\n- step domain.walk.h\n";
+  const two = "# flow rec\n\n- trigger domain.walk.h\n- step domain.walk.h\n  - step domain.walk.h\n";
+  const dir = repo(t, code, { "flows/rec.md": one }, { trace: ".keylang/trace/*.jsonl" });
+  const snapshot = snapshotOf(dir);
+  const write = (flow: string, spans: SpanSpec[]): JsonResult[] => {
+    writeFileSync(join(dir, "keylang/flows/rec.md"), flow);
+    mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
+    writeFileSync(join(dir, ".keylang/trace/t.jsonl"), traceRun(snapshot, "rec", spans, { instrumented: [H] }));
+    return results(dir).rows;
+  };
+  const stepsOf = (rows: JsonResult[]): JsonResult[] => rows.filter((r) => r.criterion === "trace" && r.area === H).slice(1);
+  const lone = [{ id: "a", symbol: H, start: 1, end: 4 }];
+  const missing = stepsOf(write(one, lone));
+  assert.equal(missing.length, 1);
+  assert.match(missing[0]!.evidence, /fail domain\.walk\.h: missing step in t1/);
+  const nestedSpan = [...lone, { id: "b", symbol: H, parent: "a", start: 2, end: 3 }];
+  assert.deepEqual(stepsOf(write(one, nestedSpan)).map((r) => r.verdict), ["ok"]);
+  const deep = stepsOf(write(two, nestedSpan));
+  assert.deepEqual(deep.map((r) => r.verdict), ["ok", "fail"]);
+  assert.match(deep[1]!.evidence, /missing step in t1/);
+});
+
+test("trace: interleaved siblings keep the later span; a swapped nesting is a missing step", (t) => {
+  const { snapshot, write } = traced(t);
+  const woven: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 12 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 11 },
+    { id: "d1", symbol: SAVE, parent: "b", start: 3, end: 4 },
+    { id: "c", symbol: CREATE, parent: "b", start: 5, end: 6 },
+    { id: "d2", symbol: SAVE, parent: "b", start: 7, end: 8 },
+  ];
+  const rows = write(traceRun(snapshot, "checkout", woven, { instrumented: ALL }));
+  assert.equal(row(rows, "trace", CREATE)?.verdict, "ok");
+  assert.equal(row(rows, "trace", SAVE)?.verdict, "ok");
+  assert.doesNotMatch(row(rows, "trace", SAVE)!.evidence, /out of order/);
+
+  const code = {
+    "src/domain/order.ts": "export function create(): void {}\n",
+    "src/infrastructure/store.ts": "export function save(): void {}\n",
+    "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nimport { save } from "../infrastructure/store.ts";\nexport function buy(): void {\n  create();\n}\nexport function later(): void {\n  save();\n}\n',
+    "src/presentation/terminal.ts": 'import { buy, later } from "../application/purchase.ts";\nexport function checkout(): void {\n  buy();\n  later();\n}\n',
+  };
+  const LATER = "application.purchase.later";
+  const flow = `# flow checkout\n\n- trigger ${T}\n- step ${BUY}\n  - step ${CREATE}\n- step ${LATER}\n  - step ${SAVE}\n`;
+  const dir = repo(t, code, { "flows/checkout.md": flow }, { trace: ".keylang/trace/*.jsonl" });
+  const id = snapshotOf(dir);
+  const run = (spans: SpanSpec[]): { status: number | null; rows: JsonResult[] } => {
+    mkdirSync(join(dir, ".keylang/trace"), { recursive: true });
+    writeFileSync(join(dir, ".keylang/trace/t.jsonl"), traceRun(id, "checkout", spans, { instrumented: [...ALL, LATER] }));
+    return results(dir);
+  };
+  const swapped = run([
+    { id: "a", symbol: T, start: 1, end: 10 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 5 },
+    { id: "d", symbol: SAVE, parent: "b", start: 3, end: 4 },
+    { id: "e", symbol: LATER, parent: "a", start: 6, end: 9 },
+    { id: "c", symbol: CREATE, parent: "e", start: 7, end: 8 },
+  ]);
+  assert.match(row(swapped.rows, "trace", CREATE)!.evidence, /missing step in t1/);
+  assert.match(row(swapped.rows, "trace", SAVE)!.evidence, /missing step in t1/);
+  const straight = run([
+    { id: "b0", symbol: BUY, parent: "a", start: 2, end: 3 },
+    { id: "e0", symbol: LATER, parent: "a", start: 4, end: 5 },
+    { id: "a", symbol: T, start: 1, end: 14 },
+    { id: "b", symbol: BUY, parent: "a", start: 6, end: 9 },
+    { id: "c", symbol: CREATE, parent: "b", start: 7, end: 8 },
+    { id: "e", symbol: LATER, parent: "a", start: 10, end: 13 },
+    { id: "d", symbol: SAVE, parent: "e", start: 11, end: 12 },
+  ]);
+  assert.equal(straight.status, 0, JSON.stringify(straight.rows.filter((r) => r.verdict !== "ok")));
+  for (const area of [BUY, CREATE, LATER, SAVE]) {
+    assert.equal(row(straight.rows, "trace", area)?.verdict, "ok", area);
+    assert.equal(row(straight.rows, "static", area)?.verdict, "ok", area);
+  }
+});
+
+test("trace: a when step is not ordered against the siblings of when", (t) => {
+  const flow = `# flow checkout\n\n- trigger ${T}\n- step ${BUY}\n  - step ${CREATE}\n  - when the item is out of stock\n    - step ${SAVE}\n`;
+  const { snapshot, write } = traced(t, flow);
+  const spans: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 10 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 9 },
+    { id: "d", symbol: SAVE, parent: "b", start: 3, end: 4 },
+    { id: "c", symbol: CREATE, parent: "b", start: 5, end: 6 },
+  ];
+  const rows = write(traceRun(snapshot, "checkout", spans, { instrumented: ALL }));
+  assert.match(row(rows, "trace", "when the item is out of stock")!.evidence, /branch exercised/);
+  assert.equal(row(rows, "trace", SAVE)?.verdict, "ok");
+  assert.equal(row(rows, "trace", CREATE)?.verdict, "ok");
+});
+
+test("trace: a step seen only in another call tree is unverified, not a missing step", (t) => {
+  const { dir, snapshot, write } = traced(t);
+  const base = nested().filter((span) => span.symbol !== SAVE);
+  const outside = (span: SpanSpec): JsonResult[] => write(traceRun(snapshot, "checkout", [...base, span], { instrumented: ALL }));
+  const worker = outside({ id: "d", symbol: SAVE, start: 1, end: 2, clock: "worker" });
+  assert.equal(row(worker, "trace", SAVE)?.verdict, "unverified");
+  assert.match(row(worker, "trace", SAVE)!.evidence, /observed outside `application\.purchase\.buy` in another call tree \(root `infrastructure\.store\.save`\)/);
+  const linked = outside({ id: "d", symbol: SAVE, start: 1, end: 2, clock: "worker", links: ["b"] });
+  assert.match(row(linked, "trace", SAVE)!.evidence, /observed outside `application\.purchase\.buy` in another call tree/);
+  const later = outside({ id: "d", symbol: SAVE, start: 11, end: 12 });
+  assert.match(row(later, "trace", SAVE)!.evidence, /observed outside `application\.purchase\.buy` in another call tree \(root `infrastructure\.store\.save`\)/);
+  const early = outside({ id: "d", symbol: SAVE, start: 1, end: 2 });
+  assert.match(row(early, "trace", SAVE)!.evidence, /fail infrastructure\.store\.save: missing step in t1/);
+  const sameTree = outside({ id: "d", symbol: SAVE, parent: "a", start: 11, end: 12 });
+  assert.match(row(sameTree, "trace", SAVE)!.evidence, /fail infrastructure\.store\.save: missing step in t1/);
+  outside({ id: "d", symbol: SAVE, start: 1, end: 2, clock: "worker" });
+  const checked = results(dir);
+  assert.equal(checked.status, 0, checked.rows.filter((r) => r.verdict === "fail").map((r) => r.evidence).join("\n"));
+  assert.equal(row(checked.rows, "trace", SAVE)?.verdict, "unverified");
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+  const json = keylang(dir, ["check", "--format", "json"]);
+  assert.ok(json.stdout.startsWith("{"), json.stdout);
+  assert.equal(json.stdout.trim().endsWith("}"), true);
+});
+
+test("trace: a later trigger and a child of a planned step are unverified when a trace is configured", (t) => {
+  const planned = `# flow refund\n\n- planned fn application.purchase.refund () → void\n- trigger ${T}\n- step application.purchase.refund\n  - step ${SAVE}\n    - step ${CREATE}\n`;
+  const { snapshot, write } = traced(t, planned);
+  const rows = write(traceRun(snapshot, "refund", nested(), { instrumented: ALL }));
+  assert.match(row(rows, "trace", SAVE)!.evidence, /unverified infrastructure\.store\.save: parent step `application\.purchase\.refund` is planned/);
+  assert.match(row(rows, "static", SAVE)!.evidence, /parent `application\.purchase\.refund` is planned, not implemented/);
+  assert.match(row(rows, "trace", CREATE)!.evidence, /parent step `application\.purchase\.refund` is planned/);
+  const save = rows.find((r) => r.criterion === "trace" && r.area === SAVE);
+  assert.equal(save?.verdict, "unverified");
+
+  const two = `# flow checkout\n\n- trigger ${T}\n  - step ${BUY}\n- trigger ${BUY}\n  - step ${CREATE}\n`;
+  const second = traced(t, two);
+  const both = second.write(traceRun(second.snapshot, "checkout", nested(), { instrumented: ALL }));
+  assert.equal(row(both, "trace", T)?.verdict, "ok");
+  assert.equal(row(both, "trace", BUY)?.verdict, "ok");
+  const laterTrigger = both.filter((r) => r.criterion === "trace" && r.area === BUY);
+  assert.equal(laterTrigger.length, 2);
+  assert.match(laterTrigger[1]!.evidence, /a flow is matched from its first trigger only/);
+  assert.match(row(both, "trace", CREATE)!.evidence, /a flow is matched from its first trigger only/);
+  assert.equal(results(second.dir).status, 0);
+  assert.equal(keylang(second.dir, ["check", "--strict"]).status, 1);
+  const quiet = repo(t, CHECKOUT, { "flows/walk.md": "# flow walk\n\n- trigger domain.walk.h\n  - step domain.walk.h\n- trigger domain.walk.h\n  - step domain.walk.h\n".replaceAll("domain.walk.h", "presentation.terminal.checkout") });
+  assert.doesNotMatch(keylang(quiet, ["check"]).stdout, /first trigger only/);
+});
+
+test("trace: a sibling nested in the previous sibling fails, sync and async", (t) => {
+  const { dir, snapshot, write } = traced(t);
+  const sync: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 10 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 9 },
+    { id: "c", symbol: CREATE, parent: "b", start: 3, end: 6 },
+    { id: "d", symbol: SAVE, parent: "c", start: 4, end: 5 },
+  ];
+  const failSync = write(traceRun(snapshot, "checkout", sync, { instrumented: ALL }));
+  assert.match(row(failSync, "trace", SAVE)!.evidence, /fail infrastructure\.store\.save: nested in `domain\.order\.create`, not after it/);
+  assert.equal(results(dir).status, 1);
+  const asyncSpan: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 10 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 9 },
+    { id: "c", symbol: CREATE, parent: "b", start: 3, end: 4 },
+    { id: "d", symbol: SAVE, parent: "c", start: 5, end: 6, links: ["c"] },
+  ];
+  assert.match(row(write(traceRun(snapshot, "checkout", asyncSpan, { instrumented: ALL })), "trace", SAVE)!.evidence, /nested in `domain\.order\.create`, not after it/);
+  const open = write(traceRun(snapshot, "checkout", sync, { instrumented: ALL, complete: false }));
+  assert.equal(row(open, "trace", SAVE)?.verdict, "unverified");
+  assert.match(row(open, "trace", SAVE)!.evidence, /nested in `domain\.order\.create`/);
+
+  const twice = CHECKOUT_FLOW.replace("  - step infrastructure.store.save\n", "  - step infrastructure.store.save\n  - step infrastructure.store.save\n");
+  const again = traced(t, twice);
+  const inner: SpanSpec[] = [
+    { id: "a", symbol: T, start: 1, end: 12 },
+    { id: "b", symbol: BUY, parent: "a", start: 2, end: 11 },
+    { id: "c", symbol: CREATE, parent: "b", start: 3, end: 4 },
+    { id: "d", symbol: SAVE, parent: "b", start: 5, end: 8 },
+    { id: "e", symbol: SAVE, parent: "d", start: 6, end: 7 },
+  ];
+  const saves = again.write(traceRun(again.snapshot, "checkout", inner, { instrumented: ALL })).filter((r) => r.criterion === "trace" && r.area === SAVE);
+  assert.ok(saves.some((r) => /nested in `infrastructure\.store\.save`, not after it/.test(r.evidence)), saves.map((r) => r.evidence).join(" | "));
+
+  const noTrigger = "# flow checkout\n\n- step domain.order.create\n- step infrastructure.store.save\n";
+  const bare = traced(t, noTrigger);
+  const bareFail = bare.write(traceRun(bare.snapshot, "checkout", [
+    { id: "c", symbol: CREATE, start: 3, end: 6 },
+    { id: "d", symbol: SAVE, parent: "c", start: 4, end: 5 },
+  ], { instrumented: [CREATE, SAVE] }));
+  assert.match(row(bareFail, "trace", SAVE)!.evidence, /nested in `domain\.order\.create`, not after it/);
+  const rescued = bare.write(traceRun(bare.snapshot, "checkout", [
+    { id: "c", symbol: CREATE, start: 3, end: 6 },
+    { id: "d", symbol: SAVE, parent: "c", start: 4, end: 5 },
+    { id: "e", symbol: SAVE, start: 7, end: 8 },
+  ], { instrumented: [CREATE, SAVE] }));
+  assert.equal(row(rescued, "trace", SAVE)?.verdict, "ok", row(rescued, "trace", SAVE)?.evidence);
 });

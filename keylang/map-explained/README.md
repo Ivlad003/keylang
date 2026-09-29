@@ -6,16 +6,16 @@ The tree of the map with a brief under each node: the documentation comment from
 
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
-| [base](base.md) |  | 40 | 0 | 0 | 32 |
-| [check](check.md) |  | 78 | 0 | 0 | 78 |
-| [cli](cli.md) |  | 45 | 0 | 0 | 88 |
+| [base](base.md) |  | 47 | 0 | 0 | 32 |
+| [check](check.md) |  | 89 | 0 | 0 | 81 |
+| [cli](cli.md) |  | 46 | 0 | 0 | 88 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 109 | 0 | 0 | 64 |
-| [features](features.md) |  | 132 | 0 | 0 | 95 |
-| [lang](lang.md) |  | 27 | 0 | 0 | 43 |
-| [map](map.md) |  | 100 | 0 | 0 | 127 |
+| [features](features.md) |  | 137 | 0 | 0 | 95 |
+| [lang](lang.md) |  | 42 | 0 | 0 | 87 |
+| [map](map.md) |  | 104 | 0 | 0 | 129 |
 | [tui](tui.md) |  | 151 | 0 | 0 | 176 |
-| **all** | | 682 | 0 | 0 | 703 |
+| **all** | | 725 | 0 | 0 | 752 |
 
 ## Index
 
@@ -27,7 +27,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **C** · [changed](features.md#features.changed) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
 
-**D** · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
+**D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 
 **E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
 
@@ -53,7 +53,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **R** · [resolve](check.md#check.resolve) (check) · [rules](check.md#check.rules) (check) · [run-id](cli.md#cli.run-id) (cli) · [rust](extract.md#extract.rust) (extract) · [rust-imports](map.md#map.rust-imports) (map) · [RustResolver](map.md#map.rust-imports.RustResolver) (map.rust-imports)
 
-**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-to-code](features.md#features.spec-to-code) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
+**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-ir](lang.md#lang.spec-ir) (lang) · [spec-to-code](features.md#features.spec-to-code) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
 
 **T** · [terminal](tui.md#tui.terminal) (tui) · [test-report](check.md#check.test-report) (check) · [text-to-spec](tui.md#tui.text-to-spec) (tui) · [theme](tui.md#tui.theme) (tui) · [trace](cli.md#cli.trace) (cli) · [trace-evidence](check.md#check.trace-evidence) (check) · [trace-hooks](cli.md#cli.trace-hooks) (cli) · [trace-plan](map.md#map.trace-plan) (map) · [treesitter](extract.md#extract.treesitter) (extract) · [ts](extract.md#extract.ts) (extract)
 

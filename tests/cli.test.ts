@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { GRAMMARS, wasmFile } from "../src/extract/grammars.ts";
+import { check, parse } from "../src/index.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -1229,6 +1230,53 @@ test("explain-edge lists import and call edges in a stable order, and holes when
   assert.equal(holed.stdout, "no confirmed edge; 1 unresolved construct(s) in `main.a` could form one\nunresolved src/a.ts:2:47 call through a local value `cb`\n");
 });
 
+/** Command keys from `keylang --help`: the words of a line indented by exactly two spaces, up to a token that starts with `<`, `[` or `-`, or up to two spaces. Every `explain` variant is one key. */
+function helpCommandKeys(help: string): string[] {
+  const keys: string[] = [];
+  for (const line of help.split("\n")) {
+    if (!line.startsWith("  ") || line.startsWith("   ")) continue;
+    const words: string[] = [];
+    for (const token of line.slice(2).split(" ")) {
+      if (token === "" || token.startsWith("<") || token.startsWith("[") || token.startsWith("-")) break;
+      words.push(token);
+    }
+    if (words.length > 0) keys.push(words.join(" "));
+  }
+  return [...new Set(keys)];
+}
+
+/** First column of the commands table in tools.md, in backticks. */
+function toolsCommandKeys(tools: string): string[] {
+  const keys: string[] = [];
+  for (const line of tools.split("\n")) {
+    const cell = /^\| `([^`]+)` \|/.exec(line);
+    if (cell) keys.push(cell[1]!);
+  }
+  return keys.filter((key) => key !== "keylang");
+}
+
+/** A help key missing from the table, or a table key that `--help` does not have. */
+function commandTableDrift(help: string, tools: string): string | null {
+  const fromHelp = new Set(helpCommandKeys(help));
+  const fromTable = toolsCommandKeys(tools);
+  for (const key of fromHelp) if (!fromTable.includes(key)) return key;
+  for (const key of fromTable) if (!fromHelp.has(key)) return key;
+  return null;
+}
+
+test("the commands table in tools.md lists every command from --help", () => {
+  const help = keylang(root, ["--help"]);
+  assert.equal(help.status, 0, help.stderr);
+  const tools = readFileSync(join(root, "docs/tools.md"), "utf8");
+  const drift = commandTableDrift(help.stdout, tools);
+  assert.equal(drift, null, drift ?? "");
+  assert.ok(tools.includes("| `keylang` |"), "the bare keylang row is the TUI");
+  const withoutDoctor = tools.replace("| `doctor` |", "| `clerk` |");
+  assert.equal(commandTableDrift(help.stdout, withoutDoctor), "doctor");
+  const withInvented = tools.replace("| `doctor` |", "| `doctor` |\n| `teleport` | nowhere | | 2 | |");
+  assert.equal(commandTableDrift(help.stdout, withInvented), "teleport");
+});
+
 test("explain covers every diagnostic code", () => {
   // The codes as `src/diag.ts` declares them, so a new code without an explanation fails here.
   const codes = [...readFileSync(join(root, "src/diag.ts"), "utf8").matchAll(/\| "(K\d{3})"/g)].map((m) => m[1]!);
@@ -1820,5 +1868,60 @@ test("check --changed and hook stop report K001 when the step's source file was 
   const decision = JSON.parse(hook.stdout) as { decision?: string; reason?: string };
   assert.equal(decision.decision, "block");
   assert.match(decision.reason ?? "", /keylang\/flows\/price\.md:\d+/);
+});
+
+test("K008 warns when one undotted then word matches a declared id", (t) => {
+  const dir = tempDir(t, "keylang-k008-");
+  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+  const flow = "# flow save\n\n- when the write fails\n  - then save\n";
+  writeTree(dir, { "keylang/flows/save.md": flow });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const out = keylang(dir, ["check", "--strict"]);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /keylang\/flows\/save\.md:4:10: K008 `then save` is read as text, not a reference \(did you mean `then infra\.db\.save`\?\)/);
+  assert.match(out.stderr, /^0 fail, /m);
+  assert.equal(keylang(dir, ["check"]).status, 0);
+
+  writeTree(dir, { "keylang/flows/link.md": "# flow link\n\n- when the write fails\n  - then [save](../map/infra.md)\n" });
+  const link = keylang(dir, ["check"]);
+  assert.match(link.stdout, /keylang\/flows\/link\.md:4:11: K008 `then save` is read as text/);
+
+  writeTree(dir, { "keylang/flows/save.md": "# flow save\n\n- planned fn app.cart.save () → void\n- when the write fails\n  - then save\n" });
+  const both = keylang(dir, ["check"]);
+  const saveAt = both.stdout.indexOf("`then app.cart.save`");
+  const infraAt = both.stdout.indexOf("`then infra.db.save`");
+  assert.ok(saveAt !== -1 && infraAt !== -1 && saveAt < infraAt, both.stdout);
+
+  writeTree(dir, { "keylang/flows/case.md": "# flow case\n\n- when the write fails\n  - then Save\n" });
+  assert.doesNotMatch(keylang(dir, ["check", "keylang/flows/case.md"]).stdout, /K008/);
+
+  const quiet = "# flow quiet\n\n- when the write fails\n  - then retry ≤ 3, backoff\n  - then infra.db.save\n  - then [infra.db.save](x.md)\n  - then nothing\n";
+  writeTree(dir, { "keylang/flows/quiet.md": quiet });
+  assert.doesNotMatch(keylang(dir, ["check", "keylang/flows/quiet.md"]).stdout, /K008/);
+
+  const json = keylang(dir, ["check", "--format", "json", "keylang/flows/link.md"]);
+  const row = (JSON.parse(json.stdout) as { results: { code: string | null; verdict: string }[] }).results.find((item) => item.code === "K008");
+  assert.equal(row?.verdict, "warning");
+  const sarif = keylang(dir, ["check", "--format", "sarif", "keylang/flows/link.md"]);
+  assert.match(sarif.stdout, /"ruleId": "K008"[\s\S]*?"level": "warning"/);
+  const github = keylang(dir, ["check", "--format", "github", "keylang/flows/link.md"]);
+  assert.match(github.stdout, /::warning .*title=K008::/);
+
+  const found = check([
+    parse("map.md", "# map\n\n- layer infra\n  - module db\n    - fn save () → void\n"),
+    parse("flow.md", "# flow f\n\n- planned fn app.cart.save () → void\n- when the write fails\n  - then save\n"),
+  ]).diagnostics.filter((diag) => diag.code === "K008");
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.severity, "warning");
+  assert.match(found[0]!.message, /`then app\.cart\.save`, `then infra\.db\.save`/);
+
+  const explained = keylang(root, ["explain", "K008"]);
+  assert.equal(explained.status, 0, explained.stderr);
+  assert.match(explained.stdout, /full id/);
+  assert.match(explained.stdout, /several words/);
+  const parsed = keylang(dir, ["parse", "--json", "keylang/flows/save.md"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  assert.doesNotMatch(parsed.stdout + parsed.stderr, /K008/);
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows/save.md"]).status, 0);
 });
 

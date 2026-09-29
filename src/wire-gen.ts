@@ -10,7 +10,8 @@ import { createHash } from "node:crypto";
 import { dirname, join, posix } from "node:path";
 import { readJsonc } from "./imports.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
-import { wireImport, wireOrder, type Wire, type WireDep, type WiringView } from "./wiring.ts";
+import type { Wire, WireDep } from "./spec-ir.ts";
+import { wireImport, wireOrder, type WiringView } from "./wiring.ts";
 
 export const WIRE_MARKER = "// keylang:generated — не редагувати, `keylang wire`";
 
@@ -35,11 +36,11 @@ export function generateWire(input: WireInput): string {
   const { snapshot, wires, out } = input;
   const order = wireOrder(wires);
   if ("cycle" in order) throw new Error(`wiring cycle ${order.cycle.join(" → ")}`);
-  const byId = new Map(wires.map((w) => [w.target, w]));
+  const byId = new Map(wires.map((w) => [w.target.target, w]));
   // Every ID that is built (wire targets, leaves, `when` branches) and every decorator.
   const built = new Set<string>(order.order);
   const decorators = new Set<string>();
-  for (const w of wires) for (const d of w.deps) for (const c of d.compose) decorators.add(c.target);
+  for (const w of wires) for (const d of w.deps) for (const c of d.compose) decorators.add(c.target.target);
   const imports = [...new Set([...built, ...decorators])].sort();
   const kinds = new Map<string, string>();
   for (const id of [...imports, ...imports.map((id) => id.slice(0, id.lastIndexOf(".")))]) kinds.set(id, isClass(snapshot, id) ? "class" : (snapshot.nodes[id]?.kind ?? "missing"));
@@ -111,7 +112,7 @@ export function generateWire(input: WireInput): string {
     lines.push(`  const ${n.build} = async () => track(await ${call});`);
     lines.push(`  const ${n.builder} = () => (${n.cell} ??= ${n.build}());`);
   }
-  const targets = wires.map((w) => w.target);
+  const targets = wires.map((w) => w.target.target);
   lines.push(
     "  try {",
     ...targets.map((id) => `    const ${name(id).value} = await ${name(id).builder}();`),
@@ -133,10 +134,11 @@ export function generateWire(input: WireInput): string {
 
 /** The value of one dependency: a `when` branch chosen from `env` (else the default), wrapped by `compose` innermost first. */
 function depValue(d: WireDep, name: (id: string) => Names, callee: (id: string) => string): string {
-  let value = `await ${name(d.target).builder}()`;
-  for (const c of [...d.when].reverse()) value = `env[${JSON.stringify(c.env)}] === ${JSON.stringify(c.value)} ? await ${name(c.target).builder}() : ${value}`;
-  if (d.when.length > 0) value = `(${value})`;
-  for (const c of d.compose) value = `${callee(c.target)}(${value})`;
+  let value = `await ${name(d.target.target).builder}()`;
+  const branches = d.when.map((when) => ({ env: when.env, value: when.value, id: when.target.target }));
+  for (const c of [...branches].reverse()) value = `env[${JSON.stringify(c.env)}] === ${JSON.stringify(c.value)} ? await ${name(c.id).builder}() : ${value}`;
+  if (branches.length > 0) value = `(${value})`;
+  for (const c of d.compose) value = `${callee(c.target.target)}(${value})`;
   return value;
 }
 

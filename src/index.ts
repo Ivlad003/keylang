@@ -5,7 +5,7 @@
 //   const { index, diagnostics } = check([doc]);
 //   index.decls.has("domain.orderAggregate"); // true
 
-export type { Code, Diagnostic, Severity } from "./diag.ts";
+export type { Code, Diagnostic, K005Reason, Severity } from "./diag.ts";
 export { compareDiagnostics, diagnostic, formatDiagnostic, isError, severityOf } from "./diag.ts";
 export { collectMdFiles, load } from "./files.ts";
 export { formatDocument, formatSource } from "./fmt.ts";

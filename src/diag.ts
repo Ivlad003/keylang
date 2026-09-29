@@ -15,6 +15,8 @@ export type Code =
   | "K005"
   /** Unknown section heading (warning). */
   | "K006"
+  /** A one-word `then` matches a declared id and is still read as text (warning). K007 stays reserved. */
+  | "K008"
   // rules (M1)
   /** Dependency against the layer order (divergence). */
   | "K101"
@@ -26,6 +28,8 @@ export type Code =
   | "K104"
   /** Dependency cycle where `no-cycles` is declared. */
   | "K105"
+  /** Incomparable `allow` and `deny`: the depth sum and deny-overrides disagree (warning). */
+  | "K106"
   // flows (M2)
   /** A `planned` declaration disagrees with the implemented symbol (kind or signature). */
   | "K201"
@@ -39,8 +43,11 @@ export type Code =
 
 export type Severity = "error" | "warning";
 
+/** Why a K005 is malformed. Other codes do not carry this. */
+export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope";
+
 export function severityOf(code: Code): Severity {
-  return code === "K006" || code === "K103" || code === "K202" ? "warning" : "error";
+  return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" ? "warning" : "error";
 }
 
 export interface Diagnostic {
@@ -57,10 +64,27 @@ export interface Diagnostic {
    */
   criterion?: string;
   area?: string;
+  /**
+   * SHA-256 input of a warning that has no verdict of its own (K103: the
+   * canonical `entry` lines). Absent on every other diagnostic, so `parse --json`
+   * does not grow a field.
+   */
+  specHash?: string;
+  /** K005 only. Absent on every other code, including in `parse --json`. */
+  reason?: K005Reason;
 }
 
-export function diagnostic(code: Code, file: string, span: Span, message: string, target?: string): Diagnostic {
-  return { code, severity: severityOf(code), message, file, span, ...(target !== undefined ? { target } : {}) };
+const K005_REASONS: readonly K005Reason[] = ["arguments", "id", "link", "quote", "layer", "scope"];
+
+export function diagnostic(code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string): Diagnostic;
+export function diagnostic(code: "K005", file: string, span: Span, message: string, reason: K005Reason): Diagnostic;
+export function diagnostic(code: Code, file: string, span: Span, message: string, extra?: string): Diagnostic {
+  const diag: Diagnostic = { code, severity: severityOf(code), message, file, span };
+  if (code === "K005") {
+    const reason = K005_REASONS.find((item) => item === extra);
+    if (reason !== undefined) diag.reason = reason;
+  } else if (extra !== undefined) diag.target = extra;
+  return diag;
 }
 
 export function isError(d: Diagnostic): boolean {

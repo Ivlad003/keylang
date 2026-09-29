@@ -8,9 +8,39 @@ import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
 
+/** The format `init` writes and a repository without `keylang.json` is read as. */
+export const CURRENT_FORMAT = 2;
+
+/** `1` keeps depth-sum priority. `2` is deny-overrides for incomparable rules. */
+export type RuleFormat = 1 | 2;
+
+/**
+ * Which call edges prove a static path. `shape`: calls written in the code.
+ * `behavior`: also the default of a hook and values resolved callers inject
+ * for it — what runs, not only what is written.
+ */
+export type StaticMode = "behavior" | "shape";
+
+export const STATIC_MODES: readonly StaticMode[] = ["behavior", "shape"];
+
+/** Who chose the static mode. Absent when nobody set it and the mode is `behavior`. */
+export type StaticSource = "flag" | "config";
+
+/** Flag, then `check.static`, then `behavior`. */
+export function resolveStatic(flag: StaticMode | undefined, configured: StaticMode | undefined): { mode: StaticMode; setBy?: StaticSource } {
+  if (flag !== undefined) return { mode: flag, setBy: "flag" };
+  if (configured !== undefined) return { mode: configured, setBy: "config" };
+  return { mode: "behavior" };
+}
+
 export interface Config {
   /** Repository root (directory of `keylang.json`). Absolute. */
   root: string;
+  /**
+   * Rules edition. A file without the field is 1. No file at all is
+   * {@link CURRENT_FORMAT}, so a new repository is not stuck on the old priority.
+   */
+  format: RuleFormat;
   /** Directory with map/rules/flows, relative to root. */
   dir: string;
   languages: Language[];
@@ -20,7 +50,7 @@ export interface Config {
   layers: Map<string, string[]>;
   /** Globs excluded from indexing, in addition to the built-in list. */
   exclude: string[];
-  check: { tests?: string; trace?: string };
+  check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>` or `openrouter:<model>`; null: no model is configured. */
   agent: string | null;
   /** Voice input (`Ctrl+R`): which recognizer, and the OpenRouter model with audio input. */
@@ -76,12 +106,13 @@ function skipDir(abs: string, name: string): boolean {
 }
 
 export interface RawConfig {
+  format?: RuleFormat;
   dir?: string;
   languages?: Language[];
   module?: "file" | "dir";
   layers?: Record<string, string | string[]>;
   exclude?: string[];
-  check?: { tests?: string; trace?: string };
+  check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
@@ -91,7 +122,8 @@ export interface RawConfig {
 /** Load `<root>/keylang.json`, or guess a config for `root`. */
 export function loadConfig(root: string): Config {
   const file = join(root, CONFIG_FILE);
-  const raw: RawConfig = existsSync(file) ? parseConfig(file, readFileSync(file, "utf8")) : {};
+  const fileExists = existsSync(file);
+  const raw: RawConfig = fileExists ? parseConfig(file, readFileSync(file, "utf8")) : {};
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
   let layers: Map<string, string[]>;
@@ -104,6 +136,7 @@ export function loadConfig(root: string): Config {
   }
   return {
     root,
+    format: fileExists ? (raw.format ?? 1) : CURRENT_FORMAT,
     dir: raw.dir ?? "keylang",
     languages,
     module: raw.module ?? defaultModule(languages),
@@ -144,9 +177,10 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "dir", "languages", "module", "layers", "exclude", "check", "agent", "explain", "ghost", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "check", "agent", "explain", "ghost", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
+  if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
   if (value.dir !== undefined) {
     const dir = typeof value.dir === "string" && value.dir !== "" ? value.dir : fail("dir", "a non-empty string", value.dir);
     // `map` writes under `dir`: it must not lead out of the repository.
@@ -183,11 +217,16 @@ export function parseConfig(file: string, text: string): RawConfig {
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
-    const check: { tests?: string; trace?: string } = {};
+    const check: { tests?: string; trace?: string; static?: StaticMode } = {};
     for (const [key, path] of Object.entries(value.check)) {
+      if (key === "static") {
+        if (path === "behavior" || path === "shape") check.static = path;
+        else fail("check.static", '"behavior" or "shape"', path);
+        continue;
+      }
       if (key !== "tests" && key !== "trace") throw new Error(`${file}: unknown field \`check.${key}\``);
-      if (typeof path !== "string" || path === "") fail(`check.${key}`, "a path", path);
-      check[key] = path as string;
+      if (typeof path === "string" && path !== "") check[key] = path;
+      else fail(`check.${key}`, "a path", path);
     }
     raw.check = check;
   }
@@ -230,9 +269,36 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** `format` when it is present: a positive integer this keylang can read. */
+export function acceptFormat(file: string, got: unknown): RuleFormat {
+  if (typeof got !== "number" || !Number.isInteger(got) || got < 1) {
+    throw new Error(`${file}: \`format\` must be a positive integer, got ${JSON.stringify(got)}`);
+  }
+  if (got > CURRENT_FORMAT) {
+    throw new Error(`${file}: \`format\` ${got} is newer than this keylang reads (${CURRENT_FORMAT}); upgrade keylang`);
+  }
+  return got as RuleFormat;
+}
+
+/**
+ * `fmt` and `parse` read nothing of the config except `format`. Invalid JSON
+ * or a non-object root cannot tell them the edition, so they stop.
+ */
+export function assertFormatOnly(file: string, text: string): void {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${file}: cannot determine \`format\`: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!isObject(value)) throw new Error(`${file}: cannot determine \`format\`: the file is not a JSON object`);
+  if (value.format !== undefined) acceptFormat(file, value.format);
+}
+
 /** The config as it would be written by `keylang init`. */
 export function configToJson(c: Config): string {
   const out: RawConfig & { $schema?: string } = {
+    format: c.format,
     languages: c.languages,
     module: c.module,
     layers: Object.fromEntries(c.layers),

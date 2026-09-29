@@ -121,7 +121,7 @@ test("mcp: each call sees sources, specs and evidence changed since the last one
   const mcp = await connect(t);
   const config = join(mcp.dir, "keylang.json");
   writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), check: { tests: ".keylang/reports/*.json" } }));
-  type Check = { results: { code: string | null; verdict: string; evidence: string }[] };
+  type Check = { results: { code: string | null; verdict: string; evidence: string; reason?: string }[] };
   const check = async (): Promise<Check> => JSON.parse((await mcp.call("check")).text) as Check;
   const codes = (r: Check): (string | null)[] => r.results.filter((row) => row.verdict === "fail").map((row) => row.code);
   assert.deepEqual(codes(await check()), []);
@@ -131,6 +131,10 @@ test("mcp: each call sees sources, specs and evidence changed since the last one
   assert.ok(codes(await check()).includes("K102"), "a denied import added to a source");
   writeFileSync(join(mcp.dir, "keylang/flows/checkout.md"), `${FLOW}  - step domain.order.missingFn\n`);
   assert.ok(codes(await check()).includes("K001"), "a dangling step added to a spec");
+  writeFileSync(join(mcp.dir, "keylang/flows/checkout.md"), `${FLOW}  - step domain.order.missingFn\n- test f.ts "x\n`);
+  const quoted = await check();
+  assert.equal(quoted.results.find((row) => row.code === "K005" && row.evidence === "unterminated quote")?.reason, "quote");
+  assert.equal(quoted.results.find((row) => row.code === "K102")?.reason, undefined);
   mkdirSync(join(mcp.dir, ".keylang/reports"), { recursive: true });
   writeFileSync(join(mcp.dir, ".keylang/reports/run.json"), "{ not json");
   const broken = await mcp.call("check");
@@ -191,11 +195,16 @@ test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
   const spec = "# flow broken\n\n- trigger app.checkout.missingFn\n";
   const validated = await mcp.call("validate_spec", { path: "keylang/flows/broken.md", text: spec });
   assert.equal(validated.isError, false, validated.text);
-  const report = JSON.parse(validated.text) as { diagnostics: { code: string; line: number; col: number }[] };
+  const report = JSON.parse(validated.text) as { diagnostics: { code: string; line: number; col: number; reason?: string }[] };
   const k001 = report.diagnostics.find((diag) => diag.code === "K001");
   assert.ok(k001, validated.text);
   assert.equal(k001.line, 3);
   assert.equal(k001.col, 11);
+  assert.equal(k001.reason, undefined);
+  const quoted = await mcp.call("validate_spec", { path: "keylang/flows/quote.md", text: '# flow q\n\n- test f.ts "x\n' });
+  assert.equal(quoted.isError, false, quoted.text);
+  const quoteReport = JSON.parse(quoted.text) as { diagnostics: { code: string; message: string; reason?: string }[] };
+  assert.equal(quoteReport.diagnostics.find((diag) => diag.message === "unterminated quote")?.reason, "quote");
   assert.equal(existsSync(join(mcp.dir, "keylang/flows/broken.md")), false);
   assert.equal(treeBytes(mcp.dir), disk);
 

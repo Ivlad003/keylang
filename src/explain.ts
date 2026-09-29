@@ -33,6 +33,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`# Shop`.",
     fix: "Rename the heading, or leave it as prose if it was intentional. The section is still read as a map.",
   },
+  K008: {
+    cause: "A `then` of one token without a dot matches the last segment of a declared id, so it was probably meant as a reference. It is still read as text.",
+    example: "`then save` when the map has `infra.db.save`.",
+    fix: "Write the full id, bare (`then infra.db.save`) or as a link (`then [infra.db.save](map.md)`). Or rewrite the text as several words (`then save the order`).",
+  },
   K101: {
     cause: "A dependency points against the layer order.",
     example: "`domain` importing `app` when the rules say `domain < app`.",
@@ -58,6 +63,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`a → b → c → a` and `d → c` makes `d` part of the same component.",
     fix: "Break the cycle. `no-cycles` under a module reports a route through that module.",
   },
+  K106: {
+    cause: "An `allow` and a `deny` are incomparable: one is narrower on the source and the other on the target, and the allow's depth sum is greater. Format 1 lets that allow win. Format 2 (deny-overrides) lets the deny win. The warning is the same pair either way.",
+    example: "`allow app.x.y domain` and `deny app domain.storefront` both match `app.x.y → domain.storefront`, and neither area contains the other.",
+    fix: "Add the intersection, `allow app.x.y domain.storefront` or `deny app.x.y domain.storefront`, so one rule is strictly more specific. That removes K106 in both formats. Format 2 keeps the deny unless the intersection is an allow.",
+  },
   K201: {
     cause: "A `planned` declaration names a symbol that now exists with another kind or signature.",
     example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id.",
@@ -81,9 +91,21 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
   },
 };
 
+const K005_REASON_LINES = [
+  "reasons:",
+  "- arguments: `# flow` without a name, or `deny app` with no second id",
+  "- id: a token that is not an id, such as `module 1bad`",
+  "- link: a broken link, such as `calls [a.b](x`",
+  "- quote: an unclosed quote, such as `test f.ts \"x`",
+  "- layer: `layers a < a`, a dotted name, or two orders that disagree",
+  "- scope: `deny app app.checkout.buy` names a fn instead of its module",
+];
+
 export function explainCode(code: string): string | null {
   const upper = code.toUpperCase();
   const text = Object.hasOwn(EXPLANATIONS, upper) ? EXPLANATIONS[upper as Code] : undefined;
   if (!text) return null;
-  return [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`].join("\n");
+  const lines = [`${upper}: ${text.cause}`, `example: ${text.example}`, `fix: ${text.fix}`];
+  if (upper === "K005") lines.push(...K005_REASON_LINES);
+  return lines.join("\n");
 }

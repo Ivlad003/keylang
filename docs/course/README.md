@@ -6,7 +6,7 @@
 
 If the words layer, dependency and flow are new, start with the [pre-course](pre/README.md) ([українською](pre/uk/README.md)). It teaches them on the shop example, before any command.
 
-A guide to reading and writing keylang, and to the CLI, the terminal UI and the browser UI. The normative grammar remains [`docs/format.md`](../format.md), in Ukrainian. When this course and that file disagree about a diagnostic or a flag, the spec wins. [`docs/design.md`](../design.md) is the target design; it describes things the tool does not do yet, and those are called out here as not implemented.
+A guide to reading and writing keylang, and to the CLI, the terminal UI and the browser UI. The normative grammar remains [`docs/format.md`](../format.md), in Ukrainian. When this course and that file disagree about a diagnostic, the spec wins. Flags are in [`docs/tools.md`](../tools.md). [`docs/design.md`](../design.md) is the target design; it describes things the tool does not do yet, and those are called out here as not implemented.
 
 Screenshots were taken from this repository with `node bin/keylang.js web` on 2026-09-28, and from `node bin/keylang.js check` on `examples/shop`. The local trace and test report were stale, so those kinds of evidence show as `unverified`.
 

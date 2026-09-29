@@ -6,10 +6,10 @@
   - module [analyze](../../src/analyze.ts#L1)
     - node external.node
     - assess check.assess
+    - declared-packages map.declared-packages
     - config base.config
     - span base.span
     - files lang.files
-    - flows check.flows
     - ir lang.ir
     - map map.map
     - parser lang.parser
@@ -19,9 +19,21 @@
     - type [AnalysisRequest](../../src/analyze.ts#L20)
     - type [Analysis](../../src/analyze.ts#L41) extends Assessment
     - fn [analyze](../../src/analyze.ts#L50) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, base.span.compareText, base.config.evidenceFiles, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
-    - fn [findRoot](../../src/analyze.ts#L97) (start: string) → string
-    - fn [within](../../src/analyze.ts#L107) (abs: string, dir: string) → boolean
+      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.declared-packages.declaredExternalIds
+    - fn [findRoot](../../src/analyze.ts#L105) (start: string) → string
+    - fn [within](../../src/analyze.ts#L115) (abs: string, dir: string) → boolean
+  - module [declared-packages](../../src/declared-packages.ts#L1)
+    - node external.node
+    - smol-toml external.smol-toml
+    - config base.config
+    - fn [declaredExternalIds](../../src/declared-packages.ts#L11) (root: string) → ReadonlySet<string>
+      - calls base.config.layerName, map.declared-packages.addPackages, map.declared-packages.readText, map.declared-packages.addCrates
+    - fn [readText](../../src/declared-packages.ts#L35) (path: string) → string | null <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L43) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [addPackages](../../src/declared-packages.ts#L48) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+      - calls map.declared-packages.isRecord
+    - fn [addCrates](../../src/declared-packages.ts#L65) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+      - calls map.declared-packages.isRecord
   - module [emit](../../src/emit.ts#L1)
     - node external.node
     - explanations map.explanations
@@ -373,34 +385,35 @@
     - node external.node
     - config base.config
     - files lang.files
-    - ir lang.ir
     - map map.map
     - parser lang.parser
+    - spec-ir lang.spec-ir
     - snapshot map.snapshot
     - explanations map.explanations
     - type [TracePlan](../../src/trace-plan.ts#L16)
     - fn [tracePlan](../../src/trace-plan.ts#L24) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
       - calls map.trace-plan.flowSymbols, map.map.generateMap
     - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
-      - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+      - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.spec-ir.compileSpec, lang.parser.parse, lang.spec-ir.walkFlow
   - module [wire-gen](../../src/wire-gen.ts#L1)
     - node external.node
     - imports map.imports
     - snapshot map.snapshot
+    - spec-ir lang.spec-ir
     - wiring check.wiring
-    - type [WireInput](../../src/wire-gen.ts#L17)
-    - type [Names](../../src/wire-gen.ts#L26) <!-- internal -->
-    - fn [generateWire](../../src/wire-gen.ts#L34) (input: WireInput) → string
+    - type [WireInput](../../src/wire-gen.ts#L18)
+    - type [Names](../../src/wire-gen.ts#L27) <!-- internal -->
+    - fn [generateWire](../../src/wire-gen.ts#L35) (input: WireInput) → string
       - calls check.wiring.wireOrder, map.wire-gen.isClass, map.wire-gen.localNames, map.wire-gen.importExtension, map.wire-gen.memberAccess, check.wiring.wireImport, map.wire-gen.specifier, map.wire-gen.key, map.wire-gen.depValue
-    - fn [depValue](../../src/wire-gen.ts#L135) (d: WireDep, name: (id: string) => Names, callee: (id: string) => string) → string <!-- internal -->
-    - fn [memberAccess](../../src/wire-gen.ts#L144) (member: string) → string <!-- internal -->
-    - fn [isClass](../../src/wire-gen.ts#L149) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
-    - fn [localNames](../../src/wire-gen.ts#L160) (ids: readonly string[]) → Map<string, Names> <!-- internal -->
+    - fn [depValue](../../src/wire-gen.ts#L136) (d: WireDep, name: (id: string) => Names, callee: (id: string) => string) → string <!-- internal -->
+    - fn [memberAccess](../../src/wire-gen.ts#L146) (member: string) → string <!-- internal -->
+    - fn [isClass](../../src/wire-gen.ts#L151) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
+    - fn [localNames](../../src/wire-gen.ts#L162) (ids: readonly string[]) → Map<string, Names> <!-- internal -->
       - calls map.wire-gen.shortHash
-    - fn [shortHash](../../src/wire-gen.ts#L180) (text: string) → string <!-- internal -->
-    - fn [key](../../src/wire-gen.ts#L184) (name: string) → string <!-- internal -->
-    - fn [importExtension](../../src/wire-gen.ts#L193) (root: string) → "ts" | "js" | "none" <!-- internal -->
+    - fn [shortHash](../../src/wire-gen.ts#L182) (text: string) → string <!-- internal -->
+    - fn [key](../../src/wire-gen.ts#L186) (name: string) → string <!-- internal -->
+    - fn [importExtension](../../src/wire-gen.ts#L195) (root: string) → "ts" | "js" | "none" <!-- internal -->
       - calls map.wire-gen.compilerOptions
-    - fn [compilerOptions](../../src/wire-gen.ts#L201) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
+    - fn [compilerOptions](../../src/wire-gen.ts#L203) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
       - calls map.imports.readJsonc
-    - fn [specifier](../../src/wire-gen.ts#L216) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
+    - fn [specifier](../../src/wire-gen.ts#L218) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->

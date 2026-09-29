@@ -4,7 +4,8 @@
 import { CONFIG_FILE, SYNTHETIC_LAYERS } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { isDecl, sectionNodes, walk, type Document, type Node, type NodeKind } from "./ir.ts";
-import type { Span } from "./span.ts";
+import { isSegment, linkTextSpan, renderMeaning } from "./parser.ts";
+import { compareText, type Span } from "./span.ts";
 
 export interface Decl {
   id: string;
@@ -34,6 +35,8 @@ export interface ResolveContext {
   layers?: readonly string[];
   /** Member state of the snapshot's modules. Without it a member-less module of the map is opaque (Р13). */
   members?: Members;
+  /** `external.<segment>` ids declared in package.json or Cargo.toml. A reference to one is not K001. */
+  knownExternal?: ReadonlySet<string>;
 }
 
 /** A reference into a module whose contents the snapshot does not know: neither confirmed nor dangling. */
@@ -42,6 +45,8 @@ export interface Unverified {
   line: number;
   col: number;
   message: string;
+  /** `kind` plus the line's meaning. A rule line replaces this with its canonical text before hashing. */
+  spec: string;
 }
 
 const NO_SPAN: Span = { start: { offset: 0, line: 1, col: 1 }, end: { offset: 0, line: 1, col: 1 } };
@@ -171,7 +176,7 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
   const unverified: Unverified[] = [];
   for (const doc of docs) {
     for (const section of doc.sections) {
-      for (const node of sectionNodes(section)) checkRefs(index, doc, node, diags, unverified);
+      for (const node of sectionNodes(section)) checkRefs(index, doc, node, diags, unverified, context.knownExternal ?? new Set());
     }
   }
   return { index, diagnostics: diags, unverified };
@@ -198,7 +203,45 @@ function insert(map: Map<string, Decl>, decl: Decl, what: string, diags: Diagnos
 /** `external` and `unassigned` are layers keylang makes itself; a rule may name them before they have modules. */
 const SYNTHETIC = new Set<string>(SYNTHETIC_LAYERS);
 
-function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[]): void {
+const THEN_KINDS = new Set(["fn", "type", "event", "module", "planned"]);
+
+/** Ids whose last segment is `word`: map declarations and `planned`, never a layer. */
+function thenCandidates(index: Index, word: string): string[] {
+  const ids = new Set<string>();
+  const take = (decl: Decl): void => {
+    if (!THEN_KINDS.has(decl.kind)) return;
+    const dot = decl.id.lastIndexOf(".");
+    if (dot <= 0) return;
+    if (decl.id.slice(dot + 1) === word) ids.add(decl.id);
+  };
+  for (const decl of index.decls.values()) take(decl);
+  for (const decl of index.planned.values()) take(decl);
+  return [...ids].sort(compareText);
+}
+
+/** `then save` is text (Р10). When `save` is the last segment of a real id, say so. */
+function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic[]): void {
+  // `tokens` includes the keyword. Р10 reads the arguments: exactly one, and not a dotted id.
+  const args = node.tokens[0]?.text === "then" ? node.tokens.slice(1) : node.tokens;
+  if (node.kind !== "then" || node.refs.length > 0 || args.length !== 1) return;
+  const token = args[0]!;
+  let word = "";
+  let span = token.span;
+  if (token.kind === "word") word = token.text;
+  else if (token.kind === "link") {
+    const close = token.text.indexOf("](");
+    word = token.text.slice(1, close === -1 ? token.text.length : close);
+    span = linkTextSpan(token);
+  } else return;
+  if (word.includes(".") || !isSegment(word)) return;
+  const ids = thenCandidates(index, word);
+  if (ids.length === 0) return;
+  const listed = ids.map((id) => `\`then ${id}\``).join(", ");
+  diags.push(diagnostic("K008", doc.path, span, `\`then ${word}\` is read as text, not a reference (did you mean ${listed}?)`));
+}
+
+function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>): void {
+  warnBareThen(index, doc, node, diags);
   let ok = true;
   // `exports` lists public names (values, aliases, `default`), compared with the
   // snapshot's export table by the rule, not declarations of the map.
@@ -207,6 +250,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
     if (SYNTHETIC.has(r.target)) continue;
     const hit = index.lookup(r.target);
     if (hit.kind === "missing") {
+      if (knownExternal.has(r.target)) continue;
       ok = false;
       let msg = `dangling reference \`${r.target}\``;
       const s = index.suggest(r.target);
@@ -214,12 +258,18 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
       msg += "; declare `planned` if this is an intention";
       diags.push(diagnostic("K001", doc.path, r.span, msg, r.target));
     } else if (hit.kind === "opaque" && index.snapshotOpaque(hit.decl.id)) {
-      unverified.push({ file: doc.path, line: r.span.start.line, col: r.span.start.col, message: `opaque module \`${hit.decl.id}\`` });
+      unverified.push({
+        file: doc.path,
+        line: r.span.start.line,
+        col: r.span.start.col,
+        message: `opaque module \`${hit.decl.id}\``,
+        spec: `${node.kind} ${renderMeaning(node)}`,
+      });
     }
   }
   for (const child of node.children) {
     // `exports` of an unknown module would only repeat the error.
-    if (ok || node.kind !== "rule-module") checkRefs(index, doc, child, diags, unverified);
+    if (ok || node.kind !== "rule-module") checkRefs(index, doc, child, diags, unverified, knownExternal);
   }
 }
 

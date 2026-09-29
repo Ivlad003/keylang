@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -10,10 +10,10 @@
     <a id="map.analyze"></a><br>One analysis for the CLI and the language server: config, a fresh snapshot, spec documents, and their assessment. Generated map files are replaced by the map rendered from the fresh snapshot, so IDs resolve against current code, not a stale committed map.
     - node [external.node](external.md#external.node)
     - assess [check.assess](check.md#check.assess)
+    - declared-packages [map.declared-packages](map.md#map.declared-packages)
     - config [base.config](base.md#base.config)
     - span [base.span](base.md#base.span)
     - files [lang.files](lang.md#lang.files)
-    - flows [check.flows](check.md#check.flows)
     - ir [lang.ir](lang.md#lang.ir)
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
@@ -26,11 +26,29 @@
       <a id="map.analyze.Analysis"></a>
     - fn [analyze](../../src/analyze.ts#L50) (request: AnalysisRequest) → Promise<Analysis>
       <a id="map.analyze.analyze"></a>
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.map.generateMap](map.md#map.map.generateMap), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces)
-    - fn [findRoot](../../src/analyze.ts#L97) (start: string) → string
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.map.generateMap](map.md#map.map.generateMap), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.declared-packages.declaredExternalIds](map.md#map.declared-packages.declaredExternalIds)
+    - fn [findRoot](../../src/analyze.ts#L105) (start: string) → string
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
-    - fn [within](../../src/analyze.ts#L107) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L115) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a>
+  - module [declared-packages](../../src/declared-packages.ts#L1)
+    <a id="map.declared-packages"></a><br>Packages a repository declares, as `external.<segment>` ids. A rule may name one before any file imports it.
+    - node [external.node](external.md#external.node)
+    - smol-toml [external.smol-toml](external.md#external.smol-toml)
+    - config [base.config](base.md#base.config)
+    - fn [declaredExternalIds](../../src/declared-packages.ts#L11) (root: string) → ReadonlySet<string>
+      <a id="map.declared-packages.declaredExternalIds"></a><br>`external.<segment>` for every package declared in a JS or Rust manifest under `root`.
+      - calls [base.config.layerName](base.md#base.config.layerName), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.readText](map.md#map.declared-packages.readText), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates)
+    - fn [readText](../../src/declared-packages.ts#L35) (path: string) → string | null <!-- internal -->
+      <a id="map.declared-packages.readText"></a>
+    - fn [isRecord](../../src/declared-packages.ts#L43) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="map.declared-packages.isRecord"></a>
+    - fn [addPackages](../../src/declared-packages.ts#L48) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+      <a id="map.declared-packages.addPackages"></a><br>`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`.
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
+    - fn [addCrates](../../src/declared-packages.ts#L65) (text: string | null, add: (pkg: string) => void) → void <!-- internal -->
+      <a id="map.declared-packages.addCrates"></a><br>`[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`.
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
   - module [emit](../../src/emit.ts#L1)
     <a id="map.emit"></a><br>Snapshot → generated `map/<layer>.md` files, and the explained map: the same tree with an explanation under every node (ADR 0004).
     - node [external.node](external.md#external.node)
@@ -586,9 +604,9 @@
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
     - files [lang.files](lang.md#lang.files)
-    - ir [lang.ir](lang.md#lang.ir)
     - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - explanations [map.explanations](map.md#map.explanations)
     - type [TracePlan](../../src/trace-plan.ts#L16)
@@ -598,38 +616,39 @@
       - calls [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [map.map.generateMap](map.md#map.map.generateMap)
     - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
       <a id="map.trace-plan.flowSymbols"></a><br>`trigger` and `step` IDs of the flow; null when no spec declares it.
-      - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
+      - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [wire-gen](../../src/wire-gen.ts#L1)
     <a id="map.wire-gen"></a><br>`keylang wire`: `# wiring` + the snapshot → `keylang.gen.ts` (ADR 0003). One memoized builder per factory: a builder awaits its dependencies, then calls the factory (`new` for a class) with them, so every node is built once per `wire()` call, after what it needs, and only when…
     - node [external.node](external.md#external.node)
     - imports [map.imports](map.md#map.imports)
     - snapshot [map.snapshot](map.md#map.snapshot)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - wiring [check.wiring](check.md#check.wiring)
-    - type [WireInput](../../src/wire-gen.ts#L17)
+    - type [WireInput](../../src/wire-gen.ts#L18)
       <a id="map.wire-gen.WireInput"></a>
-    - type [Names](../../src/wire-gen.ts#L26) <!-- internal -->
+    - type [Names](../../src/wire-gen.ts#L27) <!-- internal -->
       <a id="map.wire-gen.Names"></a><br>Local names of one ID in the generated file.
-    - fn [generateWire](../../src/wire-gen.ts#L34) (input: WireInput) → string
+    - fn [generateWire](../../src/wire-gen.ts#L35) (input: WireInput) → string
       <a id="map.wire-gen.generateWire"></a>
       - calls [check.wiring.wireOrder](check.md#check.wiring.wireOrder), [map.wire-gen.isClass](map.md#map.wire-gen.isClass), [map.wire-gen.localNames](map.md#map.wire-gen.localNames), [map.wire-gen.importExtension](map.md#map.wire-gen.importExtension), [map.wire-gen.memberAccess](map.md#map.wire-gen.memberAccess), [check.wiring.wireImport](check.md#check.wiring.wireImport), [map.wire-gen.specifier](map.md#map.wire-gen.specifier), [map.wire-gen.key](map.md#map.wire-gen.key), [map.wire-gen.depValue](map.md#map.wire-gen.depValue)
-    - fn [depValue](../../src/wire-gen.ts#L135) (d: WireDep, name: (id: string) => Names, callee: (id: string) => string) → string <!-- internal -->
+    - fn [depValue](../../src/wire-gen.ts#L136) (d: WireDep, name: (id: string) => Names, callee: (id: string) => string) → string <!-- internal -->
       <a id="map.wire-gen.depValue"></a><br>The value of one dependency: a `when` branch chosen from `env` (else the default), wrapped by `compose` innermost first.
-    - fn [memberAccess](../../src/wire-gen.ts#L144) (member: string) → string <!-- internal -->
+    - fn [memberAccess](../../src/wire-gen.ts#L146) (member: string) → string <!-- internal -->
       <a id="map.wire-gen.memberAccess"></a><br>`.name`, or `["name"]` for a member name that is not an identifier.
-    - fn [isClass](../../src/wire-gen.ts#L149) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
+    - fn [isClass](../../src/wire-gen.ts#L151) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
       <a id="map.wire-gen.isClass"></a><br>A class is a module node with the class marker.
-    - fn [localNames](../../src/wire-gen.ts#L160) (ids: readonly string[]) → Map<string, Names> <!-- internal -->
+    - fn [localNames](../../src/wire-gen.ts#L162) (ids: readonly string[]) → Map<string, Names> <!-- internal -->
       <a id="map.wire-gen.localNames"></a><br>Identifiers for each ID: the ID with `_` for every character a JS name does not take. IDs that collapse to one name (`a-b.f`, `a_b.f`, `a.b.f`) each get a short hash of the ID, so a name does not change when an unrelated ID comes or goes; the helpers derived from a name are…
       - calls [map.wire-gen.shortHash](map.md#map.wire-gen.shortHash)
-    - fn [shortHash](../../src/wire-gen.ts#L180) (text: string) → string <!-- internal -->
+    - fn [shortHash](../../src/wire-gen.ts#L182) (text: string) → string <!-- internal -->
       <a id="map.wire-gen.shortHash"></a>
-    - fn [key](../../src/wire-gen.ts#L184) (name: string) → string <!-- internal -->
+    - fn [key](../../src/wire-gen.ts#L186) (name: string) → string <!-- internal -->
       <a id="map.wire-gen.key"></a>
-    - fn [importExtension](../../src/wire-gen.ts#L193) (root: string) → "ts" | "js" | "none" <!-- internal -->
+    - fn [importExtension](../../src/wire-gen.ts#L195) (root: string) → "ts" | "js" | "none" <!-- internal -->
       <a id="map.wire-gen.importExtension"></a><br>How the project writes relative imports: `.ts` with `allowImportingTsExtensions` or `rewriteRelativeImportExtensions`, `.js` under `node16`/`nodenext` resolution, no extension otherwise (bundlers). Relative `extends` are followed.
       - calls [map.wire-gen.compilerOptions](map.md#map.wire-gen.compilerOptions)
-    - fn [compilerOptions](../../src/wire-gen.ts#L201) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
+    - fn [compilerOptions](../../src/wire-gen.ts#L203) (file: string, depth: number) → Record<string, unknown> <!-- internal -->
       <a id="map.wire-gen.compilerOptions"></a><br>`compilerOptions` of a tsconfig over those of its relative `extends`; package configs are not read.
       - calls [map.imports.readJsonc](map.md#map.imports.readJsonc)
-    - fn [specifier](../../src/wire-gen.ts#L216) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
+    - fn [specifier](../../src/wire-gen.ts#L218) (out: string, file: string, ext: "ts" | "js" | "none") → string <!-- internal -->
       <a id="map.wire-gen.specifier"></a>

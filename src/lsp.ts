@@ -4,8 +4,8 @@
 // generation only: a request waits while a reanalysis is pending, and results
 // of a superseded generation are never published.
 //
-// The protocol subset is small, so it is spoken directly instead of through
-// `vscode-languageserver`, which would add a dependency for a few messages.
+// Hand-written on purpose: framing and lifecycle are stricter than
+// `vscode-languageserver` (docs/adr/0006-lsp-transport.md).
 
 import { existsSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -24,7 +24,7 @@ interface Rpc {
   error?: { code: number; message: string };
 }
 
-const ERRORS = { parse: -32700, invalidRequest: -32600, methodNotFound: -32601, internal: -32603, cancelled: -32800 } as const;
+const ERRORS = { parse: -32700, invalidRequest: -32600, methodNotFound: -32601, internal: -32603, notInitialized: -32002, cancelled: -32800 } as const;
 /** Changes that arrive together are analysed once. */
 const SETTLE_MS = 60;
 
@@ -89,6 +89,8 @@ class Server {
   private running: { generation: number; result: Promise<Analysis> } | null = null;
   private timer: NodeJS.Timeout | null = null;
   private shutdown = false;
+  /** False until `initialize` has been accepted. Requests before that are not served. */
+  private initialized = false;
   /** The client pulls diagnostics (`textDocument/diagnostic`), so pushing them too would show each twice. */
   private pulls = false;
   private refreshes = false;
@@ -141,6 +143,12 @@ class Server {
   }
 
   private notify(method: string, params: Record<string, unknown>): void {
+    if (method === "exit") {
+      this.exitCode = this.shutdown ? 0 : 1;
+      return;
+    }
+    // A notification before `initialize` has no reply. Drop it, including `didOpen`, so the overlay stays empty.
+    if (!this.initialized) return;
     const doc = params.textDocument as { uri?: string; version?: number; text?: string } | undefined;
     switch (method) {
       case "textDocument/didOpen":
@@ -171,9 +179,6 @@ class Server {
         }
         return;
       }
-      case "exit":
-        this.exitCode = this.shutdown ? 0 : 1;
-        return;
       default:
         return;
     }
@@ -250,7 +255,12 @@ class Server {
   }
 
   private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
-    if (method === "initialize") return this.initialize(params);
+    if (method === "initialize") {
+      this.initialized = true;
+      return this.initialize(params);
+    }
+    // LSP: a request before `initialize` is not served, shutdown included.
+    if (!this.initialized) throw new LspError(ERRORS.notInitialized, "server not initialized");
     // After `shutdown` the only valid message is `exit`.
     if (this.shutdown) throw new LspError(ERRORS.invalidRequest, `\`${method}\` after shutdown`);
     if (method === "shutdown") {

@@ -4,12 +4,12 @@
 // only compares them with the specs and the snapshot.
 
 import { createHash } from "node:crypto";
+import type { StaticMode, StaticSource } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { constructorName } from "./languages.ts";
-import { renderMeaning } from "./parser.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
+import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, Trigger, WhenItem } from "./spec-ir.ts";
 import { matchTest, type TestCase } from "./test-report.ts";
 import { traceFlow, type ShapeNode, type TraceEvidence, type TraceRun } from "./trace-evidence.ts";
 import type { Verdict } from "./verdict.ts";
@@ -44,23 +44,19 @@ interface SnapshotNodeView {
   escapes?: { file: string; line: number; col: number; reason: string };
 }
 
-/**
- * Which call edges prove a static path. `shape`: calls written in the code.
- * `behavior`: also the default of a hook and values resolved callers inject
- * for it — what runs, not only what is written.
- */
-export type StaticMode = "shape" | "behavior";
-
-export const STATIC_MODES: readonly StaticMode[] = ["behavior", "shape"];
-
 export interface FlowInput {
   snapshotId: string | null;
   nodes: Record<string, SnapshotNodeView>;
   edges: SnapshotEdge[];
   /** Constructs the snapshot does not turn into edges (`eval`, computed members, …). */
   coverage?: { kind: string; file: string; line: number; col: number; reason: string; text?: string; source?: string | null }[];
-  /** Default `behavior`. */
+  /**
+   * Resolved by the caller (`resolveStatic`). Omitted is not a mode: a hook
+   * edge is followed only when this is `behavior`.
+   */
   static?: StaticMode;
+  /** Who set `static`. The evidence names the flag or `keylang.json check.static`. */
+  staticSetBy?: StaticSource;
   /** Test cases from `check.tests`; null when it is not configured. */
   tests: TestCase[] | null;
   /** Trace runs from `check.trace`; null when it is not configured. */
@@ -78,10 +74,12 @@ interface Planned {
 
 type Channel = "ID" | "static" | "tests" | "trace";
 
-export function evaluateFlows(docs: readonly Document[], index: Index, input: FlowInput): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
+type FlowNode = Trigger | FlowItem;
+
+export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput): { diagnostics: Diagnostic[]; verdicts: Verdict[] } {
   const diagnostics: Diagnostic[] = [];
   const verdicts: Verdict[] = [];
-  const planned = collectPlanned(docs, input, diagnostics);
+  const planned = collectPlanned(compiled, input, diagnostics);
   const graph = callGraph(input);
   // The spec line a verdict is about, for its hash: set while a node is visited.
   let spec = "";
@@ -101,104 +99,100 @@ export function evaluateFlows(docs: readonly Document[], index: Index, input: Fl
     });
   };
 
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "flow" || !section.name) continue;
-      const flow = section.name.value;
-      const top = sectionNodes(section);
-      const triggerNode = top.find((node) => node.kind === "trigger");
-      const trigger = triggerNode ? refOf(triggerNode) : null;
-      let key = 0;
-      const keys = new Map<Node, number>();
-      const shape = (nodes: readonly Node[]): ShapeNode[] =>
-        nodes.flatMap((node): ShapeNode[] => {
-          if (node.kind === "when") {
-            keys.set(node, key);
-            return [{ kind: "when", key: key++, children: shape(node.children) }];
-          }
-          const id = node.kind === "step" ? refOf(node) : null;
-          if (!id) return [];
-          // A planned step is not expected in a trace; its children cannot be matched under it.
-          if (planned.get(id)?.implemented === false) return [];
-          keys.set(node, key);
-          return [{ kind: "step", key: key++, id, children: shape(node.children) }];
-        });
-      // Steps may sit under the trigger or beside it; either way the trigger is their parent.
-      const tree = shape([...(triggerNode?.children ?? []), ...top.filter((node) => node.kind !== "trigger")]);
-      const triggerKey = triggerNode && trigger ? key++ : null;
-      if (triggerNode && triggerKey !== null) keys.set(triggerNode, triggerKey);
-      const traced: Map<number, TraceEvidence> | null =
-        input.traces === null ? null : traceFlow(input.traces, flow, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
-
-      const visit = (node: Node, parent: string | null, claim: Node | null): void => {
-        spec = `${flow}\0${node.kind} ${renderMeaning(node)}`;
-        const nodeKey = keys.get(node);
-        const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
-        if (node.kind === "step" || node.kind === "trigger") {
-          const id = refOf(node);
-          if (id) {
-            const plan = planned.get(id);
-            const pending = plan !== undefined && !plan.implemented;
-            const known = idVerdict(id, pending ? plan : undefined, node, doc.path, index, input, verdict);
-            // A dangling id is K001 already; a static line would count it twice.
-            if (node.kind === "step" && known !== "fail") {
-              if (pending) verdict("static", id, "unverified", doc.path, node.span, `planned ${plan.kind}, not implemented`);
-              else if (input.nodes[id] !== undefined) {
-                const reach = reachability(graph, input, parent, id);
-                verdict("static", id, reach.verdict, doc.path, node.span, reach.message, { provenance: "syntactic" });
-              } else verdict("static", id, "unverified", doc.path, node.span, "not in the snapshot (opaque module)");
-            }
-            if (traced !== null) {
-              if (pending) verdict("trace", id, "unverified", doc.path, node.span, `planned ${plan.kind}`);
-              else {
-                const evidence = traceOf();
-                if (evidence) verdict("trace", id, evidence.verdict, doc.path, node.span, evidence.message, traceProvenance(evidence));
-              }
-            }
-          }
-          const next = node.kind === "step" || node.kind === "trigger" ? (id ?? parent) : parent;
-          for (const child of node.children) visit(child, next, claim);
-          return;
-        }
+  for (const flow of compiled.flows) {
+    const file = flow.file;
+    // A flow is matched from its first trigger. Later triggers stay in the spec and are reported, not matched.
+    const triggerNode = flow.triggers[0];
+    const trigger = triggerNode?.target.target ?? null;
+    let key = 0;
+    const keys = new Map<FlowNode, number>();
+    const shape = (nodes: readonly FlowItem[]): ShapeNode[] =>
+      nodes.flatMap((node): ShapeNode[] => {
         if (node.kind === "when") {
-          const evidence = traceOf();
-          if (evidence) verdict("trace", `when ${node.text?.value ?? ""}`, evidence.verdict, doc.path, node.span, evidence.message, traceProvenance(evidence));
+          keys.set(node, key);
+          return [{ kind: "when", key: key++, children: shape(node.children) }];
         }
-        // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
-        const tests = input.tests;
-        if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
-          const area = claimArea(node);
-          const proofs = node.children.filter((child) => child.kind === "test");
-          if (tests !== null && proofs.length === 0 && node.kind !== "when") {
-            verdict("tests", area, "unverified", doc.path, node.span, quantitative(node.text?.value ?? "") ? "needs a separate predicate or test (quantitative or negative property)" : "no test evidence");
+        if (node.kind !== "step") return [];
+        const id = node.target.target;
+        // A planned step is not expected in a trace; its children cannot be matched under it.
+        if (planned.get(id)?.implemented === false) return [];
+        keys.set(node, key);
+        return [{ kind: "step", key: key++, id, children: shape(node.children) }];
+      });
+    // Steps may sit under the trigger or beside it; either way the trigger is their parent.
+    const tree = shape([...(triggerNode?.children ?? []), ...flow.items]);
+    const triggerKey = triggerNode && trigger ? key++ : null;
+    if (triggerNode && triggerKey !== null) keys.set(triggerNode, triggerKey);
+    const traced: Map<number, TraceEvidence> | null =
+      input.traces === null ? null : traceFlow(input.traces, flow.name, trigger && triggerKey !== null ? { key: triggerKey, id: trigger } : null, tree, input.snapshotId);
+
+    // `blocked` is why this node is not matched: a later trigger, or the nearest planned ancestor.
+    const visit = (node: FlowNode, parent: string | null, claim: ClaimItem | ThenItem | WhenItem | null, blocked: string | null): void => {
+      spec = node.text;
+      const nodeKey = keys.get(node);
+      const traceOf = (): TraceEvidence | undefined => (nodeKey === undefined ? undefined : traced?.get(nodeKey));
+      if (node.kind === "step" || node.kind === "trigger") {
+        const id = node.target.target;
+        const laterTrigger = node.kind === "trigger" && node !== triggerNode;
+        const ownBlock = laterTrigger ? "a flow is matched from its first trigger only" : blocked;
+        const plan = planned.get(id);
+        const pending = plan !== undefined && !plan.implemented;
+        const known = idVerdict(id, pending ? plan : undefined, node.span, file, index, input, verdict);
+        const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
+        // A dangling id is K001 already; a static line would count it twice.
+        if (node.kind === "step" && known !== "fail") {
+          if (pending) verdict("static", id, "unverified", file, node.span, `planned ${plan.kind}, not implemented`);
+          else if (parentPlanned) verdict("static", id, "unverified", file, node.span, `parent \`${parent}\` is planned, not implemented`);
+          else if (input.nodes[id] !== undefined) {
+            const reach = reachability(graph, input, parent, id);
+            verdict("static", id, reach.verdict, file, node.span, reach.message, { provenance: "syntactic" });
+          } else verdict("static", id, "unverified", file, node.span, "not in the snapshot (opaque module)");
+        }
+        if (traced !== null) {
+          if (pending) verdict("trace", id, "unverified", file, node.span, `planned ${plan.kind}`);
+          else if (ownBlock) verdict("trace", id, "unverified", file, node.span, ownBlock);
+          else {
+            const evidence = traceOf();
+            if (evidence) verdict("trace", id, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
           }
-          for (const child of node.children) visit(child, parent, node);
-          return;
         }
-        if (node.kind === "test") {
-          if (tests === null) return;
-          const name = node.label?.value ?? "";
-          const file = node.text?.value ?? "";
-          const matched = matchTest(tests, file, name, input.snapshotId);
-          const area = claim ? claimArea(claim) : `test ${file} "${name}"`;
-          verdict("tests", area, matched.verdict, doc.path, node.span, `${matched.message} (${file} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
-          return;
+        const childBlock = pending ? `parent step \`${id}\` is planned` : laterTrigger ? "a flow is matched from its first trigger only" : blocked;
+        for (const child of node.children) visit(child, id, claim, childBlock);
+        return;
+      }
+      if (node.kind === "when") {
+        const evidence = traceOf();
+        if (evidence) verdict("trace", `when ${node.condition}`, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
+      }
+      // Without `check.tests` the channel is not asked for: nothing is printed and nothing counts.
+      const tests = input.tests;
+      if (node.kind === "invariant" || node.kind === "when" || node.kind === "then" || node.kind === "reads" || node.kind === "emits") {
+        const area = claimArea(node);
+        const proofs = node.children.filter((child): child is TestItem => child.kind === "test");
+        if (tests !== null && proofs.length === 0 && node.kind !== "when") {
+          const prose = node.kind === "then" ? (node.form === "text" ? node.prose : "") : node.kind === "reads" ? "" : node.body;
+          verdict("tests", area, "unverified", file, node.span, quantitative(prose) ? "needs a separate predicate or test (quantitative or negative property)" : "no test evidence");
         }
-        for (const child of node.children) visit(child, parent, claim);
-      };
-      for (const node of top) visit(node, trigger, null);
-    }
+        for (const child of node.children) visit(child, parent, node, blocked);
+        return;
+      }
+      if (node.kind === "test") {
+        if (tests === null) return;
+        const name = node.name ?? "";
+        const matched = matchTest(tests, node.path, name, input.snapshotId);
+        const area = claim ? claimArea(claim) : `test ${node.path} "${name}"`;
+        verdict("tests", area, matched.verdict, file, node.span, `${matched.message} (${node.path} "${name}")`, { provenance: "test-report", ...(matched.runId ? { runId: matched.runId } : {}) });
+      }
+    };
+    for (const node of flow.top) visit(node, trigger, null, null);
   }
   return { diagnostics, verdicts };
 }
 
-function refOf(node: Node): string | null {
-  return node.refs[0]?.target ?? node.id ?? null;
-}
-
-function claimArea(node: Node): string {
-  const text = node.text?.value ?? node.refs[0]?.target ?? "";
-  return `${node.kind} ${text}`.trim();
+function claimArea(node: ClaimItem | ThenItem | WhenItem): string {
+  if (node.kind === "when") return `when ${node.condition}`;
+  if (node.kind === "then") return node.form === "ref" ? `then ${node.target.target}` : `then ${node.prose}`;
+  return `${node.kind} ${node.body}`.trim();
 }
 
 function traceProvenance(evidence: TraceEvidence): Verdict["evidence"] {
@@ -213,14 +207,14 @@ function quantitative(text: string): boolean {
 function idVerdict(
   id: string,
   plan: Planned | undefined,
-  node: Node,
+  span: Span,
   file: string,
   index: Index,
   input: FlowInput,
   verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void,
 ): Verdict["verdict"] {
   const say = (value: Verdict["verdict"], message: string): Verdict["verdict"] => {
-    verdict("ID", id, value, file, node.span, message);
+    verdict("ID", id, value, file, span, message);
     return value;
   };
   if (plan) return say("unverified", `planned ${plan.kind}`);
@@ -339,10 +333,13 @@ function describeVia(edge: SnapshotEdge): string {
   return edge.via === "injected" ? `\`${edge.hook ?? edge.text ?? ""}\` injected at ${edge.site ?? "?"}` : `the default of the hook \`${edge.hook ?? edge.text ?? ""}\``;
 }
 
-function describeHole(edge: SnapshotEdge, target: string): string {
+function describeHole(edge: SnapshotEdge, target: string, input: FlowInput): string {
   if (edge.resolution === "ambiguous") return `ambiguous call \`${edge.text ?? edge.source}\` [${(edge.candidates ?? []).join(", ")}]`;
   if (edge.resolution === "resolved") {
-    if (edge.via) return `${describeVia(edge)} (not followed with --static=shape)`;
+    if (edge.via) {
+      const by = input.staticSetBy === "config" ? "keylang.json check.static" : "--static";
+      return `${describeVia(edge)} (not followed in static mode ${input.static}, set by ${by})`;
+    }
     return `\`${edge.text ?? ""}\` may dispatch to another \`${lastSegment(edge.text ?? callName(target))}\``;
   }
   return edge.reason ?? `unresolved call \`${edge.text ?? ""}\``;
@@ -385,7 +382,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // An import in some other module does not prove this step.
   if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
   if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
-  const behavior = (input.static ?? "behavior") === "behavior";
+  const behavior = input.static === "behavior";
   // A call in a closure runs only when that function value is called: it is a possible route, not a proof.
   const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
 
@@ -410,7 +407,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (uncertain?.closure && uncertain.resolution === "resolved" && !uncertain.via) {
     return { verdict: "unverified", message: `no resolved path from ${parent}; reached only through a closure of ${uncertain.source}: \`${uncertain.text ?? ""}\` at ${at(uncertain)} runs only when that function value is called${more(uncertain)}` };
   }
-  if (uncertain) return { verdict: "unverified", message: `no resolved path from ${parent}; ${describeHole(uncertain, target)} at ${at(uncertain)} may reach it${more(uncertain)}` };
+  if (uncertain) return { verdict: "unverified", message: `no resolved path from ${parent}; ${describeHole(uncertain, target, input)} at ${at(uncertain)} may reach it${more(uncertain)}` };
 
   // 3. Code that may run a fn without naming it.
   const routes = callersOf(graph, target);
@@ -419,7 +416,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   if (blocker) {
     // Only an unresolved call in code the escaping value is handed to can be the missing link.
     const near = blocker.from === null ? null : holeNear(graph, holes, blocker.from);
-    const lead = near ? `no resolved path from ${parent}; ${describeHole(near, target)} at ${at(near)} may reach it${more(near)}` : `no call path from ${parent} in the static graph`;
+    const lead = near ? `no resolved path from ${parent}; ${describeHole(near, target, input)} at ${at(near)} may reach it${more(near)}` : `no call path from ${parent} in the static graph`;
     return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
   }
   const unseen = holes.length > 0 && graph.opaque ? graph.opaque : null;
@@ -629,32 +626,24 @@ function moduleMembers(nodes: FlowInput["nodes"], id: string): "complete" | "opa
  * a different kind or signature is K201, a match is the K202 hint to remove
  * the declaration, and the step is checked as implemented.
  */
-function collectPlanned(docs: readonly Document[], input: FlowInput, diagnostics: Diagnostic[]): Map<string, Planned> {
+function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]): Map<string, Planned> {
   const planned = new Map<string, Planned>();
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind !== "planned" || !node.id) return;
-          const span = node.name?.span ?? node.span;
-          // A duplicate is K002 of resolution (`resolve.ts`), with or without a snapshot.
-          if (planned.has(node.id)) return;
-          const kind = node.label?.value ?? "fn";
-          const signature = node.text?.value ?? null;
-          const code = input.nodes[node.id];
-          const entry: Planned = { kind, signature, file: doc.path, span, implemented: false };
-          planned.set(node.id, entry);
-          if (!code) return;
-          entry.implemented = true;
-          if (code.kind !== kind) {
-            diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` is implemented as a ${code.kind} (${code.file ?? "?"}:${code.line ?? 1})`));
-          } else if (signature !== null && code.signature && normalizeSignature(signature) !== normalizeSignature(code.signature)) {
-            diagnostics.push(diagnostic("K201", doc.path, node.span, `planned ${kind} \`${node.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${code.file ?? "?"}:${code.line ?? 1})`));
-          } else {
-            diagnostics.push(diagnostic("K202", doc.path, node.span, `planned ${kind} \`${node.id}\` is implemented (${code.file ?? "?"}:${code.line ?? 1}); remove the declaration`));
-          }
-        });
-      }
+  for (const item of spec.planned) {
+    // A duplicate is K002 of resolution (`resolve.ts`), with or without a snapshot.
+    if (planned.has(item.id)) continue;
+    const kind = item.decl;
+    const signature = item.signature;
+    const code = input.nodes[item.id];
+    const entry: Planned = { kind, signature, file: item.file, span: item.span, implemented: false };
+    planned.set(item.id, entry);
+    if (!code) continue;
+    entry.implemented = true;
+    if (code.kind !== kind) {
+      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${code.file ?? "?"}:${code.line ?? 1})`));
+    } else if (signature !== null && code.signature && normalizeSignature(signature) !== normalizeSignature(code.signature)) {
+      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${code.file ?? "?"}:${code.line ?? 1})`));
+    } else {
+      diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${code.file ?? "?"}:${code.line ?? 1}); remove the declaration`));
     }
   }
   return planned;

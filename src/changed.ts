@@ -6,11 +6,13 @@
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
-import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import type { Document } from "./ir.ts";
+import { walkFlow, type SpecIR } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
 export interface ChangedInput {
   docs: readonly Document[];
+  spec: SpecIR;
   diagnostics: readonly Diagnostic[];
   verdicts: readonly Verdict[];
   nodes: Readonly<Record<string, { kind: string; file: string | null; layer?: string }>>;
@@ -41,7 +43,7 @@ export function filterChanged(input: ChangedInput, changed: ReadonlySet<string>,
   const modules = Object.entries(input.nodes)
     .filter(([, node]) => node.kind === "module" && node.file !== null && changed.has(node.file))
     .map(([id, node]) => ({ id, layer: node.layer ?? id.split(".")[0] ?? id }));
-  const rules = modules.length === 0 ? [] : collectRules(input.docs).filter((rule) => modules.some((mod) => covers(rule.scope, mod.id, mod.layer)));
+  const rules = modules.length === 0 ? [] : ruleHits(input.spec).filter((rule) => modules.some((mod) => covers(rule.scope, mod.id, mod.layer)));
   const flowLines = flowLinesTouching(input, changed, gone);
   const ruleLine = (file: string, line: number): boolean => rules.some((rule) => rule.file === file && rule.line === line);
   const ruleCriterion = (criterion: string): boolean => rules.some((rule) => rule.criterion === criterion);
@@ -93,33 +95,21 @@ function covers(scope: readonly string[], moduleId: string, layer: string): bool
   return scope.some((id) => id === layer || moduleId === id || moduleId.startsWith(`${id}.`));
 }
 
-function collectRules(docs: readonly Document[]): RuleHit[] {
+/** Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`. */
+function ruleHits(spec: SpecIR): RuleHit[] {
   const hits: RuleHit[] = [];
-  for (const doc of docs) {
-    for (const section of doc.sections) {
-      if (section.kind !== "rules" && section.kind !== "map") continue;
-      for (const node of sectionNodes(section)) addRule(hits, doc.path, node, null);
-    }
+  for (const rule of spec.rules) {
+    const line = rule.span.start.line;
+    if (rule.kind === "dependency") hits.push({ file: rule.file, line, criterion: rule.text, scope: [rule.from.target] });
+    else if (rule.kind === "layers" && rule.layers.length > 0) hits.push({ file: rule.file, line, criterion: rule.text, scope: [...rule.layers] });
+    else if (rule.kind === "entry") hits.push({ file: rule.file, line, criterion: rule.text, scope: rule.entries.map((ref) => ref.target) });
+    else if (rule.kind === "no-cycles") hits.push({ file: rule.file, line, criterion: "no-cycles", scope: rule.under === null ? [] : [rule.under.target] });
+  }
+  for (const line of spec.rejectedLayers) {
+    if (line.order.length === 0) continue;
+    hits.push({ file: line.file, line: line.span.start.line, criterion: line.text, scope: line.order.map((ref) => ref.target) });
   }
   return hits;
-}
-
-function addRule(hits: RuleHit[], file: string, node: Node, under: string | null): void {
-  if (node.kind === "allow" || node.kind === "deny") {
-    const [from, ...to] = node.refs;
-    if (from && to.length > 0) hits.push({ file, line: node.span.start.line, criterion: `${node.kind} ${from.target} ${to.map((ref) => ref.target).join(" ")}`, scope: [from.target] });
-  } else if (node.kind === "layers" && node.refs.length > 0) {
-    const layers = node.refs.map((ref) => ref.target);
-    hits.push({ file, line: node.span.start.line, criterion: `layers ${layers.join(" < ")}`, scope: layers });
-  } else if (node.kind === "entry") {
-    const ids = node.children.flatMap((child) => child.refs.map((ref) => ref.target));
-    hits.push({ file, line: node.span.start.line, criterion: `entry ${ids.join(" ")}`, scope: ids });
-  } else if (node.kind === "no-cycles") {
-    hits.push({ file, line: node.span.start.line, criterion: "no-cycles", scope: under === null ? [] : [under] });
-  } else if (node.kind === "rule-module") {
-    const target = node.refs[0]?.target ?? null;
-    if (target !== null) for (const child of node.children) addRule(hits, file, child, target);
-  }
 }
 
 /** `file:line` of every verdict in a flow that names a symbol whose file changed or was deleted. */
@@ -127,19 +117,18 @@ function flowLinesTouching(input: ChangedInput, changed: ReadonlySet<string>, go
   const lines = new Set<string>();
   for (const doc of input.docs) {
     doc.sections.forEach((section, index) => {
-      if (section.kind !== "flow") return;
+      if (section.kind !== "flow" || section.name === null) return;
+      const name = section.name;
+      const flow = input.spec.flows.find((item) => item.file === doc.path && item.name === name.value && item.span.start.offset === name.span.start.offset);
+      if (flow === undefined) return;
       let touch = false;
-      const start = section.heading?.span.start.line ?? 1;
-      for (const top of sectionNodes(section)) {
-        walk(top, (node) => {
-          if (node.kind !== "step" && node.kind !== "trigger") return;
-          for (const ref of node.refs) {
-            const file = input.nodes[ref.target]?.file;
-            if ((file !== null && file !== undefined && changed.has(file)) || gone(ref.target)) touch = true;
-          }
-        });
-      }
+      walkFlow(flow, (item) => {
+        if (item.kind !== "step" && item.kind !== "trigger") return;
+        const file = input.nodes[item.target.target]?.file;
+        if ((file !== null && file !== undefined && changed.has(file)) || gone(item.target.target)) touch = true;
+      });
       if (!touch) return;
+      const start = section.heading?.span.start.line ?? 1;
       const next = doc.sections[index + 1]?.heading?.span.start.line ?? Number.POSITIVE_INFINITY;
       for (const verdict of input.verdicts) {
         if (verdict.file === doc.path && verdict.line >= start && verdict.line < next) lines.add(`${verdict.file}:${verdict.line}`);
