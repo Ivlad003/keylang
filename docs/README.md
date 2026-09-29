@@ -8,6 +8,7 @@ The user guide is the [course](course/README.md). English is the language of tha
 
 | Document | Role |
 |---|---|
+| [course/pre/](course/pre/README.md) | Ideas and words for a reader who has not drawn an architecture before |
 | [course/](course/README.md) | How to use the language, what it solves, what it does not, with screenshots |
 | [course/uk/](course/uk/README.md) | The same course in Ukrainian |
 | [format.md](format.md) | Normative grammar and current behavior |

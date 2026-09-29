@@ -2,9 +2,21 @@
 
 [Course](README.md) · **English** · [Українською](uk/01-what-it-is.md)
 
+New to the words? The [pre-course](pre/README.md) introduces them on the shop before this lesson.
+
 keylang is a Markdown language for architecture claims that a repository can check. A generated map says what the code contains. A hand-written rules file says which dependencies are allowed. A flow names a scenario as a tree of ids and attaches evidence: the id exists, a static call path reaches it, a test passed, a trace observed the call. The same analysis answers the CLI, the editor, the terminal UI and an agent.
 
 The idea follows the architecture language in [`architecture-language.md`](../../architecture-language.md): a tree of layer, module and dependency, written as a Markdown list. keylang keeps that shape and adds module members, rules with a verdict, flows, and an optional wiring generator.
+
+The rule those layers exist to hold is older than the tool. Two sentences from the free sources are enough to see it. The reading path, with the GitHub repositories the authors published, is [pre-course part 4](pre/04-reading.md).
+
+> Nothing in an inner circle can know anything at all about something in an outer circle. In particular, the name of something declared in an outer circle must not be mentioned by the code in an inner circle.
+>
+> — Robert C. Martin, [The Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html), 13 August 2012. The post's source is [in his site repository](https://github.com/unclebob/unclebob.github.io/blob/master/uncle-bob/_posts/2012-08-13-the-clean-architecture.md).
+
+> The asymmetry to exploit is not that between left and right sides of the application but between inside and outside of the application. The rule to obey is that code pertaining to the inside part should not leak into the outside part.
+>
+> — Alistair Cockburn, [Hexagonal architecture](https://alistair.cockburn.us/hexagonal-architecture/), 2005
 
 ## Four documents, one language
 
@@ -14,9 +26,11 @@ code + keylang.json → extract / resolve → snapshot
                                            └→ .keylang/index.json  fact cache, not committed
 
 specs under keylang/ → parse → claims ────┴→ keylang check
-   keylang/rules.md      what is allowed
-   keylang/flows/*.md    a named scenario and its evidence
-   keylang/wiring.md     factories for `keylang wire`
+   keylang/rules.md             what is allowed, written by hand
+   keylang/rules.baseline.md    generated: the dependencies that exist today
+   keylang/flows/*.md           a named scenario and its evidence
+   keylang/features/*.md        one feature: planned ids, flows, then drop planned
+   keylang/wiring.md            factories for `keylang wire`
 ```
 
 The section heading decides the kind, not the file name. `# map`, `# rules`, `# flow checkout` and `# wiring` may share a file. Anything before the first heading is treated as a map, which is why the original slides parse.
@@ -33,7 +47,11 @@ The map is a view of the snapshot. Checking the Markdown alone can confirm that 
 
 **Reviewing an agent's draft.** Drafts are full proposed files under `.keylang/proposals/`. The spec on disk changes only when a person accepts hunks (`m` in the UI, or an explicit `--apply` for `spec-to-code`). A model comment on a line records where the line came from. It is not a verdict.
 
-**Navigating.** Hover, go-to-definition and completion use the same ids. From a flow step you open the function. From a diagnostic you run `keylang explain K001` and get the reason and a fix.
+**Navigating.** Hover, go-to-definition and completion use the same ids. From a flow step you open the function. From a diagnostic you run `keylang explain K001` and get the reason and a fix. With `"explain": {"map": true}` the same snapshot also renders an explained map: the doc comment under each node, or a saved brief when the code has none. `t` in the UI switches a layer file between the two maps. Neither map is a verdict.
+
+**Saying when a feature is done.** A file `keylang/features/<slug>.md` is an ordinary spec: `planned` ids and a flow. `keylang feature <slug>` is done when every `planned` there is implemented (K202, not K201), every step of its flows is static `ok`, and no rule `fail` remains, including the baseline. Tests and traces are reported and do not block that answer. An integration that is not imported yet is `planned module external.<pkg>` plus a step to that module. No new grammar.
+
+**Pointing a coding agent at a repository it has not seen.** `keylang init` writes `keylang.json`, the map, `rules.baseline.md`, and a short managed block in `AGENTS.md`. Where it finds Claude, Codex, Cursor or opencode, it also registers the MCP server and a skill. The agent writes the code with its own tools. keylang does not launch it. `check` is still the verdict. Hand-written rules change only as a proposal a person merges. The baseline is regenerated with `keylang baseline`. `--agents=none` skips the harness files and still writes the baseline.
 
 ## Problems it leaves alone
 
@@ -41,7 +59,7 @@ The map is a view of the snapshot. Checking the Markdown alone can confirm that 
 
 **Behavior behind a hole.** If the frontend cannot name the callee (`obj[k]()`, a value passed through a local, an unknown decorator that may replace the function, a Rust macro it does not expand), the call is not a confirmed edge. Rules that needed that edge stay `unverified`. That is a limit of the snapshot, and the message names the construct.
 
-**Prose that drifted from the code.** The design calls this staleness. The current tool formats and displays descriptions. It does not yet mark them stale when the body changes. Do not read a green gutter as "the paragraph is still true".
+**Prose under a node that drifted from the code.** A description in a spec is still text. `check` does not mark it stale when the body changes. A saved explanation is different: `explain <id>` prints `fresh` or `stale` from the closure fingerprint taken when it was written, and a green gutter is still not "the paragraph is true".
 
 **Everything around the code.** Deployment topology, SLOs, threat models, product scope and ADRs are out of band. keylang will not notice that two services share a database.
 
@@ -75,4 +93,4 @@ The honest output is noisier than a red/green linter. A fresh clone of this repo
 
 ## Where to go next
 
-[Lesson 2](02-install-and-check.md) runs the CLI on the slide example and on this repository. [Lesson 3](03-the-language.md) is the grammar you need to write a file. Lessons 4–6 are the three kinds of claim. Lesson 7 is the UI and the agent boundary. [Lesson 8](08-use-cases.md) repeats the screenshots as sessions.
+[Lesson 2](02-install-and-check.md) runs the CLI on the slide example and on this repository. [Lesson 3](03-the-language.md) is the grammar you need to write a file. Lessons 4–6 are the map, the rules (including the generated baseline) and flows. Lesson 7 is the UI, wiring, and the line between a proposal and a harness that writes code. [Lesson 8](08-use-cases.md) repeats the screenshots as sessions.

@@ -4,7 +4,7 @@
 
 ![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-Мова опису архітектури, що живе в репозиторії як звичайний Markdown: згенерована карта шарів і модулів, написані вручну правила залежностей і потоки логіки, перевірені відносно коду. Навчальний посібник — [курс](docs/course/uk/README.md) ([English](docs/course/README.md)). Нормативна граматика — [`docs/format.md`](docs/format.md). Цільовий дизайн — [`docs/design.md`](docs/design.md); огляд статей — [`docs/research.md`](docs/research.md).
+Мова опису архітектури, що живе в репозиторії як звичайний Markdown: згенерована карта шарів і модулів, написані вручну правила залежностей і потоки логіки, перевірені відносно коду. Навчальний посібник — [курс](docs/course/uk/README.md) ([English](docs/course/README.md)). Якщо архітектурні слова нові, почніть із [підготовчого курсу](docs/course/pre/uk/README.md) ([English](docs/course/pre/README.md)). Нормативна граматика — [`docs/format.md`](docs/format.md). Цільовий дизайн — [`docs/design.md`](docs/design.md); огляд статей — [`docs/research.md`](docs/research.md).
 
 Стек: Node.js ≥ 22.18 і TypeScript. У цьому чекауті Node виконує `.ts` напряму (`node bin/keylang.js`). Перед публікацією `prepack` компілює `src/` у `dist/` і переписує відносні імпорти `.ts` на `.js`. Встановлений пакет завантажує цей JavaScript і нічого не компілює в користувача. Дистрибуція — npm / npx. Компіляції native-коду немає.
 

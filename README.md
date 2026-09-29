@@ -4,7 +4,7 @@
 
 ![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-Architecture description that lives in the repository as ordinary Markdown: a generated map of layers and modules, hand-written dependency rules, and logic flows, all checked against the code. The teaching guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). The normative grammar is [`docs/format.md`](docs/format.md) (Ukrainian). The target design is [`docs/design.md`](docs/design.md); the research notes are [`docs/research.md`](docs/research.md).
+Architecture description that lives in the repository as ordinary Markdown: a generated map of layers and modules, hand-written dependency rules, and logic flows, all checked against the code. The teaching guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). If the architecture words are new, start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The normative grammar is [`docs/format.md`](docs/format.md) (Ukrainian). The target design is [`docs/design.md`](docs/design.md); the research notes are [`docs/research.md`](docs/research.md).
 
 Stack: Node.js ≥ 22.18 and TypeScript. In this checkout Node runs `.ts` directly (`node bin/keylang.js`). Before publish, `prepack` compiles `src/` to `dist/` and rewrites relative `.ts` imports to `.js`. An installed package loads that JavaScript and compiles nothing on the user's machine. Distribution is npm / npx. No native compilation.
 
