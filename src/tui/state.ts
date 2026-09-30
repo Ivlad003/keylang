@@ -119,8 +119,9 @@ export interface Prompt {
    * `fmt`: the files and directories to format, relative to the root and separated by spaces, and the mode (`ids` are `write` / `check`);
    * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
    * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one; on the `since` row typing edits the git ref instead of the paths).
+   * `explain-edge`: two ids, `edge.from` and `edge.to` (the items `from`, `to`, run; typing edits the selected id row; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -137,6 +138,8 @@ export interface Prompt {
   form?: NewSpecForm;
   /** `full-check`: strict, the static mode (null: what keylang.json says, then `behavior`), and the git slice: `changed` with its ref (`since`, `HEAD` by default). */
   checkOptions?: { strict: boolean; static: StaticMode | null; changed: boolean; since: string };
+  /** `explain-edge`: the two ids as typed; the id under the cursor fills only `from`. */
+  edge?: { from: string; to: string };
 }
 
 /** The kinds of a new specification: its first text follows the kind (design §2.8). */

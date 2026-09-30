@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, map-check, map, baseline, agents, init, fmt, wire) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -89,6 +89,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["keylang check", "full check", "check paths", "check --strict", "check --static", "strict", "static mode", "check report"],
     // A form names the paths and the options; it reads the saved files, so unsaved buffers are offered for saving first. Never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "explain-edge",
+    label: "Check: explain the edge between two ids",
+    group: "Check",
+    aliases: ["explain edge", "check --explain-edge", "edge", "dependency evidence", "why depends", "between ids"],
+    // A form takes two ids (the one under the cursor fills the first); it reads the saved code in a worker and never writes.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

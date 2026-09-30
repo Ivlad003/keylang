@@ -30,9 +30,7 @@ import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
 import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckPayload, type OperationEnvelope } from "./operations.ts";
-import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
-import { compareText } from "./span.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -946,8 +944,17 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
   if (opts.changed && opts.explain) throw new Error("check: --changed cannot be combined with --explain-edge");
   const cwd = process.cwd();
   if (opts.explain) {
-    const analyzed = await analyze({ root: findRoot(cwd), specs: [] });
-    return explainEdge(paths, analyzed.snapshot);
+    const [from, to, extra] = paths;
+    const root = findRoot(cwd);
+    if (!from || !to || extra !== undefined) {
+      // A broken keylang.json is reported first, as it always was.
+      loadConfig(root);
+      throw new Error("check --explain-edge needs exactly two ids: <from> <to>");
+    }
+    const explained = await runOperation({ kind: "explain-edge", root, from, to });
+    if (explained.payload === null) throw new Error(explained.messages[0]?.text ?? "check --explain-edge failed");
+    for (const line of explained.payload.lines) process.stdout.write(`${line}\n`);
+    return explained.exitCode ?? 2;
   }
   const root = findRoot(cwd);
   const result = await runOperation({
@@ -966,40 +973,6 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
   writeCheck(opts.format, payload);
   process.stderr.write(`${checkSummary(payload.counts)}\n`);
   return result.exitCode ?? 2;
-}
-
-function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
-  const [from, to, extra] = ids;
-  if (!from || !to || extra !== undefined) throw new Error("check --explain-edge needs exactly two ids: <from> <to>");
-  if (!snapshot) throw new Error("no snapshot; run inside a repository with sources");
-  // An id names a node or an ancestor of nodes (a layer or a directory), never an unknown tail.
-  const known = (id: string): boolean => snapshot.nodes[id] !== undefined || Object.keys(snapshot.nodes).some((key) => key.startsWith(`${id}.`));
-  for (const id of [from, to]) if (!known(id)) throw new Error(`unknown id \`${id}\``);
-  const under = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
-  const between = (a: string, b: string) => (edge: AnalysisSnapshot["edges"][number]): boolean =>
-    under(edge.source, a) && ((edge.target !== null && under(edge.target, b)) || (edge.candidates ?? []).some((id) => under(id, b)));
-  // Edges in both directions: `a → b` first, then `b → a`.
-  const forward = between(from, to);
-  const hits = snapshot.edges
-    .filter((edge) => forward(edge) || between(to, from)(edge))
-    .sort((a, b) => Number(!forward(a)) - Number(!forward(b)) || compareText(a.kind, b.kind) || compareText(a.file ?? "", b.file ?? "") || a.line - b.line || a.col - b.col || compareText(a.source, b.source));
-  for (const edge of hits) {
-    const via = edge.candidates?.length ? ` [${edge.candidates.join(", ")}]` : "";
-    const hook = edge.via === "default" ? ` (default of the hook \`${edge.hook ?? ""}\`)` : edge.via === "injected" ? ` (injected as \`${edge.hook ?? ""}\` at ${edge.site ?? "?"})` : "";
-    const fragment = edge.text ? ` \`${edge.text.replace(/\s+/g, " ")}\`` : "";
-    process.stdout.write(`${edge.kind} ${edge.resolution} ${edge.provenance} ${edge.file}:${edge.line}:${edge.col}-${edge.endLine}:${edge.endCol}${fragment} ${edge.source} → ${edge.target ?? "?"}${via}${hook}${edge.reason ? ` (${edge.reason})` : ""}\n`);
-  }
-  if (hits.length > 0) return 0;
-  const holes = snapshot.coverage
-    .filter((item) => item.source !== null && under(item.source, from))
-    .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
-  if (holes.length === 0) {
-    process.stdout.write("no edge, coverage complete\n");
-    return 0;
-  }
-  process.stdout.write(`no confirmed edge; ${holes.length} unresolved construct(s) in \`${from}\` could form one\n`);
-  for (const hole of holes) process.stdout.write(`unresolved ${hole.file}:${hole.line}:${hole.col} ${hole.reason}\n`);
-  return 0;
 }
 
 /** Shows one check report in a format; the report, its verdicts and its code do not depend on the format. */

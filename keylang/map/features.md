@@ -142,6 +142,20 @@
     - fn [gitPath](../../src/draft.ts#L262) (text: string) → string <!-- internal -->
     - fn [changedFlows](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       - calls features.draft.draftFlow, features.draft.distinctNames
+  - module [explain-edge](../../src/explain-edge.ts#L1)
+    - snapshot map.snapshot
+    - span base.span
+    - type [EdgeEvidence](../../src/explain-edge.ts#L10)
+    - type [EdgeConclusion](../../src/explain-edge.ts#L20) = "edges" | "complete" | "unresolved"
+    - type [EdgeExplanation](../../src/explain-edge.ts#L22)
+    - fn [edgeIdKnown](../../src/explain-edge.ts#L33) (snapshot: AnalysisSnapshot, id: string) → boolean
+    - fn [under](../../src/explain-edge.ts#L37) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
+      - calls features.explain-edge.under, base.span.compareText
+    - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
+    - fn [holeLine](../../src/explain-edge.ts#L67) (hole: CoverageItem) → string
+    - fn [edgeExplanationLines](../../src/explain-edge.ts#L72) (explanation: EdgeExplanation) → string[]
+      - calls features.explain-edge.edgeLine
   - module [explain-llm](../../src/explain-llm.ts#L1)
     - node external.node
     - agent-context features.agent-context

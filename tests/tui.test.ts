@@ -5349,6 +5349,188 @@ function cliInit(root: string, args: string[] = []): { status: number | null; st
   return spawnSync(process.execPath, [BIN, "init", ...args], { cwd: root, encoding: "utf8" });
 }
 
+function cliEdge(root: string, from: string, to: string): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "check", "--explain-edge", from, to], { cwd: root, encoding: "utf8" });
+}
+
+/** The palette's explain-edge form; `from` replaces the first field when given, `to` is typed into the second, then Enter. */
+function edgeForm(app: App, send: (keys: string) => void, ids: { from?: string; to: string }): void {
+  send(KEY.ctrlP);
+  for (const ch of "explain edge") send(ch);
+  send(KEY.enter);
+  assert.equal(app.state.prompt?.kind, "explain-edge");
+  if (ids.from !== undefined) {
+    while (app.state.prompt!.index !== 0) send(KEY.up);
+    for (const _ of app.state.prompt!.edge!.from) send("\x7f");
+    for (const ch of ids.from) send(ch);
+    send(KEY.down);
+  }
+  assert.equal(app.state.prompt!.ids![app.state.prompt!.index], "to");
+  for (const _ of app.state.prompt!.edge!.to) send("\x7f");
+  for (const ch of ids.to) send(ch);
+  send(KEY.enter);
+}
+
+function edgePayload(record: App["state"]["records"][number] | undefined): NonNullable<Extract<OperationResult, { kind: "explain-edge" }>["payload"]> {
+  const result = record?.result;
+  assert.ok(result?.kind === "explain-edge" && result.payload !== null, JSON.stringify(result?.messages));
+  return result.payload;
+}
+
+test("tui: explain-edge fills the first id from the cursor, lists both directions in the CLI's order and opens the evidence in the code; nothing is written", async (t) => {
+  const root = checkoutRepo(t, {
+    // A way back: domain.order imports and calls the application.
+    "src/domain/order.ts": 'import { buy } from "../application/purchase.ts";\nexport function create(): void {}\nexport function again(): void {\n  buy();\n}\n',
+  });
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.ctrlP);
+  for (const ch of "explain edge") s.send(ch);
+  s.send(KEY.enter);
+  // The id under the cursor fills only the first field; the second is selected and empty.
+  const prompt = s.app.state.prompt!;
+  assert.deepEqual(prompt.edge, { from: "application.purchase.buy", to: "" });
+  assert.equal(prompt.ids![prompt.index], "to");
+  assert.deepEqual(prompt.items, ["from: application.purchase.buy", "to: ▏", "Explain the edge (reads the saved code, writes nothing)"]);
+  for (const ch of "domain.ordr") s.send(ch);
+  assert.equal(promptNote(s.app), "domain.ordr: not in the current snapshot · did you mean domain.order?");
+  s.send("\x7f");
+  for (const ch of "er") s.send(ch);
+  assert.equal(promptNote(s.app), "domain.order: in the current snapshot");
+  assert.match(s.text(), /explain edge: application\.purchase\.buy ↔ domain\.order/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.deepEqual([record.kind, record.status, record.result!.exitCode, record.result!.written], ["explain-edge", "completed", 0, []]);
+  const payload = edgePayload(record);
+  assert.equal(payload.conclusion, "edges");
+  const directions = payload.edges.map((item) => item.direction);
+  assert.ok(directions.includes("forward") && directions.includes("backward"), JSON.stringify(directions));
+  assert.ok(directions.lastIndexOf("forward") < directions.indexOf("backward"), "a → b first, then b → a");
+  assert.ok(payload.edges.some(({ direction, edge }) => direction === "forward" && edge.kind === "call" && edge.target === "domain.order.create"));
+  assert.ok(payload.edges.some(({ direction, edge }) => direction === "backward" && edge.kind === "call" && edge.source === "domain.order.again"));
+  assert.deepEqual(payload.holes, []);
+  assert.equal(payload.snapshotId, s.app.state.analysis?.snapshot?.snapshotId);
+  // The CLI prints the same result: the same lines, the same code, nothing on stderr.
+  const cli = cliEdge(root, "application.purchase.buy", "domain.order");
+  assert.deepEqual([cli.status, cli.stderr], [0, ""]);
+  assert.equal(cli.stdout, payload.lines.map((line) => `${line}\n`).join(""));
+  assert.equal(cliEdge(root, "application.purchase.buy", "domain.order").stdout, cli.stdout, "a stable order");
+  assert.deepEqual(treeBytes(root), before, "neither the TUI nor the CLI wrote anything");
+  // F6: the ids, both directions and every edge; Tab, then Enter shows the edge's line in the code.
+  s.send(KEY.f6);
+  assert.match(s.text(), /Check: explain the edge between two ids · application\.purchase\.buy ↔ domain\.order/);
+  assert.match(s.text(), /Explain edge · read-only, nothing written · saved code · snapshot/);
+  assert.match(s.text(), /\d+ edge\(s\): \d+ → , \d+ ← · code 0/);
+  assert.match(s.text(), /→ call resolved syntactic src\/application\/purchase\.ts:4:\d+-\d+:\d+ `create` application\.purchase\.buy → domain\.order\.create/);
+  assert.match(s.text(), /← call resolved syntactic src\/domain\/order\.ts:4:\d+/);
+  s.send(KEY.tab);
+  const back = payload.edges.findIndex(({ direction, edge }) => direction === "backward" && edge.kind === "call");
+  for (let i = 0; i < back; i++) s.send(KEY.down);
+  assert.match(s.app.state.message ?? "", /^← call resolved syntactic src\/domain\/order\.ts:4:\d+.* · Enter opens src\/domain\/order\.ts:4$/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.deepEqual([s.app.state.code?.file, s.app.state.code?.line], ["src/domain/order.ts", 4]);
+  await esc(s.send);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+});
+
+test("tui: explain-edge without an edge tells a complete coverage from an unresolved construct, as the CLI does, on the saved code", async (t) => {
+  const root = repoWith(t, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { main: ["src/**"] } }, null, 2)}\n`,
+    "keylang/rules.md": "# rules\n\n- layers main\n",
+    "src/a.ts": "export function a(): void {}\n",
+    "src/b.ts": "export function b(): void {}\n",
+  });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  edgeForm(s.app, s.send, { from: "main.a", to: "main.b" });
+  await s.app.idle();
+  const complete = edgePayload(s.app.state.records.at(-1));
+  assert.deepEqual([complete.conclusion, complete.edges, complete.holes, complete.lines], ["complete", [], [], ["no edge, coverage complete"]]);
+  assert.equal(cliEdge(root, "main.a", "main.b").stdout, "no edge, coverage complete\n");
+  s.send(KEY.f6);
+  assert.match(s.text(), /no edge, coverage complete · code 0/);
+  assert.match(s.text(), /absence proven: no edge either way, nothing unresolved in main\.a/);
+  await esc(s.send);
+  // A call through a local value, saved outside the session: the operation reads the saved code, not the session's snapshot.
+  writeFileSync(join(root, "src/a.ts"), "export function a(): void {}\nexport function later(cb: () => void): void { cb(); }\n");
+  const before = treeBytes(root);
+  edgeForm(s.app, s.send, { from: "main.a", to: "main.b" });
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  const holed = edgePayload(record);
+  assert.equal(record.result!.exitCode, 0);
+  assert.equal(holed.conclusion, "unresolved");
+  assert.deepEqual(holed.edges, []);
+  assert.deepEqual(holed.holes.map((hole) => [hole.file, hole.line, hole.col, hole.reason]), [["src/a.ts", 2, 47, "call through a local value `cb`"]]);
+  const cli = cliEdge(root, "main.a", "main.b");
+  assert.equal(cli.stdout, "no confirmed edge; 1 unresolved construct(s) in `main.a` could form one\nunresolved src/a.ts:2:47 call through a local value `cb`\n");
+  assert.equal(cli.stdout, holed.lines.map((line) => `${line}\n`).join(""));
+  assert.deepEqual(treeBytes(root), before);
+  s.send(KEY.f6);
+  assert.match(s.text(), /no confirmed edge · code 0/);
+  assert.match(s.text(), /not proven absent: 1 unresolved construct\(s\) in main\.a could form one/);
+  assert.doesNotMatch(s.text(), /absence proven/);
+  s.send(KEY.tab);
+  assert.match(s.app.state.message ?? "", /^unresolved src\/a\.ts:2:47 call through a local value `cb` · Enter opens src\/a\.ts:2$/);
+  s.send(KEY.enter);
+  assert.deepEqual([s.app.state.code?.file, s.app.state.code?.line], ["src/a.ts", 2]);
+  await esc(s.send);
+});
+
+test("tui: explain-edge with an unknown tail under a known module is code 2 with the CLI's message and a suggestion; dirty specs stay dirty; the session goes on", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A dirty spec: the edge reads no spec, so no save step opens and the buffer stays as typed.
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const flow = s.app.state.buffers.get("keylang/flows/checkout.md")!;
+  assert.notEqual(flow.text, flow.saved);
+  const before = treeBytes(root);
+  edgeForm(s.app, s.send, { from: "presentation.terminal.checkot", to: "domain.order" });
+  assert.equal(s.app.state.barrier, null);
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.deepEqual([record.status, record.result!.exitCode, record.result!.payload], ["failed", 2, null]);
+  assert.deepEqual(record.result!.messages, [
+    { level: "error", text: "unknown id `presentation.terminal.checkot`" },
+    { level: "info", text: "did you mean `presentation.terminal.checkout`?" },
+  ]);
+  const cli = cliEdge(root, "presentation.terminal.checkot", "domain.order");
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [2, "", "keylang: unknown id `presentation.terminal.checkot`\n"]);
+  // Both ids are checked, the second too, with the same contract.
+  const second = await runOperation({ kind: "explain-edge", root, from: "domain.order", to: "domain.order.nope" });
+  assert.deepEqual([second.status, second.exitCode, second.messages[0]?.text], ["failed", 2, "unknown id `domain.order.nope`"]);
+  assert.equal(cliEdge(root, "domain.order", "domain.order.nope").stderr, "keylang: unknown id `domain.order.nope`\n");
+  s.send(KEY.f6);
+  assert.match(s.text(), /failed · code 2/);
+  assert.match(s.text(), /unknown id `presentation\.terminal\.checkot`/);
+  assert.match(s.text(), /did you mean `presentation\.terminal\.checkout`\?/);
+  await esc(s.send);
+  // An empty field keeps the form and names what is missing.
+  s.send(KEY.ctrlP);
+  for (const ch of "explain edge") s.send(ch);
+  s.send(KEY.enter);
+  while (s.app.state.prompt!.edge!.from !== "") s.send("\x7f");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "explain-edge");
+  assert.equal(s.app.state.message, "explain edge: two ids are needed: <from> <to>");
+  await esc(s.send);
+  assert.equal(flow.text !== flow.saved, true, "the dirty spec is still dirty");
+  assert.deepEqual(treeBytes(root), before);
+  s.send("q");
+});
+
 test("tui: init from the start screen writes what the CLI writes in a twin and opens the workspace without a restart; init --check keeps the CLI's codes and the whole tree", async (t) => {
   const root = uninitializedRepo(t);
   const twin = uninitializedRepo(t);

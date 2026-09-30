@@ -11,6 +11,7 @@
     - check-results features.check-results
     - config base.config
     - diag base.diag
+    - explain-edge features.explain-edge
     - explain-llm features.explain-llm
     - explanations map.explanations
     - files lang.files
@@ -27,96 +28,101 @@
     - voice features.voice
     - git-changes features.git-changes
     - wire-gen map.wire-gen
-    - type [DoctorRequest](../../src/operations.ts#L34)
-    - type [FeatureRequest](../../src/operations.ts#L41)
-    - type [MapCheckRequest](../../src/operations.ts#L50)
-    - type [MapRequest](../../src/operations.ts#L59)
-    - type [BaselineRequest](../../src/operations.ts#L71)
-    - type [AgentsRequest](../../src/operations.ts#L84)
-    - type [FmtRequest](../../src/operations.ts#L99)
-    - type [WireRequest](../../src/operations.ts#L119)
-    - type [CheckRequest](../../src/operations.ts#L134)
-    - type [InitRequest](../../src/operations.ts#L161)
-    - type [OperationRequest](../../src/operations.ts#L173)
-    - type [OperationContext](../../src/operations.ts#L179)
-    - type [OperationStatus](../../src/operations.ts#L198) = "completed" | "failed" | "cancelled"
-    - type [OperationMessage](../../src/operations.ts#L200)
-    - type [DoctorPayload](../../src/operations.ts#L207)
-    - type [FeaturePayload](../../src/operations.ts#L250)
-    - type [MapCheckPayload](../../src/operations.ts#L261)
-    - type [MapPayload](../../src/operations.ts#L280)
-    - type [BaselinePayload](../../src/operations.ts#L296)
-    - type [AgentsPayload](../../src/operations.ts#L324)
-    - type [FmtFile](../../src/operations.ts#L349)
-    - type [FmtPayload](../../src/operations.ts#L362)
-    - type [WirePayload](../../src/operations.ts#L368)
-    - type [CheckPayload](../../src/operations.ts#L396)
-    - type [ChangedSlice](../../src/operations.ts#L421)
-    - type [InitPayload](../../src/operations.ts#L441)
-    - type [OperationPayloads](../../src/operations.ts#L467)
-    - type [OperationResult](../../src/operations.ts#L481)
-    - type [OperationEnvelope](../../src/operations.ts#L483)
-    - fn [runOperation](../../src/operations.ts#L504) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
-      - calls operations.operations.runDoctor, operations.operations.runFeature, operations.operations.runMapCheck, operations.operations.runMap, operations.operations.runBaseline, operations.operations.runAgents, operations.operations.runFmt, operations.operations.runWire, operations.operations.runCheck, operations.operations.runInit
-    - fn [resultWithout](../../src/operations.ts#L544) (kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationResult
-    - fn [emptyMapCheck](../../src/operations.ts#L570) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map-check"> <!-- internal -->
-    - fn [runMapCheck](../../src/operations.ts#L580) (request: MapCheckRequest, context: OperationContext) → Promise<OperationEnvelope<"map-check">> <!-- internal -->
+    - type [DoctorRequest](../../src/operations.ts#L35)
+    - type [FeatureRequest](../../src/operations.ts#L42)
+    - type [MapCheckRequest](../../src/operations.ts#L51)
+    - type [MapRequest](../../src/operations.ts#L60)
+    - type [BaselineRequest](../../src/operations.ts#L72)
+    - type [AgentsRequest](../../src/operations.ts#L85)
+    - type [FmtRequest](../../src/operations.ts#L100)
+    - type [WireRequest](../../src/operations.ts#L120)
+    - type [CheckRequest](../../src/operations.ts#L135)
+    - type [ExplainEdgeRequest](../../src/operations.ts#L161)
+    - type [InitRequest](../../src/operations.ts#L176)
+    - type [OperationRequest](../../src/operations.ts#L188)
+    - type [OperationContext](../../src/operations.ts#L194)
+    - type [OperationStatus](../../src/operations.ts#L213) = "completed" | "failed" | "cancelled"
+    - type [OperationMessage](../../src/operations.ts#L215)
+    - type [DoctorPayload](../../src/operations.ts#L222)
+    - type [FeaturePayload](../../src/operations.ts#L265)
+    - type [MapCheckPayload](../../src/operations.ts#L276)
+    - type [MapPayload](../../src/operations.ts#L295)
+    - type [BaselinePayload](../../src/operations.ts#L311)
+    - type [AgentsPayload](../../src/operations.ts#L339)
+    - type [FmtFile](../../src/operations.ts#L364)
+    - type [FmtPayload](../../src/operations.ts#L377)
+    - type [WirePayload](../../src/operations.ts#L383)
+    - type [CheckPayload](../../src/operations.ts#L411)
+    - type [ChangedSlice](../../src/operations.ts#L436)
+    - type [ExplainEdgePayload](../../src/operations.ts#L451) extends EdgeExplanation
+    - type [InitPayload](../../src/operations.ts#L464)
+    - type [OperationPayloads](../../src/operations.ts#L490)
+    - type [OperationResult](../../src/operations.ts#L505)
+    - type [OperationEnvelope](../../src/operations.ts#L507)
+    - fn [runOperation](../../src/operations.ts#L528) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
+      - calls operations.operations.runDoctor, operations.operations.runFeature, operations.operations.runMapCheck, operations.operations.runMap, operations.operations.runBaseline, operations.operations.runAgents, operations.operations.runFmt, operations.operations.runWire, operations.operations.runCheck, operations.operations.runExplainEdge, operations.operations.runInit
+    - fn [resultWithout](../../src/operations.ts#L571) (kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationResult
+    - fn [emptyMapCheck](../../src/operations.ts#L599) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map-check"> <!-- internal -->
+    - fn [runMapCheck](../../src/operations.ts#L609) (request: MapCheckRequest, context: OperationContext) → Promise<OperationEnvelope<"map-check">> <!-- internal -->
       - calls operations.operations.emptyMapCheck, operations.operations.messageOf, map.map.diffMap, base.config.toPosix, operations.operations.mapCheckLines
-    - fn [emptyMap](../../src/operations.ts#L612) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map"> <!-- internal -->
-    - fn [runMap](../../src/operations.ts#L627) (request: MapRequest, context: OperationContext) → Promise<OperationEnvelope<"map">> <!-- internal -->
+    - fn [emptyMap](../../src/operations.ts#L641) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map"> <!-- internal -->
+    - fn [runMap](../../src/operations.ts#L656) (request: MapRequest, context: OperationContext) → Promise<OperationEnvelope<"map">> <!-- internal -->
       - calls operations.operations.emptyMap, operations.operations.messageOf, map.map.planMap, operations.operations.mapConflictLines, map.map.mapPlanProblems, map.map.commitMap, operations.operations.mapStepLines
-    - fn [mapConflictLines](../../src/operations.ts#L703) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
-    - fn [mapStepLines](../../src/operations.ts#L712) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
-    - fn [mapSummary](../../src/operations.ts#L718) (payload: MapPayload) → string
-    - fn [mapCheckLines](../../src/operations.ts#L735) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
+    - fn [mapConflictLines](../../src/operations.ts#L732) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapStepLines](../../src/operations.ts#L741) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapSummary](../../src/operations.ts#L747) (payload: MapPayload) → string
+    - fn [mapCheckLines](../../src/operations.ts#L764) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
       - calls operations.operations.mapConflictLines
-    - fn [emptyBaseline](../../src/operations.ts#L741) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"baseline"> <!-- internal -->
-    - fn [runBaseline](../../src/operations.ts#L757) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">> <!-- internal -->
+    - fn [emptyBaseline](../../src/operations.ts#L770) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"baseline"> <!-- internal -->
+    - fn [runBaseline](../../src/operations.ts#L786) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">> <!-- internal -->
       - calls operations.operations.emptyBaseline, operations.operations.messageOf, features.baseline.planBaseline, features.baseline.baselinePlanProblems, features.baseline.commitBaseline
-    - fn [emptyAgents](../../src/operations.ts#L824) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"agents"> <!-- internal -->
-    - fn [runAgents](../../src/operations.ts#L840) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">> <!-- internal -->
+    - fn [emptyAgents](../../src/operations.ts#L853) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"agents"> <!-- internal -->
+    - fn [runAgents](../../src/operations.ts#L869) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">> <!-- internal -->
       - calls operations.operations.emptyAgents, features.harness.planAgents, operations.operations.messageOf, features.harness.agentsPlanProblems, features.harness.commitAgents
-    - fn [emptyInit](../../src/operations.ts#L907) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"init"> <!-- internal -->
-    - fn [initSources](../../src/operations.ts#L917) (root: string, label = ".") → { config: Config } | { error: string }
+    - fn [emptyInit](../../src/operations.ts#L936) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"init"> <!-- internal -->
+    - fn [initSources](../../src/operations.ts#L946) (root: string, label = ".") → { config: Config } | { error: string }
       - calls base.config.loadConfig, operations.operations.messageOf
-    - fn [runInit](../../src/operations.ts#L944) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">> <!-- internal -->
+    - fn [runInit](../../src/operations.ts#L973) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">> <!-- internal -->
       - calls operations.operations.emptyInit, operations.operations.initSources, base.config.guessLayout, operations.operations.runAgents, operations.operations.runBaseline, operations.operations.messageOf, base.safe-write.writeAtomic, base.config.configToJson, operations.operations.runMap
-    - fn [emptyFmt](../../src/operations.ts#L1029) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"fmt"> <!-- internal -->
-    - fn [runFmt](../../src/operations.ts#L1045) (request: FmtRequest, context: OperationContext) → Promise<OperationEnvelope<"fmt">> <!-- internal -->
+    - fn [emptyFmt](../../src/operations.ts#L1058) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"fmt"> <!-- internal -->
+    - fn [runFmt](../../src/operations.ts#L1074) (request: FmtRequest, context: OperationContext) → Promise<OperationEnvelope<"fmt">> <!-- internal -->
       - calls operations.operations.emptyFmt, base.config.assertFormatOnly, lang.files.collectMdFiles, base.config.toPosix, operations.operations.messageOf, map.explanations.isStoredExplanation, lang.fmt.formatSource, operations.operations.fmtMessages, operations.operations.commitFormatted
-    - fn [commitFormatted](../../src/operations.ts#L1131) (abs: string, source: string, text: string) → void <!-- internal -->
+    - fn [commitFormatted](../../src/operations.ts#L1160) (abs: string, source: string, text: string) → void <!-- internal -->
       - calls base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [fmtMessages](../../src/operations.ts#L1143) (payload: FmtPayload) → OperationMessage[]
+    - fn [fmtMessages](../../src/operations.ts#L1172) (payload: FmtPayload) → OperationMessage[]
       - calls base.diag.formatDiagnostic
-    - fn [emptyWire](../../src/operations.ts#L1157) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"wire"> <!-- internal -->
-    - fn [runWire](../../src/operations.ts#L1176) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">> <!-- internal -->
+    - fn [emptyWire](../../src/operations.ts#L1186) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"wire"> <!-- internal -->
+    - fn [runWire](../../src/operations.ts#L1205) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">> <!-- internal -->
       - calls operations.operations.emptyWire, operations.operations.wireOutProblem, operations.operations.wireSpecInputs, base.config.loadConfig, operations.operations.messageOf, operations.operations.wiringErrors, map.wire-gen.generateWire, base.safe-write.landing, map.map.sourceInputs, base.safe-write.writeProblem, map.map.sourceInputProblems, operations.operations.wireSpecProblems, base.safe-write.writeAtomic
-    - fn [wireOutProblem](../../src/operations.ts#L1267) (root: string, out: string) → string | null
+    - fn [wireOutProblem](../../src/operations.ts#L1296) (root: string, out: string) → string | null
       - calls base.safe-write.writeProblem, operations.operations.messageOf
-    - fn [wiringErrors](../../src/operations.ts#L1278) (analysis: Analysis) → Diagnostic[] <!-- internal -->
+    - fn [wiringErrors](../../src/operations.ts#L1307) (analysis: Analysis) → Diagnostic[] <!-- internal -->
       - calls base.diag.isError
-    - type [WireSpecInputs](../../src/operations.ts#L1291) <!-- internal -->
-    - fn [wireSpecInputs](../../src/operations.ts#L1297) (config: Config) → WireSpecInputs <!-- internal -->
+    - type [WireSpecInputs](../../src/operations.ts#L1320) <!-- internal -->
+    - fn [wireSpecInputs](../../src/operations.ts#L1326) (config: Config) → WireSpecInputs <!-- internal -->
       - calls lang.files.collectMdFiles, map.analyze.within, operations.operations.readTextOrNull, base.config.toPosix, map.snapshot.sha256
-    - fn [wireSpecProblems](../../src/operations.ts#L1313) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
+    - fn [wireSpecProblems](../../src/operations.ts#L1342) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
       - calls operations.operations.wireSpecInputs
-    - fn [readTextOrNull](../../src/operations.ts#L1326) (abs: string) → string | null <!-- internal -->
-    - fn [emptyCheck](../../src/operations.ts#L1334) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"check"> <!-- internal -->
-    - fn [runCheck](../../src/operations.ts#L1348) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">> <!-- internal -->
-      - calls operations.operations.emptyCheck, base.config.loadConfig, operations.operations.messageOf, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.config.resolveStatic, operations.operations.checkSkipNote, operations.operations.checkSummary, features.check-results.checkExitCode
-    - fn [checkSkipNote](../../src/operations.ts#L1428) (path: string) → string
-    - fn [checkSummary](../../src/operations.ts#L1433) (counts: CheckPayload["counts"]) → string
-    - fn [emptyFeature](../../src/operations.ts#L1440) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
-    - fn [runFeature](../../src/operations.ts#L1450) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
+    - fn [readTextOrNull](../../src/operations.ts#L1355) (abs: string) → string | null <!-- internal -->
+    - fn [emptyCheck](../../src/operations.ts#L1363) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"check"> <!-- internal -->
+    - fn [runCheck](../../src/operations.ts#L1377) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">> <!-- internal -->
+      - calls operations.operations.emptyCheck, base.config.loadConfig, operations.operations.messageOf, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.config.resolveStatic, operations.operations.checkSkipNote, operations.operations.checkSummary, features.check-results.checkExitCode
+    - fn [emptyExplainEdge](../../src/operations.ts#L1458) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-edge"> <!-- internal -->
+    - fn [runExplainEdge](../../src/operations.ts#L1470) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">> <!-- internal -->
+      - calls operations.operations.emptyExplainEdge, map.analyze.analyze, operations.operations.messageOf, features.explain-edge.edgeIdKnown, features.explain-edge.explainEdge, features.explain-edge.edgeExplanationLines
+    - fn [checkSkipNote](../../src/operations.ts#L1496) (path: string) → string
+    - fn [checkSummary](../../src/operations.ts#L1501) (counts: CheckPayload["counts"]) → string
+    - fn [emptyFeature](../../src/operations.ts#L1508) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
+    - fn [runFeature](../../src/operations.ts#L1518) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
       - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.feature-status.featureStatus, operations.operations.gapLine, operations.operations.featureSummary
-    - fn [gapLine](../../src/operations.ts#L1481) (gap: Gap) → string
-    - fn [featureSummary](../../src/operations.ts#L1486) (report: FeatureReport) → string
-    - fn [emptyDoctor](../../src/operations.ts#L1490) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
-    - fn [runDoctor](../../src/operations.ts#L1494) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
+    - fn [gapLine](../../src/operations.ts#L1549) (gap: Gap) → string
+    - fn [featureSummary](../../src/operations.ts#L1554) (report: FeatureReport) → string
+    - fn [emptyDoctor](../../src/operations.ts#L1558) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
+    - fn [runDoctor](../../src/operations.ts#L1562) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
       - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L1547) (config: Config, llmClient: (agent: string | null) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
+    - fn [agentState](../../src/operations.ts#L1615) (config: Config, llmClient: (agent: string | null) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [engineState](../../src/operations.ts#L1559) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+    - fn [engineState](../../src/operations.ts#L1627) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [doctorLines](../../src/operations.ts#L1576) (payload: DoctorPayload) → string[] <!-- internal -->
-    - fn [messageOf](../../src/operations.ts#L1604) (error: unknown) → string <!-- internal -->
+    - fn [doctorLines](../../src/operations.ts#L1644) (payload: DoctorPayload) → string[] <!-- internal -->
+    - fn [messageOf](../../src/operations.ts#L1672) (error: unknown) → string <!-- internal -->

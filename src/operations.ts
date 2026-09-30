@@ -13,6 +13,7 @@ import { filterChanged } from "./changed.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
+import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
@@ -153,6 +154,20 @@ export interface CheckRequest {
 }
 
 /**
+ * Explains the dependency between two ids of the saved code (`keylang check
+ * --explain-edge <from> <to>`): the snapshot's edges both ways, or whether
+ * their absence is proven. Read-only; the specs are not read.
+ */
+export interface ExplainEdgeRequest {
+  kind: "explain-edge";
+  /** Repository root (absolute). */
+  root: string;
+  /** A node, or an ancestor of nodes (a layer, a directory). */
+  from: string;
+  to: string;
+}
+
+/**
  * Sets a repository up (`keylang init [dir] [--agents=LIST]`): keylang.json
  * (an existing one is kept), the map, the baseline and the harness files, in
  * that order. With `check` it runs exactly `init --check`: the harness files
@@ -170,7 +185,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | InitRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init"]);
@@ -432,6 +447,14 @@ export interface ChangedSlice {
   hidden: number;
 }
 
+/** The evidence between two ids: the domain result of `--explain-edge`, and the CLI's lines of it. */
+export interface ExplainEdgePayload extends EdgeExplanation {
+  /** The snapshot the edges come from. */
+  snapshotId: string;
+  /** The CLI's stdout, line by line; presentation of the same result. */
+  lines: string[];
+}
+
 /**
  * What `keylang init [--check]` did, stage by stage. Each stage is the result
  * of its own shared operation, null when it was not run (a check has no map
@@ -474,6 +497,7 @@ export interface OperationPayloads {
   fmt: FmtPayload;
   wire: WirePayload;
   check: CheckPayload;
+  "explain-edge": ExplainEdgePayload;
   init: InitPayload;
 }
 
@@ -510,6 +534,7 @@ export function runOperation(request: AgentsRequest, context?: OperationContext)
 export function runOperation(request: FmtRequest, context?: OperationContext): Promise<OperationEnvelope<"fmt">>;
 export function runOperation(request: WireRequest, context?: OperationContext): Promise<OperationEnvelope<"wire">>;
 export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
+export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
@@ -532,6 +557,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runWire(request, context);
     case "check":
       return runCheck(request, context);
+    case "explain-edge":
+      return runExplainEdge(request, context);
     case "init":
       return runInit(request, context);
   }
@@ -561,6 +588,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "wire":
       return { kind, ...base };
     case "check":
+      return { kind, ...base };
+    case "explain-edge":
       return { kind, ...base };
     case "init":
       return { kind, ...base };
@@ -1375,9 +1404,11 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
   const withoutCode = !specs.every((spec) => within(spec, specDir));
   const display = (abs: string): string => toPosix(relative(base, abs));
   context.onProgress?.({ text: "checking the saved specs against the code" });
+  // A named hook default: the static evidence of `keylang check` follows it to `analyze`.
+  const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
   try {
-    analyzed = await (context.analyze ?? analyze)({
+    analyzed = await analyzeSaved({
       root: request.root,
       specs,
       display,
@@ -1422,6 +1453,43 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
     { level: "info", text: checkSummary(payload.counts) },
   ];
   return { ...emptyCheck("completed", checkExitCode(payload.counts, request.strict)), payload, messages };
+}
+
+function emptyExplainEdge(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-edge"> {
+  return { kind: "explain-edge", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang check --explain-edge <from> <to>` on the saved code: a fresh
+ * analysis without specs, then the edges between the ids. Code 0 whether or
+ * not there is an edge; code 2 for a broken config, no snapshot or an
+ * unknown id (an unknown tail under a known module included). A message after
+ * the error may suggest a near id; the CLI prints only the error. Writes
+ * nothing, not even the fact cache.
+ */
+async function runExplainEdge(request: ExplainEdgeRequest, context: OperationContext): Promise<OperationEnvelope<"explain-edge">> {
+  if (!isAbsolute(request.root)) return emptyExplainEdge("failed", 2, "check --explain-edge: root must be an absolute path");
+  if (context.signal?.aborted) return emptyExplainEdge("cancelled", null);
+  context.onProgress?.({ text: "reading the edges of the saved code" });
+  const analyzeSaved = context.analyze ?? analyze;
+  let analyzed: Analysis;
+  try {
+    analyzed = await analyzeSaved({ root: request.root, specs: [] });
+  } catch (error) {
+    return emptyExplainEdge("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExplainEdge("cancelled", null);
+  const { snapshot } = analyzed;
+  if (!snapshot) return emptyExplainEdge("failed", 2, "no snapshot; run inside a repository with sources");
+  for (const id of [request.from, request.to]) {
+    if (edgeIdKnown(snapshot, id)) continue;
+    const near = analyzed.index.suggest(id);
+    const failed = emptyExplainEdge("failed", 2, `unknown id \`${id}\``);
+    return near === undefined ? failed : { ...failed, messages: [...failed.messages, { level: "info", text: `did you mean \`${near}\`?` }] };
+  }
+  const explanation = explainEdge(snapshot, request.from, request.to);
+  const payload: ExplainEdgePayload = { ...explanation, snapshotId: snapshot.snapshotId, lines: edgeExplanationLines(explanation) };
+  return { ...emptyExplainEdge("completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
 }
 
 /** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */

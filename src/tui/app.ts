@@ -28,6 +28,7 @@ import { completions, definition, hover, references, targetAt, workspace, type L
 import { contextPack, type ContextPack } from "../agent-context.ts";
 import type { CheckResult } from "../check-results.ts";
 import type { Gap } from "../feature-status.ts";
+import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
@@ -53,7 +54,7 @@ import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts"
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, ConfigState, Cursor, Hover, NewSpecForm, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
+import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -513,7 +514,7 @@ export class App {
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
-          : result?.kind === "check"
+          : result?.kind === "check" || result?.kind === "explain-edge"
             ? (result.payload?.snapshotId ?? undefined)
             : undefined;
       if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
@@ -1714,6 +1715,10 @@ export class App {
       const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
     }
+    if (request.kind === "explain-edge") {
+      // Explain-edge reads the saved code and keylang.json, never the specs: only a dirty keylang.json is saved first.
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE });
+    }
     if (request.kind === "wire") {
       // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
       // A write names its target in that step; without dirty buffers the form already did.
@@ -2309,6 +2314,51 @@ export class App {
     this.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}), ...slice });
   }
 
+  // ---------- explain edge ----------
+
+  /** The edge form: the id under the cursor fills only the first field; the second is typed. */
+  private openEdgePrompt(): void {
+    const from = this.state.mode === "merge" || this.state.start !== null ? null : this.idAtCursor();
+    this.state.prompt = { kind: "explain-edge", text: "", items: [], ids: ["from", "to", "run"], index: from === null ? 0 : 1, edge: { from: from ?? "", to: "" } };
+    this.refreshEdgePrompt();
+  }
+
+  /** The rows, and a note on the selected id against the session's current snapshot (the operation reads the saved code again). */
+  private refreshEdgePrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "explain-edge" || !prompt.edge) return;
+    const { from, to } = prompt.edge;
+    const field = prompt.ids?.[prompt.index];
+    const caret = (row: string): string => (field === row ? "▏" : "");
+    prompt.items = [`from: ${from}${caret("from")}`, `to: ${to}${caret("to")}`, "Explain the edge (reads the saved code, writes nothing)"];
+    const id = field === "from" ? from.trim() : field === "to" ? to.trim() : "";
+    const snapshot = this.state.analysis?.snapshot ?? null;
+    if (field === "run") prompt.note = from.trim() === "" || to.trim() === "" ? "two ids are needed: ↑ to the empty one" : "Enter explains both directions";
+    else if (id === "") prompt.note = `type the ${field === "from" ? "first" : "second"} id · ↑↓ the other field`;
+    else if (snapshot === null) prompt.note = "no current snapshot to look the id up; the operation reads the saved code";
+    else if (edgeIdKnown(snapshot, id)) prompt.note = `${id}: in the current snapshot`;
+    else {
+      const near = this.state.analysis?.index.suggest(id);
+      prompt.note = `${id}: not in the current snapshot${near === undefined ? "" : ` · did you mean ${near}?`}`;
+    }
+  }
+
+  /** Enter in the edge form, on any row: both ids run as the session's operation; an empty one keeps the form. */
+  private submitEdge(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "explain-edge" || !prompt.edge) return;
+    const from = prompt.edge.from.trim();
+    const to = prompt.edge.to.trim();
+    if (from === "" || to === "") {
+      prompt.index = from === "" ? 0 : 1;
+      this.refreshEdgePrompt();
+      this.state.message = "explain edge: two ids are needed: <from> <to>";
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from, to });
+  }
+
   // ---------- new specification ----------
 
   /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
@@ -2717,13 +2767,15 @@ export class App {
 
   /**
    * The items of the selected record the arrows select after Tab: the gaps of
-   * a feature record, every result of a check record; none for the others.
+   * a feature record, every result of a check record, the evidence of an
+   * explain-edge record (an edge with no file has an empty one); none for the others.
    * `text` is the whole reason, which the report row may cut.
    */
   private recordGaps(): readonly { file: string; line: number; col: number; text: string }[] {
     const result = this.state.records[this.state.results.index]?.result;
     if (result?.kind === "feature") return (result.payload?.report.gaps ?? []).map((gap: Gap) => ({ file: gap.file, line: gap.line, col: gap.col, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
     if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
+    if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
     return [];
   }
 
@@ -2734,13 +2786,13 @@ export class App {
   /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
   private showGapReason(): void {
     const gap = this.selectedGap();
-    if (gap) this.state.message = `${gap.text} · Enter opens ${gap.file}:${gap.line}`;
+    if (gap) this.state.message = gap.file === "" ? `${gap.text} · no position in the code` : `${gap.text} · Enter opens ${gap.file}:${gap.line}`;
   }
 
   /** Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
   private openGap(): void {
     const gap = this.selectedGap();
-    if (gap) this.openTarget(gap.file, gap.line, gap.col);
+    if (gap && gap.file !== "") this.openTarget(gap.file, gap.line, gap.col);
   }
 
   // ---------- mouse ----------
@@ -2834,7 +2886,10 @@ export class App {
     if (prompt.kind === "baseline") return;
     // The since row of the check form takes the git ref; every other row types the paths.
     if (prompt.kind === "full-check" && prompt.checkOptions && prompt.ids?.[prompt.index] === "since") prompt.checkOptions.since += text;
-    else prompt.text += text;
+    else if (prompt.kind === "explain-edge") {
+      const field = prompt.ids?.[prompt.index];
+      if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] += text;
+    } else prompt.text += text;
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2845,6 +2900,7 @@ export class App {
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
+    if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2865,8 +2921,11 @@ export class App {
       return;
     }
     if (event.name === "backspace") {
-      if (prompt.kind === "full-check" && prompt.checkOptions && prompt.ids?.[prompt.index] === "since") prompt.checkOptions.since = graphemes(prompt.checkOptions.since).slice(0, -1).join("");
-      else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
+      const field = prompt.ids?.[prompt.index];
+      if (prompt.kind === "full-check" && prompt.checkOptions && field === "since") prompt.checkOptions.since = graphemes(prompt.checkOptions.since).slice(0, -1).join("");
+      else if (prompt.kind === "explain-edge") {
+        if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] = graphemes(prompt.edge[field]).slice(0, -1).join("");
+      } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2877,14 +2936,16 @@ export class App {
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
+      if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
+      if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -2894,6 +2955,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
+    if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -2966,6 +3028,8 @@ export class App {
         return this.openFeaturePrompt();
       case "full-check":
         return this.openCheckPrompt();
+      case "explain-edge":
+        return this.openEdgePrompt();
       case "map-check":
         return this.requestOperation("map-check", { kind: "map-check", root: this.state.root });
       case "map":
