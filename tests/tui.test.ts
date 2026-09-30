@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3072,4 +3072,258 @@ test("tui: the list is scanned again on Enter; a proposal rewritten during MERGE
   s.send("m");
   assert.equal(s.app.state.merge?.path, "keylang/rules.md");
   assert.match(s.text(), /\+ - no-cycles/);
+});
+
+// ---------- a new specification buffer (ticket 06) ----------
+
+/** The tree without `.keylang/` (typing may count a completion in its stats); a link is its target, not followed. */
+function specTree(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      const rel = abs.slice(root.length + 1);
+      if (rel === ".keylang") continue;
+      if (entry.isSymbolicLink()) out.set(rel, `-> ${readlinkSync(abs)}`);
+      else if (entry.isDirectory()) walk(abs);
+      else out.set(rel, readFileSync(abs, "latin1"));
+    }
+    if (dir !== root && readdirSync(dir).length === 0) out.set(`${dir.slice(root.length + 1)}/`, "");
+  };
+  walk(root);
+  return out;
+}
+
+/** The field the new-spec form is on, read through a function so assertions do not narrow the state. */
+function formField(app: App): string | undefined {
+  return app.state.prompt?.form?.field;
+}
+
+/** Esc alone: the decoder waits a moment for the rest of an escape sequence. */
+async function esc(send: (keys: string) => void): Promise<void> {
+  send("\x1b");
+  await sleep(40);
+}
+
+/** The palette's "New specification": the kind form opens. */
+function newSpecForm(send: (keys: string) => void): void {
+  send(KEY.ctrlP);
+  for (const ch of "new specification") send(ch);
+  send(KEY.enter);
+}
+
+/** Chooses `kind` in the form and replaces the path field with `path`, then Enter. */
+function newSpecPath(s: ReturnType<typeof session>, kind: string, path: string): void {
+  newSpecForm(s.send);
+  assert.equal(s.app.state.prompt?.kind, "new-spec");
+  for (const ch of kind) s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(formField(s.app), "path");
+  for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+  for (const ch of path) s.send(ch);
+  s.send(KEY.enter);
+}
+
+test("tui: a new flow and a new feature exist only as buffers until Ctrl+S; the analysis then reads their exact text", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = specTree(root);
+  // The kind field names the root; the path starts under the configured spec directory.
+  newSpecForm(s.send);
+  assert.match(promptNote(s.app), new RegExp(`root ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.text, "keylang/flows/");
+  for (const ch of "refund.md") s.send(ch);
+  assert.match(promptNote(s.app), /new file: nothing is written until Ctrl\+S/);
+  s.send(KEY.enter);
+  // The flow name defaults to the file name.
+  assert.equal(formField(s.app), "name");
+  assert.equal(s.app.state.prompt?.text, "refund");
+  s.send(KEY.enter);
+  const flow = "keylang/flows/refund.md";
+  assert.equal(s.app.state.prompt, null);
+  assert.equal(s.app.state.current, flow);
+  assert.equal(s.app.state.mode, "edit");
+  assert.equal(s.app.state.buffers.get(flow)!.text, "# flow refund\n");
+  assert.equal(s.app.state.buffers.get(flow)!.disk, null);
+  assert.ok(s.app.state.files.includes(flow));
+  assert.deepEqual(s.app.unsaved(), [flow]);
+  assert.match(s.lines()[0]!, /refund\.md \[\+ new, not on disk\]/);
+  for (const ch of "- trigger presentation.terminal.checkout") s.send(ch);
+  await sleep(200);
+  await s.app.idle();
+  // The unsaved flow is analysed as overlay; nothing exists on disk.
+  assert.ok(s.app.state.analysis!.docs.some((doc) => doc.path === flow));
+  assert.ok(s.app.state.files.includes(flow));
+  assert.deepEqual(specTree(root), before);
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  const typed = s.app.state.buffers.get(flow)!.text;
+  assert.equal(readFileSync(join(root, flow), "utf8"), typed);
+  assert.deepEqual(s.app.unsaved(), []);
+  await esc(s.send);
+  // A feature: a prose heading, no invented IDs; its directory does not exist before Ctrl+S.
+  newSpecPath(s, "feature", "keylang/features/refunds.md");
+  const feature = "keylang/features/refunds.md";
+  assert.equal(s.app.state.buffers.get(feature)!.text, "## refunds\n");
+  assert.equal(existsSync(join(root, "keylang/features")), false);
+  for (const ch of "Refunds go back to the card.") s.send(ch);
+  await sleep(200);
+  await s.app.idle();
+  assert.equal(existsSync(join(root, "keylang/features")), false);
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, feature), "utf8"), "## refunds\nRefunds go back to the card.");
+  const doc = s.app.state.analysis!.docs.find((d) => d.path === feature);
+  assert.ok(doc);
+  assert.equal(s.app.state.analysis!.docs.find((d) => d.path === flow)?.sections[0]?.name?.value, "refund");
+  assert.deepEqual(s.app.unsaved(), []);
+});
+
+test("tui: an empty new file stays unsaved across file switches and asks before quitting; Esc in the form creates nothing", async (t) => {
+  const root = checkoutRepo(t);
+  let quit = 0;
+  const vt = new VirtualTerminal(110, 30);
+  const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  t.after(() => app.close());
+  const s = { app, vt, send: (keys: string) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
+  await app.idle();
+  const before = specTree(root);
+  // Esc in each field: no buffer, no file.
+  newSpecForm(s.send);
+  await esc(s.send);
+  assert.equal(app.state.prompt, null);
+  newSpecForm(s.send);
+  s.send(KEY.enter);
+  await esc(s.send);
+  newSpecForm(s.send);
+  s.send(KEY.enter);
+  for (const ch of "x.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(formField(app), "name");
+  await esc(s.send);
+  assert.equal(app.state.prompt, null);
+  assert.equal([...app.state.buffers.values()].some((buffer) => buffer.newFile), false);
+  assert.deepEqual(app.unsaved(), []);
+  // A blank file: empty text, and still unsaved.
+  newSpecPath(s, "blank", "keylang/notes.md");
+  const notes = "keylang/notes.md";
+  assert.equal(app.state.buffers.get(notes)!.text, "");
+  assert.deepEqual(app.unsaved(), [notes]);
+  await esc(s.send);
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/rules.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(app.state.current, "keylang/rules.md");
+  await sleep(200);
+  await app.idle();
+  // After an analysis and a switch the empty buffer is still there, listed and unsaved.
+  assert.ok(app.state.files.includes(notes));
+  assert.deepEqual(app.unsaved(), [notes]);
+  s.send(KEY.ctrlP);
+  for (const ch of `open ${notes}`) s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(app.state.current, notes);
+  assert.equal(app.state.buffers.get(notes)!.text, "");
+  s.send("q");
+  assert.equal(quit, 0);
+  assert.match(app.state.message ?? "", /unsaved changes in keylang\/notes\.md/);
+  assert.deepEqual(specTree(root), before);
+  // An existing file opens as it is.
+  newSpecPath(s, "rules", "keylang/rules.md");
+  assert.equal(app.state.current, "keylang/rules.md");
+  assert.equal(app.state.buffers.get("keylang/rules.md")!.text, readFileSync(join(root, "keylang/rules.md"), "utf8"));
+  assert.match(app.state.message ?? "", /exists; opened as it is/);
+  assert.deepEqual(app.unsaved(), [notes]);
+});
+
+test("tui: a new spec outside the spec directory, in a generated or explanations directory, or through a link out is refused without a write", async (t) => {
+  const root = checkoutRepo(t);
+  const outside = mkdtempSync(join(tmpdir(), "keylang-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(root, "keylang/out"));
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = specTree(root);
+  const cases: [string, RegExp][] = [
+    ["../x.md", /not a plain relative path/],
+    ["keylang/../x.md", /not a plain relative path/],
+    [`${root}/keylang/x.md`, /not a plain relative path/],
+    ["src/x.md", /outside keylang\//],
+    ["keylang/x.txt", /not a Markdown spec/],
+    ["keylang/map/domain.md", /generated map/],
+    ["keylang/map-explained/domain.md", /explained map is generated/],
+    ["keylang/explain/brief/x.md", /saved explanations/],
+    ["keylang/out/x.md", /leads out of keylang\/ through a link/],
+  ];
+  for (const [path, reason] of cases) {
+    newSpecPath(s, "blank", path);
+    // The form stays with the typed path and the reason; no buffer is made.
+    assert.equal(s.app.state.prompt?.kind, "new-spec", path);
+    assert.equal(s.app.state.prompt?.text, path);
+    assert.match(s.app.state.message ?? "", reason, path);
+    assert.match(promptNote(s.app), reason, path);
+    assert.equal(s.app.state.buffers.has(path), false);
+    await esc(s.send);
+  }
+  assert.deepEqual(specTree(root), before);
+  assert.deepEqual(readdirSync(outside), []);
+  // A buffer whose directory turns into a link out before Ctrl+S: the save checks again and writes nothing.
+  newSpecPath(s, "blank", "keylang/drafts/x.md");
+  assert.equal(s.app.state.current, "keylang/drafts/x.md");
+  for (const ch of "Draft.") s.send(ch);
+  symlinkSync(outside, join(root, "keylang/drafts"));
+  s.send(KEY.ctrlS);
+  assert.match(s.app.state.message ?? "", /not saved: leads out of keylang\/ through a link; your text stays/);
+  assert.deepEqual(readdirSync(outside), []);
+  assert.equal(s.app.state.buffers.get("keylang/drafts/x.md")!.text, "Draft.");
+  assert.deepEqual(s.app.unsaved(), ["keylang/drafts/x.md"]);
+});
+
+test("tui: a target created on disk before the first save is kept; the typed text stays and Ctrl+S again does not overwrite", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  newSpecPath(s, "flow", "keylang/flows/refund.md");
+  s.send(KEY.enter);
+  const flow = "keylang/flows/refund.md";
+  for (const ch of "- trigger presentation.terminal.checkout") s.send(ch);
+  const typed = s.app.state.buffers.get(flow)!.text;
+  // Someone else creates the file between the form and the save.
+  const foreign = "# flow refund\n\nWritten elsewhere.\n";
+  writeFileSync(join(root, flow), foreign);
+  s.send(KEY.ctrlS);
+  assert.match(s.app.state.message ?? "", /not saved: the file was created on disk after this buffer opened/);
+  s.send(KEY.ctrlS);
+  assert.equal(readFileSync(join(root, flow), "utf8"), foreign);
+  assert.equal(s.app.state.buffers.get(flow)!.text, typed);
+  assert.deepEqual(s.app.unsaved(), [flow]);
+  await sleep(200);
+  await s.app.idle();
+  // The analysis does not take the foreign file into the unsaved buffer.
+  assert.equal(s.app.state.buffers.get(flow)!.text, typed);
+  // The save step before an operation refuses it the same way.
+  await esc(s.send);
+  featureForm(s.send);
+  submitSlug(s.app, s.send, "buy");
+  assert.deepEqual(s.app.state.barrier?.files, [flow]);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.length, 0);
+  assert.match(s.app.state.barrier?.error ?? "", /refund\.md: the file was created on disk after this buffer opened.*the text stays in its buffer/);
+  assert.equal(readFileSync(join(root, flow), "utf8"), foreign);
+  assert.equal(s.app.state.buffers.get(flow)!.text, typed);
+  await esc(s.send);
+  // Once the other file is gone, Ctrl+S creates it with the typed text.
+  rmSync(join(root, flow));
+  s.send("i");
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, flow), "utf8"), typed);
+  assert.deepEqual(s.app.unsaved(), []);
 });

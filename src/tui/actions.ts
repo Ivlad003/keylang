@@ -85,6 +85,8 @@ export const ACTIONS: readonly Action[] = [
   },
   { id: "find-node", label: "Find a node", group: "Navigate", aliases: ["find node", "node"], key: "s", when: snapshot },
   { id: "toggle-map", label: "Map / explained map", group: "Navigate", aliases: ["toggle map", "explained map"], key: "t", when: snapshot },
+  // A new buffer, not a file: nothing is written until Ctrl+S (design §2.8).
+  { id: "new-spec", label: "New specification", group: "Edit", aliases: ["new spec", "new file", "create"], when: mergeOnly },
   { id: "reading", label: "Reading mode", group: "Edit", aliases: ["read", "reading"], key: "v", when: bufferOrMerge },
   {
     id: "edit",

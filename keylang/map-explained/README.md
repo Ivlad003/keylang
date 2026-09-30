@@ -15,8 +15,8 @@ The tree of the map with a brief under each node: the documentation comment from
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 105 | 0 | 0 | 130 |
 | [operations](operations.md) |  | 15 | 0 | 0 | 9 |
-| [tui](tui.md) |  | 236 | 0 | 0 | 191 |
-| **all** | | 828 | 0 | 0 | 776 |
+| [tui](tui.md) |  | 252 | 0 | 0 | 192 |
+| **all** | | 844 | 0 | 0 | 777 |
 
 ## Index
 
@@ -46,7 +46,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **M** · [map](map.md#map.map) (map) · [markdown](tui.md#tui.markdown) (tui) · [Matcher](check.md#check.trace-evidence.Matcher) (check.trace-evidence) · [mcp](cli.md#cli.mcp) (cli) · [merge](tui.md#tui.merge) (tui) · [merge-session](tui.md#tui.merge-session) (tui) · [MergeSession](tui.md#tui.merge-session.MergeSession) (tui.merge-session)
 
-**N** · [nav](tui.md#tui.nav) (tui) · [node-search](features.md#features.node-search) (features) · [node-test](cli.md#cli.node-test) (cli)
+**N** · [nav](tui.md#tui.nav) (tui) · [new-spec](tui.md#tui.new-spec) (tui) · [node-search](features.md#features.node-search) (features) · [node-test](cli.md#cli.node-test) (cli)
 
 **O** · [operations](operations.md#operations.operations) (operations) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
 

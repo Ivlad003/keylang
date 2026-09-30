@@ -17,7 +17,7 @@ import { compileSpec } from "../spec-ir.ts";
 import { PROPOSALS_DIR, writeProposal } from "../proposals.ts";
 import { addDrafts, updateStats } from "../stats.ts";
 import { glossary, speechToSpec, transcribeOpenRouter, voiceEngine } from "../voice.ts";
-import { docOf } from "./buffer.ts";
+import { docOf, isDirty } from "./buffer.ts";
 import { errorText } from "./merge-session.ts";
 import type { Buffer, Cursor, Mode, State } from "./state.ts";
 import { graphemes } from "./width.ts";
@@ -285,7 +285,7 @@ export class Assist {
       return;
     }
     // The draft is proposed against the file on disk; unsaved edits would come back as hunks that revert them.
-    if (buffer.text !== buffer.saved) {
+    if (isDirty(buffer)) {
       this.state.message = `${buffer.path} has unsaved changes: save (Ctrl+S) or undo them before asking for a draft`;
       return;
     }

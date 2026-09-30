@@ -19,7 +19,17 @@ export function docOf(path: string, text: string): Document | null {
 /** A buffer for `path` with `text` (already `\n`-ended) as both its text and what is saved. */
 export function newBuffer(path: string, text: string, eol: Buffer["eol"], disk: string | null): Buffer {
   const doc = docOf(path, text);
-  return { path, text, saved: text, readOnly: doc !== null && doc.generated !== null, eol, disk, overwrite: false, doc, undo: [], version: 0 };
+  return { path, text, saved: text, readOnly: doc !== null && doc.generated !== null, eol, disk, newFile: false, overwrite: false, doc, undo: [], version: 0 };
+}
+
+/** A new specification with `text` and no file on disk: unsaved until its first save, even when `text` is empty. */
+export function newFileBuffer(path: string, text: string): Buffer {
+  return { ...newBuffer(path, text, "\n", null), saved: "", newFile: true };
+}
+
+/** Unsaved: the text differs from the disk, or there is no file yet. */
+export function isDirty(buffer: Buffer): boolean {
+  return buffer.newFile || buffer.text !== buffer.saved;
 }
 
 export function setText(buffer: Buffer, text: string): void {

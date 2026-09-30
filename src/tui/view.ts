@@ -18,7 +18,7 @@ import type { FeatureInfo } from "../feature-status.ts";
 import type { OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
-import { bufferLines, lineLayout } from "./buffer.ts";
+import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
 import { clusters, fitWidth, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
 
 export interface Rect {
@@ -412,7 +412,7 @@ export function contextTop(index: number, rect: Rect): number {
 function drawFiles(grid: Grid, state: State, rect: Rect): void {
   const entries = state.files.map((file) => {
     const buffer = state.buffers.get(file);
-    const dirty = buffer && buffer.text !== buffer.saved ? " +" : "";
+    const dirty = buffer && isDirty(buffer) ? " +" : "";
     const proposal = state.proposals.includes(file) ? " ≈" : "";
     return { text: `${file}${dirty}${proposal}`, mark: null, ...(file === state.current ? { style: { fg: 231, bold: true } } : {}) };
   });
@@ -516,7 +516,7 @@ export function resultsSplit(state: State, height: number): { list: number; repo
  * in flight, changes since the analysis, or unsaved buffers taken as overlay.
  */
 export function findingStateRow(state: State): string | null {
-  const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && buffer.text !== buffer.saved).map((buffer) => buffer.path);
+  const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && isDirty(buffer)).map((buffer) => buffer.path);
   const parts: string[] = [];
   if (state.config.kind === "invalid-config") parts.push(`invalid keylang.json: ${state.config.reason}`);
   if (state.error !== null) parts.push(`outdated: ${state.error}`);
@@ -756,10 +756,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -771,8 +771,13 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
+}
+
+/** The label of the field the new-spec form is on. */
+function newSpecLabel(field: "kind" | "path" | "name" | undefined): string {
+  return field === "path" ? "new spec path: " : field === "name" ? "flow name: " : "new spec kind: ";
 }
 
 const HINTS: Record<string, string> = {
@@ -792,7 +797,7 @@ export function configNote(state: State): string | null {
   const parts: string[] = [];
   if (state.config.kind === "missing-config" && state.analysis) parts.push("guessed configuration: no keylang.json, nothing written");
   const buffer = state.buffers.get(CONFIG_FILE);
-  if (buffer && buffer.text !== buffer.saved) parts.push("keylang.json unsaved: the analysis uses the saved file");
+  if (buffer && isDirty(buffer)) parts.push("keylang.json unsaved: the analysis uses the saved file");
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -846,7 +851,7 @@ export function render(state: State): Grid {
   const buffer = state.current ? (state.buffers.get(state.current) ?? null) : null;
   // Title
   grid.fill(0, 0, state.cols, 1, THEME.status);
-  const dirty = buffer && buffer.text !== buffer.saved ? " [+]" : "";
+  const dirty = buffer?.newFile ? " [+ new, not on disk]" : buffer && isDirty(buffer) ? " [+]" : "";
   const readOnly = buffer?.readOnly ? " [generated, read-only]" : "";
   grid.write(1, 0, `keylang · ${state.current ?? "no spec files"}${dirty}${readOnly}`, THEME.statusKey, state.cols - 14);
   const modeLabel = ` ${state.mode.toUpperCase()} `;

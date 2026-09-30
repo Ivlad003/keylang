@@ -22,8 +22,14 @@ export interface Cursor {
 export interface Buffer {
   path: string;
   text: string;
-  /** Text on disk (or of the rendered map); `text !== saved` is unsaved. */
+  /** Text on disk (or of the rendered map); `text !== saved` is unsaved (`isDirty` also counts a new file). */
   saved: string;
+  /**
+   * A new specification (design §2.8): no file on disk until its first save,
+   * so it is unsaved even while empty. `disk` stays null until then; the
+   * first save requires the target still not to exist.
+   */
+  newFile: boolean;
   /** Generated map files are read-only. */
   readOnly: boolean;
   /** Line ending of the file on disk; `text` always uses `\n`, a save restores this one. */
@@ -104,9 +110,10 @@ export interface Prompt {
   /**
    * `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`);
    * `feature`: the slug of the feature to check (the matching feature files are the items);
-   * `proposal`: the proposals list, filtered by the typed text (design §2.9).
+   * `proposal`: the proposals list, filtered by the typed text (design §2.9);
+   * `new-spec`: the form of a new specification, one field at a time (`form`, design §2.8).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -117,6 +124,19 @@ export interface Prompt {
   /** The note of the selected item (`feature`: the target file or why the slug is invalid), shown next to the query. */
   note?: string;
   index: number;
+  /** `new-spec`: the field being typed and the fields already chosen. Esc at any field creates nothing. */
+  form?: NewSpecForm;
+}
+
+/** The kinds of a new specification: its first text follows the kind (design §2.8). */
+export type SpecKind = "flow" | "rules" | "wiring" | "feature" | "blank";
+
+export interface NewSpecForm {
+  /** `kind`: choose from the items; `path`: the text is the relative path; `name`: the text is the flow name. */
+  field: "kind" | "path" | "name";
+  kind: SpecKind;
+  /** The path chosen in the `path` field; empty before it. */
+  path: string;
 }
 
 /** A run of one explicit operation in this session, kept in memory for F6 (design §2.6). */

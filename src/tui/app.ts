@@ -18,7 +18,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { extname, join, relative, resolve } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
 import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, toPosix } from "../config.ts";
@@ -39,13 +39,14 @@ import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
-import { bufferLines, lineLayout, newBuffer, setText } from "./buffer.ts";
+import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
+import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
 import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } from "./findings.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, ConfigState, Cursor, Hover, OperationRecord, State } from "./state.ts";
+import type { Buffer, ConfigState, Cursor, Hover, NewSpecForm, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
@@ -276,7 +277,7 @@ export class App {
 
   /** Files with unsaved changes. */
   unsaved(): string[] {
-    return [...this.state.buffers.values()].filter((buffer) => buffer.text !== buffer.saved).map((buffer) => buffer.path);
+    return [...this.state.buffers.values()].filter(isDirty).map((buffer) => buffer.path);
   }
 
   /** Resolves when no analysis is running or waiting to start. */
@@ -313,7 +314,7 @@ export class App {
   private overlay(): Map<string, string> {
     const overlay = new Map<string, string>();
     // The configuration always comes from disk: unparsed text of a dirty `keylang.json` is no overlay.
-    for (const buffer of this.state.buffers.values()) if (!buffer.readOnly && buffer.path !== CONFIG_FILE && buffer.text !== buffer.saved) overlay.set(resolve(this.state.root, buffer.path), buffer.text);
+    for (const buffer of this.state.buffers.values()) if (!buffer.readOnly && buffer.path !== CONFIG_FILE && isDirty(buffer)) overlay.set(resolve(this.state.root, buffer.path), buffer.text);
     return overlay;
   }
 
@@ -449,12 +450,14 @@ export class App {
   /** Files and clean buffers follow the new analysis (a regenerated map, a change on disk). */
   private adopt(analysis: Analysis): void {
     const explained = [...(analysis.map?.explained?.keys() ?? [])].map((name) => `${analysis.config.dir}/${EXPLAINED_MAP_DIR}/${name}`);
-    const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained]);
+    // A new specification is listed from the moment its buffer opens, before any file exists.
+    const fresh = [...this.state.buffers.values()].filter((buffer) => buffer.newFile).map((buffer) => buffer.path);
+    const paths = new Set([...this.diskFiles(), ...analysis.docs.map((doc) => doc.path), ...explained, ...fresh]);
     this.state.files = sortFiles([...paths], analysis);
     this.state.briefs = loadBriefs(analysis.config);
     const ws = workspace(this.state.root, analysis, new Map());
     for (const buffer of this.state.buffers.values()) {
-      if (buffer.text !== buffer.saved) continue;
+      if (isDirty(buffer)) continue;
       const fresh = ws.text(buffer.path);
       const text = fresh === null ? buffer.text : splitEol(fresh).text;
       // The explained map is no spec, so the analysis has no document of it: its marker decides.
@@ -590,8 +593,14 @@ export class App {
   private save(): void {
     const buffer = this.buffer();
     if (!buffer || buffer.readOnly) return;
+    // A new file is written only where nothing is yet: a file created meanwhile is never overwritten, however often Ctrl+S is pressed.
+    const problem = buffer.newFile ? this.newFileProblem(buffer) : null;
+    if (problem !== null) {
+      this.state.message = `${buffer.path}: not saved: ${problem}; your text stays in this buffer`;
+      return;
+    }
     // Another editor or `git checkout` changed the file: the first Ctrl+S asks, the second overwrites.
-    if (this.changedOnDisk(buffer) && !buffer.overwrite) {
+    if (!buffer.newFile && this.changedOnDisk(buffer) && !buffer.overwrite) {
       buffer.overwrite = true;
       this.state.message = `${buffer.path} changed on disk since it was opened: Ctrl+S again overwrites it, Ctrl+Z undoes your edits`;
       return;
@@ -605,13 +614,35 @@ export class App {
     return readText(resolve(this.state.root, buffer.path)) !== buffer.disk;
   }
 
+  /**
+   * Why the first save of a new specification may not happen, or null: the
+   * path rules again (the configuration or a link may have changed since the
+   * form), and the target must still not exist.
+   */
+  private newFileProblem(buffer: Buffer): string | null {
+    const problem = newSpecProblem(this.state.root, this.merges.specDir(), buffer.path, (path) => this.generatedDoc(path));
+    if (problem !== null) return problem;
+    return existsSync(resolve(this.state.root, buffer.path)) ? "the file was created on disk after this buffer opened; it is kept as it is" : null;
+  }
+
+  /** The analysis knows `path` as a generated document. */
+  private generatedDoc(path: string): boolean {
+    return this.state.analysis?.docs.some((doc) => doc.path === path && doc.generated !== null) === true;
+  }
+
   /** Writes the buffer's text with its line ending; the buffer is clean after. Throws when the write fails. */
   private persist(buffer: Buffer): void {
     const written = withEol(buffer.text, buffer.eol);
-    // A save stays in the repository, even through a link whose target does not exist yet.
-    writeInside(this.state.root, resolve(this.state.root, buffer.path), written);
+    if (buffer.newFile) {
+      const problem = this.newFileProblem(buffer);
+      if (problem !== null) throw new Error(problem);
+    }
+    // A save stays in the repository, even through a link whose target does not exist yet; a new spec stays in the spec directory.
+    const boundary = buffer.newFile ? resolve(this.state.root, this.merges.specDir()) : this.state.root;
+    writeInside(boundary, resolve(this.state.root, buffer.path), written);
     buffer.saved = buffer.text;
     buffer.disk = written;
+    buffer.newFile = false;
     buffer.overwrite = false;
     this.inputsChanged("inputs saved since this run");
   }
@@ -619,7 +650,7 @@ export class App {
   /** The unsaved spec and config buffers, in path order: what an operation on the disk would not see. */
   private dirtyInputs(): string[] {
     return [...this.state.buffers.values()]
-      .filter((buffer) => !buffer.readOnly && buffer.text !== buffer.saved)
+      .filter((buffer) => !buffer.readOnly && isDirty(buffer))
       .map((buffer) => buffer.path)
       .sort(compareText);
   }
@@ -663,9 +694,10 @@ export class App {
     let saved = 0;
     for (const path of barrier.files) {
       const buffer = this.state.buffers.get(path);
-      if (!buffer || buffer.readOnly || buffer.text === buffer.saved) continue;
-      let problem: string | null = null;
-      if (this.changedOnDisk(buffer)) problem = "changed on disk since it was opened; open it to compare (Ctrl+S twice overwrites)";
+      if (!buffer || buffer.readOnly || !isDirty(buffer)) continue;
+      let problem: string | null = buffer.newFile ? this.newFileProblem(buffer) : null;
+      if (problem !== null) problem = `${problem}; the text stays in its buffer`;
+      else if (!buffer.newFile && this.changedOnDisk(buffer)) problem = "changed on disk since it was opened; open it to compare (Ctrl+S twice overwrites)";
       else {
         try {
           this.persist(buffer);
@@ -1695,6 +1727,100 @@ export class App {
     this.requestOperation("feature", { kind: "feature", root: this.state.root, slug });
   }
 
+  // ---------- new specification ----------
+
+  /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
+  private openNewSpec(): void {
+    this.state.prompt = { kind: "new-spec", text: "", items: [], ids: [], notes: [], index: 0, form: { field: "kind", kind: "flow", path: "" } };
+    this.refreshNewSpec();
+  }
+
+  /** The items and the note of the field being typed. The root is always named: the path is relative to it. */
+  private refreshNewSpec(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.form;
+    if (prompt?.kind !== "new-spec" || !form) return;
+    if (form.field === "kind") {
+      const query = prompt.text.toLowerCase();
+      const kinds = SPEC_KINDS.filter((entry) => entry.kind.includes(query));
+      prompt.items = kinds.map((entry) => entry.label);
+      prompt.ids = kinds.map((entry) => entry.kind);
+      prompt.notes = kinds.map((entry) => `Enter: then the path under ${defaultSpecPath(entry.kind, this.merges.specDir()) || "."} · root ${this.state.root}`);
+      prompt.index = 0;
+      prompt.note = prompt.notes[0] ?? "no such kind: flow, rules, wiring, feature, blank";
+      return;
+    }
+    prompt.items = [];
+    prompt.ids = [];
+    prompt.notes = [];
+    if (form.field === "path") {
+      const path = prompt.text.trim();
+      const problem = newSpecProblem(this.state.root, this.merges.specDir(), path, (p) => this.generatedDoc(p));
+      const exists = this.state.buffers.has(path) || existsSync(resolve(this.state.root, path));
+      // The verdict first: a narrow screen cuts the end of the line, and the root is the longest part.
+      prompt.note = `${problem !== null ? `cannot use: ${problem}` : exists ? "exists: Enter opens it as it is" : "new file: nothing is written until Ctrl+S"} · root ${this.state.root}`;
+      return;
+    }
+    const problem = flowNameProblem(prompt.text.trim());
+    prompt.note = problem ?? `# flow ${prompt.text.trim()} in ${form.path}`;
+  }
+
+  /** Enter in the form: the next field, or the buffer. An invalid field keeps the form with its text and says why. */
+  private submitNewSpec(): void {
+    const prompt = this.state.prompt!;
+    const form = prompt.form!;
+    if (form.field === "kind") {
+      const kind = prompt.ids?.[prompt.index] as NewSpecForm["kind"] | undefined;
+      if (kind === undefined) return;
+      form.kind = kind;
+      form.field = "path";
+      prompt.text = defaultSpecPath(kind, this.merges.specDir());
+      return this.refreshNewSpec();
+    }
+    if (form.field === "path") {
+      const path = prompt.text.trim();
+      const problem = newSpecProblem(this.state.root, this.merges.specDir(), path, (p) => this.generatedDoc(p));
+      if (problem !== null) {
+        this.state.message = `new spec: ${path || "(no path)"}: ${problem}; nothing created`;
+        return;
+      }
+      // An existing file (or a buffer already open for it) opens as it is; nothing is cleared.
+      if (this.state.buffers.has(path) || existsSync(resolve(this.state.root, path))) {
+        this.state.prompt = null;
+        this.open(path, { line: 0, col: 0 });
+        this.state.message = `${path}: exists; opened as it is`;
+        return;
+      }
+      form.path = path;
+      if (form.kind === "flow") {
+        form.field = "name";
+        prompt.text = suggestedFlowName(path);
+        return this.refreshNewSpec();
+      }
+      return this.createSpec(form.kind, path, form.kind === "feature" ? basename(path, ".md") : "");
+    }
+    const name = prompt.text.trim();
+    const problem = flowNameProblem(name);
+    if (problem !== null) {
+      this.state.message = `new spec: ${problem}`;
+      return;
+    }
+    this.createSpec("flow", form.path, name);
+  }
+
+  /** Opens the new, unsaved buffer in the editor at its end: listed in FILES and analysed as overlay, no file or directory until Ctrl+S. */
+  private createSpec(kind: NewSpecForm["kind"], path: string, name: string): void {
+    this.state.prompt = null;
+    const buffer = newFileBuffer(path, specTemplate(kind, name));
+    this.state.buffers.set(path, buffer);
+    this.state.files = sortFiles([...this.state.files, path], this.state.analysis);
+    const lines = bufferLines(buffer);
+    this.open(path, { line: lines.length - 1, col: 0 });
+    this.state.mode = "edit";
+    this.state.message = `${path}: new ${kind === "blank" ? "file" : kind}, not on disk yet: Ctrl+S creates it`;
+    this.reanalyzeSoon();
+  }
+
   // ---------- proposals list ----------
 
   /**
@@ -2115,6 +2241,7 @@ export class App {
     if (prompt.kind === "node") this.findNodes();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
     if (prompt.kind === "proposal") this.refreshProposalPrompt();
+    if (prompt.kind === "new-spec") this.refreshNewSpec();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2140,16 +2267,18 @@ export class App {
       if (prompt.kind === "node") this.findNodes();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
       if (prompt.kind === "proposal") this.refreshProposalPrompt();
+      if (prompt.kind === "new-spec") this.refreshNewSpec();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
-      if (prompt.kind === "palette" || prompt.kind === "proposal") prompt.note = prompt.notes?.[prompt.index] ?? "";
+      if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
+    if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
       this.state.prompt = null;
       if (prompt.kind === "search") {
@@ -2240,6 +2369,8 @@ export class App {
         return this.mergeOrPick();
       case "proposals":
         return this.openProposals();
+      case "new-spec":
+        return this.openNewSpec();
       case "help":
         this.state.help = true;
         return;

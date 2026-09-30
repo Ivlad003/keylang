@@ -14,7 +14,7 @@ import { loadConfig, toPosix } from "../config.ts";
 import { codeProposalProblem, PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
 import { compareText } from "../span.ts";
 import { addDrafts, statusesIn, updateStats } from "../stats.ts";
-import { setText } from "./buffer.ts";
+import { isDirty, setText } from "./buffer.ts";
 import { lf, readText, removeInside, splitEol, withEol, writeInside } from "./disk.ts";
 import type { KeyEvent } from "./input.ts";
 import { applyHunks, diffLines, type Decision } from "./merge.ts";
@@ -112,7 +112,7 @@ export class MergeSession {
     if (proposal === null) return { path, kind, newFile, hunks: null, problem: `${PROPOSALS_DIR}/${path} cannot be read` };
     const hunks = diffLines(splitEol(disk ?? "").text.split("\n"), lf(proposal).split("\n")).length;
     const buffer = kind === "spec" ? this.state.buffers.get(path) : undefined;
-    const dirty = buffer !== undefined && buffer.text !== buffer.saved ? "unsaved changes: save (Ctrl+S) or undo them before merging" : null;
+    const dirty = buffer !== undefined && isDirty(buffer) ? "unsaved changes: save (Ctrl+S) or undo them before merging" : null;
     return { path, kind, newFile, hunks, problem: dirty };
   }
 
@@ -191,7 +191,7 @@ export class MergeSession {
     const buffer = this.host.load(path);
     if (path !== state.current) this.host.open(path, { line: 0, col: 0 });
     // The proposal changes the file on disk; unsaved edits would show up as hunks that revert them.
-    if (buffer.text !== buffer.saved) {
+    if (isDirty(buffer)) {
       state.message = `${path} has unsaved changes: save (Ctrl+S) or undo them before merging its proposal`;
       return;
     }
@@ -317,7 +317,7 @@ export class MergeSession {
     const abs = resolve(state.root, merge.path);
     if (readText(abs) !== merge.disk) return this.leave(merge, `${merge.path} changed on disk during the merge; nothing written — press m to compare again`);
     const buffer = code ? null : this.host.load(merge.path);
-    if (buffer && buffer.text !== buffer.saved) return this.leave(merge, `${merge.path} has unsaved changes; nothing written`);
+    if (buffer && isDirty(buffer)) return this.leave(merge, `${merge.path} has unsaved changes; nothing written`);
     const proposalAbs = this.proposalAbs(merge.path);
     if (readText(proposalAbs) !== merge.proposal) return this.leave(merge, `the proposal for ${merge.path} changed during the merge; nothing written — press m to see the new one`);
     const result = applyHunks(merge.base, merge.hunks, merge.decisions).join("\n");
