@@ -651,10 +651,12 @@
     - explanations [map.explanations](map.md#map.explanations)
     - type [TracePlan](../../src/trace-plan.ts#L16)
       <a id="map.trace-plan.TracePlan"></a>
-    - fn [tracePlan](../../src/trace-plan.ts#L24) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
-      <a id="map.trace-plan.tracePlan"></a>
+    - fn [tracePlan](../../src/trace-plan.ts#L29) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
+      <a id="map.trace-plan.tracePlan"></a><br>The plan of `flow` on a fresh snapshot of the saved code. `omitted` are the flow's `trigger`/`step` IDs that are no function of that snapshot (a module, a type, an unknown ID, a file outside it): no adapter instruments them.
       - calls [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [map.map.generateMap](map.md#map.map.generateMap)
-    - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
+    - fn [tracePlanText](../../src/trace-plan.ts#L49) (plan: TracePlan) → string
+      <a id="map.trace-plan.tracePlanText"></a><br>What `keylang trace-plan` prints and an adapter reads: the plan as indented JSON and a newline.
+    - fn [flowSymbols](../../src/trace-plan.ts#L54) (root: string, dir: string, flow: string) → Set<string> | null
       <a id="map.trace-plan.flowSymbols"></a><br>`trigger` and `step` IDs of the flow; null when no spec declares it.
       - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [lang.parser.parse](lang.md#lang.parser.parse), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [wire-gen](../../src/wire-gen.ts#L1)

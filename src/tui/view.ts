@@ -16,7 +16,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { WIRE_OUT, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type TracePlanPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type WirePayload } from "../operations.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
@@ -440,6 +440,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "explain-edge") return `${label} · ${record.params.from} ↔ ${record.params.to}`;
   if (record.params.kind === "export") return `${label} · ${exportFormat(record.params)} · ${record.params.path}`;
   if (record.params.kind === "parse") return `${label} · ${record.params.format} · ${record.params.paths.join(" ")}`;
+  if (record.params.kind === "trace-plan") return `${label} · ${record.params.flow}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -453,6 +454,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "explain-edge") return `check --explain-edge ${request.from} ${request.to}`;
   if (request.kind === "export") return `export ${exportFormat(request)} ${request.path}`;
   if (request.kind === "parse") return request.format === "json" ? "parse --json" : "parse";
+  if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
@@ -482,6 +484,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "export" && result.payload !== null) return `${exportOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "parse" && result.payload !== null) return `${parseOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "trace-plan" && result.payload !== null) return `${tracePlanOutcome(result.payload)} · code ${result.exitCode}`;
   return recordStatus(record);
 }
 
@@ -502,7 +505,12 @@ function checkOutcome(payload: CheckPayload): string {
 
 /** The format an export request writes: an explained edge has only the human lines. */
 function exportFormat(request: ExportRequest): string {
-  return request.source.kind === "explain-edge" ? "human" : request.source.format;
+  return exportFormatOf(request.source);
+}
+
+/** `4 function(s) to instrument, 1 step id(s) left out`: the plan and what no adapter instruments. */
+function tracePlanOutcome(payload: TracePlanPayload): string {
+  return `${payload.plan.symbols.length} function(s) to instrument${payload.omitted.length > 0 ? `, ${payload.omitted.length} id(s) left out` : ""}`;
 }
 
 /** `2 document(s), 1 error(s), 0 warning(s)`: what the parser found, the same counts as the CLI's stderr. */
@@ -880,6 +888,23 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     const lines = payload.text.split("\n");
     if (lines.at(-1) === "") lines.pop();
     for (const line of lines) rows.push({ text: line, style: THEME.panel });
+  } else if (result?.kind === "trace-plan" && result.payload !== null) {
+    // The plan an adapter reads: a summary, each symbol (Tab, then Enter opens it in the code), then the CLI's stdout.
+    const { payload } = result;
+    const { plan } = payload;
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    rows.push({ text: `Trace plan · flow ${plan.flow} · read-only, nothing written, nothing run · fresh snapshot ${plan.snapshotId.slice(0, 8)} · schemaVersion ${plan.schemaVersion}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${tracePlanOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...MARK_STYLE.ok, bg: THEME.panel.bg! } });
+    rows.push({ text: "  a plan is no evidence: a step is observed only by a trace run, and an adapter leaves a file whose sha256 changed alone", style: { ...THEME.panel, fg: 243 } });
+    plan.symbols.forEach((symbol, index) => {
+      rows.push({ text: `  ${symbol.id}  ${symbol.file}:${symbol.line}:${symbol.col}  sha256 ${symbol.sha256.slice(0, 12)}`, style: index === selected ? THEME.selected : THEME.panel, gap: index });
+    });
+    if (payload.omitted.length > 0) rows.push({ text: `  not in the plan (no function of the snapshot): ${payload.omitted.join(", ")}`, style: { ...THEME.panel, fg: 179 } });
+    if (plan.symbols.length > 0) rows.push({ text: "  Tab, then ↑↓ select a symbol and Enter opens it in the code · PgUp PgDn scroll the JSON", style: THEME.hint });
+    rows.push({ text: `── keylang trace-plan ${plan.flow} · stdout ──`, style: { ...THEME.panel, fg: 243 } });
+    const lines = payload.text.split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    for (const line of lines) rows.push({ text: line, style: THEME.panel });
   } else if (result?.kind === "fmt" && result.payload !== null) {
     // Every file of the selection with what happened to it; a failure never hides the files already written.
     const { payload } = result;
@@ -1006,8 +1031,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const checked =
     (record?.result?.kind === "check" && (record.result.payload?.results.length ?? 0) > 0) ||
     (record?.result?.kind === "explain-edge" && record.result.payload !== null && edgeItems(record.result.payload).length > 0) ||
-    (record?.result?.kind === "parse" && (record.result.payload?.diagnostics.length ?? 0) > 0);
-  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : "finding";
+    (record?.result?.kind === "parse" && (record.result.payload?.diagnostics.length ?? 0) > 0) ||
+    (record?.result?.kind === "trace-plan" && (record.result.payload?.plan.symbols.length ?? 0) > 0);
+  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : "finding";
   const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const hint = analysis
@@ -1193,12 +1219,12 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(typed), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -1212,7 +1238,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

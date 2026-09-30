@@ -519,7 +519,9 @@ export class App {
           ? (result.payload?.snapshot ?? undefined)
           : result?.kind === "check" || result?.kind === "explain-edge"
             ? (result.payload?.snapshotId ?? undefined)
-            : undefined;
+            : result?.kind === "trace-plan"
+              ? (result.payload?.plan.snapshotId ?? undefined)
+              : undefined;
       if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
@@ -1671,7 +1673,7 @@ export class App {
 
   /** Records that an input changed: a feature or check result computed before it is outdated from now on. */
   private inputsChanged(reason: string): void {
-    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check" || record.kind === "parse") record.outdated ??= reason;
+    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan") record.outdated ??= reason;
   }
 
   /**
@@ -1721,6 +1723,12 @@ export class App {
     if (request.kind === "explain-edge") {
       // Explain-edge reads the saved code and keylang.json, never the specs: only a dirty keylang.json is saved first.
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE });
+    }
+    if (request.kind === "trace-plan") {
+      // The plan reads the saved specs under the spec directory (the flow), keylang.json and the code:
+      // those dirty buffers are saved first, so the plan's IDs and hashes are the files on disk.
+      const dir = `${this.specDir()}/`;
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
     }
     if (request.kind === "wire") {
       // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
@@ -2405,6 +2413,72 @@ export class App {
     this.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from, to });
   }
 
+  // ---------- trace plan ----------
+
+  /** The trace-plan form: the flow under the cursor is the visible default; the list is the flows of the current documents. */
+  private openTracePlanPrompt(): void {
+    const initial = this.state.mode === "merge" ? null : this.flowAtCursor();
+    this.state.prompt = { kind: "trace-plan", text: initial ?? "", items: [], ids: [], index: 0 };
+    this.refreshTracePlanPrompt();
+  }
+
+  /** The `# flow <name>` section the cursor is in, or null. */
+  private flowAtCursor(): string | null {
+    const doc = this.buffer()?.doc;
+    if (!doc) return null;
+    const offset = this.offsetOf(this.state.cursor);
+    let found: string | null = null;
+    for (const section of doc.sections) {
+      const start = section.heading?.span.start.offset ?? 0;
+      if (start > offset) break;
+      found = section.kind === "flow" && section.name ? section.name.value : null;
+    }
+    return found;
+  }
+
+  /** The declared flows matching the typed name (the exact one first), each with the file that declares it. */
+  private refreshTracePlanPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "trace-plan") return;
+    // The flows of the current documents (dirty buffers included), not the file names; the operation reads them saved.
+    const declared = new Map<string, string>();
+    for (const flow of this.state.analysis?.spec.flows ?? []) if (!declared.has(flow.name)) declared.set(flow.name, flow.file);
+    const typed = prompt.text.trim();
+    const query = typed.toLowerCase();
+    const names = [...declared.keys()].filter((name) => name.toLowerCase().includes(query)).sort((a, b) => Number(b === typed) - Number(a === typed) || compareText(a, b));
+    prompt.ids = names;
+    prompt.items = names.map((name) => `${name}  ${declared.get(name)}`);
+    prompt.index = 0;
+    this.tracePlanNote();
+  }
+
+  /** The flow Enter plans: the selected one of the list, else the typed name. */
+  private tracePlanFlow(): string {
+    const prompt = this.state.prompt!;
+    return prompt.ids?.[prompt.index] ?? prompt.text.trim();
+  }
+
+  private tracePlanNote(): void {
+    const prompt = this.state.prompt!;
+    const flow = this.tracePlanFlow();
+    const known = this.state.analysis?.spec.flows.some((item) => item.name === flow) ?? false;
+    prompt.note =
+      flow === ""
+        ? "type a flow name: # flow <name>"
+        : `${flow}${known ? "" : ": not in the current documents"} · a fresh snapshot of the saved code · writes nothing, runs nothing`;
+  }
+
+  /** Enter in the trace-plan form: the flow runs as the session's operation; an empty name keeps the form. */
+  private submitTracePlan(): void {
+    const flow = this.tracePlanFlow();
+    if (flow === "") {
+      this.state.message = "trace-plan: a flow name is required";
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("trace-plan", { kind: "trace-plan", root: this.state.root, flow });
+  }
+
   // ---------- export ----------
 
   /**
@@ -2424,8 +2498,9 @@ export class App {
     }
     const { record } = found;
     // A parse report is exported in the view it was shown in, unless another is chosen.
-    const formats: readonly ExportFormat[] = record.kind === "check" ? CHECK_FORMATS : record.kind === "parse" ? PARSE_FORMATS : ["human"];
-    const format: ExportFormat = record.kind === "check" ? "json" : record.params.kind === "parse" ? record.params.format : "human";
+    // A trace plan has one format, the JSON the adapters read.
+    const formats: readonly ExportFormat[] = record.kind === "check" ? CHECK_FORMATS : record.kind === "parse" ? PARSE_FORMATS : record.kind === "trace-plan" ? ["json"] : ["human"];
+    const format: ExportFormat = record.kind === "check" || record.kind === "trace-plan" ? "json" : record.params.kind === "parse" ? record.params.format : "human";
     this.state.prompt = {
       kind: "export",
       text: defaultExportPath(record.kind, format),
@@ -2933,8 +3008,9 @@ export class App {
     const results = this.state.results;
     const rows = resultsReportRows(this.state);
     const gaps = this.recordGaps();
-    // A parse report is long text under its diagnostics: ↑↓ select a diagnostic, a page or the wheel scrolls the text.
-    const scrollText = this.state.records[results.index]?.kind === "parse" && Math.abs(delta) > 1;
+    // A parse or trace-plan report is long text under its items: ↑↓ select one, a page or the wheel scrolls the text.
+    const kind = this.state.records[results.index]?.kind;
+    const scrollText = (kind === "parse" || kind === "trace-plan") && Math.abs(delta) > 1;
     if (gaps.length > 0 && !scrollText) {
       // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
       results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
@@ -2960,6 +3036,8 @@ export class App {
     if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
     // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
+    // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
+    if (result?.kind === "trace-plan") return (result.payload?.plan.symbols ?? []).map((symbol) => ({ file: symbol.file, line: symbol.line, col: symbol.col, text: `${symbol.id} ${symbol.file}:${symbol.line}:${symbol.col}` }));
     if (result?.kind === "parse") return (result.payload?.diagnostics ?? []).map((d) => ({ file: toPosix(relative(this.state.root, resolve(this.state.root, d.file))), line: d.span.start.line, col: d.span.start.col, text: formatDiagnostic(d) }));
     return [];
   }
@@ -3085,6 +3163,7 @@ export class App {
     if (prompt.kind === "init") this.refreshInitPrompt();
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
     if (prompt.kind === "parse") this.refreshParsePrompt();
+    if (prompt.kind === "trace-plan") this.refreshTracePlanPrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -3124,6 +3203,7 @@ export class App {
       if (prompt.kind === "init") this.refreshInitPrompt();
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
       if (prompt.kind === "parse") this.refreshParsePrompt();
+      if (prompt.kind === "trace-plan") this.refreshTracePlanPrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -3132,10 +3212,11 @@ export class App {
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
+      if (prompt.kind === "trace-plan") this.tracePlanNote();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
@@ -3147,6 +3228,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "init") return this.submitInit();
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "parse") return this.submitParse();
+    if (event.name === "enter" && prompt.kind === "trace-plan") return this.submitTracePlan();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
@@ -3241,6 +3323,8 @@ export class App {
         return this.openFmtPrompt();
       case "parse":
         return this.openParsePrompt();
+      case "trace-plan":
+        return this.openTracePlanPrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":
@@ -3347,10 +3431,11 @@ export class App {
   }
 }
 
-/** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`, `.keylang/export/parse.txt`. */
+/** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`, `.keylang/export/parse.txt`, `.keylang/export/trace-plan.json`. */
 function defaultExportPath(kind: OperationRecord["kind"], format: ExportFormat): string {
   const extension: Record<ExportFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt", tree: "txt" };
-  return `.keylang/export/${kind === "explain-edge" ? "edge" : kind === "parse" ? "parse" : "check"}.${extension[format]}`;
+  const name = kind === "explain-edge" ? "edge" : kind === "parse" || kind === "trace-plan" ? kind : "check";
+  return `.keylang/export/${name}.${extension[format]}`;
 }
 
 /** The typed report of a finished record in a format, or null when it has none. */
@@ -3364,6 +3449,8 @@ function exportSourceOf(record: OperationRecord, format: ExportFormat): ExportSo
   // The documents as parsed then: the export renders them, it never parses again.
   const view = PARSE_FORMATS.find((candidate) => candidate === format);
   if (result?.kind === "parse" && result.payload !== null && view !== undefined) return { kind: "parse", format: view, documents: result.payload.documents };
+  // The plan as it was computed: its snapshot and hashes, never a new plan.
+  if (result?.kind === "trace-plan" && result.payload !== null && format === "json") return { kind: "trace-plan", plan: result.payload.plan };
   return null;
 }
 

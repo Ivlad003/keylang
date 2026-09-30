@@ -415,9 +415,10 @@
     - snapshot map.snapshot
     - explanations map.explanations
     - type [TracePlan](../../src/trace-plan.ts#L16)
-    - fn [tracePlan](../../src/trace-plan.ts#L24) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot }>
+    - fn [tracePlan](../../src/trace-plan.ts#L29) (config: Config, flow: string) → Promise<{ plan: TracePlan; index: AnalysisSnapshot; omitted: string[] }>
       - calls map.trace-plan.flowSymbols, map.map.generateMap
-    - fn [flowSymbols](../../src/trace-plan.ts#L41) (root: string, dir: string, flow: string) → Set<string> | null
+    - fn [tracePlanText](../../src/trace-plan.ts#L49) (plan: TracePlan) → string
+    - fn [flowSymbols](../../src/trace-plan.ts#L54) (root: string, dir: string, flow: string) → Set<string> | null
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.spec-ir.compileSpec, lang.parser.parse, lang.spec-ir.walkFlow
   - module [wire-gen](../../src/wire-gen.ts#L1)
     - node external.node

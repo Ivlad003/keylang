@@ -36,6 +36,7 @@ import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, type ChangedFiles } from "./git-changes.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
+import { tracePlan, tracePlanText, type TracePlan } from "./trace-plan.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -193,12 +194,29 @@ export interface ExplainEdgeRequest {
 /**
  * The typed result an export writes: a finished check report in one of the
  * CLI's formats, or the lines of an explained edge (the CLI has only its
- * human output). A later report kind (parse, trace-plan) joins as a variant.
+ * human output), the documents of a parse in a view, or a trace plan (JSON only, as the CLI prints it).
  */
-export type ExportSource = { kind: "check"; format: CheckFormat; report: CheckReportData } | { kind: "explain-edge"; lines: string[] } | { kind: "parse"; format: ParseFormat; documents: Document[] };
+export type ExportSource =
+  | { kind: "check"; format: CheckFormat; report: CheckReportData }
+  | { kind: "explain-edge"; lines: string[] }
+  | { kind: "parse"; format: ParseFormat; documents: Document[] }
+  | { kind: "trace-plan"; plan: TracePlan };
 
 /** The formats an export writes: the check formats and the parse views. */
 export type ExportFormat = CheckFormat | ParseFormat;
+
+/**
+ * The functions of one flow a trace adapter instruments (`keylang trace-plan
+ * <flow>`), on a fresh snapshot of the saved code and specs. Read-only: it
+ * writes nothing, not even the fact cache, and runs no test or program.
+ */
+export interface TracePlanRequest {
+  kind: "trace-plan";
+  /** Repository root (absolute). */
+  root: string;
+  /** The flow's name, as its `# flow <name>` heading declares it. */
+  flow: string;
+}
 
 /**
  * Saves a report that was already computed to one file: exactly the stdout
@@ -235,7 +253,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export"]);
@@ -444,6 +462,16 @@ export interface ParsePayload {
   text: string;
 }
 
+/** The plan `keylang trace-plan` prints, and what it leaves out. */
+export interface TracePlanPayload {
+  /** Exactly the adapters' input: schemaVersion, snapshotId, flow, symbols sorted by ID with the file hashes. */
+  plan: TracePlan;
+  /** The flow's trigger and step IDs that are no function of the snapshot: never instrumented, never evidence. */
+  omitted: string[];
+  /** The CLI's stdout, byte for byte. */
+  text: string;
+}
+
 /** What `keylang wire [--check]` found and did. The path is POSIX, relative to the root. */
 export interface WirePayload {
   /** The generated file (`--out`). */
@@ -583,6 +611,7 @@ export interface OperationPayloads {
   init: InitPayload;
   export: ExportPayload;
   parse: ParsePayload;
+  "trace-plan": TracePlanPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -622,6 +651,7 @@ export function runOperation(request: ExplainEdgeRequest, context?: OperationCon
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
+export function runOperation(request: TracePlanRequest, context?: OperationContext): Promise<OperationEnvelope<"trace-plan">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -651,6 +681,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runExport(request, context);
     case "parse":
       return runParse(request, context);
+    case "trace-plan":
+      return runTracePlan(request, context);
   }
 }
 
@@ -686,6 +718,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "export":
       return { kind, ...base };
     case "parse":
+      return { kind, ...base };
+    case "trace-plan":
       return { kind, ...base };
   }
 }
@@ -1590,10 +1624,16 @@ function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?
   return { kind: "export", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
+/** The format of an export: an explained edge has only the human lines, a trace plan only its JSON. */
+export function exportFormatOf(source: ExportSource): ExportFormat {
+  return source.kind === "explain-edge" ? "human" : source.kind === "trace-plan" ? "json" : source.format;
+}
+
 /** The bytes an export writes: the CLI's stdout for the same report. */
 export function exportText(source: ExportSource): string {
   if (source.kind === "check") return checkReportText(source.format, source.report);
   if (source.kind === "parse") return parseReportText(source.format, source.documents);
+  if (source.kind === "trace-plan") return tracePlanText(source.plan);
   return source.lines.map((line) => `${line}\n`).join("");
 }
 
@@ -1641,7 +1681,7 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
   const text = exportText(request.source);
   const payload: ExportPayload = {
     path: request.path,
-    format: request.source.kind === "explain-edge" ? "human" : request.source.format,
+    format: exportFormatOf(request.source),
     source: request.source.kind,
     bytes: Buffer.byteLength(text, "utf8"),
     existed: request.expect !== null,
@@ -1728,6 +1768,34 @@ async function runParse(request: ParseRequest, context: OperationContext): Promi
   for (const d of diagnostics) messages.push({ level: isError(d) ? "error" : "warning", text: formatDiagnostic(d) });
   const payload: ParsePayload = { format: request.format, documents, skipped, unreadable, diagnostics, text: parseReportText(request.format, documents) };
   return { ...emptyParse("completed", diagnostics.some(isError) ? 1 : 0), payload, messages };
+}
+
+function emptyTracePlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"trace-plan"> {
+  return { kind: "trace-plan", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang trace-plan <flow>`: the flow's `trigger` and `step` IDs from the
+ * saved specs, then a fresh snapshot of the saved code — never the session's
+ * or a cached index. Nothing is written and nothing is run. Code 0 with the
+ * plan; 2 with no payload for a missing name, an unknown flow or a broken
+ * keylang.json, with the CLI's message.
+ */
+async function runTracePlan(request: TracePlanRequest, context: OperationContext): Promise<OperationEnvelope<"trace-plan">> {
+  if (!isAbsolute(request.root)) return emptyTracePlan("failed", 2, "trace-plan: root must be an absolute path");
+  if (request.flow === "") return emptyTracePlan("failed", 2, "trace-plan: a flow name is required");
+  if (context.signal?.aborted) return emptyTracePlan("cancelled", null);
+  context.onProgress?.({ text: "reading the flow and a fresh snapshot of the saved code" });
+  let found: Awaited<ReturnType<typeof tracePlan>>;
+  try {
+    found = await tracePlan(loadConfig(request.root), request.flow);
+  } catch (error) {
+    return emptyTracePlan("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyTracePlan("cancelled", null);
+  const { plan, omitted } = found;
+  const payload: TracePlanPayload = { plan, omitted, text: tracePlanText(plan) };
+  return { ...emptyTracePlan("completed", 0), payload, messages: [{ level: "info", text: `flow ${plan.flow}: ${plan.symbols.length} function(s) to instrument on snapshot ${plan.snapshotId}` }] };
 }
 
 /** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */

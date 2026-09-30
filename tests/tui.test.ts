@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5941,7 +5942,7 @@ test("tui: export saves an explained edge as the CLI's lines; the palette export
   s.send(KEY.f6);
   s.send("e");
   assert.equal(s.app.state.prompt, null);
-  assert.match(s.app.state.message ?? "", /^export: only a check, explain-edge or parse report is exported$/);
+  assert.match(s.app.state.message ?? "", /^export: only a check, explain-edge, parse or trace-plan report is exported$/);
 });
 
 // ---------- parse (ticket 19) ----------
@@ -6138,4 +6139,191 @@ test("tui: parse of a syntax error and a directory with a saved explanation keep
   s.send(KEY.f6);
   text = s.text();
   assert.match(text, /keylang\/nope\.md: not found/);
+});
+
+// ---------- trace plan (ticket 20) ----------
+
+/** A second flow: a module and an unknown ID are no functions of the snapshot, so no adapter instruments them. */
+const MIXED_FLOW = "# flow mixed\n\n- trigger presentation.terminal.checkout\n  - step domain.order\n  - step domain.order.nope\n";
+
+/** The palette's trace-plan form; `flow` replaces the default name when given, then Enter plans the first match (or the typed name). */
+function tracePlanForm(s: ReturnType<typeof session>, flow?: string): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "trace plan") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "trace-plan", s.app.state.message ?? "");
+  if (flow !== undefined) {
+    for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+    for (const ch of flow) s.send(ch);
+  }
+  s.send(KEY.enter);
+}
+
+type TracePlanResult = Extract<OperationResult, { kind: "trace-plan" }> & { payload: NonNullable<Extract<OperationResult, { kind: "trace-plan" }>["payload"]> };
+
+function tracePlanRecord(app: App): TracePlanResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "trace-plan" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as TracePlanResult;
+}
+
+function cliTracePlan(root: string, flow: string): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "trace-plan", flow], { cwd: root, encoding: "utf8" });
+}
+
+const fileSha256 = (root: string, file: string): string => createHash("sha256").update(readFileSync(join(root, file), "utf8")).digest("hex");
+
+test("tui: trace-plan of a flow with a trigger and nested steps gives the CLI's JSON byte for byte — symbols, positions, hashes; Enter opens a symbol; nothing written or run; export writes only the JSON", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/mixed.md": MIXED_FLOW });
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  // The flow under the cursor is the visible default; the list is the declared flows, not the file names.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang trace-plan") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "trace-plan");
+  assert.equal(s.app.state.prompt?.text, "checkout");
+  assert.deepEqual(s.app.state.prompt?.items, ["checkout  keylang/flows/checkout.md"]);
+  assert.equal(promptNote(s.app), "checkout · a fresh snapshot of the saved code · writes nothing, runs nothing");
+  for (const _ of "checkout") s.send("\x7f");
+  assert.deepEqual(s.app.state.prompt?.ids, ["checkout", "mixed"]);
+  assert.match(s.text(), /2 flow\(s\): trace plan/);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  tracePlanForm(s);
+  assert.equal(s.app.state.barrier, null, "nothing unsaved, no step");
+  await s.app.idle();
+  const result = tracePlanRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, []]);
+  const cli = cliTracePlan(root, "checkout");
+  assert.deepEqual([cli.status, cli.stderr], [0, ""]);
+  assert.equal(result.payload.text, cli.stdout, "the CLI's stdout, byte for byte");
+  assert.deepEqual(result.payload.plan, JSON.parse(cli.stdout));
+  assert.doesNotMatch(result.payload.text, /\x1b|code 0|completed|F6/);
+  const { plan } = result.payload;
+  assert.deepEqual([plan.schemaVersion, plan.flow], [1, "checkout"]);
+  assert.equal(plan.snapshotId, s.app.state.analysis?.snapshot?.snapshotId, "the same saved code, the same snapshot");
+  // Every trigger and nested step, sorted by ID, at its declaration, with the hash of the file the snapshot read.
+  assert.deepEqual(plan.symbols.map((symbol) => symbol.id), ["application.purchase.buy", "domain.order.create", "infrastructure.store.save", "presentation.terminal.checkout"]);
+  const create = plan.symbols.find((symbol) => symbol.id === "domain.order.create")!;
+  assert.deepEqual([create.name, create.file, create.line], ["create", "src/domain/order.ts", 1]);
+  for (const symbol of plan.symbols) assert.equal(symbol.sha256, fileSha256(root, symbol.file), symbol.id);
+  assert.deepEqual(result.payload.omitted, []);
+  assert.deepEqual(treeBytes(root), before, "neither the TUI nor the CLI wrote anything: no trace, no cache");
+  // What is no function of the snapshot stays out of the plan and is named, never an observed step.
+  tracePlanForm(s, "mixed");
+  await s.app.idle();
+  const mixed = tracePlanRecord(s.app);
+  assert.equal(mixed.payload.text, cliTracePlan(root, "mixed").stdout);
+  assert.deepEqual(mixed.payload.plan.symbols.map((symbol) => symbol.id), ["presentation.terminal.checkout"]);
+  assert.deepEqual(mixed.payload.omitted, ["domain.order", "domain.order.nope"]);
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Trace plan: the functions of a flow to instrument · mixed/);
+  assert.match(text, /1 function\(s\) to instrument, 2 id\(s\) left out · code 0/);
+  assert.match(text, /not in the plan \(no function of the snapshot\): domain\.order, domain\.order\.nope/);
+  assert.match(text, /a plan is no evidence/);
+  // F6 over the checkout plan: the summary, each symbol, the JSON; Tab, then Enter opens a symbol in the code.
+  s.send(KEY.up);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.result, result);
+  text = s.text();
+  assert.match(text, /Trace plan · flow checkout · read-only, nothing written, nothing run · fresh snapshot/);
+  assert.match(text, /4 function\(s\) to instrument · code 0/);
+  assert.match(text, new RegExp(`domain\\.order\\.create {2}src/domain/order\\.ts:1:${create.col} {2}sha256 ${create.sha256.slice(0, 12)}`));
+  assert.match(text, /── keylang trace-plan checkout · stdout ──/);
+  assert.match(text, /"schemaVersion": 1,/);
+  assert.match(text, /Tab symbols · e export/);
+  s.send(KEY.tab);
+  s.send(KEY.down);
+  assert.match(s.app.state.message ?? "", /^domain\.order\.create src\/domain\/order\.ts:1:\d+ · Enter opens src\/domain\/order\.ts:1$/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.deepEqual([s.app.state.code?.file, s.app.state.code?.line], ["src/domain/order.ts", 1]);
+  await esc(s.send);
+  s.send(KEY.tab);
+  // Export: the JSON the adapters read, as computed; the file is the CLI's stdout and the only new file.
+  exportForm(s);
+  assert.equal(s.app.state.prompt!.text, ".keylang/export/trace-plan.json");
+  assert.equal(s.app.state.prompt!.exportForm!.format, "json");
+  assert.deepEqual(s.app.state.prompt!.exportForm!.formats, ["json"]);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const exported = s.app.state.records.at(-1)!;
+  assert.deepEqual([exported.kind, exported.status, exported.result!.exitCode, exported.result!.written], ["export", "completed", 0, [".keylang/export/trace-plan.json"]]);
+  assert.equal(readFileSync(join(root, ".keylang/export/trace-plan.json"), "utf8"), cli.stdout);
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [".keylang/export/trace-plan.json"]);
+  for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
+  assert.equal(s.app.state.records.filter((record) => record.kind === "trace-plan").length, 2, "no hidden plan");
+  while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
+  assert.match(s.text(), /Export · json of the trace-plan report · \.keylang\/export\/trace-plan\.json · \d+ bytes/);
+});
+
+test("tui: trace-plan of an unknown flow is code 2 with the CLI's message and no plan; a changed source makes the old plan outdated and a rerun has the new snapshot and hash; a dirty spec is saved first", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // An unknown flow: the form says so, the operation fails with the CLI's code and message, nothing is written.
+  s.send(KEY.ctrlP);
+  for (const ch of "trace plan") s.send(ch);
+  s.send(KEY.enter);
+  for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+  for (const ch of "zzz") s.send(ch);
+  assert.deepEqual(s.app.state.prompt?.items, []);
+  assert.equal(promptNote(s.app), "zzz: not in the current documents · a fresh snapshot of the saved code · writes nothing, runs nothing");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const unknown = s.app.state.records.at(-1)!;
+  assert.deepEqual([unknown.kind, unknown.status, unknown.result!.exitCode, unknown.result!.payload, unknown.result!.written], ["trace-plan", "failed", 2, null, []]);
+  const cliUnknown = cliTracePlan(root, "zzz");
+  assert.deepEqual([cliUnknown.status, cliUnknown.stdout, cliUnknown.stderr], [2, "", `keylang: ${unknown.result!.messages[0]!.text}\n`]);
+  assert.equal(unknown.result!.messages[0]!.text, "no flow `zzz` under keylang/");
+  assert.deepEqual(treeBytes(root), before);
+  // The source changes on disk after a plan: F5 takes a new snapshot, the old plan is outdated; a rerun plans the new code.
+  tracePlanForm(s, "checkout");
+  await s.app.idle();
+  const first = tracePlanRecord(s.app);
+  writeFileSync(join(root, "src/domain/order.ts"), "// changed\nexport function create(): void {}\n");
+  s.send(KEY.f5);
+  await s.app.idle();
+  const firstRecord = s.app.state.records.at(-1)!;
+  assert.equal(firstRecord.outdated, "the code snapshot changed since this run");
+  s.send(KEY.f6);
+  assert.match(s.text(), /outdated: the code snapshot changed since this run · Enter reruns/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const second = tracePlanRecord(s.app);
+  assert.notEqual(s.app.state.records.at(-1), firstRecord);
+  assert.notEqual(second.payload.plan.snapshotId, first.payload.plan.snapshotId);
+  const create = (result: TracePlanResult) => result.payload.plan.symbols.find((symbol) => symbol.id === "domain.order.create")!;
+  assert.notEqual(create(second).sha256, create(first).sha256);
+  assert.deepEqual([create(second).sha256, create(second).line], [fileSha256(root, "src/domain/order.ts"), 2]);
+  assert.equal(second.payload.text, cliTracePlan(root, "checkout").stdout);
+  // A dirty spec under the spec directory is saved first: Back writes and plans nothing; Save plans the saved flow.
+  await esc(s.send);
+  const flow = "keylang/flows/checkout.md";
+  s.app.state.cursor = { line: 7, col: 0 };
+  s.send("i");
+  for (const ch of "  - step domain.order.create\n") s.send(ch);
+  await esc(s.send);
+  const typed = s.app.state.buffers.get(flow)!.text;
+  assert.notEqual(typed, CHECKOUT_FLOW);
+  const records = s.app.state.records.length;
+  tracePlanForm(s, "checkout");
+  assert.deepEqual(s.app.state.barrier?.files, [flow]);
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, flow), "utf8"), CHECKOUT_FLOW, "Back writes nothing");
+  assert.equal(s.app.state.records.length, records);
+  tracePlanForm(s, "checkout");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const saved = tracePlanRecord(s.app);
+  assert.equal(readFileSync(join(root, flow), "utf8"), typed);
+  assert.equal(saved.payload.text, cliTracePlan(root, "checkout").stdout, "the saved flow is planned");
+  assert.ok(!existsSync(join(root, ".keylang/trace")), "no trace file");
 });

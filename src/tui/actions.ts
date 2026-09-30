@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, export) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -99,6 +99,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain edge", "check --explain-edge", "edge", "dependency evidence", "why depends", "between ids"],
     // A form takes two ids (the one under the cursor fills the first); it reads the saved code in a worker and never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "trace-plan",
+    label: "Trace plan: the functions of a flow to instrument",
+    group: "Check",
+    aliases: ["trace-plan", "trace plan", "keylang trace-plan", "instrument", "trace adapter", "flow trace"],
+    // A form takes a flow of the current documents (the one under the cursor by default); a fresh snapshot in a worker; writes nothing, runs nothing.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -236,17 +244,17 @@ export function availabilityOf(state: State): ActionContext {
 }
 
 /** The operation kinds whose finished report Export saves. */
-export const EXPORTABLE_KINDS: ReadonlySet<OperationRecord["kind"]> = new Set(["check", "explain-edge", "parse"]);
+export const EXPORTABLE_KINDS: ReadonlySet<OperationRecord["kind"]> = new Set(["check", "explain-edge", "parse", "trace-plan"]);
 
 /**
  * The report Export saves: the record selected in F6 while the panel is open,
- * else the newest check, explain-edge or parse record — exactly that run, as it ran.
+ * else the newest check, explain-edge, parse or trace-plan record — exactly that run, as it ran.
  */
 export function exportRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
   const { results, records } = state;
   const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => EXPORTABLE_KINDS.has(candidate.kind));
   if (!record) return { reason: results.open ? "select a check report in F6: the current analysis is not a saved report" : "no report yet: run a check first" };
-  if (!EXPORTABLE_KINDS.has(record.kind)) return { reason: "only a check, explain-edge or parse report is exported" };
+  if (!EXPORTABLE_KINDS.has(record.kind)) return { reason: "only a check, explain-edge, parse or trace-plan report is exported" };
   if (record.status === "running") return { reason: "the report is still running" };
   if (!record.result || record.result.payload === null) return { reason: "this run has no report to export" };
   return { record };

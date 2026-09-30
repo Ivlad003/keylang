@@ -16,7 +16,6 @@ import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
-import { tracePlan } from "./trace-plan.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
 import { stronglyConnected } from "./scc.ts";
@@ -710,11 +709,13 @@ async function cmdDoctor(): Promise<number> {
   return result.exitCode ?? 0;
 }
 
+/** A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else. */
 async function cmdTracePlan(flow: string | undefined): Promise<number> {
   if (!flow) throw new Error("trace-plan: a flow name is required");
-  const { plan } = await tracePlan(loadConfig(findRoot(process.cwd())), flow);
-  process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
-  return 0;
+  const result = await runOperation({ kind: "trace-plan", root: findRoot(process.cwd()), flow });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "trace-plan failed");
+  process.stdout.write(result.payload.text);
+  return result.exitCode ?? 2;
 }
 
 function needPaths(cmd: string, paths: string[]): void {

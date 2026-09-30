@@ -121,9 +121,10 @@ export interface Prompt {
    * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one; on the `since` row typing edits the git ref instead of the paths).
    * `explain-edge`: two ids, `edge.from` and `edge.to` (the items `from`, `to`, run; typing edits the selected id row; `text` is unused).
    * `parse`: the spec files and directories to parse, relative to the root and separated by spaces (the current spec by default), and the view (`ids` are `tree` / `json`);
+   * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
