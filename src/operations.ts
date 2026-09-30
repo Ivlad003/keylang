@@ -9,7 +9,8 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
-import { CONFIG_FILE, assertFormatOnly, loadConfig, toPosix, type Config } from "./config.ts";
+import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
+import { CONFIG_FILE, assertFormatOnly, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
@@ -21,7 +22,7 @@ import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan } from "./map.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { sha256 } from "./snapshot.ts";
+import { sha256, type CoverageItem } from "./snapshot.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
@@ -122,7 +123,26 @@ export interface WireRequest {
   check: boolean;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest;
+/**
+ * Checks the saved specs against the code (`keylang check [paths…]
+ * [--strict] [--static <mode>]`). Read-only. The output format is not part
+ * of the request: it only shows the result.
+ */
+export interface CheckRequest {
+  kind: "check";
+  /** Repository root (absolute). */
+  root: string;
+  /** Spec files and directories: absolute, or relative to `base`; empty is the configured spec directory. */
+  paths: string[];
+  /** Where relative `paths` start and what reported paths are relative to (absolute); default the root. The CLI passes its working directory. */
+  base?: string;
+  /** An unverified verdict fails the check (code 1). */
+  strict: boolean;
+  /** Overrides `check.static` of keylang.json; omitted leaves the config, then `behavior`. */
+  static?: StaticMode;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire"]);
@@ -340,6 +360,33 @@ export interface WirePayload {
   snapshot: string;
 }
 
+/**
+ * What `keylang check` found on the saved files. `results`, `snapshotId`
+ * and `coverage` are exactly `--format json`; `lines` and `counts` are the
+ * human output and its summary. Paths are relative to the request's `base`.
+ */
+export interface CheckPayload {
+  results: CheckResult[];
+  snapshotId: string | null;
+  /** Constructs of the code no confirmed edge was built from (`--format json`). */
+  coverage: CoverageItem[];
+  lines: string[];
+  counts: { fail: number; unverified: number; ok: number };
+  /** The options the check really ran with. */
+  options: {
+    /** The checked paths as reported (the spec directory when none was given). */
+    paths: string[];
+    strict: boolean;
+    static: StaticMode;
+    /** Who chose the static mode: the request, `check.static` of keylang.json, or the default. */
+    staticFrom: "request" | "config" | "default";
+    /** Specs outside the spec directory are checked on their own, without the code. */
+    withoutCode: boolean;
+  };
+  /** Paths that hold no specs (the explained map, saved explanations): skipped, as reported. */
+  notSpecs: string[];
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
@@ -350,6 +397,7 @@ export interface OperationPayloads {
   agents: AgentsPayload;
   fmt: FmtPayload;
   wire: WirePayload;
+  check: CheckPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -384,6 +432,7 @@ export function runOperation(request: BaselineRequest, context?: OperationContex
 export function runOperation(request: AgentsRequest, context?: OperationContext): Promise<OperationEnvelope<"agents">>;
 export function runOperation(request: FmtRequest, context?: OperationContext): Promise<OperationEnvelope<"fmt">>;
 export function runOperation(request: WireRequest, context?: OperationContext): Promise<OperationEnvelope<"wire">>;
+export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -403,6 +452,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runFmt(request, context);
     case "wire":
       return runWire(request, context);
+    case "check":
+      return runCheck(request, context);
   }
 }
 
@@ -428,6 +479,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "fmt":
       return { kind, ...base };
     case "wire":
+      return { kind, ...base };
+    case "check":
       return { kind, ...base };
   }
 }
@@ -1072,6 +1125,86 @@ function readTextOrNull(abs: string): string | null {
   } catch {
     return null;
   }
+}
+
+function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"check"> {
+  return { kind: "check", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang check` on the saved files: the paths (the spec directory by
+ * default), the static mode (request, then keylang.json, then `behavior`)
+ * and `strict`. Code 1 for a failure, or with `strict` for an unverified
+ * verdict; an unverified one without `strict` is code 0 and stays in the
+ * report. Code 2 for a broken config or a missing path. It writes nothing,
+ * not even the fact cache.
+ */
+async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
+  if (!isAbsolute(request.root)) return emptyCheck("failed", 2, "check: root must be an absolute path");
+  const base = request.base ?? request.root;
+  if (!isAbsolute(base)) return emptyCheck("failed", 2, "check: base must be an absolute path");
+  if (context.signal?.aborted) return emptyCheck("cancelled", null);
+  let config: Config;
+  try {
+    config = loadConfig(request.root);
+  } catch (error) {
+    return emptyCheck("failed", 2, messageOf(error));
+  }
+  const specDir = join(request.root, config.dir);
+  if (request.paths.length === 0 && !existsSync(specDir)) return emptyCheck("failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
+  const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
+  for (const spec of specs) if (!existsSync(spec)) return emptyCheck("failed", 2, `${relative(base, spec) || spec}: not found`);
+  // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
+  const withoutCode = !specs.every((spec) => within(spec, specDir));
+  const display = (abs: string): string => toPosix(relative(base, abs));
+  context.onProgress?.({ text: "checking the saved specs against the code" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({
+      root: request.root,
+      specs,
+      display,
+      ...(request.static ? { static: request.static } : {}),
+      ...(withoutCode ? { withoutCode: true } : {}),
+    });
+  } catch (error) {
+    return emptyCheck("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyCheck("cancelled", null);
+  const snapshotId = analyzed.snapshot?.snapshotId ?? null;
+  const report = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
+  const mode = resolveStatic(request.static, analyzed.config.check.static);
+  const payload: CheckPayload = {
+    results: report.results,
+    snapshotId,
+    coverage: analyzed.snapshot?.coverage ?? [],
+    lines: report.lines,
+    counts: report.counts,
+    options: {
+      paths: specs.map((spec) => display(spec) || "."),
+      strict: request.strict,
+      static: mode.mode,
+      staticFrom: mode.setBy === "flag" ? "request" : (mode.setBy ?? "default"),
+      withoutCode,
+    },
+    notSpecs: analyzed.notSpecs,
+  };
+  const messages: OperationMessage[] = [
+    ...payload.notSpecs.map((path) => ({ level: "warning" as const, text: checkSkipNote(path) })),
+    ...payload.lines.map((text) => ({ level: "info" as const, text })),
+    { level: "info", text: checkSummary(payload.counts) },
+  ];
+  return { ...emptyCheck("completed", checkExitCode(payload.counts, request.strict)), payload, messages };
+}
+
+/** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */
+export function checkSkipNote(path: string): string {
+  return `note: ${path}: the explained map and saved explanations are not specs; skipped`;
+}
+
+/** The CLI's closing line on stderr: `0 fail, 2 unverified, 5 ok`. */
+export function checkSummary(counts: CheckPayload["counts"]): string {
+  return `${counts.fail} fail, ${counts.unverified} unverified, ${counts.ok} ok`;
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

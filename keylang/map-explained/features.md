@@ -106,18 +106,25 @@
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [check-results](../../src/check-results.ts#L1)
-    <a id="features.check-results"></a><br>The results of `keylang check --format json`: diagnostics and verdicts in one list, a diagnostic joined with the verdict it explains. Shared by the CLI and the MCP server, so an agent sees exactly what CI sees.
+    <a id="features.check-results"></a><br>The results of `keylang check --format json`: diagnostics and verdicts in one list, a diagnostic joined with the verdict it explains. Shared by the CLI, the MCP server and the TUI (the check operation and the findings panel), so an agent sees exactly what CI sees.
     - node [external.node](external.md#external.node)
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Provenance](../../src/check-results.ts#L10) = NonNullable<Verdict["evidence"]>["provenance"] <!-- internal -->
+    - type [Provenance](../../src/check-results.ts#L11) = NonNullable<Verdict["evidence"]>["provenance"] <!-- internal -->
       <a id="features.check-results.Provenance"></a>
-    - type [CheckResult](../../src/check-results.ts#L12)
+    - type [CheckResult](../../src/check-results.ts#L13)
       <a id="features.check-results.CheckResult"></a>
-    - fn [checkResults](../../src/check-results.ts#L34) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
+    - fn [checkResults](../../src/check-results.ts#L35) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
       <a id="features.check-results.checkResults"></a><br>Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.diag.isError](base.md#base.diag.isError)
+    - type [CheckReport](../../src/check-results.ts#L72)
+      <a id="features.check-results.CheckReport"></a><br>What `keylang check` reports, whatever the format: the verdicts decide it, the format only shows it.
+    - fn [checkReport](../../src/check-results.ts#L84) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
+      <a id="features.check-results.checkReport"></a>
+      - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults)
+    - fn [checkExitCode](../../src/check-results.ts#L98) (counts: CheckReport["counts"], strict: boolean) → 0 | 1
+      <a id="features.check-results.checkExitCode"></a><br>The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible.
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
     - analyze [map.analyze](map.md#map.analyze)

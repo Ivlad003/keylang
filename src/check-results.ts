@@ -1,11 +1,12 @@
 // The results of `keylang check --format json`: diagnostics and verdicts in one
-// list, a diagnostic joined with the verdict it explains. Shared by the CLI
-// and the MCP server, so an agent sees exactly what CI sees.
+// list, a diagnostic joined with the verdict it explains. Shared by the CLI,
+// the MCP server and the TUI (the check operation and the findings panel), so
+// an agent sees exactly what CI sees.
 
 import { createHash } from "node:crypto";
 import { sameFinding } from "./assess.ts";
-import { isError, type Diagnostic, type K005Reason } from "./diag.ts";
-import type { Verdict } from "./verdict.ts";
+import { formatDiagnostic, isError, type Diagnostic, type K005Reason } from "./diag.ts";
+import { formatVerdict, type Verdict } from "./verdict.ts";
 
 type Provenance = NonNullable<Verdict["evidence"]>["provenance"];
 
@@ -65,4 +66,35 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       ...(verdict.evidence ?? { provenance: "syntactic" }),
     }));
   return [...fromDiags, ...fromVerdicts];
+}
+
+/** What `keylang check` reports, whatever the format: the verdicts decide it, the format only shows it. */
+export interface CheckReport {
+  /** The `--format json` results. */
+  results: CheckResult[];
+  /** The `--format human` lines: every diagnostic, then the verdicts that repeat none (an `ok` only for an evidence channel). */
+  lines: string[];
+  /** The summary on stderr: errors and failed verdicts, unverified and ok verdicts. */
+  counts: { fail: number; unverified: number; ok: number };
+}
+
+/** Evidence channels whose `ok` the human lines keep. */
+const CHANNELS: ReadonlySet<string> = new Set(["ID", "static", "tests", "trace"]);
+
+export function checkReport(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckReport {
+  const own = verdicts.filter((verdict) => !sameFinding(verdict, diags));
+  return {
+    results: checkResults(verdicts, snapshotId, diags),
+    lines: [...diags.map(formatDiagnostic), ...own.filter((verdict) => verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion)).map(formatVerdict)],
+    counts: {
+      fail: diags.filter(isError).length + own.filter((verdict) => verdict.verdict === "fail").length,
+      unverified: verdicts.filter((verdict) => verdict.verdict === "unverified").length,
+      ok: verdicts.filter((verdict) => verdict.verdict === "ok").length,
+    },
+  };
+}
+
+/** The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible. */
+export function checkExitCode(counts: CheckReport["counts"], strict: boolean): 0 | 1 {
+  return counts.fail > 0 || (strict && counts.unverified > 0) ? 1 : 0;
 }

@@ -72,10 +72,14 @@
     - assess check.assess
     - diag base.diag
     - verdict check.verdict
-    - type [Provenance](../../src/check-results.ts#L10) = NonNullable<Verdict["evidence"]>["provenance"] <!-- internal -->
-    - type [CheckResult](../../src/check-results.ts#L12)
-    - fn [checkResults](../../src/check-results.ts#L34) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
+    - type [Provenance](../../src/check-results.ts#L11) = NonNullable<Verdict["evidence"]>["provenance"] <!-- internal -->
+    - type [CheckResult](../../src/check-results.ts#L13)
+    - fn [checkResults](../../src/check-results.ts#L35) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
       - calls check.assess.sameFinding, base.diag.isError
+    - type [CheckReport](../../src/check-results.ts#L72)
+    - fn [checkReport](../../src/check-results.ts#L84) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
+      - calls check.assess.sameFinding, features.check-results.checkResults
+    - fn [checkExitCode](../../src/check-results.ts#L98) (counts: CheckReport["counts"], strict: boolean) → 0 | 1
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess

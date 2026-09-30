@@ -16,7 +16,7 @@ import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts
 import { analyze, findRoot, within } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
-import { checkResults, type CheckResult } from "./check-results.ts";
+import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { tracePlan } from "./trace-plan.ts";
@@ -30,7 +30,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckPayload, type OperationEnvelope } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -978,6 +978,16 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     return explainEdge(paths, analyzed.snapshot);
   }
   const root = findRoot(cwd);
+  if (!opts.changed) {
+    const result = await runOperation({ kind: "check", root, paths, base: cwd, strict: opts.strict, ...(staticMode ? { static: staticMode } : {}) });
+    if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
+    const { payload } = result;
+    for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+    writeCheck(opts.format, payload);
+    process.stderr.write(`${checkSummary(payload.counts)}\n`);
+    return result.exitCode ?? 2;
+  }
+  // `--changed` narrows the report to a git slice; it runs here until it becomes an operation of its own.
   const config = loadConfig(root);
   if (paths.length === 0 && !existsSync(join(root, config.dir))) throw new Error(`no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
   const specs = paths.length > 0 ? paths.map((p) => resolve(cwd, p)) : [join(root, config.dir)];
@@ -991,27 +1001,16 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     ...(staticMode ? { static: staticMode } : {}),
     ...(inRepo ? {} : { withoutCode: true }),
   });
-  for (const path of analyzed.notSpecs) process.stderr.write(`keylang: note: ${path}: the explained map and saved explanations are not specs; skipped\n`);
-  const gitChanged = opts.changed ? gitChangedFiles(root, opts.since ?? "HEAD") : null;
-  const changed = gitChanged === null ? null : changedPathSet(root, gitChanged.paths, cwd);
-  const deleted = gitChanged === null ? [] : deletedModuleIds(config, gitChanged.deleted);
-  const filtered = changed === null ? null : filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
-  const diags = filtered?.diagnostics ?? analyzed.diagnostics;
-  const snapshot = analyzed.snapshot;
-  const channel = filtered?.verdicts ?? analyzed.verdicts;
-  const unverified = channel.filter((verdict) => verdict.verdict === "unverified");
-  const oks = channel.filter((verdict) => verdict.verdict === "ok").length;
-  const fails = diags.filter(isError).length + channel.filter((verdict) => verdict.verdict === "fail" && !sameFinding(verdict, diags)).length;
-  const channels = new Set(["ID", "static", "tests", "trace"]);
-  const rendered = [
-    ...diags.map(formatDiagnostic),
-    ...channel.filter((verdict) => !sameFinding(verdict, diags) && (verdict.verdict !== "ok" || channels.has(verdict.criterion))).map(formatVerdict),
-  ];
-  writeCheck(opts.format, rendered, channel, snapshot, diags);
-  process.stderr.write(`${fails} fail, ${unverified.length} unverified, ${oks} ok\n`);
-  if (fails > 0) return 1;
-  if (opts.strict && unverified.length > 0) return 1;
-  return 0;
+  for (const path of analyzed.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+  const gitChanged = gitChangedFiles(root, opts.since ?? "HEAD");
+  const changed = changedPathSet(root, gitChanged.paths, cwd);
+  const deleted = deletedModuleIds(config, gitChanged.deleted);
+  const filtered = filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
+  const snapshotId = analyzed.snapshot?.snapshotId ?? null;
+  const report = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
+  writeCheck(opts.format, { ...report, snapshotId, coverage: analyzed.snapshot?.coverage ?? [] });
+  process.stderr.write(`${checkSummary(report.counts)}\n`);
+  return checkExitCode(report.counts, opts.strict);
 }
 
 function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
@@ -1048,13 +1047,13 @@ function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
   return 0;
 }
 
-function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]): void {
+/** Shows one check report in a format; the report, its verdicts and its code do not depend on the format. */
+function writeCheck(format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">): void {
   if (format === "human") {
-    for (const line of lines) process.stdout.write(`${line}\n`);
+    for (const line of report.lines) process.stdout.write(`${line}\n`);
     return;
   }
-  const snapshotId = snapshot?.snapshotId ?? null;
-  const results = checkResults(verdicts, snapshotId, diags);
+  const { snapshotId, results } = report;
   if (format === "github") {
     for (const result of results) {
       if (result.verdict === "ok") continue;
@@ -1064,7 +1063,7 @@ function writeCheck(format: string, lines: string[], verdicts: Verdict[], snapsh
     return;
   }
   if (format === "json") {
-    process.stdout.write(`${JSON.stringify({ snapshotId, results, coverage: snapshot?.coverage ?? [] }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ snapshotId, results, coverage: report.coverage }, null, 2)}\n`);
     return;
   }
   const reported = results.filter((result) => result.verdict !== "ok");

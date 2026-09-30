@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import { WIRE_OUT, type AgentsPayload, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type WirePayload } from "../operations.ts";
+import { WIRE_OUT, type AgentsPayload, type CheckPayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type WirePayload } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -433,6 +433,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "agents") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
   if (record.params.kind === "fmt") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.paths.join(" ")}`;
   if (record.params.kind === "wire") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.out ?? WIRE_OUT}`;
+  if (record.params.kind === "check") return `${label} · ${checkParams(record.params)}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -442,6 +443,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "agents") return request.check ? "agents check" : "agents write";
   if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
   if (request.kind === "wire") return request.check ? "wire check" : "wire write";
+  if (request.kind === "check") return request.strict ? "check --strict" : "check";
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -464,8 +466,19 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "fmt" && result.payload !== null) return `${fmtOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "check" && result.payload !== null) return `${checkOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
+}
+
+/** The requested check options as the F6 list names them: `keylang · strict · static shape`. */
+function checkParams(request: CheckRequest): string {
+  return [request.paths.length > 0 ? request.paths.join(" ") : "spec directory", request.strict ? "strict" : "not strict", `static ${request.static ?? "from config"}`].join(" · ");
+}
+
+/** `0 fail, 2 unverified, 5 ok`: the CLI's summary line. */
+function checkOutcome(payload: CheckPayload): string {
+  return `${payload.counts.fail} fail, ${payload.counts.unverified} unverified, ${payload.counts.ok} ok`;
 }
 
 /** `written`, `up to date`, `stale`, `2 error(s) in wiring`, `manual file`, `inputs changed, nothing written`: what wire found and really did. */
@@ -650,6 +663,23 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     }
     if (payload.steps.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
     rows.push({ text: "Files only: no client is started or tested.", style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "check" && result.payload !== null) {
+    // A report of the saved files, apart from the pinned current analysis: its options, its outcome, then every result.
+    const { payload } = result;
+    const { options } = payload;
+    const from = options.staticFrom === "request" ? "override" : options.staticFrom === "config" ? "keylang.json check.static" : "default";
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    rows.push({ text: `Check · read-only, nothing written · saved files · ${options.paths.join(" ")}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `strict ${options.strict ? "on" : "off"} · static ${options.static} (${from}) · snapshot ${payload.snapshotId === null ? "none" : payload.snapshotId.slice(0, 8)}`, style: { ...THEME.panel, fg: 243 } });
+    rows.push({ text: `${checkOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    // Code 0 is not proof: unverified verdicts stay visible as incomplete evidence.
+    if (!options.strict && payload.counts.unverified > 0) rows.push({ text: `  incomplete: ${payload.counts.unverified} unverified, not proven · strict would make it code 1`, style: { ...THEME.panel, fg: 179 } });
+    if (options.withoutCode) rows.push({ text: "  specs outside the spec directory: checked on their own, without the code", style: { ...THEME.panel, fg: 243 } });
+    for (const path of payload.notSpecs) rows.push({ text: `  ${path}: the explained map and saved explanations are not specs; skipped`, style: { ...THEME.panel, fg: 243 } });
+    payload.results.forEach((item, index) => {
+      rows.push({ text: `${FINDING_GLYPH[item.verdict]} ${findingRow(item)}`, style: index === selected ? THEME.selected : item.verdict === "ok" ? { ...THEME.panel, fg: 243 } : THEME.panel, gap: index });
+    });
+    if (payload.coverage.length > 0) rows.push({ text: `coverage: ${payload.coverage.length} unresolved construct(s) in the code`, style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "wire" && result.payload !== null) {
     // The generated file with what happened to it; the code itself opens read-only on Enter.
     const { payload } = result;
@@ -783,8 +813,21 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const analysis = results.entry === "analysis";
   const record = records[results.index];
   const gaps = record?.result?.kind === "feature" && (record.result.payload?.report.gaps.length ?? 0) > 0;
+  const checked = record?.result?.kind === "check" && (record.result.payload?.results.length ?? 0) > 0;
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
-  const hint = analysis ? " Enter open · Tab findings · Esc back " : record?.status === "running" ? " x cancel · Esc back " : gaps ? (results.scrollReport ? " Enter open gap · Tab entries · Esc back " : " Enter rerun · Tab gaps · Esc back ") : " Enter rerun · Esc back ";
+  const hint = analysis
+    ? " Enter open · Tab findings · Esc back "
+    : record?.status === "running"
+      ? " x cancel · Esc back "
+      : gaps
+        ? results.scrollReport
+          ? " Enter open gap · Tab entries · Esc back "
+          : " Enter rerun · Tab gaps · Esc back "
+        : checked
+          ? results.scrollReport
+            ? " Enter open finding · Tab entries · Esc back "
+            : " Enter rerun · Tab findings · Esc back "
+          : " Enter rerun · Esc back ";
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
@@ -953,10 +996,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -968,7 +1011,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 

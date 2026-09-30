@@ -198,33 +198,33 @@
       - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [cli.cli.keylangFiles](cli.md#cli.cli.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [cli.cli.printTree](cli.md#cli.cli.printTree), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
     - fn [cmdCheck](../../src/cli.ts#L964) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
-      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.explainEdge](cli.md#cli.cli.explainEdge), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [check.assess.sameFinding](check.md#check.assess.sameFinding), [cli.cli.writeCheck](cli.md#cli.cli.writeCheck)
-    - fn [explainEdge](../../src/cli.ts#L1017) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+      - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.explainEdge](cli.md#cli.cli.explainEdge), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [cli.cli.writeCheck](cli.md#cli.cli.writeCheck), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.check-results.checkReport](features.md#features.check-results.checkReport), [features.check-results.checkExitCode](features.md#features.check-results.checkExitCode)
+    - fn [explainEdge](../../src/cli.ts#L1016) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       <a id="cli.cli.explainEdge"></a>
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [writeCheck](../../src/cli.ts#L1051) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
-      <a id="cli.cli.writeCheck"></a>
-      - calls [features.check-results.checkResults](features.md#features.check-results.checkResults), [cli.cli.githubProperty](cli.md#cli.cli.githubProperty), [cli.cli.ruleOf](cli.md#cli.cli.ruleOf), [cli.cli.githubData](cli.md#cli.cli.githubData), [cli.cli.ruleText](cli.md#cli.cli.ruleText)
-    - fn [ruleOf](../../src/cli.ts#L1104) (result: CheckResult) → string <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1051) (format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">) → void <!-- internal -->
+      <a id="cli.cli.writeCheck"></a><br>Shows one check report in a format; the report, its verdicts and its code do not depend on the format.
+      - calls [cli.cli.githubProperty](cli.md#cli.cli.githubProperty), [cli.cli.ruleOf](cli.md#cli.cli.ruleOf), [cli.cli.githubData](cli.md#cli.cli.githubData), [cli.cli.ruleText](cli.md#cli.cli.ruleText)
+    - fn [ruleOf](../../src/cli.ts#L1103) (result: CheckResult) → string <!-- internal -->
       <a id="cli.cli.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
-    - fn [ruleText](../../src/cli.ts#L1116) (id: string) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1115) (id: string) → string <!-- internal -->
       <a id="cli.cli.ruleText"></a>
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [githubData](../../src/cli.ts#L1122) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1121) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubData"></a>
-    - fn [githubProperty](../../src/cli.ts#L1126) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1125) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubProperty"></a>
       - calls [cli.cli.githubData](cli.md#cli.cli.githubData)
-    - fn [cmdFmt](../../src/cli.ts#L1137) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1136) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [printTree](../../src/cli.ts#L1151) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1150) (doc: Document) → void <!-- internal -->
       <a id="cli.cli.printTree"></a>
       - calls [cli.cli.printNode](cli.md#cli.cli.printNode)
-    - fn [printNode](../../src/cli.ts#L1159) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1158) (n: Node, depth: number) → void <!-- internal -->
       <a id="cli.cli.printNode"></a>
       - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [gitChanges](../../src/cli.ts#L1172) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1171) (root: string, ref: string) → ChangedLines <!-- internal -->
       <a id="cli.cli.gitChanges"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet, relative to `root`.
       - calls [features.draft.diffHunks](features.md#features.draft.diffHunks)
   - module [index](../../src/index.ts#L1)

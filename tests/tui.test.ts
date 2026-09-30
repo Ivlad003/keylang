@@ -28,6 +28,7 @@ import { inline } from "../src/tui/markdown.ts";
 import { editorCommand, runTerminal, splitCommand, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { textToSpec } from "../src/tui/text-to-spec.ts";
 import { stringWidth } from "../src/tui/width.ts";
+import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -4808,4 +4809,298 @@ test("tui: a spec or the target changed between the computation and the write re
   assert.match(readFileSync(wiring, "utf8"), /^# wiring <!-- saved first -->\n/);
   assert.equal(s.app.state.buffers.get("keylang/wiring.md")!.text, s.app.state.buffers.get("keylang/wiring.md")!.saved);
   assert.equal(cliWire(root, ["--check"]).status, 0);
+});
+
+// ---------- full check: paths, strict, static ----------
+
+const LEFT = "\x1b[D";
+
+function cliCheck(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "check", ...args], { cwd: root, encoding: "utf8" });
+}
+
+/**
+ * The palette's full check: the form, then its paths replaced by `paths`
+ * (null keeps the default), strict and the static mode set with ←→ on their
+ * rows, then Enter on the run row.
+ */
+function checkForm(app: App, send: (keys: string) => void, options: { paths?: string; strict?: boolean; static?: "config" | "behavior" | "shape" } = {}): void {
+  send(KEY.ctrlP);
+  for (const ch of "keylang check") send(ch);
+  send(KEY.enter);
+  assert.equal(app.state.prompt?.kind, "full-check");
+  if (options.paths !== undefined) {
+    for (const _ of app.state.prompt!.text) send("\x7f");
+    for (const ch of options.paths) send(ch);
+  }
+  // The rows: strict, static, run (selected first).
+  send(KEY.up);
+  send(KEY.up);
+  if (options.strict) send(KEY.right);
+  send(KEY.down);
+  const steps = { config: 0, behavior: 1, shape: 2 }[options.static ?? "config"];
+  for (let i = 0; i < steps; i++) send(KEY.right);
+  send(KEY.down);
+  send(KEY.enter);
+}
+
+function checkPayload(record: App["state"]["records"][number] | undefined): NonNullable<Extract<OperationResult, { kind: "check" }>["payload"]> {
+  const result = record?.result;
+  assert.ok(result?.kind === "check" && result.payload !== null, JSON.stringify(result?.messages));
+  return result.payload;
+}
+
+/** What `keylang check --format json` prints, from a record's payload. */
+function checkJson(record: App["state"]["records"][number] | undefined): unknown {
+  const payload = checkPayload(record);
+  return { snapshotId: payload.snapshotId, results: payload.results, coverage: payload.coverage };
+}
+
+test("tui: full check and strict give the CLI's codes on the same evidence; the format changes no verdict; nothing is written; the current analysis stays apart", async (t) => {
+  const root = checkoutRepo(t);
+  let quit = 0;
+  const vt = new VirtualTerminal(110, 30);
+  const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  t.after(() => app.close());
+  const send = (keys: string): void => app.input(keys);
+  await app.idle();
+  const analysis = app.state.analysis;
+  const findings = findingsOf(analysis);
+  const before = treeBytes(root);
+  // The form: the spec directory, not strict, the static mode of keylang.json (the default here).
+  send(KEY.ctrlP);
+  for (const ch of "keylang check") send(ch);
+  send(KEY.enter);
+  assert.equal(app.state.prompt?.text, "keylang");
+  assert.deepEqual(app.state.prompt?.items, ["strict: off · unverified stays visible; code 0 unless something fails", "static: behavior, the default", "Run the check (writes nothing)"]);
+  assert.match(promptNote(app), /^2 spec file\(s\) · ←→ change the selected option$/);
+  await esc(send);
+  checkForm(app, send);
+  await app.idle();
+  const normal = app.state.records.at(-1)!;
+  assert.deepEqual([normal.status, normal.result!.exitCode, normal.result!.written], ["completed", 0, []]);
+  checkForm(app, send, { strict: true });
+  await app.idle();
+  const strict = app.state.records.at(-1)!;
+  assert.deepEqual([strict.status, strict.result!.exitCode], ["completed", 1]);
+  // The same evidence under both policies: only the code differs.
+  assert.deepEqual(checkJson(strict), checkJson(normal));
+  const payload = checkPayload(normal);
+  assert.ok(payload.results.some((result) => result.criterion === "ID" && result.verdict === "ok"));
+  assert.ok(payload.results.some((result) => result.criterion === "trace" && result.verdict === "unverified"));
+  assert.deepEqual(payload.options, { paths: ["keylang"], strict: false, static: "behavior", staticFrom: "default", withoutCode: false });
+  assert.equal(checkPayload(strict).options.strict, true);
+  // The CLI on the same saved files: JSON equal to the payload, the human lines and summary, every format the same code.
+  for (const [record, flags] of [[normal, []], [strict, ["--strict"]]] as const) {
+    const json = cliCheck(root, [...flags, "--format", "json"]);
+    assert.equal(json.status, record.result!.exitCode, json.stderr);
+    assert.deepEqual(JSON.parse(json.stdout), checkJson(record));
+    const human = cliCheck(root, [...flags]);
+    assert.equal(human.stdout, checkPayload(record).lines.map((line) => `${line}\n`).join(""));
+    assert.equal(human.stderr, record.result!.messages.filter((message) => message.level !== "info" || !checkPayload(record).lines.includes(message.text)).map((message) => `${message.text}\n`).join(""));
+    for (const format of ["sarif", "github"]) assert.equal(cliCheck(root, [...flags, "--format", format]).status, record.result!.exitCode, format);
+  }
+  assert.deepEqual(treeBytes(root), before, "neither the TUI nor the CLI check wrote anything");
+  // The pinned current analysis is not replaced by the disk report.
+  assert.equal(app.state.analysis, analysis);
+  assert.deepEqual(findingsOf(app.state.analysis), findings);
+  // F6: the report with its options and the visible incompleteness; every result opens its position.
+  send(KEY.f6);
+  send(KEY.up);
+  assert.match(vt.text(), /Check: paths, strict, static · keylang · not strict · static from config/);
+  assert.match(vt.text(), /Check · read-only, nothing written · saved files · keylang/);
+  assert.match(vt.text(), /strict off · static behavior \(default\)/);
+  assert.match(vt.text(), /0 fail, \d+ unverified, \d+ ok · code 0/);
+  assert.match(vt.text(), /incomplete: \d+ unverified, not proven · strict would make it code 1/);
+  send(KEY.tab);
+  const trace = payload.results.findIndex((result) => result.criterion === "trace");
+  for (let i = 0; i < trace; i++) send(KEY.down);
+  assert.match(app.state.message ?? "", /^unverified trace: .* · Enter opens keylang\/flows\/checkout\.md:\d+$/);
+  send(KEY.enter);
+  assert.equal(app.state.results.viewing, true);
+  assert.equal(app.state.current, "keylang/flows/checkout.md");
+  assert.equal(app.state.cursor.line, payload.results[trace]!.line - 1);
+  await esc(send);
+  assert.equal(app.state.results.viewing, false);
+  await esc(send);
+  send("q");
+  assert.equal(quit, 1);
+});
+
+test("terminal: quitting after a strict check with code 1 and a failed check with code 2 returns 0", async (t) => {
+  const root = checkoutRepo(t);
+  const term = fakeTerminal();
+  const running = runTerminal(root, term.host);
+  // The frames are diffs: the screen is what they draw, not their concatenated text.
+  const screen = (): string => {
+    const vt = new VirtualTerminal(100, 30);
+    for (const chunk of term.out) vt.feed(chunk);
+    return vt.text();
+  };
+  await waitUntil(() => screen().includes("checkout"), "the first frame");
+  const form = (paths: string, strict: boolean): void => {
+    term.type(KEY.ctrlP);
+    for (const ch of "keylang check") term.type(ch);
+    term.type(KEY.enter);
+    for (const _ of "keylang") term.type("\x7f");
+    for (const ch of paths) term.type(ch);
+    term.type(KEY.up);
+    term.type(KEY.up);
+    if (strict) term.type(KEY.right);
+    term.type(KEY.enter);
+  };
+  form("keylang", true);
+  await waitUntil(() => /check --strict: 0 fail, \d+ unverified, \d+ ok · code 1/.test(screen()), "the strict check");
+  form("keylang/nope", false);
+  await waitUntil(() => screen().includes("check: failed · code 2"), "the failed check");
+  term.type("q");
+  assert.equal(await running, 0);
+});
+
+test("tui: static behavior and shape match the CLI on a hook's default and are named: override, keylang.json or the default", async (t) => {
+  const layers = { domain: ["src/domain/**"], application: ["src/application/**"], presentation: ["src/presentation/**"] };
+  const hooksRepo = (check: Record<string, string>): string =>
+    repoWith(t, { ...HOOKS, "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers, check }, null, 2)}\n`, "keylang/flows/hooks.md": HOOK_FLOW });
+  const root = hooksRepo({});
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  for (const [mode, flags] of [["config", []], ["behavior", ["--static=behavior"]], ["shape", ["--static=shape"]]] as const) {
+    checkForm(s.app, s.send, { static: mode });
+    await s.app.idle();
+    const record = s.app.state.records.at(-1)!;
+    const cli = cliCheck(root, [...flags, "--format", "json"]);
+    assert.equal(record.result!.exitCode, cli.status, mode);
+    assert.deepEqual(checkJson(record), JSON.parse(cli.stdout), mode);
+    assert.equal((record.params as { static?: string }).static, mode === "config" ? undefined : mode);
+  }
+  const [plain, behavior, shape] = s.app.state.records.map(checkPayload);
+  assert.deepEqual([plain!.options.static, plain!.options.staticFrom], ["behavior", "default"]);
+  assert.deepEqual([behavior!.options.static, behavior!.options.staticFrom], ["behavior", "request"]);
+  assert.deepEqual([shape!.options.static, shape!.options.staticFrom], ["shape", "request"]);
+  assert.ok(plain!.results.some((result) => result.criterion === "static" && result.verdict === "ok" && /through the default of the hook `generate`/.test(result.evidence)));
+  assert.ok(shape!.results.some((result) => result.criterion === "static" && result.verdict === "unverified" && /not followed in static mode shape, set by --static/.test(result.evidence)));
+  s.send(KEY.f6);
+  assert.match(s.text(), /static shape \(override\)/);
+  await esc(s.send);
+  // The mode of keylang.json is named as such, and an override still wins over it.
+  const shaped = hooksRepo({ static: "shape" });
+  const t2 = session(shaped);
+  t.after(() => t2.app.close());
+  await t2.app.idle();
+  t2.send(KEY.ctrlP);
+  for (const ch of "keylang check") t2.send(ch);
+  t2.send(KEY.enter);
+  assert.equal(t2.app.state.prompt?.items[1], "static: shape, from keylang.json check.static");
+  t2.send(KEY.up);
+  t2.send(KEY.right);
+  assert.equal(t2.app.state.prompt?.items[1], "static: behavior, override of keylang.json");
+  t2.send(LEFT);
+  t2.send(KEY.enter);
+  await t2.app.idle();
+  const configured = t2.app.state.records.at(-1)!;
+  assert.deepEqual([checkPayload(configured).options.static, checkPayload(configured).options.staticFrom], ["shape", "config"]);
+  assert.deepEqual(checkJson(configured), JSON.parse(cliCheck(shaped, ["--format", "json"]).stdout));
+  t2.send(KEY.f6);
+  assert.match(t2.text(), /static shape \(keylang\.json check\.static\)/);
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("tui: a chosen file narrows the report as the CLI does; an explanation path is skipped with the CLI's note; a missing path or a broken config is code 2", async (t) => {
+  const explanation = "<!-- keylang:explain agent=mock date=2026-09-30 closure=abc lang=en detail=short -->\nWhat buy does.\n";
+  const other = "# flow other\n\n- trigger domain.order.create\n- step domain.order.nope\n";
+  const root = checkoutRepo(t, { "keylang/flows/other.md": other, "keylang/explain/application.purchase.buy.md": explanation });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  const file = "keylang/flows/checkout.md";
+  checkForm(s.app, s.send, { paths: file });
+  await s.app.idle();
+  const narrow = s.app.state.records.at(-1)!;
+  const cli = cliCheck(root, [file, "--format", "json"]);
+  assert.equal(narrow.result!.exitCode, cli.status);
+  assert.deepEqual(checkJson(narrow), JSON.parse(cli.stdout));
+  assert.ok(checkPayload(narrow).results.every((result) => result.file !== "keylang/flows/other.md"));
+  // The whole directory has the failing step of the other flow: code 1, as the CLI.
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  const whole = s.app.state.records.at(-1)!;
+  assert.equal(whole.result!.exitCode, 1);
+  assert.equal(cliCheck(root, []).status, 1);
+  assert.ok(checkPayload(whole).results.some((result) => result.file === "keylang/flows/other.md" && result.verdict === "fail"));
+  // A saved explanation is not a spec: skipped with the same note.
+  checkForm(s.app, s.send, { paths: `${file} keylang/explain` });
+  await s.app.idle();
+  const skipped = s.app.state.records.at(-1)!;
+  const cliSkipped = cliCheck(root, [file, "keylang/explain", "--format", "json"]);
+  assert.deepEqual(checkPayload(skipped).notSpecs, ["keylang/explain"]);
+  assert.match(cliSkipped.stderr, /^keylang: note: keylang\/explain: the explained map and saved explanations are not specs; skipped\n/);
+  assert.equal(cliSkipped.stderr.split("\n")[0], `keylang: ${skipped.result!.messages[0]!.text}`);
+  assert.deepEqual(checkJson(skipped), JSON.parse(cliSkipped.stdout));
+  s.send(KEY.f6);
+  assert.match(s.text(), /keylang\/explain: the explained map and saved explanations are not specs/);
+  await esc(s.send);
+  // A missing path: code 2 with the CLI's message; the session goes on.
+  checkForm(s.app, s.send, { paths: "keylang/nope" });
+  await s.app.idle();
+  const missing = s.app.state.records.at(-1)!;
+  const cliMissing = cliCheck(root, ["keylang/nope"]);
+  assert.deepEqual([missing.status, missing.result!.exitCode, cliMissing.status], ["failed", 2, 2]);
+  assert.equal(`keylang: ${missing.result!.messages[0]!.text}\n`, cliMissing.stderr);
+  // A path out of the repository is refused in the form.
+  checkForm(s.app, s.send, { paths: "../elsewhere" });
+  assert.equal(s.app.state.prompt?.kind, "full-check");
+  assert.match(s.app.state.message ?? "", /check: \.\.\/elsewhere: outside the repository/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before);
+  // A broken keylang.json on disk: code 2, the CLI's message.
+  writeFileSync(join(root, "keylang.json"), "{ nope");
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  const broken = s.app.state.records.at(-1)!;
+  const cliBroken = cliCheck(root, []);
+  assert.deepEqual([broken.status, broken.result!.exitCode, cliBroken.status], ["failed", 2, 2]);
+  assert.equal(`keylang: ${broken.result!.messages[0]!.text}\n`, cliBroken.stderr);
+});
+
+test("tui: the check saves the chosen dirty spec first as its own step — Back writes nothing; other dirty buffers stay; the check reads the saved text", async (t) => {
+  const root = checkoutRepo(t, { "keylang/notes/other.md": "# notes\n" });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const flow = "keylang/flows/checkout.md";
+  // Dirty the flow with an unknown step, and another spec outside the chosen path.
+  // Typed on the last (empty) line of each file.
+  const edit = async (path: string, text: string): Promise<void> => {
+    s.send(KEY.ctrlP);
+    for (const ch of `open ${path}`) s.send(ch);
+    s.send(KEY.enter);
+    assert.equal(s.app.state.current, path);
+    s.app.state.cursor = { line: s.app.state.buffers.get(path)!.text.split("\n").length - 1, col: 0 };
+    s.send("i");
+    for (const ch of text) s.send(ch);
+    await esc(s.send);
+  };
+  await edit("keylang/notes/other.md", "Unsaved.");
+  await edit(flow, "- step domain.order.nope");
+  const before = treeBytes(root);
+  checkForm(s.app, s.send, { paths: flow });
+  assert.deepEqual(s.app.state.barrier?.files, [flow], "only the chosen spec is an input");
+  await esc(s.send);
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.records.length, 0, "Back starts nothing");
+  assert.deepEqual(treeBytes(root), before, "Back writes nothing");
+  checkForm(s.app, s.send, { paths: flow });
+  s.send(KEY.enter);
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.match(readFileSync(join(root, flow), "utf8"), /^# flow checkout[\s\S]*\n- step domain\.order\.nope\n?$/);
+  assert.equal(isDirtyBuffer(s.app, flow), false);
+  assert.equal(readFileSync(join(root, "keylang/notes/other.md"), "utf8"), "# notes\n", "the other dirty buffer stays unsaved");
+  assert.equal(record.result!.exitCode, 1);
+  assert.deepEqual(checkJson(record), JSON.parse(cliCheck(root, [flow, "--format", "json"]).stdout));
+  assert.ok(checkPayload(record).results.some((result) => result.verdict === "fail" && result.evidence.includes("domain.order.nope")));
 });

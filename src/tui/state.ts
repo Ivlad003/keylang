@@ -2,6 +2,7 @@
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
 
 import type { Analysis } from "../analyze.ts";
+import type { StaticMode } from "../config.ts";
 import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
@@ -115,9 +116,10 @@ export interface Prompt {
    * `baseline`: write or check `<dir>/rules.baseline.md` (the items; `ids` are `write` / `check`);
    * `agents`: the harness selection as typed (empty is auto, `none`, or names as in `--agents`) and the mode (`ids` are `write` / `check`);
    * `fmt`: the files and directories to format, relative to the root and separated by spaces, and the mode (`ids` are `write` / `check`);
-   * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`).
+   * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
+   * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "fmt" | "wire";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "fmt" | "wire" | "full-check";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -130,6 +132,8 @@ export interface Prompt {
   index: number;
   /** `new-spec`: the field being typed and the fields already chosen. Esc at any field creates nothing. */
   form?: NewSpecForm;
+  /** `full-check`: strict, and the static mode (null: what keylang.json says, then `behavior`). */
+  checkOptions?: { strict: boolean; static: StaticMode | null };
 }
 
 /** The kinds of a new specification: its first text follows the kind (design §2.8). */
@@ -274,8 +278,8 @@ export interface State {
    * records. `top` is the first report row of a record or the first finding
    * row of the analysis; `scrollReport` routes the arrows from the entries to
    * the report or the findings. `filter` only hides verdicts: the report is
-   * unchanged. `gap` is the selected gap of a feature record (Tab moves the
-   * arrows to its gaps). `viewing` hides the panel while a finding's or gap's target is shown;
+   * unchanged. `gap` is the selected item of a record: a gap of a feature
+   * record, a result of a check record (Tab moves the arrows to them). `viewing` hides the panel while a finding's or gap's target is shown;
    * leaving it puts back `origin`, where the finding was opened from.
    * `previousFocus` is where Esc returns when the panel closes.
    */

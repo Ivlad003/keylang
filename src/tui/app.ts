@@ -21,7 +21,7 @@ import { createRequire } from "node:module";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
-import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, toPosix } from "../config.ts";
+import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATIC_MODES, toPosix, type StaticMode } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
@@ -510,7 +510,12 @@ export class App {
     const snapshotId = analysis.snapshot?.snapshotId ?? null;
     for (const record of this.state.records) {
       const result = record.result;
-      const computedOn = result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true) ? (result.payload?.snapshot ?? undefined) : undefined;
+      const computedOn =
+        result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
+          ? (result.payload?.snapshot ?? undefined)
+          : result?.kind === "check"
+            ? (result.payload?.snapshotId ?? undefined)
+            : undefined;
       if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
@@ -1660,9 +1665,9 @@ export class App {
 
   // ---------- operations and results (F6) ----------
 
-  /** Records that an input changed: a feature result computed before it is outdated from now on. */
+  /** Records that an input changed: a feature or check result computed before it is outdated from now on. */
   private inputsChanged(reason: string): void {
-    for (const record of this.state.records) if (record.kind === "feature") record.outdated ??= reason;
+    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check") record.outdated ??= reason;
   }
 
   /**
@@ -1692,6 +1697,13 @@ export class App {
       // Fmt reads the saved bytes of the chosen files and the edition in keylang.json: those dirty
       // buffers are saved first; other dirty specs stay dirty and are never formatted behind them.
       const selected = request.paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
+      const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
+    }
+    if (request.kind === "check") {
+      // Check reads the saved specs under its paths and the saved keylang.json: those dirty buffers are
+      // saved first; other dirty buffers stay dirty. The check itself never writes.
+      const selected = (request.paths.length > 0 ? request.paths : [this.specDir()]).map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
       const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
     }
@@ -2140,6 +2152,80 @@ export class App {
     if (target) this.openTarget(target.file, target.line, target.col);
   }
 
+  // ---------- full check ----------
+
+  /** The check form: the spec directory by default, not strict, the static mode of keylang.json. */
+  private openCheckPrompt(): void {
+    this.state.prompt = { kind: "full-check", text: this.specDir(), items: [], ids: ["strict", "static", "run"], index: 2, checkOptions: { strict: false, static: null } };
+    this.refreshCheckPrompt();
+  }
+
+  /** The typed paths, relative to the root (none: the spec directory), or why they cannot be checked here. */
+  private checkPaths(): string[] | { error: string } {
+    const paths = (this.state.prompt?.text ?? "").trim().split(/\s+/).filter((path) => path !== "");
+    const outside = paths.find((path) => !within(resolve(this.state.root, path), this.state.root));
+    return outside === undefined ? paths : { error: `${outside}: outside the repository` };
+  }
+
+  /** The options as items, and the real set of spec files the paths expand to. Reading only. */
+  private refreshCheckPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "full-check" || !prompt.checkOptions) return;
+    const options = prompt.checkOptions;
+    let configured: StaticMode | undefined;
+    try {
+      configured = loadConfig(this.state.root).check.static;
+    } catch {
+      configured = undefined;
+    }
+    const effective = resolveStatic(options.static ?? undefined, configured).mode;
+    prompt.items = [
+      options.strict ? "strict: on · an unverified verdict fails (code 1)" : "strict: off · unverified stays visible; code 0 unless something fails",
+      options.static === null ? `static: ${effective}, ${configured === undefined ? "the default" : "from keylang.json check.static"}` : `static: ${options.static}, override of keylang.json`,
+      "Run the check (writes nothing)",
+    ];
+    const paths = this.checkPaths();
+    if (!Array.isArray(paths)) {
+      prompt.note = paths.error;
+      return;
+    }
+    let files: string[];
+    try {
+      files = collectMdFiles(paths.length > 0 ? paths : [this.specDir()], this.state.root).map((file) => toPosix(relative(this.state.root, resolve(this.state.root, file))));
+    } catch (error) {
+      prompt.note = `${errorText(error)} · ←→ change the selected option`;
+      return;
+    }
+    const dirty = new Set(this.dirtyInputs());
+    const unsaved = files.filter((file) => dirty.has(file)).length + (dirty.has(CONFIG_FILE) ? 1 : 0);
+    prompt.note = `${files.length} spec file(s)${unsaved > 0 ? ` · ${unsaved} unsaved, saved first` : ""} · ←→ change the selected option`;
+  }
+
+  /** ←→ on an option of the check form: strict flips; the static mode cycles config → behavior → shape. */
+  private changeCheckOption(delta: 1 | -1): void {
+    const prompt = this.state.prompt;
+    const options = prompt?.checkOptions;
+    if (!prompt || !options) return;
+    if (prompt.ids?.[prompt.index] === "strict") options.strict = !options.strict;
+    if (prompt.ids?.[prompt.index] === "static") {
+      const modes: (StaticMode | null)[] = [null, ...STATIC_MODES];
+      options.static = modes[(modes.indexOf(options.static) + delta + modes.length) % modes.length]!;
+    }
+    this.refreshCheckPrompt();
+  }
+
+  /** Enter in the check form, on any row: the typed paths with the chosen options run as the session's operation. */
+  private submitCheck(): void {
+    const options = this.state.prompt?.checkOptions ?? { strict: false, static: null };
+    const paths = this.checkPaths();
+    if (!Array.isArray(paths)) {
+      this.state.message = `check: ${paths.error}`;
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}) });
+  }
+
   // ---------- new specification ----------
 
   /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
@@ -2546,23 +2632,29 @@ export class App {
     results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - 1)));
   }
 
-  /** The gaps of the selected feature record, or none. */
-  private recordGaps(): readonly Gap[] {
+  /**
+   * The items of the selected record the arrows select after Tab: the gaps of
+   * a feature record, every result of a check record; none for the others.
+   * `text` is the whole reason, which the report row may cut.
+   */
+  private recordGaps(): readonly { file: string; line: number; col: number; text: string }[] {
     const result = this.state.records[this.state.results.index]?.result;
-    return result?.kind === "feature" ? (result.payload?.report.gaps ?? []) : [];
+    if (result?.kind === "feature") return (result.payload?.report.gaps ?? []).map((gap: Gap) => ({ file: gap.file, line: gap.line, col: gap.col, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
+    if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
+    return [];
   }
 
-  private selectedGap(): Gap | undefined {
+  private selectedGap(): { file: string; line: number; col: number; text: string } | undefined {
     return this.recordGaps()[this.state.results.gap];
   }
 
-  /** The report row cuts a long reason; the message line shows the selected gap's whole reason. */
+  /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
   private showGapReason(): void {
     const gap = this.selectedGap();
-    if (gap) this.state.message = `${gap.kind} ${gap.id}: ${gap.reason} · Enter opens ${gap.file}:${gap.line}`;
+    if (gap) this.state.message = `${gap.text} · Enter opens ${gap.file}:${gap.line}`;
   }
 
-  /** Enter on a gap: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
+  /** Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
   private openGap(): void {
     const gap = this.selectedGap();
     if (gap) this.openTarget(gap.file, gap.line, gap.col);
@@ -2666,6 +2758,7 @@ export class App {
     if (prompt.kind === "agents") this.refreshAgentsPrompt();
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
+    if (prompt.kind === "full-check") this.refreshCheckPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2695,9 +2788,11 @@ export class App {
       if (prompt.kind === "agents") this.refreshAgentsPrompt();
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
+      if (prompt.kind === "full-check") this.refreshCheckPrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire") && prompt.items.length > 0) {
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -2708,6 +2803,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
+    if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -2778,6 +2874,8 @@ export class App {
         return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
         return this.openFeaturePrompt();
+      case "full-check":
+        return this.openCheckPrompt();
       case "map-check":
         return this.requestOperation("map-check", { kind: "map-check", root: this.state.root });
       case "map":
