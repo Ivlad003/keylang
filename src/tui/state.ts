@@ -103,15 +103,16 @@ export interface LastMerge {
 export interface Prompt {
   /**
    * `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`);
-   * `feature`: the slug of the feature to check (the matching feature files are the items).
+   * `feature`: the slug of the feature to check (the matching feature files are the items);
+   * `proposal`: the proposals list, filtered by the typed text (design §2.9).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
-  /** `node`: the ID of each item; `palette`: the action id of each item; `feature`: the slug of each item. */
+  /** `node`: the ID of each item; `palette`: the action id of each item; `feature`: the slug of each item; `proposal`: the target path. */
   ids?: string[];
-  /** `palette`: the group or the availability reason of each item, parallel to `items`. */
+  /** `palette`: the group or the availability reason of each item; `proposal`: what Enter does or why it cannot; parallel to `items`. */
   notes?: string[];
   /** The note of the selected item (`feature`: the target file or why the slug is invalid), shown next to the query. */
   note?: string;

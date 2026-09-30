@@ -95,6 +95,8 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => bufferOrMerge(ctx) ?? (ctx.readOnly ? "generated map files are read-only" : null),
   },
   { id: "merge", label: "Merge proposal", group: "Proposals", aliases: ["merge", "proposal"], key: "m", when: (ctx) => (ctx.merge ? "already merging" : ctx.start ? START_REASON : null) },
+  // Every pending target, spec or code, whatever file is open and whatever proposal is still undecided (design §2.9).
+  { id: "proposals", label: "Proposals", group: "Proposals", aliases: ["proposals", "pending", "targets", "pick proposal"], when: (ctx) => (ctx.merge ? MERGE_REASON : ctx.start ? START_REASON : null) },
   { id: "help", label: "Keys and help", group: "Help", aliases: ["help", "keys"], key: "?" },
   { id: "version", label: "About keylang", group: "Help", aliases: ["version", "about"] },
   { id: "quit", label: "Quit", group: "Session", aliases: ["quit", "exit"], key: "q" },

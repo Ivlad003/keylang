@@ -33,6 +33,7 @@ import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
+import { PROPOSALS_DIR } from "../proposals.ts";
 import { FEATURE_SLUG, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
@@ -42,12 +43,12 @@ import { bufferLines, lineLayout, newBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } from "./findings.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
-import { errorText, MergeSession } from "./merge-session.ts";
+import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, ConfigState, Cursor, Hover, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
-import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
+import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
   kind: "terminal" | "web";
@@ -112,6 +113,8 @@ export class App {
   private closed = false;
   /** The id of the next operation record. */
   private nextRecord = 1;
+  /** The proposals list as scanned when it was opened or last refreshed; Enter scans again. */
+  private proposalEntries: ProposalEntry[] = [];
   /** What the open save step starts after Save and continue; null when none is open. */
   private afterSave: (() => void) | null = null;
 
@@ -1131,7 +1134,7 @@ export class App {
         return;
       }
       case "m":
-        return this.merges.open();
+        return this.mergeOrPick();
       case "u":
         return this.merges.undo();
       case "e":
@@ -1692,6 +1695,69 @@ export class App {
     this.requestOperation("feature", { kind: "feature", root: this.state.root, slug });
   }
 
+  // ---------- proposals list ----------
+
+  /**
+   * `m`: the proposal of the current file opens directly; otherwise the
+   * proposals list, so no target is chosen for the person. Without a mergeable
+   * proposal the message names the ignored ones and their reasons, as before.
+   */
+  private mergeOrPick(): void {
+    const proposals = this.merges.scan();
+    if (this.state.current !== null && proposals.includes(this.state.current)) return this.merges.open(this.state.current);
+    if (proposals.length > 0) return this.openProposals();
+    this.merges.open();
+  }
+
+  /** The proposals list (design §2.9): every file under `.keylang/proposals/`, scanned now; viewing writes nothing. */
+  private openProposals(): void {
+    this.proposalEntries = this.merges.entries();
+    this.state.proposals = this.merges.scan();
+    if (this.proposalEntries.length === 0) {
+      this.state.message = `no proposals under ${PROPOSALS_DIR}/`;
+      return;
+    }
+    this.state.prompt = { kind: "proposal", text: "", items: [], ids: [], notes: [], index: 0 };
+    this.refreshProposalPrompt();
+  }
+
+  /** The list entries whose path contains the typed text, in POSIX path order, each with its note. */
+  private refreshProposalPrompt(selected?: string): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "proposal") return;
+    const query = prompt.text.toLowerCase();
+    const entries = this.proposalEntries.filter((entry) => entry.path.toLowerCase().includes(query));
+    const width = Math.max(0, ...entries.map((entry) => stringWidth(entry.path)));
+    prompt.items = entries.map((entry) => `${padWidth(entry.path, width)}  ${proposalSummary(entry)}`);
+    prompt.ids = entries.map((entry) => entry.path);
+    prompt.notes = entries.map((entry) => (entry.problem !== null ? `cannot merge: ${entry.problem}` : `Enter merges into ${entry.path} on disk`));
+    prompt.index = Math.max(0, selected === undefined ? 0 : prompt.ids.indexOf(selected));
+    prompt.note = prompt.notes[prompt.index] ?? "no proposal matches";
+  }
+
+  /**
+   * Enter in the list: the entry is scanned again first, so a proposal
+   * removed, rewritten or broken since the list was built is judged as it is
+   * now. A mergeable one opens in MERGE against the file on disk; any other
+   * keeps the list open with its reason, and nothing is written.
+   */
+  private submitProposal(): void {
+    const prompt = this.state.prompt!;
+    const path = prompt.ids?.[prompt.index];
+    if (path === undefined) return;
+    this.proposalEntries = this.merges.entries();
+    this.state.proposals = this.merges.scan();
+    const entry = this.proposalEntries.find((candidate) => candidate.path === path);
+    this.refreshProposalPrompt(path);
+    if (!entry) {
+      prompt.note = `${path}: the proposal is gone`;
+      return;
+    }
+    if (entry.problem !== null) return;
+    this.state.prompt = null;
+    this.merges.open(path);
+  }
+
   /** F6 or the palette: the pinned current analysis and the history of operation records. */
   private openResults(): void {
     const results = this.state.results;
@@ -2048,6 +2114,7 @@ export class App {
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
+    if (prompt.kind === "proposal") this.refreshProposalPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2072,15 +2139,17 @@ export class App {
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
+      if (prompt.kind === "proposal") this.refreshProposalPrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
-      if (prompt.kind === "palette") prompt.note = prompt.notes?.[prompt.index] ?? "";
+      if (prompt.kind === "palette" || prompt.kind === "proposal") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
+    if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter") {
       this.state.prompt = null;
       if (prompt.kind === "search") {
@@ -2168,7 +2237,9 @@ export class App {
         return;
       }
       case "merge":
-        return this.merges.open();
+        return this.mergeOrPick();
+      case "proposals":
+        return this.openProposals();
       case "help":
         this.state.help = true;
         return;
@@ -2344,4 +2415,13 @@ function packageVersion(): string {
 function failedResult(kind: OperationRequest["kind"], text: string): OperationResult {
   const failure = { status: "failed" as const, exitCode: 2 as const, payload: null, messages: [{ level: "error" as const, text }], written: [], removed: [], proposals: [] };
   return kind === "doctor" ? { kind, ...failure } : { kind, ...failure };
+}
+
+/** The list text of a proposal after its path: kind, a new file, and the hunk count or that it is ignored. */
+function proposalSummary(entry: ProposalEntry): string {
+  const parts: string[] = [entry.kind];
+  if (entry.newFile) parts.push("new file");
+  if (entry.hunks !== null) parts.push(`${entry.hunks} hunk(s)`);
+  if (entry.problem !== null) parts.push("cannot merge");
+  return parts.join(" · ");
 }

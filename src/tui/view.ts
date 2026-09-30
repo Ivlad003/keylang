@@ -709,7 +709,7 @@ const HELP: Record<string, string[]> = {
     "Tab                next panel     Ctrl+O               back",
     "F2 / F3            files / nav    v                    reading mode",
     "F5                 check again    i                    edit",
-    "m                  merge proposal u                    undo last merge",
+    "m                  merge or list  u                    undo last merge",
     "/  n               search         : / Ctrl+P           actions",
     "F6                 results        q / Ctrl+C           quit",
     "?                  keys, explain",
@@ -756,14 +756,14 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : ":";
+  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
-  if (prompt.kind !== "palette" && prompt.kind !== "node" && prompt.kind !== "feature") return;
+  if (prompt.kind === "search" || prompt.kind === "context") return;
   // The list scrolls to keep the selected entry in view.
   const shown = Math.min(10, editor.height - 2);
   const first = Math.max(0, prompt.index - shown + 1);
@@ -771,7 +771,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 

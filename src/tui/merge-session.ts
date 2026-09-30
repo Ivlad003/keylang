@@ -30,6 +30,22 @@ export interface MergeHost {
   reanalyzeSoon(): void;
 }
 
+/**
+ * One pending target of the proposals list: its kind, how many hunks it has
+ * against the file on disk, and why it cannot be merged now (null: it can).
+ * Built from disk each time the list opens or Enter is pressed; building it
+ * writes nothing.
+ */
+export interface ProposalEntry {
+  path: string;
+  kind: "spec" | "code";
+  /** The target does not exist on disk yet. */
+  newFile: boolean;
+  /** Hunks against the file on disk; null when the proposal is not read (a problem found before reading). */
+  hunks: number | null;
+  problem: string | null;
+}
+
 /** A proposal file is keylang's own: a link there is replaced, never written through. */
 const PROPOSAL_FILE = { link: "replace" } as const;
 
@@ -63,6 +79,41 @@ export class MergeSession {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Every file under `.keylang/proposals/`, sorted by POSIX path, with its
+   * kind, hunk count and the reason it cannot be merged. A link in the store
+   * is listed but never followed: a proposal is a plain file.
+   */
+  entries(): ProposalEntry[] {
+    const dir = join(this.state.root, PROPOSALS_DIR);
+    if (!existsSync(dir)) return [];
+    let links: string[];
+    try {
+      links = readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isSymbolicLink())
+        .map((entry) => toPosix(relative(dir, join(entry.parentPath, entry.name))));
+    } catch {
+      links = [];
+    }
+    const linked = links.map((path) => ({ path, kind: proposalKind(path), newFile: false, hunks: null, problem: `a link under ${PROPOSALS_DIR}/: a proposal is a plain file` }));
+    return [...this.files().map((path) => this.entry(path)), ...linked].sort((a, b) => compareText(a.path, b.path));
+  }
+
+  /** The list entry of the proposal file `path`: read fresh, compared with the file on disk. */
+  private entry(path: string): ProposalEntry {
+    const kind = proposalKind(path);
+    const problem = this.problem(path);
+    if (problem !== null) return { path, kind, newFile: false, hunks: null, problem };
+    const proposal = readText(this.proposalAbs(path));
+    const disk = readText(resolve(this.state.root, path));
+    const newFile = disk === null;
+    if (proposal === null) return { path, kind, newFile, hunks: null, problem: `${PROPOSALS_DIR}/${path} cannot be read` };
+    const hunks = diffLines(splitEol(disk ?? "").text.split("\n"), lf(proposal).split("\n")).length;
+    const buffer = kind === "spec" ? this.state.buffers.get(path) : undefined;
+    const dirty = buffer !== undefined && buffer.text !== buffer.saved ? "unsaved changes: save (Ctrl+S) or undo them before merging" : null;
+    return { path, kind, newFile, hunks, problem: dirty };
   }
 
   /** The spec directory relative to the root, POSIX (`keylang`). */
@@ -112,6 +163,12 @@ export class MergeSession {
     const proposals = this.scan();
     state.proposals = proposals;
     const path = wanted !== undefined ? proposals.find((file) => file === wanted) : (proposals.find((file) => file === state.current) ?? proposals[0]);
+    if (!path && wanted !== undefined) {
+      // Checked again now: a proposal removed or broken since the list was built is not opened from memory.
+      const problem = this.files().includes(wanted) ? this.problem(wanted) : null;
+      state.message = problem !== null ? `proposal ignored: ${wanted} (${problem})` : `no proposal for ${wanted} under ${PROPOSALS_DIR}/ any more`;
+      return;
+    }
     if (!path) {
       const ignored = this.files()
         .map((file) => ({ file, problem: this.problem(file) }))
@@ -228,6 +285,8 @@ export class MergeSession {
 
   private leave(merge: MergeState, message: string): void {
     this.state.merge = null;
+    // The counts follow the store: an agent may have written or removed proposals during the merge.
+    this.state.proposals = this.scan();
     this.state.mode = merge.from;
     this.state.message = message;
     this.host.clampCursor();
@@ -368,6 +427,11 @@ export class MergeSession {
     this.host.clampCursor();
     this.host.reanalyze();
   }
+}
+
+/** A Markdown proposal replaces a spec; any other replaces a source file (or a test). */
+function proposalKind(path: string): ProposalEntry["kind"] {
+  return path.endsWith(".md") ? "spec" : "code";
 }
 
 export function errorText(error: unknown): string {

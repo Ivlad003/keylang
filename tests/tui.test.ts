@@ -394,7 +394,10 @@ test("tui: Esc cancels a merge and writes nothing", async (t) => {
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
+  // The open flow has no proposal: `m` lists the pending targets instead of picking one.
   s.send("m");
+  assert.equal(s.app.state.prompt?.kind, "proposal");
+  s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/rules.md");
   s.send("a");
   s.send("\x1b");
@@ -1133,6 +1136,7 @@ test("tui: spec-to-code proposes code and its test; MERGE writes the accepted hu
   await s.app.idle();
   assert.match(s.lines().at(-1)!, /≈ 2 proposal\(s\): m/);
   s.send("m");
+  s.send(KEY.enter);
   assert.match(s.lines()[1]!, /MERGE src\/application\/refund\.ts · code · hunk 1\/1 · 0 accepted, 0 rejected, 1 pending/);
   assert.match(s.text(), /\+ export function refund\(order: Order\): Order \{/);
   s.send("a");
@@ -1149,6 +1153,7 @@ test("tui: spec-to-code proposes code and its test; MERGE writes the accepted hu
   assert.ok(existsSync(join(root, ".keylang/proposals/src/application/refund.ts")));
 
   s.send("m");
+  s.send(KEY.enter);
   s.send("a");
   writeFileSync(code, "// written meanwhile\n");
   s.send("w");
@@ -1157,6 +1162,7 @@ test("tui: spec-to-code proposes code and its test; MERGE writes the accepted hu
 
   // Compared again with the file as it is now: the hunk shows what accepting would replace.
   s.send("m");
+  s.send(KEY.enter);
   assert.match(s.lines()[1]!, /MERGE src\/application\/refund\.ts · code/);
   assert.match(s.text(), /- \/\/ written meanwhile/);
   s.send("a");
@@ -1164,6 +1170,7 @@ test("tui: spec-to-code proposes code and its test; MERGE writes the accepted hu
   await s.app.idle();
   assert.match(readFileSync(code, "utf8"), /^export function refund/);
   s.send("m");
+  s.send(KEY.enter);
   assert.match(s.lines()[1]!, /MERGE tests\/refund\.test\.ts · code/);
   s.send("r");
   s.send("w");
@@ -2077,6 +2084,7 @@ test("tui: a draft that arrives during another merge waits as a proposal instead
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   s.send(KEY.ctrlSpace);
   s.send("m");
+  s.send(KEY.enter);
   assert.equal(s.app.state.merge?.path, "keylang/rules.md");
   s.send("a");
   await s.app.idle();
@@ -2858,4 +2866,210 @@ test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks 
   s.send("\x1b");
   await sleep(40);
   assert.equal(s.app.state.records.length, 1);
+});
+
+// ---------- 21: the proposals list ----------
+
+/** The palette's Proposals action: the list whatever the current file. */
+function openProposalList(s: ReturnType<typeof session>): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "proposals") s.send(ch);
+  assert.equal(s.app.state.prompt?.ids?.[0], "proposals", s.text());
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "proposal", s.app.state.message ?? s.text());
+}
+
+/** The listed proposal paths, read through a function so earlier assertions do not narrow the prompt's type. */
+function listed(s: ReturnType<typeof session>): string[] | undefined {
+  return s.app.state.prompt?.ids;
+}
+
+/** Moves the list selection to `path` with the arrow keys. */
+function selectProposal(s: ReturnType<typeof session>, path: string): void {
+  const at = s.app.state.prompt!.ids!.indexOf(path);
+  assert.notEqual(at, -1, `${path} is not listed: ${s.app.state.prompt!.ids!.join(", ")}`);
+  while (s.app.state.prompt!.index !== at) s.send(KEY.down);
+}
+
+test("tui: the proposals list reaches any spec, code or test target while the first stays undecided", async (t) => {
+  const flow = `${CHECKOUT_FLOW}\n# flow refund\n\n- planned fn application.refund.refund (order: Order) → Order\n- trigger application.refund.refund\n  - test tests/refund.test.ts "refund returns the order"\n`;
+  const root = checkoutRepo(t, { [FLOW_PATH]: flow });
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const cli = spawnSync(process.execPath, [bin, "spec-to-code", "application.refund.refund"], { cwd: root, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  const RULES = "# rules\n\n- layers domain < infrastructure < application < presentation\n";
+  propose(root, "keylang/rules.md", `${RULES}- no-cycles\n`);
+  propose(root, "keylang/flows/pay.md", "# flow pay\n\n- trigger presentation.terminal.checkout\n");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The open flow has no proposal: `m` opens the list, in POSIX path order, with kind, new file and hunks.
+  assert.equal(s.app.state.current, FLOW_PATH);
+  s.send("m");
+  assert.equal(s.app.state.mode, "view");
+  assert.deepEqual(listed(s), ["keylang/flows/pay.md", "keylang/rules.md", "src/application/refund.ts", "tests/refund.test.ts"]);
+  assert.match(s.text(), /4 proposal\(s\)/);
+  assert.match(s.text(), /keylang\/flows\/pay\.md\s+spec · new file · 1 hunk\(s\)/);
+  assert.match(s.text(), /keylang\/rules\.md\s+spec · 1 hunk\(s\)/);
+  assert.match(s.text(), /src\/application\/refund\.ts\s+code · new file · 1 hunk\(s\)/);
+  assert.match(s.text(), /tests\/refund\.test\.ts\s+code · new file · 1 hunk\(s\)/);
+  assert.match(s.text(), /Enter merges into keylang\/flows\/pay\.md on disk/);
+  // Moving through the list and leaving it writes and removes nothing.
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.prompt, null);
+  assert.deepEqual(treeBytes(root), before, "viewing the list changes nothing");
+
+  // The first target opened and left undecided.
+  s.send("m");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/flows/pay.md");
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.mode, "view");
+  assert.ok(existsSync(join(root, ".keylang/proposals/keylang/flows/pay.md")));
+
+  // The current file now has a proposal (`m` would open it); the palette list picks the third target instead.
+  assert.equal(s.app.state.current, "keylang/flows/pay.md");
+  openProposalList(s);
+  selectProposal(s, "src/application/refund.ts");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "merge");
+  assert.match(s.lines()[1]!, /MERGE src\/application\/refund\.ts · code · hunk 1\/1/);
+  assert.match(s.text(), /\+ export function refund\(order: Order\): Order \{/);
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(s.app.state.mode, "view", "w returns to the mode the merge began in");
+  assert.match(readFileSync(join(root, "src/application/refund.ts"), "utf8"), /^export function refund/);
+  assert.ok(!existsSync(join(root, ".keylang/proposals/src/application/refund.ts")), "the merged proposal is consumed");
+  assert.ok(existsSync(join(root, ".keylang/proposals/keylang/flows/pay.md")), "the undecided first proposal stays");
+  assert.ok(!existsSync(join(root, "keylang/flows/pay.md")));
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), RULES);
+  assert.deepEqual(s.app.state.proposals, ["keylang/flows/pay.md", "keylang/rules.md", "tests/refund.test.ts"]);
+  assert.match(s.lines().at(-1)!, /≈ 3 proposal\(s\): m/);
+
+  // The test next, then the rules: each is written only as decided.
+  openProposalList(s);
+  assert.deepEqual(listed(s), ["keylang/flows/pay.md", "keylang/rules.md", "tests/refund.test.ts"]);
+  selectProposal(s, "tests/refund.test.ts");
+  s.send(KEY.enter);
+  assert.match(s.lines()[1]!, /MERGE tests\/refund\.test\.ts · code/);
+  s.send("r");
+  s.send("w");
+  await s.app.idle();
+  assert.ok(!existsSync(join(root, "tests/refund.test.ts")));
+  openProposalList(s);
+  selectProposal(s, "keylang/rules.md");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+  assert.match(s.text(), /\+ - no-cycles/);
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), `${RULES}- no-cycles\n`);
+  // `u` keeps its meaning: the last merge is undone and its proposal is back.
+  s.send("u");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), RULES);
+  assert.ok(existsSync(join(root, ".keylang/proposals/keylang/rules.md")));
+  assert.deepEqual(s.app.state.proposals, ["keylang/flows/pay.md", "keylang/rules.md"]);
+});
+
+test("tui: the proposals list shows why a target cannot be merged and writes nothing on Enter", async (t) => {
+  const root = checkoutRepo(t);
+  const outside = mkdtempSync(join(tmpdir(), "keylang-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "spec.md"), "# flow out\n");
+  symlinkSync(join(outside, "spec.md"), join(root, "keylang/flows/out.md"));
+  writeFileSync(join(root, "README.md"), "# readme\n");
+  propose(root, FLOW_PATH, PAID);
+  propose(root, "README.md", "# overwritten\n");
+  propose(root, "keylang/map/domain.md", "# overwritten\n");
+  propose(root, "keylang/flows/out.md", "# flow out\n\n- trigger presentation.terminal.checkout\n");
+  writeFileSync(join(outside, "linked.md"), "# rules\n");
+  symlinkSync(join(outside, "linked.md"), join(root, ".keylang/proposals/keylang/linked.md"));
+  const s = session(root, { cols: 160 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // Unsaved edits in the flow that has a proposal.
+  s.send("i");
+  s.send(KEY.end);
+  s.send("!");
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  const before = treeBytes(root);
+  openProposalList(s);
+  assert.deepEqual(listed(s), ["README.md", FLOW_PATH, "keylang/flows/out.md", "keylang/linked.md", "keylang/map/domain.md"]);
+  const reasons: Record<string, RegExp> = {
+    "README.md": /cannot merge: outside keylang\/: a proposal changes specs only/,
+    [FLOW_PATH]: /cannot merge: unsaved changes: save \(Ctrl\+S\) or undo them before merging/,
+    "keylang/flows/out.md": /cannot merge: leads out of keylang\/ through a link/,
+    "keylang/linked.md": /cannot merge: a link under \.keylang\/proposals\/: a proposal is a plain file/,
+    "keylang/map/domain.md": /cannot merge: a generated map file/,
+  };
+  assert.match(s.text(), /keylang\/flows\/checkout\.md\s+spec · 1 hunk\(s\) · cannot merge/);
+  for (const [path, reason] of Object.entries(reasons)) {
+    selectProposal(s, path);
+    assert.match(s.text(), reason, path);
+    s.send(KEY.enter);
+    assert.equal(s.app.state.prompt?.kind, "proposal", `${path}: the list stays open`);
+    assert.equal(s.app.state.mode, "view");
+    assert.equal(s.app.state.merge, null);
+    assert.match(s.text(), reason, `${path}: the reason stays visible after Enter`);
+  }
+  assert.equal(s.app.state.current, FLOW_PATH);
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text, /^# flow checkout!/, "the unsaved text is kept");
+  assert.deepEqual(treeBytes(root), before, "nothing written or removed");
+});
+
+test("tui: the list is scanned again on Enter; a proposal rewritten during MERGE is not written over", async (t) => {
+  const root = checkoutRepo(t);
+  const RULES = "# rules\n\n- layers domain < infrastructure < application < presentation\n";
+  propose(root, "keylang/flows/pay.md", "# flow pay\n\n- trigger presentation.terminal.checkout\n");
+  propose(root, "keylang/rules.md", `${RULES}- no-cycles\n`);
+  propose(root, "keylang/flows/refund.md", "# flow refund\n");
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("m");
+  assert.deepEqual(listed(s), ["keylang/flows/pay.md", "keylang/flows/refund.md", "keylang/rules.md"]);
+  // Removed after the list was built: not opened from memory, and the list follows the disk.
+  rmSync(join(root, ".keylang/proposals/keylang/flows/pay.md"));
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.prompt?.kind, "proposal");
+  assert.match(s.text(), /keylang\/flows\/pay\.md: the proposal is gone/);
+  assert.deepEqual(listed(s), ["keylang/flows/refund.md", "keylang/rules.md"]);
+  assert.ok(!existsSync(join(root, "keylang/flows/pay.md")));
+  // Rewritten after the list was built: the MERGE shows the text on disk now, not the listed one.
+  selectProposal(s, "keylang/rules.md");
+  propose(root, "keylang/rules.md", `${RULES}- deny domain application\n`);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+  assert.match(s.text(), /\+ - deny domain application/);
+  assert.doesNotMatch(s.text(), /no-cycles/);
+  // An agent rewrites the proposal during the merge: w refuses, the new text is kept.
+  s.send("a");
+  const newer = `${RULES}- no-cycles\n- deny domain application\n`;
+  propose(root, "keylang/rules.md", newer);
+  s.send("w");
+  await s.app.idle();
+  assert.equal(s.app.state.mode, "view");
+  assert.match(s.app.state.message ?? "", /the proposal for keylang\/rules\.md changed during the merge; nothing written/);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), RULES);
+  assert.equal(readFileSync(join(root, ".keylang/proposals/keylang/rules.md"), "utf8"), newer);
+  s.send("u");
+  assert.match(s.app.state.message ?? "", /no merge to undo/);
+  assert.equal(readFileSync(join(root, ".keylang/proposals/keylang/rules.md"), "utf8"), newer);
+  // The other undecided proposal was never touched.
+  assert.equal(readFileSync(join(root, ".keylang/proposals/keylang/flows/refund.md"), "utf8"), "# flow refund\n");
+  // The current file has a proposal now: `m` opens it directly, with the newest text.
+  assert.equal(s.app.state.current, "keylang/rules.md");
+  s.send("m");
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+  assert.match(s.text(), /\+ - no-cycles/);
 });
