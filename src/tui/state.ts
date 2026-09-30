@@ -6,6 +6,7 @@ import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { DoctorRequest, OperationResult, OperationStatus } from "../operations.ts";
+import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
 export type Mode = "view" | "edit" | "read" | "code" | "merge";
@@ -193,11 +194,26 @@ export interface State {
   /** The id of the record of the operation running now, or null. One explicit operation at a time. */
   activeOperation: number | null;
   /**
-   * The F6 panel: the history of records and the scrollable report of the selected one.
-   * `index` selects the record, `top` the first report row shown, `scrollReport` routes the
-   * keys to the report scroll instead of the list, `previousFocus` is where Esc returns.
+   * The F6 panel: the pinned current analysis and the history of operation
+   * records. `top` is the first report row of a record or the first finding
+   * row of the analysis; `scrollReport` routes the arrows from the entries to
+   * the report or the findings. `filter` only hides verdicts: the report is
+   * unchanged. `viewing` hides the panel while a finding's target is shown;
+   * leaving it puts back `origin`, where the finding was opened from.
+   * `previousFocus` is where Esc returns when the panel closes.
    */
-  results: { open: boolean; index: number; top: number; scrollReport: boolean; previousFocus: Focus };
+  results: {
+    open: boolean;
+    entry: "analysis" | "record";
+    index: number;
+    finding: number;
+    filter: VerdictFilter;
+    top: number;
+    scrollReport: boolean;
+    viewing: boolean;
+    origin: { path: string | null; cursor: Cursor; top: number; mode: Mode; code: CodeView | null } | null;
+    previousFocus: Focus;
+  };
   /** Model briefs saved under `<dir>/explain/brief/`, read with each analysis: explanations for the nav panel and the node search. */
   briefs: ReadonlyMap<string, StoredExplanation>;
 }

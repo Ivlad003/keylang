@@ -22,6 +22,7 @@ import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
 import { contextPack, type ContextPack } from "../agent-context.ts";
+import type { CheckResult } from "../check-results.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
@@ -34,12 +35,13 @@ import { actionLabel, catalog, matchActions } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { bufferLines, lineLayout, newBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
+import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } from "./findings.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, Cursor, Hover, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, editorRows, filesTop, gutterWidth, layout, navEntries, navListHeight, readCursorRow, recordStatus, render, resultsReportRows } from "./view.ts";
+import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, readCursorRow, recordStatus, render, resultsReportRows } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
 
 export interface Surface {
@@ -149,7 +151,7 @@ export class App {
       quitArmed: false,
       records: [],
       activeOperation: null,
-      results: { open: false, index: 0, top: 0, scrollReport: false, previousFocus: "editor" },
+      results: { open: false, entry: "record", index: 0, finding: 0, filter: { ...DEFAULT_FILTER }, top: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
     };
     // The helpers reach the session through closures: its private methods stay private.
@@ -309,9 +311,10 @@ export class App {
       .then(
         (analysis) => {
           if (generation !== this.generation || this.closed) return;
+          const selected = this.selectedFinding();
           this.state.analysis = analysis;
           try {
-            this.adoptResult(analysis, edits);
+            this.adoptResult(analysis, edits, selected);
           } catch (error) {
             this.state.message = `error: ${errorText(error)}`;
           }
@@ -334,12 +337,16 @@ export class App {
     this.draw();
   }
 
-  private adoptResult(analysis: Analysis, edits: number): void {
+  private adoptResult(analysis: Analysis, edits: number, selected: CheckResult | undefined): void {
     this.state.updating = false;
     // Typing while it ran: the marks belong to older text and stay dimmed until the next run.
     this.state.outdated = edits !== this.edits;
     this.state.error = null;
     this.adopt(analysis);
+    // The findings list follows the new analysis: the selected finding stays selected while it is still reported.
+    const at = selected ? visibleFindings(findingsOf(analysis), this.state.results.filter).findIndex((result) => sameResult(result, selected)) : -1;
+    if (at >= 0) this.state.results.finding = at;
+    this.clampFinding();
   }
 
   /** Typing: mark results outdated now, analyse once the typing settles. */
@@ -650,18 +657,25 @@ export class App {
       void this.surface.openEditor(abs, line);
       return;
     }
+    const place = this.state.current ? { path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode } : null;
+    if (this.showCode(rel, abs, line) && place) this.state.back.push(place);
+  }
+
+  /** The built-in read-only viewer at `line` of a code file; false (with a message) when it cannot be read. */
+  private showCode(rel: string, abs: string, line: number): boolean {
     let lines: string[];
     try {
-      lines = readFileSync(abs, "utf8").split("\n");
+      lines = readFileSync(abs, "utf8").split(/\r?\n/);
     } catch {
       this.state.message = `${rel}: cannot read`;
-      return;
+      return false;
     }
-    if (this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode });
+    const at = Math.max(1, Math.min(line, lines.length));
     const editor = layout(this.state).editor;
-    this.state.code = { file: rel, line, lines, top: Math.max(0, line - 1 - Math.floor((editor.height - 1) / 3)), link: `vscode://file${pathToFileURL(abs).pathname}:${line}` };
+    this.state.code = { file: rel, line: at, lines, top: Math.max(0, at - 1 - Math.floor((editor.height - 1) / 3)), link: `vscode://file${pathToFileURL(abs).pathname}:${at}` };
     this.state.mode = "code";
     this.state.hover = null;
+    return true;
   }
 
   /** The ID of the node whose item is at the cursor line or the nearest one above it (a description, `calls`). */
@@ -797,7 +811,17 @@ export class App {
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
-    if (this.state.results.open) return this.resultsKey(event);
+    if (this.state.results.open) {
+      if (this.state.results.viewing) {
+        // The panel is hidden while the finding's target is shown; the keys go to the editor or the
+        // code viewer. Esc / Ctrl+O (and q in the code viewer) bring the list back and put back the place the finding was opened
+        // from (Esc in edit mode leaves editing first); F6 closes the panel and stays at the target.
+        if ((event.name === "escape" && this.state.mode !== "edit") || (event.ctrl && event.name === "o") || (event.name === "q" && this.state.mode === "code")) return this.returnToFindings();
+        if (event.name === "f6") return this.closeResults();
+      } else {
+        return this.resultsKey(event);
+      }
+    }
     if (event.name === "f5") return this.reanalyze();
     if (event.name === "f6") return this.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
@@ -1444,7 +1468,7 @@ export class App {
     this.draw();
   }
 
-  /** F6 or the palette: the history of operation records and the report of the selected one. */
+  /** F6 or the palette: the pinned current analysis and the history of operation records. */
   private openResults(): void {
     const results = this.state.results;
     // Already open: keep the current selection — re-entering must not capture a stale focus or reset the record.
@@ -1452,8 +1476,12 @@ export class App {
     results.open = true;
     results.previousFocus = this.state.focus;
     results.scrollReport = false;
+    results.viewing = false;
     results.top = 0;
+    // The pinned "Current analysis" is the first entry; with records, the newest one stays selected as before.
+    results.entry = this.state.records.length > 0 ? "record" : "analysis";
     results.index = Math.max(0, this.state.records.length - 1);
+    this.clampFinding();
     this.state.focus = "results";
   }
 
@@ -1461,6 +1489,8 @@ export class App {
   private closeResults(): void {
     this.state.results.open = false;
     this.state.results.scrollReport = false;
+    this.state.results.viewing = false;
+    this.state.results.origin = null;
     this.state.focus = this.state.results.previousFocus;
   }
 
@@ -1478,8 +1508,9 @@ export class App {
     }
   }
 
-  /** While the panel is open its keys stay with it; Tab switches between the list and the report scroll. */
+  /** While the panel is open its keys stay with it; Tab switches between the entries and the content. */
   private resultsKey(event: KeyEvent): void {
+    if (this.state.results.entry === "analysis") return this.findingsKey(event);
     const results = this.state.results;
     const records = this.state.records;
     const page = Math.max(1, layout(this.state).editor.height - 4);
@@ -1492,6 +1523,12 @@ export class App {
       case "up":
       case "k":
         if (results.scrollReport) return this.scrollReport(-1);
+        if (results.index === 0) {
+          // The pinned current analysis sits above the records.
+          results.entry = "analysis";
+          results.top = 0;
+          return this.clampFinding();
+        }
         return select(results.index - 1);
       case "down":
       case "j":
@@ -1523,7 +1560,135 @@ export class App {
     }
   }
 
+  /** The keys of the pinned "Current analysis" entry: the findings list with verdict filters. */
+  private findingsKey(event: KeyEvent): void {
+    const results = this.state.results;
+    const page = Math.max(1, findingsListRows(this.state, layout(this.state).editor));
+    switch (event.name) {
+      case "up":
+      case "k":
+        if (results.scrollReport) return this.moveFinding(-1);
+        return; // The analysis entry is pinned at the top; nothing above it.
+      case "down":
+      case "j":
+        if (results.scrollReport) return this.moveFinding(1);
+        if (this.state.records.length > 0) {
+          // Below the pinned entry come the records.
+          results.entry = "record";
+          results.index = 0;
+          results.top = 0;
+        }
+        return;
+      case "pageup":
+      case "pagedown":
+        if (results.scrollReport) return this.moveFinding(event.name === "pageup" ? -page : page);
+        return;
+      case "tab":
+        // Tab switches the arrows between the entries and the findings.
+        results.scrollReport = !results.scrollReport;
+        return;
+      case "enter":
+        // Enter opens the selected finding straight away; back in the list the arrows select findings.
+        results.scrollReport = true;
+        return this.openFinding();
+      case "f5":
+        return this.reanalyze();
+      case "f6":
+      case "escape":
+        return this.closeResults();
+      case "q":
+        return this.quit();
+      case "?":
+        this.state.help = true;
+        return;
+      default: {
+        // The filters hide verdicts; the report itself and its totals stay unchanged.
+        const verdict = FILTER_KEYS.get(event.name);
+        if (verdict === undefined) return;
+        results.filter[verdict] = !results.filter[verdict];
+        return this.clampFinding();
+      }
+    }
+  }
+
+  /** Moves the finding selection and keeps it in the visible part of the list. */
+  private moveFinding(delta: number): void {
+    this.state.results.finding += delta;
+    this.clampFinding();
+  }
+
+  /** The finding selection stays within the filtered list, and the list scrolls to keep it in view. */
+  private clampFinding(): void {
+    const results = this.state.results;
+    const visible = visibleFindings(findingsOf(this.state.analysis), results.filter);
+    results.finding = Math.max(0, Math.min(results.finding, Math.max(0, visible.length - 1)));
+    const rows = findingsListRows(this.state, layout(this.state).editor);
+    if (results.finding < results.top) results.top = results.finding;
+    if (results.finding >= results.top + rows) results.top = results.finding - rows + 1;
+  }
+
+  /** The finding selected in the filtered list of the current analysis, if any. */
+  private selectedFinding(): CheckResult | undefined {
+    return visibleFindings(findingsOf(this.state.analysis), this.state.results.filter)[this.state.results.finding];
+  }
+
+  /**
+   * Enter on a finding: the panel hides while the target is shown — a spec
+   * position in the editor (the file need not be among the Markdown buffers)
+   * or the line in the read-only code viewer. Esc / Ctrl+O return to the list
+   * without losing the selection and put back the place it was opened from.
+   */
+  private openFinding(): void {
+    const results = this.state.results;
+    const finding = this.selectedFinding();
+    if (!finding) return;
+    // Leaving MERGE for the target would drop the open hunk decisions.
+    if (this.state.mode === "merge") {
+      this.state.message = "finish the merge first: the finding opens after MERGE";
+      return;
+    }
+    const origin = { path: this.state.current, cursor: { ...this.state.cursor }, top: this.state.top, mode: this.state.mode, code: this.state.code };
+    const abs = resolve(this.state.root, finding.file);
+    if (extname(finding.file) === ".md" && !finding.file.startsWith("..")) {
+      const lines = bufferLines(this.load(finding.file));
+      const line = Math.max(0, Math.min(finding.line - 1, lines.length - 1));
+      // Verdict columns are 1-based code points; the cursor counts grapheme clusters.
+      const col = clusterAt(lines[line] ?? "", finding.col - 1);
+      this.open(finding.file, { line, col }, false);
+      this.state.code = null;
+    } else if (!this.showCode(finding.file, abs, finding.line)) {
+      return;
+    }
+    results.viewing = true;
+    results.origin = origin;
+    this.state.message = "Esc or Ctrl+O: back to the findings list · F6: stay here";
+  }
+
+  /** Back from a finding's target: the list with its selection, over the place the finding was opened from. */
+  private returnToFindings(): void {
+    const results = this.state.results;
+    const origin = results.origin;
+    results.viewing = false;
+    results.origin = null;
+    if (!origin) return;
+    if (origin.path !== null) {
+      this.load(origin.path);
+      this.state.filesIndex = Math.max(0, this.state.files.indexOf(origin.path));
+    }
+    this.state.current = origin.path;
+    this.state.cursor = { ...origin.cursor };
+    this.state.mode = origin.mode;
+    this.state.code = origin.code;
+    this.state.selection = null;
+    this.state.completion = null;
+    this.state.hover = null;
+    this.clampCursor();
+    this.state.top = origin.top;
+  }
+
   private scrollReport(delta: number): void {
+    // Over the findings the selection moves, so it never leaves the shown rows.
+    if (this.state.results.entry === "analysis") return this.moveFinding(delta);
     const rows = resultsReportRows(this.state);
     this.state.results.top = Math.max(0, Math.min(this.state.results.top + delta, Math.max(0, rows.length - 1)));
   }
@@ -1532,7 +1697,8 @@ export class App {
 
   private mouse(event: MouseEvent): void {
     // The F6 panel is modal over the editor area: only the wheel scrolls its report.
-    if (this.state.results.open) {
+    // While a finding's target is shown (viewing), the keys and the wheel go to it instead.
+    if (this.state.results.open && !this.state.results.viewing) {
       if (event.action === "wheel-up" || event.action === "wheel-down") this.scrollReport(event.action === "wheel-up" ? -3 : 3);
       return;
     }

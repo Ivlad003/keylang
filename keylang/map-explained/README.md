@@ -15,8 +15,8 @@ The tree of the map with a brief under each node: the documentation comment from
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 105 | 0 | 0 | 130 |
 | [operations](operations.md) |  | 9 | 0 | 0 | 7 |
-| [tui](tui.md) |  | 173 | 0 | 0 | 183 |
-| **all** | | 758 | 0 | 0 | 767 |
+| [tui](tui.md) |  | 194 | 0 | 0 | 186 |
+| **all** | | 779 | 0 | 0 | 770 |
 
 ## Index
 
@@ -32,7 +32,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
 
-**F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
+**F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 
 **G** · [ghost](features.md#features.ghost) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
 

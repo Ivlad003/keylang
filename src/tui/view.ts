@@ -8,6 +8,7 @@ import { explanationOf } from "../explanations.ts";
 import { ACTIONS, catalog } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
+import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
@@ -15,7 +16,7 @@ import { Grid, type Style } from "./screen.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, lineLayout } from "./buffer.ts";
-import { clusters, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
+import { clusters, fitWidth, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
 
 export interface Rect {
   x: number;
@@ -460,32 +461,111 @@ export function resultsReportRows(state: State): { text: string; style: Style }[
   return rows;
 }
 
-/** The F6 panel over the editor area: the history list on top, the scrollable report of the selected record below. */
+/** How the F6 panel splits: the entries list on top, the content of the selected entry below. */
+export function resultsSplit(state: State, height: number): { list: number; report: number } {
+  const entries = state.records.length + 1; // the pinned current analysis, then the records
+  const list = Math.max(1, Math.min(entries, Math.floor((height - 4) / 2)));
+  return { list, report: height - list - 2 };
+}
+
+/**
+ * Why the shown analysis is not a plain current check: a failed run, an update
+ * in flight, changes since the analysis, or unsaved buffers taken as overlay.
+ */
+export function findingStateRow(state: State): string | null {
+  const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && buffer.text !== buffer.saved).map((buffer) => buffer.path);
+  const parts: string[] = [];
+  if (state.error !== null) parts.push(`outdated: ${state.error}`);
+  else if (state.outdated && !state.updating) parts.push("outdated: changes since this analysis");
+  if (state.updating) parts.push("updating…");
+  if (unsaved.length > 0) parts.push(`unsaved inputs: ${unsaved.join(", ")}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Rows above the list for the full message of the selected finding and for its metadata. */
+const DETAIL_MESSAGE_ROWS = 3;
+const DETAIL_META_ROWS = 2;
+
+/**
+ * The details of the selected finding, wrapped to `width`: its full message
+ * (the list row cuts it) and then criterion, provenance, snapshot and reason;
+ * without a selection, why the list is empty. Always the same number of rows,
+ * so the list does not jump while the selection moves.
+ */
+export function findingDetailRows(state: State, width: number): string[] {
+  const selected = visibleFindings(findingsOf(state.analysis), state.results.filter)[state.results.finding];
+  if (!selected) {
+    const why =
+      state.analysis === null ? (state.error !== null ? "the analysis failed; no report yet" : "analyzing…") : "no findings match the filter";
+    return padRows([why]);
+  }
+  return padRows([...clipRows(wrapCells(selected.evidence, width), DETAIL_MESSAGE_ROWS, width), ...clipRows(wrapCells(findingDetailText(selected), width), DETAIL_META_ROWS, width)]);
+}
+
+/** The first `count` rows; a cut ends with `…`. */
+function clipRows(rows: string[], count: number, width: number): string[] {
+  return rows.length > count ? [...rows.slice(0, count - 1), `${fitWidth(rows[count - 1]!, width - 1)}…`] : rows;
+}
+
+function padRows(rows: string[]): string[] {
+  return [...rows, ...Array<string>(Math.max(0, DETAIL_MESSAGE_ROWS + DETAIL_META_ROWS - rows.length)).fill("")];
+}
+
+/** `text` cut into rows of at most `width` cells, at spaces where it can. */
+function wrapCells(text: string, width: number): string[] {
+  const rows: string[] = [];
+  let rest = text;
+  while (stringWidth(rest) > width && width > 0) {
+    const fit = fitWidth(rest, width);
+    const space = fit.lastIndexOf(" ");
+    // A cluster wider than the row still takes one row, so the loop always advances.
+    const cut = space > 0 ? space : Math.max(fit.length, graphemes(rest)[0]!.length);
+    rows.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  rows.push(rest);
+  return rows;
+}
+
+/** Rows the findings list takes inside the panel `rect`: the counts, the state and the details of the selected finding come first. */
+export function findingsListRows(state: State, rect: Rect): number {
+  const { report } = resultsSplit(state, rect.height);
+  const detail = findingDetailRows(state, rect.width - 2).length;
+  return Math.max(1, report - detail - (findingStateRow(state) === null ? 0 : 1));
+}
+
+/** The F6 panel over the editor area: the entries on top, the content of the selected entry below. */
 function drawResults(grid: Grid, state: State, rect: Rect): void {
   const results = state.results;
   const records = state.records;
-  const hint = " Enter rerun · Esc back ";
+  const analysis = results.entry === "analysis";
+  const hint = analysis ? " Enter open · Tab findings · Esc back " : " Enter rerun · Esc back ";
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
-  if (records.length === 0) {
-    grid.write(rect.x + 2, rect.y + 2, "No operations in this session yet.", THEME.hint);
-    grid.write(rect.x + 2, rect.y + 3, "Open the palette (Ctrl+P) and run Environment diagnostics.", THEME.hint);
-    return;
-  }
-  const listHeight = Math.max(1, Math.min(records.length, Math.floor((rect.height - 4) / 2)));
-  const first = Math.max(0, Math.min(results.index, records.length - listHeight));
+  const { list: listHeight } = resultsSplit(state, rect.height);
+  const entryIndex = analysis ? 0 : results.index + 1;
+  const first = Math.max(0, Math.min(entryIndex, records.length + 1 - listHeight));
+  const counts = findingCounts(findingsOf(state.analysis));
   for (let i = 0; i < listHeight; i++) {
-    const record = records[first + i]!;
+    const at = first + i;
     const y = rect.y + 1 + i;
-    const selected = first + i === results.index && !results.scrollReport;
+    const selected = at === entryIndex && !results.scrollReport;
     const style = selected ? THEME.selected : i % 2 === 0 ? THEME.panel : { ...THEME.panel, bg: 234 };
     grid.fill(rect.x, y, rect.width, 1, style);
-    grid.write(rect.x + 1, y, `${first + i + 1}  ${recordLabel(record)}  ${recordStatus(record)}`, style, rect.width - 2);
+    if (at === 0) {
+      // The pinned current analysis, with the full counts of the report (findings, not gutter lines).
+      const summary = VERDICTS.map((verdict) => `${FINDING_GLYPH[verdict]} ${counts[verdict]}`).join(" ");
+      grid.write(rect.x + 1, y, `1  Current analysis · ${summary}`, style, rect.width - 2);
+    } else {
+      const record = records[at - 1]!;
+      grid.write(rect.x + 1, y, `${at + 1}  ${recordLabel(record)}  ${recordStatus(record)}`, style, rect.width - 2);
+    }
   }
   const dividerY = rect.y + 1 + listHeight;
   grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
   grid.write(rect.x, dividerY, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
+  if (analysis) return drawFindings(grid, state, rect, dividerY);
   const rows = resultsReportRows(state);
   for (let i = 0; i < rect.height - listHeight - 2; i++) {
     const row = rows[results.top + i];
@@ -494,6 +574,51 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
     grid.fill(rect.x, y, rect.width, 1, row.style);
     grid.write(rect.x + 1, y, results.scrollReport ? "▌" : " ", { ...row.style, fg: 75 });
     grid.write(rect.x + 3, y, row.text, row.style, rect.width - 4);
+  }
+}
+
+/** The full findings report of the current analysis: counts, filters, the selected finding's details, and the list. */
+function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): void {
+  const results = state.results;
+  const all = findingsOf(state.analysis);
+  const visible = visibleFindings(all, results.filter);
+  const counts = findingCounts(all);
+  const hidden = all.length - visible.length;
+  // The full counts and the filter never change the report; the hidden count is visible.
+  const countsRow: { text: string; style: Style }[] = [];
+  for (const verdict of VERDICTS) {
+    countsRow.push({ text: `${FINDING_GLYPH[verdict]} ${counts[verdict]} `, style: { ...MARK_STYLE[verdict], ...(results.filter[verdict] ? {} : { dim: true, fg: 243 }) } });
+  }
+  countsRow.push(
+    { text: `· ${all.length} findings`, style: { ...THEME.panel, fg: 243 } },
+    { text: ` · ${hidden} hidden`, style: { ...THEME.panel, fg: hidden > 0 ? 179 : 243 } },
+    { text: " · f/u/w/o filter", style: { ...THEME.panel, fg: 243 } },
+  );
+  grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
+  let x = rect.x + 1;
+  for (const part of countsRow) x += grid.write(x, dividerY, part.text, part.style, rect.x + rect.width - x);
+  let y = dividerY + 1;
+  const stateRow = findingStateRow(state);
+  if (stateRow) {
+    grid.fill(rect.x, y, rect.width, 1, THEME.panel);
+    grid.write(rect.x + 1, y, stateRow, state.error !== null ? { ...THEME.panel, fg: 160 } : { ...THEME.panel, fg: 179 }, rect.width - 2);
+    y++;
+  }
+  for (const detail of findingDetailRows(state, rect.width - 2)) {
+    if (y >= rect.y + rect.height) break;
+    grid.fill(rect.x, y, rect.width, 1, THEME.panel);
+    grid.write(rect.x + 1, y, detail, { ...THEME.panel, fg: 250 }, rect.width - 2);
+    y++;
+  }
+  const listTop = y;
+  for (let i = 0; listTop + i < rect.y + rect.height; i++) {
+    const result = visible[results.top + i];
+    if (!result) break;
+    const isSelected = results.top + i === results.finding && results.scrollReport;
+    const style = isSelected ? THEME.selected : THEME.panel;
+    grid.fill(rect.x, listTop + i, rect.width, 1, style);
+    grid.write(rect.x + 1, listTop + i, FINDING_GLYPH[result.verdict], { ...style, ...MARK_STYLE[result.verdict] });
+    grid.write(rect.x + 3, listTop + i, findingRow(result), style, rect.width - 4);
   }
 }
 
@@ -659,7 +784,7 @@ export function render(state: State): Grid {
   const hintWidth = stringWidth(hints);
   if (x + hintWidth + 3 < state.cols) grid.write(state.cols - hintWidth - 1, area.status.y, hints, THEME.status);
   // Popups
-  if (state.results.open) drawResults(grid, state, area.editor);
+  if (state.results.open && !state.results.viewing) drawResults(grid, state, area.editor);
   if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read")) drawHover(grid, state, area.editor);
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
   if (state.help) drawHelp(grid, state, area.editor, buffer);

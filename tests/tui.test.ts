@@ -18,6 +18,7 @@ import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts"
 import { formatSource } from "../src/fmt.ts";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
+import { findingsOf } from "../src/tui/findings.ts";
 import { navEntries } from "../src/tui/view.ts";
 import { InputDecoder } from "../src/tui/input.ts";
 import { applyHunks, diffLines } from "../src/tui/merge.ts";
@@ -648,6 +649,268 @@ test("tui: help lists the registry keys and the palette actions", async (t) => {
   for (const ch of "version") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.lines().at(-2)!, /keylang \d+\.\d+\.\d+/);
+});
+
+// 04: the full findings list of the current analysis in F6.
+const DENY_RULES = "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny application infrastructure\n";
+
+test("tui: F6 lists a K102 on a source line; Enter shows the import, Esc returns to the list", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The pinned entry is the current analysis; the forbidden import is its first finding (diagnostics first).
+  s.send(KEY.f6);
+  assert.match(s.text(), /RESULTS · F6 · 0 run/);
+  assert.match(s.text(), /Current analysis · ✗ 1/);
+  assert.match(s.text(), /K102 src\/application\/purchase\.ts:2:/, s.text());
+  // Enter opens the selected finding: the code viewer shows the import line.
+  const before = { current: s.app.state.current, mode: s.app.state.mode };
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.open, true);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.equal(s.app.state.code?.file, "src/application/purchase.ts");
+  assert.equal(s.app.state.code?.line, 2);
+  assert.equal(s.app.state.code?.lines[1], 'import { save } from "../infrastructure/store.ts";');
+  // Ctrl+O returns to the list without losing the selection; Esc closes the panel where the session was.
+  s.send(KEY.ctrlO);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.results.open, true);
+  assert.equal(s.app.state.results.finding, 0);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.open, false);
+  assert.deepEqual({ current: s.app.state.current, mode: s.app.state.mode }, before);
+  assert.equal(s.app.state.code?.file ?? null, null);
+  // F6 at the target closes the panel and stays there.
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  s.send(KEY.f6);
+  assert.equal(s.app.state.results.open, false);
+  assert.equal(s.app.state.mode, "code");
+  assert.equal(s.app.state.code?.line, 2);
+});
+
+test("tui: the selected finding shows its full message; MERGE keeps its hunks instead of opening it", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const proposal = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the register.");
+  mkdirSync(join(root, ".keylang/proposals/keylang/flows"), { recursive: true });
+  writeFileSync(join(root, ".keylang/proposals/keylang/flows/checkout.md"), proposal);
+  const s = session(root, { cols: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  // The list row is cut at the panel width; the details above it carry the whole message.
+  const k102 = findingsOf(s.app.state.analysis).find((result) => result.code === "K102")!;
+  const words = s.text().replace(/\s+/g, " ");
+  assert.ok(words.includes(k102.evidence), `${k102.evidence}\n${s.text()}`);
+  assert.match(s.text(), /provenance syntactic/);
+  s.send("\x1b");
+  await sleep(40);
+  s.send("m");
+  assert.equal(s.app.state.mode, "merge");
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.mode, "merge");
+  assert.match(s.app.state.message ?? "", /finish the merge first/);
+});
+
+test("tui: findings on one line stay separate; a diagnostic joined with its verdict is listed once", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send("o"); // ok findings visible
+  const rows = s.text().split("\n").filter((line) => line.includes("keylang/flows/checkout.md:6:1"));
+  assert.ok(rows.length >= 2, `separate findings of one line must stay separate:\n${s.text()}`);
+  assert.ok(rows.some((row) => row.includes("ID ")), rows.join("\n"));
+  assert.ok(rows.some((row) => row.includes("trace ")), rows.join("\n"));
+  // The K102 diagnostic and the verdict it explains are one finding, never two.
+  assert.equal(s.text().split("\n").filter((line) => line.includes("K102")).length, 1, s.text());
+});
+
+test("tui: the findings list equals `check --format json` results on the same saved inputs", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: root, encoding: "utf8" });
+  assert.equal(cli.status, 1, cli.stderr);
+  const json = JSON.parse(cli.stdout) as { results: unknown[] };
+  assert.deepEqual(findingsOf(s.app.state.analysis), json.results);
+});
+
+test("tui: the selected finding stays selected when a rerun drops the findings above it", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send("\t");
+  s.send(KEY.down);
+  assert.equal(s.app.state.results.finding, 1);
+  assert.match(s.text(), /K102 src\/application\/purchase\.ts:2:/);
+  // The deny goes away on disk: the K102 above the selection leaves the report, the selection stays on its finding.
+  writeFileSync(join(root, "keylang/rules.md"), "# rules\n\n- layers domain < infrastructure < application < presentation\n");
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.doesNotMatch(s.text(), /K102/, s.text());
+  assert.equal(s.app.state.results.finding, 0);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  assert.equal(s.app.state.cursor.line, 4);
+});
+
+test("tui: findings of a dirty buffer equal `check --format json` once it is saved", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The dirty text denies a dependency the code has: the overlay analysis reports the K102 before any save.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/rules.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/rules.md");
+  s.send("i");
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  for (const ch of "deny application infrastructure") s.send(ch);
+  await sleep(40);
+  await s.app.idle();
+  const dirty = findingsOf(s.app.state.analysis);
+  assert.ok(dirty.some((result) => result.code === "K102"), JSON.stringify(dirty.map((result) => result.code)));
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: root, encoding: "utf8" });
+  const json = JSON.parse(cli.stdout) as { results: unknown[] };
+  assert.deepEqual(findingsOf(s.app.state.analysis), json.results);
+  assert.deepEqual(dirty, json.results, "the dirty analysis already reported what the CLI sees after the save");
+});
+
+test("tui: the verdict filters hide findings and count them; the totals stay", async (t) => {
+  const root = checkoutRepo(t, { "keylang/rules.md": DENY_RULES });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  const header = /✗ (\d+) ◌ (\d+) ! (\d+) ✓ (\d+) · (\d+) findings · (\d+) hidden/.exec(s.text());
+  assert.ok(header, s.text());
+  const [, fail, , , ok, total, hidden] = header!;
+  assert.ok(Number(total) > 0 && Number(ok) > 0, s.text());
+  assert.equal(Number(hidden), Number(ok), "ok is hidden by default and counted as hidden");
+  // o shows the ok findings: nothing is hidden, the full counts stay.
+  s.send("o");
+  assert.match(s.text(), /· 0 hidden/);
+  // f hides the fails: the K102 leaves the list, the totals still count it.
+  s.send("f");
+  assert.doesNotMatch(s.text(), /K102 src\/application\/purchase\.ts:2:/, s.text());
+  const headerAfter = /✗ (\d+) ◌ (\d+) ! (\d+) ✓ (\d+) · (\d+) findings · (\d+) hidden/.exec(s.text());
+  assert.ok(headerAfter, s.text());
+  assert.equal(headerAfter![1], fail, "the full totals never change");
+  assert.equal(headerAfter![6], "1", "only the hidden K102 is filtered out");
+});
+
+test("tui: Enter on a finding lands on the right cluster after Unicode characters", async (t) => {
+  // An astral emoji is two UTF-16 units but one code point and one cluster; the Cyrillic word is one of each per letter.
+  const wiring = "# wiring\n\n- wire presentation.terminal.checkout\n  - buy application.purchase.buy\n    - when env.DB = 💾память → infrastructure.store.missing\n";
+  const root = checkoutRepo(t, { "keylang/wiring.md": wiring });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f6);
+  assert.match(s.text(), /K001 keylang\/wiring\.md:5:31/, s.text());
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.equal(s.app.state.current, "keylang/wiring.md");
+  assert.equal(s.app.state.cursor.line, 4);
+  const line = s.app.state.buffers.get("keylang/wiring.md")!.text.split("\n")[4]!;
+  assert.equal(s.app.state.cursor.col, [...line.slice(0, line.indexOf("infrastructure.store.missing"))].length);
+  assert.notEqual(s.app.state.cursor.col, line.indexOf("infrastructure.store.missing"), "the fixture must tell UTF-16 from code points");
+  // Esc while editing the target leaves editing first; the next Esc returns to the list.
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.results.viewing, true);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.results.finding, 0);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.open, false);
+});
+
+test("tui: the findings panel names unsaved inputs and a failed analysis", async (t) => {
+  const root = checkoutRepo(t);
+  let calls = 0;
+  const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
+    calls++;
+    if (calls > 2) throw new Error("boom");
+    return analyze(request);
+  };
+  const s = session(root, { analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // An unsaved buffer is an overlay input of the shown report (a change in the prose keeps the flow parseable).
+  s.send("i");
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send("z");
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  s.send(KEY.f6);
+  assert.match(s.text(), /unsaved inputs: keylang\/flows\/checkout\.md/, s.text());
+  // A failed reanalysis keeps the last list with the persistent reason; the panel names it.
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.match(s.text(), /outdated: analysis failed: boom/, s.text());
+  assert.match(s.text(), /◌ trace keylang\/flows\/checkout\.md:/, s.text());
+  // Navigating the list keeps the reason; a successful retry clears it.
+  s.send(KEY.enter);
+  s.send("\x1b");
+  await sleep(40);
+  assert.match(s.text(), /outdated: analysis failed: boom/, s.text());
+  calls = -10; // the analyzer works again
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.doesNotMatch(s.text(), /analysis failed/, s.text());
+  assert.match(s.text(), /◌ trace keylang\/flows\/checkout\.md:/, s.text());
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.open, false);
+});
+
+test("tui: the pinned analysis sits above the records and is reachable with the arrows", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  // With records the newest stays selected; up reaches the pinned analysis.
+  s.send(KEY.f6);
+  assert.equal(s.app.state.results.entry, "record");
+  assert.match(s.text(), /Environment diagnostics {2}completed · code 0/);
+  s.send(KEY.up);
+  assert.equal(s.app.state.results.entry, "analysis");
+  assert.match(s.text(), /Current analysis · ✗ 0/);
+  assert.match(s.text(), /◌ trace keylang\/flows\/checkout\.md:/);
+  // Down returns to the record; Enter reruns it as before.
+  s.send(KEY.down);
+  assert.equal(s.app.state.results.entry, "record");
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.length, 2);
 });
 
 test("tui: resize and wide characters keep the frame aligned", async (t) => {
