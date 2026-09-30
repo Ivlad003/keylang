@@ -16,7 +16,7 @@ import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
-import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
+import { changedFlows, codeToSpec, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
 import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
@@ -452,31 +452,26 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
   if (what !== "flow") throw new Error("draft: expected `draft flow <trigger>`, `draft rules` or `draft map`");
   if (!trigger) throw new Error("draft flow: a trigger id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
+  if (opts.mode === "algo") return draftFlowAlgo(findRoot(process.cwd()), trigger, opts, null);
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
   if (!analysis.snapshot) throw new Error("draft: no supported source files; run `keylang init`");
   if (analysis.snapshot.nodes[trigger]?.kind !== "fn") {
     const hint = analysis.index.suggest(trigger);
     throw new Error(`draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
   }
-  let draft: { name: string; text: string; steps?: string[] } = draftFlow(analysis.snapshot, trigger, opts.name !== undefined ? { name: opts.name } : {});
-  let summary = `${draft.steps!.length} step(s)`;
-  let counts: Record<string, number> | null = null;
-  if (opts.mode !== "algo") {
-    const { llmClient } = await import("./llm.ts");
-    const setup = llmClient(analysis.config.agent);
-    if ("missing" in setup) {
-      if (opts.mode === "llm") throw new Error(`draft --mode llm: ${setup.missing}`);
-      process.stderr.write(`keylang: ${setup.missing}; drafting from the snapshot only (--mode algo)\n`);
-    } else {
-      const { draftFlowWithModel } = await import("./draft-llm.ts");
-      const model = await draftFlowWithModel(analysis, trigger, setup.client, opts.mode, opts.name);
-      draft = model;
-      summary = Object.entries(model.counts).filter(([, n]) => n > 0).map(([status, n]) => `${n} ${status}`).join(", ");
-      if (model.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")} (K001 after the merge unless declared planned)\n`);
-      for (const line of model.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
-      counts = model.counts;
-    }
+  const { llmClient } = await import("./llm.ts");
+  const setup = llmClient(analysis.config.agent);
+  if ("missing" in setup) {
+    if (opts.mode === "llm") throw new Error(`draft --mode llm: ${setup.missing}`);
+    process.stderr.write(`keylang: ${setup.missing}; drafting from the snapshot only (--mode algo)\n`);
+    return draftFlowAlgo(analysis.config.root, trigger, opts, analysis);
   }
+  const { draftFlowWithModel } = await import("./draft-llm.ts");
+  const draft = await draftFlowWithModel(analysis, trigger, setup.client, opts.mode, opts.name);
+  const summary = Object.entries(draft.counts).filter(([, n]) => n > 0).map(([status, n]) => `${n} ${status}`).join(", ");
+  if (draft.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")} (K001 after the merge unless declared planned)\n`);
+  for (const line of draft.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
+  const counts = draft.counts;
   if (opts.print) {
     process.stdout.write(draft.text);
     return 0;
@@ -489,8 +484,31 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
   const abs = join(root, target);
   const proposal = withFlow(existsSync(abs) ? readFileSync(abs, "utf8") : null, draft);
   const file = writeProposal(root, target, proposal);
-  if (counts) countProposed(root, counts);
+  countProposed(root, counts);
   process.stdout.write(`${toPosix(relative(process.cwd(), file))}: proposed flow \`${draft.name}\` for ${target} (${summary}); merge it with \`m\` in \`keylang\`\n`);
+  return 0;
+}
+
+/**
+ * `draft flow --mode algo` (and hybrid without a model): a printer over the
+ * shared `draft-flow` operation. The proposal replaces one already waiting,
+ * as the CLI always did; `analysis`, when the caller has one, is reused.
+ */
+async function draftFlowAlgo(root: string, trigger: string, opts: { name: string | undefined; into: string | undefined; print: boolean }, analysis: Awaited<ReturnType<typeof analyze>> | null): Promise<number> {
+  const result = await runOperation(
+    { kind: "draft-flow", root, trigger, ...(opts.name !== undefined ? { name: opts.name } : {}), ...(opts.into !== undefined ? { into: opts.into } : {}), output: opts.print ? "preview" : "proposal", pending: "replace" },
+    analysis === null ? {} : { analyze: async () => analysis },
+  );
+  const payload = result.payload;
+  if (result.status !== "completed" || payload === null) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  if (payload.output === "preview") {
+    process.stdout.write(payload.candidate.flow);
+    return 0;
+  }
+  process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed flow \`${payload.candidate.name}\` for ${payload.candidate.target} (${payload.summary}); merge it with \`m\` in \`keylang\`\n`);
   return 0;
 }
 

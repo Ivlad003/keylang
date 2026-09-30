@@ -482,9 +482,12 @@
       - calls base.safe-write.landing, map.analyze.within, lang.parser.parse
     - fn [codeProposalProblem](../../src/proposals.ts#L48) (root: string, path: string) → string | null
       - calls base.languages.languageOf, base.safe-write.landing, map.analyze.within
-    - fn [writeProposal](../../src/proposals.ts#L64) (root: string, path: string, text: string) → string
-      - calls base.safe-write.safeWrite
-    - fn [lineDiff](../../src/proposals.ts#L69) (before: string, after: string) → string
+    - type [ProposalBasis](../../src/proposals.ts#L64)
+    - fn [proposalWriteProblem](../../src/proposals.ts#L74) (root: string, path: string, basis: ProposalBasis) → string | null
+      - calls base.safe-write.writeProblem
+    - fn [writeProposal](../../src/proposals.ts#L90) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+      - calls features.proposals.proposalWriteProblem, base.safe-write.safeWrite
+    - fn [lineDiff](../../src/proposals.ts#L99) (before: string, after: string) → string
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     - node external.node
     - analyze map.analyze

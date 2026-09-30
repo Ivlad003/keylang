@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -181,6 +181,14 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["wire", "keylang wire", "wire --check", "wiring", "generate wiring", "keylang.gen.ts", "container"],
     // A form names the output file (the CLI's default) and the mode; the generated code is shown read-only, never compiled or run.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "draft-flow",
+    label: "Draft flow: from the code's calls (algo)",
+    group: "Generate",
+    aliases: ["draft flow", "keylang draft flow", "draft --mode algo", "flow draft", "propose flow", "algo"],
+    // A form names the trigger (a fn), the name, the target and preview or proposal; the target itself is never written, MERGE applies the proposal.
+    when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
     id: "cancel",

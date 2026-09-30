@@ -16,7 +16,7 @@
 // MERGE lives in `merge-session.ts`; ghost text, voice and the agent's draft
 // in `assist.ts`; this class dispatches input to them and keeps the editor.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -37,7 +37,7 @@ import { baselinePath } from "../baseline.ts";
 import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "../harness.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
-import { PROPOSALS_DIR } from "../proposals.ts";
+import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
 import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
@@ -55,7 +55,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, ConfigState, Cursor, Hover, NewSpecForm, OperationRecord, State } from "./state.ts";
+import type { Buffer, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
@@ -1730,6 +1730,13 @@ export class App {
       const dir = `${this.specDir()}/`;
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
     }
+    if (request.kind === "draft-flow") {
+      // The draft reads the saved code and keylang.json; the target is read from disk and was refused
+      // above when dirty. Only a dirty keylang.json is saved first; other dirty specs stay dirty.
+      const isConfig = (path: string): boolean => path === CONFIG_FILE;
+      const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target}`] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
+    }
     if (request.kind === "wire") {
       // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
       // A write names its target in that step; without dirty buffers the form already did.
@@ -1856,6 +1863,8 @@ export class App {
       progress: null,
     };
     const label = operationLabel(request);
+    const buffer = this.state.current === null ? undefined : this.state.buffers.get(this.state.current);
+    const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null };
     this.state.records.push(record);
     this.state.activeOperation = record.id;
     this.state.message = `${label}: running…`;
@@ -1873,6 +1882,7 @@ export class App {
       if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
+      if (request.kind === "draft-flow") this.afterDraft(record, origin);
       this.draw();
     };
     this.cancelActive = () => {
@@ -2479,6 +2489,184 @@ export class App {
     this.requestOperation("trace-plan", { kind: "trace-plan", root: this.state.root, flow });
   }
 
+  // ---------- draft flow (algo) ----------
+
+  /**
+   * The draft-flow form (design §2.4): the fn under the cursor, else the
+   * trigger of the flow under the cursor, is the visible default; name and
+   * target stay empty for the CLI's defaults, shown next to them. The output
+   * is a proposal unless preview is chosen.
+   */
+  private openDraftPrompt(): void {
+    const snapshot = this.state.analysis?.snapshot ?? null;
+    const id = this.state.mode === "merge" ? null : this.idAtCursor();
+    const trigger = id !== null && snapshot?.nodes[id]?.kind === "fn" ? id : (this.triggerAtCursor() ?? "");
+    this.state.prompt = { kind: "draft-flow", text: "", items: [], ids: [], index: 0, draft: { trigger, name: "", into: "", output: "proposal" } };
+    this.refreshDraftPrompt();
+  }
+
+  /** The `trigger` of the flow section under the cursor, or null. */
+  private triggerAtCursor(): string | null {
+    const flow = this.flowAtCursor();
+    const found = flow === null ? undefined : this.state.analysis?.spec.flows.find((item) => item.name === flow && item.file === this.state.current);
+    return found?.triggers[0]?.target.target ?? null;
+  }
+
+  /** The name and target the draft would use: the typed ones, else the CLI's defaults. */
+  private draftTarget(form: { trigger: string; name: string; into: string }): { name: string; target: string } {
+    const trigger = form.trigger.trim();
+    const name = form.name.trim() !== "" ? form.name.trim() : trigger.slice(trigger.lastIndexOf(".") + 1);
+    const into = form.into.trim();
+    return { name, target: into !== "" ? toPosix(into) : `${this.merges.specDir()}/flows/${name || "<name>"}.md` };
+  }
+
+  /** The callable IDs of the current snapshot that contain the typed trigger, at most eight. */
+  private triggerMatches(typed: string): string[] {
+    const nodes = this.state.analysis?.snapshot?.nodes ?? {};
+    if (nodes[typed]?.kind === "fn") return [];
+    const query = typed.toLowerCase();
+    return Object.keys(nodes)
+      .filter((id) => nodes[id]!.kind === "fn" && nodes[id]!.layer !== "external" && id.toLowerCase().includes(query))
+      .sort(compareText)
+      .slice(0, 8);
+  }
+
+  /** Why a draft may not start now, or null: the checks the CLI makes first, then a pending proposal and an unsaved target (a proposal only). */
+  private draftProblem(form: DraftForm): { field: string; text: string } | null {
+    const trigger = form.trigger.trim();
+    if (trigger === "") return { field: "trigger", text: "a trigger id is required" };
+    const snapshot = this.state.analysis?.snapshot ?? null;
+    if (snapshot !== null && snapshot.nodes[trigger]?.kind !== "fn") {
+      const hint = this.state.analysis?.index.suggest(trigger);
+      return { field: "trigger", text: `\`${trigger}\` is not a fn of the current snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}` };
+    }
+    if (form.output === "preview") return null;
+    const { target } = this.draftTarget(form);
+    const problem = proposalProblem(this.state.root, this.merges.specDir(), target, (path) => this.generatedDoc(path));
+    if (problem !== null) return { field: form.into.trim() === "" ? "name" : "into", text: `${target}: ${problem}` };
+    if (this.proposalWaiting(target)) return { field: "into", text: `a proposal for ${target} is waiting: merge it first (m, or Proposals)` };
+    const buffer = this.state.buffers.get(target);
+    if (buffer && isDirty(buffer)) return { field: "into", text: `${target} has unsaved changes: save (Ctrl+S) or undo them before a draft into it` };
+    return null;
+  }
+
+  /** Something is at `.keylang/proposals/<path>`: a proposal (or a link) the person has not resolved. */
+  private proposalWaiting(path: string): boolean {
+    try {
+      lstatSync(join(this.state.root, PROPOSALS_DIR, path));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The rows, the root, and a note on the selected row; nothing is read but the snapshot and the target's state. */
+  private refreshDraftPrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.draft;
+    if (prompt?.kind !== "draft-flow" || !form) return;
+    const selected = prompt.ids?.[prompt.index] ?? "trigger";
+    const caret = (row: string): string => (selected === row ? "▏" : "");
+    const { name, target } = this.draftTarget(form);
+    const matches = this.triggerMatches(form.trigger.trim());
+    const rows: { id: string; text: string }[] = [
+      { id: "trigger", text: `trigger: ${form.trigger}${caret("trigger")}` },
+      ...matches.map((id) => ({ id: `fn:${id}`, text: `    fn ${id}` })),
+      { id: "name", text: `name:    ${form.name}${caret("name")}${form.name.trim() === "" ? `  (default ${name || "the trigger's last segment"})` : ""}` },
+      { id: "into", text: `target:  ${form.into}${caret("into")}${form.into.trim() === "" ? `  (default ${target})` : ""}` },
+      { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
+      { id: "run", text: form.output === "proposal" ? `Create the proposal ${PROPOSALS_DIR}/${target} (the target itself is not written)` : "Preview the draft (writes nothing)" },
+    ];
+    prompt.ids = rows.map((row) => row.id);
+    prompt.items = rows.map((row) => row.text);
+    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
+    prompt.details = [`root: ${this.state.root} · the target is relative to it · algo: only the calls the snapshot resolved`];
+    const now = prompt.ids[prompt.index]!;
+    const problem = this.draftProblem(form);
+    if (now.startsWith("fn:")) prompt.note = `Enter takes ${now.slice(3)} as the trigger`;
+    else if (now === "trigger") {
+      const trigger = form.trigger.trim();
+      const snapshot = this.state.analysis?.snapshot ?? null;
+      prompt.note =
+        trigger === ""
+          ? "type a callable id · ↓ picks a match"
+          : snapshot === null
+            ? "no current snapshot to look it up; the operation reads the saved code"
+            : snapshot.nodes[trigger]?.kind === "fn"
+              ? `${trigger}: a fn of the current snapshot`
+              : (problem?.text ?? "");
+    } else if (problem !== null && (problem.field === now || now === "run" || now === "output")) prompt.note = problem.text;
+    else if (now === "into" || now === "name") prompt.note = existsSync(join(this.state.root, target)) ? `${target} exists: its other sections are kept` : `${target} is a new file`;
+    else prompt.note = form.output === "proposal" ? "Enter proposes; MERGE applies it hunk by hunk" : "Enter shows the draft in F6; nothing is written";
+  }
+
+  /** ←→ on the output row: proposal or preview. */
+  private changeDraftOutput(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "draft-flow" || !prompt.draft || prompt.ids?.[prompt.index] !== "output") return;
+    prompt.draft.output = prompt.draft.output === "proposal" ? "preview" : "proposal";
+    this.refreshDraftPrompt();
+  }
+
+  /**
+   * Enter in the draft form. On a match it takes that trigger; elsewhere a
+   * problem keeps the form (the typed values stay) with the field selected,
+   * else the draft runs as the session's operation.
+   */
+  private submitDraft(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.draft;
+    if (prompt?.kind !== "draft-flow" || !form) return;
+    const row = prompt.ids?.[prompt.index] ?? "";
+    if (row.startsWith("fn:")) {
+      form.trigger = row.slice(3);
+      prompt.index = -1;
+      prompt.ids = [];
+      this.refreshDraftPrompt();
+      prompt.index = prompt.ids!.indexOf("name");
+      this.refreshDraftPrompt();
+      return;
+    }
+    const problem = this.draftProblem(form);
+    if (problem !== null) {
+      prompt.index = Math.max(0, prompt.ids!.indexOf(problem.field));
+      this.refreshDraftPrompt();
+      this.state.message = `draft flow: ${problem.text}`;
+      return;
+    }
+    const name = form.name.trim();
+    const into = form.into.trim();
+    this.state.prompt = null;
+    this.requestOperation("draft-flow", {
+      kind: "draft-flow",
+      root: this.state.root,
+      trigger: form.trigger.trim(),
+      ...(name !== "" ? { name } : {}),
+      ...(into !== "" ? { into: toPosix(into) } : {}),
+      output: form.output,
+      pending: "refuse",
+    });
+  }
+
+  /**
+   * A finished draft: a proposal opens in MERGE only while the file, the mode
+   * and the text the operation started from are still current and nothing
+   * else is open; otherwise it waits, named in the message and the list.
+   */
+  private afterDraft(record: OperationRecord, origin: DraftOrigin): void {
+    const result = record.result;
+    if (result?.kind !== "draft-flow" || result.status !== "completed" || result.payload?.proposal == null) return;
+    const target = result.payload.candidate.target;
+    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null ? true : this.state.buffers.get(origin.path)?.version === origin.version);
+    const free = this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.results.open && !this.state.help;
+    if (current && free) {
+      this.merges.open(target);
+      if (this.state.merge?.path === target) this.state.message = `draft flow: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}`;
+      return;
+    }
+    this.state.message = `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE`;
+  }
+
   // ---------- export ----------
 
   /**
@@ -2802,6 +2990,11 @@ export class App {
     if (record.params.kind === "export") {
       this.state.message = "export: select the report and press e: the form shows the target again before Save";
       return;
+    }
+    // A proposed draft: Enter opens its MERGE (checked again: a proposal merged or rewritten since is judged as it is now).
+    if (record.result?.kind === "draft-flow" && record.result.payload?.proposal != null) {
+      this.closeResults();
+      return this.merges.open(record.result.payload.candidate.target);
     }
     // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
     if (record.params.kind === "doctor") return this.startOperation(record.action, record.params);
@@ -3152,6 +3345,9 @@ export class App {
     else if (prompt.kind === "explain-edge") {
       const field = prompt.ids?.[prompt.index];
       if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] += text;
+    } else if (prompt.kind === "draft-flow") {
+      const field = prompt.ids?.[prompt.index];
+      if (prompt.draft && (field === "trigger" || field === "name" || field === "into")) prompt.draft[field] += text;
     } else prompt.text += text;
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
@@ -3168,6 +3364,7 @@ export class App {
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
     if (prompt.kind === "export") this.refreshExportPrompt();
+    if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -3192,6 +3389,8 @@ export class App {
       if (prompt.kind === "full-check" && prompt.checkOptions && field === "since") prompt.checkOptions.since = graphemes(prompt.checkOptions.since).slice(0, -1).join("");
       else if (prompt.kind === "explain-edge") {
         if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] = graphemes(prompt.edge[field]).slice(0, -1).join("");
+      } else if (prompt.kind === "draft-flow") {
+        if (prompt.draft && (field === "trigger" || field === "name" || field === "into")) prompt.draft[field] = graphemes(prompt.draft[field]).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
@@ -3208,11 +3407,13 @@ export class App {
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
+      if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
       return;
     }
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftOutput();
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -3220,6 +3421,7 @@ export class App {
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
+      if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -3233,6 +3435,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
     if (event.name === "enter" && prompt.kind === "export") return this.submitExport();
+    if (event.name === "enter" && prompt.kind === "draft-flow") return this.submitDraft();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -3325,6 +3528,8 @@ export class App {
         return this.openParsePrompt();
       case "trace-plan":
         return this.openTracePlanPrompt();
+      case "draft-flow":
+        return this.openDraftPrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":
@@ -3555,4 +3760,11 @@ function proposalSummary(entry: ProposalEntry): string {
   if (entry.hunks !== null) parts.push(`${entry.hunks} hunk(s)`);
   if (entry.problem !== null) parts.push("cannot merge");
   return parts.join(" · ");
+}
+
+/** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
+interface DraftOrigin {
+  path: string | null;
+  mode: Mode;
+  version: number | null;
 }

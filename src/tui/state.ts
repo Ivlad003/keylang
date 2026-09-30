@@ -123,8 +123,9 @@ export interface Prompt {
    * `parse`: the spec files and directories to parse, relative to the root and separated by spaces (the current spec by default), and the view (`ids` are `tree` / `json`);
    * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
+   * `draft-flow`: the algorithmic flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `output`, run; typing edits the selected field, ←→ change the output; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -145,6 +146,17 @@ export interface Prompt {
   edge?: { from: string; to: string };
   /** `export`: the report and what the form showed about the target. */
   exportForm?: ExportForm;
+  /** `draft-flow`: the fields as typed; an empty name or target is the CLI's default, shown next to it. */
+  draft?: DraftForm;
+}
+
+/** The fields of `draft flow <trigger> [--name] [--into]` and whether it proposes or only previews. */
+export interface DraftForm {
+  trigger: string;
+  name: string;
+  /** Relative to the root, POSIX. */
+  into: string;
+  output: "proposal" | "preview";
 }
 
 /**

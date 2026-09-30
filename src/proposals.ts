@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { within } from "./analyze.ts";
 import { languageOf } from "./languages.ts";
 import { parse } from "./parser.ts";
-import { landing, safeWrite } from "./safe-write.ts";
+import { landing, safeWrite, writeProblem } from "./safe-write.ts";
 import { WIRE_MARKER } from "./wire-gen.ts";
 
 export const PROPOSALS_DIR = ".keylang/proposals";
@@ -57,12 +57,42 @@ export function codeProposalProblem(root: string, path: string): string | null {
 }
 
 /**
+ * What a proposal was built from: the target on disk and the proposal already
+ * waiting for it (null: no file). A write that carries it lands only while
+ * both are still so.
+ */
+export interface ProposalBasis {
+  target: string | null;
+  proposal: string | null;
+}
+
+/**
+ * Why the proposal of `path` built from `basis` may not be written now, or
+ * null: the target or the waiting proposal changed, appeared or went away
+ * since, or the store breaks the write policy. Each reason names its file.
+ */
+export function proposalWriteProblem(root: string, path: string, basis: ProposalBasis): string | null {
+  const abs = resolve(root, path);
+  const target = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  if (target !== basis.target) return `${path}: ${basis.target === null ? "created" : target === null ? "removed" : "changed"} on disk while the proposal was prepared; nothing written`;
+  const problem = writeProblem(root, `${PROPOSALS_DIR}/${path}`, { under: PROPOSALS_DIR, generated: true, expect: basis.proposal });
+  if (problem === null) return null;
+  return `${PROPOSALS_DIR}/${path}: ${problem.replace("while the change was prepared", "while the proposal was prepared")}`;
+}
+
+/**
  * Writes the proposal for `path` (relative, POSIX) atomically and returns its
  * file; `.keylang/proposals/` is keylang's own store, so a link there that
- * leads elsewhere is refused like any other.
+ * leads elsewhere is refused like any other. With `basis` nothing is written
+ * unless the target and the waiting proposal are still what it says: a
+ * proposal that appeared or changed meanwhile is never overwritten.
  */
-export function writeProposal(root: string, path: string, text: string): string {
-  return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true });
+export function writeProposal(root: string, path: string, text: string, basis?: ProposalBasis): string {
+  if (basis !== undefined) {
+    const problem = proposalWriteProblem(root, path, basis);
+    if (problem !== null) throw new Error(problem);
+  }
+  return safeWrite(root, `${PROPOSALS_DIR}/${path}`, text, { under: PROPOSALS_DIR, generated: true, ...(basis !== undefined ? { expect: basis.proposal } : {}) });
 }
 
 /** `-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes. */

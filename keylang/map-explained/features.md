@@ -747,10 +747,15 @@
     - fn [codeProposalProblem](../../src/proposals.ts#L48) (root: string, path: string) → string | null
       <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, inside the repository (links included), outside the directories sources are not read from, and not one keylang generates (`keylang wire`).
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - fn [writeProposal](../../src/proposals.ts#L64) (root: string, path: string, text: string) → string
-      <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other.
-      - calls [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L69) (before: string, after: string) → string
+    - type [ProposalBasis](../../src/proposals.ts#L64)
+      <a id="features.proposals.ProposalBasis"></a><br>What a proposal was built from: the target on disk and the proposal already waiting for it (null: no file). A write that carries it lands only while both are still so.
+    - fn [proposalWriteProblem](../../src/proposals.ts#L74) (root: string, path: string, basis: ProposalBasis) → string | null
+      <a id="features.proposals.proposalWriteProblem"></a><br>Why the proposal of `path` built from `basis` may not be written now, or null: the target or the waiting proposal changed, appeared or went away since, or the store breaks the write policy. Each reason names its file.
+      - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
+    - fn [writeProposal](../../src/proposals.ts#L90) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+      <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
+      - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+    - fn [lineDiff](../../src/proposals.ts#L99) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a TS/JS e2e test that…

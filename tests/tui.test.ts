@@ -6327,3 +6327,235 @@ test("tui: trace-plan of an unknown flow is code 2 with the CLI's message and no
   assert.equal(saved.payload.text, cliTracePlan(root, "checkout").stdout, "the saved flow is planned");
   assert.ok(!existsSync(join(root, ".keylang/trace")), "no trace file");
 });
+
+// ---------- algorithmic flow draft (ticket 22) ----------
+
+/** A spec with prose and another flow: a draft into it keeps both. */
+const BUYING_SPEC = "# Buying\n\nHow an order is bought.\n\n# flow other\n\n- trigger presentation.terminal.checkout\n";
+
+/** Moves the draft form's selection to the row `id`. */
+function draftRow(s: ReturnType<typeof session>, id: string): void {
+  const prompt = s.app.state.prompt!;
+  for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
+  assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
+}
+
+/** Replaces the text of a field row of the draft form. */
+function draftField(s: ReturnType<typeof session>, id: "trigger" | "name" | "into", text: string): void {
+  draftRow(s, id);
+  for (const _ of s.app.state.prompt!.draft![id]) s.send("\x7f");
+  for (const ch of text) s.send(ch);
+}
+
+/** The palette's draft-flow form with the given fields; Enter on the run row. */
+function draftForm(s: ReturnType<typeof session>, fields: { trigger: string; name?: string; into?: string; output?: "proposal" | "preview" }): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "draft flow") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "draft-flow", s.app.state.message ?? "");
+  draftField(s, "trigger", fields.trigger);
+  if (fields.name !== undefined) draftField(s, "name", fields.name);
+  if (fields.into !== undefined) draftField(s, "into", fields.into);
+  if ((fields.output ?? "proposal") !== s.app.state.prompt!.draft!.output) {
+    draftRow(s, "output");
+    s.send(KEY.right);
+  }
+  draftRow(s, "run");
+  s.send(KEY.enter);
+}
+
+type DraftResult = Extract<OperationResult, { kind: "draft-flow" }> & { payload: NonNullable<Extract<OperationResult, { kind: "draft-flow" }>["payload"]> };
+
+function draftRecord(app: App): DraftResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "draft-flow" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as DraftResult;
+}
+
+function cliDraft(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "draft", "flow", ...args], { cwd: root, encoding: "utf8" });
+}
+
+test("tui: draft flow (algo) of a callable with two calls: the preview is the CLI's --print and writes nothing; the proposal is the CLI's full target with another flow kept; the target stays until w", async (t) => {
+  const specs = { "keylang/flows/buying.md": BUYING_SPEC };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The form: the trigger of the flow under the cursor is the default; a typed part lists the callable ids; the defaults and the root are visible.
+  s.send(KEY.ctrlP);
+  for (const ch of "draft flow") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "draft-flow");
+  assert.equal(s.app.state.current, "keylang/flows/buying.md");
+  assert.equal(prompt.draft?.trigger, "", "no flow with a trigger under the cursor: no default");
+  assert.match(prompt.items.join("\n"), /target: {4}\(default keylang\/flows\/<name>\.md\)/);
+  assert.deepEqual(prompt.details, [`root: ${root} · the target is relative to it · algo: only the calls the snapshot resolved`]);
+  draftField(s, "trigger", "purchase.b");
+  assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("fn:")), ["fn:application.purchase.buy"]);
+  assert.match(promptNote(s.app), /`purchase\.b` is not a fn of the current snapshot/);
+  s.send(KEY.down);
+  assert.equal(promptNote(s.app), "Enter takes application.purchase.buy as the trigger");
+  s.send(KEY.enter);
+  assert.equal(prompt.draft?.trigger, "application.purchase.buy");
+  assert.equal(prompt.ids?.[prompt.index], "name");
+  assert.deepEqual(prompt.items.slice(1, 3), ["name:    ▏  (default buy)", "target:    (default keylang/flows/buy.md)"]);
+  assert.equal(promptNote(s.app), "keylang/flows/buy.md is a new file");
+  assert.match(s.text(), /draft flow · algo/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Esc writes nothing");
+  // Preview: the CLI's --print, byte for byte; the candidate keeps the other sections; nothing is written, stats included.
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md", output: "preview" });
+  assert.equal(s.app.state.barrier, null);
+  await s.app.idle();
+  const preview = draftRecord(s.app);
+  assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals], ["completed", 0, [], []]);
+  const printed = cliDraft(twin, ["application.purchase.buy", "--mode", "algo", "--into", "keylang/flows/buying.md", "--print"]);
+  assert.deepEqual([printed.status, printed.stderr], [0, ""]);
+  const { candidate } = preview.payload;
+  assert.equal(candidate.flow, printed.stdout);
+  assert.deepEqual(candidate.steps, ["application.purchase.buy", "domain.order.create", "infrastructure.store.save"]);
+  assert.deepEqual([candidate.target, candidate.before, candidate.pending, candidate.problem], ["keylang/flows/buying.md", BUYING_SPEC, null, null]);
+  assert.ok(candidate.text!.startsWith(BUYING_SPEC), "the prose and the other flow are kept");
+  assert.ok(candidate.text!.endsWith(printed.stdout));
+  assert.deepEqual(treeBytes(root), before, "a preview writes no proposal, no stats, not the target");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Draft flow · algo · application\.purchase\.buy → keylang\/flows\/buying\.md · preview, nothing written/);
+  assert.match(text, /3 step\(s\), preview, nothing written · code 0/);
+  assert.match(text, /── keylang draft flow application\.purchase\.buy --print · stdout ──/);
+  assert.match(text, /── keylang\/flows\/buying\.md as proposed ──/);
+  await esc(s.send);
+  // Proposal: the full proposed text as the CLI writes it in a twin; the target is unchanged; MERGE opens since nothing moved.
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md" });
+  await s.app.idle();
+  const proposed = draftRecord(s.app);
+  const store = ".keylang/proposals/keylang/flows/buying.md";
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.written, proposed.proposals, proposed.payload.proposal], ["completed", 0, [], [store], store]);
+  const cli = cliDraft(twin, ["application.purchase.buy", "--mode", "algo", "--into", "keylang/flows/buying.md"]);
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [0, `${store}: proposed flow \`buy\` for keylang/flows/buying.md (3 step(s)); merge it with \`m\` in \`keylang\`\n`, ""]);
+  assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), "the CLI's proposal, byte for byte");
+  assert.equal(readFileSync(join(root, store), "utf8"), candidate.text);
+  assert.equal(readFileSync(join(root, "keylang/flows/buying.md"), "utf8"), BUYING_SPEC);
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [store], "only the proposal, no stats");
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.equal(s.app.state.merge?.path, "keylang/flows/buying.md");
+  assert.equal(s.app.state.current, "keylang/flows/buying.md");
+  // Esc leaves the proposal; F6 Enter on the record opens the same MERGE again; w writes the accepted hunks.
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, "keylang/flows/buying.md"), "utf8"), BUYING_SPEC, "before w the target is byte for byte the same");
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /3 step\(s\) proposed for keylang\/flows\/buying\.md · code 0/);
+  assert.match(text, /Enter open MERGE/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/flows/buying.md");
+  for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang/flows/buying.md"), "utf8"), candidate.text);
+  assert.ok(!existsSync(join(root, store)), "every hunk decided: the proposal is gone");
+});
+
+test("tui: draft flow refuses an unknown trigger, a waiting or just-created proposal and an unsaved target before it runs; a proposal or target changed during the work is kept; the CLI still replaces its own", async (t) => {
+  const root = checkoutRepo(t);
+  const hook: { during: (() => void) | null } = { during: null };
+  // The operation on this thread, with a hook between the computation and the commit: what another tool does meanwhile.
+  const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
+    runOperation(request, {
+      ...context,
+      beforeCommit: async () => {
+        hook.during?.();
+        await context.beforeCommit?.();
+      },
+    });
+  const s = session(root, { cols: 200, operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The trigger of the flow under the cursor is the default.
+  s.send(KEY.ctrlP);
+  for (const ch of "draft flow") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.draft?.trigger, "presentation.terminal.checkout");
+  assert.equal(promptNote(s.app), "presentation.terminal.checkout: a fn of the current snapshot");
+  await esc(s.send);
+  // An unknown trigger: the field keeps its text, the suggestion is named, nothing runs.
+  draftForm(s, { trigger: "application.purchase.buyy" });
+  assert.equal(s.app.state.prompt?.kind, "draft-flow");
+  assert.equal(s.app.state.prompt?.draft?.trigger, "application.purchase.buyy");
+  assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], "trigger");
+  assert.match(s.app.state.message ?? "", /^draft flow: `application\.purchase\.buyy` is not a fn of the current snapshot \(did you mean `application\.purchase\.buy`\?\)$/);
+  assert.equal(s.app.state.records.length, 0);
+  await esc(s.send);
+  // A proposal already waiting for the target: refused before the run; its bytes stay.
+  const store = join(root, ".keylang/proposals/keylang/flows/buy.md");
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, "# flow buy\n\nsomeone's proposal\n");
+  draftForm(s, { trigger: "application.purchase.buy" });
+  assert.equal(s.app.state.prompt?.kind, "draft-flow");
+  assert.equal(s.app.state.message, "draft flow: a proposal for keylang/flows/buy.md is waiting: merge it first (m, or Proposals)");
+  assert.equal(s.app.state.records.length, 0);
+  await esc(s.send);
+  assert.equal(readFileSync(store, "utf8"), "# flow buy\n\nsomeone's proposal\n");
+  // The CLI's policy is unchanged: its draft replaces the proposal it finds at the start.
+  const cli = cliDraft(root, ["application.purchase.buy", "--mode", "algo"]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(readFileSync(store, "utf8"), cliDraft(root, ["application.purchase.buy", "--mode", "algo", "--print"]).stdout);
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  assert.deepEqual(treeBytes(root), before);
+  // An unsaved target: refused, the buffer keeps its text.
+  const flow = "keylang/flows/checkout.md";
+  s.send("i");
+  for (const ch of "Draft me. ") s.send(ch);
+  await esc(s.send);
+  const typed = s.app.state.buffers.get(flow)!.text;
+  draftForm(s, { trigger: "presentation.terminal.checkout", into: flow });
+  assert.equal(s.app.state.message, `draft flow: ${flow} has unsaved changes: save (Ctrl+S) or undo them before a draft into it`);
+  assert.equal(s.app.state.records.length, 0);
+  await esc(s.send);
+  assert.equal(s.app.state.buffers.get(flow)!.text, typed);
+  s.send("\x1a"); // Ctrl+Z
+  // A proposal that appears during the work is never overwritten: failed 1, nothing written.
+  const other = ".keylang/proposals/keylang/flows/buy.md";
+  hook.during = () => {
+    mkdirSync(dirname(join(root, other)), { recursive: true });
+    writeFileSync(join(root, other), "agent's proposal\n");
+  };
+  draftForm(s, { trigger: "application.purchase.buy" });
+  await s.app.idle();
+  const raced = s.app.state.records.at(-1)!.result!;
+  assert.deepEqual([raced.kind, raced.status, raced.exitCode, raced.proposals], ["draft-flow", "failed", 1, []]);
+  assert.match(raced.messages[0]!.text, /^\.keylang\/proposals\/keylang\/flows\/buy\.md: created on disk while the proposal was prepared; nothing written$/);
+  assert.equal(readFileSync(join(root, other), "utf8"), "agent's proposal\n");
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // A target changed during the work: failed 1, the new text stays, no proposal.
+  hook.during = () => writeFileSync(join(root, "keylang/flows/buy.md"), "# flow buy\n\nwritten meanwhile\n");
+  draftForm(s, { trigger: "application.purchase.buy" });
+  await s.app.idle();
+  const changed = s.app.state.records.at(-1)!.result!;
+  assert.deepEqual([changed.status, changed.exitCode], ["failed", 1]);
+  assert.equal(changed.messages[0]!.text, "keylang/flows/buy.md: created on disk while the proposal was prepared; nothing written");
+  assert.equal(readFileSync(join(root, "keylang/flows/buy.md"), "utf8"), "# flow buy\n\nwritten meanwhile\n");
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+  // A proposal made while the person moved on (F6 opened meanwhile) waits: no MERGE by itself; a second draft into it is refused.
+  hook.during = () => s.send(KEY.f6);
+  draftForm(s, { trigger: "application.purchase.buy" });
+  await s.app.idle();
+  const made = draftRecord(s.app);
+  assert.deepEqual([made.status, made.exitCode], ["completed", 0]);
+  assert.equal(s.app.state.merge, null);
+  assert.equal(s.app.state.message, "draft flow: .keylang/proposals/keylang/flows/buy.md waits: m, Proposals or Enter in F6 opens MERGE");
+  const proposal = readFileSync(join(root, other), "utf8");
+  hook.during = null;
+  await esc(s.send);
+  draftForm(s, { trigger: "application.purchase.buy" });
+  assert.equal(s.app.state.message, "draft flow: a proposal for keylang/flows/buy.md is waiting: merge it first (m, or Proposals)");
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, other), "utf8"), proposal);
+  assert.equal(readFileSync(join(root, "keylang/flows/buy.md"), "utf8"), "# flow buy\n\nwritten meanwhile\n");
+});

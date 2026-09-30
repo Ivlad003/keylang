@@ -23,7 +23,8 @@ import type { Document } from "./ir.ts";
 import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
-import { PROPOSALS_DIR } from "./proposals.ts";
+import { PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal } from "./proposals.ts";
+import { draftFlow, withFlow, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
@@ -219,6 +220,34 @@ export interface TracePlanRequest {
 }
 
 /**
+ * A flow drafted from the snapshot's call edges (`keylang draft flow
+ * <trigger> --mode algo`): only what the edges show, no model. `preview`
+ * computes the candidate and writes nothing (`--print`: no proposal, no
+ * stats, not the target); `proposal` writes the target's full proposed text
+ * to `.keylang/proposals/<target>`. The target itself is never written: MERGE
+ * applies a proposal.
+ */
+export interface DraftFlowRequest {
+  kind: "draft-flow";
+  /** Repository root (absolute). */
+  root: string;
+  /** A fn of the snapshot. */
+  trigger: string;
+  /** The flow's name; default the trigger's last segment. */
+  name?: string;
+  /** The target spec, relative to the root, POSIX; default `<dir>/flows/<name>.md`. */
+  into?: string;
+  output: "preview" | "proposal";
+  /**
+   * A proposal already waiting for the target when the draft starts:
+   * `replace` overwrites it (the CLI's policy), `refuse` writes nothing (the
+   * TUI: a pending proposal is never covered by a new one). Default `refuse`.
+   * Either way a proposal that appears or changes during the work is kept.
+   */
+  pending?: "refuse" | "replace";
+}
+
+/**
  * Saves a report that was already computed to one file: exactly the stdout
  * the CLI prints for it, without ANSI or status lines. It never runs the
  * check again. The target is a plain relative path inside the repository, not
@@ -253,10 +282,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -472,6 +501,44 @@ export interface TracePlanPayload {
   text: string;
 }
 
+/**
+ * One drafted flow and what it makes of its target: the typed candidate a
+ * preview shows and a proposal writes. `before` and `pending` are the files
+ * it was built from — the expected state of a later write.
+ */
+export interface FlowCandidate {
+  trigger: string;
+  name: string;
+  /** IDs of the steps, trigger first. */
+  steps: string[];
+  /** The `# flow` section alone: what `draft flow --print` writes. */
+  flow: string;
+  /** The target spec, relative to the root, POSIX. */
+  target: string;
+  /** Why the target cannot take a proposal, or null; with a problem the target is not read. */
+  problem: string | null;
+  /** The target on disk the candidate was built from (null: no file). */
+  before: string | null;
+  /** The proposal already waiting for the target then (null: none). */
+  pending: string | null;
+  /** The target's full proposed text: its other sections kept, a section of the same flow replaced. Null with a problem. */
+  text: string | null;
+}
+
+/** What `keylang draft flow --mode algo` drafted, and the proposal it wrote. */
+export interface DraftFlowPayload {
+  output: "preview" | "proposal";
+  candidate: FlowCandidate;
+  /** `3 step(s)`, as the CLI names the draft. */
+  summary: string;
+  /** The proposal file written (`.keylang/proposals/<target>`), or null. */
+  proposal: string | null;
+  /** Why nothing was written: a pending proposal, or a target or proposal changed during the work. */
+  refused: string[];
+  /** The write failed with this error. */
+  error: string | null;
+}
+
 /** What `keylang wire [--check]` found and did. The path is POSIX, relative to the root. */
 export interface WirePayload {
   /** The generated file (`--out`). */
@@ -612,6 +679,7 @@ export interface OperationPayloads {
   export: ExportPayload;
   parse: ParsePayload;
   "trace-plan": TracePlanPayload;
+  "draft-flow": DraftFlowPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -652,6 +720,7 @@ export function runOperation(request: InitRequest, context?: OperationContext): 
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
 export function runOperation(request: TracePlanRequest, context?: OperationContext): Promise<OperationEnvelope<"trace-plan">>;
+export function runOperation(request: DraftFlowRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-flow">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -683,6 +752,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runParse(request, context);
     case "trace-plan":
       return runTracePlan(request, context);
+    case "draft-flow":
+      return runDraftFlow(request, context);
   }
 }
 
@@ -720,6 +791,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "parse":
       return { kind, ...base };
     case "trace-plan":
+      return { kind, ...base };
+    case "draft-flow":
       return { kind, ...base };
   }
 }
@@ -1799,6 +1872,116 @@ async function runTracePlan(request: TracePlanRequest, context: OperationContext
 }
 
 /** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */
+function emptyDraftFlow(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"draft-flow"> {
+  return { kind: "draft-flow", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * The candidate of `draft` for its target: `into`, else
+ * `<specDir>/flows/<name>.md`. A target a proposal may not change is named
+ * and not read; otherwise the text on disk and the waiting proposal are read
+ * once, here, and `withFlow` keeps the target's other sections. Reads only.
+ */
+export function flowCandidate(root: string, specDir: string, generated: (path: string) => boolean, draft: FlowDraft, into?: string): FlowCandidate {
+  const target = toPosix(into ?? `${specDir}/flows/${draft.name}.md`);
+  const base = { trigger: draft.steps[0]!, name: draft.name, steps: draft.steps, flow: draft.text, target };
+  const problem = proposalProblem(root, specDir, target, generated);
+  if (problem !== null) return { ...base, problem, before: null, pending: null, text: null };
+  const store = `${PROPOSALS_DIR}/${target}`;
+  const before = existingText(join(root, target));
+  // A store that breaks the write policy (a link out) is never read; the write names it.
+  const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
+  return { ...base, problem: null, before, pending, text: withFlow(before, draft) };
+}
+
+/**
+ * `keylang draft flow <trigger> --mode algo`. Compute: the analysis of the
+ * saved files (nothing persisted), the trigger must be a fn, `draftFlow`,
+ * then the candidate against the target on disk. A preview ends there (0).
+ * A proposal: a target a proposal may not change is 2, as in the CLI; a
+ * waiting proposal with `pending: refuse` is 1, nothing written. After
+ * `beforeCommit` the target and the waiting proposal must still be the ones
+ * read (else 1, nothing written); then the full text is written atomically
+ * (0; 2 on an I/O error). Cancelled: null, nothing written.
+ */
+async function runDraftFlow(request: DraftFlowRequest, context: OperationContext): Promise<OperationEnvelope<"draft-flow">> {
+  const { root, trigger } = request;
+  if (!isAbsolute(root)) return emptyDraftFlow("failed", 2, "draft flow: root must be an absolute path");
+  if (trigger === "") return emptyDraftFlow("failed", 2, "draft flow: a trigger id is required");
+  if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyDraftFlow("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
+  const snapshot = analyzed.snapshot;
+  if (!snapshot) return emptyDraftFlow("failed", 2, "draft: no supported source files; run `keylang init`");
+  if (snapshot.nodes[trigger]?.kind !== "fn") {
+    const hint = analyzed.index.suggest(trigger);
+    return emptyDraftFlow("failed", 2, `draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
+  }
+  const draft = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
+  const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
+  const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
+  let candidate: FlowCandidate;
+  try {
+    candidate = flowCandidate(root, specDir, generated, draft, request.into);
+  } catch (error) {
+    return emptyDraftFlow("failed", 2, messageOf(error));
+  }
+  const payload: DraftFlowPayload = { output: request.output, candidate, summary: `${draft.steps.length} step(s)`, proposal: null, refused: [], error: null };
+  if (request.output === "preview") {
+    return { ...emptyDraftFlow("completed", 0), payload, messages: [{ level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
+  }
+  if (candidate.problem !== null) return { ...emptyDraftFlow("failed", 2, `draft: ${candidate.target}: ${candidate.problem}`), payload };
+  const store = `${PROPOSALS_DIR}/${candidate.target}`;
+  const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
+  if (storeProblem !== null) return { ...emptyDraftFlow("failed", 2, `${store}: ${storeProblem}`), payload };
+  const refuse = (reasons: string[]): OperationEnvelope<"draft-flow"> => {
+    payload.refused = reasons;
+    return { ...emptyDraftFlow("failed", 1), payload, messages: [...reasons.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; the proposal waiting there is kept" }] };
+  };
+  if ((request.pending ?? "refuse") === "refuse" && candidate.pending !== null) return refuse([`${store}: a proposal for ${candidate.target} is waiting; merge it (m) or remove it before a new draft`]);
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyDraftFlow("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyDraftFlow("cancelled", null), payload };
+  const basis = { target: candidate.before, proposal: candidate.pending };
+  let problem: string | null;
+  try {
+    const target = proposalProblem(root, specDir, candidate.target, generated);
+    problem = target !== null ? `${candidate.target}: ${target}` : proposalWriteProblem(root, candidate.target, basis);
+  } catch (error) {
+    return { ...emptyDraftFlow("failed", 2, messageOf(error)), payload };
+  }
+  if (problem !== null) return refuse([problem]);
+  context.onProgress?.({ text: `writing ${store}` });
+  try {
+    writeProposal(root, candidate.target, candidate.text!, basis);
+  } catch (error) {
+    payload.error = messageOf(error);
+    return { ...emptyDraftFlow("failed", 2), payload, messages: [{ level: "error", text: payload.error }] };
+  }
+  payload.proposal = store;
+  return {
+    ...emptyDraftFlow("completed", 0),
+    payload,
+    messages: [{ level: "info", text: `${store}: proposed flow \`${draft.name}\` for ${candidate.target} (${payload.summary})` }],
+    proposals: [store],
+  };
+}
+
+/** The file's text, null when there is none; a directory or an unreadable file throws. */
+function existingText(abs: string): string | null {
+  return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+}
+
 export function checkSkipNote(path: string): string {
   return `note: ${path}: the explained map and saved explanations are not specs; skipped`;
 }
