@@ -5,15 +5,17 @@
 //
 // In-process entries serve the language server. `.keylang/cache/facts.json`
 // is written by `keylang map` only (`check` writes nothing) and read by every
-// command; a cache of another schema, extractor, or grammar is ignored.
+// command; a cache of another schema, extractor, or grammar is ignored. The
+// cache prepares its text; the map's commit step writes it with the map.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FileFacts } from "./extract/facts.ts";
 import { compareText } from "./span.ts";
 
 const CACHE_SCHEMA = 1;
-const CACHE_FILE = ".keylang/cache/facts.json";
+/** Relative to the root, POSIX. */
+export const FACT_CACHE_FILE = ".keylang/cache/facts.json";
 
 type StoredFacts = Omit<FileFacts, "exports"> & { exports: string[] };
 
@@ -183,7 +185,7 @@ export class FactCache {
 
   /** `version` names the extractor and grammars; any other stored version is ignored. */
   static open(root: string, version: string): FactCache {
-    const file = join(root, CACHE_FILE);
+    const file = join(root, FACT_CACHE_FILE);
     let disk: Stored["files"] = {};
     if (existsSync(file)) {
       try {
@@ -213,14 +215,12 @@ export class FactCache {
     return facts;
   }
 
-  /** Write the facts of this run (and nothing else) for the next process. */
-  save(): void {
+  /** The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process. */
+  serialize(): string {
     const files: Stored["files"] = {};
     for (const [path, entry] of [...this.used].sort(([a], [b]) => compareText(a, b))) {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
-    const file = join(this.root, CACHE_FILE);
-    mkdirSync(join(this.root, ".keylang/cache"), { recursive: true });
-    writeFileSync(file, `${JSON.stringify({ schema: CACHE_SCHEMA, version: this.version, files } satisfies Stored)}\n`);
+    return `${JSON.stringify({ schema: CACHE_SCHEMA, version: this.version, files } satisfies Stored)}\n`;
   }
 }

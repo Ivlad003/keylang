@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { MapCheckPayload, OperationRequest } from "../operations.ts";
+import type { MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -434,7 +434,7 @@ function recordLabel(record: OperationRecord): string {
 
 /** How messages name an operation: `doctor`, `feature pay`. */
 export function operationLabel(request: OperationRequest): string {
-  return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind;
+  return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
 /** The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed. */
@@ -452,7 +452,21 @@ export function recordSummary(record: OperationRecord): string {
     return `${report.done ? "done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode}`;
   }
   if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
+}
+
+/** `3 written, 1 removed`, `1 conflict(s), nothing written`, `2 of 5 done, failed` — what a map write really did. */
+function mapOutcome(status: OperationRecord["status"], payload: MapPayload): string {
+  if (payload.conflicts.length > 0) return `${payload.conflicts.length} conflict(s), nothing written`;
+  if (payload.refused.length > 0) return "inputs changed, nothing written";
+  const done = payload.steps.filter((step) => step.state === "completed");
+  if (status === "completed") {
+    const written = done.filter((step) => step.action === "write").length;
+    const removed = done.length - written;
+    return `${written} written${removed > 0 ? `, ${removed} removed` : ""}`;
+  }
+  return `${done.length} of ${payload.steps.length} step(s) done, ${status}`;
 }
 
 /** `up to date`, `3 stale`, `1 conflict(s)` (conflicts first: they block `keylang map`). */
@@ -503,6 +517,25 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     rows.push({ text: `${mapCheckOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(clean ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
     for (const file of payload.conflicts) rows.push({ text: `  conflict ${file}: manual file without keylang:generated marker`, style: THEME.panel });
     for (const file of payload.stale) rows.push({ text: `  stale    ${file}${payload.conflicts.length > 0 ? " (after the conflicts are resolved)" : ""}`, style: THEME.panel });
+    for (const warning of payload.warnings) rows.push({ text: `  warning: ${warning}`, style: { ...THEME.panel, fg: 179 } });
+    const stats = payload.stats;
+    rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "map" && result.payload !== null) {
+    // What landed on disk, step by step: a partial commit is named as partial, nothing is rolled back.
+    const { payload } = result;
+    rows.push({ text: `Map write · generated files only · snapshot ${payload.snapshot.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    const ok = record.status === "completed" && result.exitCode === 0;
+    rows.push({ text: `${mapOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const file of payload.conflicts) rows.push({ text: `  conflict ${file}: manual file without keylang:generated marker`, style: THEME.panel });
+    for (const line of payload.refused) rows.push({ text: `  refused  ${line}`, style: THEME.panel });
+    if (payload.refused.length > 0) rows.push({ text: "  nothing was written · Enter computes the map again", style: THEME.hint });
+    const state = { completed: "", failed: "failed ", "not-attempted": "not attempted " } as const;
+    for (const step of payload.steps) {
+      const verb = step.action === "write" ? "written" : "removed";
+      const text = step.state === "completed" ? `  ${verb.padEnd(8)} ${step.path}` : `  ${state[step.state]}${step.path}${step.error === undefined ? "" : `: ${step.error}`}`;
+      rows.push({ text, style: step.state === "failed" ? { ...THEME.panel, ...THEME.error } : step.state === "not-attempted" ? { ...THEME.panel, fg: 243 } : THEME.panel });
+    }
+    if (payload.steps.length === 0 && payload.conflicts.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
     for (const warning of payload.warnings) rows.push({ text: `  warning: ${warning}`, style: { ...THEME.panel, fg: 179 } });
     const stats = payload.stats;
     rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: { ...THEME.panel, fg: 243 } });
@@ -823,21 +856,26 @@ export function configNote(state: State): string | null {
 /** The save step before an operation that reads the disk (design §2.5), over the editor area. */
 function drawBarrier(grid: Grid, state: State, editor: Rect): void {
   const barrier = state.barrier!;
-  const rows: { text: string; style: Style }[] = [
-    { text: "The operation reads the files on disk. Unsaved:", style: THEME.popup },
-    ...barrier.files.map((file) => ({ text: `  ${file}`, style: THEME.popup })),
-  ];
+  const rows: { text: string; style: Style }[] = [];
+  if (barrier.writes !== null) {
+    rows.push({ text: "Writes (generated files only; a manual file stops it):", style: THEME.popup });
+    rows.push(...barrier.writes.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
+  }
+  if (barrier.files.length > 0) {
+    rows.push({ text: "The operation reads the files on disk. Unsaved:", style: THEME.popup });
+    rows.push(...barrier.files.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
+  }
   if (barrier.error !== null) rows.push({ text: `not saved: ${barrier.error}`, style: { ...THEME.popup, ...THEME.error, bg: THEME.popup.bg! } });
   rows.push({ text: "", style: THEME.popup });
   const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row.text) + 4)));
   const height = Math.min(editor.height, rows.length + 4);
   const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
   const y = editor.y + 1;
-  drawBox(grid, { x, y, width, height }, `Save before ${barrier.action}`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x, y, width, height }, barrier.files.length > 0 ? `Save before ${barrier.action}` : barrier.action, THEME.popup, THEME.popupTitle);
   rows.slice(0, height - 4).forEach((row, i) => grid.write(x + 2, y + 1 + i, row.text, row.style, width - 4));
   const buttonsY = y + height - 3;
   let bx = x + 2;
-  bx += grid.write(bx, buttonsY, "[Save and continue]", barrier.choice === "save" ? THEME.selected : THEME.popup, x + width - 2 - bx);
+  bx += grid.write(bx, buttonsY, barrier.files.length > 0 ? "[Save and continue]" : "[Continue]", barrier.choice === "save" ? THEME.selected : THEME.popup, x + width - 2 - bx);
   bx += grid.write(bx, buttonsY, "    ", THEME.popup, x + width - 2 - bx);
   grid.write(bx, buttonsY, "[Back]", barrier.choice === "back" ? THEME.selected : THEME.popup, x + width - 2 - bx);
   grid.write(x + 2, y + height - 2, "←→ choose · Enter do it · Esc back", { ...THEME.popup, fg: 243 }, width - 4);

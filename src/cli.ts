@@ -16,7 +16,6 @@ import { parse } from "./parser.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
-import { writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
@@ -34,7 +33,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { featureSummary, gapLine, mapCheckLines, runOperation } from "./operations.ts";
+import { featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -979,31 +978,30 @@ async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
     for (const line of mapCheckLines(result.payload, (file) => toPosix(relative(process.cwd(), join(root, file))))) process.stdout.write(`${line}\n`);
     return result.exitCode ?? 2;
   }
-  // `map` also leaves the fact cache for the next run.
-  const analyzed = await analyze({ root, specs: [], withoutEvidence: true, persistFacts: true });
-  const config = analyzed.config;
-  const r = analyzed.map;
-  if (r === null) throw new Error(`no supported source files under ${dir}; run \`keylang init\``);
-  const s = r.graph.stats;
-  for (const w of r.graph.warnings) process.stderr.write(`warning: ${w}\n`);
-  const reportConflict = (p: string): void => {
-    process.stdout.write(`${toPosix(relative(process.cwd(), p))}: manual file without keylang:generated marker\n`);
-  };
-  const { written, removed, conflicts } = writeMap(config, r);
-  if (conflicts.length > 0) {
-    for (const p of conflicts) reportConflict(p);
-    return 1;
+  // `map` is a printer over the shared operation, which also leaves the fact cache for the next run.
+  const result = await runOperation({ kind: "map", root, label: dir });
+  const shown = (file: string): string => toPosix(relative(process.cwd(), join(root, file)));
+  const payload = result.payload;
+  if (payload === null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  for (const p of written) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: written\n`);
-  for (const p of removed) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: removed\n`);
-  process.stderr.write(
-    `${s.files} file(s), ${s.modules} module(s), ${s.fns} fn, ${s.types} type(s), ${s.deps} dep(s); calls ${s.callsResolved} resolved, ${s.callsExternal} external, ${s.callsDynamic} dynamic, ${s.callsUnresolved} unresolved` +
-      (s.importsUnresolved ? `; ${s.importsUnresolved} unresolved import(s)` : "") +
-      (s.unassignedFiles ? `; ${s.unassignedFiles} file(s) outside any layer` : "") +
-      (r.skipped ? `; ${r.skipped} file(s) outside guessed layers skipped` : "") +
-      (config.guessed ? " (layers guessed; run `keylang init` to write keylang.json)" : "") +
-      "\n",
-  );
+  for (const w of payload.warnings) process.stderr.write(`warning: ${w}\n`);
+  for (const line of mapConflictLines(payload.conflicts, shown)) process.stdout.write(`${line}\n`);
+  for (const line of payload.refused) process.stdout.write(`${line}\n`);
+  if (payload.conflicts.length > 0) return result.exitCode ?? 2;
+  if (payload.refused.length > 0) {
+    process.stderr.write("keylang: nothing was written; run `keylang map` again\n");
+    return result.exitCode ?? 2;
+  }
+  for (const line of mapStepLines(payload.steps, shown)) process.stdout.write(`${line}\n`);
+  // A failure part way: the steps that landed are listed above; the failed one and the rest are named here.
+  for (const step of payload.steps) {
+    if (step.state === "failed") process.stderr.write(`keylang: ${shown(step.path)}: ${step.error ?? "failed"}\n`);
+    else if (step.state === "not-attempted") process.stderr.write(`keylang: ${shown(step.path)}: not written\n`);
+  }
+  if (result.status !== "completed") return result.exitCode ?? 2;
+  process.stderr.write(`${mapSummary(payload)}\n`);
   return 0;
 }
 

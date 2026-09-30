@@ -198,65 +198,65 @@
     - node [external.node](external.md#external.node)
     - facts [extract.facts](extract.md#extract.facts)
     - span [base.span](base.md#base.span)
-    - type [StoredFacts](../../src/fact-cache.ts#L18) = Omit<FileFacts, "exports"> & { exports: string[] } <!-- internal -->
+    - type [StoredFacts](../../src/fact-cache.ts#L20) = Omit<FileFacts, "exports"> & { exports: string[] } <!-- internal -->
       <a id="map.fact-cache.StoredFacts"></a>
-    - type [Stored](../../src/fact-cache.ts#L20) <!-- internal -->
+    - type [Stored](../../src/fact-cache.ts#L22) <!-- internal -->
       <a id="map.fact-cache.Stored"></a>
-    - fn [storedFiles](../../src/fact-cache.ts#L31) (value: unknown, version: string) → Stored["files"] <!-- internal -->
+    - fn [storedFiles](../../src/fact-cache.ts#L33) (value: unknown, version: string) → Stored["files"] <!-- internal -->
       <a id="map.fact-cache.storedFiles"></a><br>Entries of a cache written by this schema and version. An entry of the wrong shape — any field the graph reads, at any depth — is dropped, so its file is extracted again instead of trusted or thrown on.
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isStoredFacts](map.md#map.fact-cache.isStoredFacts)
-    - fn [isStoredFacts](../../src/fact-cache.ts#L41) (value: unknown) → value is StoredFacts <!-- internal -->
+    - fn [isStoredFacts](../../src/fact-cache.ts#L43) (value: unknown) → value is StoredFacts <!-- internal -->
       <a id="map.fact-cache.isStoredFacts"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isPosition](map.md#map.fact-cache.isPosition), [map.fact-cache.every](map.md#map.fact-cache.every), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isImport](../../src/fact-cache.ts#L61) (value: unknown) → boolean <!-- internal -->
+    - fn [isImport](../../src/fact-cache.ts#L63) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isImport"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.every](map.md#map.fact-cache.every)
-    - fn [isDecl](../../src/fact-cache.ts#L73) (value: unknown) → boolean <!-- internal -->
+    - fn [isDecl](../../src/fact-cache.ts#L75) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isDecl"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.every](map.md#map.fact-cache.every), [map.fact-cache.optional](map.md#map.fact-cache.optional), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue)
-    - fn [isCall](../../src/fact-cache.ts#L94) (value: unknown) → boolean <!-- internal -->
+    - fn [isCall](../../src/fact-cache.ts#L96) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isCall"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.optional](map.md#map.fact-cache.optional), [map.fact-cache.every](map.md#map.fact-cache.every)
-    - fn [isHook](../../src/fact-cache.ts#L108) (value: unknown) → boolean <!-- internal -->
+    - fn [isHook](../../src/fact-cache.ts#L110) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isHook"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isInteger](map.md#map.fact-cache.isInteger)
-    - fn [isPass](../../src/fact-cache.ts#L119) (value: unknown) → boolean <!-- internal -->
+    - fn [isPass](../../src/fact-cache.ts#L121) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isPass"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isExportRow](../../src/fact-cache.ts#L126) (value: unknown) → boolean <!-- internal -->
+    - fn [isExportRow](../../src/fact-cache.ts#L128) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isExportRow"></a>
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isBound](../../src/fact-cache.ts#L130) (value: unknown) → boolean <!-- internal -->
+    - fn [isBound](../../src/fact-cache.ts#L132) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isBound"></a>
-    - fn [isRange](../../src/fact-cache.ts#L135) (value: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isRange](../../src/fact-cache.ts#L137) (value: Record<string, unknown>) → boolean <!-- internal -->
       <a id="map.fact-cache.isRange"></a><br>1-based `line`, `col`, `endLine`, `endCol`.
       - calls [map.fact-cache.isPosition](map.md#map.fact-cache.isPosition)
-    - fn [isPosition](../../src/fact-cache.ts#L139) (value: unknown) → boolean <!-- internal -->
+    - fn [isPosition](../../src/fact-cache.ts#L141) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isPosition"></a>
       - calls [map.fact-cache.isInteger](map.md#map.fact-cache.isInteger)
-    - fn [isInteger](../../src/fact-cache.ts#L143) (value: unknown) → value is number <!-- internal -->
+    - fn [isInteger](../../src/fact-cache.ts#L145) (value: unknown) → value is number <!-- internal -->
       <a id="map.fact-cache.isInteger"></a>
-    - fn [isString](../../src/fact-cache.ts#L147) (value: unknown) → boolean <!-- internal -->
+    - fn [isString](../../src/fact-cache.ts#L149) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isString"></a>
-    - fn [every](../../src/fact-cache.ts#L151) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/fact-cache.ts#L153) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
       <a id="map.fact-cache.every"></a>
-    - fn [optional](../../src/fact-cache.ts#L155) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optional](../../src/fact-cache.ts#L157) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
       <a id="map.fact-cache.optional"></a>
-    - fn [optionalTrue](../../src/fact-cache.ts#L159) (value: unknown) → boolean <!-- internal -->
+    - fn [optionalTrue](../../src/fact-cache.ts#L161) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.optionalTrue"></a>
-    - fn [isRecord](../../src/fact-cache.ts#L163) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/fact-cache.ts#L165) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.fact-cache.isRecord"></a>
-    - module [FactCache](../../src/fact-cache.ts#L169)
+    - module [FactCache](../../src/fact-cache.ts#L171)
       <a id="map.fact-cache.FactCache"></a>
-      - fn [constructor](../../src/fact-cache.ts#L178) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+      - fn [constructor](../../src/fact-cache.ts#L180) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
         <a id="map.fact-cache.FactCache.constructor"></a>
-      - fn [open](../../src/fact-cache.ts#L185) (root: string, version: string) → FactCache
+      - fn [open](../../src/fact-cache.ts#L187) (root: string, version: string) → FactCache
         <a id="map.fact-cache.FactCache.open"></a><br>`version` names the extractor and grammars; any other stored version is ignored.
         - calls [map.fact-cache.storedFiles](map.md#map.fact-cache.storedFiles), [map.fact-cache.FactCache](map.md#map.fact-cache.FactCache)
-      - fn [facts](../../src/fact-cache.ts#L198) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [facts](../../src/fact-cache.ts#L200) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
         <a id="map.fact-cache.FactCache.facts"></a>
-      - fn [save](../../src/fact-cache.ts#L217) () → void
-        <a id="map.fact-cache.FactCache.save"></a><br>Write the facts of this run (and nothing else) for the next process.
+      - fn [serialize](../../src/fact-cache.ts#L219) () → string
+        <a id="map.fact-cache.FactCache.serialize"></a><br>The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process.
         - calls [base.span.compareText](base.md#base.span.compareText)
   - module [frontends](../../src/frontends.ts#L1)
     <a id="map.frontends"></a><br>A frontend reads one family of languages: its extractor turns a file into `FileFacts`, its resolver turns an import specifier into a file, and its capabilities say which edges it looks for. Graph, snapshot and checks are the same for every language; adding one means a frontend…
@@ -465,36 +465,62 @@
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
+    - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [MapResult](../../src/map.ts#L17)
+    - type [MapResult](../../src/map.ts#L18)
       <a id="map.map.MapResult"></a>
-    - fn [generateMap](../../src/map.ts#L34) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
-      <a id="map.map.generateMap"></a><br>`persist` writes the fact cache for the next process (`keylang map` only); `overlay` gives unsaved text of source files by absolute path (the language server).
+    - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+      <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process (`keylang map` only; the commit step writes it, generation writes nothing); `overlay` gives unsaved text of source files by absolute path (the language server).
       - calls [base.config.sourceTree](base.md#base.config.sourceTree), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [base.config.excludedSourceFiles](base.md#base.config.excludedSourceFiles), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [opaqueFacts](../../src/map.ts#L110) (path: string) → FileFacts <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L114) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a>
-    - fn [readSource](../../src/map.ts#L115) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L119) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [extractGuarded](../../src/map.ts#L129) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L133) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L140)
+    - type [MapDiff](../../src/map.ts#L144)
       <a id="map.map.MapDiff"></a>
-    - fn [targets](../../src/map.ts#L151) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string> }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L155) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - fn [extraGenerated](../../src/map.ts#L159) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L163) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there.
       - calls [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L167) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L171) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [writeMap](../../src/map.ts#L182) (config: Config, r: MapResult) → { written: string[]; removed: string[]; conflicts: string[] }
-      <a id="map.map.writeMap"></a><br>Write both maps and the index. A manual target file blocks every write and every removal: the generator checks all targets before touching disk.
-      - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [diffMap](../../src/map.ts#L211) (config: Config, r: MapResult) → MapDiff
+    - type [MapArtifact](../../src/map.ts#L183) = "map" | "explained" | "index" | "facts"
+      <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
+    - type [MapStep](../../src/map.ts#L186)
+      <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
+    - type [PlannedStep](../../src/map.ts#L192) extends MapStep <!-- internal -->
+      <a id="map.map.PlannedStep"></a>
+    - type [MapPlan](../../src/map.ts#L208)
+      <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
+    - type [MapInputs](../../src/map.ts#L220) <!-- internal -->
+      <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
+    - type [CommittedStep](../../src/map.ts#L230) extends MapStep
+      <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
+    - type [MapCommit](../../src/map.ts#L235)
+      <a id="map.map.MapCommit"></a>
+    - fn [planMap](../../src/map.ts#L246) (config: Config, r: MapResult) → MapPlan
+      <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
+      - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.briefsKey](map.md#map.map.briefsKey)
+    - fn [mapPlanProblems](../../src/map.ts#L280) (plan: MapPlan) → string[]
+      <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
+      - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.map.briefsKey](map.md#map.map.briefsKey)
+    - fn [commitMap](../../src/map.ts#L311) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+      <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
+      - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
+    - fn [briefsKey](../../src/map.ts#L340) (config: Config) → string <!-- internal -->
+      <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
+      - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
+    - fn [readOrNull](../../src/map.ts#L345) (abs: string) → string | null <!-- internal -->
+      <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
+    - fn [diffMap](../../src/map.ts#L354) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L233) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L376) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [python-imports](../../src/python-imports.ts#L1)

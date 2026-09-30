@@ -13,10 +13,10 @@ The tree of the map with a brief under each node: the documentation comment from
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
 | [features](features.md) |  | 137 | 0 | 0 | 95 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
-| [map](map.md) |  | 105 | 0 | 0 | 130 |
-| [operations](operations.md) |  | 20 | 0 | 0 | 10 |
-| [tui](tui.md) |  | 263 | 0 | 0 | 197 |
-| **all** | | 860 | 0 | 0 | 783 |
+| [map](map.md) |  | 114 | 0 | 0 | 132 |
+| [operations](operations.md) |  | 26 | 0 | 0 | 11 |
+| [tui](tui.md) |  | 270 | 0 | 0 | 198 |
+| **all** | | 882 | 0 | 0 | 787 |
 
 ## Index
 

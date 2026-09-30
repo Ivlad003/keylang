@@ -31,10 +31,11 @@ import type { Gap } from "../feature-status.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
+import { FACT_CACHE_FILE } from "../fact-cache.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { FEATURE_SLUG, resultWithout, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { FEATURE_SLUG, resultWithout, runOperation, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
@@ -126,6 +127,17 @@ export class App {
   private proposalEntries: ProposalEntry[] = [];
   /** What the open save step starts after Save and continue; null when none is open. */
   private afterSave: (() => void) | null = null;
+  /** Which dirty buffers the open save step lists: the inputs its operation reads. */
+  private barrierInputs: (path: string) => boolean = () => true;
+  /**
+   * The record whose operation is writing files now (between `beforeCommit`
+   * and its result), or null. Meanwhile an analysis is not started or
+   * adopted, and saves and merge writes wait: the report after the commit
+   * describes the disk as it is then.
+   */
+  private committing: number | null = null;
+  /** An analysis was asked for during a commit: it runs when the commit ends. */
+  private analysisAfterCommit = false;
 
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
@@ -337,6 +349,11 @@ export class App {
     if (this.closed) return;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (this.committing !== null) {
+      this.analysisAfterCommit = true;
+      this.state.message = "the map is being written: the analysis runs when it finishes";
+      return;
+    }
     if (!this.readConfig(explicit)) return;
     const generation = ++this.generation;
     const edits = this.edits;
@@ -609,6 +626,7 @@ export class App {
   private save(): void {
     const buffer = this.buffer();
     if (!buffer || buffer.readOnly) return;
+    if (this.writingNow()) return;
     // A new file is written only where nothing is yet: a file created meanwhile is never overwritten, however often Ctrl+S is pressed.
     const problem = buffer.newFile ? this.newFileProblem(buffer) : null;
     if (problem !== null) {
@@ -676,11 +694,13 @@ export class App {
    * once; with them the save step opens: Save and continue or Back. Every
    * operation that reads the disk goes through here; doctor and help do not.
    */
-  private withSavedInputs(action: string, run: () => void): void {
-    const files = this.dirtyInputs();
-    if (files.length === 0) return run();
-    this.state.barrier = { action, files, choice: "save", error: null };
+  private withSavedInputs(action: string, run: () => void, options: { writes?: string[]; inputs?: (path: string) => boolean } = {}): void {
+    const inputs = options.inputs ?? (() => true);
+    const files = this.dirtyInputs().filter(inputs);
+    if (files.length === 0 && options.writes === undefined) return run();
+    this.state.barrier = { action, files, writes: options.writes ?? null, choice: "save", error: null };
     this.afterSave = run;
+    this.barrierInputs = inputs;
   }
 
   /** The keys of the save step: ←→/Tab choose, Enter does it, Esc is Back. */
@@ -723,7 +743,7 @@ export class App {
       }
       if (problem !== null) {
         barrier.error = `${path}: ${problem}`;
-        barrier.files = this.dirtyInputs();
+        barrier.files = this.dirtyInputs().filter(this.barrierInputs);
         this.state.message = `${barrier.action}: not started; ${saved} file(s) saved, ${barrier.error}`;
         if (saved > 0) this.reanalyze(false);
         return;
@@ -1042,6 +1062,8 @@ export class App {
     if (event.name === "f4") return this.toggleContext(focusable);
     switch (this.state.mode) {
       case "merge":
+        // `w` writes the merged file: it waits while the map is written.
+        if (event.name === "w" && this.writingNow()) return;
         return this.merges.key(event);
       case "code":
         return this.codeKey(event);
@@ -1184,6 +1206,7 @@ export class App {
       case "m":
         return this.mergeOrPick();
       case "u":
+        if (this.writingNow()) return;
         return this.merges.undo();
       case "e":
         return this.explainAtCursor();
@@ -1640,7 +1663,66 @@ export class App {
       this.state.message = "an operation is already running";
       return;
     }
-    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
+    if (request.kind !== "map") return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
+    // The map reads the code and the saved keylang.json, not the specs: dirty specs stay dirty
+    // and go into the analysis after the commit as overlays. The step names the targets first.
+    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { writes: this.mapTargets(), inputs: (path) => path === CONFIG_FILE });
+  }
+
+  /** What `keylang map` may write, as the step before it shows. */
+  private mapTargets(): string[] {
+    const dir = this.specDir();
+    return [`${dir}/map/*.md`, `${dir}/${EXPLAINED_MAP_DIR}/*.md`, ".keylang/index.json", FACT_CACHE_FILE];
+  }
+
+  /** True (with the reason shown) while an operation writes files: saves and merge writes wait for it. */
+  private writingNow(): boolean {
+    if (this.committing === null) return false;
+    this.state.message = "the map is being written: try again when it finishes; your text stays in the buffer";
+    return true;
+  }
+
+  /**
+   * A writing operation is about to touch files: an analysis in flight is
+   * dropped (it read the disk before the commit) and none starts until the
+   * commit ends. A record no longer running (cancelled) changes nothing: its
+   * aborted signal makes the operation stop with nothing written.
+   */
+  private beginCommit(record: OperationRecord): void {
+    if (record.status !== "running" || this.closed) return;
+    this.committing = record.id;
+    if (this.settleTimer) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+      this.analysisAfterCommit = true;
+    }
+    if (this.state.updating) this.analysisAfterCommit = true;
+    this.generation++;
+    this.state.updating = false;
+  }
+
+  /**
+   * After a writing operation — completed, cancelled part way or failed part
+   * way — the old analysis is superseded and a full one runs with the dirty
+   * buffers as overlays. Clean buffers follow the disk through it; a dirty
+   * buffer of a written file keeps its text and is named.
+   */
+  private endCommit(result: OperationResult): string | null {
+    const wasCommitting = this.committing !== null;
+    this.committing = null;
+    const touched = [...result.written, ...result.removed];
+    if (!wasCommitting && touched.length === 0 && !this.analysisAfterCommit) return null;
+    this.analysisAfterCommit = false;
+    const kept: string[] = [];
+    for (const path of touched) {
+      const buffer = this.state.buffers.get(path);
+      if (!buffer) continue;
+      if (isDirty(buffer)) kept.push(path);
+      else buffer.disk = readText(resolve(this.state.root, path));
+    }
+    if (touched.length > 0) for (const record of this.state.records) if (record.kind === "map-check") record.outdated ??= "the map was written since this run";
+    this.reanalyze(false);
+    return kept.length === 0 ? null : `${kept.join(", ")} changed on disk under unsaved edits: the text stays in the buffer (Ctrl+S twice overwrites, Ctrl+Z undoes)`;
   }
 
   /**
@@ -1680,12 +1762,20 @@ export class App {
       record.finished = Date.now();
       this.state.activeOperation = null;
       this.cancelActive = null;
+      const note = WRITING_KINDS.has(request.kind) ? this.endCommit(result) : null;
       // Completion adds a message; it never changes the open file.
-      this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report`;
+      this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
       this.draw();
     };
     this.cancelActive = () => {
       controller.abort();
+      // During a commit the operation stops between two file steps; its result names what was written.
+      if (this.committing === record.id) {
+        record.progress = "cancelling after the current file";
+        this.state.message = `${label}: cancelling after the current file…`;
+        this.draw();
+        return;
+      }
       settle(resultWithout(request.kind, "cancelled", null));
     };
     const onProgress = ({ text }: { text: string }): void => {
@@ -1697,7 +1787,8 @@ export class App {
     // The session's analyzer serves an operation run on this thread; the worker has its own.
     let work: Promise<OperationResult>;
     try {
-      work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress });
+      const beforeCommit = (): void => this.beginCommit(record);
+      work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress, ...(WRITING_KINDS.has(request.kind) ? { beforeCommit } : {}) });
     } catch (error) {
       work = Promise.reject(error);
     }
@@ -2398,6 +2489,8 @@ export class App {
         return this.openFeaturePrompt();
       case "map-check":
         return this.requestOperation("map-check", { kind: "map-check", root: this.state.root });
+      case "map":
+        return this.requestOperation("map", { kind: "map", root: this.state.root });
       case "cancel":
         return this.cancelOperation();
       case "find-node":

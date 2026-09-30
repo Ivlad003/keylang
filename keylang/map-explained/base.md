@@ -150,36 +150,36 @@
       <a id="base.languages.implicitMember"></a><br>A member of a class in `file` that the language calls without naming it.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [safe-write](../../src/safe-write.ts#L1)
-    <a id="base.safe-write"></a><br>One protocol for every file keylang writes into a repository: proposals, `spec-to-code --apply`, `wire`, `.keylang/stats.json`, explanations. The path is plain and relative, and it stays inside the repository once every link on the way is followed — a link whose target does not…
+    <a id="base.safe-write"></a><br>One protocol for every file keylang writes into a repository: proposals, `spec-to-code --apply`, `wire`, `.keylang/stats.json`, explanations, the map with its index and fact cache (byte-exact, see `writeAtomic`). The path is plain and relative, and it stays inside the…
     - node [external.node](external.md#external.node)
-    - type [WriteOptions](../../src/safe-write.ts#L15)
+    - type [WriteOptions](../../src/safe-write.ts#L16)
       <a id="base.safe-write.WriteOptions"></a>
-    - type [PlannedWrite](../../src/safe-write.ts#L28)
+    - type [PlannedWrite](../../src/safe-write.ts#L29)
       <a id="base.safe-write.PlannedWrite"></a>
-    - fn [writeProblem](../../src/safe-write.ts#L38) (root: string, path: string, options: WriteOptions = {}) → string | null
+    - fn [writeProblem](../../src/safe-write.ts#L39) (root: string, path: string, options: WriteOptions = {}) → string | null
       <a id="base.safe-write.writeProblem"></a><br>Why `path` (relative to `root`, POSIX) may not be written, or null. Reads nothing outside the repository.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.inside](base.md#base.safe-write.inside), [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
-    - fn [safeWrite](../../src/safe-write.ts#L63) (root: string, path: string, text: string, options: WriteOptions = {}) → string
+    - fn [safeWrite](../../src/safe-write.ts#L64) (root: string, path: string, text: string, options: WriteOptions = {}) → string
       <a id="base.safe-write.safeWrite"></a><br>Writes `text` to `path` (relative to `root`, POSIX) when `writeProblem` finds nothing, and returns the absolute path; throws `path: problem` otherwise. A symlinked file is written at its target, so the link stays.
       - calls [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
-    - fn [safeWriteAll](../../src/safe-write.ts#L68) (root: string, writes: readonly PlannedWrite[]) → string[]
+    - fn [safeWriteAll](../../src/safe-write.ts#L69) (root: string, writes: readonly PlannedWrite[]) → string[]
       <a id="base.safe-write.safeWriteAll"></a><br>Every write is checked before the first one happens: either all land, or (short of an I/O error) none does.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [writeAtomic](../../src/safe-write.ts#L85) (abs: string, text: string) → void
-      <a id="base.safe-write.writeAtomic"></a><br>A temporary file in the target's directory renamed over the target, so a crash never leaves half a file; missing directories are created. The new file keeps the permissions of the one it replaces, and CRLF when that one has CRLF on every line. `abs` is where the bytes land: not…
+    - fn [writeAtomic](../../src/safe-write.ts#L88) (abs: string, text: string, options: { exact?: boolean } = {}) → void
+      <a id="base.safe-write.writeAtomic"></a><br>A temporary file in the target's directory renamed over the target, so a crash never leaves half a file; missing directories are created. The new file keeps the permissions of the one it replaces, and CRLF when that one has CRLF on every line — unless `exact`: a generated…
       - calls [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [isGeneratedText](../../src/safe-write.ts#L103) (text: string) → boolean
+    - fn [isGeneratedText](../../src/safe-write.ts#L106) (text: string) → boolean
       <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker (`<!-- … -->` of a map file, `// …` of `keylang wire`).
-    - fn [allCrlf](../../src/safe-write.ts#L109) (text: string) → boolean
+    - fn [allCrlf](../../src/safe-write.ts#L112) (text: string) → boolean
       <a id="base.safe-write.allCrlf"></a><br>Every line ends with CRLF (at least one does): the file keeps them when it is rewritten.
-    - fn [landing](../../src/safe-write.ts#L119) (abs: string, hops = 0) → string | null
+    - fn [landing](../../src/safe-write.ts#L122) (abs: string, hops = 0) → string | null
       <a id="base.safe-write.landing"></a><br>Where bytes written to `abs` land: the longest prefix that exists is resolved through links, and a link on the way is followed even when its target does not exist yet. Null for a loop of links.
       - calls [base.safe-write.lstatOrNull](base.md#base.safe-write.lstatOrNull)
-    - fn [inside](../../src/safe-write.ts#L133) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L136) (abs: string, dir: string) → boolean <!-- internal -->
       <a id="base.safe-write.inside"></a>
-    - fn [lstatOrNull](../../src/safe-write.ts#L138) (abs: string) → Stats | null <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L141) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.lstatOrNull"></a>
-    - fn [statOrNull](../../src/safe-write.ts#L146) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L149) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.statOrNull"></a>
   - module [span](../../src/span.ts#L1)
     <a id="base.span"></a><br>Source positions. Every node, name, link and reference carries a Span so that diagnostics and the future LSP (hover, definition) can point at it.

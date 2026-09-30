@@ -13,7 +13,7 @@ import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
-import { diffMap } from "./map.ts";
+import { commitMap, diffMap, mapPlanProblems, planMap, type CommittedStep, type MapPlan } from "./map.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
 
@@ -42,7 +42,19 @@ export interface MapCheckRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest;
+/** Writes the generated map, the explained map, the index and the fact cache (`keylang map`). */
+export interface MapRequest {
+  kind: "map";
+  /** Repository root (absolute): the directory `keylang map` is run for. */
+  root: string;
+  /** How messages name the root, as the caller does (`keylang map <dir>`); default `.`. */
+  label?: string;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest;
+
+/** The operation kinds that write files: they compute first and commit after `beforeCommit`. */
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -55,6 +67,13 @@ export interface OperationContext {
    * passes its own, which builds the snapshot off the UI thread.
    */
   analyze?: (request: AnalysisRequest) => Promise<Analysis>;
+  /**
+   * A writing operation calls this once, after everything is computed and
+   * before its first file step; nothing is written before it resolves. A
+   * session defers its analysis and conflicting saves from here on; a signal
+   * aborted by then cancels the operation with nothing written.
+   */
+  beforeCommit?: () => Promise<void> | void;
 }
 
 export type OperationStatus = "completed" | "failed" | "cancelled";
@@ -133,11 +152,33 @@ export interface MapCheckPayload {
   snapshot: string;
 }
 
+/**
+ * What `keylang map` did. With conflicts or refusals nothing is written and
+ * `steps` is empty; otherwise every planned file step is listed with its
+ * state, so a partial commit names what landed, what failed and what was
+ * never tried. Paths are POSIX, relative to the root.
+ */
+export interface MapPayload {
+  /** Target files without the keylang:generated marker: nothing was written. */
+  conflicts: string[];
+  /** Why the computed map could not be committed (`path: reason`): a target or an input changed meanwhile. Nothing was written. */
+  refused: string[];
+  steps: CommittedStep[];
+  stats: Stats;
+  warnings: string[];
+  snapshot: string;
+  /** Files left out because they fall outside guessed layers. */
+  skipped: number;
+  /** The layers are guessed: there is no keylang.json with `layers`. */
+  guessed: boolean;
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
   feature: FeaturePayload;
   "map-check": MapCheckPayload;
+  map: MapPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -167,6 +208,7 @@ export interface OperationEnvelope<K extends OperationRequest["kind"]> {
 export function runOperation(request: DoctorRequest, context?: OperationContext): Promise<OperationEnvelope<"doctor">>;
 export function runOperation(request: FeatureRequest, context?: OperationContext): Promise<OperationEnvelope<"feature">>;
 export function runOperation(request: MapCheckRequest, context?: OperationContext): Promise<OperationEnvelope<"map-check">>;
+export function runOperation(request: MapRequest, context?: OperationContext): Promise<OperationEnvelope<"map">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -176,6 +218,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runFeature(request, context);
     case "map-check":
       return runMapCheck(request, context);
+    case "map":
+      return runMap(request, context);
   }
 }
 
@@ -191,6 +235,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "feature":
       return { kind, ...base };
     case "map-check":
+      return { kind, ...base };
+    case "map":
       return { kind, ...base };
   }
 }
@@ -237,6 +283,123 @@ async function runMapCheck(request: MapCheckRequest, context: OperationContext):
   return { ...emptyMapCheck("completed", clean ? 0 : 1), payload, messages };
 }
 
+function emptyMap(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"map"> {
+  return { kind: "map", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang map` in two phases. Compute: the analysis (the fact cache is
+ * prepared, not written) and a plan with the expected bytes of every target.
+ * Commit, after `beforeCommit`: the plan is checked again — a manual target
+ * or a changed target, config, source or brief refuses it with nothing
+ * written — then the steps run one by one. Codes: 0 written; 1 conflicts or a
+ * refused plan; 2 no sources, a broken config, a failed analysis, or an I/O
+ * error part way (the payload names completed, failed and not-attempted
+ * steps); null when cancelled — before the commit nothing is written, during
+ * it the current step finishes and the rest is not attempted.
+ */
+async function runMap(request: MapRequest, context: OperationContext): Promise<OperationEnvelope<"map">> {
+  if (!isAbsolute(request.root)) return emptyMap("failed", 2, "map: root must be an absolute path");
+  if (context.signal?.aborted) return emptyMap("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: true });
+  } catch (error) {
+    return emptyMap("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyMap("cancelled", null);
+  const map = analyzed.map;
+  if (map === null) return emptyMap("failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
+  const payload: MapPayload = {
+    conflicts: [],
+    refused: [],
+    steps: [],
+    stats: map.graph.stats,
+    warnings: [...map.graph.warnings],
+    snapshot: map.index.snapshotId,
+    skipped: map.skipped,
+    guessed: analyzed.config.guessed,
+  };
+  const warnings = payload.warnings.map((text) => ({ level: "warning" as const, text: `warning: ${text}` }));
+  let plan: MapPlan;
+  try {
+    plan = planMap(analyzed.config, map);
+  } catch (error) {
+    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+  }
+  if (plan.conflicts.length > 0) {
+    payload.conflicts = plan.conflicts;
+    return { ...emptyMap("completed", 1), payload, messages: [...warnings, ...mapConflictLines(plan.conflicts).map((text) => ({ level: "info" as const, text }))] };
+  }
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyMap("cancelled", null), payload };
+  let problems: string[];
+  try {
+    problems = mapPlanProblems(plan);
+  } catch (error) {
+    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+  }
+  if (problems.length > 0) {
+    payload.refused = problems;
+    return {
+      ...emptyMap("failed", 1),
+      payload,
+      messages: [...warnings, ...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run the map again to compute it from the files on disk" }],
+    };
+  }
+  context.onProgress?.({ text: "writing the map" });
+  const commit = await commitMap(plan, {
+    ...(context.signal ? { signal: context.signal } : {}),
+    onStep: (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` }),
+  });
+  payload.steps = commit.steps;
+  const done = commit.steps.filter((step) => step.state === "completed");
+  const written = done.filter((step) => step.action === "write").map((step) => step.path);
+  const removed = done.filter((step) => step.action === "remove").map((step) => step.path);
+  const messages: OperationMessage[] = [...warnings, ...mapStepLines(commit.steps).map((text) => ({ level: "info" as const, text }))];
+  const failed = commit.steps.find((step) => step.state === "failed");
+  const untried = commit.steps.filter((step) => step.state === "not-attempted");
+  if (failed) messages.push({ level: "error", text: `${failed.path}: ${failed.error ?? "failed"}` });
+  if (commit.outcome !== "completed") {
+    messages.push({ level: commit.outcome === "failed" ? "error" : "warning", text: `${done.length} of ${commit.steps.length} step(s) done; not attempted: ${untried.length === 0 ? "none" : untried.map((step) => step.path).join(", ")}` });
+  }
+  const status = commit.outcome;
+  return { ...emptyMap(status, status === "completed" ? 0 : status === "failed" ? 2 : null), payload, messages, written, removed };
+}
+
+/** The conflict lines `keylang map` prints: nothing is written while any exists. */
+export function mapConflictLines(conflicts: readonly string[], path: (file: string) => string = (file) => file): string[] {
+  return conflicts.map((file) => `${path(file)}: manual file without keylang:generated marker`);
+}
+
+/**
+ * The lines `keylang map` prints for its completed steps of both maps:
+ * writes, then removals. The index and the fact cache are written silently,
+ * as they always were; the payload lists them.
+ */
+export function mapStepLines(steps: readonly CommittedStep[], path: (file: string) => string = (file) => file): string[] {
+  const shown = steps.filter((step) => step.state === "completed" && (step.artifact === "map" || step.artifact === "explained"));
+  return [...shown.filter((step) => step.action === "write").map((step) => `${path(step.path)}: written`), ...shown.filter((step) => step.action === "remove").map((step) => `${path(step.path)}: removed`)];
+}
+
+/** The summary `keylang map` writes to stderr after a commit. */
+export function mapSummary(payload: MapPayload): string {
+  const s = payload.stats;
+  return (
+    `${s.files} file(s), ${s.modules} module(s), ${s.fns} fn, ${s.types} type(s), ${s.deps} dep(s); calls ${s.callsResolved} resolved, ${s.callsExternal} external, ${s.callsDynamic} dynamic, ${s.callsUnresolved} unresolved` +
+    (s.importsUnresolved ? `; ${s.importsUnresolved} unresolved import(s)` : "") +
+    (s.unassignedFiles ? `; ${s.unassignedFiles} file(s) outside any layer` : "") +
+    (payload.skipped ? `; ${payload.skipped} file(s) outside guessed layers skipped` : "") +
+    (payload.guessed ? " (layers guessed; run `keylang init` to write keylang.json)" : "")
+  );
+}
+
 /**
  * The lines `map --check` prints, paths as given (the CLI makes them relative
  * to its working directory). A manual file blocks `map` itself, so with a
@@ -244,7 +407,7 @@ async function runMapCheck(request: MapCheckRequest, context: OperationContext):
  * not listed.
  */
 export function mapCheckLines(diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file): string[] {
-  const lines = diff.conflicts.map((file) => `${path(file)}: manual file without keylang:generated marker`);
+  const lines = mapConflictLines(diff.conflicts, path);
   if (diff.conflicts.length === 0) for (const file of diff.stale) lines.push(`${path(file)}: stale, run \`keylang map\``);
   return lines;
 }

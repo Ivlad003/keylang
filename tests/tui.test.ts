@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,7 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { analyze, findRoot, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
-import { mapCheckLines, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
+import { mapCheckLines, mapStepLines, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { OperationWorker } from "../src/tui/background.ts";
 import { findingsOf } from "../src/tui/findings.ts";
@@ -3541,4 +3541,347 @@ test("operation worker: every request settles once; close cancels what is pendin
   assert.equal((await open).status, "cancelled");
   const after = await gated.worker.run({ kind: "map-check", root });
   assert.deepEqual([after.status, after.exitCode], ["failed", 2]);
+});
+
+// ---------- map write and its commit (ticket 09) ----------
+
+/** The palette's "Map: write": the step naming the targets opens; Enter in it starts the write. */
+function mapWrite(send: (keys: string) => void): void {
+  send(KEY.ctrlP);
+  for (const ch of "map write") send(ch);
+  send(KEY.enter);
+}
+
+/** The repository's files with the index's `generated` time taken out: what two runs must share. */
+function artifacts(root: string): Map<string, string> {
+  const tree = treeBytes(root);
+  const index = tree.get(".keylang/index.json");
+  if (index !== undefined) tree.set(".keylang/index.json", index.replace(/"generated": "[^"]*"/, '"generated": "…"'));
+  return tree;
+}
+
+/** A runner that calls the shared operation on this thread, with `pause` run at the commit barrier before the session hears of it. */
+function pausedRunner(pause: () => void | Promise<void>, onProgress?: (text: string) => void): NonNullable<AppOptions["operations"]> {
+  return (request, context) =>
+    runOperation(request, {
+      ...context,
+      onProgress: (progress) => {
+        context.onProgress?.(progress);
+        onProgress?.(progress.text);
+      },
+      beforeCommit: async () => {
+        await pause();
+        await context.beforeCommit?.();
+      },
+    });
+}
+
+function mapRecord(app: App): Extract<OperationResult, { kind: "map" }> & { payload: NonNullable<Extract<OperationResult, { kind: "map" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "map" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "map" }> & { payload: NonNullable<Extract<OperationResult, { kind: "map" }>["payload"]> };
+}
+
+test("tui: Map: write names its targets first and writes what the CLI writes in a twin repository; F5 and Back write nothing; the map stays read-only", async (t) => {
+  const root = checkoutRepo(t);
+  const twin = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
+  // The generated map is open as a read-only buffer before it exists on disk.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/map/domain.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/map/domain.md");
+  assert.equal(s.app.state.buffers.get("keylang/map/domain.md")!.readOnly, true);
+  // The step names the targets; Back writes nothing and starts nothing.
+  mapWrite(s.send);
+  assert.deepEqual(s.app.state.barrier?.writes, ["keylang/map/*.md", "keylang/map-explained/*.md", ".keylang/index.json", ".keylang/cache/facts.json"]);
+  assert.deepEqual(s.app.state.barrier?.files, []);
+  assert.match(s.text(), /Writes \(generated files only/);
+  assert.match(s.text(), /\[Continue\]/);
+  await esc(s.send);
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.records.length, 0);
+  assert.deepEqual(treeBytes(root), before, "Back writes nothing");
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = mapRecord(s.app);
+  assert.equal(result.status, "completed");
+  assert.equal(result.exitCode, 0);
+  const cli = spawnSync(process.execPath, [BIN, "map"], { cwd: twin, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual(artifacts(root), artifacts(twin), "the same bytes as the CLI, but for the index's generated time");
+  assert.equal(mapStepLines(result.payload.steps).map((line) => `${line}\n`).join(""), cli.stdout);
+  assert.deepEqual(result.written, [...mapStepLines(result.payload.steps).map((line) => line.replace(/: written$/, "")), ".keylang/index.json", ".keylang/cache/facts.json"]);
+  assert.ok(result.payload.steps.every((step) => step.state === "completed"));
+  // The map buffer follows the disk and stays read-only.
+  const buffer = s.app.state.buffers.get("keylang/map/domain.md")!;
+  assert.equal(buffer.readOnly, true);
+  assert.equal(buffer.text, readFileSync(join(root, "keylang/map/domain.md"), "utf8"));
+  s.send("i");
+  assert.match(s.app.state.message ?? "", /generated by `keylang map`/);
+  assert.notEqual(s.app.state.mode, "edit");
+  s.send(KEY.f6);
+  assert.match(s.text(), /Map: write {2}completed · code 0/);
+  assert.match(s.text(), /written {2}keylang\/map\/domain\.md/);
+  // Nothing changed since: a second write only refreshes the index and the cache; map check agrees.
+  const after = treeBytes(root);
+  assert.equal(cliMapCheck(root).status, 0);
+  assert.deepEqual(treeBytes(root), after);
+});
+
+test("tui: a manual target or a changed source during the pause before the commit refuses the map; the new bytes stay; a rerun writes", async (t) => {
+  const root = checkoutRepo(t);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  rmSync(join(root, "keylang/map/domain.md"));
+  const manual = "# notes\n\nWritten by hand while the map was computed.\n";
+  const source = "export function create(): void {}\nexport function cancel(): void {}\n";
+  const pauses: (() => void)[] = [
+    () => writeFileSync(join(root, "keylang/map/domain.md"), manual),
+    () => writeFileSync(join(root, "src/domain/order.ts"), source),
+    () => {},
+  ];
+  let calls = 0;
+  const s = session(root, { operations: pausedRunner(() => pauses[calls++]!()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A manual file where the plan expected none.
+  let before = treeBytes(root);
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  let result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, ["keylang/map/domain.md: created on disk while the change was prepared; nothing written"]);
+  assert.deepEqual([result.written, result.payload.steps], [[], []]);
+  assert.deepEqual(treeBytes(root), new Map([...before, ["keylang/map/domain.md", manual]]), "only the outside write is on disk");
+  // Code changed after it was read: refused as well.
+  rmSync(join(root, "keylang/map/domain.md"));
+  before = treeBytes(root);
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, ["src/domain/order.ts: changed on disk while the map was computed"]);
+  assert.deepEqual(treeBytes(root), new Map([...before, ["src/domain/order.ts", source]]));
+  s.send(KEY.f6);
+  assert.match(s.text(), /inputs changed, nothing written · code 1/);
+  assert.match(s.text(), /Enter computes the map again/);
+  // Enter reruns through the same step; the map is now computed from the new code.
+  s.send(KEY.enter);
+  assert.ok(s.app.state.barrier?.writes);
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["completed", 0]);
+  assert.match(readFileSync(join(root, "keylang/map/domain.md"), "utf8"), /cancel/);
+  assert.equal(cliMapCheck(root).status, 0);
+});
+
+test("tui: an I/O failure on the second step names the first as written, the second as failed and the rest as not attempted; code 2, the session goes on", async (t) => {
+  const root = checkoutRepo(t);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  withConfig(root, { explain: { map: true } });
+  writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n");
+  const index = readFileSync(join(root, ".keylang/index.json"), "utf8");
+  // Not a permission trick: a file where the explained map's directory must be makes its first write fail.
+  const s = session(root, { operations: pausedRunner(() => writeFileSync(join(root, "keylang/map-explained"), "in the way\n")) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 2]);
+  const [first, second, ...rest] = result.payload.steps;
+  assert.deepEqual([first?.path, first?.state], ["keylang/map/domain.md", "completed"]);
+  assert.equal(second?.state, "failed");
+  assert.match(second?.path ?? "", /^keylang\/map-explained\//);
+  assert.match(second?.error ?? "", /ENOTDIR|EEXIST|not a directory/);
+  assert.ok(rest.length > 0 && rest.every((step) => step.state === "not-attempted"), JSON.stringify(rest));
+  assert.ok(rest.some((step) => step.path === ".keylang/index.json"));
+  assert.deepEqual([result.written, result.removed], [["keylang/map/domain.md"], []]);
+  assert.match(readFileSync(join(root, "keylang/map/domain.md"), "utf8"), /cancel/, "the completed step stays: no rollback");
+  assert.equal(readFileSync(join(root, ".keylang/index.json"), "utf8"), index, "a not-attempted step wrote nothing");
+  assert.equal(readFileSync(join(root, "keylang/map-explained"), "utf8"), "in the way\n");
+  assert.ok(result.messages.some((message) => message.level === "error" && /not attempted: .*\.keylang\/index\.json/.test(message.text)));
+  s.send(KEY.f6);
+  assert.match(s.text(), /1 of \d+ step\(s\) done, failed · code 2/);
+  assert.match(s.text(), /not attempted \.keylang\/index\.json/);
+  // The session answers; a fresh analysis ran after the partial write.
+  s.send("\x1b");
+  await sleep(40);
+  s.send(KEY.down);
+  assert.equal(s.app.state.cursor.line, 1);
+  assert.equal(s.app.state.updating, false);
+  assert.equal(s.app.state.activeOperation, null);
+});
+
+test("tui: Cancel during the commit lets the current file finish and names what was written; nothing is rolled back", async (t) => {
+  const root = checkoutRepo(t);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n");
+  const cache = readFileSync(join(root, ".keylang/cache/facts.json"), "utf8");
+  let cancel = (): void => {};
+  const s = session(root, { operations: pausedRunner(() => {}, (text) => text === "writing .keylang/index.json" && cancel()) });
+  cancel = () => {
+    s.send(KEY.ctrlP);
+    for (const ch of "cancel") s.send(ch);
+    s.send(KEY.enter);
+  };
+  t.after(() => s.app.close());
+  await s.app.idle();
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["cancelled", null]);
+  assert.deepEqual(
+    result.payload.steps.map((step) => [step.path, step.state]),
+    [
+      ["keylang/map/domain.md", "completed"],
+      [".keylang/index.json", "completed"],
+      [".keylang/cache/facts.json", "not-attempted"],
+    ],
+  );
+  assert.deepEqual(result.written, ["keylang/map/domain.md", ".keylang/index.json"]);
+  assert.equal(readFileSync(join(root, ".keylang/cache/facts.json"), "utf8"), cache);
+  assert.equal(s.app.state.records.at(-1)!.status, "cancelled");
+  assert.match(s.app.state.message ?? "", /map write: 2 of 3 step\(s\) done, cancelled/);
+});
+
+test("tui: an analysis finishing during the commit is not adopted; the report after it matches the disk and keeps the dirty buffers", async (t) => {
+  const root = checkoutRepo(t);
+  let gateNext = false;
+  let release: (() => void) | null = null;
+  let dropped: Analysis | null = null;
+  let committed = false;
+  const reports: { analysis: Analysis; afterCommit: boolean; overlay: string[] }[] = [];
+  const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
+    const afterCommit = committed;
+    // The map's own analysis (persistFacts) is not the editor's report.
+    const gated = gateNext && request.persistFacts !== true;
+    if (gated) {
+      gateNext = false;
+      await new Promise<void>((done) => (release = done));
+    }
+    const analysis = await analyze(request);
+    if (gated) dropped = analysis;
+    if (request.persistFacts !== true) reports.push({ analysis, afterCommit, overlay: [...(request.overlay?.keys() ?? [])] });
+    return analysis;
+  };
+  const operations: NonNullable<AppOptions["operations"]> = async (request, context) => {
+    const result = await pausedRunner(async () => {
+      await context.beforeCommit?.();
+      // The session knows of the commit now; the F5 started before it finishes meanwhile.
+      release!();
+      await waitUntil(() => dropped !== null, "the analysis started before the commit");
+    })(request, { ...context, beforeCommit: () => {} });
+    committed = true;
+    return result;
+  };
+  const s = session(root, { analyzer, operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // An unsaved flow: the map does not read it, so the step does not list it and it stays dirty.
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  await s.app.idle();
+  const typed = s.app.state.buffers.get("keylang/flows/checkout.md")!.text;
+  gateNext = true;
+  s.send(KEY.f5);
+  mapWrite(s.send);
+  assert.deepEqual(s.app.state.barrier?.files, []);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(mapRecord(s.app).exitCode, 0);
+  assert.ok(dropped !== null);
+  assert.notEqual(s.app.state.analysis, dropped, "the analysis from before the commit is not adopted");
+  const current = reports.at(-1)!;
+  assert.equal(current.afterCommit, true, "the report was computed after the commit");
+  assert.equal(s.app.state.analysis, current.analysis);
+  assert.deepEqual(s.app.unsaved(), ["keylang/flows/checkout.md"]);
+  assert.equal(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, typed);
+  assert.deepEqual(current.overlay, [join(root, "keylang/flows/checkout.md")], "the dirty buffer is the overlay");
+  assert.equal(current.analysis.snapshot?.snapshotId, (JSON.parse(readFileSync(join(root, ".keylang/index.json"), "utf8")) as { snapshotId: string }).snapshotId);
+  assert.equal(cliMapCheck(root).status, 0);
+});
+
+test("map: the commit keeps permissions, writes through links inside the repository, refuses one leading out, and never writes over a manual file", async (t) => {
+  const root = checkoutRepo(t);
+  const outside = mkdtempSync(join(tmpdir(), "keylang-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const map = (): { status: number | null; stdout: string; stderr: string } => spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" });
+  assert.equal(map().status, 0);
+  const stale = (): void => writeFileSync(join(root, "src/domain/order.ts"), `export function create(): void {}\nexport function v${Date.now()}(): void {}\n`);
+  // Permissions of the file replaced.
+  chmodSync(join(root, "keylang/map/domain.md"), 0o640);
+  stale();
+  assert.equal(map().status, 0);
+  assert.equal(statSync(join(root, "keylang/map/domain.md")).mode & 0o777, 0o640);
+  // A generated file with CRLF gets the generator's exact bytes, so the next check finds it current.
+  writeFileSync(join(root, "keylang/map/domain.md"), readFileSync(join(root, "keylang/map/domain.md"), "utf8").replace(/\n/g, "\r\n"));
+  stale();
+  assert.equal(map().status, 0);
+  assert.doesNotMatch(readFileSync(join(root, "keylang/map/domain.md"), "utf8"), /\r/);
+  assert.equal(cliMapCheck(root).status, 0);
+  // A link inside the repository: written at its target, the link stays.
+  mkdirSync(join(root, "docs"));
+  writeFileSync(join(root, "docs/domain.md"), readFileSync(join(root, "keylang/map/domain.md"), "utf8"));
+  rmSync(join(root, "keylang/map/domain.md"));
+  symlinkSync("../../docs/domain.md", join(root, "keylang/map/domain.md"));
+  stale();
+  assert.equal(map().status, 0);
+  assert.equal(readlinkSync(join(root, "keylang/map/domain.md")), "../../docs/domain.md");
+  assert.match(readFileSync(join(root, "docs/domain.md"), "utf8"), /fn \[v\d+\]/);
+  // A link out of the repository: the whole plan is refused, nothing is written, code 1.
+  writeFileSync(join(outside, "domain.md"), readFileSync(join(root, "docs/domain.md"), "utf8"));
+  rmSync(join(root, "keylang/map/domain.md"));
+  symlinkSync(join(outside, "domain.md"), join(root, "keylang/map/domain.md"));
+  stale();
+  let before = treeBytes(root);
+  const outsideBefore = readFileSync(join(outside, "domain.md"), "utf8");
+  let out = map();
+  assert.equal(out.status, 1, out.stderr);
+  assert.match(out.stdout, /keylang\/map\/domain\.md: leads out of the repository through a link/);
+  assert.match(out.stderr, /nothing was written/);
+  assert.deepEqual(treeBytes(root), before);
+  assert.equal(readFileSync(join(outside, "domain.md"), "utf8"), outsideBefore);
+  // A manual file where a generated one belongs: code 1, nothing written — the index and the fact cache included.
+  rmSync(join(root, "keylang/map/domain.md"));
+  writeFileSync(join(root, "keylang/map/domain.md"), "# domain notes\n");
+  stale();
+  before = treeBytes(root);
+  out = map();
+  assert.equal(out.status, 1);
+  assert.equal(out.stdout, "keylang/map/domain.md: manual file without keylang:generated marker\n");
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("operation worker: a map cancelled before its commit ends the worker with nothing written; the next one writes what the CLI writes", async (t) => {
+  const root = checkoutRepo(t);
+  const twin = checkoutRepo(t);
+  const gated = gatedWorker();
+  const before = treeBytes(root);
+  const controller = new AbortController();
+  const cancelled = gated.worker.run({ kind: "map", root }, { signal: controller.signal });
+  controller.abort();
+  assert.deepEqual([(await cancelled).status, (await cancelled).exitCode], ["cancelled", null]);
+  gated.open();
+  await sleep(100);
+  assert.deepEqual(treeBytes(root), before);
+  let told = 0;
+  const done = await gated.worker.run({ kind: "map", root }, { beforeCommit: () => void told++ });
+  gated.worker.close();
+  assert.deepEqual([done.status, done.exitCode, told], ["completed", 0, 1]);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: twin, encoding: "utf8" }).status, 0);
+  assert.deepEqual(artifacts(root), artifacts(twin));
 });

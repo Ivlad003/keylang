@@ -1,9 +1,9 @@
 // `keylang map`: source files → facts → graph → map/*.md + .keylang/index.json.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { excludedSourceFiles, isExcluded, sourceTree, toPosix, type Config } from "./config.ts";
+import { CONFIG_FILE, excludedSourceFiles, isExcluded, sourceTree, toPosix, type Config } from "./config.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
@@ -11,7 +11,8 @@ import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
-import { FactCache } from "./fact-cache.ts";
+import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
+import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot } from "./snapshot.ts";
 
 export interface MapResult {
@@ -25,10 +26,13 @@ export interface MapResult {
   skipped: number;
   /** Source files whose facts were reused from a cache, and files parsed in this run. */
   facts: { reused: number; extracted: number };
+  /** The text of the fact cache for the next process (`persist`); null otherwise. Written by `commitMap`. */
+  factCache: string | null;
 }
 
 /**
- * `persist` writes the fact cache for the next process (`keylang map` only);
+ * `persist` prepares the fact cache for the next process (`keylang map` only;
+ * the commit step writes it, generation writes nothing);
  * `overlay` gives unsaved text of source files by absolute path (the language server).
  */
 export async function generateMap(config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
@@ -72,7 +76,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     if (!frontend) continue;
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
-  if (options.persist) cache.save();
+  const factCache = options.persist ? cache.serialize() : null;
   // An explicitly excluded file inside a layer is a module with unknown contents.
   const excluded = excludedSourceFiles(config).filter((p) => placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
@@ -98,7 +102,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     const briefs = loadBriefs(config);
     explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
   }
-  return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted } };
+  return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
 }
 
 /** The explained map's directory under the spec directory. */
@@ -148,10 +152,10 @@ export interface MapDiff {
  * Directories the generator owns and what they should hold: the map, and the
  * explained map (empty when `explain.map` is off, so its generated files go).
  */
-function targets(config: Config, r: MapResult): { dir: string; files: ReadonlyMap<string, string> }[] {
+function targets(config: Config, r: MapResult): { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] {
   return [
-    { dir: join(config.root, config.dir, "map"), files: r.files },
-    { dir: join(config.root, config.dir, EXPLAINED_MAP_DIR), files: r.explained ?? new Map() },
+    { dir: join(config.root, config.dir, "map"), files: r.files, artifact: "map" },
+    { dir: join(config.root, config.dir, EXPLAINED_MAP_DIR), files: r.explained ?? new Map(), artifact: "explained" },
   ];
 }
 
@@ -175,36 +179,175 @@ export function mapConflicts(config: Config, r: MapResult): string[] {
   return conflicts.sort();
 }
 
+/** What a step of the map's commit touches. */
+export type MapArtifact = "map" | "explained" | "index" | "facts";
+
+/** One file step of `keylang map`: a path relative to the root, POSIX. */
+export interface MapStep {
+  path: string;
+  action: "write" | "remove";
+  artifact: MapArtifact;
+}
+
+interface PlannedStep extends MapStep {
+  /** `write`: the new bytes. */
+  text: string;
+  /**
+   * What the file must still hold when the step runs: its bytes, or null for
+   * no file. Undefined: not compared — the index and the fact cache are only
+   * the generator's own output.
+   */
+  expect: string | null | undefined;
+}
+
 /**
- * Write both maps and the index. A manual target file blocks every write and
- * every removal: the generator checks all targets before touching disk.
+ * What `keylang map` will do, computed before anything is written: the
+ * expected bytes of every target, the removals, and what the render was made
+ * from. Internal to one operation — not a stored format.
  */
-export function writeMap(config: Config, r: MapResult): { written: string[]; removed: string[]; conflicts: string[] } {
-  const conflicts = mapConflicts(config, r);
-  if (conflicts.length > 0) return { written: [], removed: [], conflicts };
-  const written: string[] = [];
-  const removed: string[] = [];
-  for (const { dir, files } of targets(config, r)) {
-    if (files.size > 0) mkdirSync(dir, { recursive: true });
+export interface MapPlan {
+  root: string;
+  config: Config;
+  /** Target files that exist without the keylang:generated marker: they block every step. Relative, sorted. */
+  conflicts: string[];
+  steps: PlannedStep[];
+  /** Directories of a map turned off: removed after the steps when they are empty. */
+  emptyDirs: string[];
+  inputs: MapInputs;
+}
+
+/** The inputs of the render: a change in any makes the plan unfit. */
+interface MapInputs {
+  /** The text of `keylang.json`, or null without one. */
+  config: string | null;
+  /** Every source file the snapshot read, with its hash (the snapshot manifest). */
+  sources: readonly { path: string; sha256: string }[];
+  /** A hash of the briefs the explained map was rendered with; null when it is off. */
+  briefs: string | null;
+}
+
+/** A step after the commit: done, failed with the reason, or never tried. */
+export interface CommittedStep extends MapStep {
+  state: "completed" | "failed" | "not-attempted";
+  error?: string;
+}
+
+export interface MapCommit {
+  steps: CommittedStep[];
+  /** `cancelled`: the signal stopped the commit between two steps; what was done stays done. */
+  outcome: "completed" | "failed" | "cancelled";
+}
+
+/**
+ * Plans both maps, the index and the fact cache: a write for every missing or
+ * changed generated file, a removal for every generated file of a layer that
+ * is gone (or of a map turned off). Reads the disk, writes nothing.
+ */
+export function planMap(config: Config, r: MapResult): MapPlan {
+  const rel = (abs: string): string => toPosix(relative(config.root, abs));
+  const steps: PlannedStep[] = [];
+  const emptyDirs: string[] = [];
+  for (const { dir, files, artifact } of targets(config, r)) {
     for (const [name, text] of files) {
       const p = join(dir, name);
-      if (!existsSync(p) || readFileSync(p, "utf8") !== text) {
-        writeFileSync(p, text);
-        written.push(p);
-      }
+      const current = readOrNull(p);
+      if (current !== text) steps.push({ path: rel(p), action: "write", artifact, text, expect: current });
     }
     // Only generated files of layers that no longer exist (or of a map turned off) may be removed.
-    for (const p of extraGenerated(dir, files)) {
-      rmSync(p);
-      removed.push(p);
-    }
+    for (const p of extraGenerated(dir, files)) steps.push({ path: rel(p), action: "remove", artifact, text: "", expect: readFileSync(p, "utf8") });
     // A map turned off leaves no empty directory behind; one with manual files stays.
-    if (files.size === 0 && existsSync(dir) && readdirSync(dir).length === 0) rmdirSync(dir);
+    if (files.size === 0) emptyDirs.push(rel(dir));
   }
-  const idxDir = join(config.root, ".keylang");
-  mkdirSync(idxDir, { recursive: true });
-  writeFileSync(join(idxDir, "index.json"), `${JSON.stringify(r.index, null, 2)}\n`);
-  return { written, removed, conflicts };
+  steps.push({ path: ".keylang/index.json", action: "write", artifact: "index", text: `${JSON.stringify(r.index, null, 2)}\n`, expect: undefined });
+  if (r.factCache !== null) steps.push({ path: FACT_CACHE_FILE, action: "write", artifact: "facts", text: r.factCache, expect: undefined });
+  return {
+    root: config.root,
+    config,
+    conflicts: mapConflicts(config, r).map(rel),
+    steps,
+    emptyDirs,
+    inputs: { config: readOrNull(join(config.root, CONFIG_FILE)), sources: r.index.manifest.files, briefs: config.explain.map ? briefsKey(config) : null },
+  };
+}
+
+/**
+ * Why the plan may not be committed now, as `path: reason` lines; empty when
+ * it may. Every target must pass the repository's write rules (a plain path
+ * that stays inside the repository through links) and still hold the bytes
+ * the plan saw — a manual file created meanwhile included; `keylang.json`,
+ * the source files and the briefs must be the ones the map was rendered from.
+ */
+export function mapPlanProblems(plan: MapPlan): string[] {
+  const problems: string[] = [];
+  for (const step of plan.steps) {
+    const problem = writeProblem(plan.root, step.path, { generated: true, ...(step.expect === undefined ? {} : { expect: step.expect }) });
+    if (problem !== null) problems.push(`${step.path}: ${problem}`);
+  }
+  if (readOrNull(join(plan.root, CONFIG_FILE)) !== plan.inputs.config) problems.push(`${CONFIG_FILE}: changed on disk while the map was computed`);
+  const before = new Map(plan.inputs.sources.map((file) => [file.path, file.sha256]));
+  const now = new Map<string, string>();
+  for (const path of sourceTree(plan.config).files) {
+    const text = readOrNull(join(plan.root, path));
+    if (text !== null) now.set(path, sha256(text));
+  }
+  for (const [path, hash] of now) {
+    const old = before.get(path);
+    if (old === undefined) problems.push(`${path}: added while the map was computed`);
+    else if (old !== hash) problems.push(`${path}: changed on disk while the map was computed`);
+  }
+  for (const path of before.keys()) if (!now.has(path)) problems.push(`${path}: removed while the map was computed`);
+  if (plan.inputs.briefs !== null && briefsKey(plan.config) !== plan.inputs.briefs) problems.push(`${plan.config.dir}/explain/brief: changed while the map was computed`);
+  return problems;
+}
+
+/**
+ * Runs the plan's steps in order, each an atomic write (the generator's exact
+ * bytes, the permissions of the file it replaces, links followed inside the
+ * repository) or a removal. The signal is checked between steps: the step
+ * under way finishes. `onStep` is told before each step starts. The first failure stops the rest, which stay
+ * not-attempted; nothing done is rolled back. The caller checks
+ * `mapPlanProblems` first.
+ */
+export async function commitMap(plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}): Promise<MapCommit> {
+  const steps: CommittedStep[] = plan.steps.map(({ path, action, artifact }) => ({ path, action, artifact, state: "not-attempted" }));
+  for (const [i, step] of plan.steps.entries()) {
+    // One turn of the event loop between steps: a cancel message sent to a worker arrives here.
+    await new Promise<void>((done) => setImmediate(done));
+    if (options.signal?.aborted) return { steps, outcome: "cancelled" };
+    options.onStep?.({ path: step.path, action: step.action, artifact: step.artifact });
+    const abs = join(plan.root, step.path);
+    try {
+      if (step.action === "write") writeAtomic(landing(abs) ?? abs, step.text, { exact: true });
+      else rmSync(abs);
+      steps[i]!.state = "completed";
+    } catch (error) {
+      steps[i] = { ...steps[i]!, state: "failed", error: error instanceof Error ? error.message : String(error) };
+      return { steps, outcome: "failed" };
+    }
+  }
+  for (const dir of plan.emptyDirs) {
+    const abs = join(plan.root, dir);
+    try {
+      if (existsSync(abs) && readdirSync(abs).length === 0) rmdirSync(abs);
+    } catch {
+      // An empty directory left behind is no failure of the map.
+    }
+  }
+  return { steps, outcome: "completed" };
+}
+
+/** A hash of the briefs the explained map reads. */
+function briefsKey(config: Config): string {
+  return sha256(JSON.stringify([...loadBriefs(config)]));
+}
+
+/** A file's text, or null when there is none. */
+function readOrNull(abs: string): string | null {
+  try {
+    return readFileSync(abs, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** Compare both generated maps with the files on disk (`map --check`). */

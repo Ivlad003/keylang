@@ -166,7 +166,7 @@ export interface OperationRecord {
 
 /**
  * The step before an operation that reads the disk (design §2.5): the dirty
- * spec and config buffers it would not see. Save and continue writes them in
+ * spec and config buffers it would not see, and what it would write. Save and continue writes them in
  * order and starts the operation only when every write succeeded; Back writes
  * nothing. `error` names the file whose save failed; the step stays open.
  */
@@ -174,6 +174,12 @@ export interface SaveBarrier {
   /** What waits for the save, as shown in the title. */
   action: string;
   files: string[];
+  /**
+   * What a writing operation will write, shown before it starts (design §2.2:
+   * a write action first shows its target); null for one that only reads.
+   * With targets the step opens even without unsaved buffers.
+   */
+  writes: string[] | null;
   choice: "save" | "back";
   error: string | null;
 }

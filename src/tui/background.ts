@@ -5,9 +5,9 @@
 // If the worker cannot start, generation falls back to the calling thread.
 //
 // `OperationWorker` runs the session's explicit operations (feature,
-// map-check) in a worker of their own, with no such fallback: a worker that
-// cannot start or dies is a failed result with code 2, and the next request
-// starts a new one.
+// map-check, map) in a worker of their own, with no such fallback: a worker
+// that cannot start or dies is a failed result with code 2, and the next
+// request starts a new one.
 
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
@@ -80,13 +80,18 @@ export class SnapshotWorker {
   }
 }
 
-/** The operation kinds that only read: cancelling them may terminate the worker at any moment. */
-const READ_ONLY = new Set<OperationRequest["kind"]>(["doctor", "feature", "map-check"]);
-
 interface Pending {
   kind: OperationRequest["kind"];
   resolve: (result: OperationResult) => void;
   onProgress: OperationContext["onProgress"];
+  beforeCommit: OperationContext["beforeCommit"];
+  signal: AbortSignal | undefined;
+  /**
+   * The worker was let through to its file steps. Until then nothing is
+   * written and cancelling may terminate the worker; from then on it may
+   * not — cancellation is a message, and the result lists what was written.
+   */
+  committing: boolean;
   /** Removes the abort listener: a settled request keeps no reference to its signal. */
   release: () => void;
 }
@@ -129,28 +134,82 @@ export class OperationWorker {
       const signal = context.signal;
       const onAbort = (): void => this.cancel(operationId);
       signal?.addEventListener("abort", onAbort, { once: true });
-      this.pending.set(operationId, { kind: request.kind, resolve, onProgress: context.onProgress, release: () => signal?.removeEventListener("abort", onAbort) });
+      this.pending.set(operationId, {
+        kind: request.kind,
+        resolve,
+        onProgress: context.onProgress,
+        beforeCommit: context.beforeCommit,
+        signal,
+        committing: false,
+        release: () => signal?.removeEventListener("abort", onAbort),
+      });
       worker.ref();
       try {
-        worker.postMessage({ operationId, request } satisfies OperationCall);
+        worker.postMessage({ type: "run", operationId, request } satisfies OperationCall);
       } catch (error) {
         this.settle(operationId, resultWithout(request.kind, "failed", 2, `the operation could not be sent to the worker: ${messageOf(error)}`));
       }
     });
   };
 
-  /** Ends the worker; every pending request settles as cancelled. */
+  /**
+   * Ends the worker; every pending request settles as cancelled. A commit
+   * under way is cut short too: each file step is atomic, but the report of
+   * what landed is lost (waiting for it is the quit dialog's job).
+   */
   close(): void {
     this.closed = true;
     this.stop((kind) => resultWithout(kind, "cancelled", null));
   }
 
-  /** Cancellation of a read-only request terminates the worker; a new one starts with the next request. */
+  /**
+   * Before a commit nothing is written: cancelling terminates the worker and a
+   * new one starts with the next request. During a commit the worker is never
+   * terminated: it is asked to stop between file steps, and its result —
+   * `cancelled` with the steps it did — settles the request.
+   */
   private cancel(operationId: number): void {
     const pending = this.pending.get(operationId);
     if (!pending) return;
+    if (pending.committing) {
+      this.post({ type: "cancel", operationId });
+      return;
+    }
     this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
-    if (READ_ONLY.has(pending.kind)) this.stop((kind) => resultWithout(kind, "failed", 2, "the operation worker was stopped to cancel another operation"));
+    this.stop((kind) => resultWithout(kind, "failed", 2, "the operation worker was stopped to cancel another operation"));
+  }
+
+  /**
+   * The worker asks to start writing: the session is told first
+   * (`beforeCommit`), then the worker goes ahead — or is cancelled when the
+   * signal was aborted meanwhile, with nothing written.
+   */
+  private commit(worker: Worker, operationId: number): void {
+    const pending = this.pending.get(operationId);
+    if (!pending) return;
+    const answer = (): void => {
+      // Settled meanwhile (cancelled before the commit, worker replaced): that worker is gone.
+      if (this.pending.get(operationId) !== pending || this.worker !== worker) return;
+      if (pending.signal?.aborted) return this.post({ type: "cancel", operationId });
+      pending.committing = true;
+      this.post({ type: "commit", operationId });
+    };
+    let told: Promise<void> | void;
+    try {
+      told = pending.beforeCommit?.();
+    } catch {
+      return this.post({ type: "cancel", operationId });
+    }
+    if (told === undefined) return answer();
+    told.then(answer, () => this.post({ type: "cancel", operationId }));
+  }
+
+  private post(call: OperationCall): void {
+    try {
+      this.worker?.postMessage(call);
+    } catch {
+      // A worker that cannot take the message fails through its `error`/`exit` events.
+    }
   }
 
   private start(): Worker {
@@ -162,6 +221,7 @@ export class OperationWorker {
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
       if (reply.type === "progress") pending.onProgress?.({ text: reply.text });
+      else if (reply.type === "commit") this.commit(worker, reply.operationId);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
       else this.settle(reply.operationId, resultWithout(pending.kind, "failed", 2, reply.error));
     });

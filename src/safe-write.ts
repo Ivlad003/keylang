@@ -1,5 +1,6 @@
 // One protocol for every file keylang writes into a repository: proposals,
-// `spec-to-code --apply`, `wire`, `.keylang/stats.json`, explanations. The
+// `spec-to-code --apply`, `wire`, `.keylang/stats.json`, explanations, the
+// map with its index and fact cache (byte-exact, see `writeAtomic`). The
 // path is plain and relative, and it stays inside the repository once every
 // link on the way is followed — a link whose target does not exist yet
 // included, since the write would create that target. A file with a
@@ -80,13 +81,15 @@ export function safeWriteAll(root: string, writes: readonly PlannedWrite[]): str
  * A temporary file in the target's directory renamed over the target, so a
  * crash never leaves half a file; missing directories are created. The new
  * file keeps the permissions of the one it replaces, and CRLF when that one
- * has CRLF on every line. `abs` is where the bytes land: not a link.
+ * has CRLF on every line — unless `exact`: a generated artifact (the map, the
+ * index) is the generator's bytes, so the next comparison finds it current.
+ * `abs` is where the bytes land: not a link.
  */
-export function writeAtomic(abs: string, text: string): void {
+export function writeAtomic(abs: string, text: string, options: { exact?: boolean } = {}): void {
   mkdirSync(dirname(abs), { recursive: true });
   const existing = statOrNull(abs);
   const mode = existing?.isFile() ? existing.mode & 0o7777 : undefined;
-  const out = existing?.isFile() && allCrlf(readFileSync(abs, "utf8")) ? text.replace(/\r?\n/g, "\r\n") : text;
+  const out = options.exact !== true && existing?.isFile() && allCrlf(readFileSync(abs, "utf8")) ? text.replace(/\r?\n/g, "\r\n") : text;
   const temporary = join(dirname(abs), `.${basename(abs)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
   try {
     // `wx`: a link planted at the temporary name is never followed.
