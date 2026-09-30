@@ -3,9 +3,10 @@
 // and the status bar. Popups (hover, completion, palette, help) draw on top.
 
 import { contextPack } from "../agent-context.ts";
+import { CONFIG_FILE } from "../config.ts";
 import { explainCode } from "../explain.ts";
 import { explanationOf } from "../explanations.ts";
-import { ACTIONS, catalog } from "./actions.ts";
+import { ACTIONS, catalog, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
 import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
@@ -475,10 +476,13 @@ export function resultsSplit(state: State, height: number): { list: number; repo
 export function findingStateRow(state: State): string | null {
   const unsaved = [...state.buffers.values()].filter((buffer) => !buffer.readOnly && buffer.text !== buffer.saved).map((buffer) => buffer.path);
   const parts: string[] = [];
+  if (state.config.kind === "invalid-config") parts.push(`invalid keylang.json: ${state.config.reason}`);
   if (state.error !== null) parts.push(`outdated: ${state.error}`);
   else if (state.outdated && !state.updating) parts.push("outdated: changes since this analysis");
   if (state.updating) parts.push("updating…");
   if (unsaved.length > 0) parts.push(`unsaved inputs: ${unsaved.join(", ")}`);
+  const note = configNote(state);
+  if (note !== null) parts.push(note);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -496,7 +500,7 @@ export function findingDetailRows(state: State, width: number): string[] {
   const selected = visibleFindings(findingsOf(state.analysis), state.results.filter)[state.results.finding];
   if (!selected) {
     const why =
-      state.analysis === null ? (state.error !== null ? "the analysis failed; no report yet" : "analyzing…") : "no findings match the filter";
+      state.analysis === null ? (state.error !== null ? "the analysis failed; no report yet" : (noSnapshotReason(state) ?? "analyzing…")) : "no findings match the filter";
     return padRows([why]);
   }
   return padRows([...clipRows(wrapCells(selected.evidence, width), DETAIL_MESSAGE_ROWS, width), ...clipRows(wrapCells(findingDetailText(selected), width), DETAIL_META_ROWS, width)]);
@@ -735,6 +739,40 @@ const HINTS: Record<string, string> = {
   merge: "a accept · r reject · u undo · n next · w write · Esc cancel",
 };
 
+/**
+ * Where the analysis takes its settings from, when that is not a plain saved
+ * `keylang.json`: a guess (no config), or the saved file while the buffer of
+ * `keylang.json` has unsaved edits that do not take effect.
+ */
+export function configNote(state: State): string | null {
+  const parts: string[] = [];
+  if (state.config.kind === "missing-config" && state.analysis) parts.push("guessed configuration: no keylang.json, nothing written");
+  const buffer = state.buffers.get(CONFIG_FILE);
+  if (buffer && buffer.text !== buffer.saved) parts.push("keylang.json unsaved: the analysis uses the saved file");
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** The start screen of a repository without `keylang.json` (design §2.1): what was found and what can be done. */
+function drawStart(grid: Grid, state: State, rect: Rect): void {
+  if (state.config.kind !== "missing-config") return;
+  const { languages, layers, notes } = state.config;
+  grid.fill(rect.x, rect.y, rect.width, rect.height, {});
+  const found = languages.length > 0 ? `Found: ${languages.join(", ")}${layers.length > 0 ? ` · layers: ${layers.join(", ")}` : ""}` : "Found: no supported source files (TypeScript, JavaScript, Python, Rust)";
+  const rows: { text: string; style: Style }[] = [
+    { text: "keylang.json is not here yet", style: THEME.heading },
+    { text: `Root: ${state.root}`, style: THEME.text },
+    { text: found, style: THEME.text },
+    ...notes.map((note) => ({ text: `  ${note}`, style: THEME.comment })),
+    { text: "", style: THEME.text },
+  ];
+  const labels = new Map(ACTIONS.map((action) => [action.id, action.label]));
+  START_ACTIONS.forEach((id, index) => rows.push({ text: `${index === state.start ? ">" : " "} ${labels.get(id) ?? id}`, style: index === state.start ? THEME.selected : THEME.text }));
+  rows.push({ text: "", style: THEME.text });
+  rows.push({ text: "Nothing is written here. To set up keylang, run `keylang init` in a shell.", style: THEME.hint });
+  rows.push({ text: "Enter choose · ↑↓ move · : all actions · ? help · q quit", style: THEME.comment });
+  rows.slice(0, rect.height - 1).forEach((row, i) => grid.write(rect.x + 2, rect.y + 1 + i, row.text, row.style, rect.width - 3));
+}
+
 export function render(state: State): Grid {
   const grid = new Grid(state.cols, state.rows);
   const area = layout(state);
@@ -747,17 +785,20 @@ export function render(state: State): Grid {
   const modeLabel = ` ${state.mode.toUpperCase()} `;
   grid.write(state.cols - modeLabel.length, 0, modeLabel, { ...THEME.statusKey, bg: state.mode === "edit" ? 28 : state.mode === "merge" ? 94 : 25 });
   // Body
-  if (area.files) {
+  // The start screen takes the whole body: there are no panels to show before Browse.
+  const start = state.start !== null && state.mode === "view";
+  if (area.files && !start) {
     drawFiles(grid, state, area.files);
     grid.fill(area.files.x + area.files.width, area.files.y, 1, area.files.height, { fg: 238 });
     for (let y = area.files.y; y < area.files.y + area.files.height; y++) grid.write(area.files.x + area.files.width, y, "│", { fg: 238 });
   }
-  if (area.nav) {
+  if (area.nav && !start) {
     for (let y = area.nav.y; y < area.nav.y + area.nav.height; y++) grid.write(area.nav.x - 1, y, "│", { fg: 238 });
     if (state.context.open) drawContext(grid, state, area.nav);
     else drawNav(grid, state, area.nav);
   }
-  if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
+  if (start) drawStart(grid, state, { x: 0, y: area.editor.y, width: state.cols, height: area.editor.height });
+  else if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
   else if (state.mode === "merge" && state.merge) drawMerge(grid, state, area.editor);
   else if (buffer && state.mode === "read") drawRead(grid, state, area.editor, buffer);
   else if (buffer) drawEditor(grid, state, area.editor, buffer);
@@ -777,8 +818,26 @@ export function render(state: State): Grid {
     x += grid.write(x, area.status.y, `  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
     x += grid.write(x, area.status.y, `  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
   }
-  const phase = state.updating ? "  updating… results shown are stale" : state.error ? `  outdated: ${state.error}` : state.outdated ? "  outdated: changes since this analysis" : state.analysis ? "" : "  analyzing…";
-  x += grid.write(x, area.status.y, phase, { ...THEME.status, fg: state.error && !state.updating ? 160 : 179 });
+  const invalid = state.config.kind === "invalid-config" ? state.config.reason : null;
+  const phase = state.updating
+    ? "  updating… results shown are stale"
+    : invalid !== null
+      ? `  invalid keylang.json: ${invalid}`
+      : state.error
+        ? `  outdated: ${state.error}`
+        : state.outdated
+          ? "  outdated: changes since this analysis"
+          : state.analysis
+            ? ""
+            : state.config.kind === "missing-config"
+              ? "  no keylang.json: Browse (Enter) or F5 analyses with a guessed configuration"
+              : "  analyzing…";
+  // Where the settings come from goes first: a long failure reason must not cut it off.
+  const note = configNote(state);
+  if (note !== null) x += grid.write(x, area.status.y, `  ${note}`, { ...THEME.status, fg: 179 });
+  x += grid.write(x, area.status.y, phase, { ...THEME.status, fg: (state.error || invalid !== null) && !state.updating ? 160 : 179 });
+  // A snapshot is its own property: a valid config may find no sources.
+  if (state.analysis && !state.analysis.snapshot) x += grid.write(x, area.status.y, "  no supported source files", { ...THEME.status, fg: 179 });
   if (state.proposals.length > 0 && state.mode !== "merge") x += grid.write(x, area.status.y, `  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
   const hints = HINTS[state.mode] ?? HINTS.view!;
   const hintWidth = stringWidth(hints);

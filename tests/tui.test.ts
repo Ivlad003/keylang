@@ -7,14 +7,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
+import { analyze, findRoot, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
@@ -27,7 +27,7 @@ import { inline } from "../src/tui/markdown.ts";
 import { editorCommand, runTerminal, splitCommand, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { textToSpec } from "../src/tui/text-to-spec.ts";
 import { stringWidth } from "../src/tui/width.ts";
-import { checkoutRepo, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
@@ -2314,4 +2314,254 @@ test("tui: t with the explained map off says how to turn it on and changes nothi
   assert.deepEqual({ current: s.app.state.current, cursor: s.app.state.cursor }, before);
   assert.match(s.text(), /the explained map is off: add "explain": \{"map": true\} to keylang\.json, then F5/);
   assert.ok(!s.app.state.files.some((file) => file.includes("map-explained")));
+});
+
+// ---------- workspace bootstrap: missing, invalid, and source-less configurations ----------
+
+/** Every file under `root` with its bytes: a session that must write nothing leaves this unchanged. */
+function treeBytes(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) walk(abs);
+      else out.set(abs.slice(root.length + 1), readFileSync(abs, "latin1"));
+    }
+    if (dir !== root && readdirSync(dir).length === 0) out.set(`${dir.slice(root.length + 1)}/`, "");
+  };
+  walk(root);
+  return out;
+}
+
+/** Read through a function, so the assertions on a changing state do not narrow its type. */
+function configKind(app: App): string {
+  return app.state.config.kind;
+}
+
+function promptNote(app: App): string {
+  return app.state.prompt?.note ?? "";
+}
+
+/** A temp repository with `files` and nothing else. */
+function repoWith(t: { after: (f: () => void) => void }, files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-tui-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+/** The shared analyzer, counting its runs. */
+function countingAnalyzer(): { analyzer: (request: AnalysisRequest) => Promise<Analysis>; calls: () => number } {
+  let calls = 0;
+  return {
+    analyzer: (request) => {
+      calls++;
+      return analyze(request);
+    },
+    calls: () => calls,
+  };
+}
+
+test("tui: without keylang.json the start screen shows the guess; Browse analyses with it and nothing is written", async (t) => {
+  const root = repoWith(t, { ...CHECKOUT_FILES });
+  const before = treeBytes(root);
+  const counted = countingAnalyzer();
+  const s = session(root, { analyzer: counted.analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(configKind(s.app), "missing-config");
+  assert.equal(counted.calls(), 0, "no analysis before Browse");
+  const screen = s.text();
+  assert.match(screen, /keylang\.json is not here yet/);
+  assert.ok(screen.includes(`Root: ${root}`), screen);
+  assert.match(screen, /Found: typescript · layers: application, domain, infrastructure, presentation/);
+  assert.match(screen, /> Browse with the guessed configuration/);
+  assert.match(screen, /Environment diagnostics/);
+  assert.doesNotMatch(screen, /Set up keylang|Initialize/, "no fake init before ticket 12");
+  assert.match(s.lines().at(-1)!, /no keylang\.json: Browse/);
+  assert.doesNotMatch(s.lines().at(-1)!, /analyzing/);
+  // Snapshot actions explain why they cannot run yet; the palette works on the start screen.
+  s.send(":");
+  for (const ch of "find node") s.send(ch);
+  assert.match(s.text(), /choose Browse on the start screen first/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt, null);
+  assert.match(s.lines().at(-2)!, /Find a node: choose Browse/);
+  // Doctor from the start screen: a record, and the start screen stays.
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.status, "completed");
+  assert.equal(s.app.state.start, 1);
+  // Browse: the shared analysis with the guessed layers, the map shown, still no config on disk.
+  s.send(KEY.up);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(counted.calls(), 1);
+  assert.equal(s.app.state.start, null);
+  assert.ok(s.app.state.analysis?.snapshot, "a snapshot of the guessed layout");
+  assert.deepEqual([...s.app.state.analysis!.config.layers.keys()], ["application", "domain", "infrastructure", "presentation"]);
+  assert.match(s.app.state.current ?? "", /^keylang\/map\//);
+  assert.match(s.lines().at(-1)!, /guessed configuration: no keylang\.json, nothing written/);
+  s.send(":");
+  for (const ch of "find node") s.send(ch);
+  assert.doesNotMatch(promptNote(s.app), /Browse|no analysis/);
+  s.send("\x1b");
+  await sleep(40);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), before, "the first run without init writes nothing");
+});
+
+test("tui: invalid JSON in keylang.json opens its text at the error; a saved fix analyses without a restart", async (t) => {
+  const root = checkoutRepo(t);
+  writeFileSync(join(root, "keylang.json"), '{\n  "languages": ["typescript"]\n}x\n');
+  const counted = countingAnalyzer();
+  const s = session(root, { analyzer: counted.analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(configKind(s.app), "invalid-config");
+  assert.equal(s.app.state.current, "keylang.json", "the raw text is open, though specs exist");
+  assert.deepEqual(s.app.state.cursor, { line: 2, col: 1 }, "the cursor is at the JSON error");
+  assert.match(s.lines().at(-1)!, /invalid keylang\.json: invalid JSON/);
+  assert.equal(counted.calls(), 0, "the analyzer never runs on an invalid config");
+  // F5 again and typing elsewhere do not repeat the same failure in a loop.
+  s.send(KEY.f5);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(counted.calls(), 0);
+  assert.match(s.app.state.message ?? "", /keylang\.json is invalid: invalid JSON.*Ctrl\+S/);
+  // Fix it in the editor: the unsaved text is not applied, the saved one is.
+  s.send("i");
+  s.send(KEY.end);
+  s.send("\x7f");
+  await sleep(200);
+  await s.app.idle();
+  assert.equal(counted.calls(), 0, "unsaved config text is no overlay");
+  assert.match(s.lines().at(-1)!, /keylang\.json unsaved: the analysis uses the saved file/);
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  assert.equal(configKind(s.app), "configured");
+  assert.equal(counted.calls(), 1);
+  assert.ok(s.app.state.analysis?.snapshot);
+  assert.equal(s.app.state.error, null);
+  assert.doesNotMatch(s.lines().at(-1)!, /invalid|outdated/);
+  assert.match(s.lines().at(-1)!, /✗ \d+ {2}◌ \d+ {2}✓ \d+/);
+});
+
+test("tui: an invalid field names the field; breaking the config later keeps the old report outdated; the fix recovers", async (t) => {
+  const root = checkoutRepo(t);
+  const good = readFileSync(join(root, "keylang.json"), "utf8");
+  writeFileSync(join(root, "keylang.json"), good.replace('"languages": [\n    "typescript"\n  ]', '"languages": 3'));
+  const counted = countingAnalyzer();
+  const s = session(root, { analyzer: counted.analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.current, "keylang.json");
+  assert.match(s.lines().at(-1)!, /invalid keylang\.json: `languages` must be an array, got 3/);
+  assert.equal(s.app.state.cursor.line, 1, "the cursor is on the field");
+  assert.match(bufferLine(s.app, s.app.state.cursor.line), /"languages": 3/);
+  // Snapshot actions say why they are unavailable; doctor still runs.
+  s.send(":");
+  for (const ch of "find node") s.send(ch);
+  assert.match(promptNote(s.app), /keylang\.json is invalid/);
+  s.send("\x1b");
+  await sleep(40);
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.result?.kind, "doctor");
+  // The fix, saved.
+  s.send("i");
+  s.app.state.buffers.get("keylang.json")!.text = good.replace(/\n$/, "");
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  assert.equal(configKind(s.app), "configured");
+  assert.equal(counted.calls(), 1);
+  assert.ok(s.app.state.analysis?.snapshot);
+  // Broken again on disk by another program: F5 keeps the report, outdated with the reason, and runs nothing.
+  s.send("\x1b");
+  await sleep(40);
+  s.send(":");
+  for (const ch of "checkout") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  writeFileSync(join(root, "keylang.json"), '{"layers": {"external": ["src/**"]}}\n');
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(counted.calls(), 1);
+  assert.equal(configKind(s.app), "invalid-config");
+  assert.ok(s.app.state.analysis, "the last report is kept");
+  assert.equal(s.app.state.outdated, true);
+  assert.equal(s.app.state.current, "keylang.json", "the broken config is opened");
+  assert.match(s.lines().at(-1)!, /invalid keylang\.json: `layers\.external`/);
+  s.send(KEY.ctrlO);
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md", "Ctrl+O returns");
+  writeFileSync(join(root, "keylang.json"), good);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(configKind(s.app), "configured");
+  assert.equal(s.app.state.outdated, false);
+  assert.equal(counted.calls(), 2);
+});
+
+function bufferLine(app: App, line: number): string {
+  return app.state.buffers.get(app.state.current!)!.text.split("\n")[line] ?? "";
+}
+
+test("tui: a valid config without supported sources keeps the editor and doctor; snapshot actions explain why not", async (t) => {
+  const root = repoWith(t, { "keylang.json": "{}\n", "keylang/rules.md": "# rules\n\n- layers a < b\n" });
+  const before = treeBytes(root);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(configKind(s.app), "configured");
+  assert.ok(s.app.state.analysis, "the analysis ran");
+  assert.equal(s.app.state.analysis!.snapshot, null, "no invented snapshot");
+  assert.match(s.lines().at(-1)!, /no supported source files/);
+  assert.equal(s.app.state.current, "keylang/rules.md");
+  s.send(":");
+  for (const ch of "toggle map") s.send(ch);
+  assert.match(promptNote(s.app), /no supported source files/);
+  s.send("\x1b");
+  await sleep(40);
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit", "the editor is available");
+  s.send("\x1b");
+  await sleep(40);
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.status, "completed");
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("tui: a start in a subdirectory uses the root of keylang.json and creates nothing in the subdirectory", async (t) => {
+  const root = checkoutRepo(t);
+  const sub = join(root, "src", "domain");
+  const before = treeBytes(root);
+  assert.equal(findRoot(sub), root);
+  const s = session(findRoot(sub));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(configKind(s.app), "configured");
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  assert.deepEqual(readdirSync(sub), ["order.ts"]);
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("cli: keylang without a command and without a TTY prints usage with code 2 and writes nothing", (t) => {
+  const root = repoWith(t, { ...CHECKOUT_FILES });
+  const before = treeBytes(root);
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const run = spawnSync(process.execPath, [bin], { cwd: root, encoding: "utf8" });
+  assert.equal(run.status, 2);
+  assert.equal(run.stdout, "");
+  assert.match(run.stderr, /Usage: keylang {6,}Open the TUI in this terminal \(needs a TTY\)/);
+  assert.deepEqual(treeBytes(root), before);
 });

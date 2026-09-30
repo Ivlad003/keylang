@@ -132,6 +132,18 @@ export interface OperationRecord {
   result: OperationResult | null;
 }
 
+/**
+ * How the session found `keylang.json` on disk. The analysis always reads the
+ * saved file; an unsaved config buffer never takes effect. Whether a snapshot
+ * exists is separate: `analysis?.snapshot` (a valid config may find no sources).
+ */
+export type ConfigState =
+  | { kind: "configured" }
+  /** No `keylang.json`: the guessed languages and layers, and the notes of renamed layers. Nothing is written. */
+  | { kind: "missing-config"; languages: string[]; layers: string[]; notes: string[] }
+  /** `keylang.json` does not parse or validate: `reason` names the field; the analyzer is not run. */
+  | { kind: "invalid-config"; reason: string };
+
 export interface Place {
   path: string;
   cursor: Cursor;
@@ -140,6 +152,12 @@ export interface Place {
 
 export interface State {
   root: string;
+  config: ConfigState;
+  /**
+   * The start screen of a repository without `keylang.json` (design §2.1): the
+   * selected item, or null when it is closed. No analysis runs before Browse.
+   */
+  start: number | null;
   cols: number;
   rows: number;
   files: string[];

@@ -9,6 +9,10 @@
 // It runs in the background: the UI keeps answering, shows "updating" and
 // dims the old marks, a result of a superseded generation is dropped, and a
 // failed run keeps the old marks outdated with a persistent reason.
+// `keylang.json` is read from disk before every run: without it the session
+// opens on a start screen and analyses only after Browse, with a guessed
+// configuration and no writes; an invalid one is opened as text with the
+// reason, and the analyzer does not run until a saved fix parses.
 // MERGE lives in `merge-session.ts`; ghost text, voice and the agent's draft
 // in `assist.ts`; this class dispatches input to them and keeps the editor.
 
@@ -17,7 +21,7 @@ import { createRequire } from "node:module";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
-import { CONFIG_FILE, loadConfig, toPosix } from "../config.ts";
+import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, toPosix } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
@@ -31,7 +35,7 @@ import { searchNodes } from "../node-search.ts";
 import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
-import { actionLabel, catalog, matchActions } from "./actions.ts";
+import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { bufferLines, lineLayout, newBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
@@ -39,7 +43,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, Cursor, Hover, OperationRecord, State } from "./state.ts";
+import type { Buffer, ConfigState, Cursor, Hover, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, readCursorRow, recordStatus, render, resultsReportRows } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
@@ -114,6 +118,8 @@ export class App {
     this.onQuit = options.onQuit ?? (() => {});
     this.state = {
       root: options.root,
+      config: { kind: "configured" },
+      start: null,
       cols: options.cols,
       rows: options.rows,
       files: [],
@@ -185,7 +191,12 @@ export class App {
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
     if (first) this.open(first, { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
-    this.reanalyze();
+    const config = configState(this.state.root);
+    this.state.config = config;
+    // No config: the start screen, and no analysis until Browse (design §2.1). Invalid: its text, at the field.
+    if (config.kind === "missing-config") this.state.start = 0;
+    else if (config.kind === "invalid-config") this.openConfig(config.reason, false);
+    else this.reanalyze();
   }
 
   // ---------- transport ----------
@@ -294,15 +305,17 @@ export class App {
 
   private overlay(): Map<string, string> {
     const overlay = new Map<string, string>();
-    for (const buffer of this.state.buffers.values()) if (!buffer.readOnly && buffer.text !== buffer.saved) overlay.set(resolve(this.state.root, buffer.path), buffer.text);
+    // The configuration always comes from disk: unparsed text of a dirty `keylang.json` is no overlay.
+    for (const buffer of this.state.buffers.values()) if (!buffer.readOnly && buffer.path !== CONFIG_FILE && buffer.text !== buffer.saved) overlay.set(resolve(this.state.root, buffer.path), buffer.text);
     return overlay;
   }
 
-  /** `F5` or a save: analyse now. */
-  reanalyze(): void {
+  /** `F5` or a save (`explicit`), or typing that settled: analyse now. */
+  reanalyze(explicit = true): void {
     if (this.closed) return;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (!this.readConfig(explicit)) return;
     const generation = ++this.generation;
     const edits = this.edits;
     this.state.updating = true;
@@ -337,6 +350,50 @@ export class App {
     this.draw();
   }
 
+  /**
+   * Reads `keylang.json` again before a run. False: it is invalid, and the
+   * analyzer is not run — it would only fail with the same error again. The
+   * last report stays outdated; a run in flight (on the old config) is dropped.
+   */
+  private readConfig(explicit: boolean): boolean {
+    const before = this.state.config;
+    const config = configState(this.state.root);
+    this.state.config = config;
+    if (config.kind !== "invalid-config") return true;
+    this.generation++;
+    this.state.updating = false;
+    this.state.outdated = this.state.analysis !== null;
+    const changed = before.kind !== "invalid-config" || before.reason !== config.reason;
+    if (explicit || changed) this.state.message = `keylang.json is invalid: ${config.reason} — fix it and save (Ctrl+S); nothing was analysed`;
+    // The config broke under an open session: show its text at the field, unless the user is typing elsewhere.
+    if (before.kind !== "invalid-config" && this.state.current !== CONFIG_FILE && (this.state.mode === "view" || this.state.mode === "read")) this.openConfig(config.reason, true);
+    return false;
+  }
+
+  /** Opens `keylang.json` as text with the cursor on the field (or the JSON position) the reason names. */
+  private openConfig(reason: string, remember: boolean): void {
+    const text = this.state.buffers.get(CONFIG_FILE)?.text ?? splitEol(readText(join(this.state.root, CONFIG_FILE)) ?? "").text;
+    this.open(CONFIG_FILE, configErrorCursor(text, reason), remember);
+  }
+
+  /** The start screen's Browse: the current analysis with the guessed configuration; nothing is written. */
+  private browse(): void {
+    this.state.start = null;
+    this.reanalyze();
+  }
+
+  /** Keys of the start screen: choose an item; the palette, help, F6 and quitting work as elsewhere. */
+  private startKey(event: KeyEvent): void {
+    const index = this.state.start ?? 0;
+    if (event.name === "up" || event.name === "k") this.state.start = Math.max(0, index - 1);
+    else if (event.name === "down" || event.name === "j") this.state.start = Math.min(START_ACTIONS.length - 1, index + 1);
+    else if (event.name === "enter") this.runAction(START_ACTIONS[index]!);
+    else if (event.name === "f5") this.browse();
+    else if (event.text === ":") this.openPalette();
+    else if (event.text === "?") this.state.help = true;
+    else if (event.name === "q") this.quit();
+  }
+
   private adoptResult(analysis: Analysis, edits: number, selected: CheckResult | undefined): void {
     this.state.updating = false;
     // Typing while it ran: the marks belong to older text and stay dimmed until the next run.
@@ -356,7 +413,7 @@ export class App {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
-      this.reanalyze();
+      this.reanalyze(false);
     }, SETTLE_MS);
   }
 
@@ -441,6 +498,8 @@ export class App {
   }
 
   private open(path: string, cursor: Cursor, remember = true): void {
+    // Opening a file leaves the start screen; the analysis still waits for Browse or F5.
+    this.state.start = null;
     if (remember && this.state.current) this.state.back.push({ path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode === "code" ? "view" : this.state.mode });
     this.load(path);
     this.state.current = path;
@@ -708,7 +767,7 @@ export class App {
     const analysis = this.state.analysis;
     const path = this.state.current;
     if (!analysis || !path) {
-      this.state.message = analysis ? "no file open" : "analysis is still running";
+      this.state.message = analysis ? "no file open" : (noSnapshotReason(this.state) ?? "analysis is still running");
       return;
     }
     const dirs = this.mapDirs(analysis);
@@ -822,6 +881,7 @@ export class App {
         return this.resultsKey(event);
       }
     }
+    if (this.state.start !== null && event.name !== "f6") return this.startKey(event);
     if (event.name === "f5") return this.reanalyze();
     if (event.name === "f6") return this.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
@@ -1702,6 +1762,8 @@ export class App {
       if (event.action === "wheel-up" || event.action === "wheel-down") this.scrollReport(event.action === "wheel-up" ? -3 : 3);
       return;
     }
+    // The start screen covers the editor: a click never moves the hidden cursor.
+    if (this.state.start !== null) return;
     const area = layout(this.state);
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
@@ -1863,7 +1925,10 @@ export class App {
     const focusable = this.state.mode === "view" || this.state.mode === "read";
     switch (id) {
       case "check":
+        if (this.state.start !== null) return this.browse();
         return this.reanalyze();
+      case "browse":
+        return this.browse();
       case "files":
         return this.toggleFiles(focusable);
       case "navigation":
@@ -2012,6 +2077,52 @@ function printable(text: string): string {
     .replace(/\r\n?/g, "\n")
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-9;?<=>]*[ -/]*[@-~]?|\x1b[@-_]?/g, "")
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+}
+
+/** `keylang.json` as it is on disk now: missing (with the guessed layout), invalid (with the reason) or valid. */
+function configState(root: string): ConfigState {
+  const file = join(root, CONFIG_FILE);
+  if (!existsSync(file)) {
+    const guessed = loadConfig(root);
+    return { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes };
+  }
+  try {
+    parseConfig(file, readFileSync(file, "utf8"));
+    return { kind: "configured" };
+  } catch (error) {
+    // The file is the one open in the editor: the reason keeps only the field.
+    const text = errorText(error);
+    return { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text };
+  }
+}
+
+/**
+ * Where the config error is: the line and column of an invalid JSON message
+ * (`line 3 column 5`, else `position N`), or the key the first quoted field
+ * path names (`check.trace` → `"check"`, then `"trace"` after it); else the start.
+ */
+export function configErrorCursor(text: string, reason: string): Cursor {
+  const at = (offset: number): Cursor => {
+    const before = text.slice(0, offset).split("\n");
+    return { line: before.length - 1, col: graphemes(before.at(-1)!).length };
+  };
+  const lineCol = /line (\d+) column (\d+)/.exec(reason);
+  if (lineCol) {
+    const line = Number(lineCol[1]) - 1;
+    const lineText = text.split("\n")[line] ?? "";
+    return { line, col: graphemes(lineText.slice(0, Number(lineCol[2]) - 1)).length };
+  }
+  const position = /position (\d+)/.exec(reason);
+  if (position) return at(Math.min(text.length, Number(position[1])));
+  const field = /`([^`]+)`/.exec(reason);
+  if (!field) return { line: 0, col: 0 };
+  let offset = -1;
+  for (const segment of field[1]!.split(".")) {
+    const next = text.indexOf(JSON.stringify(segment), offset + 1);
+    if (next === -1) break;
+    offset = next;
+  }
+  return offset === -1 ? { line: 0, col: 0 } : at(offset);
 }
 
 /** The package version, for the "About keylang" palette action. */
