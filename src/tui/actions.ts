@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor) is running. */
+  /** An explicit operation (doctor, feature) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -74,6 +74,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Project",
     aliases: ["doctor", "diagnostics", "health", "integrations"],
     when: (ctx) => (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "feature",
+    label: "Feature readiness",
+    group: "Check",
+    aliases: ["feature", "readiness", "done", "gaps"],
+    // It reads the saved files; unsaved buffers are offered for saving first.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   { id: "find-node", label: "Find a node", group: "Navigate", aliases: ["find node", "node"], key: "s", when: snapshot },
   { id: "toggle-map", label: "Map / explained map", group: "Navigate", aliases: ["toggle map", "explained map"], key: "t", when: snapshot },

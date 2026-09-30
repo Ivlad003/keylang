@@ -7,7 +7,6 @@ import { join, relative, resolve } from "node:path";
 import { detectHarnesses, HARNESS_PATHS, parseAgents, planHarness, skillFile, type HarnessPlan, type HarnessSelection } from "./adapters/harness.ts";
 import { baselineText } from "./baseline.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
-import { featureStatus } from "./feature-status.ts";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
@@ -35,7 +34,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { runOperation } from "./operations.ts";
+import { featureSummary, gapLine, runOperation } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -824,21 +823,20 @@ async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
   return 0;
 }
 
+/** Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation. */
 async function cmdFeature(slug: string | undefined, format: string): Promise<number> {
   if (!slug) throw new Error("feature: a slug is required");
   if (format !== "human" && format !== "json") throw new Error(`feature: unknown --format \`${format}\`; expected human, json`);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug)) throw new Error(`feature: invalid slug \`${slug}\``);
-  const root = findRoot(process.cwd());
-  const config = loadConfig(root);
-  const rel = `${config.dir}/features/${slug}.md`;
-  if (!existsSync(join(root, rel))) throw new Error(`feature: ${rel}: not found`);
-  const analyzed = await analyze({ root });
-  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, slug);
-  if (report === null) throw new Error(`feature: ${rel}: not a spec keylang read`);
+  const result = await runOperation({ kind: "feature", root: findRoot(process.cwd()), slug });
+  if (result.payload === null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  const { report } = result.payload;
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  else for (const gap of report.gaps) process.stdout.write(`${gap.file}:${gap.line}:${gap.col}: ${gap.kind} ${gap.id}: ${gap.reason}\n`);
-  process.stderr.write(report.done ? "done\n" : `${report.gaps.length} gap(s)\n`);
-  return report.done ? 0 : 1;
+  else for (const gap of report.gaps) process.stdout.write(`${gapLine(gap)}\n`);
+  process.stderr.write(`${featureSummary(report)}\n`);
+  return result.exitCode ?? 2;
 }
 
 async function cmdHook(name: string | undefined): Promise<number> {

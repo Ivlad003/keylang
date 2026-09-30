@@ -7,8 +7,10 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { analyze, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { CONFIG_FILE, loadConfig, type Config } from "./config.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
+import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import type { LlmSetup } from "./llm.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
@@ -20,7 +22,16 @@ export interface DoctorRequest {
   root: string;
 }
 
-export type OperationRequest = DoctorRequest;
+/** Whether a feature file is done, on the saved state of the repository (tools.md `feature`). */
+export interface FeatureRequest {
+  kind: "feature";
+  /** Repository root (absolute). */
+  root: string;
+  /** The feature: `<dir>/features/<slug>.md`. */
+  slug: string;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest;
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -28,6 +39,11 @@ export interface OperationContext {
   signal?: AbortSignal;
   /** Progress notes. Presentation only; never a source of domain data. */
   onProgress?: (progress: { text: string }) => void;
+  /**
+   * The analysis to run on the saved files; default `analyze`. A session
+   * passes its own, which builds the snapshot off the UI thread.
+   */
+  analyze?: (request: AnalysisRequest) => Promise<Analysis>;
 }
 
 export type OperationStatus = "completed" | "failed" | "cancelled";
@@ -81,9 +97,28 @@ export interface DoctorPayload {
   };
 }
 
+/** The feature status the CLI prints (`report`), with the file and the snapshot it was computed on. */
+export interface FeaturePayload {
+  slug: string;
+  /** `<dir>/features/<slug>.md`, relative to the root. */
+  file: string;
+  /** The snapshot id of the analysis, or null without supported sources. */
+  snapshot: string | null;
+  /** The unchanged `featureStatus` object: `keylang feature --format json` prints exactly this. */
+  report: FeatureReport;
+}
+
+/** The payload type of each operation kind. */
+export interface OperationPayloads {
+  doctor: DoctorPayload;
+  feature: FeaturePayload;
+}
+
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
-export interface OperationResult {
-  kind: OperationRequest["kind"];
+export type OperationResult = { [K in OperationRequest["kind"]]: OperationEnvelope<K> }[OperationRequest["kind"]];
+
+export interface OperationEnvelope<K extends OperationRequest["kind"]> {
+  kind: K;
   status: OperationStatus;
   /**
    * The exit code the CLI uses for the same action: 0 ok, 1 findings,
@@ -91,7 +126,7 @@ export interface OperationResult {
    */
   exitCode: 0 | 1 | 2 | null;
   /** The domain result; null when nothing was computed (failed or cancelled). */
-  payload: DoctorPayload | null;
+  payload: OperationPayloads[K] | null;
   /** The human-readable report; presentation, not the source of domain data. */
   messages: OperationMessage[];
   /** Files the operation wrote. */
@@ -102,19 +137,77 @@ export interface OperationResult {
   proposals: string[];
 }
 
-/** Runs one operation and returns its typed result. */
+/** Runs one operation and returns its typed result: the payload type follows the request's kind. */
+export function runOperation(request: DoctorRequest, context?: OperationContext): Promise<OperationEnvelope<"doctor">>;
+export function runOperation(request: FeatureRequest, context?: OperationContext): Promise<OperationEnvelope<"feature">>;
+export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
     case "doctor":
       return runDoctor(request, context);
+    case "feature":
+      return runFeature(request, context);
   }
 }
 
-function emptyDoctor(status: OperationStatus, exitCode: 0 | 1 | 2 | null): OperationResult {
+/** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */
+export const FEATURE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function emptyFeature(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"feature"> {
+  return { kind: "feature", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * The feature status of the saved files. It never takes unsaved text: a
+ * caller with dirty buffers saves them first, explicitly. A missing file, an
+ * invalid slug or config, or a failed analysis is a failure with code 2, not
+ * a gap; gaps are code 1. Nothing is written.
+ */
+async function runFeature(request: FeatureRequest, context: OperationContext): Promise<OperationEnvelope<"feature">> {
+  if (!isAbsolute(request.root)) return emptyFeature("failed", 2, "feature: root must be an absolute path");
+  if (request.slug === "") return emptyFeature("failed", 2, "feature: a slug is required");
+  if (!FEATURE_SLUG.test(request.slug)) return emptyFeature("failed", 2, `feature: invalid slug \`${request.slug}\``);
+  if (context.signal?.aborted) return emptyFeature("cancelled", null);
+  let config: Config;
+  try {
+    config = loadConfig(request.root);
+  } catch (error) {
+    return emptyFeature("failed", 2, messageOf(error));
+  }
+  const file = `${config.dir}/features/${request.slug}.md`;
+  if (!existsSync(join(request.root, file))) return emptyFeature("failed", 2, `feature: ${file}: not found`);
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root: request.root });
+  } catch (error) {
+    return emptyFeature("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyFeature("cancelled", null);
+  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, request.slug);
+  if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
+  const messages: OperationMessage[] = [...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })), { level: report.done ? "info" : "warning", text: featureSummary(report) }];
+  return {
+    ...emptyFeature("completed", report.done ? 0 : 1),
+    payload: { slug: request.slug, file, snapshot: analyzed.snapshot?.snapshotId ?? null, report },
+    messages,
+  };
+}
+
+/** One gap as the CLI prints it: `file:line:col: kind id: reason`. */
+export function gapLine(gap: Gap): string {
+  return `${gap.file}:${gap.line}:${gap.col}: ${gap.kind} ${gap.id}: ${gap.reason}`;
+}
+
+/** The CLI's closing line on stderr: `done` or `N gap(s)`. */
+export function featureSummary(report: FeatureReport): string {
+  return report.done ? "done" : `${report.gaps.length} gap(s)`;
+}
+
+function emptyDoctor(status: OperationStatus, exitCode: 0 | 1 | 2 | null): OperationEnvelope<"doctor"> {
   return { kind: "doctor", status, exitCode, payload: null, messages: [], written: [], removed: [], proposals: [] };
 }
 
-async function runDoctor(request: DoctorRequest, context: OperationContext): Promise<OperationResult> {
+async function runDoctor(request: DoctorRequest, context: OperationContext): Promise<OperationEnvelope<"doctor">> {
   // The root is absolute by contract: otherwise path resolution would fall
   // back on the working directory, which the operation must never read.
   if (!isAbsolute(request.root)) {

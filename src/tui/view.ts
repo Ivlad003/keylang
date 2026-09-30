@@ -14,6 +14,8 @@ import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
+import type { FeatureInfo } from "../feature-status.ts";
+import type { OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, lineLayout } from "./buffer.ts";
@@ -424,16 +426,32 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
 
 // ---------- F6 results panel ----------
 
-/** The registry label of a record's action (only `doctor` so far), or its id. */
+/** The registry label of a record's action, with its parameter (the feature slug), or its id. */
 function recordLabel(record: OperationRecord): string {
-  return ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
+  const label = ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
+  return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
-/** The status of a record for the F6 list and messages: `running…` or `completed · code 0`. */
+/** How messages name an operation: `doctor`, `feature pay`. */
+export function operationLabel(request: OperationRequest): string {
+  return request.kind === "feature" ? `feature ${request.slug}` : request.kind;
+}
+
+/** The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed. */
 export function recordStatus(record: OperationRecord): string {
   if (record.status === "running") return "running…";
   const code = record.result?.exitCode;
-  return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}`;
+  return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}${record.outdated !== null ? " · outdated" : ""}`;
+}
+
+/** The status with the domain outcome when there is one: `done · code 0`, `2 gap(s) · code 1`. */
+export function recordSummary(record: OperationRecord): string {
+  const result = record.result;
+  if (result?.kind === "feature" && result.payload !== null) {
+    const { report } = result.payload;
+    return `${report.done ? "done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode}`;
+  }
+  return recordStatus(record);
 }
 
 function timeStr(ms: number): string {
@@ -445,21 +463,45 @@ function timeStr(ms: number): string {
  * timings and the operation's messages. Presentation only — the payload in
  * `record.result` carries the domain data.
  */
-export function resultsReportRows(state: State): { text: string; style: Style }[] {
+export function resultsReportRows(state: State): { text: string; style: Style; gap?: number }[] {
   const record = state.records[state.results.index];
   if (!record) return [];
-  const rows: { text: string; style: Style }[] = [
+  const rows: { text: string; style: Style; gap?: number }[] = [
     { text: `root ${record.params.root} · started ${timeStr(record.started)}`, style: { ...THEME.panel, fg: 243 } },
   ];
   if (record.finished !== null) {
     rows.push({ text: `finished ${timeStr(record.finished)} · ${recordStatus(record)}`, style: { ...THEME.panel, fg: 243 } });
   }
-  if (record.result) {
-    for (const message of record.result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+  if (record.outdated !== null) rows.push({ text: `outdated: ${record.outdated} · Enter reruns`, style: { ...THEME.panel, fg: 179 } });
+  const result = record.result;
+  if (result?.kind === "feature" && result.payload !== null) {
+    // Design §2.7: the outcome, the saved state it was computed on, the gaps, and the non-blocking tests and trace.
+    const { file, snapshot, report } = result.payload;
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    rows.push({ text: `Feature · ${result.payload.slug} · saved state · ${file}`, style: { ...THEME.panel, bold: true } });
+    rows.push({
+      text: `${report.done ? "Done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode} · snapshot ${snapshot === null ? "none" : snapshot.slice(0, 8)}`,
+      style: { ...THEME.panel, ...(report.done ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! },
+    });
+    report.gaps.forEach((gap, index) => {
+      rows.push({ text: `${gap.kind.padEnd(8)} ${gap.id}  ${gap.file}:${gap.line}:${gap.col}  ${gap.reason}`, style: index === selected ? THEME.selected : THEME.panel, gap: index });
+    });
+    rows.push({ text: `Info (not blocking): tests ${infoSummary(report.info.tests)} · trace ${infoSummary(report.info.trace)}`, style: { ...THEME.panel, fg: 243 } });
+    for (const item of [...report.info.tests, ...report.info.trace]) rows.push({ text: `  ${item.verdict} ${item.id}  ${item.file}:${item.line}  ${item.reason}`, style: { ...THEME.panel, fg: 243 } });
+  } else if (result) {
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
   } else {
     rows.push({ text: "  running…", style: THEME.hint });
   }
   return rows;
+}
+
+/** `ok 2 · unverified 1`, or `—` when the feature has none. */
+function infoSummary(items: readonly FeatureInfo[]): string {
+  if (items.length === 0) return "—";
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.verdict, (counts.get(item.verdict) ?? 0) + 1);
+  return [...counts].map(([verdict, count]) => `${verdict} ${count}`).join(", ");
 }
 
 /** How the F6 panel splits: the entries list on top, the content of the selected entry below. */
@@ -543,7 +585,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const results = state.results;
   const records = state.records;
   const analysis = results.entry === "analysis";
-  const hint = analysis ? " Enter open · Tab findings · Esc back " : " Enter rerun · Esc back ";
+  const record = records[results.index];
+  const gaps = record?.result?.kind === "feature" && (record.result.payload?.report.gaps.length ?? 0) > 0;
+  const hint = analysis ? " Enter open · Tab findings · Esc back " : gaps ? (results.scrollReport ? " Enter open gap · Tab entries · Esc back " : " Enter rerun · Tab gaps · Esc back ") : " Enter rerun · Esc back ";
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
@@ -712,14 +756,14 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : ":";
+  const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if (prompt.kind === "palette" && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
-  if (prompt.kind !== "palette" && prompt.kind !== "node") return;
+  if (prompt.kind !== "palette" && prompt.kind !== "node" && prompt.kind !== "feature") return;
   // The list scrolls to keep the selected entry in view.
   const shown = Math.min(10, editor.height - 2);
   const first = Math.max(0, prompt.index - shown + 1);
@@ -727,7 +771,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
@@ -750,6 +794,29 @@ export function configNote(state: State): string | null {
   const buffer = state.buffers.get(CONFIG_FILE);
   if (buffer && buffer.text !== buffer.saved) parts.push("keylang.json unsaved: the analysis uses the saved file");
   return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** The save step before an operation that reads the disk (design §2.5), over the editor area. */
+function drawBarrier(grid: Grid, state: State, editor: Rect): void {
+  const barrier = state.barrier!;
+  const rows: { text: string; style: Style }[] = [
+    { text: "The operation reads the files on disk. Unsaved:", style: THEME.popup },
+    ...barrier.files.map((file) => ({ text: `  ${file}`, style: THEME.popup })),
+  ];
+  if (barrier.error !== null) rows.push({ text: `not saved: ${barrier.error}`, style: { ...THEME.popup, ...THEME.error, bg: THEME.popup.bg! } });
+  rows.push({ text: "", style: THEME.popup });
+  const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row.text) + 4)));
+  const height = Math.min(editor.height, rows.length + 4);
+  const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
+  const y = editor.y + 1;
+  drawBox(grid, { x, y, width, height }, `Save before ${barrier.action}`, THEME.popup, THEME.popupTitle);
+  rows.slice(0, height - 4).forEach((row, i) => grid.write(x + 2, y + 1 + i, row.text, row.style, width - 4));
+  const buttonsY = y + height - 3;
+  let bx = x + 2;
+  bx += grid.write(bx, buttonsY, "[Save and continue]", barrier.choice === "save" ? THEME.selected : THEME.popup, x + width - 2 - bx);
+  bx += grid.write(bx, buttonsY, "    ", THEME.popup, x + width - 2 - bx);
+  grid.write(bx, buttonsY, "[Back]", barrier.choice === "back" ? THEME.selected : THEME.popup, x + width - 2 - bx);
+  grid.write(x + 2, y + height - 2, "←→ choose · Enter do it · Esc back", { ...THEME.popup, fg: 243 }, width - 4);
 }
 
 /** The start screen of a repository without `keylang.json` (design §2.1): what was found and what can be done. */
@@ -848,5 +915,6 @@ export function render(state: State): Grid {
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
   if (state.help) drawHelp(grid, state, area.editor, buffer);
   if (state.prompt) drawPrompt(grid, state, area.detail, area.editor);
+  if (state.barrier) drawBarrier(grid, state, area.editor);
   return grid;
 }

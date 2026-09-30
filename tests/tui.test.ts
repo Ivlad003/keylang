@@ -2565,3 +2565,297 @@ test("cli: keylang without a command and without a TTY prints usage with code 2 
   assert.match(run.stderr, /Usage: keylang {6,}Open the TUI in this terminal \(needs a TTY\)/);
   assert.deepEqual(treeBytes(root), before);
 });
+
+// ---------- feature readiness and the save step (ticket 07) ----------
+
+const FEATURES: Record<string, string> = {
+  // Every step statically ok: done (trace stays informational).
+  "keylang/features/buy.md": "# flow buy\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n  - step domain.order.create\n",
+  // A planned fn not yet in the code: a planned gap and its static gap.
+  "keylang/features/refund.md": "# flow refund\n\n- planned fn application.purchase.refund () → void\n- trigger presentation.terminal.checkout\n  - step application.purchase.refund\n",
+  // A step its trigger never calls: a static gap.
+  "keylang/features/skip.md": "# flow skip\n\n- trigger domain.order.create\n  - step infrastructure.store.save\n",
+};
+
+const BIN = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+
+function cliFeature(root: string, slug: string): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "feature", slug, "--format", "json"], { cwd: root, encoding: "utf8" });
+}
+
+/** The palette's feature action: its form opens with the slug of the current feature file, or empty. */
+function featureForm(send: (keys: string) => void): void {
+  send(KEY.ctrlP);
+  for (const ch of "feature readiness") send(ch);
+  send(KEY.enter);
+}
+
+/** Replaces the form's text with `slug` and submits it. */
+function submitSlug(app: App, send: (keys: string) => void, slug: string): void {
+  for (const _ of app.state.prompt!.text) send("\x7f");
+  for (const ch of slug) send(ch);
+  send(KEY.enter);
+}
+
+test("tui: feature gives the same object and code as the CLI for done, planned, static and rule gaps; 2 for an unknown slug", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  let quit = 0;
+  const vt = new VirtualTerminal(110, 30);
+  const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  t.after(() => app.close());
+  const send = (keys: string): void => app.input(keys);
+  await app.idle();
+  const before = treeBytes(root);
+  for (const [slug, code] of [["buy", 0], ["refund", 1], ["skip", 1]] as const) {
+    featureForm(send);
+    assert.equal(app.state.prompt?.kind, "feature");
+    submitSlug(app, send, slug);
+    await app.idle();
+    const record = app.state.records.at(-1)!;
+    assert.equal(record.status, "completed", JSON.stringify(record.result?.messages));
+    const cli = cliFeature(root, slug);
+    assert.equal(cli.status, code, cli.stderr);
+    assert.equal(record.result!.exitCode, cli.status);
+    assert.equal(record.result!.kind, "feature");
+    assert.deepEqual(record.result!.kind === "feature" ? record.result!.payload?.report : null, JSON.parse(cli.stdout));
+  }
+  const kinds = app.state.records.map((record) => (record.result?.kind === "feature" ? record.result.payload?.report.gaps.map((gap) => gap.kind) : null));
+  assert.deepEqual(kinds, [[], ["planned", "static"], ["static"]]);
+  assert.match(vt.text(), /feature skip: 1 gap\(s\) · code 1/);
+  // A rule fail anywhere blocks every feature: a rule gap, as in the CLI (the operation reads the saved rules).
+  writeFileSync(join(root, "keylang/rules.md"), DENY_RULES);
+  before.set("keylang/rules.md", DENY_RULES);
+  featureForm(send);
+  submitSlug(app, send, "buy");
+  await app.idle();
+  const ruled = app.state.records.at(-1)!;
+  const ruledCli = cliFeature(root, "buy");
+  assert.equal(ruledCli.status, 1, ruledCli.stderr);
+  assert.equal(ruled.result!.exitCode, 1);
+  assert.deepEqual(ruled.result!.kind === "feature" ? ruled.result!.payload?.report : null, JSON.parse(ruledCli.stdout));
+  assert.ok(ruled.result!.kind === "feature" && ruled.result!.payload!.report.gaps.some((gap) => gap.kind === "rule"));
+  // An unknown slug is an action error with code 2, not "gaps"; the message is the CLI's.
+  featureForm(send);
+  submitSlug(app, send, "nope");
+  await app.idle();
+  const missing = app.state.records.at(-1)!;
+  assert.equal(missing.status, "failed");
+  assert.equal(missing.result!.exitCode, 2);
+  const cli = cliFeature(root, "nope");
+  assert.equal(cli.status, 2);
+  assert.deepEqual(missing.result!.messages.map((message) => `keylang: ${message.text}\n`).join(""), cli.stderr);
+  // An invalid slug is refused in the form, as the CLI refuses it: the form and its text stay, nothing runs.
+  featureForm(send);
+  submitSlug(app, send, "../x");
+  assert.equal(app.state.prompt?.kind, "feature");
+  assert.equal(app.state.prompt!.text, "../x");
+  assert.match(app.state.message ?? "", /feature: invalid slug `\.\.\/x`/);
+  assert.equal(app.state.records.length, 5);
+  send("\x1b");
+  await sleep(40);
+  assert.equal(app.state.prompt, null);
+  // The session still answers after codes 1 and 2, the feature run wrote nothing, and quitting is normal.
+  send(KEY.f6);
+  assert.match(vt.text(), /Feature readiness · nope {2}failed · code 2/);
+  send("\x1b");
+  await sleep(40);
+  assert.deepEqual(treeBytes(root), before);
+  send("q");
+  assert.equal(quit, 1);
+});
+
+test("terminal: quitting after a feature with code 1 and one with code 2 returns 0", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const term = fakeTerminal();
+  const running = runTerminal(root, term.host);
+  await waitUntil(() => term.out.join("").includes("checkout"), "the first frame");
+  term.type(KEY.ctrlP);
+  for (const ch of "feature readiness") term.type(ch);
+  term.type(KEY.enter);
+  for (const ch of "refund") term.type(ch);
+  term.type(KEY.enter);
+  await waitUntil(() => term.out.join("").includes("code 1"), "the feature with gaps");
+  term.type(KEY.ctrlP);
+  for (const ch of "feature readiness") term.type(ch);
+  term.type(KEY.enter);
+  for (const ch of "nope") term.type(ch);
+  term.type(KEY.enter);
+  await waitUntil(() => term.out.join("").includes("code 2"), "the failed feature");
+  term.type("q");
+  assert.equal(await running, 0);
+});
+
+test("tui: dirty spec and config — Back writes nothing; Save and continue writes both and the feature reads the new bytes", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A dirty keylang.json (still valid JSON) …
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang.json") s.send(ch);
+  s.send(KEY.enter);
+  s.send("i");
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  s.send("\x1b");
+  await sleep(40);
+  // … and a dirty feature that now plans a fn the code does not have.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/features/buy.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/features/buy.md");
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send("i");
+  for (const ch of "- planned fn application.purchase.refund () → void") s.send(ch);
+  s.send(KEY.enter);
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  assert.deepEqual(s.app.unsaved().sort(), ["keylang.json", "keylang/features/buy.md"]);
+  // What is on disk now; typing may have counted a completion in .keylang/stats.json before this point.
+  const before = treeBytes(root);
+  // The form starts with the slug of the current feature file and shows the target.
+  featureForm(s.send);
+  assert.equal(s.app.state.prompt?.text, "buy");
+  assert.match(s.app.state.prompt!.note ?? "", /keylang\/features\/buy\.md on disk/);
+  s.send(KEY.enter);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang.json", "keylang/features/buy.md"]);
+  assert.match(s.text(), /Save before feature buy/);
+  assert.match(s.text(), /\[Save and continue\] {4}\[Back\]/);
+  // Back: nothing written, nothing run, the buffers still dirty.
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.records.length, 0);
+  assert.deepEqual(treeBytes(root), before);
+  assert.equal(s.app.unsaved().length, 2);
+  // Back chosen with the arrows and Enter is the same.
+  featureForm(s.send);
+  s.send(KEY.enter);
+  s.send(KEY.right);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.records.length, 0);
+  assert.deepEqual(treeBytes(root), before);
+  // Save and continue: both files carry the buffer bytes, then the feature runs on them.
+  featureForm(s.send);
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.deepEqual(s.app.unsaved(), []);
+  for (const path of ["keylang.json", "keylang/features/buy.md"]) assert.equal(readFileSync(join(root, path), "utf8"), s.app.state.buffers.get(path)!.text);
+  assert.equal(s.app.state.records.length, 1);
+  const record = s.app.state.records[0]!;
+  const cli = cliFeature(root, "buy");
+  assert.equal(cli.status, 1);
+  assert.equal(record.result!.exitCode, 1);
+  assert.deepEqual(record.result!.kind === "feature" ? record.result!.payload?.report : null, JSON.parse(cli.stdout));
+  assert.ok(record.result!.kind === "feature" && record.result!.payload!.report.gaps.some((gap) => gap.kind === "planned" && gap.id === "application.purchase.refund"));
+});
+
+test("tui: a conflict on the second save stops the feature; the first save stays and the second text is kept", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/rules.md") s.send(ch);
+  s.send(KEY.enter);
+  s.send(KEY.down);
+  s.send("i");
+  for (const ch of "Notes.") s.send(ch);
+  s.send("\x1b");
+  await sleep(40);
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/features/buy.md") s.send(ch);
+  s.send(KEY.enter);
+  s.send(KEY.down);
+  s.send("i");
+  for (const ch of "Buying.") s.send(ch);
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  // Someone else rewrites the rules while they are dirty here.
+  const external = "# rules\n\n- layers domain < infrastructure < application < presentation\n- deny application infrastructure\n";
+  writeFileSync(join(root, "keylang/rules.md"), external);
+  featureForm(s.send);
+  s.send(KEY.enter);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/features/buy.md", "keylang/rules.md"]);
+  s.send(KEY.enter);
+  await s.app.idle();
+  // The feature did not start; the first save is on disk, the other file keeps both texts apart.
+  assert.equal(s.app.state.records.length, 0);
+  assert.equal(readFileSync(join(root, "keylang/features/buy.md"), "utf8"), s.app.state.buffers.get("keylang/features/buy.md")!.text);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), external);
+  assert.match(s.app.state.buffers.get("keylang/rules.md")!.text, /^Notes\.$/m);
+  assert.deepEqual(s.app.unsaved(), ["keylang/rules.md"]);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/rules.md"]);
+  assert.match(s.app.state.barrier?.error ?? "", /keylang\/rules\.md: changed on disk/);
+  assert.match(s.text(), /not saved: keylang\/rules\.md: changed on disk/);
+  // A second try fails the same way: the step never overwrites the other text silently.
+  s.send(KEY.enter);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), external);
+  assert.equal(s.app.state.records.length, 0);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.barrier, null);
+  assert.equal(s.app.state.records.length, 0);
+});
+
+test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks the result outdated", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/features/refund.md") s.send(ch);
+  s.send(KEY.enter);
+  featureForm(s.send);
+  assert.equal(s.app.state.prompt?.text, "refund");
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records[0]!.result?.exitCode, 1);
+  // The editor stays where it was; F6 shows the outcome, the snapshot and the gaps.
+  assert.equal(s.app.state.results.open, false);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Feature · refund · saved state · keylang\/features\/refund\.md/);
+  assert.match(s.text(), /2 gap\(s\) · code 1 · snapshot [0-9a-f]{8}/);
+  assert.match(s.text(), /planned {2}application\.purchase\.refund {2}keylang\/features\/refund\.md:3:1 {2}pla/);
+  assert.match(s.text(), /Info \(not blocking\): tests — · trace unverified 2/);
+  s.send(KEY.tab);
+  assert.match(s.app.state.message ?? "", /^planned application\.purchase\.refund: planned `application\.purchase\.refund` is not implemented · Enter opens keylang\/features\/refund\.md:3$/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.equal(s.app.state.current, "keylang/features/refund.md");
+  assert.equal(s.app.state.cursor.line, 2);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.results.open, true);
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.cursor.line, 4);
+  assert.equal(s.app.state.cursor.col, 2);
+  s.send(KEY.f6);
+  assert.equal(s.app.state.results.open, false);
+  // An edit of an input: the saved result is outdated, not a current answer.
+  assert.equal(s.app.state.records[0]!.outdated, null);
+  s.send("i");
+  s.send("x");
+  s.send("\x1b");
+  await sleep(40);
+  await s.app.idle();
+  assert.notEqual(s.app.state.records[0]!.outdated, null);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Feature readiness · refund {2}completed · code 1 · outdated/);
+  assert.match(s.text(), /outdated: inputs edited since this run · Enter reruns/);
+  // The rerun goes through the save step, since its input is dirty now.
+  s.send(KEY.enter);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/features/refund.md"]);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.records.length, 1);
+});

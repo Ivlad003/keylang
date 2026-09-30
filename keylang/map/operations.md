@@ -5,26 +5,37 @@
 - operations
   - module [operations](../../src/operations.ts#L1)
     - node external.node
+    - analyze map.analyze
     - config base.config
     - explain-llm features.explain-llm
+    - feature-status features.feature-status
     - llm features.llm
     - voice-local features.voice-local
     - voice features.voice
-    - type [DoctorRequest](../../src/operations.ts#L17)
-    - type [OperationRequest](../../src/operations.ts#L23) = DoctorRequest
-    - type [OperationContext](../../src/operations.ts#L26)
-    - type [OperationStatus](../../src/operations.ts#L33) = "completed" | "failed" | "cancelled"
-    - type [OperationMessage](../../src/operations.ts#L35)
-    - type [DoctorPayload](../../src/operations.ts#L42)
-    - type [OperationResult](../../src/operations.ts#L85)
-    - fn [runOperation](../../src/operations.ts#L106) (request: OperationRequest, context: OperationContext = {}) → Promise<OperationResult>
-      - calls operations.operations.runDoctor
-    - fn [emptyDoctor](../../src/operations.ts#L113) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationResult <!-- internal -->
-    - fn [runDoctor](../../src/operations.ts#L117) (request: DoctorRequest, context: OperationContext) → Promise<OperationResult> <!-- internal -->
+    - type [DoctorRequest](../../src/operations.ts#L19)
+    - type [FeatureRequest](../../src/operations.ts#L26)
+    - type [OperationRequest](../../src/operations.ts#L34) = DoctorRequest | FeatureRequest
+    - type [OperationContext](../../src/operations.ts#L37)
+    - type [OperationStatus](../../src/operations.ts#L49) = "completed" | "failed" | "cancelled"
+    - type [OperationMessage](../../src/operations.ts#L51)
+    - type [DoctorPayload](../../src/operations.ts#L58)
+    - type [FeaturePayload](../../src/operations.ts#L101)
+    - type [OperationPayloads](../../src/operations.ts#L112)
+    - type [OperationResult](../../src/operations.ts#L118)
+    - type [OperationEnvelope](../../src/operations.ts#L120)
+    - fn [runOperation](../../src/operations.ts#L141) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
+      - calls operations.operations.runDoctor, operations.operations.runFeature
+    - fn [emptyFeature](../../src/operations.ts#L156) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
+    - fn [runFeature](../../src/operations.ts#L166) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
+      - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.feature-status.featureStatus, operations.operations.gapLine, operations.operations.featureSummary
+    - fn [gapLine](../../src/operations.ts#L197) (gap: Gap) → string
+    - fn [featureSummary](../../src/operations.ts#L202) (report: FeatureReport) → string
+    - fn [emptyDoctor](../../src/operations.ts#L206) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
+    - fn [runDoctor](../../src/operations.ts#L210) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
       - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L170) (config: Config, llmClient: (agent: string | null) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
+    - fn [agentState](../../src/operations.ts#L263) (config: Config, llmClient: (agent: string | null) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [engineState](../../src/operations.ts#L182) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+    - fn [engineState](../../src/operations.ts#L275) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [doctorLines](../../src/operations.ts#L199) (payload: DoctorPayload) → string[] <!-- internal -->
-    - fn [messageOf](../../src/operations.ts#L227) (error: unknown) → string <!-- internal -->
+    - fn [doctorLines](../../src/operations.ts#L292) (payload: DoctorPayload) → string[] <!-- internal -->
+    - fn [messageOf](../../src/operations.ts#L320) (error: unknown) → string <!-- internal -->

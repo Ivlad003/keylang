@@ -27,12 +27,13 @@ import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
 import { contextPack, type ContextPack } from "../agent-context.ts";
 import type { CheckResult } from "../check-results.ts";
+import type { Gap } from "../feature-status.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
-import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { FEATURE_SLUG, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
@@ -45,7 +46,7 @@ import { errorText, MergeSession } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, ConfigState, Cursor, Hover, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, readCursorRow, recordStatus, render, resultsReportRows } from "./view.ts";
+import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
 
 export interface Surface {
@@ -111,6 +112,8 @@ export class App {
   private closed = false;
   /** The id of the next operation record. */
   private nextRecord = 1;
+  /** What the open save step starts after Save and continue; null when none is open. */
+  private afterSave: (() => void) | null = null;
 
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
@@ -157,7 +160,8 @@ export class App {
       quitArmed: false,
       records: [],
       activeOperation: null,
-      results: { open: false, entry: "record", index: 0, finding: 0, filter: { ...DEFAULT_FILTER }, top: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
+      barrier: null,
+      results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
     };
     // The helpers reach the session through closures: its private methods stay private.
@@ -410,6 +414,7 @@ export class App {
   private reanalyzeSoon(): void {
     this.edits++;
     this.state.outdated = true;
+    this.inputsChanged("inputs edited since this run");
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
@@ -456,20 +461,30 @@ export class App {
         setText(buffer, text);
         buffer.saved = text;
         buffer.disk = readText(resolve(this.state.root, buffer.path));
+        this.inputsChanged(`${buffer.path} changed on disk since this run`);
       }
+    }
+    // A snapshot other than the one a result was computed on: the code changed under it.
+    const snapshotId = analysis.snapshot?.snapshotId ?? null;
+    for (const record of this.state.records) {
+      if (record.result?.kind === "feature" && record.result.payload !== null && record.result.payload.snapshot !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
     this.clampCursor();
   }
 
-  private diskFiles(): string[] {
-    let dir: string;
+  /** The spec directory of the saved configuration (`keylang` when it cannot be read). */
+  private specDir(): string {
     try {
-      dir = join(this.state.root, loadConfig(this.state.root).dir);
+      return loadConfig(this.state.root).dir;
     } catch {
-      dir = join(this.state.root, "keylang");
+      return "keylang";
     }
+  }
+
+  private diskFiles(): string[] {
+    const dir = join(this.state.root, this.specDir());
     // The settings are `keylang.json` in the same editor, not a separate form (design §7.1).
     const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [CONFIG_FILE] : [];
     if (!existsSync(dir)) return config;
@@ -572,21 +587,103 @@ export class App {
   private save(): void {
     const buffer = this.buffer();
     if (!buffer || buffer.readOnly) return;
-    const abs = resolve(this.state.root, buffer.path);
     // Another editor or `git checkout` changed the file: the first Ctrl+S asks, the second overwrites.
-    if (readText(abs) !== buffer.disk && !buffer.overwrite) {
+    if (this.changedOnDisk(buffer) && !buffer.overwrite) {
       buffer.overwrite = true;
       this.state.message = `${buffer.path} changed on disk since it was opened: Ctrl+S again overwrites it, Ctrl+Z undoes your edits`;
       return;
     }
+    this.persist(buffer);
+    this.state.message = `${buffer.path}: saved`;
+    this.reanalyze();
+  }
+
+  private changedOnDisk(buffer: Buffer): boolean {
+    return readText(resolve(this.state.root, buffer.path)) !== buffer.disk;
+  }
+
+  /** Writes the buffer's text with its line ending; the buffer is clean after. Throws when the write fails. */
+  private persist(buffer: Buffer): void {
     const written = withEol(buffer.text, buffer.eol);
     // A save stays in the repository, even through a link whose target does not exist yet.
-    writeInside(this.state.root, abs, written);
+    writeInside(this.state.root, resolve(this.state.root, buffer.path), written);
     buffer.saved = buffer.text;
     buffer.disk = written;
     buffer.overwrite = false;
-    this.state.message = `${buffer.path}: saved`;
-    this.reanalyze();
+    this.inputsChanged("inputs saved since this run");
+  }
+
+  /** The unsaved spec and config buffers, in path order: what an operation on the disk would not see. */
+  private dirtyInputs(): string[] {
+    return [...this.state.buffers.values()]
+      .filter((buffer) => !buffer.readOnly && buffer.text !== buffer.saved)
+      .map((buffer) => buffer.path)
+      .sort(compareText);
+  }
+
+  /**
+   * Runs `run` on saved inputs (design §2.5). Without dirty buffers it runs at
+   * once; with them the save step opens: Save and continue or Back. Every
+   * operation that reads the disk goes through here; doctor and help do not.
+   */
+  private withSavedInputs(action: string, run: () => void): void {
+    const files = this.dirtyInputs();
+    if (files.length === 0) return run();
+    this.state.barrier = { action, files, choice: "save", error: null };
+    this.afterSave = run;
+  }
+
+  /** The keys of the save step: ←→/Tab choose, Enter does it, Esc is Back. */
+  private barrierKey(event: KeyEvent): void {
+    const barrier = this.state.barrier!;
+    if (event.name === "left" || event.name === "right" || event.name === "tab" || event.name === "h" || event.name === "l") barrier.choice = barrier.choice === "save" ? "back" : "save";
+    else if (event.name === "escape" || (event.name === "enter" && barrier.choice === "back")) this.leaveBarrier();
+    else if (event.name === "enter") this.saveAndContinue();
+  }
+
+  /** Back: nothing is written and the operation does not start. */
+  private leaveBarrier(): void {
+    const action = this.state.barrier?.action ?? "the operation";
+    this.state.barrier = null;
+    this.afterSave = null;
+    this.state.message = `${action}: not started; nothing was saved`;
+  }
+
+  /**
+   * Saves the listed buffers one by one through the ordinary save path. The
+   * first failure (a file changed on disk, a write error) stops: the step
+   * stays open with the reason, the operation does not start, and the files
+   * already saved stay saved — there is no rollback.
+   */
+  private saveAndContinue(): void {
+    const barrier = this.state.barrier!;
+    let saved = 0;
+    for (const path of barrier.files) {
+      const buffer = this.state.buffers.get(path);
+      if (!buffer || buffer.readOnly || buffer.text === buffer.saved) continue;
+      let problem: string | null = null;
+      if (this.changedOnDisk(buffer)) problem = "changed on disk since it was opened; open it to compare (Ctrl+S twice overwrites)";
+      else {
+        try {
+          this.persist(buffer);
+        } catch (error) {
+          problem = errorText(error);
+        }
+      }
+      if (problem !== null) {
+        barrier.error = `${path}: ${problem}`;
+        barrier.files = this.dirtyInputs();
+        this.state.message = `${barrier.action}: not started; ${saved} file(s) saved, ${barrier.error}`;
+        if (saved > 0) this.reanalyze(false);
+        return;
+      }
+      saved++;
+    }
+    const run = this.afterSave;
+    this.state.barrier = null;
+    this.afterSave = null;
+    this.reanalyze(false);
+    run?.();
   }
 
   // ---------- positions and targets ----------
@@ -848,12 +945,13 @@ export class App {
     // A ghost line answers the next key in the editor (Tab takes it, Alt+] cycles); a click, a paste,
     // a panel key or anything outside the editor drops it, so it is never taken into other text.
     if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
+    // The save step is modal: the pointer and pasted text do not reach what is under it.
     if (event.type === "mouse") {
-      this.mouse(event);
+      if (!this.state.barrier) this.mouse(event);
       return;
     }
     if (event.type === "paste") {
-      if (this.state.results.open) return;
+      if (this.state.results.open || this.state.barrier) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = "paste: press i to edit first";
@@ -866,6 +964,7 @@ export class App {
       this.state.help = false;
       return;
     }
+    if (this.state.barrier) return this.barrierKey(event);
     if (this.state.prompt) return this.promptKey(event);
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
@@ -1475,57 +1574,122 @@ export class App {
 
   // ---------- operations and results (F6) ----------
 
+  /** Records that an input changed: a feature result computed before it is outdated from now on. */
+  private inputsChanged(reason: string): void {
+    for (const record of this.state.records) if (record.kind === "feature") record.outdated ??= reason;
+  }
+
   /**
-   * Runs doctor as the session's one explicit operation and records it for
-   * F6. The UI never blocks: the record turns "running" and the result (or a
-   * failure) lands later; a second operation is refused while one runs. A
-   * failure is a visible record and a message, never the end of the session.
+   * Starts an operation that reads the saved files: after the save step when
+   * buffers are dirty (design §2.5), then as the session's one explicit
+   * operation. A second one is refused while one runs.
    */
-  private startDoctor(): void {
+  private requestOperation(action: string, request: OperationRequest): void {
+    if (this.state.activeOperation !== null) {
+      this.state.message = "an operation is already running";
+      return;
+    }
+    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
+  }
+
+  /**
+   * Runs an operation as the session's one explicit operation and records it
+   * for F6. The UI never blocks: the record turns "running" and the result
+   * (or a failure) lands later; a second operation is refused while one runs.
+   * A failure — or a code 1 or 2 of the operation — is a visible record and a
+   * message, never the end of the session.
+   */
+  private startOperation(action: string, request: OperationRequest): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
       return;
     }
     const record: OperationRecord = {
       id: this.nextRecord++,
-      action: "doctor",
-      kind: "doctor",
-      params: { kind: "doctor", root: this.state.root },
+      action,
+      kind: request.kind,
+      params: request,
       started: Date.now(),
       finished: null,
       status: "running",
       result: null,
+      outdated: null,
     };
+    const label = operationLabel(request);
     this.state.records.push(record);
     this.state.activeOperation = record.id;
-    this.state.message = "doctor: running…";
+    this.state.message = `${label}: running…`;
+    // The session's analyzer: the snapshot is built off the UI thread, as for F5.
     this.track(
-      this.operations(record.params, {})
+      this.operations(record.params, { analyze: this.analyzer })
         .then((result) => {
           record.result = result;
           record.status = result.status;
         })
         .catch((error) => {
           record.status = "failed";
-          record.result = {
-            kind: "doctor",
-            status: "failed",
-            exitCode: 2,
-            payload: null,
-            messages: [{ level: "error", text: errorText(error) }],
-            written: [],
-            removed: [],
-            proposals: [],
-          };
+          record.result = failedResult(request.kind, errorText(error));
         })
         .finally(() => {
           record.finished = Date.now();
           this.state.activeOperation = null;
           // Completion adds a message; it never changes the open file.
-          this.state.message = `doctor: ${recordStatus(record)} · F6 shows the report`;
+          this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report`;
         }),
     );
     this.draw();
+  }
+
+  /** The feature form: the slug of the current feature file, else typed or chosen from the feature files. */
+  private openFeaturePrompt(): void {
+    const prefix = `${this.specDir()}/features/`;
+    const current = this.state.current;
+    const initial = current !== null && current.startsWith(prefix) && current.endsWith(".md") && !current.slice(prefix.length).includes("/") ? current.slice(prefix.length, -3) : "";
+    this.state.prompt = { kind: "feature", text: initial, items: [], ids: [], index: 0 };
+    this.refreshFeaturePrompt();
+  }
+
+  /** The feature files matching the typed slug, and the target the form would check. */
+  private refreshFeaturePrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "feature") return;
+    const prefix = `${this.specDir()}/features/`;
+    const slugs = this.state.files.filter((path) => path.startsWith(prefix) && path.endsWith(".md") && !path.slice(prefix.length).includes("/")).map((path) => path.slice(prefix.length, -3));
+    const query = prompt.text.toLowerCase();
+    // The exact slug first, then the other matches in file order.
+    const matches = slugs.filter((slug) => slug.toLowerCase().includes(query)).sort((a, b) => Number(b === prompt.text) - Number(a === prompt.text));
+    prompt.ids = matches;
+    prompt.items = matches.map((slug) => `${slug}  ${prefix}${slug}.md`);
+    prompt.index = 0;
+    this.featureNote();
+  }
+
+  /** The slug Enter would check: the selected feature file, else the typed text. */
+  private featureSlug(): string {
+    const prompt = this.state.prompt!;
+    return prompt.ids?.[prompt.index] ?? prompt.text.trim();
+  }
+
+  private featureNote(): void {
+    const prompt = this.state.prompt!;
+    const slug = this.featureSlug();
+    prompt.note =
+      slug === ""
+        ? "type a slug: <dir>/features/<slug>.md"
+        : FEATURE_SLUG.test(slug)
+          ? `checks ${this.state.root}/${this.specDir()}/features/${slug}.md on disk`
+          : `invalid slug \`${slug}\`: letters, digits, . _ - (not first)`;
+  }
+
+  /** Enter in the feature form: the same slug rule as the CLI; an invalid one keeps the form and the text. */
+  private submitFeature(): void {
+    const slug = this.featureSlug();
+    if (!FEATURE_SLUG.test(slug)) {
+      this.state.message = slug === "" ? "feature: a slug is required" : `feature: invalid slug \`${slug}\``;
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("feature", { kind: "feature", root: this.state.root, slug });
   }
 
   /** F6 or the palette: the pinned current analysis and the history of operation records. */
@@ -1562,10 +1726,9 @@ export class App {
       this.state.message = "this operation is still running";
       return;
     }
-    switch (record.kind) {
-      case "doctor":
-        return this.startDoctor();
-    }
+    // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
+    if (record.params.kind === "doctor") return this.startOperation(record.action, record.params);
+    return this.requestOperation(record.action, record.params);
   }
 
   /** While the panel is open its keys stay with it; Tab switches between the entries and the content. */
@@ -1578,6 +1741,7 @@ export class App {
       results.index = Math.max(0, Math.min(Math.max(0, records.length - 1), next));
       // Each record shows its report from the top; a selection change never keeps a scroll offset of another report.
       results.top = 0;
+      results.gap = 0;
     };
     switch (event.name) {
       case "up":
@@ -1602,8 +1766,11 @@ export class App {
         return select(results.index + page);
       case "tab":
         results.scrollReport = !results.scrollReport;
+        if (results.scrollReport) this.showGapReason();
         return;
       case "enter":
+        // Over the gaps of a feature record Enter opens the selected gap; over the entries it reruns.
+        if (results.scrollReport && this.selectedGap()) return this.openGap();
         return this.rerunRecord();
       case "f5":
         return this.reanalyze();
@@ -1699,29 +1866,33 @@ export class App {
    * without losing the selection and put back the place it was opened from.
    */
   private openFinding(): void {
-    const results = this.state.results;
     const finding = this.selectedFinding();
-    if (!finding) return;
+    if (finding) this.openTarget(finding.file, finding.line, finding.col);
+  }
+
+  /** Shows a spec position (1-based line, code-point column) or a code line with the F6 panel hidden; the origin is kept for the way back. */
+  private openTarget(file: string, targetLine: number, targetCol: number): void {
+    const results = this.state.results;
     // Leaving MERGE for the target would drop the open hunk decisions.
     if (this.state.mode === "merge") {
-      this.state.message = "finish the merge first: the finding opens after MERGE";
+      this.state.message = "finish the merge first: it opens after MERGE";
       return;
     }
     const origin = { path: this.state.current, cursor: { ...this.state.cursor }, top: this.state.top, mode: this.state.mode, code: this.state.code };
-    const abs = resolve(this.state.root, finding.file);
-    if (extname(finding.file) === ".md" && !finding.file.startsWith("..")) {
-      const lines = bufferLines(this.load(finding.file));
-      const line = Math.max(0, Math.min(finding.line - 1, lines.length - 1));
+    const abs = resolve(this.state.root, file);
+    if (extname(file) === ".md" && !file.startsWith("..")) {
+      const lines = bufferLines(this.load(file));
+      const line = Math.max(0, Math.min(targetLine - 1, lines.length - 1));
       // Verdict columns are 1-based code points; the cursor counts grapheme clusters.
-      const col = clusterAt(lines[line] ?? "", finding.col - 1);
-      this.open(finding.file, { line, col }, false);
+      const col = clusterAt(lines[line] ?? "", targetCol - 1);
+      this.open(file, { line, col }, false);
       this.state.code = null;
-    } else if (!this.showCode(finding.file, abs, finding.line)) {
+    } else if (!this.showCode(file, abs, targetLine)) {
       return;
     }
     results.viewing = true;
     results.origin = origin;
-    this.state.message = "Esc or Ctrl+O: back to the findings list · F6: stay here";
+    this.state.message = `Esc or Ctrl+O: back to the ${results.entry === "analysis" ? "findings list" : "report"} · F6: stay here`;
   }
 
   /** Back from a finding's target: the list with its selection, over the place the finding was opened from. */
@@ -1749,8 +1920,41 @@ export class App {
   private scrollReport(delta: number): void {
     // Over the findings the selection moves, so it never leaves the shown rows.
     if (this.state.results.entry === "analysis") return this.moveFinding(delta);
+    const results = this.state.results;
     const rows = resultsReportRows(this.state);
-    this.state.results.top = Math.max(0, Math.min(this.state.results.top + delta, Math.max(0, rows.length - 1)));
+    const gaps = this.recordGaps();
+    if (gaps.length > 0) {
+      // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
+      results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
+      const row = rows.findIndex((item) => item.gap === results.gap);
+      const height = Math.max(1, resultsSplit(this.state, layout(this.state).editor.height).report);
+      if (row < results.top) results.top = row;
+      if (row >= results.top + height) results.top = row - height + 1;
+      return this.showGapReason();
+    }
+    results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - 1)));
+  }
+
+  /** The gaps of the selected feature record, or none. */
+  private recordGaps(): readonly Gap[] {
+    const result = this.state.records[this.state.results.index]?.result;
+    return result?.kind === "feature" ? (result.payload?.report.gaps ?? []) : [];
+  }
+
+  private selectedGap(): Gap | undefined {
+    return this.recordGaps()[this.state.results.gap];
+  }
+
+  /** The report row cuts a long reason; the message line shows the selected gap's whole reason. */
+  private showGapReason(): void {
+    const gap = this.selectedGap();
+    if (gap) this.state.message = `${gap.kind} ${gap.id}: ${gap.reason} · Enter opens ${gap.file}:${gap.line}`;
+  }
+
+  /** Enter on a gap: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
+  private openGap(): void {
+    const gap = this.selectedGap();
+    if (gap) this.openTarget(gap.file, gap.line, gap.col);
   }
 
   // ---------- mouse ----------
@@ -1843,6 +2047,7 @@ export class App {
     prompt.text += text;
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
+    if (prompt.kind === "feature") this.refreshFeaturePrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -1866,13 +2071,16 @@ export class App {
       prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
+      if (prompt.kind === "feature") this.refreshFeaturePrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette") prompt.note = prompt.notes?.[prompt.index] ?? "";
+      if (prompt.kind === "feature") this.featureNote();
       return;
     }
+    if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter") {
       this.state.prompt = null;
       if (prompt.kind === "search") {
@@ -1938,7 +2146,9 @@ export class App {
       case "results":
         return this.openResults();
       case "doctor":
-        return this.startDoctor();
+        return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
+      case "feature":
+        return this.openFeaturePrompt();
       case "find-node":
         this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
         return this.findNodes();
@@ -2128,4 +2338,10 @@ export function configErrorCursor(text: string, reason: string): Cursor {
 /** The package version, for the "About keylang" palette action. */
 function packageVersion(): string {
   return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
+}
+
+/** The result of an operation whose adapter threw: a failure with code 2 and the reason, nothing written. */
+function failedResult(kind: OperationRequest["kind"], text: string): OperationResult {
+  const failure = { status: "failed" as const, exitCode: 2 as const, payload: null, messages: [{ level: "error" as const, text }], written: [], removed: [], proposals: [] };
+  return kind === "doctor" ? { kind, ...failure } : { kind, ...failure };
 }

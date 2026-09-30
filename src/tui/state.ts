@@ -5,7 +5,7 @@ import type { Analysis } from "../analyze.ts";
 import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
-import type { DoctorRequest, OperationResult, OperationStatus } from "../operations.ts";
+import type { OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
@@ -101,16 +101,19 @@ export interface LastMerge {
 }
 
 export interface Prompt {
-  /** `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`). */
-  kind: "search" | "palette" | "context" | "node";
+  /**
+   * `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`);
+   * `feature`: the slug of the feature to check (the matching feature files are the items).
+   */
+  kind: "search" | "palette" | "context" | "node" | "feature";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
-  /** `node`: the ID of each item; `palette`: the action id of each item. */
+  /** `node`: the ID of each item; `palette`: the action id of each item; `feature`: the slug of each item. */
   ids?: string[];
   /** `palette`: the group or the availability reason of each item, parallel to `items`. */
   notes?: string[];
-  /** The note of the selected item, shown next to the query. */
+  /** The note of the selected item (`feature`: the target file or why the slug is invalid), shown next to the query. */
   note?: string;
   index: number;
 }
@@ -119,17 +122,37 @@ export interface Prompt {
 export interface OperationRecord {
   /** Stable within the session. */
   id: number;
-  /** The action id from the registry (only `doctor` so far). */
+  /** The action id from the registry. */
   action: string;
-  kind: "doctor";
+  kind: OperationRequest["kind"];
   /** The request snapshot, for a rerun with the same parameters. */
-  params: DoctorRequest;
+  params: OperationRequest;
   /** ms timestamps; `finished` is null while the operation runs. */
   started: number;
   finished: number | null;
   status: OperationStatus | "running";
   /** The operation result; null while it runs. */
   result: OperationResult | null;
+  /**
+   * Why the result no longer describes the inputs (an edit, a save, a new
+   * snapshot since it ran), or null. A saved `done` is never shown as current
+   * after its inputs changed; a rerun makes a new record.
+   */
+  outdated: string | null;
+}
+
+/**
+ * The step before an operation that reads the disk (design §2.5): the dirty
+ * spec and config buffers it would not see. Save and continue writes them in
+ * order and starts the operation only when every write succeeded; Back writes
+ * nothing. `error` names the file whose save failed; the step stays open.
+ */
+export interface SaveBarrier {
+  /** What waits for the save, as shown in the title. */
+  action: string;
+  files: string[];
+  choice: "save" | "back";
+  error: string | null;
 }
 
 /**
@@ -211,12 +234,15 @@ export interface State {
   records: OperationRecord[];
   /** The id of the record of the operation running now, or null. One explicit operation at a time. */
   activeOperation: number | null;
+  /** The save step before an operation, or null. It is modal: keys go to it until Save and continue or Back. */
+  barrier: SaveBarrier | null;
   /**
    * The F6 panel: the pinned current analysis and the history of operation
    * records. `top` is the first report row of a record or the first finding
    * row of the analysis; `scrollReport` routes the arrows from the entries to
    * the report or the findings. `filter` only hides verdicts: the report is
-   * unchanged. `viewing` hides the panel while a finding's target is shown;
+   * unchanged. `gap` is the selected gap of a feature record (Tab moves the
+   * arrows to its gaps). `viewing` hides the panel while a finding's or gap's target is shown;
    * leaving it puts back `origin`, where the finding was opened from.
    * `previousFocus` is where Esc returns when the panel closes.
    */
@@ -225,6 +251,7 @@ export interface State {
     entry: "analysis" | "record";
     index: number;
     finding: number;
+    gap: number;
     filter: VerdictFilter;
     top: number;
     scrollReport: boolean;
