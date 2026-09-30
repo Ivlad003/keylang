@@ -2,12 +2,11 @@
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
 
 import type { Analysis } from "../analyze.ts";
-import type { CheckFormat } from "../check-format.ts";
 import type { StaticMode } from "../config.ts";
 import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
-import type { OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
+import type { ExportFormat, OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
@@ -121,9 +120,10 @@ export interface Prompt {
    * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
    * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one; on the `since` row typing edits the git ref instead of the paths).
    * `explain-edge`: two ids, `edge.from` and `edge.to` (the items `from`, `to`, run; typing edits the selected id row; `text` is unused).
+   * `parse`: the spec files and directories to parse, relative to the root and separated by spaces (the current spec by default), and the view (`ids` are `tree` / `json`);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -154,8 +154,8 @@ export interface Prompt {
 export interface ExportForm {
   /** The id of the exported record: the report as it ran, never run again. */
   record: number;
-  formats: readonly CheckFormat[];
-  format: CheckFormat;
+  formats: readonly ExportFormat[];
+  format: ExportFormat;
   /** The path was typed: a format change no longer replaces it with its default. */
   custom: boolean;
   expect: string | null;

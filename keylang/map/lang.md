@@ -42,6 +42,14 @@
     - type [Token](../../src/ir.ts#L153)
     - fn [walk](../../src/ir.ts#L160) (node: Node, f: (n: Node) => void) → void
     - fn [sectionNodes](../../src/ir.ts#L165) (section: Section) → Node[]
+  - module [parse-format](../../src/parse-format.ts#L1)
+    - ir lang.ir
+    - type [ParseFormat](../../src/parse-format.ts#L8) = (typeof PARSE_FORMATS)[number]
+    - fn [parseReportText](../../src/parse-format.ts#L11) (format: ParseFormat, docs: readonly Document[]) → string
+    - fn [treeLines](../../src/parse-format.ts#L17) (doc: Document) → string[] <!-- internal -->
+      - calls lang.parse-format.nodeLines
+    - fn [nodeLines](../../src/parse-format.ts#L26) (n: Node, depth: number, out: string[]) → void <!-- internal -->
+      - calls lang.ir.kindLabel
   - module [parser](../../src/parser.ts#L1)
     - diag base.diag
     - ir lang.ir

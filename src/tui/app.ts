@@ -38,8 +38,10 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
-import { CHECK_FORMATS, type CheckFormat } from "../check-format.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
+import { formatDiagnostic } from "../diag.ts";
+import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
@@ -1669,7 +1671,7 @@ export class App {
 
   /** Records that an input changed: a feature or check result computed before it is outdated from now on. */
   private inputsChanged(reason: string): void {
-    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check") record.outdated ??= reason;
+    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check" || record.kind === "parse") record.outdated ??= reason;
   }
 
   /**
@@ -1702,9 +1704,9 @@ export class App {
       const writes = !request.check && this.dirtyInputs().some(isInput) ? { writes: this.initTargets() } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
-    if (request.kind === "fmt") {
-      // Fmt reads the saved bytes of the chosen files and the edition in keylang.json: those dirty
-      // buffers are saved first; other dirty specs stay dirty and are never formatted behind them.
+    if (request.kind === "fmt" || request.kind === "parse") {
+      // Fmt and parse read the saved bytes of the chosen files and the edition in keylang.json: those
+      // dirty buffers are saved first; other dirty specs stay dirty and are never read behind them.
       const selected = request.paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
       const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
@@ -2122,8 +2124,8 @@ export class App {
     this.refreshFmtPrompt();
   }
 
-  /** The typed paths, relative to the root, or why they cannot be formatted. */
-  private fmtPaths(): string[] | { error: string } {
+  /** The typed paths of the fmt or parse form, relative to the root, or why they cannot be used. */
+  private promptPaths(): string[] | { error: string } {
     const paths = (this.state.prompt?.text ?? "").trim().split(/\s+/).filter((path) => path !== "");
     if (paths.length === 0) return { error: "type a spec file or a directory, relative to the root" };
     const outside = paths.find((path) => !within(resolve(this.state.root, path), this.state.root));
@@ -2134,33 +2136,42 @@ export class App {
   private refreshFmtPrompt(): void {
     const prompt = this.state.prompt;
     if (prompt?.kind !== "fmt") return;
-    const paths = this.fmtPaths();
+    const paths = this.promptPaths();
     if (!Array.isArray(paths)) {
       prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
       prompt.note = paths.error;
       return;
     }
+    const selection = this.markdownSelection(paths);
+    if ("error" in selection) {
+      prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
+      prompt.note = selection.error;
+      return;
+    }
+    prompt.items = [`Write: format ${selection.files.length} file(s)`, `Check ${selection.files.length} file(s) (writes nothing)`];
+    prompt.note = `${selection.note} · saved explanations are skipped`;
+  }
+
+  /** The Markdown files the paths expand to on disk, and a note naming them and how many are unsaved (saved first). */
+  private markdownSelection(paths: readonly string[]): { files: string[]; note: string } | { error: string } {
     let files: string[];
     try {
       files = collectMdFiles(paths, this.state.root).map((file) => toPosix(relative(this.state.root, resolve(this.state.root, file))));
     } catch (error) {
-      prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
-      prompt.note = `${errorText(error)} · a new spec is saved first`;
-      return;
+      return { error: `${errorText(error)} · a new spec is saved first` };
     }
     const shown = files.length > 3 ? `${files.slice(0, 3).join(", ")}, …` : files.join(", ");
     const dirty = files.filter((file) => {
       const buffer = this.state.buffers.get(file);
       return buffer !== undefined && isDirty(buffer);
     }).length;
-    prompt.items = [`Write: format ${files.length} file(s)`, `Check ${files.length} file(s) (writes nothing)`];
-    prompt.note = `${files.length === 0 ? "no Markdown files" : shown}${dirty > 0 ? ` · ${dirty} unsaved, saved first` : ""} · saved explanations are skipped`;
+    return { files, note: `${files.length === 0 ? "no Markdown files" : shown}${dirty > 0 ? ` · ${dirty} unsaved, saved first` : ""}` };
   }
 
   /** Enter in the fmt form: the typed paths with the chosen mode run as the session's operation. */
   private submitFmt(): void {
     const prompt = this.state.prompt!;
-    const paths = this.fmtPaths();
+    const paths = this.promptPaths();
     if (!Array.isArray(paths)) {
       this.state.message = `fmt: ${paths.error}`;
       return;
@@ -2168,6 +2179,40 @@ export class App {
     const check = prompt.ids?.[prompt.index] === "check";
     this.state.prompt = null;
     this.requestOperation("fmt", { kind: "fmt", root: this.state.root, paths, check });
+  }
+
+  // ---------- parse ----------
+
+  /** The parse form: the current spec file by default — a directory only when typed — then the view. */
+  private openParsePrompt(): void {
+    const current = this.state.current;
+    const initial = current !== null && extname(current) === ".md" ? current : "";
+    this.state.prompt = { kind: "parse", text: initial, items: [], ids: [...PARSE_FORMATS], index: 0 };
+    this.refreshParsePrompt();
+  }
+
+  /** The form shows the real set the paths expand to and both views; parsing needs no snapshot and writes nothing. */
+  private refreshParsePrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "parse") return;
+    const paths = this.promptPaths();
+    const selection = Array.isArray(paths) ? this.markdownSelection(paths) : paths;
+    const count = "files" in selection ? ` of ${selection.files.length} file(s)` : "";
+    prompt.items = [`Tree${count}: as keylang parse prints it`, `JSON${count}: as keylang parse --json prints it`];
+    prompt.note = "error" in selection ? selection.error : `${selection.note} · saved explanations are skipped · no code snapshot needed · writes nothing`;
+  }
+
+  /** Enter in the parse form: the typed paths in the chosen view run as the session's operation. */
+  private submitParse(): void {
+    const prompt = this.state.prompt!;
+    const paths = this.promptPaths();
+    if (!Array.isArray(paths)) {
+      this.state.message = `parse: ${paths.error}`;
+      return;
+    }
+    const format: ParseFormat = prompt.ids?.[prompt.index] === "json" ? "json" : "tree";
+    this.state.prompt = null;
+    this.requestOperation("parse", { kind: "parse", root: this.state.root, paths, format });
   }
 
   // ---------- wire ----------
@@ -2378,8 +2423,9 @@ export class App {
       return;
     }
     const { record } = found;
-    const formats: readonly CheckFormat[] = record.kind === "check" ? CHECK_FORMATS : ["human"];
-    const format: CheckFormat = record.kind === "check" ? "json" : "human";
+    // A parse report is exported in the view it was shown in, unless another is chosen.
+    const formats: readonly ExportFormat[] = record.kind === "check" ? CHECK_FORMATS : record.kind === "parse" ? PARSE_FORMATS : ["human"];
+    const format: ExportFormat = record.kind === "check" ? "json" : record.params.kind === "parse" ? record.params.format : "human";
     this.state.prompt = {
       kind: "export",
       text: defaultExportPath(record.kind, format),
@@ -2392,7 +2438,7 @@ export class App {
   }
 
   /** The bytes of the report in a format: exactly what the CLI prints, from the record's payload. */
-  private exportBytes(record: OperationRecord, format: CheckFormat): number {
+  private exportBytes(record: OperationRecord, format: ExportFormat): number {
     const source = exportSourceOf(record, format);
     return source === null ? 0 : Buffer.byteLength(exportText(source), "utf8");
   }
@@ -2887,7 +2933,9 @@ export class App {
     const results = this.state.results;
     const rows = resultsReportRows(this.state);
     const gaps = this.recordGaps();
-    if (gaps.length > 0) {
+    // A parse report is long text under its diagnostics: ↑↓ select a diagnostic, a page or the wheel scrolls the text.
+    const scrollText = this.state.records[results.index]?.kind === "parse" && Math.abs(delta) > 1;
+    if (gaps.length > 0 && !scrollText) {
       // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
       results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
       const row = rows.findIndex((item) => item.gap === results.gap);
@@ -2902,7 +2950,8 @@ export class App {
   /**
    * The items of the selected record the arrows select after Tab: the gaps of
    * a feature record, every result of a check record, the evidence of an
-   * explain-edge record (an edge with no file has an empty one); none for the others.
+   * explain-edge record (an edge with no file has an empty one), the
+   * diagnostics of a parse record; none for the others.
    * `text` is the whole reason, which the report row may cut.
    */
   private recordGaps(): readonly { file: string; line: number; col: number; text: string }[] {
@@ -2910,6 +2959,8 @@ export class App {
     if (result?.kind === "feature") return (result.payload?.report.gaps ?? []).map((gap: Gap) => ({ file: gap.file, line: gap.line, col: gap.col, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
     if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
+    // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
+    if (result?.kind === "parse") return (result.payload?.diagnostics ?? []).map((d) => ({ file: toPosix(relative(this.state.root, resolve(this.state.root, d.file))), line: d.span.start.line, col: d.span.start.col, text: formatDiagnostic(d) }));
     return [];
   }
 
@@ -3033,6 +3084,7 @@ export class App {
     if (prompt.kind === "agents") this.refreshAgentsPrompt();
     if (prompt.kind === "init") this.refreshInitPrompt();
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
+    if (prompt.kind === "parse") this.refreshParsePrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -3071,6 +3123,7 @@ export class App {
       if (prompt.kind === "agents") this.refreshAgentsPrompt();
       if (prompt.kind === "init") this.refreshInitPrompt();
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
+      if (prompt.kind === "parse") this.refreshParsePrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -3079,7 +3132,7 @@ export class App {
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -3093,6 +3146,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
     if (event.name === "enter" && prompt.kind === "init") return this.submitInit();
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
+    if (event.name === "enter" && prompt.kind === "parse") return this.submitParse();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
@@ -3185,6 +3239,8 @@ export class App {
         return this.openInitPrompt();
       case "fmt":
         return this.openFmtPrompt();
+      case "parse":
+        return this.openParsePrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":
@@ -3291,20 +3347,23 @@ export class App {
   }
 }
 
-/** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`. */
-function defaultExportPath(kind: OperationRecord["kind"], format: CheckFormat): string {
-  const extension: Record<CheckFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt" };
-  return `.keylang/export/${kind === "explain-edge" ? "edge" : "check"}.${extension[format]}`;
+/** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`, `.keylang/export/parse.txt`. */
+function defaultExportPath(kind: OperationRecord["kind"], format: ExportFormat): string {
+  const extension: Record<ExportFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt", tree: "txt" };
+  return `.keylang/export/${kind === "explain-edge" ? "edge" : kind === "parse" ? "parse" : "check"}.${extension[format]}`;
 }
 
 /** The typed report of a finished record in a format, or null when it has none. */
-function exportSourceOf(record: OperationRecord, format: CheckFormat): ExportSource | null {
+function exportSourceOf(record: OperationRecord, format: ExportFormat): ExportSource | null {
   const result = record.result;
-  if (result?.kind === "check" && result.payload !== null) {
+  if (result?.kind === "check" && result.payload !== null && isCheckFormat(format)) {
     const { results, snapshotId, coverage, lines } = result.payload;
     return { kind: "check", format, report: { results, snapshotId, coverage, lines } };
   }
   if (result?.kind === "explain-edge" && result.payload !== null) return { kind: "explain-edge", lines: result.payload.lines };
+  // The documents as parsed then: the export renders them, it never parses again.
+  const view = PARSE_FORMATS.find((candidate) => candidate === format);
+  if (result?.kind === "parse" && result.payload !== null && view !== undefined) return { kind: "parse", format: view, documents: result.payload.documents };
   return null;
 }
 

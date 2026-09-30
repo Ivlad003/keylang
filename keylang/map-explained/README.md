@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 47 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 34 | 0 | 0 | 53 |
+| [cli](cli.md) |  | 33 | 0 | 0 | 50 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
 | [features](features.md) |  | 189 | 0 | 0 | 132 |
-| [lang](lang.md) |  | 42 | 0 | 0 | 87 |
+| [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 117 | 0 | 0 | 132 |
-| [operations](operations.md) |  | 66 | 0 | 0 | 20 |
-| [tui](tui.md) |  | 321 | 0 | 0 | 200 |
-| **all** | | 1015 | 0 | 0 | 801 |
+| [operations](operations.md) |  | 70 | 0 | 0 | 21 |
+| [tui](tui.md) |  | 326 | 0 | 0 | 200 |
+| **all** | | 1026 | 0 | 0 | 801 |
 
 ## Index
 
@@ -50,7 +50,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **O** · [operation-worker](tui.md#tui.operation-worker) (tui) · [operations](operations.md#operations.operations) (operations) · [OperationWorker](tui.md#tui.background.OperationWorker) (tui.background) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
 
-**P** · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
+**P** · [parse-format](lang.md#lang.parse-format) (lang) · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
 
 **R** · [resolve](check.md#check.resolve) (check) · [rules](check.md#check.rules) (check) · [run-id](cli.md#cli.run-id) (cli) · [rust](extract.md#extract.rust) (extract) · [rust-imports](map.md#map.rust-imports) (map) · [RustResolver](map.md#map.rust-imports.RustResolver) (map.rust-imports)
 

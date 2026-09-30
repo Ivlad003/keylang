@@ -19,6 +19,9 @@ import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
+import type { Document } from "./ir.ts";
+import { parse } from "./parser.ts";
+import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
 import { PROPOSALS_DIR } from "./proposals.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
@@ -112,6 +115,23 @@ export interface FmtRequest {
   check: boolean;
 }
 
+/**
+ * Parses spec files into the Text IR (`keylang parse [--json] <paths…>`).
+ * Read-only: nothing is analyzed and nothing is written; of keylang.json only
+ * the edition is read. A saved explanation is skipped and named.
+ */
+export interface ParseRequest {
+  kind: "parse";
+  /** Repository root (absolute): its keylang.json tells the edition. */
+  root: string;
+  /** Files and directories as the caller names them: absolute, or relative to `base`; at least one. */
+  paths: string[];
+  /** Where relative `paths` start (absolute); default the root. The CLI passes its working directory. */
+  base?: string;
+  /** How the caller shows the documents: `payload.text` is the CLI's stdout in it. */
+  format: ParseFormat;
+}
+
 /** Where `keylang wire` writes when no `--out` is given. */
 export const WIRE_OUT = "keylang.gen.ts";
 
@@ -175,7 +195,10 @@ export interface ExplainEdgeRequest {
  * CLI's formats, or the lines of an explained edge (the CLI has only its
  * human output). A later report kind (parse, trace-plan) joins as a variant.
  */
-export type ExportSource = { kind: "check"; format: CheckFormat; report: CheckReportData } | { kind: "explain-edge"; lines: string[] };
+export type ExportSource = { kind: "check"; format: CheckFormat; report: CheckReportData } | { kind: "explain-edge"; lines: string[] } | { kind: "parse"; format: ParseFormat; documents: Document[] };
+
+/** The formats an export writes: the check formats and the parse views. */
+export type ExportFormat = CheckFormat | ParseFormat;
 
 /**
  * Saves a report that was already computed to one file: exactly the stdout
@@ -212,7 +235,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export"]);
@@ -406,6 +429,21 @@ export interface FmtPayload {
   files: FmtFile[];
 }
 
+/** What `keylang parse` read: the documents in path order, the skipped and unreadable files. */
+export interface ParsePayload {
+  format: ParseFormat;
+  /** The Text IR of each file, named as the paths name it; offsets count UTF-16 code units. */
+  documents: Document[];
+  /** Saved explanations, as the paths name them: the model's text, not parsed. */
+  skipped: string[];
+  /** Files that could not be read: each is parsed as empty text, as the CLI always did. */
+  unreadable: string[];
+  /** The diagnostics of every document, in document order. */
+  diagnostics: Diagnostic[];
+  /** The CLI's stdout for `format`, byte for byte. */
+  text: string;
+}
+
 /** What `keylang wire [--check]` found and did. The path is POSIX, relative to the root. */
 export interface WirePayload {
   /** The generated file (`--out`). */
@@ -486,7 +524,7 @@ export interface ExplainEdgePayload extends EdgeExplanation {
 export interface ExportPayload {
   path: string;
   /** The format written (an explained edge is always `human`). */
-  format: CheckFormat;
+  format: ExportFormat;
   source: ExportSource["kind"];
   /** The size of the text in UTF-8 bytes. */
   bytes: number;
@@ -544,6 +582,7 @@ export interface OperationPayloads {
   "explain-edge": ExplainEdgePayload;
   init: InitPayload;
   export: ExportPayload;
+  parse: ParsePayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -582,6 +621,7 @@ export function runOperation(request: CheckRequest, context?: OperationContext):
 export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
+export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -609,6 +649,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runInit(request, context);
     case "export":
       return runExport(request, context);
+    case "parse":
+      return runParse(request, context);
   }
 }
 
@@ -642,6 +684,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "init":
       return { kind, ...base };
     case "export":
+      return { kind, ...base };
+    case "parse":
       return { kind, ...base };
   }
 }
@@ -1548,7 +1592,9 @@ function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?
 
 /** The bytes an export writes: the CLI's stdout for the same report. */
 export function exportText(source: ExportSource): string {
-  return source.kind === "check" ? checkReportText(source.format, source.report) : source.lines.map((line) => `${line}\n`).join("");
+  if (source.kind === "check") return checkReportText(source.format, source.report);
+  if (source.kind === "parse") return parseReportText(source.format, source.documents);
+  return source.lines.map((line) => `${line}\n`).join("");
 }
 
 /**
@@ -1595,7 +1641,7 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
   const text = exportText(request.source);
   const payload: ExportPayload = {
     path: request.path,
-    format: request.source.kind === "check" ? request.source.format : "human",
+    format: request.source.kind === "explain-edge" ? "human" : request.source.format,
     source: request.source.kind,
     bytes: Buffer.byteLength(text, "utf8"),
     existed: request.expect !== null,
@@ -1632,6 +1678,56 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
   }
   payload.written = true;
   return { ...emptyExport("completed", 0), payload, messages: [{ level: "info", text: `${request.path}: written` }], written: [request.path] };
+}
+
+function emptyParse(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"parse"> {
+  return { kind: "parse", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang parse`: every Markdown file under the paths, in their order, into
+ * the Text IR. The parser alone runs — no snapshot of the code, no rules.
+ * Messages: a `warning` note per skipped explanation, then each diagnostic
+ * by its severity — all of which the CLI prints to stderr. Code 1 when a diagnostic is
+ * an error, else 0; 2 for a missing path or an edition this keylang cannot
+ * read, with no payload.
+ */
+async function runParse(request: ParseRequest, context: OperationContext): Promise<OperationEnvelope<"parse">> {
+  if (!isAbsolute(request.root)) return emptyParse("failed", 2, "parse: root must be an absolute path");
+  const base = request.base ?? request.root;
+  if (!isAbsolute(base)) return emptyParse("failed", 2, "parse: base must be an absolute path");
+  if (request.paths.length === 0) return emptyParse("failed", 2, "parse: at least one path is required");
+  if (context.signal?.aborted) return emptyParse("cancelled", null);
+  const documents: Document[] = [];
+  const skipped: string[] = [];
+  const unreadable: string[] = [];
+  const messages: OperationMessage[] = [];
+  try {
+    // `parse` reads nothing of the config but the edition it asks for.
+    const config = join(request.root, CONFIG_FILE);
+    if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
+    context.onProgress?.({ text: "parsing the files" });
+    for (const file of collectMdFiles(request.paths, base)) {
+      let text: string;
+      try {
+        text = readFileSync(resolve(base, file), "utf8");
+      } catch {
+        unreadable.push(file);
+        text = "";
+      }
+      if (isStoredExplanation(text)) {
+        skipped.push(file);
+        messages.push({ level: "warning", text: `note: ${file}: a saved explanation, not keylang Markdown; skipped` });
+      } else documents.push(parse(file, text));
+    }
+  } catch (error) {
+    return emptyParse("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyParse("cancelled", null);
+  const diagnostics = documents.flatMap((doc) => doc.diagnostics);
+  for (const d of diagnostics) messages.push({ level: isError(d) ? "error" : "warning", text: formatDiagnostic(d) });
+  const payload: ParsePayload = { format: request.format, documents, skipped, unreadable, diagnostics, text: parseReportText(request.format, documents) };
+  return { ...emptyParse("completed", diagnostics.some(isError) ? 1 : 0), payload, messages };
 }
 
 /** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */

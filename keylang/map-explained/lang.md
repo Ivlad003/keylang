@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [files](#lang.files) · [fmt](#lang.fmt) · [ir](#lang.ir) · [parser](#lang.parser) · [spec-ir](#lang.spec-ir)
+[README](README.md) · modules: [files](#lang.files) · [fmt](#lang.fmt) · [ir](#lang.ir) · [parse-format](#lang.parse-format) · [parser](#lang.parser) · [spec-ir](#lang.spec-ir)
 
 # map
 
@@ -70,6 +70,19 @@
       <a id="lang.ir.walk"></a><br>Pre-order walk over a node and its descendants.
     - fn [sectionNodes](../../src/ir.ts#L165) (section: Section) → Node[]
       <a id="lang.ir.sectionNodes"></a>
+  - module [parse-format](../../src/parse-format.ts#L1)
+    <a id="lang.parse-format"></a><br>The stdout of `keylang parse [--json]` for parsed documents: the indented tree or the Text IR as JSON. Pure text, shared by the CLI and the TUI (and its export), so both give the same bytes; diagnostics are not part of it.
+    - ir [lang.ir](lang.md#lang.ir)
+    - type [ParseFormat](../../src/parse-format.ts#L8) = (typeof PARSE_FORMATS)[number]
+      <a id="lang.parse-format.ParseFormat"></a>
+    - fn [parseReportText](../../src/parse-format.ts#L11) (format: ParseFormat, docs: readonly Document[]) → string
+      <a id="lang.parse-format.parseReportText"></a><br>The whole stdout of `parse` in a format, every line ending in `\n`.
+    - fn [treeLines](../../src/parse-format.ts#L17) (doc: Document) → string[] <!-- internal -->
+      <a id="lang.parse-format.treeLines"></a><br>One document as the tree `parse` prints: the path, each section, its nodes with their start.
+      - calls [lang.parse-format.nodeLines](lang.md#lang.parse-format.nodeLines)
+    - fn [nodeLines](../../src/parse-format.ts#L26) (n: Node, depth: number, out: string[]) → void <!-- internal -->
+      <a id="lang.parse-format.nodeLines"></a>
+      - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
   - module [parser](../../src/parser.ts#L1)
     <a id="lang.parser"></a><br>Markdown → IR. A small line-oriented parser: keylang files use a strict subset of Markdown (headings, bullet lists indented by 2 spaces, paragraphs, fenced code), so a hand-written parser gives exact spans for every token without mapping back from a CommonMark AST.
     - diag [base.diag](base.md#base.diag)

@@ -6,18 +6,16 @@ import { join, relative, resolve } from "node:path";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, STATIC_MODES, configToJson, guessLayers, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
-import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
-import { collectMdFiles } from "./files.ts";
-import { parse } from "./parser.ts";
-import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
+import { formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { sectionNodes, walk } from "./ir.ts";
 import { analyze, findRoot } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
-import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
+import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { tracePlan } from "./trace-plan.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
@@ -895,38 +893,20 @@ function printMap(result: OperationEnvelope<"map">, root: string): number {
   return 0;
 }
 
-/** Markdown files under `paths` that are keylang: a saved explanation is the model's text, named in a note and left out. */
-function keylangFiles(paths: readonly string[]): { file: string; text: string }[] {
-  const out: { file: string; text: string }[] = [];
-  for (const file of collectMdFiles(paths)) {
-    let text: string;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch {
-      out.push({ file, text: "" });
-      continue;
-    }
-    if (isStoredExplanation(text)) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
-    else out.push({ file, text });
-  }
-  return out;
-}
-
-/** `fmt` and `parse` do not validate the rest of `keylang.json`, only which edition it asks for. */
-function assertConfigFormat(): void {
-  const file = join(findRoot(process.cwd()), CONFIG_FILE);
-  if (!existsSync(file)) return;
-  assertFormatOnly(file, readFileSync(file, "utf8"));
-}
-
-function cmdParse(paths: string[], json: boolean): number {
-  assertConfigFormat();
-  const docs = keylangFiles(paths).map(({ file, text }) => parse(file, text));
-  if (json) process.stdout.write(`${JSON.stringify(docs, null, 2)}\n`);
-  else for (const d of docs) printTree(d);
-  const diags = docs.flatMap((d) => d.diagnostics);
-  for (const d of diags) process.stderr.write(`${formatDiagnostic(d)}\n`);
-  return diags.some(isError) ? 1 : 0;
+/**
+ * A printer over the shared parse operation: the tree or the JSON to stdout
+ * and nothing else; the notes on skipped explanations and the diagnostics to
+ * stderr.
+ */
+async function cmdParse(paths: string[], json: boolean): Promise<number> {
+  const cwd = process.cwd();
+  const result = await runOperation({ kind: "parse", root: findRoot(cwd), base: cwd, paths, format: json ? "json" : "tree" });
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "parse failed");
+  const { payload } = result;
+  for (const file of payload.skipped) process.stderr.write(`keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped\n`);
+  process.stdout.write(payload.text);
+  for (const d of payload.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
+  return result.exitCode ?? 2;
 }
 
 async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }): Promise<number> {
@@ -992,25 +972,5 @@ async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
     else if (message.level === "error") process.stderr.write(`${message.text}\n`);
   }
   return result.exitCode ?? 2;
-}
-
-function printTree(doc: Document): void {
-  process.stdout.write(`${doc.path}${doc.generated !== null ? " (generated)" : ""}\n`);
-  for (const s of doc.sections) {
-    process.stdout.write(`  [${s.kind}] ${s.heading?.value ?? "(no heading)"}\n`);
-    for (const item of s.items) if (item.type === "node") printNode(item, 2);
-  }
-}
-
-function printNode(n: Node, depth: number): void {
-  let line = `${"  ".repeat(depth)}${kindLabel(n.kind)}`;
-  const id = n.id ?? n.name?.value;
-  if (id !== undefined) line += ` ${id}`;
-  if (n.link) line += ` <${n.link.target}>`;
-  if (n.text) line += ` ${JSON.stringify(n.text.value)}`;
-  if (n.label) line += ` ${JSON.stringify(n.label.value)}`;
-  if (n.refs.length > 0) line += ` -> ${n.refs.map((r) => r.target).join(", ")}`;
-  process.stdout.write(`${line}  @${n.span.start.line}:${n.span.start.col}\n`);
-  for (const c of n.children) printNode(c, depth + 1);
 }
 

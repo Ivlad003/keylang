@@ -81,8 +81,6 @@
     - config [base.config](base.md#base.config)
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
-    - files [lang.files](lang.md#lang.files)
-    - parser [lang.parser](lang.md#lang.parser)
     - ir [lang.ir](lang.md#lang.ir)
     - analyze [map.analyze](map.md#map.analyze)
     - explain [features.explain](features.md#features.explain)
@@ -106,102 +104,90 @@
     - mcp [cli.mcp](cli.md#cli.mcp)
     - llm [features.llm](features.md#features.llm)
     - draft-llm [features.draft-llm](features.md#features.draft-llm)
-    - fn [main](../../src/cli.ts#L148) (argv: readonly string[]) → Promise<number>
+    - fn [main](../../src/cli.ts#L146) (argv: readonly string[]) → Promise<number>
       <a id="cli.cli.main"></a><br>Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error.
       - calls [cli.cli.run](cli.md#cli.cli.run)
-    - fn [run](../../src/cli.ts#L157) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L155) (argv: readonly string[]) → Promise<number> <!-- internal -->
       <a id="cli.cli.run"></a>
       - calls [tui.terminal.runTerminal](tui.md#tui.terminal.runTerminal), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [cli.cli.cmdFeature](cli.md#cli.cli.cmdFeature), [cli.cli.cmdHook](cli.md#cli.cli.cmdHook), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap), [cli.cli.cmdCheck](cli.md#cli.cli.cmdCheck), [cli.cli.cmdExplain](cli.md#cli.cli.cmdExplain), [cli.lsp.serveLsp](cli.md#cli.lsp.serveLsp), [cli.cli.cmdDoctor](cli.md#cli.cli.cmdDoctor), [cli.cli.cmdDraft](cli.md#cli.cli.cmdDraft), [cli.cli.cmdSpecToCode](cli.md#cli.cli.cmdSpecToCode), [cli.cli.cmdCodeToSpec](cli.md#cli.cli.cmdCodeToSpec), [cli.cli.cmdWire](cli.md#cli.cli.cmdWire), [cli.cli.cmdTracePlan](cli.md#cli.cli.cmdTracePlan), [cli.cli.cmdWeb](cli.md#cli.cli.cmdWeb), [cli.cli.needPaths](cli.md#cli.cli.needPaths), [cli.cli.cmdParse](cli.md#cli.cli.cmdParse), [cli.cli.cmdFmt](cli.md#cli.cli.cmdFmt)
-    - fn [cmdWeb](../../src/cli.ts#L278) (portText: string, host: string) → Promise<number> <!-- internal -->
+    - fn [cmdWeb](../../src/cli.ts#L276) (portText: string, host: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWeb"></a>
       - calls [tui.web.serveWeb](tui.md#tui.web.serveWeb), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - type [ExplainOptions](../../src/cli.ts#L308) <!-- internal -->
+    - type [ExplainOptions](../../src/cli.ts#L306) <!-- internal -->
       <a id="cli.cli.ExplainOptions"></a>
-    - fn [cmdExplain](../../src/cli.ts#L319) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L317) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExplain"></a>
       - calls [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.noteOldExplanations](cli.md#cli.cli.noteOldExplanations), [features.explain-llm.explainedIds](features.md#features.explain-llm.explainedIds), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain.explainCode](features.md#features.explain.explainCode), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.unknownIds](features.md#features.explain-llm.unknownIds), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.briefText](features.md#features.explain-llm.briefText), [features.explain-llm.writeExplanation](features.md#features.explain-llm.writeExplanation)
-    - fn [cmdExplainBatch](../../src/cli.ts#L400) (batch: BriefBatch, opts: ExplainOptions) → Promise<number> <!-- internal -->
+    - fn [cmdExplainBatch](../../src/cli.ts#L398) (batch: BriefBatch, opts: ExplainOptions) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExplainBatch"></a><br>`explain --missing|--stale [--llm] [--dry-run] [--limit N] [--jobs N]`: briefs for the explained map, bottom-up. Without `--llm` it lists the nodes; `--dry-run` counts them and estimates tokens.
       - calls [cli.cli.positiveInteger](cli.md#cli.cli.positiveInteger), [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.noteOldExplanations](cli.md#cli.cli.noteOldExplanations), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.planBriefs](features.md#features.explain-llm.planBriefs), [features.explain-llm.estimateTokens](features.md#features.explain-llm.estimateTokens), [features.explain-llm.runBriefs](features.md#features.explain-llm.runBriefs)
-    - fn [positiveInteger](../../src/cli.ts#L440) (flag: string, text: string) → number <!-- internal -->
+    - fn [positiveInteger](../../src/cli.ts#L438) (flag: string, text: string) → number <!-- internal -->
       <a id="cli.cli.positiveInteger"></a>
-    - fn [noteOldExplanations](../../src/cli.ts#L447) (config: Config) → void <!-- internal -->
+    - fn [noteOldExplanations](../../src/cli.ts#L445) (config: Config) → void <!-- internal -->
       <a id="cli.cli.noteOldExplanations"></a><br>One note per command while the store of keylang 0.1 still holds files.
       - calls [features.explain-llm.oldExplanations](features.md#features.explain-llm.oldExplanations), [features.explain-llm.moveHint](features.md#features.explain-llm.moveHint)
-    - fn [cmdDraft](../../src/cli.ts#L452) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraft](../../src/cli.ts#L450) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDraft"></a>
       - calls [cli.cli.cmdDraftLayout](cli.md#cli.cli.cmdDraftLayout), [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.draft.draftFlow](features.md#features.draft.draftFlow), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [cli.cli.countProposed](cli.md#cli.cli.countProposed)
-    - fn [cmdSpecToCode](../../src/cli.ts#L500) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+    - fn [cmdSpecToCode](../../src/cli.ts#L498) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdSpecToCode"></a>
       - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.spec-to-code.specToCode](features.md#features.spec-to-code.specToCode), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [check.assess.sameFinding](check.md#check.assess.sameFinding), [check.verdict.formatVerdict](check.md#check.verdict.formatVerdict), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
-    - fn [cmdCodeToSpec](../../src/cli.ts#L543) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCodeToSpec](../../src/cli.ts#L541) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCodeToSpec"></a>
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.draft.changedFlows](features.md#features.draft.changedFlows), [features.git-changes.gitChangedLines](features.md#features.git-changes.gitChangedLines), [base.config.toPosix](base.md#base.config.toPosix), [features.draft.codeToSpec](features.md#features.draft.codeToSpec), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [cli.cli.countProposed](cli.md#cli.cli.countProposed)
-    - fn [countProposed](../../src/cli.ts#L614) (root: string, counts: Record<string, number>) → void <!-- internal -->
+    - fn [countProposed](../../src/cli.ts#L612) (root: string, counts: Record<string, number>) → void <!-- internal -->
       <a id="cli.cli.countProposed"></a><br>The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the command.
       - calls [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
-    - fn [cmdDraftLayout](../../src/cli.ts#L622) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraftLayout](../../src/cli.ts#L620) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDraftLayout"></a>
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [base.config.configToJson](base.md#base.config.configToJson), [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.guessLayers](base.md#base.config.guessLayers), [features.draft.draftRules](features.md#features.draft.draftRules), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.draft.withRules](features.md#features.draft.withRules), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [cli.cli.countProposed](cli.md#cli.cli.countProposed)
-    - fn [cmdWire](../../src/cli.ts#L687) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdWire](../../src/cli.ts#L685) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWire"></a><br>`keylang wire [--check]`: the CLI is a printer over the shared wire operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDoctor](../../src/cli.ts#L701) () → Promise<number> <!-- internal -->
+    - fn [cmdDoctor](../../src/cli.ts#L699) () → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDoctor"></a><br>What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [cmdTracePlan](../../src/cli.ts#L715) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L713) (flow: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdTracePlan"></a>
       - calls [map.trace-plan.tracePlan](map.md#map.trace-plan.tracePlan), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [needPaths](../../src/cli.ts#L722) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L720) (cmd: string, paths: string[]) → void <!-- internal -->
       <a id="cli.cli.needPaths"></a>
-    - fn [cmdInit](../../src/cli.ts#L727) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L725) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
       - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.operations.initSources](operations.md#operations.operations.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [cmdAgents](../../src/cli.ts#L770) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdAgents](../../src/cli.ts#L768) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
       - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printAgents](../../src/cli.ts#L775) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L773) (result: OperationEnvelope<"agents">) → number <!-- internal -->
       <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
-    - fn [cmdBaseline](../../src/cli.ts#L794) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L792) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
       - calls [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printBaseline](../../src/cli.ts#L798) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+    - fn [printBaseline](../../src/cli.ts#L796) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
       <a id="cli.cli.printBaseline"></a>
-    - fn [cmdFeature](../../src/cli.ts#L813) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L811) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.gapLine](operations.md#operations.operations.gapLine), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L828) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L826) (name: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a>
       - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [readStdin](../../src/cli.ts#L848) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L846) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a>
-    - fn [cmdMap](../../src/cli.ts#L854) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L852) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdMap"></a>
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [printMap](../../src/cli.ts#L872) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L870) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       <a id="cli.cli.printMap"></a><br>The lines of a map write: paths relative to the working directory; failures and the summary to stderr.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
-    - fn [keylangFiles](../../src/cli.ts#L899) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
-      <a id="cli.cli.keylangFiles"></a><br>Markdown files under `paths` that are keylang: a saved explanation is the model's text, named in a note and left out.
-      - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation)
-    - fn [assertConfigFormat](../../src/cli.ts#L916) () → void <!-- internal -->
-      <a id="cli.cli.assertConfigFormat"></a><br>`fmt` and `parse` do not validate the rest of `keylang.json`, only which edition it asks for.
-      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.assertFormatOnly](base.md#base.config.assertFormatOnly)
-    - fn [cmdParse](../../src/cli.ts#L922) (paths: string[], json: boolean) → number <!-- internal -->
-      <a id="cli.cli.cmdParse"></a>
-      - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [cli.cli.keylangFiles](cli.md#cli.cli.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [cli.cli.printTree](cli.md#cli.cli.printTree), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L932) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L901) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdParse"></a><br>A printer over the shared parse operation: the tree or the JSON to stdout and nothing else; the notes on skipped explanations and the diagnostics to stderr.
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
+    - fn [cmdCheck](../../src/cli.ts#L912) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
       - calls [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary)
-    - fn [cmdFmt](../../src/cli.ts#L983) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L963) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [printTree](../../src/cli.ts#L997) (doc: Document) → void <!-- internal -->
-      <a id="cli.cli.printTree"></a>
-      - calls [cli.cli.printNode](cli.md#cli.cli.printNode)
-    - fn [printNode](../../src/cli.ts#L1005) (n: Node, depth: number) → void <!-- internal -->
-      <a id="cli.cli.printNode"></a>
-      - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
   - module [index](../../src/index.ts#L1)
     <a id="cli.index"></a><br>keylang core: IR, Markdown parser, cross-file resolver, formatter.
     - diag [base.diag](base.md#base.diag)

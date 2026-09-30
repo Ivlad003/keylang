@@ -5941,5 +5941,201 @@ test("tui: export saves an explained edge as the CLI's lines; the palette export
   s.send(KEY.f6);
   s.send("e");
   assert.equal(s.app.state.prompt, null);
-  assert.match(s.app.state.message ?? "", /^export: only a check or explain-edge report is exported$/);
+  assert.match(s.app.state.message ?? "", /^export: only a check, explain-edge or parse report is exported$/);
+});
+
+// ---------- parse (ticket 19) ----------
+
+/** A flow with Unicode (a two-code-unit letter before the ids) and a nested list: offsets count UTF-16 code units, columns code points. */
+const UNICODE_FLOW = "# flow ціна-𝒳\n\nОплата 𝒳 з терміналу — «швидко».\n\n- trigger presentation.terminal.checkout <!-- 𝒳 -->\n- step application.purchase.buy\n  - step domain.order.create\n    - step infrastructure.store.save\n";
+/** A tab in the indentation of a nested step: K003, an error. */
+const TAB_FLOW = "# flow tabbed\n\n- trigger presentation.terminal.checkout\n  - step application.purchase.buy\n\t- step domain.order.create\n";
+const SAVED_EXPLANATION = "<!-- keylang:explain agent=mock date=2026-10-01 closure=abc lang=en detail=short -->\nThe checkout.\n";
+
+/** The palette's parse form; `paths` replaces the default text when given, then the view. */
+function parseForm(s: ReturnType<typeof session>, view: "tree" | "json", paths?: string): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang parse") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "parse", s.app.state.message ?? "");
+  if (paths !== undefined) {
+    for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+    for (const ch of paths) s.send(ch);
+  }
+  if (view === "json") s.send(KEY.down);
+  s.send(KEY.enter);
+}
+
+function parseRecord(app: App): Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "parse" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> };
+}
+
+function cliParse(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "parse", ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** What the CLI prints to stderr for the same result: the notes, then the diagnostics. */
+function parseStderr(result: Extract<OperationResult, { kind: "parse" }> & { payload: NonNullable<Extract<OperationResult, { kind: "parse" }>["payload"]> }): string {
+  return [...result.payload.skipped.map((file) => `keylang: note: ${file}: a saved explanation, not keylang Markdown; skipped`), ...result.messages.filter((m) => !m.text.startsWith("note: ")).map((m) => m.text)].map((line) => `${line}\n`).join("");
+}
+
+test("tui: parse of the current spec with Unicode and a nested list gives the CLI's tree and JSON byte for byte without a code snapshot; nothing is written; export writes only its target", async (t) => {
+  const file = "keylang/flows/unicode.md";
+  const root = checkoutRepo(t, { [file]: UNICODE_FLOW });
+  // No snapshot of the code at all: parse reads only the specs and the edition of keylang.json.
+  const s = session(root, { cols: 160, analyzer: async () => { throw new Error("no code snapshot in this test"); } });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.analysis?.snapshot ?? null, null);
+  s.send(KEY.ctrlP);
+  for (const ch of `open ${file}`) s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, file);
+  // The form defaults to the current spec and shows both views; a directory only when typed.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang parse") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "parse");
+  assert.equal(s.app.state.prompt?.text, file);
+  assert.deepEqual(s.app.state.prompt?.items, ["Tree of 1 file(s): as keylang parse prints it", "JSON of 1 file(s): as keylang parse --json prints it"]);
+  assert.equal(promptNote(s.app), `${file} · saved explanations are skipped · no code snapshot needed · writes nothing`);
+  assert.match(s.text(), /parse specifications: Text IR/);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  const before = treeBytes(root);
+  // JSON: the CLI's stdout, byte for byte, and the same documents; no ANSI, no session summary.
+  parseForm(s, "json");
+  assert.equal(s.app.state.barrier, null, "nothing unsaved, no step");
+  await s.app.idle();
+  let result = parseRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, []]);
+  const cliJson = cliParse(root, ["--json", file]);
+  assert.equal(cliJson.status, 0);
+  assert.equal(cliJson.stderr, "");
+  assert.equal(result.payload.text, cliJson.stdout);
+  assert.deepEqual(result.payload.documents, JSON.parse(cliJson.stdout));
+  assert.doesNotMatch(result.payload.text, /\x1b|code 0|completed|F6/);
+  // The spans are the parser's: UTF-16 offsets that slice the source, 1-based code-point columns.
+  const [doc] = result.payload.documents;
+  const buy = doc!.sections[0]!.items.flatMap((item) => (item.type === "node" ? [item] : []))[1]!;
+  const deepest = buy.children[0]!.children[0]!;
+  assert.equal(deepest.refs[0]?.target, "infrastructure.store.save");
+  assert.equal(UNICODE_FLOW.slice(deepest.span.start.offset, deepest.span.end.offset).trimEnd(), "- step infrastructure.store.save");
+  assert.equal(deepest.span.start.col, 5);
+  assert.deepEqual(treeBytes(root), before, "parse writes nothing");
+  // Tree: the CLI's stdout too.
+  parseForm(s, "tree");
+  await s.app.idle();
+  result = parseRecord(s.app);
+  const cliTree = cliParse(root, [file]);
+  assert.deepEqual([result.exitCode, cliTree.status], [0, 0]);
+  assert.equal(result.payload.text, cliTree.stdout);
+  assert.match(result.payload.text, /^ {8}step -> infrastructure\.store\.save {2}@8:5$/m);
+  // F6: the report, then the tree as stdout; the text scrolls.
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Parse: show the Text IR of specifications · tree · keylang\/flows\/unicode\.md/);
+  assert.match(text, /Parse · read-only, nothing written · saved files · keylang\/flows\/unicode\.md · tree/);
+  assert.match(text, /1 document\(s\), 0 error\(s\), 0 warning\(s\) · code 0/);
+  assert.match(text, /\[flow\] flow ціна-𝒳/);
+  assert.match(text, /e export/);
+  // Export: the view the report was shown in, then JSON; each file is the CLI's stdout; nothing is parsed again.
+  exportForm(s);
+  assert.equal(s.app.state.prompt!.text, ".keylang/export/parse.txt");
+  assert.equal(s.app.state.prompt!.items[0], "format: tree · ←→ tree / json");
+  s.send(KEY.enter);
+  await s.app.idle();
+  let exported = s.app.state.records.at(-1)!;
+  assert.deepEqual([exported.kind, exported.status, exported.result!.exitCode, exported.result!.written], ["export", "completed", 0, [".keylang/export/parse.txt"]]);
+  assert.equal(readFileSync(join(root, ".keylang/export/parse.txt"), "utf8"), cliTree.stdout);
+  while (s.app.state.results.index > 1) s.send(KEY.up);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.kind, "parse");
+  exportForm(s, { format: "json" });
+  assert.equal(s.app.state.prompt!.text, ".keylang/export/parse.json");
+  s.send(KEY.enter);
+  await s.app.idle();
+  exported = s.app.state.records.at(-1)!;
+  assert.deepEqual([exported.status, exported.result!.exitCode], ["completed", 0]);
+  assert.equal(readFileSync(join(root, ".keylang/export/parse.json"), "utf8"), cliJson.stdout);
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)).sort(), [".keylang/export/parse.json", ".keylang/export/parse.txt"]);
+  for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
+  assert.equal(s.app.state.records.filter((record) => record.kind === "parse").length, 2, "no hidden parse");
+  while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
+  assert.match(s.text(), /Export · json of the parse report · \.keylang\/export\/parse\.json · \d+ bytes/);
+});
+
+test("tui: parse of a syntax error and a directory with a saved explanation keeps the CLI's code, diagnostics and note; Enter opens the diagnostic; a dirty spec is saved first", async (t) => {
+  const bad = "keylang/flows/tabbed.md";
+  const root = checkoutRepo(t, { [bad]: TAB_FLOW, "keylang/explain/presentation.terminal.checkout.md": SAVED_EXPLANATION });
+  const s = session(root, { cols: 160 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  parseForm(s, "json", "keylang");
+  await s.app.idle();
+  const result = parseRecord(s.app);
+  const cli = cliParse(root, ["--json", "keylang"]);
+  assert.equal(cli.status, 1);
+  assert.deepEqual([result.status, result.exitCode], ["completed", 1]);
+  assert.equal(result.payload.text, cli.stdout, "the IR is there despite the error, as in the CLI");
+  assert.equal(parseStderr(result), cli.stderr);
+  assert.deepEqual(result.payload.skipped, ["keylang/explain/presentation.terminal.checkout.md"]);
+  assert.ok(!result.payload.documents.some((doc) => doc.path.includes("/explain/")), "the explanation is not parsed");
+  assert.deepEqual(result.payload.diagnostics.map((d) => [d.code, d.file, d.span.start.line, d.span.start.col]), [["K003", bad, 5, 1]]);
+  assert.match(cli.stderr, /^keylang\/flows\/tabbed\.md:5:1: K003 tab in indentation/m);
+  assert.deepEqual(treeBytes(root), before, "parse writes nothing");
+  // F6: the note, the diagnostic, and a jump to it in the document.
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /\d+ document\(s\), 1 error\(s\), 0 warning\(s\) · code 1/);
+  assert.match(text, /keylang\/explain\/presentation\.terminal\.checkout\.md: a saved explanation, not keylang Markdown; skipped/);
+  assert.match(text, /keylang\/flows\/tabbed\.md:5:1: K003 tab in indentation/);
+  assert.match(text, /Tab diagnostics/);
+  s.send(KEY.tab);
+  assert.match(s.app.state.message ?? "", /K003 .* · Enter opens keylang\/flows\/tabbed\.md:5$/);
+  // A page scrolls the text below the diagnostic; the diagnostic stays selected.
+  s.send("\x1b[6~");
+  assert.ok(s.app.state.results.top > 0, "PgDn scrolls the long JSON");
+  assert.equal(s.app.state.results.gap, 0);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, bad);
+  assert.deepEqual(s.app.state.cursor, { line: 4, col: 0 });
+  await esc(s.send);
+  assert.equal(s.app.state.results.open, true, "Esc comes back to the report");
+  await esc(s.send);
+  // A dirty spec under the paths is saved first; Back writes nothing and parses nothing.
+  s.send(KEY.ctrlP);
+  for (const ch of `open ${bad}`) s.send(ch);
+  s.send(KEY.enter);
+  s.app.state.cursor = { line: 4, col: 0 };
+  s.send("i");
+  s.send("\x7f");
+  await esc(s.send);
+  const typed = s.app.state.buffers.get(bad)!.text;
+  assert.notEqual(typed, TAB_FLOW);
+  const records = s.app.state.records.length;
+  parseForm(s, "tree");
+  assert.deepEqual(s.app.state.barrier?.files, [bad]);
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, bad), "utf8"), TAB_FLOW, "Back writes nothing");
+  assert.equal(s.app.state.records.length, records);
+  parseForm(s, "tree");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const saved = parseRecord(s.app);
+  assert.equal(readFileSync(join(root, bad), "utf8"), typed);
+  assert.equal(saved.payload.text, cliParse(root, [bad]).stdout, "the saved text is parsed");
+  // A missing path: code 2 and the CLI's message, no IR; the session goes on.
+  parseForm(s, "json", "keylang/nope.md");
+  await s.app.idle();
+  const missing = s.app.state.records.at(-1)!;
+  assert.deepEqual([missing.kind, missing.status, missing.result!.exitCode, missing.result!.payload], ["parse", "failed", 2, null]);
+  const cliMissing = cliParse(root, ["--json", "keylang/nope.md"]);
+  assert.deepEqual([cliMissing.status, cliMissing.stdout, cliMissing.stderr], [2, "", `keylang: ${missing.result!.messages[0]!.text}\n`]);
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /keylang\/nope\.md: not found/);
 });
