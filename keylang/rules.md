@@ -4,14 +4,16 @@
 `base`) і перевірка (`check`) не знають ні про карту, ні про tree-sitter —
 ні через `extract`, ні напряму через пакет. `features` — запити до однієї
 аналізи (hover, definition, completion, explain), спільні для LSP і TUI;
-`tui` — термінал і браузер над тими самими запитами. Входи — усе, що Node
+`operations` — транспортно-незалежна оркестрація прикладних дій, спільна
+для CLI і TUI (ADR 0008), без залежності від транспортів; `tui` — термінал
+і браузер над тими самими запитами. Входи — усе, що Node
 запускає сам: CLI, пакет, репортер (`--test-reporter`), trace (`--import`),
 його hooks (`module.register`) і worker знімка TUI (`new Worker(new URL(…))`).
 Hooks і worker виконуються в окремому потоці, тому вони тут, хоч карта й має
 ребро до них від `register(…)` і `new URL(…, import.meta.url)`: видалений
 worker — K001 у цьому списку.
 
-- layers base < extract < lang < check < map < features < tui < cli
+- layers base < extract < lang < check < map < features < operations < tui < cli
 - deny lang map
 - deny lang extract
 - deny check extract

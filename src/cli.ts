@@ -35,6 +35,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
+import { runOperation } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -741,47 +742,19 @@ function wiringErrors(analysis: Analysis): Diagnostic[] {
   return analysis.diagnostics.filter((d) => isError(d) && (ranges.get(d.file) ?? []).some(([from, to]) => d.span.start.line >= from && d.span.start.line <= to));
 }
 
-/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. */
+/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. The CLI is a printer over the shared doctor operation. */
 async function cmdDoctor(): Promise<number> {
-  const root = findRoot(process.cwd());
-  const config = loadConfig(root);
-  const { llmClient } = await import("./llm.ts");
-  const { localStatus, microphoneStatus } = await import("./voice-local.ts");
-  const { localModel, modelsDir, voiceEngine } = await import("./voice.ts");
-  const problem = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-  const agent = (): string => {
-    if (config.agent === null) return "not configured (keylang.json `agent`)";
-    try {
-      const setup = llmClient(config.agent);
-      return `${config.agent}: ${"missing" in setup ? setup.missing : "credentials found"}`;
-    } catch (error) {
-      return `${config.agent}: ${problem(error)}`;
-    }
-  };
-  const whisper = await localStatus();
-  const engine = (): string => {
-    try {
-      const found = voiceEngine(config.voice, whisper.status === "ok");
-      return "missing" in found ? found.missing : found.kind === "openrouter" ? `openrouter (${found.model})` : `local (${found.modelFile})`;
-    } catch (error) {
-      return problem(error);
-    }
-  };
-  const microphone = await microphoneStatus();
-  const model = localModel();
-  const old = oldExplanations(root);
-  const explanations = `${explainedIds(config, "answers").length} saved, ${explainedIds(config, "briefs").length} brief(s) in ${config.dir}/explain/; explained map ${config.explain.map ? "on" : "off"} (keylang.json \`explain.map\`)${old > 0 ? `; ${moveHint(config, old)}` : ""}`;
-  const lines = [
-    `languages: ${config.languages.join(", ") || "none found"}${existsSync(join(root, CONFIG_FILE)) ? "" : ` (guessed; no ${CONFIG_FILE})`}`,
-    `agent: ${agent()}`,
-    `explanations: ${explanations}`,
-    `voice: engine ${config.voice.engine} → ${engine()}`,
-    `voice model: ${model ?? `none in ${modelsDir()}`}`,
-    `@fugood/whisper.node: ${whisper.status === "ok" ? "installed" : whisper.status === "missing" ? "not installed (optional)" : `unavailable: ${whisper.reason}`}`,
-    `microphone (decibri): ${microphone.status === "ok" ? "installed" : microphone.status === "missing" ? "not installed (optional; keylang web uses the browser's microphone)" : `unavailable: ${microphone.reason} (keylang web uses the browser's microphone)`}`,
-  ];
-  process.stdout.write(`${lines.join("\n")}\n`);
-  return 0;
+  const result = await runOperation({ kind: "doctor", root: findRoot(process.cwd()) });
+  if (result.status === "failed") {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  if (result.status === "cancelled" || result.payload === null) return result.exitCode ?? 0;
+  for (const message of result.messages) {
+    if (message.level === "info") process.stdout.write(`${message.text}\n`);
+    else process.stderr.write(`${message.text}\n`);
+  }
+  return result.exitCode ?? 0;
 }
 
 async function cmdTracePlan(flow: string | undefined): Promise<number> {

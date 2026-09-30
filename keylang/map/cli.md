@@ -132,98 +132,97 @@
     - lsp cli.lsp
     - terminal tui.terminal
     - web tui.web
+    - operations operations.operations
     - snapshot map.snapshot
     - verdict check.verdict
     - span base.span
     - mcp cli.mcp
     - llm features.llm
     - draft-llm features.draft-llm
-    - voice-local features.voice-local
-    - voice features.voice
-    - fn [main](../../src/cli.ts#L155) (argv: readonly string[]) → Promise<number>
+    - fn [main](../../src/cli.ts#L156) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
-    - fn [run](../../src/cli.ts#L164) (argv: readonly string[]) → Promise<number> <!-- internal -->
+    - fn [run](../../src/cli.ts#L165) (argv: readonly string[]) → Promise<number> <!-- internal -->
       - calls tui.terminal.runTerminal, map.analyze.findRoot, cli.cli.cmdInit, cli.cli.cmdAgents, cli.cli.cmdBaseline, cli.cli.cmdFeature, cli.cli.cmdHook, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.cmdDoctor, cli.cli.cmdDraft, cli.cli.cmdSpecToCode, cli.cli.cmdCodeToSpec, cli.cli.cmdWire, cli.cli.cmdTracePlan, cli.cli.cmdWeb, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
-    - fn [cmdWeb](../../src/cli.ts#L285) (portText: string, host: string) → Promise<number> <!-- internal -->
+    - fn [cmdWeb](../../src/cli.ts#L286) (portText: string, host: string) → Promise<number> <!-- internal -->
       - calls tui.web.serveWeb, map.analyze.findRoot
-    - type [ExplainOptions](../../src/cli.ts#L315) <!-- internal -->
-    - fn [cmdExplain](../../src/cli.ts#L326) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
+    - type [ExplainOptions](../../src/cli.ts#L316) <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L327) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdExplainBatch, map.analyze.analyze, map.analyze.findRoot, cli.cli.noteOldExplanations, features.explain-llm.explainedIds, features.explain-llm.readExplanation, features.explain-llm.currentBaseline, features.explain-llm.isStale, features.explain.explainCode, features.explain-node.summarizeNode, features.explain-llm.unknownIds, features.explain-node.formatSummary, features.explain-llm.explanationRequest, map.explanations.loadBriefs, features.explain-llm.briefText, features.explain-llm.writeExplanation
-    - fn [cmdExplainBatch](../../src/cli.ts#L407) (batch: BriefBatch, opts: ExplainOptions) → Promise<number> <!-- internal -->
+    - fn [cmdExplainBatch](../../src/cli.ts#L408) (batch: BriefBatch, opts: ExplainOptions) → Promise<number> <!-- internal -->
       - calls cli.cli.positiveInteger, map.analyze.analyze, map.analyze.findRoot, cli.cli.noteOldExplanations, map.explanations.loadBriefs, features.explain-llm.planBriefs, features.explain-llm.estimateTokens, features.explain-llm.runBriefs
-    - fn [positiveInteger](../../src/cli.ts#L447) (flag: string, text: string) → number <!-- internal -->
-    - fn [noteOldExplanations](../../src/cli.ts#L454) (config: Config) → void <!-- internal -->
+    - fn [positiveInteger](../../src/cli.ts#L448) (flag: string, text: string) → number <!-- internal -->
+    - fn [noteOldExplanations](../../src/cli.ts#L455) (config: Config) → void <!-- internal -->
       - calls features.explain-llm.oldExplanations, features.explain-llm.moveHint
-    - fn [cmdDraft](../../src/cli.ts#L459) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraft](../../src/cli.ts#L460) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdDraftLayout, map.analyze.analyze, map.analyze.findRoot, features.draft.draftFlow, base.config.toPosix, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
-    - fn [cmdSpecToCode](../../src/cli.ts#L507) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+    - fn [cmdSpecToCode](../../src/cli.ts#L508) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, features.spec-to-code.specToCode, base.config.toPosix, features.proposals.lineDiff, check.assess.sameFinding, check.verdict.formatVerdict, base.diag.formatDiagnostic, features.proposals.codeProposalProblem, features.proposals.writeProposal, base.safe-write.safeWriteAll
-    - fn [cmdCodeToSpec](../../src/cli.ts#L550) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCodeToSpec](../../src/cli.ts#L551) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, map.analyze.analyze, lang.ir.sectionNodes, lang.ir.walk, features.draft.changedFlows, cli.cli.gitChanges, base.config.toPosix, features.draft.codeToSpec, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
-    - fn [countProposed](../../src/cli.ts#L621) (root: string, counts: Record<string, number>) → void <!-- internal -->
+    - fn [countProposed](../../src/cli.ts#L622) (root: string, counts: Record<string, number>) → void <!-- internal -->
       - calls features.stats.updateStats, features.stats.addDrafts
-    - fn [cmdDraftLayout](../../src/cli.ts#L629) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraftLayout](../../src/cli.ts#L630) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, map.analyze.analyze, base.config.configToJson, base.config.loadConfig, base.config.guessLayers, features.draft.draftRules, check.scc.stronglyConnected, base.config.toPosix, features.proposals.proposalProblem, features.draft.withRules, features.proposals.writeProposal, cli.cli.countProposed
-    - fn [cmdWire](../../src/cli.ts#L693) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdWire](../../src/cli.ts#L694) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, base.config.toPosix, base.safe-write.writeProblem, map.analyze.analyze, cli.cli.wiringErrors, base.diag.formatDiagnostic, map.wire-gen.generateWire, base.safe-write.safeWrite
-    - fn [wiringErrors](../../src/cli.ts#L732) (analysis: Analysis) → Diagnostic[] <!-- internal -->
+    - fn [wiringErrors](../../src/cli.ts#L733) (analysis: Analysis) → Diagnostic[] <!-- internal -->
       - calls base.diag.isError
-    - fn [cmdDoctor](../../src/cli.ts#L745) () → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, base.config.loadConfig, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint
-    - fn [cmdTracePlan](../../src/cli.ts#L787) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdDoctor](../../src/cli.ts#L746) () → Promise<number> <!-- internal -->
+      - calls operations.operations.runOperation, map.analyze.findRoot
+    - fn [cmdTracePlan](../../src/cli.ts#L760) (flow: string | undefined) → Promise<number> <!-- internal -->
       - calls map.trace-plan.tracePlan, base.config.loadConfig, map.analyze.findRoot
-    - fn [needPaths](../../src/cli.ts#L794) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L798) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L767) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L771) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       - calls base.config.loadConfig, cli.cli.harnessPlan, cli.cli.applyHarness, cli.cli.cmdBaseline, base.config.guessLayout, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdAgents](../../src/cli.ts#L831) (agents: string | undefined, checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdAgents](../../src/cli.ts#L804) (agents: string | undefined, checkOnly: boolean) → number <!-- internal -->
       - calls cli.cli.applyHarness, map.analyze.findRoot, cli.cli.harnessPlan
-    - fn [cmdBaseline](../../src/cli.ts#L835) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L808) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, features.baseline.baselineText, base.safe-write.safeWrite
-    - fn [cmdFeature](../../src/cli.ts#L854) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L827) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, base.config.loadConfig, map.analyze.analyze, features.feature-status.featureStatus
-    - fn [cmdHook](../../src/cli.ts#L871) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L844) (name: string | undefined) → Promise<number> <!-- internal -->
       - calls features.changed.parseHookEvent, cli.cli.readStdin, features.changed.hookDecision, map.analyze.findRoot, map.analyze.analyze, cli.cli.gitChangedFiles, cli.cli.changedPathSet, features.changed.filterChanged, cli.cli.deletedModuleIds, features.changed.hookFails
-    - fn [readStdin](../../src/cli.ts#L891) () → Promise<string> <!-- internal -->
-    - fn [packageVersion](../../src/cli.ts#L897) () → string <!-- internal -->
-    - fn [harnessPlan](../../src/cli.ts#L901) (root: string, flag: string | undefined) → HarnessPlan <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L864) () → Promise<string> <!-- internal -->
+    - fn [packageVersion](../../src/cli.ts#L870) () → string <!-- internal -->
+    - fn [harnessPlan](../../src/cli.ts#L874) (root: string, flag: string | undefined) → HarnessPlan <!-- internal -->
       - calls cli.harness.parseAgents, cli.harness.detectHarnesses, cli.cli.harnessPresent, cli.cli.listDir, cli.harness.skillFile, cli.harness.planHarness, cli.cli.packageVersion
-    - fn [harnessPresent](../../src/cli.ts#L911) (root: string, path: string) → boolean <!-- internal -->
-    - fn [listDir](../../src/cli.ts#L920) (root: string, path: string) → string[] | null <!-- internal -->
-    - fn [applyHarness](../../src/cli.ts#L930) (root: string, plan: HarnessPlan, checkOnly: boolean) → number <!-- internal -->
+    - fn [harnessPresent](../../src/cli.ts#L884) (root: string, path: string) → boolean <!-- internal -->
+    - fn [listDir](../../src/cli.ts#L893) (root: string, path: string) → string[] | null <!-- internal -->
+    - fn [applyHarness](../../src/cli.ts#L903) (root: string, plan: HarnessPlan, checkOnly: boolean) → number <!-- internal -->
       - calls base.safe-write.safeWrite
-    - fn [changedPathSet](../../src/cli.ts#L958) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
+    - fn [changedPathSet](../../src/cli.ts#L931) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
       - calls base.config.toPosix
-    - fn [gitChangedFiles](../../src/cli.ts#L968) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
+    - fn [gitChangedFiles](../../src/cli.ts#L941) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
       - calls features.draft.deletedDiffPaths, features.draft.diffHunks
-    - fn [deletedModuleIds](../../src/cli.ts#L987) (config: Config, files: readonly string[]) → string[] <!-- internal -->
+    - fn [deletedModuleIds](../../src/cli.ts#L960) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       - calls map.graph.placeFile
-    - fn [cmdMap](../../src/cli.ts#L998) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L971) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.map.diffMap, base.config.toPosix, map.map.writeMap
-    - fn [keylangFiles](../../src/cli.ts#L1038) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+    - fn [keylangFiles](../../src/cli.ts#L1011) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation
-    - fn [assertConfigFormat](../../src/cli.ts#L1055) () → void <!-- internal -->
+    - fn [assertConfigFormat](../../src/cli.ts#L1028) () → void <!-- internal -->
       - calls map.analyze.findRoot, base.config.assertFormatOnly
-    - fn [cmdParse](../../src/cli.ts#L1061) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1034) (paths: string[], json: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, cli.cli.keylangFiles, lang.parser.parse, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1073) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1046) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, cli.cli.gitChangedFiles, cli.cli.changedPathSet, cli.cli.deletedModuleIds, features.changed.filterChanged, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L1126) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1099) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       - calls base.span.compareText
-    - fn [writeCheck](../../src/cli.ts#L1160) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1133) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleOf](../../src/cli.ts#L1213) (result: CheckResult) → string <!-- internal -->
-    - fn [ruleText](../../src/cli.ts#L1225) (id: string) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1186) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1198) (id: string) → string <!-- internal -->
       - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L1231) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L1235) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1204) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1208) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L1244) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1217) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L1283) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1256) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L1291) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1264) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
-    - fn [gitChanges](../../src/cli.ts#L1304) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1277) (root: string, ref: string) → ChangedLines <!-- internal -->
       - calls features.draft.diffHunks
   - module [index](../../src/index.ts#L1)
     - diag base.diag

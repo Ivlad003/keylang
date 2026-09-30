@@ -5,6 +5,7 @@
   "layers": {
     "cli": ["bin/**", "src/cli.ts", "src/index.ts", "src/lsp.ts", "src/mcp.ts", "src/adapters/**"],
     "tui": ["src/tui/**"],
+    "operations": ["src/operations.ts"],
     "features": ["src/lsp-features.ts", "src/node-search.ts", "src/explain.ts", "src/explain-node.ts", "src/llm.ts", "src/explain-llm.ts", "src/proposals.ts", "src/draft.ts", "src/draft-llm.ts", "src/stats.ts", "src/check-results.ts", "src/spec-to-code.ts", "src/agent-context.ts", "src/ghost.ts", "src/voice.ts", "src/keys.ts", "src/voice-local.ts", "src/baseline.ts", "src/feature-status.ts", "src/changed.ts"],
     "map": ["src/map.ts", "src/emit.ts", "src/explanations.ts", "src/graph.ts", "src/exports.ts", "src/imports.ts", "src/snapshot.ts", "src/analyze.ts", "src/declared-packages.ts", "src/fact-cache.ts", "src/frontends.ts", "src/rust-imports.ts", "src/python-imports.ts", "src/trace-plan.ts", "src/wire-gen.ts"],
     "check": ["src/rules.ts", "src/resolve.ts", "src/scc.ts", "src/verdict.ts", "src/flows.ts", "src/assess.ts", "src/test-report.ts", "src/trace-evidence.ts", "src/wiring.ts"],
