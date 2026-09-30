@@ -452,54 +452,28 @@ async function cmdDraft(args: string[], opts: { mode: string; name: string | und
   if (what !== "flow") throw new Error("draft: expected `draft flow <trigger>`, `draft rules` or `draft map`");
   if (!trigger) throw new Error("draft flow: a trigger id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
-  if (opts.mode === "algo") return draftFlowAlgo(findRoot(process.cwd()), trigger, opts, null);
-  const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-  if (!analysis.snapshot) throw new Error("draft: no supported source files; run `keylang init`");
-  if (analysis.snapshot.nodes[trigger]?.kind !== "fn") {
-    const hint = analysis.index.suggest(trigger);
-    throw new Error(`draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
-  }
-  const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(analysis.config.agent);
-  if ("missing" in setup) {
-    if (opts.mode === "llm") throw new Error(`draft --mode llm: ${setup.missing}`);
-    process.stderr.write(`keylang: ${setup.missing}; drafting from the snapshot only (--mode algo)\n`);
-    return draftFlowAlgo(analysis.config.root, trigger, opts, analysis);
-  }
-  const { draftFlowWithModel } = await import("./draft-llm.ts");
-  const draft = await draftFlowWithModel(analysis, trigger, setup.client, opts.mode, opts.name);
-  const summary = Object.entries(draft.counts).filter(([, n]) => n > 0).map(([status, n]) => `${n} ${status}`).join(", ");
-  if (draft.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")} (K001 after the merge unless declared planned)\n`);
-  for (const line of draft.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
-  const counts = draft.counts;
-  if (opts.print) {
-    process.stdout.write(draft.text);
-    return 0;
-  }
-  const root = analysis.config.root;
-  const specDir = toPosix(relative(root, resolve(root, analysis.config.dir)));
-  const target = toPosix(opts.into ?? `${specDir}/flows/${draft.name}.md`);
-  const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
-  if (problem) throw new Error(`draft: ${target}: ${problem}`);
-  const abs = join(root, target);
-  const proposal = withFlow(existsSync(abs) ? readFileSync(abs, "utf8") : null, draft);
-  const file = writeProposal(root, target, proposal);
-  countProposed(root, counts);
-  process.stdout.write(`${toPosix(relative(process.cwd(), file))}: proposed flow \`${draft.name}\` for ${target} (${summary}); merge it with \`m\` in \`keylang\`\n`);
-  return 0;
+  return draftFlowPrinter(findRoot(process.cwd()), trigger, opts.mode, opts);
 }
 
 /**
- * `draft flow --mode algo` (and hybrid without a model): a printer over the
- * shared `draft-flow` operation. The proposal replaces one already waiting,
- * as the CLI always did; `analysis`, when the caller has one, is reused.
+ * `draft flow <trigger> --mode algo|llm|hybrid`: a printer over the shared
+ * `draft-flow` operation. The proposal replaces one already waiting, as the
+ * CLI always did. On stderr: the fallback of a hybrid without a model, IDs
+ * the model left unknown, lines it dropped, a stats file not updated.
  */
-async function draftFlowAlgo(root: string, trigger: string, opts: { name: string | undefined; into: string | undefined; print: boolean }, analysis: Awaited<ReturnType<typeof analyze>> | null): Promise<number> {
-  const result = await runOperation(
-    { kind: "draft-flow", root, trigger, ...(opts.name !== undefined ? { name: opts.name } : {}), ...(opts.into !== undefined ? { into: opts.into } : {}), output: opts.print ? "preview" : "proposal", pending: "replace" },
-    analysis === null ? {} : { analyze: async () => analysis },
-  );
+async function draftFlowPrinter(root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }): Promise<number> {
+  const result = await runOperation({
+    kind: "draft-flow",
+    root,
+    trigger,
+    mode,
+    ...(opts.name !== undefined ? { name: opts.name } : {}),
+    ...(opts.into !== undefined ? { into: opts.into } : {}),
+    output: opts.print ? "preview" : "proposal",
+    pending: "replace",
+  });
   const payload = result.payload;
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
     return result.exitCode ?? 2;

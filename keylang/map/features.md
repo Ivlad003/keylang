@@ -111,7 +111,7 @@
     - spec-ir lang.spec-ir
     - type [DraftStatus](../../src/draft-llm.ts#L20) = "agree" | "llm-only" | "algo-only" | "conflict"
     - type [ModelDraft](../../src/draft-llm.ts#L22)
-    - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string) → Promise<ModelDraft>
+    - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string, options: LlmCallOptions = {}) → Promise<ModelDraft>
       - calls features.draft.draftFlow, features.draft-llm.compactMap, features.draft-llm.similarFlows, features.draft-llm.flowText, features.draft-llm.unknownIn, features.draft-llm.reconcile
     - fn [reconcile](../../src/draft-llm.ts#L88) (analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string) → { text: string; counts: Record<DraftStatus, number>; dropped: string[] } <!-- internal -->
       - calls lang.parser.parse, features.draft-llm.reachability, lang.spec-ir.compileSpec, features.draft-llm.algoItem, features.draft-llm.algoCallers, lang.fmt.formatDocument
@@ -357,17 +357,22 @@
     - eventsource-parser external.eventsource-parser
     - node external.node
     - keys features.keys
-    - type [LlmRequest](../../src/llm.ts#L18)
-    - type [LlmClient](../../src/llm.ts#L24)
-    - type [LlmSetup](../../src/llm.ts#L31) = { client: LlmClient } | { missing: string }
-    - type [Env](../../src/llm.ts#L33) = Readonly<Record<string, string | undefined>> <!-- internal -->
-    - fn [llmClient](../../src/llm.ts#L40) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
+    - type [LlmRequest](../../src/llm.ts#L20)
+    - type [LlmCallOptions](../../src/llm.ts#L27)
+    - type [LlmClient](../../src/llm.ts#L31)
+    - module [LlmCancelled](../../src/llm.ts#L39)
+      - fn [constructor](../../src/llm.ts#L40) (provider: string)
+    - type [LlmSetup](../../src/llm.ts#L46) = { client: LlmClient } | { missing: string }
+    - type [Env](../../src/llm.ts#L48) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - fn [llmClient](../../src/llm.ts#L55) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
       - calls features.llm.timeoutMs, features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
-    - fn [timeoutMs](../../src/llm.ts#L67) (env: Env) → number | string <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L73) (client: Anthropic, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
-    - fn [openrouterComplete](../../src/llm.ts#L103) (base: string, key: string, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
-      - calls features.llm.parseJson
-    - fn [parseJson](../../src/llm.ts#L156) (text: string) → unknown <!-- internal -->
+    - fn [timeoutMs](../../src/llm.ts#L82) (env: Env) → number | string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L93) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L117) (client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.LlmCancelled
+    - fn [openrouterComplete](../../src/llm.ts#L151) (base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled
+    - fn [parseJson](../../src/llm.ts#L210) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze

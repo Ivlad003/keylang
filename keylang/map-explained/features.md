@@ -170,8 +170,8 @@
       <a id="features.draft-llm.DraftStatus"></a>
     - type [ModelDraft](../../src/draft-llm.ts#L22)
       <a id="features.draft-llm.ModelDraft"></a>
-    - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string) → Promise<ModelDraft>
-      <a id="features.draft-llm.draftFlowWithModel"></a><br>`context`: the pack from the TUI context panel, sent as it is shown.
+    - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string, options: LlmCallOptions = {}) → Promise<ModelDraft>
+      <a id="features.draft-llm.draftFlowWithModel"></a><br>`context`: the pack from the TUI context panel, sent as it is shown; `options.signal` cancels the model's rounds.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft-llm.compactMap](features.md#features.draft-llm.compactMap), [features.draft-llm.similarFlows](features.md#features.draft-llm.similarFlows), [features.draft-llm.flowText](features.md#features.draft-llm.flowText), [features.draft-llm.unknownIn](features.md#features.draft-llm.unknownIn), [features.draft-llm.reconcile](features.md#features.draft-llm.reconcile)
     - fn [reconcile](../../src/draft-llm.ts#L88) (analysis: Analysis, text: string, algo: { text: string; steps: readonly string[] }, trigger: string, mode: "llm" | "hybrid", agent: string) → { text: string; counts: Record<DraftStatus, number>; dropped: string[] } <!-- internal -->
       <a id="features.draft-llm.reconcile"></a><br>The model's flow judged on its IR. An item with a parse error other than indentation (a step under an `invariant`, an unknown keyword) is dropped; the requested trigger is added when the answer lacks it.
@@ -556,25 +556,34 @@
     - eventsource-parser [external.eventsource-parser](external.md#external.eventsource-parser)
     - node [external.node](external.md#external.node)
     - keys [features.keys](features.md#features.keys)
-    - type [LlmRequest](../../src/llm.ts#L18)
+    - type [LlmRequest](../../src/llm.ts#L20)
       <a id="features.llm.LlmRequest"></a>
-    - type [LlmClient](../../src/llm.ts#L24)
+    - type [LlmCallOptions](../../src/llm.ts#L27)
+      <a id="features.llm.LlmCallOptions"></a><br>Per call: `signal` cancels the request (and its stream); without options a call ends by its answer or the timeout.
+    - type [LlmClient](../../src/llm.ts#L31)
       <a id="features.llm.LlmClient"></a>
-    - type [LlmSetup](../../src/llm.ts#L31) = { client: LlmClient } | { missing: string }
+    - module [LlmCancelled](../../src/llm.ts#L39)
+      <a id="features.llm.LlmCancelled"></a><br>The caller cancelled the request: not a timeout, not a provider error, and no partial answer.
+      - fn [constructor](../../src/llm.ts#L40) (provider: string)
+        <a id="features.llm.LlmCancelled.constructor"></a>
+    - type [LlmSetup](../../src/llm.ts#L46) = { client: LlmClient } | { missing: string }
       <a id="features.llm.LlmSetup"></a>
-    - type [Env](../../src/llm.ts#L33) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Env](../../src/llm.ts#L48) = Readonly<Record<string, string | undefined>> <!-- internal -->
       <a id="features.llm.Env"></a>
-    - fn [llmClient](../../src/llm.ts#L40) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
+    - fn [llmClient](../../src/llm.ts#L55) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
       <a id="features.llm.llmClient"></a>
       - calls [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
-    - fn [timeoutMs](../../src/llm.ts#L67) (env: Env) → number | string <!-- internal -->
+    - fn [timeoutMs](../../src/llm.ts#L82) (env: Env) → number | string <!-- internal -->
       <a id="features.llm.timeoutMs"></a><br>`KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one.
-    - fn [anthropicComplete](../../src/llm.ts#L73) (client: Anthropic, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L93) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+      <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
+    - fn [anthropicComplete](../../src/llm.ts#L117) (client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.anthropicComplete"></a>
-    - fn [openrouterComplete](../../src/llm.ts#L103) (base: string, key: string, model: string, request: LlmRequest, timeout: number) → Promise<string> <!-- internal -->
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled)
+    - fn [openrouterComplete](../../src/llm.ts#L151) (base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.openrouterComplete"></a>
-      - calls [features.llm.parseJson](features.md#features.llm.parseJson)
-    - fn [parseJson](../../src/llm.ts#L156) (text: string) → unknown <!-- internal -->
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled)
+    - fn [parseJson](../../src/llm.ts#L210) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a>
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.

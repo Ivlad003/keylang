@@ -6348,7 +6348,7 @@ function draftField(s: ReturnType<typeof session>, id: "trigger" | "name" | "int
 }
 
 /** The palette's draft-flow form with the given fields; Enter on the run row. */
-function draftForm(s: ReturnType<typeof session>, fields: { trigger: string; name?: string; into?: string; output?: "proposal" | "preview" }): void {
+function draftForm(s: ReturnType<typeof session>, fields: { trigger: string; name?: string; into?: string; mode?: "algo" | "hybrid" | "llm"; output?: "proposal" | "preview" }): void {
   s.send(KEY.ctrlP);
   for (const ch of "draft flow") s.send(ch);
   s.send(KEY.enter);
@@ -6356,6 +6356,11 @@ function draftForm(s: ReturnType<typeof session>, fields: { trigger: string; nam
   draftField(s, "trigger", fields.trigger);
   if (fields.name !== undefined) draftField(s, "name", fields.name);
   if (fields.into !== undefined) draftField(s, "into", fields.into);
+  if (fields.mode !== undefined && fields.mode !== s.app.state.prompt!.draft!.mode) {
+    draftRow(s, "mode");
+    for (let i = 0; i < 3 && s.app.state.prompt!.draft!.mode !== fields.mode; i++) s.send(KEY.right);
+    assert.equal(s.app.state.prompt!.draft!.mode, fields.mode);
+  }
   if ((fields.output ?? "proposal") !== s.app.state.prompt!.draft!.output) {
     draftRow(s, "output");
     s.send(KEY.right);
@@ -6558,4 +6563,254 @@ test("tui: draft flow refuses an unknown trigger, a waiting or just-created prop
   await esc(s.send);
   assert.equal(readFileSync(join(root, other), "utf8"), proposal);
   assert.equal(readFileSync(join(root, "keylang/flows/buy.md"), "utf8"), "# flow buy\n\nwritten meanwhile\n");
+});
+
+// ---------- model flow draft and cancellation (ticket 23) ----------
+
+const BUY_ANSWER = "```markdown\n# flow buy\n\n- trigger application.purchase.buy\n  - step domain.order.create\n  - step infrastructure.store.save\n```";
+const F4 = "\x1bOS";
+
+/**
+ * A Messages API stand-in that holds every answer until `release`; the TUI's
+ * operation worker reaches it through the environment set here, before the
+ * session starts. `dropped` counts requests the client closed unanswered.
+ */
+async function heldModel(t: { after: (f: () => void) => void }, reply: string): Promise<{ prompts: string[]; requested: (n: number) => Promise<void>; release: () => void; dropped: () => number }> {
+  const prompts: string[] = [];
+  const held: (() => void)[] = [];
+  const waiters: { n: number; resolve: () => void }[] = [];
+  let dropped = 0;
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+    req.on("end", () => {
+      prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      for (const waiter of waiters) if (prompts.length >= waiter.n) waiter.resolve();
+      held.push(() => {
+        if (res.destroyed) return;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
+      });
+    });
+    res.on("close", () => {
+      if (!res.writableEnded) dropped++;
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY };
+  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  process.env.ANTHROPIC_API_KEY = "test";
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+    if (saved.url === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = saved.url;
+    if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved.key;
+  });
+  return {
+    prompts,
+    requested: (n) => (prompts.length >= n ? Promise.resolve() : new Promise<void>((resolve) => waiters.push({ n, resolve }))),
+    release: () => {
+      for (const answer of held.splice(0)) answer();
+    },
+    dropped: () => dropped,
+  };
+}
+
+/** The draft counts in `.keylang/stats.json`; empty when there is none. */
+function draftCounts(root: string): Record<string, { proposed: number }> {
+  const file = join(root, ".keylang/stats.json");
+  return existsSync(file) ? ((JSON.parse(readFileSync(file, "utf8")) as { drafts?: Record<string, { proposed: number }> }).drafts ?? {}) : {};
+}
+
+test("tui: a hybrid draft from the form sends the F4 pack as it was, asks no ghost line while it runs, and a late answer lands as the first target's proposal without taking the focus", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND });
+  withConfig(root, { agent: "anthropic:claude-opus-5", ghost: { delay: 0 } });
+  const model = await heldModel(t, BUY_ANSWER);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // F4: the buffer is left out of the pack; the node under the cursor stays.
+  for (let i = 0; i < 6; i++) s.send(KEY.down);
+  s.send(F4);
+  s.send("x");
+  assert.match(s.app.state.message ?? "", /context: keylang\/flows\/checkout\.md left out/);
+  s.send(F4);
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md" });
+  const record = s.app.state.records.at(-1)!;
+  assert.equal(record.params.kind === "draft-flow" ? record.params.mode : null, "hybrid", "with a model the form's default is the CLI's hybrid");
+  await model.requested(1);
+  assert.match(model.prompts[0]!, /Context chosen by the developer:\n\[node\] domain\.order\.create/);
+  assert.doesNotMatch(model.prompts[0]!, /\[buffer\]/, "the item left out in F4 is not sent");
+  assert.equal(record.status, "running");
+  // The session answers meanwhile: a new flow item asks no ghost line while the operation runs.
+  s.app.state.cursor = { line: 0, col: 0 };
+  s.send("i");
+  for (let i = 0; i < 7; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  await sleep(60);
+  assert.equal(model.prompts.length, 1, "no ghost request during the draft");
+  assert.equal(s.app.state.ghost, null);
+  await esc(s.send);
+  // Another file is opened before the answer comes.
+  s.send("\x1b[12~");
+  const other = locate(s.lines(), "keylang/flows/refund");
+  s.send(click(other.x + 1, other.y));
+  assert.equal(s.app.state.current, "keylang/flows/refund.md");
+  model.release();
+  await s.app.idle();
+  assert.equal(record.status, "completed", JSON.stringify(record.result?.messages));
+  const result = draftRecord(s.app);
+  assert.equal(result.payload.mode, "hybrid");
+  assert.equal(result.payload.model?.agent, "anthropic:claude-opus-5");
+  assert.equal(result.payload.summary, "3 agree");
+  assert.equal(result.payload.candidate.target, "keylang/flows/buying.md", "the proposal is for the target the draft started with");
+  assert.equal(readFileSync(join(root, ".keylang/proposals/keylang/flows/buying.md"), "utf8"), result.payload.candidate.text);
+  assert.ok(!existsSync(join(root, "keylang/flows/buying.md")), "the target itself is not written");
+  assert.equal(s.app.state.current, "keylang/flows/refund.md", "the focus is not taken");
+  assert.notEqual(s.app.state.mode, "merge");
+  assert.match(s.app.state.message ?? "", /draft flow: \.keylang\/proposals\/keylang\/flows\/buying\.md waits: m, Proposals or Enter in F6 opens MERGE/);
+  assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), CHECKOUT_FLOW, "the dirty buffer is not saved by the draft");
+  assert.equal(draftCounts(root).agree?.proposed, 3, "a model proposal counts its lines");
+  // F6 names the mode and the model; the statuses are not evidence.
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Draft flow · hybrid · application\.purchase\.buy → keylang\/flows\/buying\.md/);
+  assert.match(text, /drafted by anthropic:claude-opus-5 in 1 round\(s\)/);
+  assert.match(text, /the statuses are provenance, not evidence/);
+  assert.match(text, /keylang draft flow application\.purchase\.buy --mode hybrid --print · stdout/);
+});
+
+test("tui: Cancel while the model answers ends the draft as cancelled: the request is dropped and nothing is written, not even the stats; Ctrl+Space in edit mode stays completion", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, BUY_ANSWER);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md", mode: "llm" });
+  await model.requested(1);
+  const record = s.app.state.records.at(-1)!;
+  assert.equal(record.status, "running");
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([record.status, record.result?.exitCode, record.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the model request is closed, not left running");
+  model.release();
+  await s.app.idle();
+  assert.equal(record.status, "cancelled", "a late answer changes nothing");
+  assert.deepEqual(treeBytes(root), before, "no proposal, no stats");
+  assert.match(s.app.state.message ?? "", /draft flow application\.purchase\.buy --mode llm: cancelled/);
+  // In edit mode Ctrl+Space completes IDs; it asks no model and starts no draft.
+  const records = s.app.state.records.length;
+  s.send("i");
+  s.send(KEY.ctrlSpace);
+  await sleep(30);
+  assert.equal(s.app.state.records.length, records);
+  assert.equal(model.prompts.length, 1);
+  await esc(s.send);
+});
+
+test("tui: a model draft whose target, waiting proposal or buffer changed while the model answered writes nothing and counts nothing", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, BUY_ANSWER);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const target = join(root, "keylang/flows/buying.md");
+  const store = join(root, ".keylang/proposals/keylang/flows/buying.md");
+  // The target appears on disk meanwhile: kept, no proposal.
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md", mode: "llm" });
+  await model.requested(1);
+  writeFileSync(target, BUYING_SPEC);
+  model.release();
+  await s.app.idle();
+  let result = draftRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, ["keylang/flows/buying.md: created on disk while the proposal was prepared; nothing written"]);
+  assert.equal(readFileSync(target, "utf8"), BUYING_SPEC);
+  assert.ok(!existsSync(store));
+  assert.deepEqual(draftCounts(root), {});
+  // Someone else's proposal appears meanwhile: it is kept.
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md", mode: "llm" });
+  await model.requested(2);
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, "# flow foreign\n");
+  model.release();
+  await s.app.idle();
+  result = draftRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.match(result.payload.refused.join("\n"), /\.keylang\/proposals\/keylang\/flows\/buying\.md: .*while the proposal was prepared/);
+  assert.equal(readFileSync(store, "utf8"), "# flow foreign\n");
+  assert.deepEqual(draftCounts(root), {});
+  rmSync(join(root, ".keylang/proposals"), { recursive: true });
+  // Ctrl+Space, then the flow's own buffer is edited before the answer: the text stays, no proposal.
+  s.app.state.cursor = { line: 5, col: 0 };
+  s.send(KEY.ctrlSpace);
+  await model.requested(3);
+  const agentRecord = s.app.state.records.at(-1)!;
+  assert.equal(agentRecord.action, "agent-draft");
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const typed = s.app.state.buffers.get(FLOW_PATH)!.text;
+  model.release();
+  await s.app.idle();
+  result = draftRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, [`${FLOW_PATH}: edited in this session while the draft was prepared; save or undo the edits, then draft again`]);
+  assert.ok(!existsSync(join(root, ".keylang/proposals", FLOW_PATH)));
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, typed);
+  assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), CHECKOUT_FLOW);
+  assert.notEqual(s.app.state.mode, "merge");
+  assert.deepEqual(draftCounts(root), {});
+});
+
+test("tui: without a model the form drafts hybrid as algo and says so, as the CLI does; llm is refused before it runs", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "draft flow") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.draft?.mode, "algo", "no model: the form starts on algo");
+  draftField(s, "trigger", "application.purchase.buy");
+  draftRow(s, "mode");
+  s.send(KEY.right);
+  assert.equal(s.app.state.prompt?.draft?.mode, "hybrid");
+  assert.match(s.app.state.prompt?.note ?? "", /no model configured .*hybrid drafts from the snapshot only, as algo, and says so/);
+  assert.match(s.text(), /draft flow · hybrid/);
+  s.send(KEY.right);
+  assert.equal(s.app.state.prompt?.draft?.mode, "llm");
+  draftRow(s, "run");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "draft-flow", "the form stays");
+  assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], "mode");
+  assert.match(s.app.state.message ?? "", /--mode llm needs a model: set `agent` in keylang\.json/);
+  assert.equal(s.app.state.records.length, 0);
+  s.send("\x1b[D");
+  assert.equal(s.app.state.prompt?.draft?.mode, "hybrid");
+  draftRow(s, "output");
+  s.send(KEY.right);
+  draftRow(s, "run");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = draftRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["completed", 0]);
+  assert.equal(result.payload.mode, "algo");
+  assert.equal(result.payload.model, null);
+  assert.match(result.payload.fallback ?? "", /^no model configured: set `agent` in keylang\.json.*; drafting from the snapshot only \(--mode algo\)$/);
+  const cli = cliDraft(root, ["application.purchase.buy", "--mode", "hybrid", "--print"]);
+  assert.equal(result.payload.candidate.flow, cli.stdout);
+  assert.equal(cli.stderr, `keylang: ${result.payload.fallback}\n`);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Draft flow · algo \(hybrid without a model\) · application\.purchase\.buy/);
+  assert.match(s.text(), /drafting from the snapshot only \(--mode algo\)/);
 });

@@ -25,7 +25,7 @@ import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATI
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
-import { contextPack, type ContextPack } from "../agent-context.ts";
+import { contextPack, contextText, type ContextPack } from "../agent-context.ts";
 import type { CheckResult } from "../check-results.ts";
 import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
@@ -38,7 +38,7 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CommitGate, type DraftFlowRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -219,7 +219,6 @@ export class App {
         buffer: () => this.buffer(),
         contextPack: () => this.contextPack(),
         edit: (change) => this.edit(change),
-        openProposal: (path) => this.merges.open(path),
         track: (work) => this.track(work),
         settled: () => this.wake(),
         draw: () => this.draw(),
@@ -1171,7 +1170,7 @@ export class App {
     if (event.name === "enter" && event.alt) return this.goToSpec(this.idAtCursor());
     if (event.ctrl && event.name === "o") return this.goBack();
     if (event.ctrl && event.name === "g") return this.textToSpec();
-    if (event.ctrl && event.name === "space") return this.assist.agentDraft();
+    if (event.ctrl && event.name === "space") return this.draftAtCursor();
     if (event.ctrl && event.name === "r") {
       // A recording started in the editor is stopped from anywhere.
       if (this.assist.recordingNow) return this.assist.voice();
@@ -1868,6 +1867,8 @@ export class App {
     this.state.records.push(record);
     this.state.activeOperation = record.id;
     this.state.message = `${label}: running…`;
+    // One explicit operation at a time: no ghost request is made (or shown) until it ends.
+    this.assist.suspendGhost();
     const controller = new AbortController();
     // The first outcome wins: a result after Cancel, or a second one, never changes the record.
     const settle = (result: OperationResult): void => {
@@ -1905,13 +1906,28 @@ export class App {
     // The session's analyzer serves an operation run on this thread; the worker has its own.
     let work: Promise<OperationResult>;
     try {
-      const beforeCommit = (): void => this.beginCommit(record);
+      const beforeCommit = (): CommitGate => {
+        this.beginCommit(record);
+        return this.commitGate(request);
+      };
       work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress, ...(WRITING_KINDS.has(request.kind) ? { beforeCommit } : {}) });
     } catch (error) {
       work = Promise.reject(error);
     }
     this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
+  }
+
+  /**
+   * The session's answer before a commit: a draft's target edited in a buffer
+   * while the draft was prepared keeps its text and gets no proposal (the
+   * proposal would be judged against the disk under unsaved edits).
+   */
+  private commitGate(request: OperationRequest): CommitGate {
+    if (request.kind !== "draft-flow" || request.output !== "proposal") return;
+    const { target } = this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" });
+    const buffer = this.state.buffers.get(target);
+    if (buffer && isDirty(buffer)) return { refused: [`${target}: edited in this session while the draft was prepared; save or undo the edits, then draft again`] };
   }
 
   /** Cancel (palette, `x` in F6): the running operation ends as cancelled with exit code null. Esc never does this. */
@@ -2489,20 +2505,78 @@ export class App {
     this.requestOperation("trace-plan", { kind: "trace-plan", root: this.state.root, flow });
   }
 
-  // ---------- draft flow (algo) ----------
+  // ---------- draft flow (algo, hybrid, llm) ----------
 
   /**
    * The draft-flow form (design §2.4): the fn under the cursor, else the
    * trigger of the flow under the cursor, is the visible default; name and
    * target stay empty for the CLI's defaults, shown next to them. The output
-   * is a proposal unless preview is chosen.
+   * is a proposal unless preview is chosen; the mode is the CLI's default
+   * (hybrid) when a model is configured, else algo.
    */
   private openDraftPrompt(): void {
     const snapshot = this.state.analysis?.snapshot ?? null;
     const id = this.state.mode === "merge" ? null : this.idAtCursor();
     const trigger = id !== null && snapshot?.nodes[id]?.kind === "fn" ? id : (this.triggerAtCursor() ?? "");
-    this.state.prompt = { kind: "draft-flow", text: "", items: [], ids: [], index: 0, draft: { trigger, name: "", into: "", output: "proposal" } };
+    const mode = this.agentName() !== null ? "hybrid" : "algo";
+    this.state.prompt = { kind: "draft-flow", text: "", items: [], ids: [], index: 0, draft: { trigger, name: "", into: "", mode, output: "proposal" } };
     this.refreshDraftPrompt();
+  }
+
+  /** The `agent` of the saved keylang.json as the last analysis read it, or null. Credentials are checked by the operation. */
+  private agentName(): string | null {
+    return this.state.analysis?.config.agent ?? null;
+  }
+
+  /**
+   * `Ctrl+Space` in the view: the agent drafts the flow under the cursor
+   * into this file — hybrid, with the context pack as F4 shows it now — as
+   * the session's draft-flow operation. It needs a model (never a silent
+   * algo draft). The request is frozen here: a file opened or a context item
+   * changed later is neither in the prompt nor the target, and the proposal
+   * opens as MERGE only while the session is still where it was asked.
+   */
+  private draftAtCursor(): void {
+    const buffer = this.buffer();
+    const analysis = this.state.analysis;
+    if (!buffer || !analysis?.snapshot) {
+      this.state.message = analysis ? "no spec open" : "analysis is still running";
+      return;
+    }
+    if (this.state.activeOperation !== null) {
+      this.state.message = "an operation is already running";
+      return;
+    }
+    // The draft is proposed against the file on disk; unsaved edits would come back as hunks that revert them.
+    if (isDirty(buffer)) {
+      this.state.message = `${buffer.path} has unsaved changes: save (Ctrl+S) or undo them before asking for a draft`;
+      return;
+    }
+    if (this.proposalWaiting(buffer.path)) {
+      this.state.message = `a proposal for ${buffer.path} is waiting: m merges it before a new draft`;
+      return;
+    }
+    const name = this.flowAtCursor();
+    const trigger = name === null ? null : this.triggerAtCursor();
+    if (name === null || trigger === null) {
+      this.state.message = "Ctrl+Space drafts a flow: put the cursor in a `# flow` with a `trigger`";
+      return;
+    }
+    const pack = this.contextPack();
+    const request: DraftFlowRequest = { kind: "draft-flow", root: this.state.root, trigger, name, into: buffer.path, output: "proposal", pending: "refuse", mode: "hybrid", ...(pack ? { context: contextText(pack) } : {}) };
+    this.state.message = `agent: drafting flow ${name}…`;
+    const work = (async () => {
+      const { llmClient } = await import("../llm.ts");
+      const setup = llmClient(analysis.config.agent);
+      if ("missing" in setup) {
+        this.state.message = `agent: ${setup.missing}`;
+        return;
+      }
+      if (!this.closed) this.requestOperation(AGENT_DRAFT, request);
+    })().catch((error: unknown) => {
+      this.state.message = `agent: ${errorText(error)}`;
+    });
+    this.track(work);
   }
 
   /** The `trigger` of the flow section under the cursor, or null. */
@@ -2540,6 +2614,7 @@ export class App {
       const hint = this.state.analysis?.index.suggest(trigger);
       return { field: "trigger", text: `\`${trigger}\` is not a fn of the current snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}` };
     }
+    if (form.mode === "llm" && this.agentName() === null) return { field: "mode", text: "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts from the snapshot without one)" };
     if (form.output === "preview") return null;
     const { target } = this.draftTarget(form);
     const problem = proposalProblem(this.state.root, this.merges.specDir(), target, (path) => this.generatedDoc(path));
@@ -2574,16 +2649,29 @@ export class App {
       ...matches.map((id) => ({ id: `fn:${id}`, text: `    fn ${id}` })),
       { id: "name", text: `name:    ${form.name}${caret("name")}${form.name.trim() === "" ? `  (default ${name || "the trigger's last segment"})` : ""}` },
       { id: "into", text: `target:  ${form.into}${caret("into")}${form.into.trim() === "" ? `  (default ${target})` : ""}` },
+      { id: "mode", text: `mode:    ${form.mode} · ←→ ${DRAFT_MODES[(DRAFT_MODES.indexOf(form.mode) + 1) % DRAFT_MODES.length]}` },
       { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
       { id: "run", text: form.output === "proposal" ? `Create the proposal ${PROPOSALS_DIR}/${target} (the target itself is not written)` : "Preview the draft (writes nothing)" },
     ];
     prompt.ids = rows.map((row) => row.id);
     prompt.items = rows.map((row) => row.text);
     prompt.index = Math.max(0, prompt.ids.indexOf(selected));
-    prompt.details = [`root: ${this.state.root} · the target is relative to it · algo: only the calls the snapshot resolved`];
+    prompt.details = [`root: ${this.state.root} · the target is relative to it · ${form.mode === "algo" ? "algo: only the calls the snapshot resolved" : "the model's steps are marked agree, llm-only or conflict; never evidence"}`];
     const now = prompt.ids[prompt.index]!;
     const problem = this.draftProblem(form);
+    const agent = this.agentName();
     if (now.startsWith("fn:")) prompt.note = `Enter takes ${now.slice(3)} as the trigger`;
+    else if (now === "mode")
+      prompt.note =
+        form.mode === "algo"
+          ? "algo: only the calls the snapshot resolved; no model"
+          : agent === null
+            ? form.mode === "hybrid"
+              ? "no model configured (agent in keylang.json): hybrid drafts from the snapshot only, as algo, and says so"
+              : (problem?.text ?? "")
+            : form.mode === "hybrid"
+              ? `${agent} drafts with the context pack (F4); the steps it missed come from the snapshot`
+              : `${agent} drafts with the context pack (F4); each step is judged against the snapshot`;
     else if (now === "trigger") {
       const trigger = form.trigger.trim();
       const snapshot = this.state.analysis?.snapshot ?? null;
@@ -2600,11 +2688,14 @@ export class App {
     else prompt.note = form.output === "proposal" ? "Enter proposes; MERGE applies it hunk by hunk" : "Enter shows the draft in F6; nothing is written";
   }
 
-  /** ←→ on the output row: proposal or preview. */
-  private changeDraftOutput(): void {
+  /** ←→ on the mode row (algo, hybrid, llm) or the output row (proposal or preview). */
+  private changeDraftChoice(delta: -1 | 1): void {
     const prompt = this.state.prompt;
-    if (prompt?.kind !== "draft-flow" || !prompt.draft || prompt.ids?.[prompt.index] !== "output") return;
-    prompt.draft.output = prompt.draft.output === "proposal" ? "preview" : "proposal";
+    const row = prompt?.ids?.[prompt.index];
+    if (prompt?.kind !== "draft-flow" || !prompt.draft) return;
+    if (row === "mode") prompt.draft.mode = DRAFT_MODES[(DRAFT_MODES.indexOf(prompt.draft.mode) + delta + DRAFT_MODES.length) % DRAFT_MODES.length]!;
+    else if (row === "output") prompt.draft.output = prompt.draft.output === "proposal" ? "preview" : "proposal";
+    else return;
     this.refreshDraftPrompt();
   }
 
@@ -2636,6 +2727,8 @@ export class App {
     }
     const name = form.name.trim();
     const into = form.into.trim();
+    // The model sees the context pack as F4 shows it now: taken once, before anything else opens.
+    const pack = form.mode === "algo" ? null : this.contextPack();
     this.state.prompt = null;
     this.requestOperation("draft-flow", {
       kind: "draft-flow",
@@ -2645,6 +2738,8 @@ export class App {
       ...(into !== "" ? { into: toPosix(into) } : {}),
       output: form.output,
       pending: "refuse",
+      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
+      ...(pack ? { context: contextText(pack) } : {}),
     });
   }
 
@@ -2656,15 +2751,22 @@ export class App {
   private afterDraft(record: OperationRecord, origin: DraftOrigin): void {
     const result = record.result;
     if (result?.kind !== "draft-flow" || result.status !== "completed" || result.payload?.proposal == null) return;
-    const target = result.payload.candidate.target;
+    const { candidate, model } = result.payload;
+    const target = candidate.target;
+    // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
+    const notes = model === null ? "" : [...(model.unknown.length > 0 ? [`still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}`] : []), ...(model.dropped.length > 0 ? [`dropped from the model's draft: ${model.dropped.join("; ")}`] : [])].join("; ");
+    const agent = record.action === AGENT_DRAFT;
     const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null ? true : this.state.buffers.get(origin.path)?.version === origin.version);
     const free = this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.results.open && !this.state.help;
     if (current && free) {
       this.merges.open(target);
-      if (this.state.merge?.path === target) this.state.message = `draft flow: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}`;
+      if (this.state.merge?.path === target) this.state.message = agent && notes ? `agent: ${notes}` : `${agent ? "agent" : "draft flow"}: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${notes ? ` · ${notes}` : ""}`;
       return;
     }
-    this.state.message = `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE`;
+    // The person moved on (another file, an edit, a merge): the draft waits as a proposal; focus stays where it is.
+    this.state.message = agent
+      ? `agent: the draft of flow ${candidate.name} is a proposal for ${target}: m merges it${notes ? `; ${notes}` : ""}`
+      : `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${notes ? ` · ${notes}` : ""}`;
   }
 
   // ---------- export ----------
@@ -3410,7 +3512,7 @@ export class App {
       if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
       return;
     }
-    if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftOutput();
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
     if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow") && prompt.items.length > 0) {
@@ -3761,6 +3863,12 @@ function proposalSummary(entry: ProposalEntry): string {
   if (entry.problem !== null) parts.push("cannot merge");
   return parts.join(" · ");
 }
+
+/** The record action of a `Ctrl+Space` draft: the draft-flow operation asked for by the agent key, not the form. */
+const AGENT_DRAFT = "agent-draft";
+
+/** The draft form's modes in ←→ order. */
+const DRAFT_MODES = ["algo", "hybrid", "llm"] as const;
 
 /** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
 interface DraftOrigin {

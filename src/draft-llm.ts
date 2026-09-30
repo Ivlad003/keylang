@@ -13,7 +13,7 @@ import { parseConfig, resolveStatic } from "./config.ts";
 import { draftFlow } from "./draft.ts";
 import { formatDocument } from "./fmt.ts";
 import { sectionNodes, walk, type Document, type Node } from "./ir.ts";
-import type { LlmClient } from "./llm.ts";
+import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { isId, parse } from "./parser.ts";
 import { compileSpec, type FlowItem, type Trigger } from "./spec-ir.ts";
 
@@ -43,8 +43,8 @@ const GRAMMAR = `A flow is Markdown:
 
 Two spaces per level. IDs are the dotted IDs of the map below.`;
 
-/** `context`: the pack from the TUI context panel, sent as it is shown. */
-export async function draftFlowWithModel(analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string): Promise<ModelDraft> {
+/** `context`: the pack from the TUI context panel, sent as it is shown; `options.signal` cancels the model's rounds. */
+export async function draftFlowWithModel(analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string, options: LlmCallOptions = {}): Promise<ModelDraft> {
   const snapshot = analysis.snapshot!;
   const algo = draftFlow(snapshot, trigger, name !== undefined ? { name } : {});
   const system = [
@@ -59,7 +59,7 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
     ...similarFlows(analysis.docs, algo.steps).map((flow, i) => `Flow ${i + 1} of this repository:\n\`\`\`markdown\n${flow}\n\`\`\``),
     ...(context ? [`Context chosen by the developer:\n${context}`] : []),
   ].join("\n\n");
-  let text = flowText(await client.complete({ system, prompt, maxTokens: 4096 }), algo.name);
+  let text = flowText(await client.complete({ system, prompt, maxTokens: 4096 }, options), algo.name);
   const unknown = unknownIn(analysis, text);
   let rounds = 1;
   if (unknown.length > 0) {
@@ -69,7 +69,7 @@ export async function draftFlowWithModel(analysis: Analysis, trigger: string, cl
       return `- \`${id}\` is not an ID of the map${near ? `; did you mean \`${near}\`?` : ""} Use a real ID, or declare \`planned fn ${id} …\` in the flow.`;
     });
     const retry = `${prompt}\n\nYour draft:\n\`\`\`markdown\n${text}\`\`\`\n\nProblems:\n${problems.join("\n")}\n\nAnswer with the corrected flow only.`;
-    text = flowText(await client.complete({ system, prompt: retry, maxTokens: 4096 }), algo.name);
+    text = flowText(await client.complete({ system, prompt: retry, maxTokens: 4096 }, options), algo.name);
     rounds = 2;
   }
   const reconciled = reconcile(analysis, text, algo, trigger, mode, client.agent);

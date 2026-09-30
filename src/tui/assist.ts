@@ -1,23 +1,17 @@
-// What a model or a microphone adds to a session: ghost text, voice, and the
-// agent's draft of a flow (`Ctrl+Space` in the view). Each finishes later
-// than it was asked for, so each remembers where it was asked — the buffer,
-// its text version and the mode — and lands only while that is still where
-// the person is (review 2026-09-28): a ghost line is not taken into another
-// file, speech does not go into a buffer opened since, and a draft does not
-// replace a merge in progress or a proposal written meanwhile.
+// What a model or a microphone adds to a session: ghost text and voice. Each
+// finishes later than it was asked for, so each remembers where it was asked
+// — the buffer, its text version and the mode — and lands only while that is
+// still where the person is (review 2026-09-28): a ghost line is not taken
+// into another file, and speech does not go into a buffer opened since. The
+// agent's draft of a flow (`Ctrl+Space` in the view) is the session's
+// draft-flow operation; while any explicit operation runs, ghost requests
+// are suspended.
 
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { Analysis } from "../analyze.ts";
 import type { ContextPack } from "../agent-context.ts";
-import { contextText } from "../agent-context.ts";
-import { withFlow } from "../draft.ts";
 import { ghostSignal, ghostSuggestions } from "../ghost.ts";
-import { compileSpec } from "../spec-ir.ts";
-import { PROPOSALS_DIR, writeProposal } from "../proposals.ts";
-import { addDrafts, updateStats } from "../stats.ts";
+import { updateStats } from "../stats.ts";
 import { glossary, speechToSpec, transcribeOpenRouter, voiceEngine } from "../voice.ts";
-import { docOf, isDirty } from "./buffer.ts";
 import { errorText } from "./merge-session.ts";
 import type { Buffer, Cursor, Mode, State } from "./state.ts";
 import { graphemes } from "./width.ts";
@@ -31,8 +25,6 @@ export interface AssistHost {
   buffer(): Buffer | null;
   contextPack(): ContextPack | null;
   edit(change: (lines: string[], cursor: Cursor) => void): void;
-  /** Opens the proposal of `path` as MERGE. */
-  openProposal(path: string): void;
   /** Work the session waits for in `idle()`; the frame is drawn when it settles. */
   track(work: Promise<void>): void;
   /** A timer of this module stopped: `idle()` may resolve. */
@@ -117,18 +109,28 @@ export class Assist {
     this.host.settled();
   }
 
-  /** After a pause with the cursor on a new flow item, ask the agent for one next line. */
+  /**
+   * An explicit operation starts: a ghost request waiting for its pause is
+   * not made, and one already asked is not shown when it answers.
+   */
+  suspendGhost(): void {
+    this.stopGhostTimer();
+    this.ghostRequest++;
+  }
+
+  /** After a pause with the cursor on a new flow item, ask the agent for one next line; never while an operation runs. */
   ghostSoon(): void {
     this.stopGhostTimer();
     const buffer = this.host.buffer();
     const analysis = this.state.analysis;
-    if (!buffer || !analysis?.snapshot || !analysis.config.agent || this.state.completion) return;
+    if (!buffer || !analysis?.snapshot || !analysis.config.agent || this.state.completion || this.state.activeOperation !== null) return;
     const { line, col } = this.state.cursor;
     if (!ghostSignal(buffer.path, buffer.text, line, col)) return;
     const spot = this.spot(buffer);
     const request = ++this.ghostRequest;
     this.ghostTimer = setTimeout(() => {
       this.ghostTimer = null;
+      if (request !== this.ghostRequest || this.state.activeOperation !== null) return this.host.settled();
       const text = buffer.text;
       const work = (async () => {
         const { llmClient } = await import("../llm.ts");
@@ -136,7 +138,7 @@ export class Assist {
         if ("missing" in setup) return;
         const variants = await ghostSuggestions(analysis, setup.client, buffer.path, text, line, this.host.contextPack());
         // The person typed on, moved, or a newer request was made meanwhile: a suggestion for older text is not shown.
-        if (request !== this.ghostRequest || !this.at(spot) || this.state.cursor.line !== line || variants.length === 0) return;
+        if (request !== this.ghostRequest || this.state.activeOperation !== null || !this.at(spot) || this.state.cursor.line !== line || variants.length === 0) return;
         this.state.ghost = { path: spot.path, version: spot.version, line, variants, index: 0, shown: Date.now() };
         countSuggestion(this.state.root, "ghost", "proposed", null);
       })().catch((error: unknown) => {
@@ -267,85 +269,5 @@ export class Assist {
       }
     });
     this.state.message = `voice: ${text.trim()}`;
-  }
-
-  // ---------- the agent's draft ----------
-
-  /**
-   * `Ctrl+Space` in the view: the agent drafts the flow under the cursor
-   * (hybrid, with the context panel's pack), the draft becomes the file's
-   * proposal and opens as MERGE. Nothing is written before `a` and `w`, and
-   * an existing proposal of the file is never overwritten.
-   */
-  agentDraft(): void {
-    const buffer = this.host.buffer();
-    const analysis = this.state.analysis;
-    if (!buffer || !analysis?.snapshot) {
-      this.state.message = analysis ? "no spec open" : "analysis is still running";
-      return;
-    }
-    // The draft is proposed against the file on disk; unsaved edits would come back as hunks that revert them.
-    if (isDirty(buffer)) {
-      this.state.message = `${buffer.path} has unsaved changes: save (Ctrl+S) or undo them before asking for a draft`;
-      return;
-    }
-    const proposal = join(this.state.root, PROPOSALS_DIR, buffer.path);
-    if (existsSync(proposal)) {
-      this.state.message = `a proposal for ${buffer.path} is waiting: m merges it before a new draft`;
-      return;
-    }
-    const doc = buffer.doc ?? docOf(buffer.path, buffer.text);
-    const line = this.state.cursor.line + 1;
-    const sections = (doc?.sections ?? []).filter((section) => section.heading !== null);
-    const section = sections.filter((s) => s.heading!.span.start.line <= line).at(-1);
-    let trigger: string | null = null;
-    if (doc && section?.kind === "flow" && section.name) {
-      const heading = section.name;
-      const flow = compileSpec([doc]).spec.flows.find((item) => item.name === heading.value && item.span.start.offset === heading.span.start.offset);
-      trigger = flow?.triggers[0]?.target.target ?? null;
-    }
-    if (!section || section.kind !== "flow" || !section.name || trigger === null) {
-      this.state.message = "Ctrl+Space drafts a flow: put the cursor in a `# flow` with a `trigger`";
-      return;
-    }
-    const name = section.name.value;
-    const from: string = trigger;
-    const spot = this.spot(buffer);
-    const saved = buffer.saved;
-    this.state.message = `agent: drafting flow ${name}…`;
-    const work = (async () => {
-      const { llmClient } = await import("../llm.ts");
-      const setup = llmClient(analysis.config.agent);
-      if ("missing" in setup) throw new Error(setup.missing);
-      const { draftFlowWithModel } = await import("../draft-llm.ts");
-      const pack = this.host.contextPack();
-      const draft = await draftFlowWithModel(analysis, from, setup.client, "hybrid", name, pack ? contextText(pack) : undefined);
-      if (existsSync(proposal)) {
-        this.state.message = `agent: a proposal for ${buffer.path} was written meanwhile; the draft is dropped (m merges that one)`;
-        return;
-      }
-      writeProposal(this.state.root, buffer.path, withFlow(saved, draft));
-      try {
-        updateStats(this.state.root, (stats) => addDrafts(stats, draft.counts, "proposed"));
-      } catch {
-        // The count is lost, not the draft.
-      }
-      if (this.host.closed) return;
-      // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
-      const notes = [
-        ...(draft.unknown.length > 0 ? [`still unknown after ${draft.rounds} round(s): ${draft.unknown.join(", ")}`] : []),
-        ...(draft.dropped.length > 0 ? [`dropped from the model's draft: ${draft.dropped.join("; ")}`] : []),
-      ].join("; ");
-      // The person moved on (another file, an edit, a merge): the draft waits as a proposal.
-      if (!this.at(spot) || this.state.merge) {
-        this.state.message = `agent: the draft of flow ${name} is a proposal for ${buffer.path}: m merges it${notes ? `; ${notes}` : ""}`;
-        return;
-      }
-      this.host.openProposal(buffer.path);
-      if (this.state.mode === "merge" && notes) this.state.message = `agent: ${notes}`;
-    })().catch((error: unknown) => {
-      this.state.message = `agent: ${errorText(error)}`;
-    });
-    this.host.track(work);
   }
 }

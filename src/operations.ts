@@ -19,7 +19,7 @@ import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
-import type { Document } from "./ir.ts";
+import { sectionNodes, walk, type Document } from "./ir.ts";
 import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
@@ -28,7 +28,9 @@ import { draftFlow, withFlow, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
-import type { LlmSetup } from "./llm.ts";
+import type { LlmClient, LlmSetup } from "./llm.ts";
+import type { DraftStatus } from "./draft-llm.ts";
+import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan } from "./map.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { sha256, type CoverageItem } from "./snapshot.ts";
@@ -220,8 +222,12 @@ export interface TracePlanRequest {
 }
 
 /**
- * A flow drafted from the snapshot's call edges (`keylang draft flow
- * <trigger> --mode algo`): only what the edges show, no model. `preview`
+ * A flow drafted for a trigger (`keylang draft flow <trigger> --mode
+ * algo|llm|hybrid`): `algo` is only what the snapshot's call edges show;
+ * `llm` and `hybrid` ask the configured model and judge its answer against
+ * those edges (`draftFlowWithModel`: agree, llm-only, conflict; hybrid adds
+ * the steps the model missed). Without a model `hybrid` drafts as `algo`
+ * with a visible note and `llm` fails. `preview`
  * computes the candidate and writes nothing (`--print`: no proposal, no
  * stats, not the target); `proposal` writes the target's full proposed text
  * to `.keylang/proposals/<target>`. The target itself is never written: MERGE
@@ -238,6 +244,13 @@ export interface DraftFlowRequest {
   /** The target spec, relative to the root, POSIX; default `<dir>/flows/<name>.md`. */
   into?: string;
   output: "preview" | "proposal";
+  /** Default `algo`: no model. */
+  mode?: "algo" | "llm" | "hybrid";
+  /**
+   * What the developer chose to show the model (the TUI's context pack), as
+   * text taken when the draft started; a model mode only.
+   */
+  context?: string;
   /**
    * A proposal already waiting for the target when the draft starts:
    * `replace` overwrites it (the CLI's policy), `refuse` writes nothing (the
@@ -302,10 +315,15 @@ export interface OperationContext {
    * A writing operation calls this once, after everything is computed and
    * before its first file step; nothing is written before it resolves. A
    * session defers its analysis and conflicting saves from here on; a signal
-   * aborted by then cancels the operation with nothing written.
+   * aborted by then cancels the operation with nothing written. The answer
+   * may refuse the write with reasons (draft-flow reads it: failed, code 1,
+   * nothing written).
    */
-  beforeCommit?: () => Promise<void> | void;
+  beforeCommit?: () => Promise<CommitGate> | CommitGate;
 }
+
+/** The caller's answer before a commit: nothing (go ahead) or the reasons the files must stay as they are. */
+export type CommitGate = void | { refused: string[] };
 
 export type OperationStatus = "completed" | "failed" | "cancelled";
 
@@ -525,18 +543,37 @@ export interface FlowCandidate {
   text: string | null;
 }
 
-/** What `keylang draft flow --mode algo` drafted, and the proposal it wrote. */
+/** What `keylang draft flow` drafted, and the proposal it wrote. */
 export interface DraftFlowPayload {
   output: "preview" | "proposal";
+  /** The mode that drafted it: `algo` also for a hybrid without a model (see `fallback`). */
+  mode: "algo" | "llm" | "hybrid";
   candidate: FlowCandidate;
-  /** `3 step(s)`, as the CLI names the draft. */
+  /** `3 step(s)` for algo, `2 agree, 1 llm-only` for a model draft, as the CLI names the draft. */
   summary: string;
+  /** The model's draft beyond its text; null for algo. Its statuses are provenance, never evidence. */
+  model: DraftModelInfo | null;
+  /** A hybrid without a model: why, as the CLI says it before it drafts from the snapshot only. */
+  fallback: string | null;
+  /** The model's counts could not go to `.keylang/stats.json`: why. The proposal stays written. */
+  statsError: string | null;
   /** The proposal file written (`.keylang/proposals/<target>`), or null. */
   proposal: string | null;
   /** Why nothing was written: a pending proposal, or a target or proposal changed during the work. */
   refused: string[];
   /** The write failed with this error. */
   error: string | null;
+}
+
+/** What the model's draft adds to its text: who drafted it, how its steps compare with the snapshot, what it left out. */
+export interface DraftModelInfo {
+  agent: string;
+  counts: Record<DraftStatus, number>;
+  /** IDs still unknown after the second round (K001 after a merge unless declared planned). */
+  unknown: string[];
+  rounds: number;
+  /** Items of the answer left out: `- line: why`. */
+  dropped: string[];
 }
 
 /** What `keylang wire [--check]` found and did. The path is POSIX, relative to the root. */
@@ -1895,17 +1932,22 @@ export function flowCandidate(root: string, specDir: string, generated: (path: s
 }
 
 /**
- * `keylang draft flow <trigger> --mode algo`. Compute: the analysis of the
- * saved files (nothing persisted), the trigger must be a fn, `draftFlow`,
- * then the candidate against the target on disk. A preview ends there (0).
- * A proposal: a target a proposal may not change is 2, as in the CLI; a
- * waiting proposal with `pending: refuse` is 1, nothing written. After
- * `beforeCommit` the target and the waiting proposal must still be the ones
- * read (else 1, nothing written); then the full text is written atomically
- * (0; 2 on an I/O error). Cancelled: null, nothing written.
+ * `keylang draft flow <trigger> [--mode algo|llm|hybrid]`. Compute: the
+ * analysis of the saved files (nothing persisted), the trigger must be a fn,
+ * then the draft — `draftFlow`, or the model's (`llm`; `hybrid`, which drafts
+ * as algo with a note when no model is configured) — then the candidate
+ * against the target on disk. A preview ends there (0). A proposal: a target
+ * a proposal may not change is 2, as in the CLI; a waiting proposal with
+ * `pending: refuse` is 1, nothing written. After `beforeCommit` (which may
+ * refuse) the target, the waiting proposal, keylang.json and the sources
+ * must still be the ones read (else 1, nothing written); then the full text
+ * is written atomically (0; 2 on an I/O error) and a model draft's counts go
+ * to the stats. Cancelled — during the model's answer too: null, nothing
+ * written, not even the stats.
  */
 async function runDraftFlow(request: DraftFlowRequest, context: OperationContext): Promise<OperationEnvelope<"draft-flow">> {
   const { root, trigger } = request;
+  const mode = request.mode ?? "algo";
   if (!isAbsolute(root)) return emptyDraftFlow("failed", 2, "draft flow: root must be an absolute path");
   if (trigger === "") return emptyDraftFlow("failed", 2, "draft flow: a trigger id is required");
   if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
@@ -1923,58 +1965,165 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
     const hint = analyzed.index.suggest(trigger);
     return emptyDraftFlow("failed", 2, `draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
   }
-  const draft = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
+  // What the draft was computed from: a commit checks that keylang.json and the sources are still these.
+  const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
+  const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
+  const setup = await modelSetup(mode, analyzed);
+  if ("error" in setup) return emptyDraftFlow("failed", 2, setup.error);
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
-  let candidate: FlowCandidate;
+  // The target and its waiting proposal as they are now, before the model answers: the basis of the write.
+  let basis: FlowCandidate;
   try {
-    candidate = flowCandidate(root, specDir, generated, draft, request.into);
+    basis = flowCandidate(root, specDir, generated, algo, request.into);
   } catch (error) {
     return emptyDraftFlow("failed", 2, messageOf(error));
   }
-  const payload: DraftFlowPayload = { output: request.output, candidate, summary: `${draft.steps.length} step(s)`, proposal: null, refused: [], error: null };
-  if (request.output === "preview") {
-    return { ...emptyDraftFlow("completed", 0), payload, messages: [{ level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
+  // A refusal before the model is asked: the payload is the algo candidate, so the target's state stays visible.
+  const early = (exitCode: 1 | 2, error: string, refused: string[] = []): OperationEnvelope<"draft-flow"> => ({
+    ...emptyDraftFlow("failed", exitCode),
+    payload: { output: request.output, mode: setup.client === null ? "algo" : mode, candidate: basis, summary: `${algo.steps.length} step(s)`, model: null, fallback: setup.fallback, statsError: null, proposal: null, refused, error: null },
+    messages: [
+      ...(setup.fallback === null ? [] : [{ level: "warning" as const, text: setup.fallback }]),
+      { level: "error", text: error },
+      ...(refused.length > 0 ? [{ level: "info" as const, text: "nothing was written; the target and any proposal waiting for it are kept" }] : []),
+    ],
+  });
+  const store = `${PROPOSALS_DIR}/${basis.target}`;
+  if (request.output === "proposal") {
+    // Checked before the model is asked: a target that cannot take the proposal costs no request.
+    if (basis.problem !== null) return early(2, `draft: ${basis.target}: ${basis.problem}`);
+    const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
+    if (storeProblem !== null) return early(2, `${store}: ${storeProblem}`);
+    if ((request.pending ?? "refuse") === "refuse" && basis.pending !== null) {
+      const waiting = `${store}: a proposal for ${basis.target} is waiting; merge it (m) or remove it before a new draft`;
+      return early(1, waiting, [waiting]);
+    }
   }
-  if (candidate.problem !== null) return { ...emptyDraftFlow("failed", 2, `draft: ${candidate.target}: ${candidate.problem}`), payload };
-  const store = `${PROPOSALS_DIR}/${candidate.target}`;
-  const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
-  if (storeProblem !== null) return { ...emptyDraftFlow("failed", 2, `${store}: ${storeProblem}`), payload };
+  let draft: FlowDraft = algo;
+  let model: DraftModelInfo | null = null;
+  if (setup.client !== null) {
+    const drafted = await modelDraft(request, mode === "llm" ? "llm" : "hybrid", analyzed, setup.client, context);
+    if ("cancelled" in drafted) return emptyDraftFlow("cancelled", null);
+    if ("error" in drafted) return emptyDraftFlow("failed", 2, drafted.error);
+    ({ draft, model } = drafted);
+  }
+  const candidate: FlowCandidate = model === null ? basis : { ...basis, flow: draft.text, steps: draft.steps, text: basis.problem === null ? withFlow(basis.before, draft) : null };
+  const summary = model === null ? `${draft.steps.length} step(s)` : draftCountsText(model.counts);
+  const payload: DraftFlowPayload = { output: request.output, mode: model === null ? "algo" : mode, candidate, summary, model, fallback: setup.fallback, statsError: null, proposal: null, refused: [], error: null };
+  const notes = draftNotes(payload);
+  if (request.output === "preview") {
+    return { ...emptyDraftFlow("completed", 0), payload, messages: [...notes, { level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
+  }
+  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"draft-flow"> => ({ ...emptyDraftFlow("failed", exitCode), payload, messages: [...notes, ...messages] });
   const refuse = (reasons: string[]): OperationEnvelope<"draft-flow"> => {
     payload.refused = reasons;
-    return { ...emptyDraftFlow("failed", 1), payload, messages: [...reasons.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; the proposal waiting there is kept" }] };
+    return failed(1, [...reasons.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" }]);
   };
-  if ((request.pending ?? "refuse") === "refuse" && candidate.pending !== null) return refuse([`${store}: a proposal for ${candidate.target} is waiting; merge it (m) or remove it before a new draft`]);
   context.onProgress?.({ text: "waiting to write" });
+  let gate: CommitGate;
   try {
-    await context.beforeCommit?.();
+    gate = await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyDraftFlow("failed", 2, messageOf(error)), payload };
+    return failed(2, [{ level: "error", text: messageOf(error) }]);
   }
   if (context.signal?.aborted) return { ...emptyDraftFlow("cancelled", null), payload };
-  const basis = { target: candidate.before, proposal: candidate.pending };
-  let problem: string | null;
+  if (gate && gate.refused.length > 0) return refuse(gate.refused);
+  const expected = { target: candidate.before, proposal: candidate.pending };
+  let problems: string[];
   try {
     const target = proposalProblem(root, specDir, candidate.target, generated);
-    problem = target !== null ? `${candidate.target}: ${target}` : proposalWriteProblem(root, candidate.target, basis);
+    const written = target !== null ? `${candidate.target}: ${target}` : proposalWriteProblem(root, candidate.target, expected);
+    problems = [...(written === null ? [] : [written]), ...sourceInputProblems(analyzed.config, inputs, "the draft")];
   } catch (error) {
-    return { ...emptyDraftFlow("failed", 2, messageOf(error)), payload };
+    return failed(2, [{ level: "error", text: messageOf(error) }]);
   }
-  if (problem !== null) return refuse([problem]);
+  if (problems.length > 0) return refuse(problems);
   context.onProgress?.({ text: `writing ${store}` });
   try {
-    writeProposal(root, candidate.target, candidate.text!, basis);
+    writeProposal(root, candidate.target, candidate.text!, expected);
   } catch (error) {
     payload.error = messageOf(error);
-    return { ...emptyDraftFlow("failed", 2), payload, messages: [{ level: "error", text: payload.error }] };
+    return failed(2, [{ level: "error", text: payload.error }]);
   }
   payload.proposal = store;
+  if (model !== null) {
+    // The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the draft.
+    try {
+      updateStats(root, (stats) => addDrafts(stats, model.counts, "proposed"));
+    } catch (error) {
+      payload.statsError = messageOf(error);
+    }
+  }
   return {
     ...emptyDraftFlow("completed", 0),
     payload,
-    messages: [{ level: "info", text: `${store}: proposed flow \`${draft.name}\` for ${candidate.target} (${payload.summary})` }],
+    messages: [
+      ...notes,
+      ...(payload.statsError === null ? [] : [{ level: "warning" as const, text: `${STATS_FILE} not updated: ${payload.statsError}` }]),
+      { level: "info", text: `${store}: proposed flow \`${draft.name}\` for ${candidate.target} (${payload.summary})` },
+    ],
     proposals: [store],
   };
+}
+
+/**
+ * The model client of a model mode, read before anything is asked: none
+ * configured, and `llm` fails as the CLI does while `hybrid` drafts as algo,
+ * saying why. Algo: no client.
+ */
+async function modelSetup(mode: "algo" | "llm" | "hybrid", analyzed: Analysis): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
+  if (mode === "algo") return { client: null, fallback: null };
+  const { llmClient } = await import("./llm.ts");
+  const setup = llmClient(analyzed.config.agent);
+  if (!("missing" in setup)) return { client: setup.client, fallback: null };
+  if (mode === "llm") return { error: `draft --mode llm: ${setup.missing}` };
+  return { client: null, fallback: `${setup.missing}; drafting from the snapshot only (--mode algo)` };
+}
+
+/** The model's draft, judged against the snapshot; a Cancel during its answer is `cancelled`, never an error. */
+async function modelDraft(request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext): Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> {
+  context.onProgress?.({ text: `asking ${client.agent}` });
+  const { LlmCancelled } = await import("./llm.ts");
+  const { draftFlowWithModel } = await import("./draft-llm.ts");
+  try {
+    const model = await draftFlowWithModel(analyzed, request.trigger, client, mode, request.name, request.context, context.signal ? { signal: context.signal } : {});
+    if (context.signal?.aborted) return { cancelled: true };
+    return {
+      draft: { name: model.name, text: model.text, steps: flowSteps(model.text, request.trigger) },
+      model: { agent: client.agent, counts: model.counts, unknown: model.unknown, rounds: model.rounds, dropped: model.dropped },
+    };
+  } catch (error) {
+    if (error instanceof LlmCancelled || context.signal?.aborted) return { cancelled: true };
+    return { error: messageOf(error) };
+  }
+}
+
+/** The IDs of a drafted flow's trigger and steps in the order they stand, the requested trigger first. */
+function flowSteps(text: string, trigger: string): string[] {
+  const ids = [trigger];
+  for (const section of parse("draft.md", text).sections) {
+    for (const top of sectionNodes(section)) walk(top, (node) => {
+      if (node.kind !== "trigger" && node.kind !== "step") return;
+      for (const ref of node.refs) if (!ids.includes(ref.target)) ids.push(ref.target);
+    });
+  }
+  return ids;
+}
+
+/** `2 agree, 1 llm-only`: the statuses that occur, as the CLI names a model draft. */
+function draftCountsText(counts: Record<string, number>): string {
+  return Object.entries(counts).filter(([, n]) => n > 0).map(([status, n]) => `${n} ${status}`).join(", ");
+}
+
+/** What the draft's text does not show, as the CLI's stderr notes: the fallback, unknown IDs, dropped lines. */
+function draftNotes(payload: DraftFlowPayload): OperationMessage[] {
+  const notes: OperationMessage[] = [];
+  if (payload.fallback !== null) notes.push({ level: "warning", text: payload.fallback });
+  const model = payload.model;
+  if (model !== null && model.unknown.length > 0) notes.push({ level: "warning", text: `still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")} (K001 after the merge unless declared planned)` });
+  for (const line of model?.dropped ?? []) notes.push({ level: "warning", text: `dropped from the model's draft: ${line}` });
+  return notes;
 }
 
 /** The file's text, null when there is none; a directory or an unreadable file throws. */

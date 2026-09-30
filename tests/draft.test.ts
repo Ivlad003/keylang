@@ -633,3 +633,130 @@ test("code-to-spec --since: a moved file and file names outside ASCII count as c
   assert.equal(o.status, 0, o.stderr);
   for (const id of ["domain.замовлення.оплатити", "infra.store.save", "infra.кеш.взяти"]) assert.match(o.stdout, new RegExp(`- trigger ${id.replace(/\./g, "\\.")}`), o.stdout);
 });
+
+/**
+ * A provider stand-in that never finishes on its own: the Messages API holds
+ * the answer, OpenRouter streams one chunk and stalls. `closed` resolves when
+ * the client drops the connection before an answer.
+ */
+async function stalledProvider(t: TestContext, kind: "anthropic" | "openrouter"): Promise<{ url: string; requested: Promise<void>; closed: Promise<void> }> {
+  let requested!: () => void;
+  let closed!: () => void;
+  const requestedP = new Promise<void>((resolve) => (requested = resolve));
+  const closedP = new Promise<void>((resolve) => (closed = resolve));
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      requested();
+      if (kind === "openrouter") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "# flow checkout\n\n- trigger app" } }] })}\n\n`);
+      }
+    });
+    res.on("close", () => {
+      if (!res.writableEnded) closed();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, requested: requestedP, closed: closedP };
+}
+
+test("llm: a caller's Cancel is `cancelled`, a deadline is a timeout; both providers drop the stream and a call without options works as before", async (t) => {
+  const { llmClient, LlmCancelled } = await import("../src/llm.ts");
+  const home = mkdtempSync(join(tmpdir(), "keylang-llm-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const request = { system: "s", prompt: "p", maxTokens: 16 };
+  const envOf = (kind: "anthropic" | "openrouter", url: string, timeout: string): Record<string, string> =>
+    kind === "anthropic" ? { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout } : { OPENROUTER_BASE_URL: url, OPENROUTER_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout };
+  const agentOf = (kind: "anthropic" | "openrouter"): string => (kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model");
+  const clientOf = (kind: "anthropic" | "openrouter", url: string, timeout: string) => {
+    const setup = llmClient(agentOf(kind), envOf(kind, url, timeout), home);
+    assert.ok("client" in setup);
+    return setup.client;
+  };
+  // Success without options: the old callers.
+  const ok = await mockModel(t, ["an answer"]);
+  assert.equal(await clientOf("anthropic", ok.url, "5000").complete(request), "an answer");
+  for (const kind of ["anthropic", "openrouter"] as const) {
+    // Cancel: the request is aborted, the text streamed so far is no answer, and it is not a timeout.
+    const cancelled = await stalledProvider(t, kind);
+    const controller = new AbortController();
+    const call = clientOf(kind, cancelled.url, "60000").complete(request, { signal: controller.signal });
+    await cancelled.requested;
+    controller.abort();
+    const error = await call.then(() => null, (e: unknown) => e);
+    assert.ok(error instanceof LlmCancelled, `${kind}: ${String(error)}`);
+    assert.equal((error as Error).message, `${kind}: cancelled`);
+    await cancelled.closed;
+    // A signal aborted before the call: no answer either.
+    const early = await clientOf(kind, cancelled.url, "60000").complete(request, { signal: AbortSignal.abort() }).then(() => null, (e: unknown) => e);
+    assert.ok(early instanceof LlmCancelled, `${kind} (aborted before): ${String(early)}`);
+    // The deadline: a timeout, with its variable named, never `cancelled`.
+    const stalled = await stalledProvider(t, kind);
+    const late = await clientOf(kind, stalled.url, "300").complete(request, { signal: new AbortController().signal }).then(() => null, (e: unknown) => e);
+    assert.ok(late instanceof Error && !(late instanceof LlmCancelled), `${kind}: ${String(late)}`);
+    assert.match((late as Error).message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)`));
+    await stalled.closed;
+  }
+});
+
+test("draft-flow operation: llm and hybrid through the shared operation; a Cancel during the model's answer writes nothing, not even the stats", async (t) => {
+  const { runOperation } = await import("../src/operations.ts");
+  const dir = copy(t);
+  const config = join(dir, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+  const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY, home: process.env.HOME };
+  t.after(() => {
+    for (const [name, value] of [["ANTHROPIC_BASE_URL", saved.url], ["ANTHROPIC_API_KEY", saved.key], ["HOME", saved.home]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  process.env.ANTHROPIC_API_KEY = "k";
+  process.env.HOME = dir;
+  // Cancel while the model answers: cancelled with no code, no proposal, no stats.
+  const stalled = await stalledProvider(t, "anthropic");
+  process.env.ANTHROPIC_BASE_URL = stalled.url;
+  const controller = new AbortController();
+  const pending = runOperation({ kind: "draft-flow", root: dir, trigger: "app.checkout.checkout", mode: "llm", output: "proposal", context: "[node] app.checkout.checkout\nchosen" }, { signal: controller.signal });
+  await stalled.requested;
+  controller.abort();
+  const cancelled = await pending;
+  assert.deepEqual([cancelled.status, cancelled.exitCode, cancelled.payload, cancelled.proposals], ["cancelled", null, null, []]);
+  await stalled.closed;
+  assert.ok(!existsSync(join(dir, ".keylang/proposals")));
+  assert.ok(!existsSync(join(dir, ".keylang/stats.json")));
+  // The same request answered: the proposal is the CLI's, the counts go to the stats, the context reaches the prompt.
+  const model = await mockModel(t, ["```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n```"]);
+  process.env.ANTHROPIC_BASE_URL = model.url;
+  const done = await runOperation({ kind: "draft-flow", root: dir, trigger: "app.checkout.checkout", mode: "hybrid", output: "proposal", context: "[node] app.checkout.checkout\nchosen" });
+  assert.deepEqual([done.status, done.exitCode], ["completed", 0], JSON.stringify(done.messages));
+  assert.equal(done.payload?.mode, "hybrid");
+  assert.equal(done.payload?.model?.agent, "anthropic:claude-opus-5");
+  // Hybrid adds the step the model missed under its caller.
+  assert.equal(done.payload?.summary, "3 agree, 1 algo-only");
+  assert.deepEqual(done.payload?.candidate.steps, ["app.checkout.checkout", "domain.order.createOrder", "domain.order.total", "infra.db.save"]);
+  assert.match(model.prompts[0]!, /Context chosen by the developer:\n\[node\] app\.checkout\.checkout\nchosen/);
+  assert.equal(readFileSync(join(dir, ".keylang/proposals/keylang/flows/checkout.md"), "utf8"), done.payload!.candidate.text);
+  const stats = JSON.parse(readFileSync(join(dir, ".keylang/stats.json"), "utf8")) as { drafts: Record<string, { proposed: number }> };
+  assert.equal(stats.drafts.agree?.proposed, 3);
+  // A preview of a model draft writes nothing new.
+  const before = readFileSync(join(dir, ".keylang/stats.json"), "utf8");
+  const preview = await runOperation({ kind: "draft-flow", root: dir, trigger: "app.checkout.checkout", mode: "llm", output: "preview" });
+  assert.deepEqual([preview.status, preview.exitCode, preview.proposals], ["completed", 0, []]);
+  assert.equal(readFileSync(join(dir, ".keylang/stats.json"), "utf8"), before);
+  // A source changed while the model answered: nothing written, the proposal waiting there is kept.
+  rmSync(join(dir, ".keylang/proposals"), { recursive: true });
+  const source = join(dir, "src/domain/order.ts");
+  const edited = await mockModel(t, ["```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n```"], () => writeFileSync(source, `${readFileSync(source, "utf8")}\n// edited\n`));
+  process.env.ANTHROPIC_BASE_URL = edited.url;
+  const stale = await runOperation({ kind: "draft-flow", root: dir, trigger: "app.checkout.checkout", mode: "llm", output: "proposal" });
+  assert.deepEqual([stale.status, stale.exitCode], ["failed", 1]);
+  assert.deepEqual(stale.payload?.refused, ["src/domain/order.ts: changed on disk while the draft was computed"]);
+  assert.ok(!existsSync(join(dir, ".keylang/proposals")));
+  assert.equal(readFileSync(join(dir, ".keylang/stats.json"), "utf8"), before, "a refused draft counts nothing");
+});

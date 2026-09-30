@@ -184,10 +184,10 @@ export const ACTIONS: readonly Action[] = [
   },
   {
     id: "draft-flow",
-    label: "Draft flow: from the code's calls (algo)",
+    label: "Draft flow: from the code's calls or the model (algo, hybrid, llm)",
     group: "Generate",
-    aliases: ["draft flow", "keylang draft flow", "draft --mode algo", "flow draft", "propose flow", "algo"],
-    // A form names the trigger (a fn), the name, the target and preview or proposal; the target itself is never written, MERGE applies the proposal.
+    aliases: ["draft flow", "keylang draft flow", "draft --mode algo", "draft --mode hybrid", "draft --mode llm", "flow draft", "propose flow", "algo"],
+    // A form names the trigger (a fn), the name, the target, the mode and preview or proposal; the target itself is never written, MERGE applies the proposal.
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

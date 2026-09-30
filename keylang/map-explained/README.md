@@ -11,12 +11,12 @@ The tree of the map with a brief under each node: the documentation comment from
 | [cli](cli.md) |  | 35 | 0 | 0 | 49 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 191 | 0 | 0 | 132 |
+| [features](features.md) |  | 194 | 0 | 0 | 133 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 119 | 0 | 0 | 131 |
-| [operations](operations.md) |  | 80 | 0 | 0 | 23 |
-| [tui](tui.md) |  | 345 | 0 | 0 | 201 |
-| **all** | | 1061 | 0 | 0 | 802 |
+| [operations](operations.md) |  | 87 | 0 | 0 | 23 |
+| [tui](tui.md) |  | 348 | 0 | 0 | 201 |
+| **all** | | 1074 | 0 | 0 | 803 |
 
 ## Index
 
@@ -42,7 +42,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **K** · [keylang](cli.md#cli.keylang) (cli) · [keys](features.md#features.keys) (features)
 
-**L** · [languages](base.md#base.languages) (base) · [Line](lang.md#lang.parser.Line) (lang.parser) · [llm](features.md#features.llm) (features) · [lsp](cli.md#cli.lsp) (cli) · [lsp-features](features.md#features.lsp-features) (features) · [LspError](cli.md#cli.lsp.LspError) (cli.lsp)
+**L** · [languages](base.md#base.languages) (base) · [Line](lang.md#lang.parser.Line) (lang.parser) · [llm](features.md#features.llm) (features) · [LlmCancelled](features.md#features.llm.LlmCancelled) (features.llm) · [lsp](cli.md#cli.lsp) (cli) · [lsp-features](features.md#features.lsp-features) (features) · [LspError](cli.md#cli.lsp.LspError) (cli.lsp)
 
 **M** · [map](map.md#map.map) (map) · [markdown](tui.md#tui.markdown) (tui) · [Matcher](check.md#check.trace-evidence.Matcher) (check.trace-evidence) · [mcp](cli.md#cli.mcp) (cli) · [merge](tui.md#tui.merge) (tui) · [merge-session](tui.md#tui.merge-session) (tui) · [MergeSession](tui.md#tui.merge-session.MergeSession) (tui.merge-session)
 

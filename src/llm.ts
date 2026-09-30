@@ -6,7 +6,9 @@
 // against a local server without the network. A request that takes longer
 // than `KEYLANG_LLM_TIMEOUT_MS` (default 10 minutes, the SDK's own default) is
 // aborted, and an answer without text is an error, never an empty
-// explanation. Nothing here decides a verdict.
+// explanation. A caller's signal cancels a request too: that is
+// `LlmCancelled`, never a timeout, and the text streamed so far is dropped.
+// Nothing here decides a verdict.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createParser } from "eventsource-parser";
@@ -21,11 +23,24 @@ export interface LlmRequest {
   maxTokens: number;
 }
 
+/** Per call: `signal` cancels the request (and its stream); without options a call ends by its answer or the timeout. */
+export interface LlmCallOptions {
+  signal?: AbortSignal;
+}
+
 export interface LlmClient {
   /** `anthropic:claude-opus-5`, as configured. */
   agent: string;
   model: string;
-  complete(request: LlmRequest): Promise<string>;
+  complete(request: LlmRequest, options?: LlmCallOptions): Promise<string>;
+}
+
+/** The caller cancelled the request: not a timeout, not a provider error, and no partial answer. */
+export class LlmCancelled extends Error {
+  constructor(provider: string) {
+    super(`${provider}: cancelled`);
+    this.name = "LlmCancelled";
+  }
 }
 
 export type LlmSetup = { client: LlmClient } | { missing: string };
@@ -52,13 +67,13 @@ export function llmClient(agent: string | null, env: Env = process.env, home: st
     const profile = fromEnv("ANTHROPIC_AUTH_TOKEN") !== undefined || existsSync(join(home, ".config/anthropic"));
     if (key === undefined && !profile) return { missing: "no Anthropic credentials: set ANTHROPIC_API_KEY, write ~/.config/keylang/anthropic.key (mode 0600), or run `ant auth login`" };
     const client = new Anthropic({ timeout, ...(key !== undefined ? { apiKey: key } : {}), ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}) });
-    return { client: { agent, model, complete: (request) => anthropicComplete(client, model, request, timeout) } };
+    return { client: { agent, model, complete: (request, options) => anthropicComplete(client, model, request, timeout, options?.signal) } };
   }
   if (provider === "openrouter") {
     const key = fromEnv("OPENROUTER_API_KEY") ?? readKey(home, "openrouter");
     if (key === undefined) return { missing: "no OpenRouter key: set OPENROUTER_API_KEY or write ~/.config/keylang/openrouter.key (mode 0600)" };
     const base = env.OPENROUTER_BASE_URL ?? "https://openrouter.ai";
-    return { client: { agent, model, complete: (request) => openrouterComplete(base, key, model, request, timeout) } };
+    return { client: { agent, model, complete: (request, options) => openrouterComplete(base, key, model, request, timeout, options?.signal) } };
   }
   return { missing: `unknown provider \`${provider}\` in agent \`${agent}\`` };
 }
@@ -70,10 +85,40 @@ function timeoutMs(env: Env): number | string {
   return /^[1-9]\d*$/.test(raw) ? Number(raw) : `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
 }
 
-async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, timeout: number): Promise<string> {
+/**
+ * One signal for a whole call: aborted by the deadline or by the caller's
+ * signal, whichever comes first; `dispose` clears the timer and the listener
+ * on the caller's signal, so a long-lived signal does not collect them.
+ */
+function callSignal(timeout: number, outer: AbortSignal | undefined): { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } {
+  const controller = new AbortController();
+  // What aborted the call first: a cancel after the deadline is still a timeout, and the other way round.
+  let cause: "timeout" | "cancel" | null = null;
+  const stop = (why: "timeout" | "cancel"): void => {
+    cause ??= why;
+    controller.abort();
+  };
+  const timer = setTimeout(() => stop("timeout"), timeout);
+  timer.unref();
+  const onAbort = (): void => stop("cancel");
+  if (outer?.aborted) stop("cancel");
+  else outer?.addEventListener("abort", onAbort, { once: true });
+  return {
+    signal: controller.signal,
+    timedOut: () => cause === "timeout",
+    cancelled: () => cause === "cancel",
+    dispose: () => {
+      clearTimeout(timer);
+      outer?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal): Promise<string> {
   const fallbacks = FALLBACK_MODELS.test(model);
   // The client's `timeout` bounds one attempt and the SDK retries; the signal bounds the whole call.
-  const signal = AbortSignal.timeout(timeout);
+  const call = callSignal(timeout, outer);
+  const signal = call.signal;
   let response: Awaited<ReturnType<typeof client.beta.messages.create>>;
   try {
     response = await client.beta.messages.create(
@@ -88,8 +133,11 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
       { signal },
     );
   } catch (error) {
-    if (signal.aborted) throw new Error(`anthropic: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
+    if (call.cancelled()) throw new LlmCancelled("anthropic");
+    if (call.timedOut()) throw new Error(`anthropic: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
     throw error;
+  } finally {
+    call.dispose();
   }
   if (response.stop_reason === "refusal") throw new Error(`${model} declined the request${response.stop_details?.category ? ` (${response.stop_details.category})` : ""}`);
   const text = response.content
@@ -100,9 +148,10 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
   return text;
 }
 
-async function openrouterComplete(base: string, key: string, model: string, request: LlmRequest, timeout: number): Promise<string> {
+async function openrouterComplete(base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal): Promise<string> {
   // One deadline for the request and the whole stream: a stalled stream never hangs the CLI or the TUI.
-  const signal = AbortSignal.timeout(timeout);
+  const call = callSignal(timeout, outer);
+  const signal = call.signal;
   try {
     const response = await fetch(`${base.replace(/\/$/, "")}/api/v1/chat/completions`, {
       method: "POST",
@@ -144,12 +193,17 @@ async function openrouterComplete(base: string, key: string, model: string, requ
     });
     const decoder = new TextDecoder();
     for await (const bytes of response.body) parser.feed(decoder.decode(bytes as Uint8Array, { stream: true }));
+    // A stream the caller cancelled may end quietly: what came until then is not an answer.
+    if (signal.aborted) throw signal.reason;
     if (failure !== null) throw new Error(`openrouter: ${failure}`);
     if (text.trim() === "") throw new Error(`openrouter: ${model} answered without text`);
     return text.trim();
   } catch (error) {
-    if (signal.aborted) throw new Error(`openrouter: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
+    if (call.cancelled()) throw new LlmCancelled("openrouter");
+    if (call.timedOut()) throw new Error(`openrouter: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
     throw error;
+  } finally {
+    call.dispose();
   }
 }
 

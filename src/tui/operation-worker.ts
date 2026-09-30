@@ -3,14 +3,15 @@
 // the AbortSignal stay on the session's side. A read-only operation — and a
 // writing one before its commit — is cancelled by terminating this worker. A
 // writing operation asks before its first file step (`commit`) and waits for
-// the answer: `commit` goes ahead, `cancel` ends it with nothing written;
+// the answer: `commit` goes ahead (or carries the session's refusal),
+// `cancel` ends it with nothing written;
 // `cancel` during the commit stops it between two file steps.
 
 import { parentPort } from "node:worker_threads";
-import { runOperation, type OperationRequest, type OperationResult } from "../operations.ts";
+import { runOperation, type CommitGate, type OperationRequest, type OperationResult } from "../operations.ts";
 
 /** A message to the worker: run a request, let its commit go ahead, or cancel it. */
-export type OperationCall = { type: "run"; operationId: number; request: OperationRequest } | { type: "commit"; operationId: number } | { type: "cancel"; operationId: number };
+export type OperationCall = { type: "run"; operationId: number; request: OperationRequest } | { type: "commit"; operationId: number; refused?: string[] } | { type: "cancel"; operationId: number };
 
 /** A reply of the worker: any number of progress notes, at most one commit request, then one result or one error. */
 export type OperationReply =
@@ -22,7 +23,7 @@ export type OperationReply =
 const post = (reply: OperationReply): void => parentPort?.postMessage(reply);
 
 /** The operations running here: their signal, and the answer their commit waits for. */
-const running = new Map<number, { controller: AbortController; proceed: (() => void) | null }>();
+const running = new Map<number, { controller: AbortController; proceed: ((gate: CommitGate) => void) | null }>();
 
 parentPort?.on("message", (call: OperationCall) => {
   const { operationId } = call;
@@ -30,14 +31,15 @@ parentPort?.on("message", (call: OperationCall) => {
     const entry = running.get(operationId);
     if (!entry) return;
     if (call.type === "cancel") entry.controller.abort();
-    entry.proceed?.();
+    // The session's refusal travels with `commit`: the operation reports it, nothing is written.
+    entry.proceed?.(call.type === "commit" && call.refused ? { refused: call.refused } : undefined);
     entry.proceed = null;
     return;
   }
-  const entry = { controller: new AbortController(), proceed: null as (() => void) | null };
+  const entry = { controller: new AbortController(), proceed: null as ((gate: CommitGate) => void) | null };
   running.set(operationId, entry);
-  const beforeCommit = (): Promise<void> =>
-    new Promise<void>((proceed) => {
+  const beforeCommit = (): Promise<CommitGate> =>
+    new Promise<CommitGate>((proceed) => {
       entry.proceed = proceed;
       post({ operationId, type: "commit" });
     });

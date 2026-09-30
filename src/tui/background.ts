@@ -12,7 +12,7 @@
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
 import { generateMap, type MapResult } from "../map.ts";
-import { resultWithout, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { resultWithout, type CommitGate, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
 
 interface Reply {
@@ -187,21 +187,21 @@ export class OperationWorker {
   private commit(worker: Worker, operationId: number): void {
     const pending = this.pending.get(operationId);
     if (!pending) return;
-    const answer = (): void => {
+    const answer = (gate: CommitGate): void => {
       // Settled meanwhile (cancelled before the commit, worker replaced): that worker is gone.
       if (this.pending.get(operationId) !== pending || this.worker !== worker) return;
       if (pending.signal?.aborted) return this.post({ type: "cancel", operationId });
       pending.committing = true;
-      this.post({ type: "commit", operationId });
+      this.post({ type: "commit", operationId, ...(gate && gate.refused.length > 0 ? { refused: gate.refused } : {}) });
     };
-    let told: Promise<void> | void;
+    let told: Promise<CommitGate> | CommitGate;
     try {
       told = pending.beforeCommit?.();
     } catch {
       return this.post({ type: "cancel", operationId });
     }
-    if (told === undefined) return answer();
-    told.then(answer, () => this.post({ type: "cancel", operationId }));
+    if (told instanceof Promise) told.then(answer, () => this.post({ type: "cancel", operationId }));
+    else answer(told);
   }
 
   private post(call: OperationCall): void {
