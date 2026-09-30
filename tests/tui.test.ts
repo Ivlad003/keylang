@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -4545,4 +4545,267 @@ test("tui: fmt saves the chosen dirty buffer first (Back writes nothing), leaves
   s.send(KEY.f6);
   assert.match(s.text(), /1 formatted, 1 not written · code 2/);
   assert.match(s.text(), /not written +keylang\/notes\/messy\.md: changed on disk/);
+});
+
+// ---------- wire ----------
+
+const WIRING_SHOP = join(dirname(fileURLToPath(import.meta.url)), "fixtures/wiring-shop");
+
+function wireRepo(t: { after: (f: () => void) => void }): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-tui-wire-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(WIRING_SHOP, dir, { recursive: true });
+  return dir;
+}
+
+/** The palette's wire form, the output path replaced when given, then the mode: `write` (the first item) or `check`. */
+function wireForm(send: (keys: string) => void, app: App, mode: "write" | "check", out?: string): void {
+  send(KEY.ctrlP);
+  for (const ch of "wire: generate or check") send(ch);
+  send(KEY.enter);
+  assert.equal(app.state.prompt?.kind, "wire");
+  if (out !== undefined) {
+    for (const _ of app.state.prompt!.text) send("\x7f");
+    for (const ch of out) send(ch);
+  }
+  if (mode === "check") send(KEY.down);
+  send(KEY.enter);
+}
+
+function wireRecord(app: App): Extract<OperationResult, { kind: "wire" }> & { payload: NonNullable<Extract<OperationResult, { kind: "wire" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "wire" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "wire" }> & { payload: NonNullable<Extract<OperationResult, { kind: "wire" }>["payload"]> };
+}
+
+function cliWire(root: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "wire", ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** The CLI's two streams for a result: `info` to stdout, the rest to stderr. */
+function wireStreams(result: OperationResult): { stdout: string; stderr: string } {
+  const lines = (level: (l: string) => boolean): string => result.messages.filter((m) => level(m.level)).map((m) => `${m.text}\n`).join("");
+  return { stdout: lines((l) => l === "info"), stderr: lines((l) => l !== "info") };
+}
+
+test("tui: wire write and check give the CLI's bytes, lines and codes; check writes nothing, not even a directory; the code opens read-only", async (t) => {
+  const root = wireRepo(t);
+  const twin = wireRepo(t);
+  const out = "keylang.gen.ts";
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
+  // The alias finds it; the form starts at the CLI's default file and names both modes.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang wire") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "wire");
+  assert.equal(s.app.state.prompt?.text, out);
+  assert.deepEqual(s.app.state.prompt?.items, [`Write ${out}`, `Check ${out} (writes nothing)`]);
+  assert.match(s.app.state.prompt?.note ?? "", /not on disk yet · never compiled or run/);
+  await esc(s.send);
+  // Check on a missing file: code 1 and the CLI's line; nothing written.
+  wireForm(s.send, s.app, "check");
+  await s.app.idle();
+  let result = wireRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.state, result.written], ["completed", 1, "stale", []]);
+  const cliMissing = cliWire(twin, ["--check"]);
+  assert.equal(cliMissing.status, 1);
+  assert.deepEqual(wireStreams(result), { stdout: cliMissing.stdout, stderr: cliMissing.stderr });
+  // A check into a missing directory creates none of it.
+  wireForm(s.send, s.app, "check", "gen/wiring/keylang.gen.ts");
+  await s.app.idle();
+  assert.deepEqual([wireRecord(s.app).exitCode, wireRecord(s.app).payload.state], [1, "stale"]);
+  assert.deepEqual(treeBytes(root), before, "check writes nothing");
+  assert.equal(existsSync(join(root, "gen")), false, "not even the parent directory");
+  // Write: no extra step without dirty buffers; the same bytes and line as the CLI.
+  wireForm(s.send, s.app, "write");
+  assert.equal(s.app.state.barrier, null);
+  // The worker runs it: the record is running and the keys still work.
+  assert.equal(s.app.state.records.at(-1)?.status, "running");
+  s.send(KEY.ctrlP);
+  assert.equal(s.app.state.prompt?.kind, "palette");
+  await esc(s.send);
+  await s.app.idle();
+  result = wireRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [out]]);
+  const cliWrite = cliWire(twin);
+  assert.equal(cliWrite.status, 0, cliWrite.stderr);
+  assert.deepEqual(wireStreams(result), { stdout: cliWrite.stdout, stderr: cliWrite.stderr });
+  const text = readFileSync(join(root, out), "utf8");
+  assert.equal(text, readFileSync(join(twin, out), "utf8"));
+  assert.match(text, /^\/\/ keylang:generated/);
+  assert.deepEqual(treeBytes(root), new Map([...before, [out, Buffer.from(text).toString("latin1")]]), "only the generated file is written");
+  const staleCheck = s.app.state.records.at(-3)!;
+  assert.equal(staleCheck.outdated, "the wiring was written since this run");
+  // Idempotent: a second write and a check are 0 with nothing written, as the CLI.
+  wireForm(s.send, s.app, "write");
+  await s.app.idle();
+  result = wireRecord(s.app);
+  assert.deepEqual([result.exitCode, result.written, result.messages, result.payload.state], [0, [], [], "current"]);
+  wireForm(s.send, s.app, "check");
+  await s.app.idle();
+  assert.equal(wireRecord(s.app).exitCode, 0);
+  assert.equal(cliWire(root, ["--check"]).status, 0);
+  // A CRLF checkout of the same file is current, as for the CLI.
+  writeFileSync(join(root, out), text.replace(/\n/g, "\r\n"));
+  wireForm(s.send, s.app, "check");
+  await s.app.idle();
+  assert.equal(wireRecord(s.app).exitCode, 0);
+  writeFileSync(join(root, out), text);
+  // F6: the report, then Tab and Enter show the generated code in the read-only viewer — no buffer is opened for it.
+  s.send(KEY.f6);
+  assert.match(s.text(), /Wire: generate or check · check · keylang\.gen\.ts {2}completed · code 0/);
+  assert.match(s.text(), /Wire check · read-only, nothing written · keylang\.gen\.ts/);
+  assert.match(s.text(), /up to date · code 0/);
+  s.send(KEY.tab);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "code");
+  assert.equal(s.app.state.code?.file, out);
+  assert.equal(s.app.state.code?.lines[0], text.split("\n")[0]);
+  assert.equal(s.app.state.buffers.has(out), false, "the generated code is not a writable buffer");
+  s.send("i");
+  assert.equal(s.app.state.mode, "code");
+  await esc(s.send);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(readFileSync(join(root, out), "utf8"), text);
+});
+
+test("tui: a wiring error, a manual file, a path out of the repository or through a link out are refused with the CLI's diagnostics and codes; nothing is written", async (t) => {
+  const root = wireRepo(t);
+  const outside = mkdtempSync(join(tmpdir(), "keylang-wire-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const wiring = join(root, "keylang/wiring.md");
+  const good = readFileSync(wiring, "utf8");
+  writeFileSync(wiring, good.replace("  - store domain.store.Store", "   - store domain.store.Store").replace("- wire domain.store.Store", "- wire app.purchase"));
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  let before = treeBytes(root);
+  // An error on a `# wiring` line: the CLI's diagnostics and summary, code 1, no file — in both modes.
+  for (const mode of ["write", "check"] as const) {
+    wireForm(s.send, s.app, mode);
+    await s.app.idle();
+    const result = wireRecord(s.app);
+    assert.deepEqual([result.status, result.exitCode, result.payload.state, result.written], ["completed", 1, "blocked", []]);
+    const cli = cliWire(root, mode === "check" ? ["--check"] : []);
+    assert.equal(cli.status, 1);
+    assert.deepEqual(wireStreams(result), { stdout: cli.stdout, stderr: cli.stderr });
+    assert.match(cli.stdout, /wiring\.md:4:4: K003 indentation must be a multiple of 2 spaces/);
+    assert.match(cli.stdout, /K302 wire `app\.purchase` is a module/);
+  }
+  assert.deepEqual(treeBytes(root), before, "no generated file");
+  // F6 → Tab → Enter opens the first error in the spec.
+  s.send(KEY.f6);
+  assert.match(s.text(), /2 error\(s\) in wiring, nothing written · code 1/);
+  s.send(KEY.tab);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/wiring.md");
+  assert.equal(s.app.state.cursor.line, 3);
+  await esc(s.send);
+  s.send(KEY.f6);
+  // A manual file on the target: code 1, its bytes stay, as the CLI.
+  writeFileSync(wiring, good);
+  writeFileSync(join(root, "keylang.gen.ts"), "export const mine = 1;\n");
+  before = treeBytes(root);
+  wireForm(s.send, s.app, "write");
+  await s.app.idle();
+  const manual = wireRecord(s.app);
+  assert.deepEqual([manual.exitCode, manual.payload.state, manual.written], [1, "manual", []]);
+  const cliManual = cliWire(root);
+  assert.equal(cliManual.status, 1);
+  assert.deepEqual(wireStreams(manual), { stdout: cliManual.stdout, stderr: cliManual.stderr });
+  assert.deepEqual(treeBytes(root), before, "a manual file is never written over");
+  // Paths out of the repository, through a link out, or not TypeScript: the form refuses them; the operation gives the CLI's code 2 before reading anything.
+  const records = s.app.state.records.length;
+  // The link exists only for these cases: the tree snapshot does not follow links.
+  symlinkSync(outside, join(root, "gen-link"));
+  const cases: [string, RegExp][] = [
+    [`../${root.split("/").at(-1)}-escape.ts`, /not a plain relative path/],
+    ["gen-link/linked.ts", /leads out of the repository through a link/],
+    ["gen/wire.js", /must name a TypeScript file/],
+  ];
+  for (const [out, why] of cases) {
+    wireForm(s.send, s.app, "write", out);
+    assert.match(s.app.state.prompt?.note ?? "", why);
+    assert.match(s.app.state.message ?? "", why);
+    await esc(s.send);
+    for (const check of [false, true]) {
+      const result = await runOperation({ kind: "wire", root, out, check });
+      assert.deepEqual([result.status, result.exitCode, result.payload], ["failed", 2, null]);
+      const cli = cliWire(root, [...(check ? ["--check"] : []), "--out", out]);
+      assert.equal(cli.status, 2);
+      assert.equal(cli.stderr, `keylang: ${result.messages[0]!.text}\n`);
+      assert.match(cli.stderr, why);
+    }
+  }
+  assert.equal(s.app.state.records.length, records, "a refused path starts nothing");
+  assert.deepEqual(readdirSync(outside), [], "nothing lands outside");
+  rmSync(join(root, "gen-link"));
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("tui: a spec or the target changed between the computation and the write refuses the stale container; a rerun writes it; dirty wiring is saved first", async (t) => {
+  const root = wireRepo(t);
+  const out = "keylang.gen.ts";
+  const wiring = join(root, "keylang/wiring.md");
+  const good = readFileSync(wiring, "utf8");
+  const edited = good.replace("    - compose infra.logged.logged\n", "");
+  const planted = "// keylang:generated — не редагувати, `keylang wire`\nexport const planted = 1;\n";
+  const pauses: (() => void)[] = [() => writeFileSync(wiring, edited), () => writeFileSync(join(root, out), planted), () => {}, () => {}];
+  let calls = 0;
+  const s = session(root, { operations: pausedRunner(() => pauses[calls++]!()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The wiring changes during the pause: refused with code 1, no file; the reason names the spec.
+  wireForm(s.send, s.app, "write");
+  await s.app.idle();
+  let result = wireRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 1, []]);
+  assert.deepEqual(result.payload.refused, ["keylang/wiring.md: changed on disk while the wiring was computed"]);
+  assert.equal(existsSync(join(root, out)), false);
+  // The target is created during the pause: refused, its bytes stay.
+  wireForm(s.send, s.app, "write");
+  await s.app.idle();
+  result = wireRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, [`${out}: created on disk while the change was prepared; nothing written`]);
+  assert.equal(readFileSync(join(root, out), "utf8"), planted);
+  s.send(KEY.f6);
+  assert.match(s.text(), /inputs changed, nothing written · code 1/);
+  // Enter on the entry reruns it from the files on disk: the CLI's bytes for the edited wiring.
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = wireRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [out]]);
+  assert.equal(cliWire(root, ["--check"]).status, 0);
+  assert.doesNotMatch(readFileSync(join(root, out), "utf8"), /logged/);
+  s.send(KEY.f6);
+  // A dirty wiring buffer opens the save step naming the target; Back writes nothing; Save and continue generates from the saved text.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/wiring.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/wiring.md");
+  s.send("i");
+  s.send(KEY.end);
+  for (const ch of " <!-- saved first -->") s.send(ch);
+  await esc(s.send);
+  const generated = readFileSync(join(root, out), "utf8");
+  wireForm(s.send, s.app, "write");
+  assert.deepEqual(s.app.state.barrier?.writes, [out]);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/wiring.md"]);
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, out), "utf8"), generated);
+  wireForm(s.send, s.app, "write");
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = wireRecord(s.app);
+  assert.equal(result.exitCode, 0, JSON.stringify(result.messages));
+  assert.match(readFileSync(wiring, "utf8"), /^# wiring <!-- saved first -->\n/);
+  assert.equal(s.app.state.buffers.get("keylang/wiring.md")!.text, s.app.state.buffers.get("keylang/wiring.md")!.saved);
+  assert.equal(cliWire(root, ["--check"]).status, 0);
 });

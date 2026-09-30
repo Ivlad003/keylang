@@ -37,9 +37,10 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { FEATURE_SLUG, resultWithout, runOperation, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { FEATURE_SLUG, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
+import { WIRE_MARKER } from "../wire-gen.ts";
 import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
@@ -1694,6 +1695,12 @@ export class App {
       const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
     }
+    if (request.kind === "wire") {
+      // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
+      // A write names its target in that step; without dirty buffers the form already did.
+      const writes = !request.check && this.dirtyInputs().length > 0 ? { writes: [request.out ?? WIRE_OUT] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), writes);
+    }
     if (request.kind !== "map") return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
     // The map reads the code and the saved keylang.json, not the specs: dirty specs stay dirty
     // and go into the analysis after the commit as overlays. The step names the targets first.
@@ -1773,6 +1780,8 @@ export class App {
       if (record.params.kind === "agents" && record.params.check && result.kind === "agents" && touched.length > 0) record.outdated ??= "the harness files were written since this run";
       const checked = record.params.kind === "fmt" && record.params.check && record.result?.kind === "fmt" ? (record.result.payload?.files ?? []) : [];
       if (checked.some((file) => touched.includes(file.path))) record.outdated ??= "the files were formatted since this run";
+      const wired = record.params.kind === "wire" && record.params.check && record.result?.kind === "wire" ? record.result.payload?.file : undefined;
+      if (wired !== undefined && touched.includes(wired)) record.outdated ??= "the wiring was written since this run";
     }
     this.reanalyze(false);
     return kept.length === 0 ? null : `${kept.join(", ")} changed on disk under unsaved edits: the text stays in the buffer (Ctrl+S twice overwrites, Ctrl+Z undoes)`;
@@ -2070,6 +2079,67 @@ export class App {
     this.requestOperation("fmt", { kind: "fmt", root: this.state.root, paths, check });
   }
 
+  // ---------- wire ----------
+
+  /** The wire form: the generated file (the CLI's default), then the mode. */
+  private openWirePrompt(): void {
+    this.state.prompt = { kind: "wire", text: WIRE_OUT, items: [], ids: ["write", "check"], index: 0 };
+    this.refreshWirePrompt();
+  }
+
+  /** The typed output path (POSIX, relative to the root), or why it cannot be the generated file. */
+  private wireOut(): string | { error: string } {
+    const out = (this.state.prompt?.text ?? "").trim();
+    if (out === "") return { error: "type the generated file, relative to the root (keylang.gen.ts)" };
+    const problem = wireOutProblem(this.state.root, out);
+    return problem === null ? out : { error: problem.replace(/^wire: /, "") };
+  }
+
+  /** The form shows the path problem as it is typed, and the state of the file on disk. Reading only. */
+  private refreshWirePrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "wire") return;
+    const out = this.wireOut();
+    if (typeof out !== "string") {
+      prompt.items = ["Write: generate the container", "Check the container (writes nothing)"];
+      prompt.note = out.error;
+      return;
+    }
+    const current = readText(resolve(this.state.root, out));
+    const onDisk = current === null ? "not on disk yet" : current.startsWith(WIRE_MARKER) ? "generated file on disk" : "a manual file on disk: never written over";
+    const dirty = this.dirtyInputs().length;
+    prompt.items = [`Write ${out}`, `Check ${out} (writes nothing)`];
+    prompt.note = `from the saved # wiring and the code · ${onDisk}${dirty > 0 ? ` · ${dirty} unsaved, saved first` : ""} · never compiled or run`;
+  }
+
+  /** Enter in the wire form: the typed file with the chosen mode runs as the session's operation; an invalid path keeps the form. */
+  private submitWire(): void {
+    const prompt = this.state.prompt!;
+    const out = this.wireOut();
+    if (typeof out !== "string") {
+      this.state.message = `wire: ${out.error}`;
+      return;
+    }
+    const check = prompt.ids?.[prompt.index] === "check";
+    this.state.prompt = null;
+    this.requestOperation("wire", { kind: "wire", root: this.state.root, out, check });
+  }
+
+  /** What Enter over the selected wire report opens: the first blocking error, else the generated file when it is on disk. */
+  private wireTarget(): { file: string; line: number; col: number } | null {
+    const result = this.state.records[this.state.results.index]?.result;
+    if (result?.kind !== "wire" || result.payload === null) return null;
+    const first = result.payload.diagnostics[0];
+    if (first) return { file: first.file, line: first.span.start.line, col: first.span.start.col };
+    return existsSync(resolve(this.state.root, result.payload.file)) ? { file: result.payload.file, line: 1, col: 1 } : null;
+  }
+
+  /** The generated code opens in the read-only viewer, not as a writable buffer; Esc / Ctrl+O come back to the report. */
+  private openWireTarget(): void {
+    const target = this.wireTarget();
+    if (target) this.openTarget(target.file, target.line, target.col);
+  }
+
   // ---------- new specification ----------
 
   /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
@@ -2306,6 +2376,8 @@ export class App {
       case "enter":
         // Over the gaps of a feature record Enter opens the selected gap; over the entries it reruns.
         if (results.scrollReport && this.selectedGap()) return this.openGap();
+        // Over a wire report: the generated file in the read-only viewer, or the first blocking error.
+        if (results.scrollReport && this.wireTarget()) return this.openWireTarget();
         return this.rerunRecord();
       case "f5":
         return this.reanalyze();
@@ -2593,6 +2665,7 @@ export class App {
     if (prompt.kind === "new-spec") this.refreshNewSpec();
     if (prompt.kind === "agents") this.refreshAgentsPrompt();
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
+    if (prompt.kind === "wire") this.refreshWirePrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2621,9 +2694,10 @@ export class App {
       if (prompt.kind === "new-spec") this.refreshNewSpec();
       if (prompt.kind === "agents") this.refreshAgentsPrompt();
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
+      if (prompt.kind === "wire") this.refreshWirePrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -2633,6 +2707,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "baseline") return this.submitBaseline();
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
+    if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -2713,6 +2788,8 @@ export class App {
         return this.openAgentsPrompt();
       case "fmt":
         return this.openFmtPrompt();
+      case "wire":
+        return this.openWirePrompt();
       case "cancel":
         return this.cancelOperation();
       case "find-node":

@@ -7,10 +7,10 @@
 
 import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { analyze, type Analysis, type AnalysisRequest } from "./analyze.ts";
+import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { CONFIG_FILE, assertFormatOnly, loadConfig, toPosix, type Config } from "./config.ts";
-import { formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
@@ -19,10 +19,12 @@ import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
-import { commitMap, diffMap, mapPlanProblems, planMap, type CommittedStep, type MapPlan } from "./map.ts";
-import { landing, writeAtomic } from "./safe-write.ts";
+import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan } from "./map.ts";
+import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { sha256 } from "./snapshot.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
+import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
 export interface DoctorRequest {
@@ -102,10 +104,28 @@ export interface FmtRequest {
   check: boolean;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest;
+/** Where `keylang wire` writes when no `--out` is given. */
+export const WIRE_OUT = "keylang.gen.ts";
+
+/**
+ * Generates the container of `# wiring` (`keylang wire [--out <file>]`), or
+ * with `check` only compares it (`--check`). The generated file is never
+ * compiled or run here.
+ */
+export interface WireRequest {
+  kind: "wire";
+  /** Repository root (absolute). */
+  root: string;
+  /** The generated file: a plain relative POSIX path with a `.ts`, `.mts` or `.cts` extension; default `WIRE_OUT`. */
+  out?: string;
+  /** Compare only; nothing is written. */
+  check: boolean;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -296,6 +316,30 @@ export interface FmtPayload {
   files: FmtFile[];
 }
 
+/** What `keylang wire [--check]` found and did. The path is POSIX, relative to the root. */
+export interface WirePayload {
+  /** The generated file (`--out`). */
+  file: string;
+  check: boolean;
+  /**
+   * `blocked`: an error on a `# wiring` line (`diagnostics`), nothing is
+   * generated; `manual`: the file exists without the keylang:generated marker
+   * and is never written; `current`: it holds the generated text (CRLF read
+   * as LF); `stale`: it is missing or differs.
+   */
+  state: "blocked" | "manual" | "current" | "stale";
+  /** The error diagnostics on `# wiring` lines, as `keylang wire` prints them; empty unless blocked. */
+  diagnostics: Diagnostic[];
+  /** Whether the file was written by this run. */
+  written: boolean;
+  /** Why the computed file could not be committed (`path: reason`): the target, a spec, a source or the config changed meanwhile. Nothing was written. */
+  refused: string[];
+  /** The I/O error of the write, or null. */
+  error: string | null;
+  /** The snapshot id the file was generated from. */
+  snapshot: string;
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
@@ -305,6 +349,7 @@ export interface OperationPayloads {
   baseline: BaselinePayload;
   agents: AgentsPayload;
   fmt: FmtPayload;
+  wire: WirePayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -338,6 +383,7 @@ export function runOperation(request: MapRequest, context?: OperationContext): P
 export function runOperation(request: BaselineRequest, context?: OperationContext): Promise<OperationEnvelope<"baseline">>;
 export function runOperation(request: AgentsRequest, context?: OperationContext): Promise<OperationEnvelope<"agents">>;
 export function runOperation(request: FmtRequest, context?: OperationContext): Promise<OperationEnvelope<"fmt">>;
+export function runOperation(request: WireRequest, context?: OperationContext): Promise<OperationEnvelope<"wire">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -355,6 +401,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runAgents(request, context);
     case "fmt":
       return runFmt(request, context);
+    case "wire":
+      return runWire(request, context);
   }
 }
 
@@ -378,6 +426,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "agents":
       return { kind, ...base };
     case "fmt":
+      return { kind, ...base };
+    case "wire":
       return { kind, ...base };
   }
 }
@@ -845,6 +895,183 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
     else if (file.state === "explanation") out.push({ level: "warning", text: `${file.shown}: a saved explanation, not keylang Markdown; skipped` });
   }
   return out;
+}
+
+function emptyWire(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"wire"> {
+  return { kind: "wire", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang wire [--check]` in two phases. The path policy of `out` is checked
+ * before anything is read: a plain relative TypeScript path that stays inside
+ * the repository through links (code 2 otherwise). Compute: the saved specs
+ * and the code are analyzed (no fact cache is written); an error on a
+ * `# wiring` line blocks with code 1, a missing section is code 2, then the
+ * unchanged `generateWire` gives the text. A file without the generation
+ * marker is never written (1). Check: 0 when the file holds the text (CRLF
+ * read as LF), 1 when it is stale or missing; nothing is written, no directory
+ * created. Write: nothing to do is 0 without `beforeCommit`; otherwise after
+ * it the target, the specs, `tsconfig.json`, `keylang.json` and the sources
+ * must be what the text was computed from — a change refuses it (failed, 1,
+ * nothing written) — and the file is written atomically (0, or 2 on an I/O
+ * error). Cancelled: null, nothing written.
+ */
+async function runWire(request: WireRequest, context: OperationContext): Promise<OperationEnvelope<"wire">> {
+  if (!isAbsolute(request.root)) return emptyWire("failed", 2, "wire: root must be an absolute path");
+  const out = request.out ?? WIRE_OUT;
+  const problem = wireOutProblem(request.root, out);
+  if (problem !== null) return emptyWire("failed", 2, problem);
+  if (context.signal?.aborted) return emptyWire("cancelled", null);
+  context.onProgress?.({ text: "reading the specs and the sources" });
+  let analyzed: Analysis;
+  let specs: WireSpecInputs;
+  try {
+    // Read before the analysis: a spec changed in between is then refused at the commit, never missed.
+    specs = wireSpecInputs(loadConfig(request.root));
+    analyzed = await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, persistFacts: false });
+  } catch (error) {
+    return emptyWire("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyWire("cancelled", null);
+  const snapshot = analyzed.snapshot;
+  if (!snapshot) return emptyWire("failed", 2, "wire: no supported source files; run `keylang init`");
+  const payload: WirePayload = { file: out, check: request.check, state: "stale", diagnostics: [], written: false, refused: [], error: null, snapshot: snapshot.snapshotId };
+  const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
+  const blocking = wiringErrors(analyzed);
+  if (blocking.length > 0) {
+    payload.state = "blocked";
+    payload.diagnostics = blocking;
+    return { ...emptyWire("completed", 1), payload, messages: [...lines(blocking.map(formatDiagnostic)), { level: "error", text: `wire: ${blocking.length} error(s) in wiring; nothing written` }] };
+  }
+  const wires = analyzed.spec.wires;
+  if (wires.length === 0) return { ...emptyWire("failed", 2, `wire: no \`# wiring\` section under ${analyzed.config.dir}/`), payload };
+  let text: string;
+  let current: string | null;
+  try {
+    text = generateWire({ root: request.root, out, wires, snapshot });
+    const abs = landing(join(request.root, out));
+    current = abs !== null && existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  } catch (error) {
+    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+  }
+  if (current !== null && !current.startsWith(WIRE_MARKER)) {
+    payload.state = "manual";
+    return { ...emptyWire("completed", 1), payload, messages: lines([`${out}: manual file without keylang:generated marker`]) };
+  }
+  // A checkout that turned LF into CRLF holds the same file.
+  if (current !== null && current.replace(/\r\n/g, "\n") === text) payload.state = "current";
+  if (request.check) return { ...emptyWire("completed", payload.state === "current" ? 0 : 1), payload, messages: lines(payload.state === "current" ? [] : [`${out}: stale, run \`keylang wire\``]) };
+  if (payload.state === "current") return { ...emptyWire("completed", 0), payload };
+  const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyWire("cancelled", null), payload };
+  let problems: string[];
+  try {
+    const target = writeProblem(request.root, out, { generated: true, expect: current });
+    // The target is a source file too (its own layer); its change is the expect check's to name.
+    const sources = sourceInputProblems(analyzed.config, inputs, "the wiring").filter((line) => !line.startsWith(`${out}: `));
+    problems = [...(target === null ? [] : [`${out}: ${target}`]), ...wireSpecProblems(analyzed.config, specs), ...sources];
+  } catch (error) {
+    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+  }
+  if (problems.length > 0) {
+    payload.refused = problems;
+    return {
+      ...emptyWire("failed", 1),
+      payload,
+      messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run wire again to generate it from the files on disk" }],
+    };
+  }
+  context.onProgress?.({ text: `writing ${out}` });
+  try {
+    const abs = landing(join(request.root, out));
+    if (abs === null) throw new Error("leads through a loop of links");
+    // Missing directories are created; a CRLF file keeps CRLF, as `keylang wire` always wrote it.
+    writeAtomic(abs, text);
+  } catch (error) {
+    payload.error = messageOf(error);
+    return { ...emptyWire("failed", 2), payload, messages: [{ level: "error", text: `${out}: ${payload.error}` }] };
+  }
+  payload.written = true;
+  return { ...emptyWire("completed", 0), payload, messages: lines([`${out}: written`]), written: [out] };
+}
+
+/**
+ * Why `out` cannot be the generated file (the CLI's message), or null: the
+ * path policy of every write — plain, relative, inside the repository through
+ * links — and a TypeScript extension. Reads nothing outside the repository and
+ * writes nothing; a form may call it as the path is typed.
+ */
+export function wireOutProblem(root: string, out: string): string | null {
+  if (!/\.(ts|mts|cts)$/.test(out)) return `wire: --out must name a TypeScript file (.ts, .mts or .cts), got \`${out}\``;
+  try {
+    const problem = writeProblem(root, out, { generated: true });
+    return problem === null ? null : `wire: --out ${out}: ${problem}`;
+  } catch (error) {
+    return `wire: --out ${out}: ${messageOf(error)}`;
+  }
+}
+
+/** Error diagnostics on the lines of a `# wiring` section, whatever their code: any of them can change what is generated. */
+function wiringErrors(analysis: Analysis): Diagnostic[] {
+  const ranges = new Map<string, [number, number][]>();
+  for (const doc of analysis.docs) {
+    const heads = doc.sections.map((section) => section.heading?.span.start.line ?? 1);
+    doc.sections.forEach((section, i) => {
+      if (section.kind !== "wiring") return;
+      ranges.set(doc.path, [...(ranges.get(doc.path) ?? []), [heads[i]!, i + 1 < heads.length ? heads[i + 1]! - 1 : Number.POSITIVE_INFINITY]]);
+    });
+  }
+  return analysis.diagnostics.filter((d) => isError(d) && (ranges.get(d.file) ?? []).some(([from, to]) => d.span.start.line >= from && d.span.start.line <= to));
+}
+
+/** What the generated text depends on besides the snapshot: every saved spec (a `# wiring` section may be in any) and `tsconfig.json` (the import form). */
+interface WireSpecInputs {
+  specs: Map<string, string>;
+  tsconfig: string | null;
+}
+
+/** The saved specs by path (relative, POSIX) with their hash, and the root `tsconfig.json`. */
+function wireSpecInputs(config: Config): WireSpecInputs {
+  const dir = join(config.root, config.dir);
+  const specs = new Map<string, string>();
+  if (existsSync(dir)) {
+    // The reading aids beside the specs are not specs: the analysis skips them too.
+    const reading = [join(dir, EXPLAINED_MAP_DIR), join(dir, "explain")];
+    for (const abs of collectMdFiles([dir])) {
+      if (reading.some((aid) => within(abs, aid))) continue;
+      const text = readTextOrNull(abs);
+      if (text !== null) specs.set(toPosix(relative(config.root, abs)), sha256(text));
+    }
+  }
+  return { specs, tsconfig: readTextOrNull(join(config.root, "tsconfig.json")) };
+}
+
+/** How the specs and `tsconfig.json` differ from the ones the wiring was computed from (`path: reason` lines). */
+function wireSpecProblems(config: Config, before: WireSpecInputs): string[] {
+  const now = wireSpecInputs(config);
+  const problems: string[] = [];
+  for (const [path, hash] of now.specs) {
+    const old = before.specs.get(path);
+    if (old === undefined) problems.push(`${path}: added while the wiring was computed`);
+    else if (old !== hash) problems.push(`${path}: changed on disk while the wiring was computed`);
+  }
+  for (const path of before.specs.keys()) if (!now.specs.has(path)) problems.push(`${path}: removed while the wiring was computed`);
+  if (now.tsconfig !== before.tsconfig) problems.push("tsconfig.json: changed on disk while the wiring was computed");
+  return problems;
+}
+
+function readTextOrNull(abs: string): string | null {
+  try {
+    return readFileSync(abs, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

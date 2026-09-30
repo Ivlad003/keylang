@@ -13,19 +13,18 @@ import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles } from "./files.ts";
 import { parse } from "./parser.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
-import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
+import { analyze, findRoot, within } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { tracePlan } from "./trace-plan.ts";
-import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 import { changedFlows, codeToSpec, deletedDiffPaths, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
 import { placeFile } from "./graph.ts";
 import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
-import { safeWrite, safeWriteAll, writeProblem } from "./safe-write.ts";
+import { safeWriteAll } from "./safe-write.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
@@ -687,55 +686,18 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
   return 0;
 }
 
+/** `keylang wire [--check]`: the CLI is a printer over the shared wire operation. */
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
-  const root = findRoot(process.cwd());
-  const outPosix = toPosix(out);
-  // The path policy of every write, checked before anything is read: plain, relative to the root, inside it through links.
-  if (!/\.(ts|mts|cts)$/.test(outPosix)) throw new Error(`wire: --out must name a TypeScript file (.ts, .mts or .cts), got \`${out}\``);
-  const problem = writeProblem(root, outPosix, { generated: true });
-  if (problem) throw new Error(`wire: --out ${outPosix}: ${problem}`);
-  const analyzed = await analyze({ root, withoutEvidence: true });
-  if (!analyzed.snapshot) throw new Error("wire: no supported source files; run `keylang init`");
-  const blocking = wiringErrors(analyzed);
-  for (const d of blocking) process.stdout.write(`${formatDiagnostic(d)}\n`);
-  if (blocking.length > 0) {
-    process.stderr.write(`wire: ${blocking.length} error(s) in wiring; nothing written\n`);
-    return 1;
+  const result = await runOperation({ kind: "wire", root: findRoot(process.cwd()), out: toPosix(out), check: checkOnly });
+  const payload = result.payload;
+  // A usage, config or I/O failure is one `keylang:` line on stderr, as a thrown error always was.
+  if (payload === null || result.exitCode === 2) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  const wires = analyzed.spec.wires;
-  if (wires.length === 0) throw new Error(`wire: no \`# wiring\` section under ${analyzed.config.dir}/`);
-  const text = generateWire({ root, out: outPosix, wires, snapshot: analyzed.snapshot });
-  const file = join(root, outPosix);
-  const current = existsSync(file) ? readFileSync(file, "utf8") : null;
-  if (current !== null && !current.startsWith(WIRE_MARKER)) {
-    process.stdout.write(`${outPosix}: manual file without keylang:generated marker\n`);
-    return 1;
-  }
-  // A checkout that turned LF into CRLF holds the same file.
-  const same = current !== null && current.replace(/\r\n/g, "\n") === text;
-  if (checkOnly) {
-    if (same) return 0;
-    process.stdout.write(`${outPosix}: stale, run \`keylang wire\`\n`);
-    return 1;
-  }
-  if (!same) {
-    safeWrite(root, outPosix, text, { generated: true, expect: current });
-    process.stdout.write(`${outPosix}: written\n`);
-  }
-  return 0;
-}
-
-/** Error diagnostics on the lines of a `# wiring` section, whatever their code: any of them can change what is generated. */
-function wiringErrors(analysis: Analysis): Diagnostic[] {
-  const ranges = new Map<string, [number, number][]>();
-  for (const doc of analysis.docs) {
-    const heads = doc.sections.map((section) => section.heading?.span.start.line ?? 1);
-    doc.sections.forEach((section, i) => {
-      if (section.kind !== "wiring") return;
-      ranges.set(doc.path, [...(ranges.get(doc.path) ?? []), [heads[i]!, i + 1 < heads.length ? heads[i + 1]! - 1 : Number.POSITIVE_INFINITY]]);
-    });
-  }
-  return analysis.diagnostics.filter((d) => isError(d) && (ranges.get(d.file) ?? []).some(([from, to]) => d.span.start.line >= from && d.span.start.line <= to));
+  // Diagnostics and file lines go to stdout; the summary of a blocked or refused run to stderr.
+  for (const message of result.messages) (message.level === "info" && payload.refused.length === 0 ? process.stdout : process.stderr).write(`${message.text}\n`);
+  return result.exitCode ?? 2;
 }
 
 /** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. The CLI is a printer over the shared doctor operation. */

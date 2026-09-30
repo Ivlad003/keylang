@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { AgentsPayload, AgentsRequest, BaselinePayload, FmtFile, FmtPayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
+import { WIRE_OUT, type AgentsPayload, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type WirePayload } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -432,6 +432,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "baseline") return `${label} · ${record.params.check ? "check" : "write"}`;
   if (record.params.kind === "agents") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
   if (record.params.kind === "fmt") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.paths.join(" ")}`;
+  if (record.params.kind === "wire") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.out ?? WIRE_OUT}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -440,6 +441,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "baseline") return request.check ? "baseline check" : "baseline write";
   if (request.kind === "agents") return request.check ? "agents check" : "agents write";
   if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
+  if (request.kind === "wire") return request.check ? "wire check" : "wire write";
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -462,7 +464,20 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "fmt" && result.payload !== null) return `${fmtOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
+}
+
+/** `written`, `up to date`, `stale`, `2 error(s) in wiring`, `manual file`, `inputs changed, nothing written`: what wire found and really did. */
+function wireOutcome(status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null): string {
+  if (payload.state === "blocked") return `${payload.diagnostics.length} error(s) in wiring, nothing written`;
+  if (payload.state === "manual") return "manual file, not written";
+  if (payload.refused.length > 0) return "inputs changed, nothing written";
+  if (payload.error !== null) return "write failed";
+  if (exitCode === 2) return "not generated";
+  if (status === "cancelled") return "cancelled, nothing written";
+  if (payload.written) return "written";
+  return payload.state === "current" ? "up to date" : payload.check ? "stale" : "not written";
 }
 
 /** `3 file(s) canonical`, `2 not formatted`, `1 formatted, 1 invalid`, `1 of 2 formatted, cancelled`: what fmt found and really did. */
@@ -635,6 +650,16 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     }
     if (payload.steps.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
     rows.push({ text: "Files only: no client is started or tested.", style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "wire" && result.payload !== null) {
+    // The generated file with what happened to it; the code itself opens read-only on Enter.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Wire ${payload.check ? "check · read-only, nothing written" : "write"} · ${payload.file} · snapshot ${payload.snapshot.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${wireOutcome(record.status, payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    if (payload.refused.length > 0) rows.push({ text: "  Enter on the entry generates it again", style: THEME.hint });
+    if (payload.diagnostics.length > 0) rows.push({ text: "  Tab, then Enter opens the first error", style: THEME.hint });
+    else if (payload.state !== "blocked" && (payload.written || payload.state !== "stale")) rows.push({ text: `  Tab, then Enter shows ${payload.file} read-only · never compiled or run here`, style: THEME.hint });
   } else if (result?.kind === "fmt" && result.payload !== null) {
     // Every file of the selection with what happened to it; a failure never hides the files already written.
     const { payload } = result;
@@ -928,10 +953,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -943,7 +968,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 

@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, map-check, map, baseline, agents, fmt) is running. */
+  /** An explicit operation (doctor, feature, map-check, map, baseline, agents, fmt, wire) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -121,6 +121,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Edit",
     aliases: ["fmt", "format", "keylang fmt", "fmt --check", "canonical form"],
     // A form names the files (the current spec by default, a directory only when typed) and the mode; never on save.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "wire",
+    label: "Wire: generate or check",
+    group: "Project",
+    aliases: ["wire", "keylang wire", "wire --check", "wiring", "generate wiring", "keylang.gen.ts", "container"],
+    // A form names the output file (the CLI's default) and the mode; the generated code is shown read-only, never compiled or run.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
