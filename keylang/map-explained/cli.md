@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [keylang](#cli.keylang) · [harness](#cli.harness) · [node-test](#cli.node-test) · [run-id](#cli.run-id) · [trace-hooks](#cli.trace-hooks) · [trace](#cli.trace) · [cli](#cli.cli) · [index](#cli.index) · [lsp](#cli.lsp) · [mcp](#cli.mcp)
+[README](README.md) · modules: [keylang](#cli.keylang) · [node-test](#cli.node-test) · [run-id](#cli.run-id) · [trace-hooks](#cli.trace-hooks) · [trace](#cli.trace) · [cli](#cli.cli) · [index](#cli.index) · [lsp](#cli.lsp) · [mcp](#cli.mcp)
 
 # map
 
@@ -9,92 +9,6 @@
   - module [keylang](../../bin/keylang.js#L1)
     <a id="cli.keylang"></a><br>Checkout entry. `npm pack` rewrites this file to import ../dist/cli.js and restores this copy afterwards (scripts/pack-entry.mjs).
     - cli [cli.cli](cli.md#cli.cli)
-  - module [harness](../../src/adapters/harness.ts#L1)
-    <a id="cli.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON and TOML replace only the `keylang` key.
-    - node [external.node](external.md#external.node)
-    - smol-toml [external.smol-toml](external.md#external.smol-toml)
-    - safe-write [base.safe-write](base.md#base.safe-write)
-    - fn [skillFile](../../src/adapters/harness.ts#L26) () → string
-      <a id="cli.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src/adapters` and from `dist/adapters`.
-    - type [HarnessName](../../src/adapters/harness.ts#L31) = (typeof HARNESS_NAMES)[number]
-      <a id="cli.harness.HarnessName"></a>
-    - type [HarnessSelection](../../src/adapters/harness.ts#L44)
-      <a id="cli.harness.HarnessSelection"></a>
-    - type [HarnessFile](../../src/adapters/harness.ts#L50)
-      <a id="cli.harness.HarnessFile"></a>
-    - type [HarnessPlan](../../src/adapters/harness.ts#L56)
-      <a id="cli.harness.HarnessPlan"></a>
-    - fn [parseAgents](../../src/adapters/harness.ts#L62) (value: string) → HarnessSelection
-      <a id="cli.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
-    - type [HarnessProbe](../../src/adapters/harness.ts#L76)
-      <a id="cli.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
-    - fn [detectHarnesses](../../src/adapters/harness.ts#L86) (probe: HarnessProbe) → HarnessName[]
-      <a id="cli.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
-      - calls [cli.harness.claudePresent](cli.md#cli.harness.claudePresent)
-    - fn [claudePresent](../../src/adapters/harness.ts#L97) (probe: HarnessProbe) → boolean <!-- internal -->
-      <a id="cli.harness.claudePresent"></a>
-      - calls [cli.harness.claudeHasUserFile](cli.md#cli.harness.claudeHasUserFile)
-    - fn [claudeHasUserFile](../../src/adapters/harness.ts#L105) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
-      <a id="cli.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/adapters/harness.ts#L119) () → string
-      <a id="cli.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline.
-    - fn [mcpCommand](../../src/adapters/harness.ts#L141) (version: string) → { command: string; args: string[] }
-      <a id="cli.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [hookCommand](../../src/adapters/harness.ts#L146) (version: string) → string
-      <a id="cli.harness.hookCommand"></a><br>What the Stop hook runs.
-    - fn [planHarness](../../src/adapters/harness.ts#L155) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
-      <a id="cli.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent. The first broken marker or invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
-      - calls [cli.harness.agentsBody](cli.md#cli.harness.agentsBody), [cli.harness.mergeMarked](cli.md#cli.harness.mergeMarked), [cli.harness.mergeClaude](cli.md#cli.harness.mergeClaude), [cli.harness.mergeMcpJson](cli.md#cli.harness.mergeMcpJson), [cli.harness.mergeCodexToml](cli.md#cli.harness.mergeCodexToml), [cli.harness.opencodeFile](cli.md#cli.harness.opencodeFile), [cli.harness.mergeOpencode](cli.md#cli.harness.mergeOpencode), [cli.harness.mergeSettings](cli.md#cli.harness.mergeSettings), [cli.harness.mergeHooksFile](cli.md#cli.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/adapters/harness.ts#L238) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
-      <a id="cli.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
-      - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [cli.harness.marked](cli.md#cli.harness.marked)
-    - fn [marked](../../src/adapters/harness.ts#L263) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-      <a id="cli.harness.marked"></a>
-    - fn [mergeClaude](../../src/adapters/harness.ts#L272) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
-      - calls [cli.harness.outsideMarkers](cli.md#cli.harness.outsideMarkers), [cli.harness.mergeMarked](cli.md#cli.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/adapters/harness.ts#L279) (existing: string | null) → string | { error: string } <!-- internal -->
-      <a id="cli.harness.outsideMarkers"></a>
-    - fn [mergeMcpJson](../../src/adapters/harness.ts#L289) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeMcpJson"></a>
-      - calls [cli.harness.mergeJsonKey](cli.md#cli.harness.mergeJsonKey), [cli.harness.mcpCommand](cli.md#cli.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/adapters/harness.ts#L293) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeOpencode"></a>
-      - calls [cli.harness.mergeJsonKey](cli.md#cli.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/adapters/harness.ts#L298) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeCodexToml"></a>
-      - calls [cli.harness.isRecord](cli.md#cli.harness.isRecord), [cli.harness.mcpCommand](cli.md#cli.harness.mcpCommand)
-    - fn [mergeSettings](../../src/adapters/harness.ts#L319) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeSettings"></a>
-      - calls [cli.harness.parseObject](cli.md#cli.harness.parseObject), [cli.harness.mergeDeny](cli.md#cli.harness.mergeDeny), [cli.harness.mergeHooksValue](cli.md#cli.harness.mergeHooksValue), [cli.harness.finishJson](cli.md#cli.harness.finishJson)
-    - fn [mergeHooksFile](../../src/adapters/harness.ts#L334) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeHooksFile"></a>
-      - calls [cli.harness.parseObject](cli.md#cli.harness.parseObject), [cli.harness.mergeHooksValue](cli.md#cli.harness.mergeHooksValue), [cli.harness.finishJson](cli.md#cli.harness.finishJson)
-    - fn [mergeDeny](../../src/adapters/harness.ts#L344) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeDeny"></a>
-      - calls [cli.harness.isRecord](cli.md#cli.harness.isRecord)
-    - fn [mergeHooksValue](../../src/adapters/harness.ts#L358) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeHooksValue"></a>
-      - calls [cli.harness.isRecord](cli.md#cli.harness.isRecord), [cli.harness.rewriteGroup](cli.md#cli.harness.rewriteGroup), [cli.harness.hookCommand](cli.md#cli.harness.hookCommand), [cli.harness.emptyGroup](cli.md#cli.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/adapters/harness.ts#L377) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
-      <a id="cli.harness.rewriteGroup"></a>
-      - calls [cli.harness.isRecord](cli.md#cli.harness.isRecord), [cli.harness.isOurHook](cli.md#cli.harness.isOurHook), [cli.harness.hookCommand](cli.md#cli.harness.hookCommand)
-    - fn [emptyGroup](../../src/adapters/harness.ts#L393) (group: Record<string, unknown>) → boolean <!-- internal -->
-      <a id="cli.harness.emptyGroup"></a>
-    - fn [isOurHook](../../src/adapters/harness.ts#L397) (command: string) → boolean <!-- internal -->
-      <a id="cli.harness.isOurHook"></a>
-    - fn [mergeJsonKey](../../src/adapters/harness.ts#L401) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="cli.harness.mergeJsonKey"></a>
-      - calls [cli.harness.parseObject](cli.md#cli.harness.parseObject), [cli.harness.isRecord](cli.md#cli.harness.isRecord), [cli.harness.finishJson](cli.md#cli.harness.finishJson)
-    - fn [parseObject](../../src/adapters/harness.ts#L415) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      <a id="cli.harness.parseObject"></a>
-      - calls [cli.harness.isRecord](cli.md#cli.harness.isRecord)
-    - fn [finishJson](../../src/adapters/harness.ts#L426) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
-      <a id="cli.harness.finishJson"></a>
-    - fn [opencodeFile](../../src/adapters/harness.ts#L431) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
-      <a id="cli.harness.opencodeFile"></a>
-    - fn [isRecord](../../src/adapters/harness.ts#L437) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-      <a id="cli.harness.isRecord"></a>
   - module [node-test](../../src/adapters/node-test.ts#L1)
     <a id="cli.node-test"></a><br>`node:test` reporter that writes a keylang test report (schema 1) bound to the current snapshot: `node --test --test-reporter=keylang/node-test-reporter` (in this repository: `--test-reporter=./src/adapters/node-test.ts`). It prints nothing; pair it with another reporter for…
     - node [external.node](external.md#external.node)
@@ -162,7 +76,7 @@
   - module [cli](../../src/cli.ts#L1)
     <a id="cli.cli"></a><br>`keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
     - node [external.node](external.md#external.node)
-    - harness [cli.harness](cli.md#cli.harness)
+    - harness [features.harness](features.md#features.harness)
     - changed [features.changed](features.md#features.changed)
     - config [base.config](base.md#base.config)
     - assess [check.assess](check.md#check.assess)
@@ -201,7 +115,7 @@
       - calls [cli.cli.run](cli.md#cli.cli.run)
     - fn [run](../../src/cli.ts#L162) (argv: readonly string[]) → Promise<number> <!-- internal -->
       <a id="cli.cli.run"></a>
-      - calls [tui.terminal.runTerminal](tui.md#tui.terminal.runTerminal), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [cli.cli.cmdFeature](cli.md#cli.cli.cmdFeature), [cli.cli.cmdHook](cli.md#cli.cli.cmdHook), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap), [cli.cli.cmdCheck](cli.md#cli.cli.cmdCheck), [cli.cli.cmdExplain](cli.md#cli.cli.cmdExplain), [cli.lsp.serveLsp](cli.md#cli.lsp.serveLsp), [cli.cli.cmdDoctor](cli.md#cli.cli.cmdDoctor), [cli.cli.cmdDraft](cli.md#cli.cli.cmdDraft), [cli.cli.cmdSpecToCode](cli.md#cli.cli.cmdSpecToCode), [cli.cli.cmdCodeToSpec](cli.md#cli.cli.cmdCodeToSpec), [cli.cli.cmdWire](cli.md#cli.cli.cmdWire), [cli.cli.cmdTracePlan](cli.md#cli.cli.cmdTracePlan), [cli.cli.cmdWeb](cli.md#cli.cli.cmdWeb), [cli.cli.needPaths](cli.md#cli.cli.needPaths), [cli.cli.cmdParse](cli.md#cli.cli.cmdParse), [cli.cli.cmdFmt](cli.md#cli.cli.cmdFmt)
+      - calls [tui.terminal.runTerminal](tui.md#tui.terminal.runTerminal), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [cli.cli.cmdFeature](cli.md#cli.cli.cmdFeature), [cli.cli.cmdHook](cli.md#cli.cli.cmdHook), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap), [cli.cli.cmdCheck](cli.md#cli.cli.cmdCheck), [cli.cli.cmdExplain](cli.md#cli.cli.cmdExplain), [cli.lsp.serveLsp](cli.md#cli.lsp.serveLsp), [cli.cli.cmdDoctor](cli.md#cli.cli.cmdDoctor), [cli.cli.cmdDraft](cli.md#cli.cli.cmdDraft), [cli.cli.cmdSpecToCode](cli.md#cli.cli.cmdSpecToCode), [cli.cli.cmdCodeToSpec](cli.md#cli.cli.cmdCodeToSpec), [cli.cli.cmdWire](cli.md#cli.cli.cmdWire), [cli.cli.cmdTracePlan](cli.md#cli.cli.cmdTracePlan), [cli.cli.cmdWeb](cli.md#cli.cli.cmdWeb), [cli.cli.needPaths](cli.md#cli.cli.needPaths), [cli.cli.cmdParse](cli.md#cli.cli.cmdParse), [cli.cli.cmdFmt](cli.md#cli.cli.cmdFmt)
     - fn [cmdWeb](../../src/cli.ts#L283) (portText: string, host: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWeb"></a>
       - calls [tui.web.serveWeb](tui.md#tui.web.serveWeb), [map.analyze.findRoot](map.md#map.analyze.findRoot)
@@ -249,83 +163,73 @@
       <a id="cli.cli.needPaths"></a>
     - fn [cmdInit](../../src/cli.ts#L768) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a>
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [cli.cli.harnessPlan](cli.md#cli.cli.harnessPlan), [cli.cli.applyHarness](cli.md#cli.cli.applyHarness), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [base.config.guessLayout](base.md#base.config.guessLayout), [base.config.configToJson](base.md#base.config.configToJson), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap)
-    - fn [cmdAgents](../../src/cli.ts#L801) (agents: string | undefined, checkOnly: boolean) → number <!-- internal -->
-      <a id="cli.cli.cmdAgents"></a>
-      - calls [cli.cli.applyHarness](cli.md#cli.cli.applyHarness), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.harnessPlan](cli.md#cli.cli.harnessPlan)
-    - fn [cmdBaseline](../../src/cli.ts#L806) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [base.config.guessLayout](base.md#base.config.guessLayout), [base.config.configToJson](base.md#base.config.configToJson), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap)
+    - fn [cmdAgents](../../src/cli.ts#L805) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
+      - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [printAgents](../../src/cli.ts#L810) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+      <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
+    - fn [cmdBaseline](../../src/cli.ts#L829) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [cmdFeature](../../src/cli.ts#L822) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L845) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.gapLine](operations.md#operations.operations.gapLine), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L837) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L860) (name: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a>
       - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [readStdin](../../src/cli.ts#L857) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L880) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a>
-    - fn [packageVersion](../../src/cli.ts#L863) () → string <!-- internal -->
-      <a id="cli.cli.packageVersion"></a>
-    - fn [harnessPlan](../../src/cli.ts#L867) (root: string, flag: string | undefined) → HarnessPlan <!-- internal -->
-      <a id="cli.cli.harnessPlan"></a>
-      - calls [cli.harness.parseAgents](cli.md#cli.harness.parseAgents), [cli.harness.detectHarnesses](cli.md#cli.harness.detectHarnesses), [cli.cli.harnessPresent](cli.md#cli.cli.harnessPresent), [cli.cli.listDir](cli.md#cli.cli.listDir), [cli.harness.skillFile](cli.md#cli.harness.skillFile), [cli.harness.planHarness](cli.md#cli.harness.planHarness), [cli.cli.packageVersion](cli.md#cli.cli.packageVersion)
-    - fn [harnessPresent](../../src/cli.ts#L877) (root: string, path: string) → boolean <!-- internal -->
-      <a id="cli.cli.harnessPresent"></a><br>`.claude` and the other harness directories are directories; opencode is a file.
-    - fn [listDir](../../src/cli.ts#L886) (root: string, path: string) → string[] | null <!-- internal -->
-      <a id="cli.cli.listDir"></a>
-    - fn [applyHarness](../../src/cli.ts#L896) (root: string, plan: HarnessPlan, checkOnly: boolean) → number <!-- internal -->
-      <a id="cli.cli.applyHarness"></a>
-      - calls [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [changedPathSet](../../src/cli.ts#L924) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
+    - fn [changedPathSet](../../src/cli.ts#L887) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
       <a id="cli.cli.changedPathSet"></a><br>Git paths are relative to `root`; check prints spec paths relative to `cwd`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitChangedFiles](../../src/cli.ts#L934) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
+    - fn [gitChangedFiles](../../src/cli.ts#L897) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
       <a id="cli.cli.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet. `deleted` are paths removed versus `ref`. Paths are relative to `root`.
       - calls [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks)
-    - fn [deletedModuleIds](../../src/cli.ts#L953) (config: Config, files: readonly string[]) → string[] <!-- internal -->
+    - fn [deletedModuleIds](../../src/cli.ts#L916) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       <a id="cli.cli.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [cmdMap](../../src/cli.ts#L964) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L927) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdMap"></a>
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
-    - fn [keylangFiles](../../src/cli.ts#L1005) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+    - fn [keylangFiles](../../src/cli.ts#L968) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       <a id="cli.cli.keylangFiles"></a><br>Markdown files under `paths` that are keylang: a saved explanation is the model's text, named in a note and left out.
       - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation)
-    - fn [assertConfigFormat](../../src/cli.ts#L1022) () → void <!-- internal -->
+    - fn [assertConfigFormat](../../src/cli.ts#L985) () → void <!-- internal -->
       <a id="cli.cli.assertConfigFormat"></a><br>`fmt` and `parse` do not validate the rest of `keylang.json`, only which edition it asks for.
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.assertFormatOnly](base.md#base.config.assertFormatOnly)
-    - fn [cmdParse](../../src/cli.ts#L1028) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L991) (paths: string[], json: boolean) → number <!-- internal -->
       <a id="cli.cli.cmdParse"></a>
       - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [cli.cli.keylangFiles](cli.md#cli.cli.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [cli.cli.printTree](cli.md#cli.cli.printTree), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L1040) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1003) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
       - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.explainEdge](cli.md#cli.cli.explainEdge), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [check.assess.sameFinding](check.md#check.assess.sameFinding), [cli.cli.writeCheck](cli.md#cli.cli.writeCheck)
-    - fn [explainEdge](../../src/cli.ts#L1093) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1056) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       <a id="cli.cli.explainEdge"></a>
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [writeCheck](../../src/cli.ts#L1127) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1090) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       <a id="cli.cli.writeCheck"></a>
       - calls [features.check-results.checkResults](features.md#features.check-results.checkResults), [cli.cli.githubProperty](cli.md#cli.cli.githubProperty), [cli.cli.ruleOf](cli.md#cli.cli.ruleOf), [cli.cli.githubData](cli.md#cli.cli.githubData), [cli.cli.ruleText](cli.md#cli.cli.ruleText)
-    - fn [ruleOf](../../src/cli.ts#L1180) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1143) (result: CheckResult) → string <!-- internal -->
       <a id="cli.cli.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
-    - fn [ruleText](../../src/cli.ts#L1192) (id: string) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1155) (id: string) → string <!-- internal -->
       <a id="cli.cli.ruleText"></a>
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [githubData](../../src/cli.ts#L1198) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1161) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubData"></a>
-    - fn [githubProperty](../../src/cli.ts#L1202) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1165) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubProperty"></a>
       - calls [cli.cli.githubData](cli.md#cli.cli.githubData)
-    - fn [cmdFmt](../../src/cli.ts#L1211) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1174) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file.
       - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation), [lang.fmt.formatSource](lang.md#lang.fmt.formatSource), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [printTree](../../src/cli.ts#L1250) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1213) (doc: Document) → void <!-- internal -->
       <a id="cli.cli.printTree"></a>
       - calls [cli.cli.printNode](cli.md#cli.cli.printNode)
-    - fn [printNode](../../src/cli.ts#L1258) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1221) (n: Node, depth: number) → void <!-- internal -->
       <a id="cli.cli.printNode"></a>
       - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [gitChanges](../../src/cli.ts#L1271) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1234) (root: string, ref: string) → ChangedLines <!-- internal -->
       <a id="cli.cli.gitChanges"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet, relative to `root`.
       - calls [features.draft.diffHunks](features.md#features.draft.diffHunks)
   - module [index](../../src/index.ts#L1)

@@ -1,13 +1,17 @@
 // Harness adapters: one pure merge from the files on disk and the selected
 // harnesses to the next text. Markdown keeps a marked block; JSON and TOML
-// replace only the `keylang` key. I/O stays in the CLI.
+// replace only the `keylang` key. Below it, the two phases the shared
+// `agents` operation runs: a plan read from the disk (nothing written), then
+// a commit that checks the plan's inputs again and writes step by step.
 
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import { allCrlf } from "../safe-write.ts";
+import { allCrlf, landing, writeAtomic, writeProblem } from "./safe-write.ts";
 
-/** Files `init` / `agents` may create or edit. The CLI reads each one before planning. */
+/** Files `init` / `agents` may create or edit. The plan reads each one before it is computed. */
 export const HARNESS_PATHS = [
   "AGENTS.md",
   "CLAUDE.md",
@@ -22,9 +26,9 @@ export const HARNESS_PATHS = [
   ".codex/hooks.json",
 ] as const;
 
-/** The skill shipped in the package. The same relative path works from `src/adapters` and from `dist/adapters`. */
+/** The skill shipped in the package. The same relative path works from `src` and from `dist`. */
 export function skillFile(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "../../resources/keylang-feature/SKILL.md");
+  return join(dirname(fileURLToPath(import.meta.url)), "../resources/keylang-feature/SKILL.md");
 }
 
 export const HARNESS_NAMES = ["claude", "codex", "opencode", "cursor"] as const;
@@ -436,4 +440,185 @@ function opencodeFile(files: ReadonlyMap<string, string | null>): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// ---------- the plan and the commit of `keylang agents` ----------
+
+/** Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list. */
+export type HarnessChoice = "auto" | "none" | readonly HarnessName[];
+
+/** `--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does. */
+export function harnessChoice(flag: string | undefined): HarnessChoice {
+  if (flag === undefined) return "auto";
+  const selection = parseAgents(flag);
+  return selection.instructions ? selection.harnesses : "none";
+}
+
+/** The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`. */
+export function keylangVersion(): string {
+  return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+}
+
+/** What a harness file is for, as a step before the write names it. */
+export type HarnessCategory = "instructions" | "mcp" | "skill" | "settings" | "hooks";
+
+export function harnessCategory(path: string): HarnessCategory {
+  if (path === "AGENTS.md" || path === "CLAUDE.md") return "instructions";
+  if (path === SKILL_AGENTS || path === SKILL_CLAUDE) return "skill";
+  if (path === ".claude/settings.json") return "settings";
+  if (path === ".codex/hooks.json") return "hooks";
+  return "mcp";
+}
+
+/** The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file. */
+export function diskProbe(root: string): HarnessProbe {
+  return {
+    exists: (path) => {
+      try {
+        const stat = statSync(join(root, path));
+        return path.endsWith(".json") || path.endsWith(".jsonc") ? stat.isFile() : stat.isDirectory();
+      } catch {
+        return false;
+      }
+    },
+    list: (path) => {
+      try {
+        return statSync(join(root, path)).isDirectory() ? readdirSync(join(root, path)) : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/** The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none. */
+export function resolveChoice(choice: HarnessChoice, probe: HarnessProbe): HarnessSelection {
+  if (choice === "auto") return { harnesses: detectHarnesses(probe), instructions: true };
+  if (choice === "none") return { harnesses: [], instructions: false };
+  if (choice.length === 0) throw new Error(`agents: name at least one harness; expected ${HARNESS_NAMES.join(", ")}, or none`);
+  const unknown = choice.find((name) => !HARNESS_NAMES.includes(name));
+  if (unknown !== undefined) throw new Error(`unknown agent \`${unknown}\`; expected ${HARNESS_NAMES.join(", ")}, or none`);
+  return { harnesses: HARNESS_NAMES.filter((name) => choice.includes(name)), instructions: true };
+}
+
+/** One file of the plan: the text it should hold (null: absent) against what is there now. */
+export interface HarnessTarget {
+  path: string;
+  category: HarnessCategory;
+  /** `keep`: it already holds the text (CRLF read as LF); `write` / `remove`: the commit changes it. */
+  action: "keep" | "write" | "remove";
+  text: string | null;
+}
+
+/**
+ * What `keylang agents` would do, computed before anything is written.
+ * Internal to one operation — not a stored format.
+ */
+export interface AgentsPlan {
+  root: string;
+  choice: HarnessChoice;
+  selection: HarnessSelection;
+  version: string;
+  /** Every file the selection owns, in the adapter's order; empty with `error`. */
+  targets: HarnessTarget[];
+  /** A broken marker or invalid JSON/TOML: nothing may be written. */
+  error: { file: string; message: string } | null;
+  /** The text of every harness path the plan read (null: absent): the commit expects exactly these. */
+  inputs: ReadonlyMap<string, string | null>;
+}
+
+/** Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error. */
+export function planAgents(root: string, choice: HarnessChoice): AgentsPlan {
+  const selection = resolveChoice(choice, diskProbe(root));
+  const inputs = readInputs(root);
+  const skill = selection.instructions && selection.harnesses.length > 0 ? readFileSync(skillFile(), "utf8") : "";
+  const version = keylangVersion();
+  const plan = planHarness({ selection, version, skill, files: inputs });
+  const targets: HarnessTarget[] = [];
+  for (const file of plan.files) {
+    const current = inputs.get(file.path) ?? null;
+    const same = current === null ? file.text === null : file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n");
+    targets.push({ path: file.path, category: harnessCategory(file.path), action: same ? "keep" : file.text === null ? "remove" : "write", text: file.text });
+  }
+  return { root, choice, selection, version, targets, error: plan.error, inputs };
+}
+
+function readInputs(root: string): Map<string, string | null> {
+  return new Map<string, string | null>(HARNESS_PATHS.map((path) => [path, existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : null]));
+}
+
+/**
+ * Why the plan may not be committed now (`path: reason` lines; empty when it
+ * may): every harness path must still hold the bytes the plan read, a target
+ * must pass the repository's write rules, and `auto` must still detect the
+ * same harnesses.
+ */
+export function agentsPlanProblems(plan: AgentsPlan): string[] {
+  const problems: string[] = [];
+  const now = readInputs(plan.root);
+  for (const path of HARNESS_PATHS) {
+    const before = plan.inputs.get(path) ?? null;
+    const after = now.get(path) ?? null;
+    if (before === after) continue;
+    problems.push(`${path}: ${before === null ? "created" : after === null ? "removed" : "changed"} on disk while the integrations were planned; nothing written`);
+  }
+  if (problems.length > 0) return problems;
+  for (const target of plan.targets) {
+    if (target.action !== "write") continue;
+    const problem = writeProblem(plan.root, target.path, { expect: plan.inputs.get(target.path) ?? null });
+    if (problem !== null) problems.push(`${target.path}: ${problem}`);
+  }
+  if (plan.choice === "auto") {
+    const detected = detectHarnesses(diskProbe(plan.root));
+    if (detected.join(",") !== plan.selection.harnesses.join(",")) {
+      problems.push(`auto: the detected harnesses changed (${plan.selection.harnesses.join(", ") || "none"} → ${detected.join(", ") || "none"}); nothing written`);
+    }
+  }
+  return problems;
+}
+
+/** One file step of a commit, with what became of it. */
+export interface HarnessStep {
+  path: string;
+  category: HarnessCategory;
+  action: "write" | "remove";
+  state: "completed" | "failed" | "not-attempted";
+  error?: string;
+}
+
+/**
+ * Writes and removes the changed targets one by one, in plan order. A write
+ * is atomic at the target (a link inside the repository is followed; CRLF of
+ * the old file kept); a removal removes the entry itself. The first error
+ * stops: that step is `failed`, the rest `not-attempted`, nothing is rolled
+ * back. The signal is checked between steps.
+ */
+export async function commitAgents(
+  plan: AgentsPlan,
+  options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {},
+): Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }> {
+  const changed = plan.targets.filter((target) => target.action !== "keep");
+  const steps: HarnessStep[] = changed.map((target) => ({ path: target.path, category: target.category, action: target.action === "remove" ? "remove" : "write", state: "not-attempted" }));
+  for (const [i, target] of changed.entries()) {
+    // One turn of the event loop between steps: a cancel sent to a worker arrives here.
+    await new Promise<void>((done) => setImmediate(done));
+    if (options.signal?.aborted) return { steps, outcome: "cancelled" };
+    const step = steps[i]!;
+    options.onStep?.({ path: step.path, action: step.action });
+    const abs = join(plan.root, target.path);
+    try {
+      if (target.text === null) rmSync(abs, { force: true });
+      else {
+        const at = landing(abs);
+        if (at === null) throw new Error("leads through a loop of links");
+        writeAtomic(at, target.text);
+      }
+      step.state = "completed";
+    } catch (error) {
+      step.state = "failed";
+      step.error = error instanceof Error ? error.message : String(error);
+      return { steps, outcome: "failed" };
+    }
+  }
+  return { steps, outcome: "completed" };
 }

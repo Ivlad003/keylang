@@ -1,10 +1,10 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
-import { detectHarnesses, HARNESS_PATHS, parseAgents, planHarness, skillFile, type HarnessPlan, type HarnessSelection } from "./adapters/harness.ts";
+import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
@@ -32,7 +32,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation } from "./operations.ts";
+import { featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type OperationEnvelope } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -218,7 +218,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "init":
       return cmdInit(paths[0] ?? ".", { agents: values.agents, check: values.check === true });
     case "agents":
-      return cmdAgents(values.agents, values.check === true);
+      return cmdAgents(findRoot(process.cwd()), harnessChoice(values.agents), values.check === true);
     case "baseline":
       return cmdBaseline(findRoot(process.cwd()), values.check === true);
     case "feature":
@@ -774,13 +774,16 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
     process.stderr.write(`keylang: no supported source files found under ${dir} (TypeScript, JavaScript, Python, Rust)\n`);
     return 2;
   }
-  // A broken harness file fails before any write, including keylang.json.
-  const plan = harnessPlan(root, opts.agents);
+  // An unknown name or a broken harness file fails before any write, including keylang.json.
+  const choice = harnessChoice(opts.agents);
   if (opts.check) {
-    const agents = applyHarness(root, plan, true);
+    const agents = await cmdAgents(root, choice, true);
+    if (agents === 2) return 2;
     const baseline = await cmdBaseline(root, true);
     return agents === 0 && baseline === 0 ? 0 : 1;
   }
+  const planned = await runOperation({ kind: "agents", root, harnesses: choice, check: true });
+  if (planned.status === "failed") return printAgents(planned);
   if (existsSync(file)) {
     process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
   } else {
@@ -792,14 +795,34 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
   }
   const mapCode = await cmdMap(dir, false);
   const baseline = await cmdBaseline(root, false);
-  const agents = applyHarness(root, plan, false);
+  const agents = await cmdAgents(root, choice, false);
   if (mapCode !== 0) return mapCode;
   if (baseline !== 0) return baseline;
   return agents;
 }
 
-function cmdAgents(agents: string | undefined, checkOnly: boolean): number {
-  return applyHarness(findRoot(process.cwd()), harnessPlan(findRoot(process.cwd()), agents), checkOnly);
+/** `agents [--agents=LIST] [--check]`: a printer over the shared agents operation. */
+async function cmdAgents(root: string, harnesses: HarnessChoice, checkOnly: boolean): Promise<number> {
+  return printAgents(await runOperation({ kind: "agents", root, harnesses, check: checkOnly }));
+}
+
+/** File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr. */
+function printAgents(result: OperationEnvelope<"agents">): number {
+  const payload = result.payload;
+  if (payload === null || payload.error !== null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  if (payload.refused.length > 0) {
+    for (const line of payload.refused) process.stdout.write(`${line}\n`);
+    process.stderr.write("keylang: nothing was written; run `keylang agents` again\n");
+    return result.exitCode ?? 2;
+  }
+  for (const message of result.messages) {
+    if (message.level === "info") process.stdout.write(`${message.text}\n`);
+    else process.stderr.write(`keylang: ${message.text}\n`);
+  }
+  return result.exitCode ?? 2;
 }
 
 /** `baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr. */
@@ -858,66 +881,6 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
-}
-
-function packageVersion(): string {
-  return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
-}
-
-function harnessPlan(root: string, flag: string | undefined): HarnessPlan {
-  const selection: HarnessSelection = flag !== undefined ? parseAgents(flag) : { harnesses: detectHarnesses({ exists: (path) => harnessPresent(root, path), list: (path) => listDir(root, path) }), instructions: true };
-  const files = new Map<string, string | null>(HARNESS_PATHS.map((path) => [path, existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : null]));
-  const skill = selection.instructions && selection.harnesses.length > 0 ? readFileSync(skillFile(), "utf8") : "";
-  const plan = planHarness({ selection, version: packageVersion(), skill, files });
-  if (plan.error) throw new Error(`${plan.error.file}: ${plan.error.message}`);
-  return plan;
-}
-
-/** `.claude` and the other harness directories are directories; opencode is a file. */
-function harnessPresent(root: string, path: string): boolean {
-  try {
-    const stat = statSync(join(root, path));
-    return path.endsWith(".json") || path.endsWith(".jsonc") ? stat.isFile() : stat.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function listDir(root: string, path: string): string[] | null {
-  try {
-    const stat = statSync(join(root, path));
-    if (!stat.isDirectory()) return null;
-    return readdirSync(join(root, path));
-  } catch {
-    return null;
-  }
-}
-
-function applyHarness(root: string, plan: HarnessPlan, checkOnly: boolean): number {
-  const stale: string[] = [];
-  const writes: { path: string; text: string | null }[] = [];
-  for (const file of plan.files) {
-    const abs = join(root, file.path);
-    const current = existsSync(abs) ? readFileSync(abs, "utf8") : null;
-    if (current === null && file.text === null) continue;
-    if (current !== null && file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n")) continue;
-    if (checkOnly) stale.push(file.path);
-    else writes.push(file);
-  }
-  if (checkOnly) {
-    for (const path of stale) process.stdout.write(`${path}: stale, run \`keylang agents\`\n`);
-    return stale.length === 0 ? 0 : 1;
-  }
-  for (const file of writes) {
-    if (file.text === null) {
-      rmSync(join(root, file.path), { force: true });
-      process.stdout.write(`${file.path}: removed\n`);
-      continue;
-    }
-    safeWrite(root, file.path, file.text);
-    process.stdout.write(`${file.path}: written\n`);
-  }
-  return 0;
 }
 
 /** Git paths are relative to `root`; check prints spec paths relative to `cwd`. Both forms match. */

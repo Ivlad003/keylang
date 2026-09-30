@@ -4117,3 +4117,194 @@ test("baseline: without supported sources the TUI and the CLI give a reason with
   assert.deepEqual([again.status, again.stdout], [0, ""]);
   assert.equal(readFileSync(join(root, "keylang/rules.baseline.md"), "utf8"), crlf);
 });
+
+// ---------- agents: harness integrations (ticket 11) ----------
+
+const PACKAGE_VERSION = (JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf8")) as { version: string }).version;
+
+/** The baseline repository with Claude and Codex in use: foreign CRLF text in AGENTS.md and a foreign Claude setting. */
+function agentsRepo(t: { after: (f: () => void) => void }): string {
+  const dir = baselineRepo(t);
+  writeFileSync(join(dir, "AGENTS.md"), "Чужий заголовок\r\n\r\nНе чіпати.\r\n");
+  mkdirSync(join(dir, ".claude"));
+  writeFileSync(join(dir, ".claude/settings.json"), `${JSON.stringify({ permissions: { allow: ["Bash"] }, theme: "dark" }, null, 2)}\n`);
+  mkdirSync(join(dir, ".codex"));
+  return dir;
+}
+
+/** The palette's agents form: the selection typed as in `--agents` (empty is auto), then the mode. */
+function agentsForm(send: (keys: string) => void, selection: string, mode: "write" | "check"): void {
+  send(KEY.ctrlP);
+  for (const ch of "agents set up") send(ch);
+  send(KEY.enter);
+  for (const ch of selection) send(ch);
+  if (mode === "check") send(KEY.down);
+  send(KEY.enter);
+}
+
+function agentsRecord(app: App): Extract<OperationResult, { kind: "agents" }> & { payload: NonNullable<Extract<OperationResult, { kind: "agents" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "agents" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "agents" }> & { payload: NonNullable<Extract<OperationResult, { kind: "agents" }>["payload"]> };
+}
+
+function cliAgents(root: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "agents", ...args], { cwd: root, encoding: "utf8" });
+}
+
+const stdoutOf = (result: OperationResult): string => result.messages.filter((m) => m.level === "info").map((m) => `${m.text}\n`).join("");
+
+test("tui: agents auto, an explicit list and none write what the CLI writes in a twin; foreign text stays byte for byte; write and check are idempotent", async (t) => {
+  const root = agentsRepo(t);
+  const twin = agentsRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The form resolves the selection on the disk and names what it would change, with the pinned MCP version; nothing runs.
+  s.send(KEY.ctrlP);
+  for (const ch of "agents: set up or check integrations") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "agents");
+  assert.match(s.app.state.prompt?.note ?? "", /^auto: detected claude, codex · changes instructions 2, mcp 2, skill 2, settings 1, hooks 1 · MCP npx -y keylang@/);
+  assert.ok(s.app.state.prompt?.note?.includes(`keylang@${PACKAGE_VERSION} mcp`));
+  assert.match(s.app.state.prompt?.note ?? "", /does not test the clients/);
+  assert.match(s.app.state.prompt?.items[0] ?? "", /^Write 8 file\(s\): AGENTS\.md, CLAUDE\.md, \.mcp\.json, …$/);
+  for (const ch of "nope") s.send(ch);
+  assert.match(s.app.state.prompt?.note ?? "", /unknown agent `nope`; expected claude, codex, opencode, cursor, or none/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "agents", "an invalid selection keeps the form");
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "the form writes nothing");
+  // Check on auto: code 1 and the CLI's stale lines; nothing written.
+  agentsForm(s.send, "", "check");
+  await s.app.idle();
+  let result = agentsRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.choice, result.payload.harnesses], ["completed", 1, "auto", ["claude", "codex"]]);
+  const cliCheck = cliAgents(twin, ["--check"]);
+  assert.equal(cliCheck.status, 1);
+  assert.equal(stdoutOf(result), cliCheck.stdout);
+  assert.deepEqual(treeBytes(root), before, "check writes nothing");
+  const staleCheck = s.app.state.records.at(-1)!;
+  // Write on auto: the CLI's files and bytes, the pinned version, the foreign text kept.
+  agentsForm(s.send, "", "write");
+  assert.equal(s.app.state.barrier, null);
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  const cliWrite = cliAgents(twin);
+  assert.equal(cliWrite.status, 0, cliWrite.stderr);
+  assert.deepEqual([result.status, result.exitCode], ["completed", 0]);
+  assert.equal(stdoutOf(result), cliWrite.stdout);
+  assert.deepEqual(treeBytes(root), treeBytes(twin));
+  assert.equal(result.payload.version, PACKAGE_VERSION);
+  assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").startsWith("Чужий заголовок\r\n\r\nНе чіпати.\r\n"));
+  const settings = JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8")) as { theme: string; permissions: { allow: string[]; deny: string[] } };
+  assert.deepEqual([settings.theme, settings.permissions.allow], ["dark", ["Bash"]]);
+  assert.match(readFileSync(join(root, ".codex/config.toml"), "utf8"), new RegExp(`keylang@${PACKAGE_VERSION.replace(/\./g, "\\.")}`));
+  assert.equal(staleCheck.outdated, "the harness files were written since this run");
+  // Idempotent: a second write changes nothing, a check is 0, as the CLI.
+  const written = treeBytes(root);
+  agentsForm(s.send, "", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  assert.deepEqual([result.exitCode, result.written, result.payload.steps], [0, [], []]);
+  agentsForm(s.send, "", "check");
+  await s.app.idle();
+  assert.equal(agentsRecord(s.app).exitCode, 0);
+  assert.deepEqual(treeBytes(root), written);
+  assert.equal(cliAgents(root, ["--check"]).status, 0);
+  // An explicit list: the named harness only, as `--agents=cursor`.
+  agentsForm(s.send, "cursor", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  const cliCursor = cliAgents(twin, ["--agents=cursor"]);
+  assert.equal(cliCursor.status, 0, cliCursor.stderr);
+  assert.deepEqual([result.exitCode, result.payload.choice, result.payload.harnesses], [0, "list", ["cursor"]]);
+  assert.equal(stdoutOf(result), cliCursor.stdout);
+  assert.deepEqual(treeBytes(root), treeBytes(twin));
+  assert.deepEqual((JSON.parse(readFileSync(join(root, ".cursor/mcp.json"), "utf8")) as { mcpServers: { keylang: { args: string[] } } }).mcpServers.keylang.args, ["-y", `keylang@${PACKAGE_VERSION}`, "mcp"]);
+  // None: keylang's harness files are stripped as the CLI strips them; the foreign text and setting stay.
+  agentsForm(s.send, "none", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  const cliNone = cliAgents(twin, ["--agents=none"]);
+  assert.equal(cliNone.status, 0, cliNone.stderr);
+  assert.deepEqual([result.exitCode, result.payload.choice], [0, "none"]);
+  assert.equal(stdoutOf(result), cliNone.stdout);
+  assert.ok(result.removed.length > 0);
+  assert.deepEqual(treeBytes(root), treeBytes(twin));
+  assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").startsWith("Чужий заголовок\r\n\r\nНе чіпати.\r\n"));
+  assert.doesNotMatch(readFileSync(join(root, "AGENTS.md"), "utf8"), /keylang:begin/);
+  assert.equal(existsSync(join(root, ".agents/skills/keylang-feature/SKILL.md")), false);
+  assert.equal((JSON.parse(readFileSync(join(root, ".claude/settings.json"), "utf8")) as { theme: string }).theme, "dark");
+  agentsForm(s.send, "none", "check");
+  await s.app.idle();
+  assert.equal(agentsRecord(s.app).exitCode, 0);
+  assert.equal(cliAgents(root, ["--agents=none", "--check"]).status, 0);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Agents: set up or check integrations · write · none/);
+  assert.match(s.text(), /Files only: no client is started or tested\./);
+});
+
+test("tui: invalid JSON blocks every write of the plan; an outside edit before the commit is refused; an I/O error names what landed", async (t) => {
+  const root = agentsRepo(t);
+  writeFileSync(join(root, ".mcp.json"), "{ broken");
+  let pause: () => void = () => {};
+  const s = session(root, { operations: pausedRunner(() => pause()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // Malformed JSON: code 2 naming the file; AGENTS.md, first in the plan, is not written either.
+  let before = treeBytes(root);
+  agentsForm(s.send, "", "write");
+  await s.app.idle();
+  let result = agentsRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.error?.file, result.written], ["failed", 2, ".mcp.json", []]);
+  assert.deepEqual(treeBytes(root), before);
+  const cli = cliAgents(root);
+  assert.equal(cli.status, 2);
+  assert.equal(cli.stderr, `keylang: ${result.messages[0]!.text}\n`);
+  assert.match(cli.stderr, /^keylang: \.mcp\.json: invalid JSON/);
+  assert.deepEqual(treeBytes(root), before);
+  s.send(KEY.f6);
+  assert.match(s.text(), /\.mcp\.json is broken, nothing written · code 2/);
+  s.send(KEY.f6);
+  // An outside edit of AGENTS.md while the plan waits for the commit: refused, its bytes stay, nothing else written.
+  writeFileSync(join(root, ".mcp.json"), "{}\n");
+  const outside = "Хтось інший\n";
+  pause = () => writeFileSync(join(root, "AGENTS.md"), outside);
+  before = treeBytes(root);
+  agentsForm(s.send, "", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 1, []]);
+  assert.deepEqual(result.payload.refused, ["AGENTS.md: changed on disk while the integrations were planned; nothing written"]);
+  assert.deepEqual(treeBytes(root), new Map([...before, ["AGENTS.md", Buffer.from(outside).toString("latin1")]]));
+  // A harness that appears meanwhile changes what auto means: refused as well.
+  pause = () => mkdirSync(join(root, ".cursor"));
+  before = treeBytes(root);
+  agentsForm(s.send, "", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, ["auto: the detected harnesses changed (claude, codex → claude, codex, cursor); nothing written"]);
+  assert.deepEqual(treeBytes(root), new Map([...before, [".cursor/", ""]]));
+  // A file where the skill directory must be: the steps before it land, it fails, the rest are not attempted; code 2.
+  rmSync(join(root, ".cursor"), { recursive: true });
+  pause = () => {};
+  writeFileSync(join(root, ".agents"), "not a directory\n");
+  agentsForm(s.send, "", "write");
+  await s.app.idle();
+  result = agentsRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 2]);
+  const states = result.payload.steps.map((step) => `${step.state} ${step.path}`);
+  const failed = states.indexOf("failed .agents/skills/keylang-feature/SKILL.md");
+  assert.ok(failed > 0, states.join("\n"));
+  assert.ok(states.slice(0, failed).every((line) => line.startsWith("completed ")), states.join("\n"));
+  assert.ok(states.slice(failed + 1).every((line) => line.startsWith("not-attempted ")) && states.length > failed + 1, states.join("\n"));
+  assert.deepEqual(result.written, result.payload.steps.slice(0, failed).map((step) => step.path));
+  assert.equal(existsSync(join(root, ".claude/skills/keylang-feature/SKILL.md")), false);
+  assert.ok(readFileSync(join(root, "AGENTS.md"), "utf8").includes("<!-- keylang:begin -->"));
+  s.send(KEY.f6);
+  assert.match(s.text(), /step\(s\) done, failed · code 2/);
+  assert.match(s.text(), /not written +skill +\.claude\/skills\/keylang-feature\/SKILL\.md/);
+});

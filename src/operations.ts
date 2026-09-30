@@ -12,6 +12,7 @@ import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan }
 import { CONFIG_FILE, loadConfig, toPosix, type Config } from "./config.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
+import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
 import { commitMap, diffMap, mapPlanProblems, planMap, type CommittedStep, type MapPlan } from "./map.ts";
@@ -64,10 +65,25 @@ export interface BaselineRequest {
   check: boolean;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest;
+/**
+ * Installs or strips the managed harness files (`keylang agents
+ * [--agents=LIST]`), or with `check` only compares them (`--check`).
+ * Setting files up says nothing about whether a harness client runs.
+ */
+export interface AgentsRequest {
+  kind: "agents";
+  /** Repository root (absolute). */
+  root: string;
+  /** `auto`: detected from the disk (the instruction block even when none is); `none`: keylang's harness files are stripped; a list: exactly those. */
+  harnesses: HarnessChoice;
+  /** Compare only; nothing is written. */
+  check: boolean;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -210,6 +226,27 @@ export interface BaselinePayload {
   snapshot: string;
 }
 
+/**
+ * What `keylang agents [--check]` planned and did. With `error` or `refused`
+ * nothing was written and `steps` is empty; otherwise every changed file is a
+ * step with its state. Paths are POSIX, relative to the root.
+ */
+export interface AgentsPayload {
+  check: boolean;
+  /** How the harnesses were chosen, and the ones the plan is for (detected, for `auto`). */
+  choice: "auto" | "none" | "list";
+  harnesses: HarnessName[];
+  /** The keylang version the MCP command and the Stop hook pin (`npx -y keylang@<version> mcp`). */
+  version: string;
+  /** Every file the selection owns, with what it needs: `keep` is current. */
+  files: { path: string; category: HarnessCategory; action: "keep" | "write" | "remove" }[];
+  /** A broken marker or invalid JSON/TOML in `file`: the whole plan is refused, nothing written. */
+  error: { file: string; message: string } | null;
+  /** Why the plan could not be committed (`path: reason`): a harness file or the detection changed meanwhile. Nothing was written. */
+  refused: string[];
+  steps: HarnessStep[];
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
@@ -217,6 +254,7 @@ export interface OperationPayloads {
   "map-check": MapCheckPayload;
   map: MapPayload;
   baseline: BaselinePayload;
+  agents: AgentsPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -248,6 +286,7 @@ export function runOperation(request: FeatureRequest, context?: OperationContext
 export function runOperation(request: MapCheckRequest, context?: OperationContext): Promise<OperationEnvelope<"map-check">>;
 export function runOperation(request: MapRequest, context?: OperationContext): Promise<OperationEnvelope<"map">>;
 export function runOperation(request: BaselineRequest, context?: OperationContext): Promise<OperationEnvelope<"baseline">>;
+export function runOperation(request: AgentsRequest, context?: OperationContext): Promise<OperationEnvelope<"agents">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -261,6 +300,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runMap(request, context);
     case "baseline":
       return runBaseline(request, context);
+    case "agents":
+      return runAgents(request, context);
   }
 }
 
@@ -280,6 +321,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "map":
       return { kind, ...base };
     case "baseline":
+      return { kind, ...base };
+    case "agents":
       return { kind, ...base };
   }
 }
@@ -536,6 +579,89 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
   }
   payload.written = true;
   return { ...emptyBaseline("completed", 0), payload, messages: lines([`${plan.path}: written`]), written: [plan.path] };
+}
+
+function emptyAgents(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"agents"> {
+  return { kind: "agents", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang agents [--check]`: the managed harness files of the chosen
+ * harnesses (the unchanged adapters of `harness.ts`) against the disk. The
+ * whole plan is built first: a broken marker or invalid JSON/TOML fails it
+ * with code 2 naming the file, and nothing is written. Check: 0 when every
+ * file is current, 1 listing the stale ones; nothing is written. Write:
+ * nothing to do is 0 without `beforeCommit`; otherwise after it the inputs
+ * are read again — a harness file or the detection changed meanwhile refuses
+ * the plan (failed, 1) — and the files are written or removed one by one (0;
+ * 2 on an I/O error part way, naming what landed and what was not
+ * attempted). Cancelled: null. No harness is started.
+ */
+async function runAgents(request: AgentsRequest, context: OperationContext): Promise<OperationEnvelope<"agents">> {
+  if (!isAbsolute(request.root)) return emptyAgents("failed", 2, "agents: root must be an absolute path");
+  if (context.signal?.aborted) return emptyAgents("cancelled", null);
+  context.onProgress?.({ text: "reading the harness files" });
+  let plan: AgentsPlan;
+  try {
+    plan = planAgents(request.root, request.harnesses);
+  } catch (error) {
+    return emptyAgents("failed", 2, messageOf(error));
+  }
+  const payload: AgentsPayload = {
+    check: request.check,
+    choice: request.harnesses === "auto" || request.harnesses === "none" ? request.harnesses : "list",
+    harnesses: [...plan.selection.harnesses],
+    version: plan.version,
+    files: plan.targets.map(({ path, category, action }) => ({ path, category, action })),
+    error: plan.error,
+    refused: [],
+    steps: [],
+  };
+  if (plan.error !== null) return { ...emptyAgents("failed", 2, `${plan.error.file}: ${plan.error.message}`), payload };
+  const changed = payload.files.filter((file) => file.action !== "keep");
+  const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
+  if (request.check) return { ...emptyAgents("completed", changed.length === 0 ? 0 : 1), payload, messages: lines(changed.map((file) => `${file.path}: stale, run \`keylang agents\``)) };
+  if (changed.length === 0) return { ...emptyAgents("completed", 0), payload };
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyAgents("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyAgents("cancelled", null), payload };
+  let problems: string[];
+  try {
+    problems = agentsPlanProblems(plan);
+  } catch (error) {
+    return { ...emptyAgents("failed", 2, messageOf(error)), payload };
+  }
+  if (problems.length > 0) {
+    payload.refused = problems;
+    return {
+      ...emptyAgents("failed", 1),
+      payload,
+      messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run agents again to plan from the files on disk" }],
+    };
+  }
+  const commit = await commitAgents(plan, {
+    ...(context.signal ? { signal: context.signal } : {}),
+    onStep: (step) => context.onProgress?.({ text: `${step.action === "write" ? "writing" : "removing"} ${step.path}` }),
+  });
+  payload.steps = commit.steps;
+  const done = commit.steps.filter((step) => step.state === "completed");
+  const messages: OperationMessage[] = lines(done.map((step) => `${step.path}: ${step.action === "write" ? "written" : "removed"}`));
+  for (const step of commit.steps) {
+    if (step.state === "failed") messages.push({ level: "error", text: `${step.path}: ${step.error ?? "failed"}` });
+    else if (step.state === "not-attempted") messages.push({ level: commit.outcome === "failed" ? "error" : "warning", text: `${step.path}: not ${step.action === "write" ? "written" : "removed"}` });
+  }
+  const status = commit.outcome;
+  return {
+    ...emptyAgents(status, status === "completed" ? 0 : status === "failed" ? 2 : null),
+    payload,
+    messages,
+    written: done.filter((step) => step.action === "write").map((step) => step.path),
+    removed: done.filter((step) => step.action === "remove").map((step) => step.path),
+  };
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

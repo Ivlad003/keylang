@@ -33,6 +33,7 @@ import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
 import { FACT_CACHE_FILE } from "../fact-cache.ts";
 import { baselinePath } from "../baseline.ts";
+import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "../harness.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
@@ -1680,6 +1681,12 @@ export class App {
       const writes = !request.check && this.dirtyInputs().some(isConfig) ? { writes: [baselinePath({ dir: this.specDir() })] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
     }
+    if (request.kind === "agents") {
+      // Agents reads the harness files only, never the specs or keylang.json: dirty spec and config
+      // buffers stay dirty. The form already showed what the write changes, so there is no extra step.
+      const isHarness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isHarness });
+    }
     if (request.kind !== "map") return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
     // The map reads the code and the saved keylang.json, not the specs: dirty specs stay dirty
     // and go into the analysis after the commit as overlays. The step names the targets first.
@@ -1742,6 +1749,7 @@ export class App {
       if (record.kind === "map-check" && result.kind === "map" && touched.length > 0) record.outdated ??= "the map was written since this run";
       const file = record.result?.kind === "baseline" ? record.result.payload?.file : undefined;
       if (record.params.kind === "baseline" && record.params.check && file !== undefined && touched.includes(file)) record.outdated ??= "the baseline was written since this run";
+      if (record.params.kind === "agents" && record.params.check && result.kind === "agents" && touched.length > 0) record.outdated ??= "the harness files were written since this run";
     }
     this.reanalyze(false);
     return kept.length === 0 ? null : `${kept.join(", ")} changed on disk under unsaved edits: the text stays in the buffer (Ctrl+S twice overwrites, Ctrl+Z undoes)`;
@@ -1910,6 +1918,75 @@ export class App {
     const check = prompt.ids?.[prompt.index] === "check";
     this.state.prompt = null;
     this.requestOperation("baseline", { kind: "baseline", root: this.state.root, check });
+  }
+
+  // ---------- agents (harness integrations) ----------
+
+  /**
+   * The agents form: the typed selection (empty is auto, `none`, or names as
+   * in `--agents`) and the mode. It shows what the selection resolves to and
+   * which files it would change, read from the disk; nothing runs a harness.
+   */
+  private openAgentsPrompt(): void {
+    this.state.prompt = { kind: "agents", text: "", items: [], ids: ["write", "check"], index: 0 };
+    this.refreshAgentsPrompt();
+  }
+
+  /** What a selection would do now: the read-only plan of the shared operation, or why it cannot be planned. */
+  private agentsPreview(choice: HarnessChoice): { changed: string[]; note: string } {
+    try {
+      const plan = planAgents(this.state.root, choice);
+      if (plan.error !== null) return { changed: [], note: `${plan.error.file}: ${plan.error.message}: nothing can be written until it is fixed` };
+      const harnesses = plan.selection.harnesses.join(", ");
+      const who =
+        choice === "auto" ? `auto: ${harnesses === "" ? "no harness detected, the AGENTS.md block only" : `detected ${harnesses}`}` : choice === "none" ? "none: keylang's harness files are stripped" : harnesses;
+      const changed = plan.targets.filter((target) => target.action !== "keep");
+      const counts = new Map<string, number>();
+      for (const target of changed) counts.set(target.category, (counts.get(target.category) ?? 0) + 1);
+      const what = changed.length === 0 ? "every file is current" : `changes ${[...counts].map(([category, n]) => `${category} ${n}`).join(", ")}`;
+      const mcp = plan.selection.harnesses.length > 0 ? ` · MCP npx -y keylang@${plan.version} mcp` : "";
+      return { changed: changed.map((target) => target.path), note: `${who} · ${what}${mcp} · sets up files only; it does not test the clients` };
+    } catch (error) {
+      return { changed: [], note: errorText(error) };
+    }
+  }
+
+  /** The typed selection as a choice, or why it is not one (the CLI's message for `--agents`). */
+  private agentsChoice(): HarnessChoice | { error: string } {
+    const text = this.state.prompt?.text.trim() ?? "";
+    try {
+      return text === "" || text === "auto" ? "auto" : harnessChoice(text);
+    } catch (error) {
+      return { error: errorText(error) };
+    }
+  }
+
+  private refreshAgentsPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "agents") return;
+    const choice = this.agentsChoice();
+    if (typeof choice === "object" && "error" in choice) {
+      prompt.items = ["Write the harness files", "Check the harness files (writes nothing)"];
+      prompt.note = `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor`;
+      return;
+    }
+    const preview = this.agentsPreview(choice);
+    const shown = preview.changed.length > 3 ? `${preview.changed.slice(0, 3).join(", ")}, …` : preview.changed.join(", ");
+    prompt.items = [preview.changed.length === 0 ? "Write: nothing to change" : `Write ${preview.changed.length} file(s): ${shown}`, "Check the harness files (writes nothing)"];
+    prompt.note = preview.note;
+  }
+
+  /** Enter in the agents form: the typed selection with the chosen mode runs as the session's operation; an invalid one keeps the form. */
+  private submitAgents(): void {
+    const prompt = this.state.prompt!;
+    const choice = this.agentsChoice();
+    if (typeof choice === "object" && "error" in choice) {
+      this.state.message = `agents: ${choice.error}`;
+      return;
+    }
+    const check = prompt.ids?.[prompt.index] === "check";
+    this.state.prompt = null;
+    this.requestOperation("agents", { kind: "agents", root: this.state.root, harnesses: choice, check });
   }
 
   // ---------- new specification ----------
@@ -2433,6 +2510,7 @@ export class App {
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
     if (prompt.kind === "proposal") this.refreshProposalPrompt();
     if (prompt.kind === "new-spec") this.refreshNewSpec();
+    if (prompt.kind === "agents") this.refreshAgentsPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2459,9 +2537,10 @@ export class App {
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
       if (prompt.kind === "proposal") this.refreshProposalPrompt();
       if (prompt.kind === "new-spec") this.refreshNewSpec();
+      if (prompt.kind === "agents") this.refreshAgentsPrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -2469,6 +2548,7 @@ export class App {
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter" && prompt.kind === "baseline") return this.submitBaseline();
+    if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -2545,6 +2625,8 @@ export class App {
         return this.requestOperation("map", { kind: "map", root: this.state.root });
       case "baseline":
         return this.openBaselinePrompt();
+      case "agents":
+        return this.openAgentsPrompt();
       case "cancel":
         return this.cancelOperation();
       case "find-node":

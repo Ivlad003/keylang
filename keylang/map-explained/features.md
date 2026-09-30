@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -337,6 +337,125 @@
     - fn [ghostSuggestions](../../src/ghost.ts#L29) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null) → Promise<string[]>
       <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs.
       - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.parse](lang.md#lang.parser.parse)
+  - module [harness](../../src/harness.ts#L1)
+    <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON and TOML replace only the `keylang` key.
+    - node [external.node](external.md#external.node)
+    - smol-toml [external.smol-toml](external.md#external.smol-toml)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - fn [skillFile](../../src/harness.ts#L30) () → string
+      <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
+    - type [HarnessName](../../src/harness.ts#L35) = (typeof HARNESS_NAMES)[number]
+      <a id="features.harness.HarnessName"></a>
+    - type [HarnessSelection](../../src/harness.ts#L48)
+      <a id="features.harness.HarnessSelection"></a>
+    - type [HarnessFile](../../src/harness.ts#L54)
+      <a id="features.harness.HarnessFile"></a>
+    - type [HarnessPlan](../../src/harness.ts#L60)
+      <a id="features.harness.HarnessPlan"></a>
+    - fn [parseAgents](../../src/harness.ts#L66) (value: string) → HarnessSelection
+      <a id="features.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
+    - type [HarnessProbe](../../src/harness.ts#L80)
+      <a id="features.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
+    - fn [detectHarnesses](../../src/harness.ts#L90) (probe: HarnessProbe) → HarnessName[]
+      <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
+      - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
+    - fn [claudePresent](../../src/harness.ts#L101) (probe: HarnessProbe) → boolean <!-- internal -->
+      <a id="features.harness.claudePresent"></a>
+      - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
+    - fn [claudeHasUserFile](../../src/harness.ts#L109) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+      <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
+    - fn [agentsBody](../../src/harness.ts#L123) () → string
+      <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline.
+    - fn [mcpCommand](../../src/harness.ts#L145) (version: string) → { command: string; args: string[] }
+      <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
+    - fn [hookCommand](../../src/harness.ts#L150) (version: string) → string
+      <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
+    - fn [planHarness](../../src/harness.ts#L159) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+      <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent. The first broken marker or invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
+      - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
+    - fn [mergeMarked](../../src/harness.ts#L242) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+      <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
+      - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
+    - fn [marked](../../src/harness.ts#L267) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+      <a id="features.harness.marked"></a>
+    - fn [mergeClaude](../../src/harness.ts#L276) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
+      - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
+    - fn [outsideMarkers](../../src/harness.ts#L283) (existing: string | null) → string | { error: string } <!-- internal -->
+      <a id="features.harness.outsideMarkers"></a>
+    - fn [mergeMcpJson](../../src/harness.ts#L293) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeMcpJson"></a>
+      - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
+    - fn [mergeOpencode](../../src/harness.ts#L297) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeOpencode"></a>
+      - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
+    - fn [mergeCodexToml](../../src/harness.ts#L302) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeCodexToml"></a>
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
+    - fn [mergeSettings](../../src/harness.ts#L323) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeSettings"></a>
+      - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
+    - fn [mergeHooksFile](../../src/harness.ts#L338) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeHooksFile"></a>
+      - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
+    - fn [mergeDeny](../../src/harness.ts#L348) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeDeny"></a>
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord)
+    - fn [mergeHooksValue](../../src/harness.ts#L362) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeHooksValue"></a>
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
+    - fn [rewriteGroup](../../src/harness.ts#L381) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+      <a id="features.harness.rewriteGroup"></a>
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
+    - fn [emptyGroup](../../src/harness.ts#L397) (group: Record<string, unknown>) → boolean <!-- internal -->
+      <a id="features.harness.emptyGroup"></a>
+    - fn [isOurHook](../../src/harness.ts#L401) (command: string) → boolean <!-- internal -->
+      <a id="features.harness.isOurHook"></a>
+    - fn [mergeJsonKey](../../src/harness.ts#L405) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeJsonKey"></a>
+      - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
+    - fn [parseObject](../../src/harness.ts#L419) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+      <a id="features.harness.parseObject"></a>
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord)
+    - fn [finishJson](../../src/harness.ts#L430) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+      <a id="features.harness.finishJson"></a>
+    - fn [opencodeFile](../../src/harness.ts#L435) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+      <a id="features.harness.opencodeFile"></a>
+    - fn [isRecord](../../src/harness.ts#L441) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.harness.isRecord"></a>
+    - type [HarnessChoice](../../src/harness.ts#L448) = "auto" | "none" | readonly HarnessName[]
+      <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
+    - fn [harnessChoice](../../src/harness.ts#L451) (flag: string | undefined) → HarnessChoice
+      <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
+      - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
+    - fn [keylangVersion](../../src/harness.ts#L458) () → string
+      <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
+    - type [HarnessCategory](../../src/harness.ts#L463) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+      <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
+    - fn [harnessCategory](../../src/harness.ts#L465) (path: string) → HarnessCategory
+      <a id="features.harness.harnessCategory"></a>
+    - fn [diskProbe](../../src/harness.ts#L474) (root: string) → HarnessProbe
+      <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
+    - fn [resolveChoice](../../src/harness.ts#L495) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+      <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
+      - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
+    - type [HarnessTarget](../../src/harness.ts#L505)
+      <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
+    - type [AgentsPlan](../../src/harness.ts#L517)
+      <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
+    - fn [planAgents](../../src/harness.ts#L531) (root: string, choice: HarnessChoice) → AgentsPlan
+      <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error.
+      - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
+    - fn [readInputs](../../src/harness.ts#L546) (root: string) → Map<string, string | null> <!-- internal -->
+      <a id="features.harness.readInputs"></a>
+    - fn [agentsPlanProblems](../../src/harness.ts#L556) (plan: AgentsPlan) → string[]
+      <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, a target must pass the repository's write rules, and `auto` must still detect the same harnesses.
+      - calls [features.harness.readInputs](features.md#features.harness.readInputs), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
+    - type [HarnessStep](../../src/harness.ts#L581)
+      <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
+    - fn [commitAgents](../../src/harness.ts#L596) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+      <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself.
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)
     <a id="features.keys"></a><br>API keys kept outside the environment: `~/.config/keylang/<name>.key`, mode 0600. Shared by the model adapter and voice, without loading either.
     - node [external.node](external.md#external.node)

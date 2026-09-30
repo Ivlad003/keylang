@@ -5,58 +5,6 @@
 - cli
   - module [keylang](../../bin/keylang.js#L1)
     - cli cli.cli
-  - module [harness](../../src/adapters/harness.ts#L1)
-    - node external.node
-    - smol-toml external.smol-toml
-    - safe-write base.safe-write
-    - fn [skillFile](../../src/adapters/harness.ts#L26) () → string
-    - type [HarnessName](../../src/adapters/harness.ts#L31) = (typeof HARNESS_NAMES)[number]
-    - type [HarnessSelection](../../src/adapters/harness.ts#L44)
-    - type [HarnessFile](../../src/adapters/harness.ts#L50)
-    - type [HarnessPlan](../../src/adapters/harness.ts#L56)
-    - fn [parseAgents](../../src/adapters/harness.ts#L62) (value: string) → HarnessSelection
-    - type [HarnessProbe](../../src/adapters/harness.ts#L76)
-    - fn [detectHarnesses](../../src/adapters/harness.ts#L86) (probe: HarnessProbe) → HarnessName[]
-      - calls cli.harness.claudePresent
-    - fn [claudePresent](../../src/adapters/harness.ts#L97) (probe: HarnessProbe) → boolean <!-- internal -->
-      - calls cli.harness.claudeHasUserFile
-    - fn [claudeHasUserFile](../../src/adapters/harness.ts#L105) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
-    - fn [agentsBody](../../src/adapters/harness.ts#L119) () → string
-    - fn [mcpCommand](../../src/adapters/harness.ts#L141) (version: string) → { command: string; args: string[] }
-    - fn [hookCommand](../../src/adapters/harness.ts#L146) (version: string) → string
-    - fn [planHarness](../../src/adapters/harness.ts#L155) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
-      - calls cli.harness.agentsBody, cli.harness.mergeMarked, cli.harness.mergeClaude, cli.harness.mergeMcpJson, cli.harness.mergeCodexToml, cli.harness.opencodeFile, cli.harness.mergeOpencode, cli.harness.mergeSettings, cli.harness.mergeHooksFile
-    - fn [mergeMarked](../../src/adapters/harness.ts#L238) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
-      - calls base.safe-write.allCrlf, cli.harness.marked
-    - fn [marked](../../src/adapters/harness.ts#L263) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
-    - fn [mergeClaude](../../src/adapters/harness.ts#L272) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.outsideMarkers, cli.harness.mergeMarked
-    - fn [outsideMarkers](../../src/adapters/harness.ts#L279) (existing: string | null) → string | { error: string } <!-- internal -->
-    - fn [mergeMcpJson](../../src/adapters/harness.ts#L289) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.mergeJsonKey, cli.harness.mcpCommand
-    - fn [mergeOpencode](../../src/adapters/harness.ts#L293) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.mergeJsonKey
-    - fn [mergeCodexToml](../../src/adapters/harness.ts#L298) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.isRecord, cli.harness.mcpCommand
-    - fn [mergeSettings](../../src/adapters/harness.ts#L319) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.parseObject, cli.harness.mergeDeny, cli.harness.mergeHooksValue, cli.harness.finishJson
-    - fn [mergeHooksFile](../../src/adapters/harness.ts#L334) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.parseObject, cli.harness.mergeHooksValue, cli.harness.finishJson
-    - fn [mergeDeny](../../src/adapters/harness.ts#L344) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
-      - calls cli.harness.isRecord
-    - fn [mergeHooksValue](../../src/adapters/harness.ts#L358) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
-      - calls cli.harness.isRecord, cli.harness.rewriteGroup, cli.harness.hookCommand, cli.harness.emptyGroup
-    - fn [rewriteGroup](../../src/adapters/harness.ts#L377) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
-      - calls cli.harness.isRecord, cli.harness.isOurHook, cli.harness.hookCommand
-    - fn [emptyGroup](../../src/adapters/harness.ts#L393) (group: Record<string, unknown>) → boolean <!-- internal -->
-    - fn [isOurHook](../../src/adapters/harness.ts#L397) (command: string) → boolean <!-- internal -->
-    - fn [mergeJsonKey](../../src/adapters/harness.ts#L401) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
-      - calls cli.harness.parseObject, cli.harness.isRecord, cli.harness.finishJson
-    - fn [parseObject](../../src/adapters/harness.ts#L415) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
-      - calls cli.harness.isRecord
-    - fn [finishJson](../../src/adapters/harness.ts#L426) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
-    - fn [opencodeFile](../../src/adapters/harness.ts#L431) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
-    - fn [isRecord](../../src/adapters/harness.ts#L437) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [node-test](../../src/adapters/node-test.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -102,7 +50,7 @@
       - calls cli.trace.write
   - module [cli](../../src/cli.ts#L1)
     - node external.node
-    - harness cli.harness
+    - harness features.harness
     - changed features.changed
     - config base.config
     - assess check.assess
@@ -139,7 +87,7 @@
     - fn [main](../../src/cli.ts#L153) (argv: readonly string[]) → Promise<number>
       - calls cli.cli.run
     - fn [run](../../src/cli.ts#L162) (argv: readonly string[]) → Promise<number> <!-- internal -->
-      - calls tui.terminal.runTerminal, map.analyze.findRoot, cli.cli.cmdInit, cli.cli.cmdAgents, cli.cli.cmdBaseline, cli.cli.cmdFeature, cli.cli.cmdHook, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.cmdDoctor, cli.cli.cmdDraft, cli.cli.cmdSpecToCode, cli.cli.cmdCodeToSpec, cli.cli.cmdWire, cli.cli.cmdTracePlan, cli.cli.cmdWeb, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
+      - calls tui.terminal.runTerminal, map.analyze.findRoot, cli.cli.cmdInit, cli.cli.cmdAgents, features.harness.harnessChoice, cli.cli.cmdBaseline, cli.cli.cmdFeature, cli.cli.cmdHook, cli.cli.cmdMap, cli.cli.cmdCheck, cli.cli.cmdExplain, cli.lsp.serveLsp, cli.cli.cmdDoctor, cli.cli.cmdDraft, cli.cli.cmdSpecToCode, cli.cli.cmdCodeToSpec, cli.cli.cmdWire, cli.cli.cmdTracePlan, cli.cli.cmdWeb, cli.cli.needPaths, cli.cli.cmdParse, cli.cli.cmdFmt
     - fn [cmdWeb](../../src/cli.ts#L283) (portText: string, host: string) → Promise<number> <!-- internal -->
       - calls tui.web.serveWeb, map.analyze.findRoot
     - type [ExplainOptions](../../src/cli.ts#L313) <!-- internal -->
@@ -170,56 +118,50 @@
       - calls map.trace-plan.tracePlan, base.config.loadConfig, map.analyze.findRoot
     - fn [needPaths](../../src/cli.ts#L764) (cmd: string, paths: string[]) → void <!-- internal -->
     - fn [cmdInit](../../src/cli.ts#L768) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
-      - calls base.config.loadConfig, cli.cli.harnessPlan, cli.cli.applyHarness, cli.cli.cmdBaseline, base.config.guessLayout, base.config.configToJson, cli.cli.cmdMap
-    - fn [cmdAgents](../../src/cli.ts#L801) (agents: string | undefined, checkOnly: boolean) → number <!-- internal -->
-      - calls cli.cli.applyHarness, map.analyze.findRoot, cli.cli.harnessPlan
-    - fn [cmdBaseline](../../src/cli.ts#L806) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls base.config.loadConfig, features.harness.harnessChoice, cli.cli.cmdAgents, cli.cli.cmdBaseline, operations.operations.runOperation, cli.cli.printAgents, base.config.guessLayout, base.config.configToJson, cli.cli.cmdMap
+    - fn [cmdAgents](../../src/cli.ts#L805) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls cli.cli.printAgents, operations.operations.runOperation
+    - fn [printAgents](../../src/cli.ts#L810) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L829) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation
-    - fn [cmdFeature](../../src/cli.ts#L822) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L845) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, operations.operations.gapLine, operations.operations.featureSummary
-    - fn [cmdHook](../../src/cli.ts#L837) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L860) (name: string | undefined) → Promise<number> <!-- internal -->
       - calls features.changed.parseHookEvent, cli.cli.readStdin, features.changed.hookDecision, map.analyze.findRoot, map.analyze.analyze, cli.cli.gitChangedFiles, cli.cli.changedPathSet, features.changed.filterChanged, cli.cli.deletedModuleIds, features.changed.hookFails
-    - fn [readStdin](../../src/cli.ts#L857) () → Promise<string> <!-- internal -->
-    - fn [packageVersion](../../src/cli.ts#L863) () → string <!-- internal -->
-    - fn [harnessPlan](../../src/cli.ts#L867) (root: string, flag: string | undefined) → HarnessPlan <!-- internal -->
-      - calls cli.harness.parseAgents, cli.harness.detectHarnesses, cli.cli.harnessPresent, cli.cli.listDir, cli.harness.skillFile, cli.harness.planHarness, cli.cli.packageVersion
-    - fn [harnessPresent](../../src/cli.ts#L877) (root: string, path: string) → boolean <!-- internal -->
-    - fn [listDir](../../src/cli.ts#L886) (root: string, path: string) → string[] | null <!-- internal -->
-    - fn [applyHarness](../../src/cli.ts#L896) (root: string, plan: HarnessPlan, checkOnly: boolean) → number <!-- internal -->
-      - calls base.safe-write.safeWrite
-    - fn [changedPathSet](../../src/cli.ts#L924) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L880) () → Promise<string> <!-- internal -->
+    - fn [changedPathSet](../../src/cli.ts#L887) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
       - calls base.config.toPosix
-    - fn [gitChangedFiles](../../src/cli.ts#L934) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
+    - fn [gitChangedFiles](../../src/cli.ts#L897) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
       - calls features.draft.deletedDiffPaths, features.draft.diffHunks
-    - fn [deletedModuleIds](../../src/cli.ts#L953) (config: Config, files: readonly string[]) → string[] <!-- internal -->
+    - fn [deletedModuleIds](../../src/cli.ts#L916) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       - calls map.graph.placeFile
-    - fn [cmdMap](../../src/cli.ts#L964) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L927) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, operations.operations.mapCheckLines, base.config.toPosix, operations.operations.mapConflictLines, operations.operations.mapStepLines, operations.operations.mapSummary
-    - fn [keylangFiles](../../src/cli.ts#L1005) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+    - fn [keylangFiles](../../src/cli.ts#L968) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation
-    - fn [assertConfigFormat](../../src/cli.ts#L1022) () → void <!-- internal -->
+    - fn [assertConfigFormat](../../src/cli.ts#L985) () → void <!-- internal -->
       - calls map.analyze.findRoot, base.config.assertFormatOnly
-    - fn [cmdParse](../../src/cli.ts#L1028) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L991) (paths: string[], json: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, cli.cli.keylangFiles, lang.parser.parse, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1040) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1003) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, cli.cli.gitChangedFiles, cli.cli.changedPathSet, cli.cli.deletedModuleIds, features.changed.filterChanged, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L1093) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1056) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       - calls base.span.compareText
-    - fn [writeCheck](../../src/cli.ts#L1127) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1090) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleOf](../../src/cli.ts#L1180) (result: CheckResult) → string <!-- internal -->
-    - fn [ruleText](../../src/cli.ts#L1192) (id: string) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1143) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1155) (id: string) → string <!-- internal -->
       - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L1198) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L1202) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1161) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1165) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L1211) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1174) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L1250) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1213) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L1258) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1221) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
-    - fn [gitChanges](../../src/cli.ts#L1271) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1234) (root: string, ref: string) → ChangedLines <!-- internal -->
       - calls features.draft.diffHunks
   - module [index](../../src/index.ts#L1)
     - diag base.diag

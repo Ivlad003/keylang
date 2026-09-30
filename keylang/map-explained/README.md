@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 47 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 48 | 0 | 0 | 86 |
+| [cli](cli.md) |  | 37 | 0 | 0 | 59 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 143 | 0 | 0 | 96 |
+| [features](features.md) |  | 167 | 0 | 0 | 120 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 117 | 0 | 0 | 132 |
-| [operations](operations.md) |  | 29 | 0 | 0 | 12 |
-| [tui](tui.md) |  | 274 | 0 | 0 | 198 |
-| **all** | | 899 | 0 | 0 | 788 |
+| [operations](operations.md) |  | 32 | 0 | 0 | 13 |
+| [tui](tui.md) |  | 280 | 0 | 0 | 199 |
+| **all** | | 921 | 0 | 0 | 787 |
 
 ## Index
 
@@ -36,7 +36,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **G** · [ghost](features.md#features.ghost) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
 
-**H** · [harness](cli.md#cli.harness) (cli)
+**H** · [harness](features.md#features.harness) (features)
 
 **I** · [ImportResolver](map.md#map.imports.ImportResolver) (map.imports) · [imports](map.md#map.imports) (map) · [Index](check.md#check.resolve.Index) (check.resolve) · [index](cli.md#cli.index) (cli) · [input](tui.md#tui.input) (tui) · [InputDecoder](tui.md#tui.input.InputDecoder) (tui.input) · [ir](lang.md#lang.ir) (lang)
 

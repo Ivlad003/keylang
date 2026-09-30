@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { BaselinePayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
+import type { AgentsPayload, AgentsRequest, BaselinePayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -430,12 +430,14 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
 function recordLabel(record: OperationRecord): string {
   const label = ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
   if (record.params.kind === "baseline") return `${label} · ${record.params.check ? "check" : "write"}`;
+  if (record.params.kind === "agents") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
 /** How messages name an operation: `doctor`, `feature pay`. */
 export function operationLabel(request: OperationRequest): string {
   if (request.kind === "baseline") return request.check ? "baseline check" : "baseline write";
+  if (request.kind === "agents") return request.check ? "agents check" : "agents write";
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -456,7 +458,28 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
+}
+
+/** `auto`, `none`, `claude, codex`: the selection as requested. */
+function choiceText(choice: AgentsRequest["harnesses"]): string {
+  return typeof choice === "string" ? choice : choice.join(", ");
+}
+
+/** `up to date`, `2 stale`, `3 written, 1 removed`, `broken file, nothing written`, `2 of 4 step(s) done, failed`. */
+function agentsOutcome(status: OperationRecord["status"], payload: AgentsPayload): string {
+  if (payload.error !== null) return `${payload.error.file} is broken, nothing written`;
+  if (payload.refused.length > 0) return "inputs changed, nothing written";
+  const changed = payload.files.filter((file) => file.action !== "keep").length;
+  if (payload.check || changed === 0) return changed === 0 ? "up to date" : `${changed} stale`;
+  const done = payload.steps.filter((step) => step.state === "completed");
+  if (status === "completed") {
+    const written = done.filter((step) => step.action === "write").length;
+    const removed = done.length - written;
+    return `${written} written${removed > 0 ? `, ${removed} removed` : ""}`;
+  }
+  return `${done.length} of ${payload.steps.length} step(s) done, ${status}`;
 }
 
 /** `3 written, 1 removed`, `1 conflict(s), nothing written`, `2 of 5 done, failed` — what a map write really did. */
@@ -565,6 +588,35 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       for (const line of payload.added) rows.push({ text: `  + ${line}`, style: THEME.panel });
       for (const line of payload.removed) rows.push({ text: `  - ${line}`, style: THEME.panel });
     }
+  } else if (result?.kind === "agents" && result.payload !== null) {
+    // Managed files only: the report names the selection, the pinned version and each file; setting up is not a test of the client.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    const who = payload.choice === "list" ? payload.harnesses.join(", ") : `${payload.choice}${payload.choice === "auto" ? ` → ${payload.harnesses.join(", ") || "no harness detected"}` : ""}`;
+    rows.push({ text: `Agents ${payload.check ? "check · read-only, nothing written" : "write"} · ${who} · keylang@${payload.version}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${agentsOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    if (payload.error !== null) rows.push({ text: `  ${payload.error.file}: ${payload.error.message}`, style: { ...THEME.panel, ...THEME.error } });
+    for (const line of payload.refused) rows.push({ text: `  refused  ${line}`, style: THEME.panel });
+    if (payload.refused.length > 0) rows.push({ text: "  nothing was written · Enter plans again", style: THEME.hint });
+    const steps = new Map(payload.steps.map((step) => [step.path, step]));
+    for (const file of payload.files) {
+      const step = steps.get(file.path);
+      const verb = file.action === "write" ? "written" : "removed";
+      const state =
+        file.action === "keep"
+          ? "current"
+          : payload.check || payload.refused.length > 0
+            ? "stale"
+            : step === undefined || step.state === "not-attempted"
+              ? `not ${verb}`
+              : step.state === "failed"
+                ? "failed"
+                : verb;
+      const style = step?.state === "failed" ? { ...THEME.panel, ...THEME.error } : file.action === "keep" ? { ...THEME.panel, fg: 243 } : THEME.panel;
+      rows.push({ text: `  ${state.padEnd(11)} ${file.category.padEnd(12)} ${file.path}${step?.error === undefined ? "" : `: ${step.error}`}`, style });
+    }
+    if (payload.steps.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
+    rows.push({ text: "Files only: no client is started or tested.", style: { ...THEME.panel, fg: 243 } });
   } else if (result) {
     for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
   } else {
@@ -834,10 +886,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -849,7 +901,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
