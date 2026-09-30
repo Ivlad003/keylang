@@ -8,6 +8,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { analyze, type Analysis, type AnalysisRequest } from "./analyze.ts";
+import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { CONFIG_FILE, loadConfig, toPosix, type Config } from "./config.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
@@ -51,10 +52,22 @@ export interface MapRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest;
+/**
+ * Writes `<dir>/rules.baseline.md` from the current layer graph (`keylang
+ * baseline`), or with `check` only compares it (`keylang baseline --check`).
+ */
+export interface BaselineRequest {
+  kind: "baseline";
+  /** Repository root (absolute). */
+  root: string;
+  /** Compare only; nothing is written. */
+  check: boolean;
+}
 
-/** The operation kinds that write files: they compute first and commit after `beforeCommit`. */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map"]);
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest;
+
+/** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -173,12 +186,37 @@ export interface MapPayload {
   guessed: boolean;
 }
 
+/** What `keylang baseline [--check]` found and did. The path is POSIX, relative to the root. */
+export interface BaselinePayload {
+  /** `<dir>/rules.baseline.md`. */
+  file: string;
+  check: boolean;
+  /**
+   * The file before the operation: `current` holds the rules of the graph
+   * (CRLF read as LF), `stale` is missing or differs, `manual` has no
+   * keylang:generated marker and is never written.
+   */
+  state: "current" | "stale" | "manual";
+  /** Whether the file was written by this run. */
+  written: boolean;
+  /** Why the computed baseline could not be committed (`path: reason`): the target or an input changed meanwhile. Nothing was written. */
+  refused: string[];
+  /** The I/O error of the write, or null. */
+  error: string | null;
+  /** Rule lines the new baseline adds and drops against the file on disk: how the allowed architecture changes. */
+  added: string[];
+  removed: string[];
+  /** The snapshot id the rules were computed from. */
+  snapshot: string;
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
   feature: FeaturePayload;
   "map-check": MapCheckPayload;
   map: MapPayload;
+  baseline: BaselinePayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -209,6 +247,7 @@ export function runOperation(request: DoctorRequest, context?: OperationContext)
 export function runOperation(request: FeatureRequest, context?: OperationContext): Promise<OperationEnvelope<"feature">>;
 export function runOperation(request: MapCheckRequest, context?: OperationContext): Promise<OperationEnvelope<"map-check">>;
 export function runOperation(request: MapRequest, context?: OperationContext): Promise<OperationEnvelope<"map">>;
+export function runOperation(request: BaselineRequest, context?: OperationContext): Promise<OperationEnvelope<"baseline">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -220,6 +259,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runMapCheck(request, context);
     case "map":
       return runMap(request, context);
+    case "baseline":
+      return runBaseline(request, context);
   }
 }
 
@@ -237,6 +278,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "map-check":
       return { kind, ...base };
     case "map":
+      return { kind, ...base };
+    case "baseline":
       return { kind, ...base };
   }
 }
@@ -410,6 +453,89 @@ export function mapCheckLines(diff: { conflicts: readonly string[]; stale: reado
   const lines = mapConflictLines(diff.conflicts, path);
   if (diff.conflicts.length === 0) for (const file of diff.stale) lines.push(`${path(file)}: stale, run \`keylang map\``);
   return lines;
+}
+
+function emptyBaseline(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"baseline"> {
+  return { kind: "baseline", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang baseline [--check]`: the rules of the current layer graph (the
+ * rule algorithm of `baselineText`) against `<dir>/rules.baseline.md`. The
+ * analysis reads the code and the saved `keylang.json`, not the specs, and
+ * writes no fact cache. Check: code 0 when the file matches, 1 when it is
+ * stale, missing or manual; nothing is written. Write: nothing to do when it
+ * matches (0); a manual file is never written (1); otherwise after
+ * `beforeCommit` the plan is checked again — a target or an input changed
+ * meanwhile refuses it (failed, 1) — and the file is written atomically (0,
+ * or 2 on an I/O error). No sources, a broken config or a failed analysis:
+ * 2, never empty rules. Cancelled: null, nothing written.
+ */
+async function runBaseline(request: BaselineRequest, context: OperationContext): Promise<OperationEnvelope<"baseline">> {
+  if (!isAbsolute(request.root)) return emptyBaseline("failed", 2, "baseline: root must be an absolute path");
+  if (context.signal?.aborted) return emptyBaseline("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
+  } catch (error) {
+    return emptyBaseline("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyBaseline("cancelled", null);
+  if (!analyzed.snapshot) return emptyBaseline("failed", 2, "baseline: no supported source files; run `keylang init`");
+  let plan: BaselinePlan;
+  try {
+    plan = planBaseline(analyzed.config, analyzed.snapshot);
+  } catch (error) {
+    return emptyBaseline("failed", 2, messageOf(error));
+  }
+  const payload: BaselinePayload = {
+    file: plan.path,
+    check: request.check,
+    state: plan.state,
+    written: false,
+    refused: [],
+    error: null,
+    added: plan.added,
+    removed: plan.removed,
+    snapshot: analyzed.snapshot.snapshotId,
+  };
+  const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
+  if (plan.state === "manual") return { ...emptyBaseline("completed", 1), payload, messages: lines([`${plan.path}: manual file without keylang:generated marker`]) };
+  if (request.check || plan.state === "current") {
+    const current = plan.state === "current";
+    return { ...emptyBaseline("completed", current ? 0 : 1), payload, messages: lines(current ? [] : [`${plan.path}: stale, run \`keylang baseline\``]) };
+  }
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyBaseline("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyBaseline("cancelled", null), payload };
+  let problems: string[];
+  try {
+    problems = baselinePlanProblems(plan);
+  } catch (error) {
+    return { ...emptyBaseline("failed", 2, messageOf(error)), payload };
+  }
+  if (problems.length > 0) {
+    payload.refused = problems;
+    return {
+      ...emptyBaseline("failed", 1),
+      payload,
+      messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run the baseline again to compute it from the files on disk" }],
+    };
+  }
+  context.onProgress?.({ text: `writing ${plan.path}` });
+  try {
+    commitBaseline(plan);
+  } catch (error) {
+    payload.error = messageOf(error);
+    return { ...emptyBaseline("failed", 2), payload, messages: [{ level: "error", text: `${plan.path}: ${payload.error}` }] };
+  }
+  payload.written = true;
+  return { ...emptyBaseline("completed", 0), payload, messages: lines([`${plan.path}: written`]), written: [plan.path] };
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

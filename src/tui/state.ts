@@ -111,9 +111,10 @@ export interface Prompt {
    * `context`: an ID to add to the agent's context (`@` in the context panel); `node`: find a node (`s`);
    * `feature`: the slug of the feature to check (the matching feature files are the items);
    * `proposal`: the proposals list, filtered by the typed text (design §2.9);
-   * `new-spec`: the form of a new specification, one field at a time (`form`, design §2.8).
+   * `new-spec`: the form of a new specification, one field at a time (`form`, design §2.8);
+   * `baseline`: write or check `<dir>/rules.baseline.md` (the items; `ids` are `write` / `check`).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];

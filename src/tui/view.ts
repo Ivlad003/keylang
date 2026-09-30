@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
+import type { BaselinePayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -429,11 +429,13 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
 /** The registry label of a record's action, with its parameter (the feature slug), or its id. */
 function recordLabel(record: OperationRecord): string {
   const label = ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
+  if (record.params.kind === "baseline") return `${label} · ${record.params.check ? "check" : "write"}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
 /** How messages name an operation: `doctor`, `feature pay`. */
 export function operationLabel(request: OperationRequest): string {
+  if (request.kind === "baseline") return request.check ? "baseline check" : "baseline write";
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -453,6 +455,7 @@ export function recordSummary(record: OperationRecord): string {
   }
   if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
 }
 
@@ -467,6 +470,16 @@ function mapOutcome(status: OperationRecord["status"], payload: MapPayload): str
     return `${written} written${removed > 0 ? `, ${removed} removed` : ""}`;
   }
   return `${done.length} of ${payload.steps.length} step(s) done, ${status}`;
+}
+
+/** `up to date`, `stale`, `written`, `manual file, nothing written`, `inputs changed, nothing written`. */
+function baselineOutcome(status: OperationRecord["status"], payload: BaselinePayload): string {
+  if (payload.state === "manual") return payload.check ? "manual file" : "manual file, nothing written";
+  if (payload.refused.length > 0) return "inputs changed, nothing written";
+  if (payload.error !== null) return "write failed, nothing written";
+  if (payload.written) return "written";
+  if (payload.state === "current") return "up to date";
+  return payload.check ? "stale" : `${status}, nothing written`;
 }
 
 /** `up to date`, `3 stale`, `1 conflict(s)` (conflicts first: they block `keylang map`). */
@@ -539,6 +552,19 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     for (const warning of payload.warnings) rows.push({ text: `  warning: ${warning}`, style: { ...THEME.panel, fg: 179 } });
     const stats = payload.stats;
     rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "baseline" && result.payload !== null) {
+    // The allowed architecture as rule lines: what the new baseline adds and drops against the file on disk.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Baseline ${payload.check ? "check · read-only, nothing written" : "write"} · ${payload.file} · snapshot ${payload.snapshot.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${baselineOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    if (payload.refused.length > 0) rows.push({ text: "  Enter computes the baseline again", style: THEME.hint });
+    if (payload.state !== "manual" && (payload.added.length > 0 || payload.removed.length > 0)) {
+      rows.push({ text: payload.written ? "Allowed dependencies changed:" : "The current graph would change the allowed dependencies:", style: { ...THEME.panel, fg: 243 } });
+      for (const line of payload.added) rows.push({ text: `  + ${line}`, style: THEME.panel });
+      for (const line of payload.removed) rows.push({ text: `  - ${line}`, style: THEME.panel });
+    }
   } else if (result) {
     for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
   } else {
@@ -808,10 +834,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -823,7 +849,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 

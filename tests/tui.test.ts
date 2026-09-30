@@ -3885,3 +3885,235 @@ test("operation worker: a map cancelled before its commit ends the worker with n
   assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: twin, encoding: "utf8" }).status, 0);
   assert.deepEqual(artifacts(root), artifacts(twin));
 });
+
+// ---------- baseline write and check (ticket 10) ----------
+
+/** Two layers, `app` importing `domain` and the `stripe` package. */
+function baselineRepo(t: { after: (f: () => void) => void }): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-tui-baseline-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files: Record<string, string> = {
+    "package.json": `${JSON.stringify({ name: "shop", private: true, dependencies: { stripe: "1.0.0" } })}\n`,
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], domain: ["src/domain/**"] } }, null, 2)}\n`,
+    "src/domain/order.ts": "export function price(): number {\n  return 1;\n}\n",
+    "src/app/pay.ts": 'import Stripe from "stripe";\nimport { price } from "../domain/order.ts";\nexport function charge(): number {\n  return Stripe ? price() : 0;\n}\n',
+    "keylang/rules.md": "# rules\n\n- layers domain < app\n",
+  };
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+/** The palette's baseline form, then the mode: `write` (the first item) or `check`. */
+function baselineForm(send: (keys: string) => void, mode: "write" | "check"): void {
+  send(KEY.ctrlP);
+  for (const ch of "baseline") send(ch);
+  send(KEY.enter);
+  if (mode === "check") send(KEY.down);
+  send(KEY.enter);
+}
+
+function baselineRecord(app: App): Extract<OperationResult, { kind: "baseline" }> & { payload: NonNullable<Extract<OperationResult, { kind: "baseline" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "baseline" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "baseline" }> & { payload: NonNullable<Extract<OperationResult, { kind: "baseline" }>["payload"]> };
+}
+
+function cliBaseline(root: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "baseline", ...args], { cwd: root, encoding: "utf8" });
+}
+
+test("tui: baseline write and check in the worker give the CLI's bytes and codes; F5 never writes it; a new edge is stale until written", async (t) => {
+  const root = baselineRepo(t);
+  const twin = baselineRepo(t);
+  const file = "keylang/rules.baseline.md";
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), before, "F5 writes nothing");
+  // The human name finds it as the alias `baseline` does; the form names the mode and the target from the config's spec directory and explains the write.
+  s.send(KEY.ctrlP);
+  for (const ch of "baseline: write or check") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "baseline");
+  assert.deepEqual(s.app.state.prompt?.items, [`Write ${file}`, `Check ${file} (writes nothing)`]);
+  assert.match(s.app.state.prompt?.note ?? "", /dependencies the code has now become the allowed ones/);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  // Check on a missing file: code 1, as the CLI, and nothing written.
+  baselineForm(s.send, "check");
+  await s.app.idle();
+  let result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.state], ["completed", 1, "stale"]);
+  const cliMissing = cliBaseline(twin, ["--check"]);
+  assert.equal(cliMissing.status, 1);
+  assert.equal(result.messages.map((m) => `${m.text}\n`).join(""), cliMissing.stdout);
+  assert.deepEqual(treeBytes(root), before, "check writes nothing");
+  // Write: no extra step without a dirty keylang.json; the bytes are the CLI's.
+  baselineForm(s.send, "write");
+  assert.equal(s.app.state.barrier, null);
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [file]]);
+  const cliWrite = cliBaseline(twin);
+  assert.equal(cliWrite.status, 0, cliWrite.stderr);
+  assert.equal(result.messages.map((m) => `${m.text}\n`).join(""), cliWrite.stdout);
+  const text = readFileSync(join(root, file), "utf8");
+  assert.equal(text, readFileSync(join(twin, file), "utf8"));
+  assert.match(text, /^- deny app external$/m);
+  assert.match(text, /^- allow app external\.stripe$/m);
+  assert.match(text, /^- deny domain app, external, unassigned$/m);
+  assert.deepEqual(treeBytes(root), new Map([...before, [file, Buffer.from(text).toString("latin1")]]), "only the baseline is written");
+  assert.ok(result.payload.added.includes("- allow app external.stripe"));
+  // Idempotent: a second write and a check change nothing and return 0.
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.exitCode, result.written, result.payload.state], [0, [], "current"]);
+  baselineForm(s.send, "check");
+  await s.app.idle();
+  assert.equal(baselineRecord(s.app).exitCode, 0);
+  assert.equal(readFileSync(join(root, file), "utf8"), text);
+  // The baseline opens read-only, named after its generator.
+  s.send(KEY.ctrlP);
+  for (const ch of `open ${file}`) s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, file);
+  const buffer = s.app.state.buffers.get(file)!;
+  assert.equal(buffer.readOnly, true);
+  s.send("i");
+  assert.match(s.app.state.message ?? "", /generated by `keylang baseline`/);
+  assert.notEqual(s.app.state.mode, "edit");
+  // A new edge: check is 1 and writes nothing, F5 writes nothing; write updates the file and the clean buffer.
+  writeFileSync(join(root, "src/domain/order.ts"), 'import Stripe from "stripe";\nexport function price(): number {\n  return Stripe ? 1 : 2;\n}\n');
+  writeFileSync(join(twin, "src/domain/order.ts"), readFileSync(join(root, "src/domain/order.ts"), "utf8"));
+  const drifted = treeBytes(root);
+  baselineForm(s.send, "check");
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.exitCode, result.payload.state], [1, "stale"]);
+  assert.ok(result.payload.added.includes("- allow domain external.stripe"), JSON.stringify(result.payload));
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), drifted, "check and F5 write nothing");
+  const staleCheck = s.app.state.records.at(-1)!;
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.exitCode, result.written], [0, [file]]);
+  assert.equal(cliBaseline(twin).status, 0);
+  const updated = readFileSync(join(root, file), "utf8");
+  assert.equal(updated, readFileSync(join(twin, file), "utf8"));
+  assert.match(updated, /^- allow domain external\.stripe$/m);
+  assert.equal(staleCheck.outdated, "the baseline was written since this run");
+  assert.equal(s.app.state.buffers.get(file)!.text, updated, "the clean buffer follows the disk");
+  assert.equal(s.app.state.buffers.get(file)!.readOnly, true);
+  assert.equal(cliBaseline(root, ["--check"]).status, 0);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Baseline: write or check · write {2}completed · code 0/);
+  assert.match(s.text(), /\+ - allow domain external\.stripe/);
+});
+
+test("tui: a manual baseline, an outside edit or a changed source before the commit is never written over; a dirty keylang.json is saved first", async (t) => {
+  const root = baselineRepo(t);
+  const file = "keylang/rules.baseline.md";
+  const manual = "# rules\n\n- deny app domain\n";
+  writeFileSync(join(root, file), manual);
+  const outside = "<!-- keylang:generated — не редагувати, `keylang baseline` -->\n\n# rules\n\n- deny domain app\n";
+  const source = "export function price(): number {\n  return 2;\n}\nexport function tax(): number {\n  return 0;\n}\n";
+  const pauses: (() => void)[] = [() => writeFileSync(join(root, file), outside), () => writeFileSync(join(root, "src/domain/order.ts"), source), () => {}];
+  let calls = 0;
+  const s = session(root, { operations: pausedRunner(() => pauses[calls++]!()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A manual file: write and check both refuse it with code 1, as the CLI does; nothing is written.
+  let before = treeBytes(root);
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  let result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.state, result.written], ["completed", 1, "manual", []]);
+  assert.deepEqual(result.messages.map((m) => m.text), [`${file}: manual file without keylang:generated marker`]);
+  baselineForm(s.send, "check");
+  await s.app.idle();
+  assert.deepEqual([baselineRecord(s.app).exitCode, baselineRecord(s.app).payload.state], [1, "manual"]);
+  const cli = cliBaseline(root);
+  assert.equal(cli.status, 1);
+  assert.equal(cli.stdout, `${file}: manual file without keylang:generated marker\n`);
+  assert.deepEqual(treeBytes(root), before, "a manual baseline is never written");
+  assert.equal(calls, 0, "no commit was asked for");
+  // An outside edit of the target during the pause: refused, its bytes stay.
+  rmSync(join(root, file));
+  before = treeBytes(root);
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 1, []]);
+  assert.deepEqual(result.payload.refused, [`${file}: created on disk while the change was prepared; nothing written`]);
+  assert.deepEqual(treeBytes(root), new Map([...before, [file, Buffer.from(outside).toString("latin1")]]));
+  // A source changed after it was read: refused as well.
+  rmSync(join(root, file));
+  before = treeBytes(root);
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 1]);
+  assert.deepEqual(result.payload.refused, ["src/domain/order.ts: changed on disk while the baseline was computed"]);
+  assert.deepEqual(treeBytes(root), new Map([...before, ["src/domain/order.ts", source]]));
+  s.send(KEY.f6);
+  assert.match(s.text(), /inputs changed, nothing written · code 1/);
+  s.send(KEY.f6);
+  // A dirty keylang.json opens the step, which names the target; Back writes nothing.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang.json") s.send(ch);
+  s.send(KEY.enter);
+  s.send("i");
+  s.send(" ");
+  await esc(s.send);
+  baselineForm(s.send, "write");
+  assert.deepEqual(s.app.state.barrier?.writes, [file]);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang.json"]);
+  await esc(s.send);
+  assert.equal(existsSync(join(root, file)), false);
+  // Save and continue: the config is saved, then the baseline is written from the new code.
+  baselineForm(s.send, "write");
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = baselineRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [file]]);
+  assert.match(readFileSync(join(root, "keylang.json"), "utf8"), /^ \{/);
+  assert.equal(cliBaseline(root, ["--check"]).status, 0);
+});
+
+test("baseline: without supported sources the TUI and the CLI give a reason with code 2 and write nothing; a CRLF checkout is current", async (t) => {
+  const empty = mkdtempSync(join(tmpdir(), "keylang-tui-baseline-empty-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  // No `languages` and no source file: nothing to analyse, so no snapshot.
+  writeFileSync(join(empty, "keylang.json"), `${JSON.stringify({ layers: { app: ["src/app/**"] } })}\n`);
+  const before = treeBytes(empty);
+  const s = session(empty);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  baselineForm(s.send, "write");
+  await s.app.idle();
+  const result = s.app.state.records.at(-1)?.result;
+  assert.deepEqual([result?.kind, result?.status, result?.exitCode, result?.payload], ["baseline", "failed", 2, null]);
+  assert.deepEqual(result?.messages.map((m) => m.text), ["baseline: no supported source files; run `keylang init`"]);
+  const cli = cliBaseline(empty);
+  assert.equal(cli.status, 2);
+  assert.equal(cli.stderr, "keylang: baseline: no supported source files; run `keylang init`\n");
+  assert.deepEqual(treeBytes(empty), before);
+  // A checkout that turned LF into CRLF holds the same baseline: check is 0 and write keeps the bytes.
+  const root = baselineRepo(t);
+  assert.equal(cliBaseline(root).status, 0);
+  const crlf = readFileSync(join(root, "keylang/rules.baseline.md"), "utf8").replace(/\n/g, "\r\n");
+  writeFileSync(join(root, "keylang/rules.baseline.md"), crlf);
+  assert.equal(cliBaseline(root, ["--check"]).status, 0);
+  const again = cliBaseline(root);
+  assert.deepEqual([again.status, again.stdout], [0, ""]);
+  assert.equal(readFileSync(join(root, "keylang/rules.baseline.md"), "utf8"), crlf);
+});

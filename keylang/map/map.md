@@ -316,21 +316,26 @@
     - type [MapStep](../../src/map.ts#L186)
     - type [PlannedStep](../../src/map.ts#L192) extends MapStep <!-- internal -->
     - type [MapPlan](../../src/map.ts#L208)
-    - type [MapInputs](../../src/map.ts#L220) <!-- internal -->
-    - type [CommittedStep](../../src/map.ts#L230) extends MapStep
-    - type [MapCommit](../../src/map.ts#L235)
-    - fn [planMap](../../src/map.ts#L246) (config: Config, r: MapResult) → MapPlan
-      - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L280) (plan: MapPlan) → string[]
-      - calls base.safe-write.writeProblem, map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L311) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - type [SourceInputs](../../src/map.ts#L220)
+    - type [MapInputs](../../src/map.ts#L228) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L234) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+      - calls map.map.readOrNull
+    - fn [sourceInputProblems](../../src/map.ts#L243) (config: Config, inputs: SourceInputs, subject: string) → string[]
+      - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
+    - type [CommittedStep](../../src/map.ts#L262) extends MapStep
+    - type [MapCommit](../../src/map.ts#L267)
+    - fn [planMap](../../src/map.ts#L278) (config: Config, r: MapResult) → MapPlan
+      - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
+    - fn [mapPlanProblems](../../src/map.ts#L312) (plan: MapPlan) → string[]
+      - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
+    - fn [commitMap](../../src/map.ts#L331) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L340) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L360) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L345) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L354) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L365) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L376) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L396) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node

@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, map-check, map) is running. */
+  /** An explicit operation (doctor, feature, map-check, map, baseline) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -97,6 +97,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Map",
     aliases: ["map", "update map", "write map", "regenerate map", "keylang map"],
     // Writes generated files only after a step that names them; F5 never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "baseline",
+    label: "Baseline: write or check",
+    group: "Rules",
+    aliases: ["baseline", "update baseline", "check baseline", "keylang baseline", "allowed dependencies"],
+    // A form chooses the mode first; F5 and the ordinary check never write it.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

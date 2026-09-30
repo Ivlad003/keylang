@@ -5,7 +5,6 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync 
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { detectHarnesses, HARNESS_PATHS, parseAgents, planHarness, skillFile, type HarnessPlan, type HarnessSelection } from "./adapters/harness.ts";
-import { baselineText } from "./baseline.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
@@ -803,23 +802,20 @@ function cmdAgents(agents: string | undefined, checkOnly: boolean): number {
   return applyHarness(findRoot(process.cwd()), harnessPlan(findRoot(process.cwd()), agents), checkOnly);
 }
 
+/** `baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr. */
 async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
-  const analyzed = await analyze({ root, specs: [], withoutEvidence: true });
-  if (!analyzed.snapshot) throw new Error("baseline: no supported source files; run `keylang init`");
-  const text = baselineText(analyzed.snapshot);
-  const rel = `${analyzed.config.dir}/rules.baseline.md`;
-  const current = existsSync(join(root, rel)) ? readFileSync(join(root, rel), "utf8") : null;
-  const same = current !== null && current.replace(/\r\n/g, "\n") === text;
-  if (checkOnly) {
-    if (same) return 0;
-    process.stdout.write(`${rel}: stale, run \`keylang baseline\`\n`);
-    return 1;
+  const result = await runOperation({ kind: "baseline", root, check: checkOnly });
+  const payload = result.payload;
+  if (payload === null || payload.error !== null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  if (!same) {
-    safeWrite(root, rel, text, { generated: true });
-    process.stdout.write(`${rel}: written\n`);
+  for (const message of result.messages) {
+    if (message.level === "error") process.stdout.write(`${message.text}\n`);
+    else if (payload.refused.length > 0) process.stderr.write(`keylang: ${message.text}\n`);
+    else process.stdout.write(`${message.text}\n`);
   }
-  return 0;
+  return result.exitCode ?? 2;
 }
 
 /** Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation. */

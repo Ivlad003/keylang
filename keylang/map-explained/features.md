@@ -47,13 +47,34 @@
       <a id="features.agent-context.contextText"></a><br>The pack as the prompt text a model gets.
   - module [baseline](../../src/baseline.ts#L1)
     <a id="features.baseline"></a><br>`keylang/rules.baseline.md`: deny rules for the dependencies the current graph does not have, so a new edge between layers or a new package is K102. The grammar is the ordinary `deny` / `allow`.
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - map [map.map](map.md#map.map)
+    - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - fn [baselineText](../../src/baseline.ts#L20) (snapshot: AnalysisSnapshot) → string
+    - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
       <a id="features.baseline.baselineText"></a><br>Baseline rules for one snapshot. Layers come from `keylang.json`, in code-unit order; `unassigned` is a source only when a module is in it.
       - calls [features.baseline.externalModule](features.md#features.baseline.externalModule)
-    - fn [externalModule](../../src/baseline.ts#L57) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
       <a id="features.baseline.externalModule"></a><br>The external module an id belongs to (`external.stripe` for a symbol under it).
+    - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+      <a id="features.baseline.baselinePath"></a><br>Where the baseline lives: `<dir>/rules.baseline.md`, relative to the root, POSIX.
+    - type [BaselinePlan](../../src/baseline.ts#L82)
+      <a id="features.baseline.BaselinePlan"></a><br>What `keylang baseline` would do, computed before anything is written. Internal to one operation — not a stored format.
+    - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+      <a id="features.baseline.planBaseline"></a><br>Plans the baseline of `snapshot` against the file on disk. Reads, writes nothing.
+      - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [features.baseline.baselineText](features.md#features.baseline.baselineText), [features.baseline.readOrNull](features.md#features.baseline.readOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.baseline.ruleLines](features.md#features.baseline.ruleLines), [map.map.sourceInputs](map.md#map.map.sourceInputs)
+    - fn [baselinePlanProblems](../../src/baseline.ts#L128) (plan: BaselinePlan) → string[]
+      <a id="features.baseline.baselinePlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): the target must pass the repository's write rules and still hold the bytes the plan saw, and `keylang.json` and the sources must be the ones the baseline was computed from.
+      - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems)
+    - fn [commitBaseline](../../src/baseline.ts#L137) (plan: BaselinePlan) → void
+      <a id="features.baseline.commitBaseline"></a><br>Writes the planned text atomically at the target (a link inside the repository is followed; CRLF of the old file kept). Throws on an I/O error.
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+    - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
+      <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
+    - fn [readOrNull](../../src/baseline.ts#L148) (abs: string) → string | null <!-- internal -->
+      <a id="features.baseline.readOrNull"></a>
   - module [changed](../../src/changed.ts#L1)
     <a id="features.changed"></a><br>`check --changed` keeps the full analysis and drops findings that do not touch the changed files: a changed spec (every finding in that file), a rule whose scope contains a changed module, and a flow with a step whose code is in a changed file. `hook stop` maps the fails that…
     - assess [check.assess](check.md#check.assess)

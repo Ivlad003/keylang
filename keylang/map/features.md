@@ -29,11 +29,25 @@
     - fn [snapshotSource](../../src/agent-context.ts#L179) (analysis: Analysis, file: string) → string | null
     - fn [contextText](../../src/agent-context.ts#L188) (pack: ContextPack) → string
   - module [baseline](../../src/baseline.ts#L1)
+    - node external.node
+    - config base.config
+    - map map.map
+    - safe-write base.safe-write
     - snapshot map.snapshot
     - span base.span
-    - fn [baselineText](../../src/baseline.ts#L20) (snapshot: AnalysisSnapshot) → string
+    - fn [baselineText](../../src/baseline.ts#L25) (snapshot: AnalysisSnapshot) → string
       - calls features.baseline.externalModule
-    - fn [externalModule](../../src/baseline.ts#L57) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [externalModule](../../src/baseline.ts#L62) (snapshot: AnalysisSnapshot, id: string) → string | null <!-- internal -->
+    - fn [baselinePath](../../src/baseline.ts#L74) (config: Pick<Config, "dir">) → string
+    - type [BaselinePlan](../../src/baseline.ts#L82)
+    - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
+      - calls features.baseline.baselinePath, features.baseline.baselineText, features.baseline.readOrNull, base.safe-write.isGeneratedText, features.baseline.ruleLines, map.map.sourceInputs
+    - fn [baselinePlanProblems](../../src/baseline.ts#L128) (plan: BaselinePlan) → string[]
+      - calls base.safe-write.writeProblem, map.map.sourceInputProblems
+    - fn [commitBaseline](../../src/baseline.ts#L137) (plan: BaselinePlan) → void
+      - calls base.safe-write.landing, base.safe-write.writeAtomic
+    - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
+    - fn [readOrNull](../../src/baseline.ts#L148) (abs: string) → string | null <!-- internal -->
   - module [changed](../../src/changed.ts#L1)
     - assess check.assess
     - diag base.diag

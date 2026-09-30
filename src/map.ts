@@ -216,14 +216,46 @@ export interface MapPlan {
   inputs: MapInputs;
 }
 
-/** The inputs of the render: a change in any makes the plan unfit. */
-interface MapInputs {
+/** What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit. */
+export interface SourceInputs {
   /** The text of `keylang.json`, or null without one. */
   config: string | null;
   /** Every source file the snapshot read, with its hash (the snapshot manifest). */
   sources: readonly { path: string; sha256: string }[];
+}
+
+/** The inputs of the render: a change in any makes the plan unfit. */
+interface MapInputs extends SourceInputs {
   /** A hash of the briefs the explained map was rendered with; null when it is off. */
   briefs: string | null;
+}
+
+/** The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest. */
+export function sourceInputs(config: Config, sources: readonly { path: string; sha256: string }[]): SourceInputs {
+  return { config: readOrNull(join(config.root, CONFIG_FILE)), sources };
+}
+
+/**
+ * How `keylang.json` and the source files differ from the ones `subject` was
+ * computed from (`path: reason` lines, empty when none does): a changed
+ * config, a source added, changed or removed since.
+ */
+export function sourceInputProblems(config: Config, inputs: SourceInputs, subject: string): string[] {
+  const problems: string[] = [];
+  if (readOrNull(join(config.root, CONFIG_FILE)) !== inputs.config) problems.push(`${CONFIG_FILE}: changed on disk while ${subject} was computed`);
+  const before = new Map(inputs.sources.map((file) => [file.path, file.sha256]));
+  const now = new Map<string, string>();
+  for (const path of sourceTree(config).files) {
+    const text = readOrNull(join(config.root, path));
+    if (text !== null) now.set(path, sha256(text));
+  }
+  for (const [path, hash] of now) {
+    const old = before.get(path);
+    if (old === undefined) problems.push(`${path}: added while ${subject} was computed`);
+    else if (old !== hash) problems.push(`${path}: changed on disk while ${subject} was computed`);
+  }
+  for (const path of before.keys()) if (!now.has(path)) problems.push(`${path}: removed while ${subject} was computed`);
+  return problems;
 }
 
 /** A step after the commit: done, failed with the reason, or never tried. */
@@ -266,7 +298,7 @@ export function planMap(config: Config, r: MapResult): MapPlan {
     conflicts: mapConflicts(config, r).map(rel),
     steps,
     emptyDirs,
-    inputs: { config: readOrNull(join(config.root, CONFIG_FILE)), sources: r.index.manifest.files, briefs: config.explain.map ? briefsKey(config) : null },
+    inputs: { ...sourceInputs(config, r.index.manifest.files), briefs: config.explain.map ? briefsKey(config) : null },
   };
 }
 
@@ -283,19 +315,7 @@ export function mapPlanProblems(plan: MapPlan): string[] {
     const problem = writeProblem(plan.root, step.path, { generated: true, ...(step.expect === undefined ? {} : { expect: step.expect }) });
     if (problem !== null) problems.push(`${step.path}: ${problem}`);
   }
-  if (readOrNull(join(plan.root, CONFIG_FILE)) !== plan.inputs.config) problems.push(`${CONFIG_FILE}: changed on disk while the map was computed`);
-  const before = new Map(plan.inputs.sources.map((file) => [file.path, file.sha256]));
-  const now = new Map<string, string>();
-  for (const path of sourceTree(plan.config).files) {
-    const text = readOrNull(join(plan.root, path));
-    if (text !== null) now.set(path, sha256(text));
-  }
-  for (const [path, hash] of now) {
-    const old = before.get(path);
-    if (old === undefined) problems.push(`${path}: added while the map was computed`);
-    else if (old !== hash) problems.push(`${path}: changed on disk while the map was computed`);
-  }
-  for (const path of before.keys()) if (!now.has(path)) problems.push(`${path}: removed while the map was computed`);
+  problems.push(...sourceInputProblems(plan.config, plan.inputs, "the map"));
   if (plan.inputs.briefs !== null && briefsKey(plan.config) !== plan.inputs.briefs) problems.push(`${plan.config.dir}/explain/brief: changed while the map was computed`);
   return problems;
 }
