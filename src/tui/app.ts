@@ -37,7 +37,7 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { FEATURE_SLUG, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
@@ -1693,6 +1693,13 @@ export class App {
       const isHarness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isHarness });
     }
+    if (request.kind === "init") {
+      // Init reads the saved keylang.json (kept when it exists), the harness files and the code, never
+      // the specs: dirty spec buffers stay dirty. The form already named the classes of files it writes.
+      const isInput = (path: string): boolean => path === CONFIG_FILE || (HARNESS_PATHS as readonly string[]).includes(path);
+      const writes = !request.check && this.dirtyInputs().some(isInput) ? { writes: this.initTargets() } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
+    }
     if (request.kind === "fmt") {
       // Fmt reads the saved bytes of the chosen files and the edition in keylang.json: those dirty
       // buffers are saved first; other dirty specs stay dirty and are never formatted behind them.
@@ -1723,6 +1730,12 @@ export class App {
   private mapTargets(): string[] {
     const dir = this.specDir();
     return [`${dir}/map/*.md`, `${dir}/${EXPLAINED_MAP_DIR}/*.md`, ".keylang/index.json", FACT_CACHE_FILE];
+  }
+
+  /** The classes of files `keylang init` may write, as its form and its save step name them. */
+  private initTargets(): string[] {
+    const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [] : [CONFIG_FILE];
+    return [...config, ...this.mapTargets(), baselinePath({ dir: this.specDir() }), "the harness files of the selection"];
   }
 
   /** True (with the reason shown) while an operation writes files: saves and merge writes wait for it. */
@@ -1790,6 +1803,9 @@ export class App {
       const file = record.result?.kind === "baseline" ? record.result.payload?.file : undefined;
       if (record.params.kind === "baseline" && record.params.check && file !== undefined && touched.includes(file)) record.outdated ??= "the baseline was written since this run";
       if (record.params.kind === "agents" && record.params.check && result.kind === "agents" && touched.length > 0) record.outdated ??= "the harness files were written since this run";
+      // Init writes what map, baseline and agents write: their checks, and an init check, no longer hold.
+      const checks = record.params.kind === "map-check" || (record.params.kind === "baseline" && record.params.check) || (record.params.kind === "agents" && record.params.check) || (record.params.kind === "init" && record.params.check);
+      if (checks && result.kind === "init" && touched.length > 0) record.outdated ??= "keylang init wrote files since this run";
       const checked = record.params.kind === "fmt" && record.params.check && record.result?.kind === "fmt" ? (record.result.payload?.files ?? []) : [];
       if (checked.some((file) => touched.includes(file.path))) record.outdated ??= "the files were formatted since this run";
       const wired = record.params.kind === "wire" && record.params.check && record.result?.kind === "wire" ? record.result.payload?.file : undefined;
@@ -1837,6 +1853,8 @@ export class App {
       this.state.activeOperation = null;
       this.cancelActive = null;
       const note = WRITING_KINDS.has(request.kind) ? this.endCommit(result) : null;
+      // After init the saved keylang.json decides (endCommit read it again): with it, the start screen is done.
+      if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
       this.draw();
@@ -2031,6 +2049,61 @@ export class App {
     const check = prompt.ids?.[prompt.index] === "check";
     this.state.prompt = null;
     this.requestOperation("agents", { kind: "agents", root: this.state.root, harnesses: choice, check });
+  }
+
+  // ---------- init ----------
+
+  /**
+   * The init form: the harness selection as in the agents form (empty is
+   * auto), then write or check. Its notes name the root, the languages and
+   * layers it describes (the saved keylang.json when there is one: it is
+   * kept), what the selection resolves to, and which classes of files each
+   * mode touches; nothing runs until Enter.
+   */
+  private openInitPrompt(): void {
+    this.state.prompt = { kind: "init", text: "", items: [], ids: ["write", "check"], notes: [], index: 0 };
+    this.refreshInitPrompt();
+  }
+
+  private refreshInitPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "init") return;
+    const root = this.state.root;
+    const sources = initSources(root);
+    const existed = existsSync(join(root, CONFIG_FILE));
+    let found: string;
+    if ("error" in sources) found = `${sources.error}: init stops with code 2 and writes nothing`;
+    else {
+      const layers = existed ? [...sources.config.layers.keys()] : [...guessLayout(root, sources.config.exclude).layers.keys()];
+      found = `${sources.config.languages.join(", ")} · layers: ${layers.length > 0 ? layers.join(", ") : "none"}`;
+    }
+    const choice = this.agentsChoice();
+    const harness = typeof choice === "object" && "error" in choice ? `${choice.error} · type auto (empty), none, or claude,codex,opencode,cursor` : this.agentsPreview(choice).note;
+    const baseline = baselinePath({ dir: this.specDir() });
+    prompt.details = [
+      `Root: ${root}`,
+      `Found: ${found}`,
+      existed ? "keylang.json: exists, kept byte for byte (no new guess replaces it)" : "keylang.json: none yet, written from this guess",
+      `Harnesses: ${harness}`,
+      `Write, in order: ${existed ? "" : "keylang.json, "}the map (${this.specDir()}/map/, .keylang/), ${baseline}, the harness files — each file on its own, no overall rollback`,
+      "Check: as `keylang init --check` — the harness files and the baseline only; the map is not compared (Map: check does)",
+    ];
+    prompt.items = [`Initialize: ${existed ? "keep" : "write"} keylang.json, map, baseline, harness files`, "Check as `keylang init --check` (writes nothing)"];
+    prompt.notes = ["writes the files listed above, in order", "writes nothing; code 1 when a harness file or the baseline is stale"];
+    prompt.note = prompt.notes[prompt.index] ?? "";
+  }
+
+  /** Enter in the init form: the typed selection with the chosen mode runs as the session's operation; an invalid one keeps the form. */
+  private submitInit(): void {
+    const prompt = this.state.prompt!;
+    const choice = this.agentsChoice();
+    if (typeof choice === "object" && "error" in choice) {
+      this.state.message = `init: ${choice.error}`;
+      return;
+    }
+    const check = prompt.ids?.[prompt.index] === "check";
+    this.state.prompt = null;
+    this.requestOperation("init", { kind: "init", root: this.state.root, harnesses: choice, check });
   }
 
   // ---------- fmt ----------
@@ -2756,6 +2829,7 @@ export class App {
     if (prompt.kind === "proposal") this.refreshProposalPrompt();
     if (prompt.kind === "new-spec") this.refreshNewSpec();
     if (prompt.kind === "agents") this.refreshAgentsPrompt();
+    if (prompt.kind === "init") this.refreshInitPrompt();
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
@@ -2786,21 +2860,23 @@ export class App {
       if (prompt.kind === "proposal") this.refreshProposalPrompt();
       if (prompt.kind === "new-spec") this.refreshNewSpec();
       if (prompt.kind === "agents") this.refreshAgentsPrompt();
+      if (prompt.kind === "init") this.refreshInitPrompt();
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
-      if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") prompt.note = prompt.notes?.[prompt.index] ?? "";
+      if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter" && prompt.kind === "baseline") return this.submitBaseline();
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
+    if (event.name === "enter" && prompt.kind === "init") return this.submitInit();
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
@@ -2884,6 +2960,8 @@ export class App {
         return this.openBaselinePrompt();
       case "agents":
         return this.openAgentsPrompt();
+      case "init":
+        return this.openInitPrompt();
       case "fmt":
         return this.openFmtPrompt();
       case "wire":

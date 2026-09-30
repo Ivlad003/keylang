@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, map-check, map, baseline, agents, fmt, wire) is running. */
+  /** An explicit operation (doctor, feature, check, map-check, map, baseline, agents, init, fmt, wire) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -124,6 +124,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "init",
+    label: "Init: set up keylang in this repository",
+    group: "Project",
+    aliases: ["init", "keylang init", "initialize", "init --check", "first run", "new project"],
+    // A form shows the root, the layout, the harness selection and the classes of files first; an existing keylang.json is kept.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "fmt",
     label: "Format: write or check specifications",
     group: "Edit",
@@ -169,7 +177,7 @@ export const ACTIONS: readonly Action[] = [
 ];
 
 /** The items of the start screen of a repository without `keylang.json`, in order (design §2.1). */
-export const START_ACTIONS = ["browse", "doctor"] as const;
+export const START_ACTIONS = ["init", "browse", "doctor"] as const;
 
 /** The per-file "open" action of the palette. */
 export function openAction(path: string): Action {

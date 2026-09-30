@@ -1,13 +1,13 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, guessLayout, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, STATIC_MODES, assertFormatOnly, configToJson, guessLayers, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles } from "./files.ts";
@@ -30,7 +30,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckPayload, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CheckPayload, type OperationEnvelope } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -726,40 +726,47 @@ function needPaths(cmd: string, paths: string[]): void {
   if (paths.length === 0) throw new Error(`${cmd}: at least one path is required`);
 }
 
+/** `init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran. */
 async function cmdInit(dir: string, opts: { agents: string | undefined; check: boolean }): Promise<number> {
   const root = resolve(process.cwd(), dir);
-  const file = join(root, CONFIG_FILE);
-  const config = loadConfig(root);
-  if (config.languages.length === 0) {
-    // Nothing to describe is a usage error (like `map`), not a finding.
-    process.stderr.write(`keylang: no supported source files found under ${dir} (TypeScript, JavaScript, Python, Rust)\n`);
-    return 2;
+  let choice: HarnessChoice;
+  try {
+    choice = harnessChoice(opts.agents);
+  } catch (error) {
+    // No supported source (or a broken keylang.json) has always been named before an unknown harness.
+    const sources = initSources(root, dir);
+    if ("error" in sources) {
+      process.stderr.write(`keylang: ${sources.error}\n`);
+      return 2;
+    }
+    throw error;
   }
-  // An unknown name or a broken harness file fails before any write, including keylang.json.
-  const choice = harnessChoice(opts.agents);
-  if (opts.check) {
-    const agents = await cmdAgents(root, choice, true);
-    if (agents === 2) return 2;
-    const baseline = await cmdBaseline(root, true);
-    return agents === 0 && baseline === 0 ? 0 : 1;
+  const result = await runOperation({ kind: "init", root, harnesses: choice, check: opts.check, label: dir });
+  const payload = result.payload;
+  if (payload === null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  const planned = await runOperation({ kind: "agents", root, harnesses: choice, check: true });
-  if (planned.status === "failed") return printAgents(planned);
-  if (existsSync(file)) {
-    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: already exists, kept\n`);
-  } else {
-    // The same guess `loadConfig` made, with a note for every directory whose layer name had to change.
-    const layout = guessLayout(root, config.exclude);
-    for (const note of layout.notes) process.stderr.write(`keylang: note: ${note}\n`);
-    writeFileSync(file, configToJson({ ...config, layers: layout.layers }));
-    process.stdout.write(`${relative(process.cwd(), file) || CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${[...layout.layers.keys()].join(", ")})\n`);
+  if (payload.check) {
+    if (payload.agents) printAgents(payload.agents);
+    if (payload.baseline) printBaseline(payload.baseline);
+    return result.exitCode ?? 2;
   }
-  const mapCode = await cmdMap(dir, false);
-  const baseline = await cmdBaseline(root, false);
-  const agents = await cmdAgents(root, choice, false);
-  if (mapCode !== 0) return mapCode;
-  if (baseline !== 0) return baseline;
-  return agents;
+  if (payload.preflight?.status === "failed") return printAgents(payload.preflight);
+  const config = relative(process.cwd(), join(root, payload.config.file)) || CONFIG_FILE;
+  if (payload.config.existed) process.stdout.write(`${config}: already exists, kept\n`);
+  else {
+    for (const note of payload.config.notes) process.stderr.write(`keylang: note: ${note}\n`);
+    if (payload.config.error !== null) {
+      process.stderr.write(`keylang: ${config}: ${payload.config.error}\n`);
+      return result.exitCode ?? 2;
+    }
+    if (payload.config.written) process.stdout.write(`${config}: written (${payload.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})\n`);
+  }
+  if (payload.map) printMap(payload.map, root);
+  if (payload.baseline) printBaseline(payload.baseline);
+  if (payload.agents) printAgents(payload.agents);
+  return result.exitCode ?? 2;
 }
 
 /** `agents [--agents=LIST] [--check]`: a printer over the shared agents operation. */
@@ -788,7 +795,10 @@ function printAgents(result: OperationEnvelope<"agents">): number {
 
 /** `baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr. */
 async function cmdBaseline(root: string, checkOnly: boolean): Promise<number> {
-  const result = await runOperation({ kind: "baseline", root, check: checkOnly });
+  return printBaseline(await runOperation({ kind: "baseline", root, check: checkOnly }));
+}
+
+function printBaseline(result: OperationEnvelope<"baseline">): number {
   const payload = result.payload;
   if (payload === null || payload.error !== null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
@@ -899,7 +909,11 @@ async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
     return result.exitCode ?? 2;
   }
   // `map` is a printer over the shared operation, which also leaves the fact cache for the next run.
-  const result = await runOperation({ kind: "map", root, label: dir });
+  return printMap(await runOperation({ kind: "map", root, label: dir }), root);
+}
+
+/** The lines of a map write: paths relative to the working directory; failures and the summary to stderr. */
+function printMap(result: OperationEnvelope<"map">, root: string): number {
   const shown = (file: string): string => toPosix(relative(process.cwd(), join(root, file)));
   const payload = result.payload;
   if (payload === null) {

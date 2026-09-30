@@ -156,75 +156,80 @@
       - calls [map.trace-plan.tracePlan](map.md#map.trace-plan.tracePlan), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.findRoot](map.md#map.analyze.findRoot)
     - fn [needPaths](../../src/cli.ts#L725) (cmd: string, paths: string[]) → void <!-- internal -->
       <a id="cli.cli.needPaths"></a>
-    - fn [cmdInit](../../src/cli.ts#L729) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdInit"></a>
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [base.config.guessLayout](base.md#base.config.guessLayout), [base.config.configToJson](base.md#base.config.configToJson), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap)
-    - fn [cmdAgents](../../src/cli.ts#L766) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L730) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
+      - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.operations.initSources](operations.md#operations.operations.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printMap](cli.md#cli.cli.printMap)
+    - fn [cmdAgents](../../src/cli.ts#L773) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
       - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printAgents](../../src/cli.ts#L771) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L778) (result: OperationEnvelope<"agents">) → number <!-- internal -->
       <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
-    - fn [cmdBaseline](../../src/cli.ts#L790) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L797) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [cmdFeature](../../src/cli.ts#L806) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+      - calls [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [printBaseline](../../src/cli.ts#L801) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+      <a id="cli.cli.printBaseline"></a>
+    - fn [cmdFeature](../../src/cli.ts#L816) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.gapLine](operations.md#operations.operations.gapLine), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L821) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L831) (name: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a>
       - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [readStdin](../../src/cli.ts#L841) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L851) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a>
-    - fn [changedPathSet](../../src/cli.ts#L848) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
+    - fn [changedPathSet](../../src/cli.ts#L858) (root: string, files: ReadonlySet<string>, cwd: string) → Set<string> <!-- internal -->
       <a id="cli.cli.changedPathSet"></a><br>Git paths are relative to `root`; check prints spec paths relative to `cwd`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitChangedFiles](../../src/cli.ts#L858) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
+    - fn [gitChangedFiles](../../src/cli.ts#L868) (root: string, ref: string) → { paths: Set<string>; deleted: string[] } <!-- internal -->
       <a id="cli.cli.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet. `deleted` are paths removed versus `ref`. Paths are relative to `root`.
       - calls [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks)
-    - fn [deletedModuleIds](../../src/cli.ts#L877) (config: Config, files: readonly string[]) → string[] <!-- internal -->
+    - fn [deletedModuleIds](../../src/cli.ts#L887) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       <a id="cli.cli.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [cmdMap](../../src/cli.ts#L888) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L898) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdMap"></a>
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
-    - fn [keylangFiles](../../src/cli.ts#L929) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
+    - fn [printMap](../../src/cli.ts#L916) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+      <a id="cli.cli.printMap"></a><br>The lines of a map write: paths relative to the working directory; failures and the summary to stderr.
+      - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
+    - fn [keylangFiles](../../src/cli.ts#L943) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       <a id="cli.cli.keylangFiles"></a><br>Markdown files under `paths` that are keylang: a saved explanation is the model's text, named in a note and left out.
       - calls [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.explanations.isStoredExplanation](map.md#map.explanations.isStoredExplanation)
-    - fn [assertConfigFormat](../../src/cli.ts#L946) () → void <!-- internal -->
+    - fn [assertConfigFormat](../../src/cli.ts#L960) () → void <!-- internal -->
       <a id="cli.cli.assertConfigFormat"></a><br>`fmt` and `parse` do not validate the rest of `keylang.json`, only which edition it asks for.
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.assertFormatOnly](base.md#base.config.assertFormatOnly)
-    - fn [cmdParse](../../src/cli.ts#L952) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L966) (paths: string[], json: boolean) → number <!-- internal -->
       <a id="cli.cli.cmdParse"></a>
       - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [cli.cli.keylangFiles](cli.md#cli.cli.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [cli.cli.printTree](cli.md#cli.cli.printTree), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L964) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L978) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
       - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.explainEdge](cli.md#cli.cli.explainEdge), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [cli.cli.writeCheck](cli.md#cli.cli.writeCheck), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary), [base.config.loadConfig](base.md#base.config.loadConfig), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.gitChangedFiles](cli.md#cli.cli.gitChangedFiles), [cli.cli.changedPathSet](cli.md#cli.cli.changedPathSet), [cli.cli.deletedModuleIds](cli.md#cli.cli.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.check-results.checkReport](features.md#features.check-results.checkReport), [features.check-results.checkExitCode](features.md#features.check-results.checkExitCode)
-    - fn [explainEdge](../../src/cli.ts#L1016) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1030) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       <a id="cli.cli.explainEdge"></a>
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [writeCheck](../../src/cli.ts#L1051) (format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1065) (format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">) → void <!-- internal -->
       <a id="cli.cli.writeCheck"></a><br>Shows one check report in a format; the report, its verdicts and its code do not depend on the format.
       - calls [cli.cli.githubProperty](cli.md#cli.cli.githubProperty), [cli.cli.ruleOf](cli.md#cli.cli.ruleOf), [cli.cli.githubData](cli.md#cli.cli.githubData), [cli.cli.ruleText](cli.md#cli.cli.ruleText)
-    - fn [ruleOf](../../src/cli.ts#L1103) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1117) (result: CheckResult) → string <!-- internal -->
       <a id="cli.cli.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
-    - fn [ruleText](../../src/cli.ts#L1115) (id: string) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1129) (id: string) → string <!-- internal -->
       <a id="cli.cli.ruleText"></a>
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [githubData](../../src/cli.ts#L1121) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1135) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubData"></a>
-    - fn [githubProperty](../../src/cli.ts#L1125) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1139) (text: string) → string <!-- internal -->
       <a id="cli.cli.githubProperty"></a>
       - calls [cli.cli.githubData](cli.md#cli.cli.githubData)
-    - fn [cmdFmt](../../src/cli.ts#L1136) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1150) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [printTree](../../src/cli.ts#L1150) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1164) (doc: Document) → void <!-- internal -->
       <a id="cli.cli.printTree"></a>
       - calls [cli.cli.printNode](cli.md#cli.cli.printNode)
-    - fn [printNode](../../src/cli.ts#L1158) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1172) (n: Node, depth: number) → void <!-- internal -->
       <a id="cli.cli.printNode"></a>
       - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [gitChanges](../../src/cli.ts#L1171) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1185) (root: string, ref: string) → ChangedLines <!-- internal -->
       <a id="cli.cli.gitChanges"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet, relative to `root`.
       - calls [features.draft.diffHunks](features.md#features.draft.diffHunks)
   - module [index](../../src/index.ts#L1)

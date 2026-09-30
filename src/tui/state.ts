@@ -115,11 +115,12 @@ export interface Prompt {
    * `new-spec`: the form of a new specification, one field at a time (`form`, design §2.8);
    * `baseline`: write or check `<dir>/rules.baseline.md` (the items; `ids` are `write` / `check`);
    * `agents`: the harness selection as typed (empty is auto, `none`, or names as in `--agents`) and the mode (`ids` are `write` / `check`);
+   * `init`: the harness selection as in `agents` and the mode (`ids` are `write` / `check`; `notes` say what each does);
    * `fmt`: the files and directories to format, relative to the root and separated by spaces, and the mode (`ids` are `write` / `check`);
    * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
    * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "fmt" | "wire" | "full-check";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -127,6 +128,8 @@ export interface Prompt {
   ids?: string[];
   /** `palette`: the group or the availability reason of each item; `proposal`: what Enter does or why it cannot; parallel to `items`. */
   notes?: string[];
+  /** `init`: rows that describe the form (root, layout, harnesses, files), shown above the items and never selected. */
+  details?: string[];
   /** The note of the selected item (`feature`: the target file or why the slug is invalid), shown next to the query. */
   note?: string;
   index: number;

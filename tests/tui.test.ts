@@ -2388,9 +2388,9 @@ test("tui: without keylang.json the start screen shows the guess; Browse analyse
   assert.match(screen, /keylang\.json is not here yet/);
   assert.ok(screen.includes(`Root: ${root}`), screen);
   assert.match(screen, /Found: typescript · layers: application, domain, infrastructure, presentation/);
-  assert.match(screen, /> Browse with the guessed configuration/);
+  assert.match(screen, /> Init: set up keylang in this repository/);
+  assert.match(screen, /  Browse with the guessed configuration/);
   assert.match(screen, /Environment diagnostics/);
-  assert.doesNotMatch(screen, /Set up keylang|Initialize/, "no fake init before ticket 12");
   assert.match(s.lines().at(-1)!, /no keylang\.json: Browse/);
   assert.doesNotMatch(s.lines().at(-1)!, /analyzing/);
   // Snapshot actions explain why they cannot run yet; the palette works on the start screen.
@@ -2402,10 +2402,11 @@ test("tui: without keylang.json the start screen shows the guess; Browse analyse
   assert.match(s.lines().at(-2)!, /Find a node: choose Browse/);
   // Doctor from the start screen: a record, and the start screen stays.
   s.send(KEY.down);
+  s.send(KEY.down);
   s.send(KEY.enter);
   await s.app.idle();
   assert.equal(s.app.state.records.at(-1)?.status, "completed");
-  assert.equal(s.app.state.start, 1);
+  assert.equal(s.app.state.start, 2);
   // Browse: the shared analysis with the guessed layers, the map shown, still no config on disk.
   s.send(KEY.up);
   s.send(KEY.enter);
@@ -5103,4 +5104,240 @@ test("tui: the check saves the chosen dirty spec first as its own step — Back 
   assert.equal(record.result!.exitCode, 1);
   assert.deepEqual(checkJson(record), JSON.parse(cliCheck(root, [flow, "--format", "json"]).stdout));
   assert.ok(checkPayload(record).results.some((result) => result.verdict === "fail" && result.evidence.includes("domain.order.nope")));
+});
+
+// ---------- init: set up a repository in the session (ticket 12) ----------
+
+/** A TypeScript repository without keylang.json, with Codex in use: what `keylang init` starts from. */
+function uninitializedRepo(t: { after: (f: () => void) => void }, extra: Record<string, string> = {}): string {
+  const dir = repoWith(t, { ...CHECKOUT_FILES, ...extra });
+  mkdirSync(join(dir, ".codex"), { recursive: true });
+  return dir;
+}
+
+/** The init form from the palette; the selection typed as in `--agents` (empty is auto), then the mode. */
+function initForm(send: (keys: string) => void, selection: string, mode: "write" | "check"): void {
+  send(KEY.ctrlP);
+  for (const ch of "init set up keylang") send(ch);
+  send(KEY.enter);
+  for (const ch of selection) send(ch);
+  if (mode === "check") send(KEY.down);
+  send(KEY.enter);
+}
+
+function initRecord(app: App): Extract<OperationResult, { kind: "init" }> & { payload: NonNullable<Extract<OperationResult, { kind: "init" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "init" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "init" }> & { payload: NonNullable<Extract<OperationResult, { kind: "init" }>["payload"]> };
+}
+
+function cliInit(root: string, args: string[] = []): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "init", ...args], { cwd: root, encoding: "utf8" });
+}
+
+test("tui: init from the start screen writes what the CLI writes in a twin and opens the workspace without a restart; init --check keeps the CLI's codes and the whole tree", async (t) => {
+  const root = uninitializedRepo(t);
+  const twin = uninitializedRepo(t);
+  const counted = countingAnalyzer();
+  const s = session(root, { analyzer: counted.analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(configKind(s.app), "missing-config");
+  assert.match(s.text(), /> Init: set up keylang in this repository/);
+  assert.match(s.text(), /Browse with the guessed configuration/);
+  assert.doesNotMatch(s.text(), /in a shell/);
+  const before = treeBytes(root);
+  // Enter on the first item opens the form: root, layout, harnesses and the files, before anything runs.
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "init");
+  const details = (s.app.state.prompt?.details ?? []).join("\n");
+  assert.ok(details.includes(`Root: ${root}`), details);
+  assert.match(details, /Found: typescript · layers: application, domain, infrastructure, presentation/);
+  assert.match(details, /keylang\.json: none yet, written from this guess/);
+  assert.match(details, /Harnesses: auto: detected codex/);
+  assert.match(details, /Write, in order: keylang\.json, the map .*keylang\/rules\.baseline\.md, the harness files/);
+  assert.match(details, /init --check.*the map is not compared/);
+  assert.match(s.text(), /Initialize: write keylang\.json, map, baseline, harness files/);
+  for (const ch of "nope") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "init", "an unknown harness keeps the form");
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "the form writes nothing");
+  // Check first: exactly `init --check` — its code, and not one byte of the tree changes.
+  s.send(KEY.enter);
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  await s.app.idle();
+  let result = initRecord(s.app);
+  const cliCheck = cliInit(twin, ["--check"]);
+  assert.deepEqual([result.status, result.exitCode, cliCheck.status], ["completed", 1, 1]);
+  assert.equal(stdoutOf(result), cliCheck.stdout);
+  assert.equal(result.payload.map, null, "init --check does not compare the map");
+  assert.deepEqual(treeBytes(root), before);
+  assert.deepEqual(treeBytes(twin), before);
+  assert.equal(counted.calls(), 0, "no analysis of the session before init");
+  const check = s.app.state.records.at(-1)!;
+  // Write: the same artifacts as the CLI in the twin, the workspace opens in the same session.
+  assert.notEqual(s.app.state.start, null);
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.barrier, null, "the form was the confirmation");
+  await s.app.idle();
+  result = initRecord(s.app);
+  const cli = cliInit(twin);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual([result.status, result.exitCode], ["completed", 0]);
+  assert.deepEqual(artifacts(root), artifacts(twin));
+  assert.ok(result.written.includes("keylang.json") && result.written.includes("keylang/rules.baseline.md") && result.written.includes("AGENTS.md"), result.written.join(" "));
+  assert.equal(result.written[0], "keylang.json", "the config is written first");
+  assert.equal(configKind(s.app), "configured");
+  assert.equal(s.app.state.start, null, "the start screen is gone");
+  assert.ok(counted.calls() >= 1);
+  assert.ok(s.app.state.analysis?.snapshot, "the analysis of the new config");
+  assert.equal(s.app.state.analysis?.config.guessed, false);
+  assert.ok(s.app.state.files.includes("keylang.json") && s.app.state.files.includes("keylang/rules.baseline.md"), s.app.state.files.join(" "));
+  assert.equal(check.outdated, "keylang init wrote files since this run");
+  s.send(KEY.f6);
+  assert.match(s.text(), /set up: map, baseline, agents · code 0/);
+  assert.match(s.text(), /keylang\.json +written \(layers: application, domain/);
+  s.send(KEY.f6);
+  // After init the CLI and the session agree the repository is set up: init --check is 0 and writes nothing.
+  const done = treeBytes(root);
+  assert.equal(cliInit(root, ["--check"]).status, 0);
+  initForm(s.send, "", "check");
+  await s.app.idle();
+  assert.deepEqual([initRecord(s.app).status, initRecord(s.app).exitCode], ["completed", 0]);
+  assert.deepEqual(treeBytes(root), done);
+  // The ordinary workspace: F5 analyses and writes nothing.
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.deepEqual(treeBytes(root), done);
+});
+
+test("tui: init keeps a custom keylang.json byte for byte; none and an explicit list follow the agents contract as in the CLI", async (t) => {
+  const root = checkoutRepo(t);
+  const twin = checkoutRepo(t);
+  const config = readFileSync(join(root, "keylang.json"));
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "init set up keylang") s.send(ch);
+  s.send(KEY.enter);
+  assert.match((s.app.state.prompt?.details ?? []).join("\n"), /keylang\.json: exists, kept byte for byte/);
+  assert.match(s.app.state.prompt?.items[0] ?? "", /^Initialize: keep keylang\.json/);
+  await esc(s.send);
+  initForm(s.send, "none", "write");
+  await s.app.idle();
+  let result = initRecord(s.app);
+  let cli = cliInit(twin, ["--agents=none"]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual([result.status, result.exitCode, result.payload.config.existed, result.payload.config.written], ["completed", 0, true, false]);
+  assert.ok(readFileSync(join(root, "keylang.json")).equals(config), "the custom config is kept");
+  assert.equal(existsSync(join(root, "AGENTS.md")), false, "none writes no harness file");
+  assert.deepEqual(artifacts(root), artifacts(twin));
+  assert.equal(result.payload.agents?.payload?.choice, "none");
+  // An explicit list: exactly the named harness, as `--agents=claude`.
+  initForm(s.send, "claude", "write");
+  await s.app.idle();
+  result = initRecord(s.app);
+  cli = cliInit(twin, ["--agents=claude"]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual([result.status, result.exitCode, result.payload.agents?.payload?.harnesses], ["completed", 0, ["claude"]]);
+  assert.deepEqual(artifacts(root), artifacts(twin));
+  assert.ok(existsSync(join(root, ".mcp.json")) && !existsSync(join(root, ".cursor")));
+  assert.ok(readFileSync(join(root, "keylang.json")).equals(config));
+  // A repeat changes nothing but the index's time, and its check is 0 as in the CLI.
+  const done = artifacts(root);
+  initForm(s.send, "claude", "write");
+  await s.app.idle();
+  assert.equal(initRecord(s.app).exitCode, 0);
+  assert.deepEqual(artifacts(root), done);
+  assert.equal(cliInit(root, ["--agents=claude", "--check"]).status, 0);
+});
+
+test("tui: a broken harness file or no supported source stops init before any write, keylang.json included, with the CLI's code and message", async (t) => {
+  const broken = { "AGENTS.md": "<!-- keylang:begin -->\nнемає кінця\n" };
+  const root = uninitializedRepo(t, broken);
+  const twin = uninitializedRepo(t, broken);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = initRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 2, []]);
+  assert.equal(result.payload.preflight?.payload?.error?.file, "AGENTS.md");
+  assert.deepEqual(treeBytes(root), before, "not even keylang.json");
+  assert.equal(configKind(s.app), "missing-config");
+  assert.notEqual(s.app.state.start, null, "the start screen stays: nothing was set up");
+  const cli = cliInit(twin);
+  assert.equal(cli.status, 2);
+  assert.equal(cli.stderr, `keylang: ${result.messages[0]!.text}\n`);
+  assert.equal(existsSync(join(twin, "keylang.json")), false);
+  s.send(KEY.f6);
+  assert.match(s.text(), /AGENTS\.md is broken, nothing written · code 2/);
+  assert.match(s.text(), /nothing was written, keylang\.json included/);
+  s.send(KEY.f6);
+  // No supported source: code 2 with the CLI's reason; nothing written.
+  const empty = repoWith(t, { "README.md": "# nothing to describe\n" });
+  const e = session(empty);
+  t.after(() => e.app.close());
+  await e.app.idle();
+  const emptyBefore = treeBytes(empty);
+  e.send(KEY.enter);
+  assert.match((e.app.state.prompt?.details ?? []).join("\n"), /no supported source files found under \. .*init stops with code 2/);
+  e.send(KEY.enter);
+  await e.app.idle();
+  const failed = e.app.state.records.at(-1)!.result!;
+  assert.deepEqual([failed.kind, failed.status, failed.exitCode, failed.payload], ["init", "failed", 2, null]);
+  const cliEmpty = cliInit(empty);
+  assert.equal(cliEmpty.status, 2);
+  assert.equal(cliEmpty.stderr, `keylang: ${failed.messages[0]!.text}\n`);
+  assert.deepEqual(treeBytes(empty), emptyBefore);
+});
+
+test("tui: an I/O failure after keylang.json names what init wrote, is no success, and a repeat keeps the config and hand-written files", async (t) => {
+  const root = uninitializedRepo(t);
+  let pause: () => void = () => writeFileSync(join(root, "keylang"), "in the way\n");
+  const s = session(root, { operations: pausedRunner(() => pause()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A file where the spec directory must be: the map and the baseline cannot land; the config and the harness files do.
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  await s.app.idle();
+  let result = initRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["failed", 2]);
+  assert.equal(result.payload.config.written, true);
+  assert.equal(result.payload.map?.status, "failed");
+  assert.equal(result.payload.baseline?.status, "failed");
+  assert.equal(result.payload.agents?.status, "completed");
+  assert.equal(result.written[0], "keylang.json");
+  assert.ok(result.written.includes("AGENTS.md"), result.written.join(" "));
+  assert.ok(!result.written.some((path) => path.startsWith("keylang/")), result.written.join(" "));
+  assert.ok(result.payload.map?.payload?.steps.some((step) => step.state === "failed"));
+  const config = readFileSync(join(root, "keylang.json"));
+  assert.equal(configKind(s.app), "configured", "the written config is read again");
+  assert.equal(s.app.state.start, null);
+  assert.equal(s.app.state.activeOperation, null);
+  s.send(KEY.f6);
+  assert.match(s.text(), /partial: map, baseline did not finish · code 2/);
+  assert.match(s.text(), /Enter runs init again/);
+  s.send(KEY.f6);
+  // A repeat after the obstacle is gone: the config written by the first run and a hand-written spec stay as they are.
+  pause = () => {};
+  rmSync(join(root, "keylang"));
+  mkdirSync(join(root, "keylang"));
+  writeFileSync(join(root, "keylang/rules.md"), "# rules\n\n- layers domain < infrastructure < application < presentation\n");
+  initForm(s.send, "", "write");
+  await s.app.idle();
+  result = initRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.config.existed], ["completed", 0, true]);
+  assert.ok(readFileSync(join(root, "keylang.json")).equals(config));
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), "# rules\n\n- layers domain < infrastructure < application < presentation\n");
+  assert.ok(existsSync(join(root, "keylang/rules.baseline.md")));
+  assert.equal(cliInit(root, ["--check"]).status, 0);
 });

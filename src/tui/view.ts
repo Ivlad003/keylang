@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import { WIRE_OUT, type AgentsPayload, type CheckPayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type WirePayload } from "../operations.ts";
+import { WIRE_OUT, type AgentsPayload, type CheckPayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type WirePayload } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -431,6 +431,7 @@ function recordLabel(record: OperationRecord): string {
   const label = ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
   if (record.params.kind === "baseline") return `${label} · ${record.params.check ? "check" : "write"}`;
   if (record.params.kind === "agents") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
+  if (record.params.kind === "init") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
   if (record.params.kind === "fmt") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.paths.join(" ")}`;
   if (record.params.kind === "wire") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.out ?? WIRE_OUT}`;
   if (record.params.kind === "check") return `${label} · ${checkParams(record.params)}`;
@@ -441,6 +442,7 @@ function recordLabel(record: OperationRecord): string {
 export function operationLabel(request: OperationRequest): string {
   if (request.kind === "baseline") return request.check ? "baseline check" : "baseline write";
   if (request.kind === "agents") return request.check ? "agents check" : "agents write";
+  if (request.kind === "init") return request.check ? "init check" : "init";
   if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
   if (request.kind === "wire") return request.check ? "wire check" : "wire write";
   if (request.kind === "check") return request.strict ? "check --strict" : "check";
@@ -465,6 +467,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "init" && result.payload !== null) return `${initOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "fmt" && result.payload !== null) return `${fmtOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "check" && result.payload !== null) return `${checkOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -526,6 +529,32 @@ function agentsOutcome(status: OperationRecord["status"], payload: AgentsPayload
     return `${written} written${removed > 0 ? `, ${removed} removed` : ""}`;
   }
   return `${done.length} of ${payload.steps.length} step(s) done, ${status}`;
+}
+
+/** `set up`, `partial: map failed`, `keylang.json not written`, `cancelled after map`, or a check's two stages: never a success for a partial run. */
+function initOutcome(status: OperationRecord["status"], payload: InitPayload): string {
+  if (payload.preflight !== null && payload.preflight.status === "failed" && payload.preflight.payload !== null) return agentsOutcome(payload.preflight.status, payload.preflight.payload);
+  if (payload.check) {
+    const agents = payload.agents?.payload ? `harness files ${agentsOutcome(payload.agents.status, payload.agents.payload)}` : "harness files not checked";
+    const baseline = payload.baseline?.payload ? `baseline ${baselineOutcome(payload.baseline.status, payload.baseline.payload)}` : payload.baseline ? "baseline not checked" : "";
+    return [agents, baseline].filter((part) => part !== "").join(", ");
+  }
+  if (payload.config.error !== null) return "keylang.json not written, nothing else attempted";
+  const stages = initStages(payload);
+  if (status === "completed") return `set up: ${stages.map((stage) => stage.name).join(", ")}`;
+  const bad = stages.filter((stage) => stage.result !== null && stage.result.exitCode !== 0).map((stage) => stage.name);
+  const missing = stages.filter((stage) => stage.result === null).map((stage) => stage.name);
+  if (status === "cancelled") return `cancelled${missing.length > 0 ? `, not run: ${missing.join(", ")}` : ""}`;
+  return `partial: ${bad.join(", ")} did not finish`;
+}
+
+/** The stages of an init write, in the order they ran. */
+function initStages(payload: InitPayload): { name: string; result: OperationResult | null }[] {
+  return [
+    { name: "map", result: payload.map },
+    { name: "baseline", result: payload.baseline },
+    { name: "agents", result: payload.agents },
+  ];
 }
 
 /** `3 written, 1 removed`, `1 conflict(s), nothing written`, `2 of 5 done, failed` — what a map write really did. */
@@ -663,6 +692,57 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     }
     if (payload.steps.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
     rows.push({ text: "Files only: no client is started or tested.", style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "init" && result.payload !== null) {
+    // Stage by stage, each with what it really did; a partial init is named as partial and nothing is rolled back.
+    const { payload } = result;
+    const ok = record.status === "completed" && result.exitCode === 0;
+    rows.push({ text: `Init ${payload.check ? "check (as init --check) · read-only, nothing written" : "write"} · ${payload.languages.join(", ")}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${initOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    const stageRow = (name: string, text: string, failed: boolean): void => {
+      rows.push({ text: `  ${name.padEnd(13)} ${text}`, style: failed ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    };
+    const code = (stage: OperationResult): string => (stage.exitCode === null ? "" : ` · code ${stage.exitCode}`);
+    if (payload.preflight?.status === "failed") {
+      stageRow("harness plan", `${payload.preflight.messages.map((message) => message.text).join("; ")}${code(payload.preflight)}`, true);
+      rows.push({ text: "  checked before any write: nothing was written, keylang.json included", style: THEME.hint });
+    } else if (!payload.check) {
+      const config = payload.config;
+      stageRow(config.file, config.existed ? "kept as it is" : config.written ? `written (layers: ${config.layers.join(", ")})` : config.error !== null ? `failed: ${config.error}` : "not written", config.error !== null);
+      for (const note of config.notes) rows.push({ text: `    note: ${note}`, style: { ...THEME.panel, fg: 243 } });
+    }
+    const stages: { name: string; result: OperationResult | null }[] = payload.check
+      ? [
+          { name: "agents", result: payload.agents },
+          { name: "baseline", result: payload.baseline },
+        ]
+      : payload.preflight?.status === "failed"
+        ? []
+        : initStages(payload);
+    for (const { name, result: stage } of stages) {
+      if (stage === null) {
+        stageRow(name, payload.config.error !== null || record.status !== "cancelled" ? "not run" : "not run (cancelled)", false);
+        continue;
+      }
+      const outcome =
+        stage.kind === "map" && stage.payload !== null
+          ? mapOutcome(stage.status, stage.payload)
+          : stage.kind === "baseline" && stage.payload !== null
+            ? baselineOutcome(stage.status, stage.payload)
+            : stage.kind === "agents" && stage.payload !== null
+              ? agentsOutcome(stage.status, stage.payload)
+              : stage.status;
+      stageRow(name, `${outcome}${code(stage)}`, stage.exitCode !== 0);
+      for (const message of stage.messages) if (message.level === "error") rows.push({ text: `    ${message.text}`, style: { ...THEME.panel, ...THEME.error } });
+      if (stage.kind === "map") for (const line of stage.payload?.refused ?? []) rows.push({ text: `    refused ${line}`, style: THEME.panel });
+      for (const step of stage.kind === "map" || stage.kind === "agents" ? (stage.payload?.steps ?? []) : []) {
+        if (step.state === "failed") rows.push({ text: `    failed ${step.path}${step.error === undefined ? "" : `: ${step.error}`}`, style: { ...THEME.panel, ...THEME.error } });
+        else if (step.state === "not-attempted") rows.push({ text: `    not attempted ${step.path}`, style: { ...THEME.panel, fg: 243 } });
+      }
+    }
+    rows.push({ text: `written: ${result.written.length} file(s)${result.removed.length > 0 ? `, removed: ${result.removed.length}` : ""}`, style: { ...THEME.panel, fg: 243 } });
+    if (payload.check) rows.push({ text: "The map is not part of init --check: Map: check compares it.", style: { ...THEME.panel, fg: 243 } });
+    else if (!ok) rows.push({ text: "  Enter runs init again: a kept keylang.json and hand-written files stay as they are", style: THEME.hint });
+    rows.push({ text: "Files only: no harness client is started or tested.", style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "check" && result.payload !== null) {
     // A report of the saved files, apart from the pinned current analysis: its options, its outcome, then every result.
     const { payload } = result;
@@ -996,10 +1076,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -1009,10 +1089,13 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const first = Math.max(0, prompt.index - shown + 1);
   const items = prompt.items.slice(first, first + shown);
   if (items.length === 0) return;
-  const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
-  const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
-  items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
+  // Rows that describe the form (init: the root, the layout, the files) stand above its choices and are never selected.
+  const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
+  const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
+  const y = editor.y + editor.height - items.length - details.length - 2;
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
+  items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
 /** The label of the field the new-spec form is on. */
@@ -1085,7 +1168,7 @@ function drawStart(grid: Grid, state: State, rect: Rect): void {
   const labels = new Map(ACTIONS.map((action) => [action.id, action.label]));
   START_ACTIONS.forEach((id, index) => rows.push({ text: `${index === state.start ? ">" : " "} ${labels.get(id) ?? id}`, style: index === state.start ? THEME.selected : THEME.text }));
   rows.push({ text: "", style: THEME.text });
-  rows.push({ text: "Nothing is written here. To set up keylang, run `keylang init` in a shell.", style: THEME.hint });
+  rows.push({ text: "Nothing is written until you choose Init and confirm its form.", style: THEME.hint });
   rows.push({ text: "Enter choose · ↑↓ move · : all actions · ? help · q quit", style: THEME.comment });
   rows.slice(0, rect.height - 1).forEach((row, i) => grid.write(rect.x + 2, rect.y + 1 + i, row.text, row.style, rect.width - 3));
 }

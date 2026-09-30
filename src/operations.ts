@@ -10,7 +10,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
-import { CONFIG_FILE, assertFormatOnly, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
@@ -142,10 +142,28 @@ export interface CheckRequest {
   static?: StaticMode;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest;
+/**
+ * Sets a repository up (`keylang init [dir] [--agents=LIST]`): keylang.json
+ * (an existing one is kept), the map, the baseline and the harness files, in
+ * that order. With `check` it runs exactly `init --check`: the harness files
+ * and the baseline are compared; the map is not (that is `map --check`).
+ */
+export interface InitRequest {
+  kind: "init";
+  /** Repository root (absolute): the directory `keylang init` is run for. */
+  root: string;
+  /** As in `AgentsRequest`: `auto`, `none`, or exactly the named harnesses. */
+  harnesses: HarnessChoice;
+  /** `init --check`: compare only; nothing is written. */
+  check: boolean;
+  /** How messages name the root, as the caller does (`keylang init <dir>`); default `.`. */
+  label?: string;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | InitRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -387,6 +405,37 @@ export interface CheckPayload {
   notSpecs: string[];
 }
 
+/**
+ * What `keylang init [--check]` did, stage by stage. Each stage is the result
+ * of its own shared operation, null when it was not run (a check has no map
+ * stage; a failure or a cancellation stops the stages after it). There is no
+ * overall atomicity: every stage names what it really wrote.
+ */
+export interface InitPayload {
+  check: boolean;
+  /** The languages of the configuration init describes. */
+  languages: string[];
+  config: {
+    /** `keylang.json`. */
+    file: string;
+    /** The file was there before the commit: it is kept byte for byte. */
+    existed: boolean;
+    /** Whether this run wrote it (never in a check). */
+    written: boolean;
+    /** The I/O error of the write, or null. */
+    error: string | null;
+    /** The layers of the guess init wrote (or would write); the configured ones when the file is kept. */
+    layers: string[];
+    /** A note for every guessed directory whose layer name had to change. */
+    notes: string[];
+  };
+  /** The harness plan checked before any write, the config included: a failure here writes nothing. Null in a check (its agents stage is the plan). */
+  preflight: OperationEnvelope<"agents"> | null;
+  map: OperationEnvelope<"map"> | null;
+  baseline: OperationEnvelope<"baseline"> | null;
+  agents: OperationEnvelope<"agents"> | null;
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
@@ -398,6 +447,7 @@ export interface OperationPayloads {
   fmt: FmtPayload;
   wire: WirePayload;
   check: CheckPayload;
+  init: InitPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -433,6 +483,7 @@ export function runOperation(request: AgentsRequest, context?: OperationContext)
 export function runOperation(request: FmtRequest, context?: OperationContext): Promise<OperationEnvelope<"fmt">>;
 export function runOperation(request: WireRequest, context?: OperationContext): Promise<OperationEnvelope<"wire">>;
 export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
+export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -454,6 +505,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runWire(request, context);
     case "check":
       return runCheck(request, context);
+    case "init":
+      return runInit(request, context);
   }
 }
 
@@ -481,6 +534,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "wire":
       return { kind, ...base };
     case "check":
+      return { kind, ...base };
+    case "init":
       return { kind, ...base };
   }
 }
@@ -820,6 +875,128 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
     written: done.filter((step) => step.action === "write").map((step) => step.path),
     removed: done.filter((step) => step.action === "remove").map((step) => step.path),
   };
+}
+
+function emptyInit(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"init"> {
+  return { kind: "init", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * The configuration `keylang init` describes: the saved keylang.json, else
+ * the guess. An error (a broken keylang.json, no supported sources) is the
+ * reason init stops with code 2 before anything else, the harness selection
+ * included.
+ */
+export function initSources(root: string, label = "."): { config: Config } | { error: string } {
+  let config: Config;
+  try {
+    config = loadConfig(root);
+  } catch (error) {
+    return { error: messageOf(error) };
+  }
+  // Nothing to describe is a usage error (like `map`), not a finding.
+  if (config.languages.length === 0) return { error: `no supported source files found under ${label} (TypeScript, JavaScript, Python, Rust)` };
+  return { config };
+}
+
+/**
+ * `keylang init [--check]`: an orchestration of the shared config, map,
+ * baseline and agents steps, not a call of the CLI commands. Before
+ * anything: the configuration (2 when it is broken or there is no supported
+ * source), then the harness plan (a broken harness file is 2 and nothing is
+ * written, keylang.json included). Check — exactly `init --check`: the
+ * agents check (2 stops it), then the baseline check; 0 when both are 0,
+ * else 1. Write, after `beforeCommit` (called once for the whole run): an
+ * existing keylang.json is kept, a missing one is written from the guess
+ * (an I/O error stops init, 2); then map, baseline and agents run in turn,
+ * each whatever the one before it did, as the CLI always has. The code is
+ * the first non-zero of map, baseline, agents; any non-zero stage makes the
+ * whole run `failed` — a partial init is never a success. Cancelled: the
+ * stage under way names what it wrote; the rest are not run (null).
+ */
+async function runInit(request: InitRequest, context: OperationContext): Promise<OperationEnvelope<"init">> {
+  if (!isAbsolute(request.root)) return emptyInit("failed", 2, "init: root must be an absolute path");
+  if (context.signal?.aborted) return emptyInit("cancelled", null);
+  const root = request.root;
+  const sources = initSources(root, request.label);
+  if ("error" in sources) return emptyInit("failed", 2, sources.error);
+  const { config } = sources;
+  const existed = existsSync(join(root, CONFIG_FILE));
+  // The same guess `loadConfig` made, with a note for every directory whose layer name had to change.
+  const layout = existed ? { layers: config.layers, notes: [] } : guessLayout(root, config.exclude);
+  const payload: InitPayload = {
+    check: request.check,
+    languages: [...config.languages],
+    config: { file: CONFIG_FILE, existed, written: false, error: null, layers: [...layout.layers.keys()], notes: layout.notes },
+    preflight: null,
+    map: null,
+    baseline: null,
+    agents: null,
+  };
+  // The stages report their progress under their own name; they never see `beforeCommit`, it is init's.
+  const stage = (name: string): OperationContext => ({
+    ...(context.signal ? { signal: context.signal } : {}),
+    ...(context.analyze ? { analyze: context.analyze } : {}),
+    onProgress: ({ text }) => context.onProgress?.({ text: `${name}: ${text}` }),
+  });
+  if (request.check) {
+    payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
+    if (payload.agents.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
+    if (payload.agents.exitCode === 2) return { ...emptyInit("failed", 2), payload, messages: payload.agents.messages };
+    payload.baseline = await runBaseline({ kind: "baseline", root, check: true }, stage("baseline"));
+    if (payload.baseline.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
+    // `init --check` has always reported a failed baseline check as a difference, code 1.
+    const code = payload.agents.exitCode === 0 && payload.baseline.exitCode === 0 ? 0 : 1;
+    return { ...emptyInit("completed", code), payload, messages: [...payload.agents.messages, ...payload.baseline.messages] };
+  }
+  // An unknown name or a broken harness file fails before any write, including keylang.json.
+  payload.preflight = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
+  if (payload.preflight.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
+  if (payload.preflight.status === "failed") return { ...emptyInit("failed", payload.preflight.exitCode ?? 2), payload, messages: payload.preflight.messages };
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyInit("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyInit("cancelled", null), payload };
+  const messages: OperationMessage[] = [];
+  const written: string[] = [];
+  const removed: string[] = [];
+  // Existence decides at the moment of the write, as it always did: a config that appeared meanwhile is kept.
+  if (existsSync(join(root, CONFIG_FILE))) {
+    payload.config.existed = true;
+    messages.push({ level: "info", text: `${CONFIG_FILE}: already exists, kept` });
+  } else {
+    context.onProgress?.({ text: `writing ${CONFIG_FILE}` });
+    for (const note of layout.notes) messages.push({ level: "warning", text: `note: ${note}` });
+    try {
+      writeAtomic(join(root, CONFIG_FILE), configToJson({ ...config, layers: layout.layers }));
+    } catch (error) {
+      payload.config.error = messageOf(error);
+      return { ...emptyInit("failed", 2), payload, messages: [...messages, { level: "error", text: `${CONFIG_FILE}: ${payload.config.error}; nothing else was written` }] };
+    }
+    payload.config.written = true;
+    written.push(CONFIG_FILE);
+    messages.push({ level: "info", text: `${CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})` });
+  }
+  const collect = (result: OperationResult): void => {
+    messages.push(...result.messages);
+    written.push(...result.written);
+    removed.push(...result.removed);
+  };
+  const stopped = (): OperationEnvelope<"init"> => ({ ...emptyInit("cancelled", null), payload, messages, written, removed });
+  payload.map = await runMap({ kind: "map", root, ...(request.label !== undefined ? { label: request.label } : {}) }, stage("map"));
+  collect(payload.map);
+  if (payload.map.status === "cancelled" || context.signal?.aborted) return stopped();
+  payload.baseline = await runBaseline({ kind: "baseline", root, check: false }, stage("baseline"));
+  collect(payload.baseline);
+  if (payload.baseline.status === "cancelled" || context.signal?.aborted) return stopped();
+  payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: false }, stage("agents"));
+  collect(payload.agents);
+  if (payload.agents.status === "cancelled") return stopped();
+  const code = [payload.map.exitCode, payload.baseline.exitCode, payload.agents.exitCode].find((exit) => exit !== 0) ?? 0;
+  return { ...emptyInit(code === 0 ? "completed" : "failed", code), payload, messages, written, removed };
 }
 
 function emptyFmt(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"fmt"> {
