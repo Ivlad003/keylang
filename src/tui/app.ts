@@ -12,6 +12,7 @@
 // in `assist.ts`; this class dispatches input to them and keeps the editor.
 
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
@@ -25,17 +26,19 @@ import { isStale, readExplanation } from "../explain-llm.ts";
 import { loadBriefs } from "../explanations.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
+import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
+import { actionLabel, catalog, matchActions } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { bufferLines, lineLayout, newBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, Cursor, Hover, State } from "./state.ts";
+import type { Buffer, Cursor, Hover, OperationRecord, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, editorRows, filesTop, gutterWidth, layout, navEntries, navListHeight, readCursorRow, render } from "./view.ts";
+import { contextTop, editorRows, filesTop, gutterWidth, layout, navEntries, navListHeight, readCursorRow, recordStatus, render, resultsReportRows } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, scrollToFit } from "./width.ts";
 
 export interface Surface {
@@ -47,11 +50,15 @@ export interface Surface {
 
 export type Analyzer = (request: AnalysisRequest) => Promise<Analysis>;
 
+/** Runs one explicit operation; the session's default is the shared `runOperation`. Tests inject a gated one. */
+export type OperationRunner = (request: OperationRequest, context: OperationContext) => Promise<OperationResult>;
+
 export interface AppOptions {
   root: string;
   cols: number;
   rows: number;
   analyzer?: Analyzer;
+  operations?: OperationRunner;
   onQuit?: () => void;
   /**
    * Microphone PCM (16 kHz, mono, s16le) until `stop` is called or the source
@@ -72,7 +79,7 @@ export const MAX_ROWS = 400;
 /** At most this many of one key in one chunk are a key held down (auto-repeat); more are pasted text. */
 const HELD_KEYS = 32;
 /** Keys handled before the mode: they show panels and reanalyse, and never edit. */
-const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5"]);
+const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6"]);
 
 /** Most nodes the `s` prompt lists. */
 const NODE_HITS = 50;
@@ -83,6 +90,7 @@ export class App {
   private previous: Grid | null = null;
   private readonly decoder = new InputDecoder();
   private readonly analyzer: Analyzer;
+  private readonly operations: OperationRunner;
   private readonly onQuit: () => void;
   private readonly merges: MergeSession;
   private readonly assist: Assist;
@@ -94,9 +102,12 @@ export class App {
   private running = 0;
   private waiters: (() => void)[] = [];
   private closed = false;
+  /** The id of the next operation record. */
+  private nextRecord = 1;
 
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
+    this.operations = options.operations ?? runOperation;
     this.onQuit = options.onQuit ?? (() => {});
     this.state = {
       root: options.root,
@@ -135,6 +146,9 @@ export class App {
       ghost: null,
       search: null,
       quitArmed: false,
+      records: [],
+      activeOperation: null,
+      results: { open: false, index: 0, top: 0, scrollReport: false, previousFocus: "editor" },
       briefs: new Map(),
     };
     // The helpers reach the session through closures: its private methods stay private.
@@ -202,7 +216,7 @@ export class App {
       // per key — and outside the editor not a string of commands (a pasted path in MERGE would accept and
       // write hunks). A few of one key is the key held down.
       const held = run.length <= HELD_KEYS && run.every((key) => key.name === run[0]!.name);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && (this.state.mode === "edit" || !held)) {
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && (this.state.mode === "edit" || !held)) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -762,6 +776,7 @@ export class App {
       return;
     }
     if (event.type === "paste") {
+      if (this.state.results.open) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = "paste: press i to edit first";
@@ -775,21 +790,17 @@ export class App {
       return;
     }
     if (this.state.prompt) return this.promptKey(event);
+    // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
+    // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
+    if (event.ctrl && event.name === "p") return this.openPalette();
+    if (this.state.results.open) return this.resultsKey(event);
     if (event.name === "f5") return this.reanalyze();
+    if (event.name === "f6") return this.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
     // the code viewer they are shown, and the keys still go where they went.
     const focusable = this.state.mode === "view" || this.state.mode === "read";
-    if (event.name === "f2") {
-      this.state.showFiles = !this.state.showFiles;
-      if (this.state.showFiles && focusable) this.state.focus = "files";
-      else if (!this.state.showFiles && this.state.focus === "files") this.state.focus = "editor";
-      return this.keepVisible();
-    }
-    if (event.name === "f3") {
-      this.state.showNav = !this.state.showNav;
-      if (!this.state.showNav && this.state.focus === "nav") this.state.focus = "editor";
-      return this.keepVisible();
-    }
+    if (event.name === "f2") return this.toggleFiles(focusable);
+    if (event.name === "f3") return this.toggleNav(focusable);
     if (event.name === "f4") return this.toggleContext(focusable);
     switch (this.state.mode) {
       case "merge":
@@ -950,8 +961,7 @@ export class App {
         this.state.prompt = { kind: "search", text: this.state.search ?? "", items: [], index: 0 };
         return;
       case ":":
-        this.state.prompt = { kind: "palette", text: "", items: this.paletteItems(""), index: 0 };
-        return;
+        return this.openPalette();
       case "n":
         return this.findNext();
       case "q":
@@ -1160,6 +1170,19 @@ export class App {
 
   // ---------- context panel ----------
 
+  private toggleFiles(focusable: boolean): void {
+    this.state.showFiles = !this.state.showFiles;
+    if (this.state.showFiles && focusable) this.state.focus = "files";
+    else if (!this.state.showFiles && this.state.focus === "files") this.state.focus = "editor";
+    this.keepVisible();
+  }
+
+  private toggleNav(focusable: boolean): void {
+    this.state.showNav = !this.state.showNav;
+    if (!this.state.showNav && this.state.focus === "nav") this.state.focus = "editor";
+    this.keepVisible();
+  }
+
   private toggleContext(focus = true): void {
     const context = this.state.context;
     context.open = !context.open;
@@ -1362,9 +1385,153 @@ export class App {
     }
   }
 
+  // ---------- operations and results (F6) ----------
+
+  /**
+   * Runs doctor as the session's one explicit operation and records it for
+   * F6. The UI never blocks: the record turns "running" and the result (or a
+   * failure) lands later; a second operation is refused while one runs. A
+   * failure is a visible record and a message, never the end of the session.
+   */
+  private startDoctor(): void {
+    if (this.state.activeOperation !== null) {
+      this.state.message = "an operation is already running";
+      return;
+    }
+    const record: OperationRecord = {
+      id: this.nextRecord++,
+      action: "doctor",
+      kind: "doctor",
+      params: { kind: "doctor", root: this.state.root },
+      started: Date.now(),
+      finished: null,
+      status: "running",
+      result: null,
+    };
+    this.state.records.push(record);
+    this.state.activeOperation = record.id;
+    this.state.message = "doctor: running…";
+    this.track(
+      this.operations(record.params, {})
+        .then((result) => {
+          record.result = result;
+          record.status = result.status;
+        })
+        .catch((error) => {
+          record.status = "failed";
+          record.result = {
+            kind: "doctor",
+            status: "failed",
+            exitCode: 2,
+            payload: null,
+            messages: [{ level: "error", text: errorText(error) }],
+            written: [],
+            removed: [],
+            proposals: [],
+          };
+        })
+        .finally(() => {
+          record.finished = Date.now();
+          this.state.activeOperation = null;
+          // Completion adds a message; it never changes the open file.
+          this.state.message = `doctor: ${recordStatus(record)} · F6 shows the report`;
+        }),
+    );
+    this.draw();
+  }
+
+  /** F6 or the palette: the history of operation records and the report of the selected one. */
+  private openResults(): void {
+    const results = this.state.results;
+    // Already open: keep the current selection — re-entering must not capture a stale focus or reset the record.
+    if (results.open) return;
+    results.open = true;
+    results.previousFocus = this.state.focus;
+    results.scrollReport = false;
+    results.top = 0;
+    results.index = Math.max(0, this.state.records.length - 1);
+    this.state.focus = "results";
+  }
+
+  /** Esc closes the panel, not the running operation; the focus goes back where F6 was pressed. */
+  private closeResults(): void {
+    this.state.results.open = false;
+    this.state.results.scrollReport = false;
+    this.state.focus = this.state.results.previousFocus;
+  }
+
+  /** Enter in the panel: reruns the selected record with its exact parameters. */
+  private rerunRecord(): void {
+    const record = this.state.records[this.state.results.index];
+    if (!record) return;
+    if (record.status === "running") {
+      this.state.message = "this operation is still running";
+      return;
+    }
+    switch (record.kind) {
+      case "doctor":
+        return this.startDoctor();
+    }
+  }
+
+  /** While the panel is open its keys stay with it; Tab switches between the list and the report scroll. */
+  private resultsKey(event: KeyEvent): void {
+    const results = this.state.results;
+    const records = this.state.records;
+    const page = Math.max(1, layout(this.state).editor.height - 4);
+    const select = (next: number): void => {
+      results.index = Math.max(0, Math.min(Math.max(0, records.length - 1), next));
+      // Each record shows its report from the top; a selection change never keeps a scroll offset of another report.
+      results.top = 0;
+    };
+    switch (event.name) {
+      case "up":
+      case "k":
+        if (results.scrollReport) return this.scrollReport(-1);
+        return select(results.index - 1);
+      case "down":
+      case "j":
+        if (results.scrollReport) return this.scrollReport(1);
+        return select(results.index + 1);
+      case "pageup":
+        if (results.scrollReport) return this.scrollReport(-page);
+        return select(results.index - page);
+      case "pagedown":
+        if (results.scrollReport) return this.scrollReport(page);
+        return select(results.index + page);
+      case "tab":
+        results.scrollReport = !results.scrollReport;
+        return;
+      case "enter":
+        return this.rerunRecord();
+      case "f5":
+        return this.reanalyze();
+      case "f6":
+      case "escape":
+        return this.closeResults();
+      case "q":
+        return this.quit();
+      case "?":
+        this.state.help = true;
+        return;
+      default:
+        return;
+    }
+  }
+
+  private scrollReport(delta: number): void {
+    const rows = resultsReportRows(this.state);
+    this.state.results.top = Math.max(0, Math.min(this.state.results.top + delta, Math.max(0, rows.length - 1)));
+  }
+
   // ---------- mouse ----------
 
   private mouse(event: MouseEvent): void {
+    // The F6 panel is modal over the editor area: only the wheel scrolls its report.
+    if (this.state.results.open) {
+      if (event.action === "wheel-up" || event.action === "wheel-down") this.scrollReport(event.action === "wheel-up" ? -3 : 3);
+      return;
+    }
     const area = layout(this.state);
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
@@ -1442,10 +1609,7 @@ export class App {
   private promptType(text: string): void {
     const prompt = this.state.prompt!;
     prompt.text += text;
-    if (prompt.kind === "palette") {
-      prompt.items = this.paletteItems(prompt.text);
-      prompt.index = 0;
-    }
+    if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
   }
 
@@ -1468,15 +1632,13 @@ export class App {
     }
     if (event.name === "backspace") {
       prompt.text = graphemes(prompt.text).slice(0, -1).join("");
-      if (prompt.kind === "palette") {
-        prompt.items = this.paletteItems(prompt.text);
-        prompt.index = 0;
-      }
+      if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
       return;
     }
     if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
+      if (prompt.kind === "palette") prompt.note = prompt.notes?.[prompt.index] ?? "";
       return;
     }
     if (event.name === "enter") {
@@ -1490,33 +1652,89 @@ export class App {
         const id = prompt.ids?.[prompt.index];
         if (id) this.goToNode(id);
       } else {
-        const chosen = prompt.items[prompt.index];
-        if (chosen) this.runCommand(chosen);
+        const id = prompt.ids?.[prompt.index];
+        if (id) this.runAction(id);
       }
       return;
     }
     if (event.text !== undefined && !event.ctrl && !event.alt) this.promptType(event.text);
   }
 
-  private commands(): string[] {
-    return ["check (F5)", "files panel (F2)", "navigation panel (F3)", "find a node (s)", "map / explained map (t)", "reading mode (v)", "edit (i)", "merge proposal (m)", "keys (?)", "quit (q)", ...this.state.files.map((file) => `open ${file}`)];
+  /** `:` in view/read, Ctrl+P anywhere: the full catalogue with fuzzy search. */
+  private openPalette(): void {
+    this.state.prompt = { kind: "palette", text: "", items: [], ids: [], notes: [], index: 0 };
+    this.refreshPalette();
   }
 
-  private paletteItems(query: string): string[] {
-    const q = query.toLowerCase();
-    // Fuzzy: the query's characters appear in order.
-    return this.commands().filter((command) => {
-      let at = 0;
-      for (const ch of command.toLowerCase()) if (ch === q[at]) at++;
-      return at === q.length;
-    });
+  /** The catalogue entries matching the prompt text, as parallel item arrays. */
+  private refreshPalette(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "palette") return;
+    const entries = matchActions(catalog(this.state), prompt.text);
+    prompt.items = entries.map((entry) => actionLabel(entry.action));
+    prompt.ids = entries.map((entry) => entry.action.id);
+    prompt.notes = entries.map((entry) => entry.reason ?? entry.action.group);
+    prompt.index = 0;
+    prompt.note = prompt.notes[0] ?? "";
   }
 
-  private runCommand(command: string): void {
-    if (command.startsWith("open ")) return this.open(command.slice(5), { line: 0, col: 0 });
-    const key = /\((.+)\)$/.exec(command)?.[1] ?? "";
-    const event: KeyEvent = { type: "key", name: key.toLowerCase() === "f5" ? "f5" : key === "F2" ? "f2" : key === "F3" ? "f3" : key, ctrl: false, alt: false, shift: false, text: key };
-    this.handle(event);
+  /**
+   * Executes a palette action by its id. An unavailable action explains its
+   * reason; execution never synthesizes fake key events. New actions join the
+   * registry in `actions.ts` and get their case here with the feature.
+   */
+  private runAction(id: string): void {
+    const entry = catalog(this.state).find((candidate) => candidate.action.id === id);
+    if (!entry) return;
+    if (entry.reason !== null) {
+      this.state.message = `${entry.action.label}: ${entry.reason}`;
+      return;
+    }
+    const focusable = this.state.mode === "view" || this.state.mode === "read";
+    switch (id) {
+      case "check":
+        return this.reanalyze();
+      case "files":
+        return this.toggleFiles(focusable);
+      case "navigation":
+        return this.toggleNav(focusable);
+      case "context":
+        return this.toggleContext(true);
+      case "results":
+        return this.openResults();
+      case "doctor":
+        return this.startDoctor();
+      case "find-node":
+        this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
+        return this.findNodes();
+      case "toggle-map":
+        return this.toggleMap();
+      case "reading": {
+        if (!this.buffer()) return;
+        this.state.mode = "read";
+        this.state.hover = null;
+        return;
+      }
+      case "edit": {
+        const buffer = this.buffer();
+        if (!buffer) return;
+        this.state.mode = "edit";
+        this.state.hover = null;
+        return;
+      }
+      case "merge":
+        return this.merges.open();
+      case "help":
+        this.state.help = true;
+        return;
+      case "version":
+        this.state.message = `keylang ${packageVersion()}`;
+        return;
+      case "quit":
+        return this.quit();
+      default:
+        if (id.startsWith("open:")) return this.open(id.slice("open:".length), { line: 0, col: 0 });
+    }
   }
 
   private findNext(): void {
@@ -1624,4 +1842,9 @@ function printable(text: string): string {
     .replace(/\r\n?/g, "\n")
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-9;?<=>]*[ -/]*[@-~]?|\x1b[@-_]?/g, "")
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+}
+
+/** The package version, for the "About keylang" palette action. */
+function packageVersion(): string {
+  return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
 }

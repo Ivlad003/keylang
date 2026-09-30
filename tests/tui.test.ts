@@ -16,6 +16,7 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { analyze, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
+import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { navEntries } from "../src/tui/view.ts";
 import { InputDecoder } from "../src/tui/input.ts";
@@ -28,11 +29,11 @@ import { stringWidth } from "../src/tui/width.ts";
 import { checkoutRepo, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
-function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; microphone?: AppOptions["microphone"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
+function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.microphone ? { microphone: options.microphone } : {}) });
+  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}) });
   app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
@@ -351,7 +352,7 @@ test("tui: palette and search", async (t) => {
   await s.app.idle();
   s.send(":");
   for (const ch of "rules") s.send(ch);
-  assert.match(s.text(), /open keylang\/rules\.md/);
+  assert.match(s.text(), /Open keylang\/rules\.md/);
   s.send(KEY.enter);
   assert.equal(s.app.state.current, "keylang/rules.md");
   s.send(":");
@@ -361,6 +362,192 @@ test("tui: palette and search", async (t) => {
   for (const ch of "store") s.send(ch);
   s.send(KEY.enter);
   assert.equal(s.app.state.cursor.line, 7);
+});
+
+test("tui: the palette runs doctor by id; F6 keeps the history and the report matches the CLI", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // In edit, `:` and `?` are characters, not commands.
+  s.send("i");
+  s.send(":");
+  s.send("?");
+  assert.ok(s.lines().some((line) => line.includes(":?# flow checkout")), s.text());
+  // Ctrl+P opens the palette and types nothing into the buffer.
+  s.send(KEY.ctrlP);
+  assert.equal(s.app.state.prompt?.kind, "palette");
+  assert.equal(s.app.state.prompt!.text, "");
+  // The CLI alias and the visible name find the same action.
+  for (const ch of "doctor") s.send(ch);
+  assert.match(s.text(), /Environment diagnostics/);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.prompt, null);
+  assert.equal(s.app.state.mode, "edit");
+  s.send(KEY.ctrlP);
+  for (const ch of "diagnostics") s.send(ch);
+  assert.match(s.text(), /Environment diagnostics/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  // One record: completed, with the same report lines the CLI prints.
+  assert.equal(s.app.state.records.length, 1);
+  const record = s.app.state.records[0]!;
+  assert.equal(record.status, "completed");
+  assert.equal(record.result?.exitCode, 0);
+  const bin = join(dirname(fileURLToPath(import.meta.url)), "../bin/keylang.js");
+  const cli = spawnSync(process.execPath, [bin, "doctor"], { cwd: root, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.deepEqual(record.result!.messages.map((m) => m.text), cli.stdout.trimEnd().split("\n"));
+  // The editor kept its file, text, mode and focus.
+  assert.equal(s.app.state.current, "keylang/flows/checkout.md");
+  assert.equal(s.app.state.mode, "edit");
+  assert.ok(s.lines().some((line) => line.includes(":?# flow checkout")), s.text());
+  // F6 shows the history and the scrollable report; Esc returns to the editor.
+  s.send(KEY.f6);
+  assert.match(s.text(), /RESULTS · F6 · 1 run/);
+  assert.match(s.text(), /Environment diagnostics {2}completed · code 0/);
+  assert.match(s.text(), /languages: typescript/);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.open, false);
+  assert.equal(s.app.state.focus, "editor");
+  assert.equal(s.app.state.mode, "edit");
+});
+
+test("tui: F6 reruns a record with the same parameters", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.length, 2);
+  assert.deepEqual(s.app.state.records[1]!.params, s.app.state.records[0]!.params);
+  assert.equal(s.app.state.records[1]!.status, "completed");
+  assert.match(s.text(), /RESULTS · F6 · 2 run/);
+});
+
+test("tui: a slow doctor does not block the UI, and a second run is refused", async (t) => {
+  const root = checkoutRepo(t);
+  let release: (() => void) | null = null;
+  let calls = 0;
+  const operations = async (request: OperationRequest, context: OperationContext): Promise<OperationResult> => {
+    calls++;
+    await new Promise<void>((done) => (release = done));
+    return runOperation(request, context);
+  };
+  const s = session(root, { operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await sleep(30);
+  assert.equal(calls, 1);
+  assert.equal(s.app.state.records.length, 1);
+  assert.equal(s.app.state.activeOperation, s.app.state.records[0]!.id);
+  // Arrows, resize and Esc keep working while the operation runs.
+  s.send(KEY.down);
+  assert.equal(s.app.state.cursor.line, 1);
+  s.vt.resize(70, 16);
+  s.app.resize(70, 16);
+  assert.equal(s.lines().length, 16);
+  // A second start does not create a second job; the reason is visible.
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  assert.match(s.text(), /unavailable: an operation is already running|an operation is already running/);
+  s.send(KEY.enter);
+  assert.equal(calls, 1);
+  assert.equal(s.app.state.records.length, 1);
+  assert.match(s.lines().at(-2)!, /an operation is already running/);
+  // Esc closes the panel, not the work.
+  s.send(KEY.f6);
+  assert.match(s.text(), /running…/);
+  s.send("\x1b");
+  await sleep(40);
+  assert.equal(s.app.state.results.open, false);
+  assert.equal(s.app.state.activeOperation, s.app.state.records[0]!.id);
+  release!();
+  await s.app.idle();
+  assert.equal(s.app.state.activeOperation, null);
+  assert.equal(s.app.state.records[0]!.status, "completed");
+  assert.equal(s.app.state.records.length, 1);
+});
+
+test("tui: in MERGE the palette shows reasons for blocked actions and still runs doctor", async (t) => {
+  const root = checkoutRepo(t);
+  const proposal = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the register.");
+  mkdirSync(join(root, ".keylang/proposals/keylang/flows"), { recursive: true });
+  writeFileSync(join(root, ".keylang/proposals/keylang/flows/checkout.md"), proposal);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("m");
+  assert.equal(s.app.state.mode, "merge");
+  // An action that would drop the merge is listed with its reason and does not run.
+  s.send(KEY.ctrlP);
+  for (const ch of "insert") s.send(ch);
+  assert.match(s.text(), /Edit \(i\)/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "merge");
+  assert.match(s.lines().at(-2)!, /Edit: finish the merge first/);
+  // The independent read-only doctor runs, and the merge stays.
+  s.send(KEY.ctrlP);
+  for (const ch of "doctor") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.mode, "merge");
+  assert.equal(s.app.state.records.length, 1);
+  assert.equal(s.app.state.records[0]!.status, "completed");
+});
+
+test("tui: a failed operation is a visible record, and quitting is still code 0", async (t) => {
+  const root = checkoutRepo(t);
+  let quit = 0;
+  const operations = async (): Promise<OperationResult> => {
+    throw new Error("adapter exploded");
+  };
+  const vt = new VirtualTerminal(100, 24);
+  const app = new App({ root, cols: 100, rows: 24, operations, onQuit: () => quit++ });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 100, 24);
+  t.after(() => app.close());
+  await app.idle();
+  app.input(KEY.ctrlP);
+  for (const ch of "doctor") app.input(ch);
+  app.input(KEY.enter);
+  await app.idle();
+  assert.equal(app.state.records.length, 1);
+  assert.equal(app.state.records[0]!.status, "failed");
+  assert.equal(app.state.records[0]!.result?.exitCode, 2);
+  assert.match(vt.text(), /doctor: failed · code 2/);
+  // F6 shows the error; the session still answers.
+  app.input(KEY.f6);
+  assert.match(vt.text(), /adapter exploded/);
+  app.input("\x1b");
+  app.input("q");
+  assert.equal(quit, 1);
+});
+
+test("tui: help lists the registry keys and the palette actions", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("?");
+  assert.match(s.text(), /keys · view/);
+  assert.match(s.text(), /actions: F5 Check again/);
+  assert.match(s.text(), /F6 Operation results/);
+  s.send(KEY.down);
+  assert.equal(s.app.state.help, false);
+  // The palette action "About keylang" shows the version.
+  s.send(KEY.ctrlP);
+  for (const ch of "version") s.send(ch);
+  s.send(KEY.enter);
+  assert.match(s.lines().at(-2)!, /keylang \d+\.\d+\.\d+/);
 });
 
 test("tui: resize and wide characters keep the frame aligned", async (t) => {

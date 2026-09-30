@@ -10,18 +10,19 @@ The tree of the map with a brief under each node: the documentation comment from
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
 | [cli](cli.md) |  | 46 | 0 | 0 | 88 |
 | [external](external.md) |  | | | | |
-| [extract](extract.md) |  | 109 | 0 | 0 | 64 |
+| [extract](extract.md) |  | 110 | 0 | 0 | 64 |
 | [features](features.md) |  | 137 | 0 | 0 | 95 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 105 | 0 | 0 | 130 |
-| [tui](tui.md) |  | 151 | 0 | 0 | 176 |
-| **all** | | 726 | 0 | 0 | 753 |
+| [operations](operations.md) |  | 9 | 0 | 0 | 7 |
+| [tui](tui.md) |  | 173 | 0 | 0 | 183 |
+| **all** | | 758 | 0 | 0 | 767 |
 
 ## Index
 
 Modules and classes by name; the parent ID follows each one.
 
-**A** · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
+**A** · [actions](tui.md#tui.actions) (tui) · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
 
 **B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
 
@@ -47,7 +48,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **N** · [nav](tui.md#tui.nav) (tui) · [node-search](features.md#features.node-search) (features) · [node-test](cli.md#cli.node-test) (cli)
 
-**O** · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
+**O** · [operations](operations.md#operations.operations) (operations) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
 
 **P** · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
 

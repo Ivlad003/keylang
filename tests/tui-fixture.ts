@@ -58,7 +58,9 @@ export const KEY = {
   ctrlS: "\x13",
   ctrlG: "\x07",
   ctrlSpace: "\x00",
+  ctrlP: "\x10",
   f5: "\x1b[15~",
+  f6: "\x1b[17~",
   tab: "\t",
   shiftDown: "\x1b[1;2B",
 };

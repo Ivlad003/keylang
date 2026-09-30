@@ -5,10 +5,11 @@ import type { Analysis } from "../analyze.ts";
 import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
+import type { DoctorRequest, OperationResult, OperationStatus } from "../operations.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
 export type Mode = "view" | "edit" | "read" | "code" | "merge";
-export type Focus = "editor" | "nav" | "files" | "context";
+export type Focus = "editor" | "nav" | "files" | "context" | "results";
 
 export interface Cursor {
   /** 0-based line. */
@@ -104,9 +105,30 @@ export interface Prompt {
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
-  /** `node`: the ID of each item. */
+  /** `node`: the ID of each item; `palette`: the action id of each item. */
   ids?: string[];
+  /** `palette`: the group or the availability reason of each item, parallel to `items`. */
+  notes?: string[];
+  /** The note of the selected item, shown next to the query. */
+  note?: string;
   index: number;
+}
+
+/** A run of one explicit operation in this session, kept in memory for F6 (design §2.6). */
+export interface OperationRecord {
+  /** Stable within the session. */
+  id: number;
+  /** The action id from the registry (only `doctor` so far). */
+  action: string;
+  kind: "doctor";
+  /** The request snapshot, for a rerun with the same parameters. */
+  params: DoctorRequest;
+  /** ms timestamps; `finished` is null while the operation runs. */
+  started: number;
+  finished: number | null;
+  status: OperationStatus | "running";
+  /** The operation result; null while it runs. */
+  result: OperationResult | null;
 }
 
 export interface Place {
@@ -162,6 +184,16 @@ export interface State {
   context: { open: boolean; index: number; added: string[]; removed: Set<string> };
   search: string | null;
   quitArmed: boolean;
+  /** Runs of explicit operations in this session, newest last; F6 shows them. */
+  records: OperationRecord[];
+  /** The id of the record of the operation running now, or null. One explicit operation at a time. */
+  activeOperation: number | null;
+  /**
+   * The F6 panel: the history of records and the scrollable report of the selected one.
+   * `index` selects the record, `top` the first report row shown, `scrollReport` routes the
+   * keys to the report scroll instead of the list, `previousFocus` is where Esc returns.
+   */
+  results: { open: boolean; index: number; top: number; scrollReport: boolean; previousFocus: Focus };
   /** Model briefs saved under `<dir>/explain/brief/`, read with each analysis: explanations for the nav panel and the node search. */
   briefs: ReadonlyMap<string, StoredExplanation>;
 }

@@ -5,13 +5,14 @@
 import { contextPack } from "../agent-context.ts";
 import { explainCode } from "../explain.ts";
 import { explanationOf } from "../explanations.ts";
+import { ACTIONS, catalog } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
-import type { Buffer, State } from "./state.ts";
+import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, lineLayout } from "./buffer.ts";
 import { clusters, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
@@ -419,6 +420,83 @@ export function filesTop(state: Pick<State, "filesIndex">, rect: Rect): number {
   return Math.max(0, state.filesIndex - rect.height + 2);
 }
 
+// ---------- F6 results panel ----------
+
+/** The registry label of a record's action (only `doctor` so far), or its id. */
+function recordLabel(record: OperationRecord): string {
+  return ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
+}
+
+/** The status of a record for the F6 list and messages: `running…` or `completed · code 0`. */
+export function recordStatus(record: OperationRecord): string {
+  if (record.status === "running") return "running…";
+  const code = record.result?.exitCode;
+  return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}`;
+}
+
+function timeStr(ms: number): string {
+  return new Date(ms).toTimeString().slice(0, 8);
+}
+
+/**
+ * The report rows of the record selected in the F6 panel: its parameters,
+ * timings and the operation's messages. Presentation only — the payload in
+ * `record.result` carries the domain data.
+ */
+export function resultsReportRows(state: State): { text: string; style: Style }[] {
+  const record = state.records[state.results.index];
+  if (!record) return [];
+  const rows: { text: string; style: Style }[] = [
+    { text: `root ${record.params.root} · started ${timeStr(record.started)}`, style: { ...THEME.panel, fg: 243 } },
+  ];
+  if (record.finished !== null) {
+    rows.push({ text: `finished ${timeStr(record.finished)} · ${recordStatus(record)}`, style: { ...THEME.panel, fg: 243 } });
+  }
+  if (record.result) {
+    for (const message of record.result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+  } else {
+    rows.push({ text: "  running…", style: THEME.hint });
+  }
+  return rows;
+}
+
+/** The F6 panel over the editor area: the history list on top, the scrollable report of the selected record below. */
+function drawResults(grid: Grid, state: State, rect: Rect): void {
+  const results = state.results;
+  const records = state.records;
+  const hint = " Enter rerun · Esc back ";
+  grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
+  grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
+  grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
+  if (records.length === 0) {
+    grid.write(rect.x + 2, rect.y + 2, "No operations in this session yet.", THEME.hint);
+    grid.write(rect.x + 2, rect.y + 3, "Open the palette (Ctrl+P) and run Environment diagnostics.", THEME.hint);
+    return;
+  }
+  const listHeight = Math.max(1, Math.min(records.length, Math.floor((rect.height - 4) / 2)));
+  const first = Math.max(0, Math.min(results.index, records.length - listHeight));
+  for (let i = 0; i < listHeight; i++) {
+    const record = records[first + i]!;
+    const y = rect.y + 1 + i;
+    const selected = first + i === results.index && !results.scrollReport;
+    const style = selected ? THEME.selected : i % 2 === 0 ? THEME.panel : { ...THEME.panel, bg: 234 };
+    grid.fill(rect.x, y, rect.width, 1, style);
+    grid.write(rect.x + 1, y, `${first + i + 1}  ${recordLabel(record)}  ${recordStatus(record)}`, style, rect.width - 2);
+  }
+  const dividerY = rect.y + 1 + listHeight;
+  grid.fill(rect.x, dividerY, rect.width, 1, THEME.panel);
+  grid.write(rect.x, dividerY, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
+  const rows = resultsReportRows(state);
+  for (let i = 0; i < rect.height - listHeight - 2; i++) {
+    const row = rows[results.top + i];
+    if (!row) break;
+    const y = dividerY + 1 + i;
+    grid.fill(rect.x, y, rect.width, 1, row.style);
+    grid.write(rect.x + 1, y, results.scrollReport ? "▌" : " ", { ...row.style, fg: 75 });
+    grid.write(rect.x + 3, y, row.text, row.style, rect.width - 4);
+  }
+}
+
 function drawHover(grid: Grid, state: State, editor: Rect): void {
   const hover = state.hover!;
   const width = Math.min(editor.width - 2, Math.max(24, ...hover.lines.map((line) => stringWidth(line.text) + 4)), 72);
@@ -459,8 +537,9 @@ const HELP: Record<string, string[]> = {
     "F2 / F3            files / nav    v                    reading mode",
     "F5                 check again    i                    edit",
     "m                  merge proposal u                    undo last merge",
-    "/  n               search         :                    command palette",
-    "?                  keys, explain  q / Ctrl+C           quit",
+    "/  n               search         : / Ctrl+P           actions",
+    "F6                 results        q / Ctrl+C           quit",
+    "?                  keys, explain",
     "F4                 agent context  e                    explain id",
     "s                  find a node    t                    explained map",
     "Ctrl+Space         agent draft of this flow as MERGE",
@@ -471,12 +550,14 @@ const HELP: Record<string, string[]> = {
     "Ctrl+Space         complete IDs   Tab / Enter          accept completion",
     "Shift+↑↓           select lines   Ctrl+G               text → spec (merge)",
     "Ctrl+Z             undo           Esc                  back to view",
+    "Ctrl+P             action palette F6                   results",
   ],
   merge: [
     "n / N  ↑↓          next / previous hunk   a   accept hunk   r   reject hunk",
     "u                  undo last decision     w   write result  Esc cancel (nothing written)",
+    "Ctrl+P             action catalogue (read-only actions work; the rest explain why)",
   ],
-  code: ["↑↓ PgUp PgDn       scroll         Esc / Ctrl+O / q     back"],
+  code: ["↑↓ PgUp PgDn       scroll         Esc / Ctrl+O / q     back", "Ctrl+P             action palette F6                   results"],
   read: ["↑↓                 move           Enter                go to code      v / Esc   raw Markdown"],
 };
 
@@ -488,6 +569,11 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
     const explained = code ? explainCode(code) : null;
     if (explained) lines.push("", ...explained.split("\n"));
   }
+  // The keyed, currently available actions come from the same registry the palette searches.
+  const keyed = catalog(state)
+    .filter((entry) => entry.action.key !== undefined && entry.reason === null)
+    .map((entry) => `${entry.action.key} ${entry.action.label}`);
+  if (keyed.length > 0) lines.push("", ...wrapWords(`actions: ${keyed.join(" · ")}`, Math.min(64, editor.width - 8)));
   const width = Math.min(editor.width, Math.max(...lines.map((line) => stringWidth(line))) + 4);
   const height = Math.min(editor.height, lines.length + 2);
   drawBox(grid, { x: editor.x + Math.max(0, Math.floor((editor.width - width) / 2)), y: editor.y + 1, width, height }, `keys · ${state.mode}`, THEME.popup, THEME.popupTitle);
@@ -500,6 +586,10 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const label = prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
+  if (prompt.kind === "palette" && prompt.note) {
+    // The selected action's group, or why it is unavailable; never a reason to hide it.
+    grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
+  }
   if (prompt.kind !== "palette" && prompt.kind !== "node") return;
   // The list scrolls to keep the selected entry in view.
   const shown = Math.min(10, editor.height - 2);
@@ -508,12 +598,12 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : "commands", THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
 const HINTS: Record<string, string> = {
-  view: "Enter code · Alt+Enter spec · / search · s node · F5 check · i edit · ? keys",
+  view: "Enter code · Alt+Enter spec · / search · s node · F5 check · F6 results · i edit · ? keys",
   edit: "Ctrl+S save · Ctrl+Space complete · Ctrl+G text→spec · Esc view · ? keys",
   read: "Enter code · v raw · F5 check · ? keys",
   code: "Esc back · ↑↓ scroll · ? keys",
@@ -569,6 +659,7 @@ export function render(state: State): Grid {
   const hintWidth = stringWidth(hints);
   if (x + hintWidth + 3 < state.cols) grid.write(state.cols - hintWidth - 1, area.status.y, hints, THEME.status);
   // Popups
+  if (state.results.open) drawResults(grid, state, area.editor);
   if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read")) drawHover(grid, state, area.editor);
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
   if (state.help) drawHelp(grid, state, area.editor, buffer);
