@@ -7,7 +7,8 @@
 //
 // Analysis is the shared `analyze()` with the unsaved buffers as an overlay.
 // It runs in the background: the UI keeps answering, shows "updating" and
-// dims the old marks, and a result of a superseded generation is dropped.
+// dims the old marks, a result of a superseded generation is dropped, and a
+// failed run keeps the old marks outdated with a persistent reason.
 // MERGE lives in `merge-session.ts`; ghost text, voice and the agent's draft
 // in `assist.ts`; this class dispatches input to them and keeps the editor.
 
@@ -317,7 +318,10 @@ export class App {
         },
         (error: unknown) => {
           if (generation !== this.generation || this.closed) return;
+          // Keep the last useful report, but never let it pass as current again:
+          // it stays outdated with the persistent reason until a new generation succeeds.
           this.state.updating = false;
+          this.state.outdated = true;
           this.state.error = `analysis failed: ${errorText(error)}`;
           this.state.message = this.state.error;
         },

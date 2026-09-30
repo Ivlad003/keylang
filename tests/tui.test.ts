@@ -121,6 +121,106 @@ test("tui: a superseded analysis is dropped", async (t) => {
   assert.match(s.lines().at(-1)!, /✗ 0 /);
 });
 
+test("tui: a failed F5 keeps the old report outdated with a persistent reason", async (t) => {
+  const root = checkoutRepo(t);
+  let calls = 0;
+  const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
+    calls++;
+    if (calls > 1) throw new Error("no specs: boom");
+    return analyze(request);
+  };
+  const s = session(root, { analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.match(s.lines().at(-1)!, /✗ 0 /);
+  const y = s.lines().findIndex((line) => line.includes("- step application.purchase.buy"));
+  assert.notEqual(s.app.frame().styleAt(0, y).dim, true);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(s.app.state.outdated, true, "the old verdict is no longer current");
+  assert.match(s.app.state.error ?? "", /boom/);
+  assert.match(s.lines().at(-1)!, /outdated.*boom/);
+  // Keys must neither restore the old verdict nor clear the persistent reason.
+  for (let i = 0; i < 3; i++) s.send(KEY.down);
+  assert.equal(s.app.state.message, null, "the transient message is gone");
+  assert.equal(s.app.state.outdated, true, "keys do not make the old verdict current");
+  assert.match(s.lines().at(-1)!, /outdated.*boom/, "the reason survives navigation");
+  assert.equal(s.app.frame().styleAt(0, y).dim, true, "the stale mark stays dimmed");
+});
+
+test("tui: a successful F5 after a failure clears the reason and restores the marks", async (t) => {
+  const root = checkoutRepo(t);
+  let calls = 0;
+  const analyzer = async (request: AnalysisRequest): Promise<Analysis> => {
+    calls++;
+    if (calls === 2) throw new Error("boom");
+    return analyze(request);
+  };
+  const s = session(root, { analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.match(s.lines().at(-1)!, /outdated.*boom/);
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(s.app.state.error, null);
+  assert.equal(s.app.state.outdated, false);
+  assert.doesNotMatch(s.lines().at(-1)!, /boom|outdated/);
+  const y = s.lines().findIndex((line) => line.includes("- step application.purchase.buy"));
+  assert.notEqual(s.app.frame().styleAt(0, y).dim, true);
+});
+
+test("tui: a late failure of a superseded generation cannot spoil the new result", async (t) => {
+  const root = checkoutRepo(t);
+  const pending: { call: number; settle: () => void; fail: (error: Error) => void }[] = [];
+  let calls = 0;
+  const analyzer = (request: AnalysisRequest): Promise<Analysis> => {
+    const call = ++calls;
+    if (call > 1) {
+      return new Promise<Analysis>((resolve, reject) => {
+        pending.push({ call, settle: () => resolve(analyze(request)), fail: reject });
+      });
+    }
+    return analyze(request);
+  };
+  const s = session(root, { analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.f5);
+  s.send(KEY.f5);
+  assert.equal(pending.length, 2);
+  pending[1]!.settle(); // The third generation succeeds first.
+  await sleep(30);
+  pending[0]!.fail(new Error("boom")); // The second fails late.
+  await s.app.idle();
+  assert.equal(s.app.state.error, null, "the stale failure is dropped");
+  assert.equal(s.app.state.outdated, false);
+  assert.match(s.lines().at(-1)!, /✗ 0 /);
+  assert.doesNotMatch(s.lines().at(-1)!, /boom/);
+});
+
+test("tui: a failed first analysis leaves no phantom success and the session answers keys", async (t) => {
+  const root = checkoutRepo(t);
+  const analyzer = async (): Promise<Analysis> => {
+    throw new Error("no specs");
+  };
+  const s = session(root, { analyzer });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.analysis, null, "no empty successful snapshot");
+  assert.equal(s.app.state.outdated, true);
+  assert.match(s.app.state.error ?? "", /no specs/);
+  assert.match(s.lines().at(-1)!, /outdated.*no specs/);
+  assert.doesNotMatch(s.lines().at(-1)!, /✗ \d/);
+  s.send(KEY.down);
+  s.send(KEY.down);
+  assert.equal(s.app.state.cursor.line, 2, "the session answers keys");
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  assert.match(s.app.state.error ?? "", /no specs/, "the reason persists in edit mode");
+});
+
 test("tui: hover by mouse and by K shows signature, code, and flows", async (t) => {
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());

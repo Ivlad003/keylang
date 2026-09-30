@@ -160,6 +160,10 @@ export interface State {
   updating: boolean;
   /** The buffers changed after the shown analysis started. */
   outdated: boolean;
+  /**
+   * Persistent reason the shown report is not current: the last analysis failed.
+   * A key does not clear it; only a successful analysis of a newer generation does.
+   */
   error: string | null;
   hover: Hover | null;
   code: CodeView | null;

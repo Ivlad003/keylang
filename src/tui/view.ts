@@ -652,8 +652,8 @@ export function render(state: State): Grid {
     x += grid.write(x, area.status.y, `  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
     x += grid.write(x, area.status.y, `  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
   }
-  const phase = state.updating ? "  updating… results shown are stale" : state.outdated ? "  outdated: changes since this analysis" : state.analysis ? "" : "  analyzing…";
-  x += grid.write(x, area.status.y, phase, { ...THEME.status, fg: 179 });
+  const phase = state.updating ? "  updating… results shown are stale" : state.error ? `  outdated: ${state.error}` : state.outdated ? "  outdated: changes since this analysis" : state.analysis ? "" : "  analyzing…";
+  x += grid.write(x, area.status.y, phase, { ...THEME.status, fg: state.error && !state.updating ? 160 : 179 });
   if (state.proposals.length > 0 && state.mode !== "merge") x += grid.write(x, area.status.y, `  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
   const hints = HINTS[state.mode] ?? HINTS.view!;
   const hintWidth = stringWidth(hints);
