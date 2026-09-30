@@ -34,11 +34,12 @@ import { loadBriefs } from "../explanations.ts";
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { FEATURE_SLUG, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { FEATURE_SLUG, resultWithout, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
+import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -68,7 +69,10 @@ export interface AppOptions {
   cols: number;
   rows: number;
   analyzer?: Analyzer;
+  /** Replaces every operation runner (tests inject a gated one); default: doctor here, the rest in `operationWorker`. */
   operations?: OperationRunner;
+  /** The worker that runs feature and map-check; the session owns it and closes it. Default: one started on first use. */
+  operationWorker?: OperationWorker;
   onQuit?: () => void;
   /**
    * Microphone PCM (16 kHz, mono, s16le) until `stop` is called or the source
@@ -101,6 +105,10 @@ export class App {
   private readonly decoder = new InputDecoder();
   private readonly analyzer: Analyzer;
   private readonly operations: OperationRunner;
+  /** Created on the first operation that needs it; closed with the session. */
+  private operationWorker: OperationWorker | null;
+  /** Cancels the running operation: its record turns cancelled now, a late result is dropped. Null when none runs. */
+  private cancelActive: (() => void) | null = null;
   private readonly onQuit: () => void;
   private readonly merges: MergeSession;
   private readonly assist: Assist;
@@ -121,7 +129,10 @@ export class App {
 
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
-    this.operations = options.operations ?? runOperation;
+    this.operationWorker = options.operationWorker ?? null;
+    // Doctor only reads settings and probes optional native modules: it stays here. Feature and
+    // map-check analyse the whole repository in the worker, which has no fallback to this thread.
+    this.operations = options.operations ?? ((request, context) => (request.kind === "doctor" ? runOperation(request, context) : this.worker().run(request, context)));
     this.onQuit = options.onQuit ?? (() => {});
     this.state = {
       root: options.root,
@@ -293,6 +304,9 @@ export class App {
     this.settleTimer = null;
     this.assist.close();
     this.surface = null;
+    // A running operation settles as cancelled and the worker ends: no pending promise outlives the session.
+    this.cancelActive?.();
+    this.operationWorker?.close();
     this.wake();
   }
 
@@ -473,7 +487,9 @@ export class App {
     // A snapshot other than the one a result was computed on: the code changed under it.
     const snapshotId = analysis.snapshot?.snapshotId ?? null;
     for (const record of this.state.records) {
-      if (record.result?.kind === "feature" && record.result.payload !== null && record.result.payload.snapshot !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
+      const result = record.result;
+      const computedOn = result?.kind === "feature" || result?.kind === "map-check" ? (result.payload?.snapshot ?? undefined) : undefined;
+      if (computedOn !== undefined && computedOn !== snapshotId) record.outdated ??= "the code snapshot changed since this run";
     }
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
@@ -1649,30 +1665,59 @@ export class App {
       status: "running",
       result: null,
       outdated: null,
+      progress: null,
     };
     const label = operationLabel(request);
     this.state.records.push(record);
     this.state.activeOperation = record.id;
     this.state.message = `${label}: running…`;
-    // The session's analyzer: the snapshot is built off the UI thread, as for F5.
-    this.track(
-      this.operations(record.params, { analyze: this.analyzer })
-        .then((result) => {
-          record.result = result;
-          record.status = result.status;
-        })
-        .catch((error) => {
-          record.status = "failed";
-          record.result = failedResult(request.kind, errorText(error));
-        })
-        .finally(() => {
-          record.finished = Date.now();
-          this.state.activeOperation = null;
-          // Completion adds a message; it never changes the open file.
-          this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report`;
-        }),
-    );
+    const controller = new AbortController();
+    // The first outcome wins: a result after Cancel, or a second one, never changes the record.
+    const settle = (result: OperationResult): void => {
+      if (record.status !== "running") return;
+      record.result = result;
+      record.status = result.status;
+      record.finished = Date.now();
+      this.state.activeOperation = null;
+      this.cancelActive = null;
+      // Completion adds a message; it never changes the open file.
+      this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report`;
+      this.draw();
+    };
+    this.cancelActive = () => {
+      controller.abort();
+      settle(resultWithout(request.kind, "cancelled", null));
+    };
+    const onProgress = ({ text }: { text: string }): void => {
+      if (record.status !== "running") return;
+      record.progress = text;
+      this.state.message = `${label}: ${text}…`;
+      this.draw();
+    };
+    // The session's analyzer serves an operation run on this thread; the worker has its own.
+    let work: Promise<OperationResult>;
+    try {
+      work = this.operations(record.params, { analyze: this.analyzer, signal: controller.signal, onProgress });
+    } catch (error) {
+      work = Promise.reject(error);
+    }
+    this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
+  }
+
+  /** Cancel (palette, `x` in F6): the running operation ends as cancelled with exit code null. Esc never does this. */
+  private cancelOperation(): void {
+    if (!this.cancelActive) {
+      this.state.message = "no operation is running";
+      return;
+    }
+    this.cancelActive();
+  }
+
+  /** The session's operation worker, started on first use; after a failure the next request starts a new one. */
+  private worker(): OperationWorker {
+    this.operationWorker ??= new OperationWorker();
+    return this.operationWorker;
   }
 
   /** The feature form: the slug of the current feature file, else typed or chosen from the feature files. */
@@ -1969,6 +2014,8 @@ export class App {
       case "f6":
       case "escape":
         return this.closeResults();
+      case "x":
+        return this.cancelOperation();
       case "q":
         return this.quit();
       case "?":
@@ -2015,6 +2062,8 @@ export class App {
       case "f6":
       case "escape":
         return this.closeResults();
+      case "x":
+        return this.cancelOperation();
       case "q":
         return this.quit();
       case "?":
@@ -2347,6 +2396,10 @@ export class App {
         return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
         return this.openFeaturePrompt();
+      case "map-check":
+        return this.requestOperation("map-check", { kind: "map-check", root: this.state.root });
+      case "cancel":
+        return this.cancelOperation();
       case "find-node":
         this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
         return this.findNodes();
@@ -2543,11 +2596,6 @@ function packageVersion(): string {
 }
 
 /** The result of an operation whose adapter threw: a failure with code 2 and the reason, nothing written. */
-function failedResult(kind: OperationRequest["kind"], text: string): OperationResult {
-  const failure = { status: "failed" as const, exitCode: 2 as const, payload: null, messages: [{ level: "error" as const, text }], written: [], removed: [], proposals: [] };
-  return kind === "doctor" ? { kind, ...failure } : { kind, ...failure };
-}
-
 /** The list text of a proposal after its path: kind, a new file, and the hunk count or that it is ignored. */
 function proposalSummary(entry: ProposalEntry): string {
   const parts: string[] = [entry.kind];

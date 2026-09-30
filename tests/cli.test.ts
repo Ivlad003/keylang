@@ -6,7 +6,7 @@ import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { GRAMMARS, wasmFile } from "../src/extract/grammars.ts";
 import { check, parse } from "../src/index.ts";
 
@@ -503,6 +503,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   assert.ok(names.some((n) => n.endsWith("/bin/keylang.js")));
   for (const asset of ["xterm.js", "xterm.css", "addon-fit.js", "xterm.LICENSE"]) assert.ok(names.some((n) => n.endsWith(`/dist/web/${asset}`)), asset);
   assert.ok(names.some((n) => n.endsWith("/dist/tui/analysis-worker.js")));
+  assert.ok(names.some((n) => n.endsWith("/dist/tui/operation-worker.js")));
   assert.equal(names.some((n) => n.includes("/src/")), false);
   const published = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string; files: string[] };
   assert.ok(published.files.includes("bin"));
@@ -576,6 +577,20 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
       name,
     );
   }
+  // The TUI's operation worker runs from the package's JS entry: the same map check as the packed CLI.
+  // A script file, not `--eval`: a worker inherits the parent's exec flags, and `--input-type` refuses a file entry.
+  const workerScript = join(tmp, "operation-worker-check.mjs");
+  writeFileSync(
+    workerScript,
+    `const { OperationWorker } = await import(${JSON.stringify(pathToFileURL(join(tmp, "node_modules/keylang/dist/tui/background.js")).href)});\n` +
+      `const worker = new OperationWorker();\n` +
+      `const result = await worker.run({ kind: "map-check", root: ${JSON.stringify(packedRepo)} });\n` +
+      `worker.close();\n` +
+      `console.log(JSON.stringify([result.status, result.exitCode]));\n` +
+      `if (result.status !== "completed") console.error(JSON.stringify(result.messages));\n`,
+  );
+  const packedWorker = spawnSync(process.execPath, [workerScript], { cwd: tmp, encoding: "utf8" });
+  assert.equal(packedWorker.stdout, `${JSON.stringify(["completed", spawnSync(process.execPath, [installedBin, "map", "--check"], { cwd: packedRepo, encoding: "utf8" }).status])}\n`, packedWorker.stderr);
   const localIndex = JSON.parse(readFileSync(join(localRepo, ".keylang/index.json"), "utf8"));
   const packedIndex = JSON.parse(readFileSync(join(packedRepo, ".keylang/index.json"), "utf8"));
   assert.equal(packedIndex.snapshotId, localIndex.snapshotId);

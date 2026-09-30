@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature) is running. */
+  /** An explicit operation (doctor, feature, map-check) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -82,6 +82,22 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["feature", "readiness", "done", "gaps"],
     // It reads the saved files; unsaved buffers are offered for saving first.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "map-check",
+    label: "Map: check",
+    group: "Map",
+    aliases: ["map check", "map --check", "stale map", "up to date"],
+    // Read-only and in a worker; `keylang.json` is read from disk, so unsaved buffers are offered for saving first.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "cancel",
+    label: "Cancel the running operation",
+    group: "Session",
+    aliases: ["cancel", "stop", "abort"],
+    key: "x in F6",
+    when: (ctx) => (ctx.operation ? null : "no operation is running"),
   },
   { id: "find-node", label: "Find a node", group: "Navigate", aliases: ["find node", "node"], key: "s", when: snapshot },
   { id: "toggle-map", label: "Map / explained map", group: "Navigate", aliases: ["toggle map", "explained map"], key: "t", when: snapshot },

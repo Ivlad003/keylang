@@ -8,10 +8,10 @@
 для CLI і TUI (ADR 0008), без залежності від транспортів; `tui` — термінал
 і браузер над тими самими запитами. Входи — усе, що Node
 запускає сам: CLI, пакет, репортер (`--test-reporter`), trace (`--import`),
-його hooks (`module.register`) і worker знімка TUI (`new Worker(new URL(…))`).
-Hooks і worker виконуються в окремому потоці, тому вони тут, хоч карта й має
-ребро до них від `register(…)` і `new URL(…, import.meta.url)`: видалений
-worker — K001 у цьому списку.
+його hooks (`module.register`) і worker-и TUI — знімка й операцій
+(`new Worker(new URL(…))`). Hooks і worker-и виконуються в окремому потоці,
+тому вони тут, хоч карта й має ребро до них від `register(…)` і
+`new URL(…, import.meta.url)`: видалений worker — K001 у цьому списку.
 
 - layers base < extract < lang < check < map < features < operations < tui < cli
 - deny lang map
@@ -29,4 +29,5 @@ worker — K001 у цьому списку.
   - cli.trace
   - cli.trace-hooks
   - tui.analysis-worker
+  - tui.operation-worker
 - no-cycles

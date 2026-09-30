@@ -196,32 +196,32 @@
     - fn [deletedModuleIds](../../src/cli.ts#L958) (config: Config, files: readonly string[]) → string[] <!-- internal -->
       - calls map.graph.placeFile
     - fn [cmdMap](../../src/cli.ts#L969) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
-      - calls map.analyze.analyze, map.map.diffMap, base.config.toPosix, map.map.writeMap
-    - fn [keylangFiles](../../src/cli.ts#L1009) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
+      - calls operations.operations.runOperation, operations.operations.mapCheckLines, map.analyze.analyze, map.map.writeMap, base.config.toPosix
+    - fn [keylangFiles](../../src/cli.ts#L1011) (paths: readonly string[]) → { file: string; text: string }[] <!-- internal -->
       - calls lang.files.collectMdFiles, map.explanations.isStoredExplanation
-    - fn [assertConfigFormat](../../src/cli.ts#L1026) () → void <!-- internal -->
+    - fn [assertConfigFormat](../../src/cli.ts#L1028) () → void <!-- internal -->
       - calls map.analyze.findRoot, base.config.assertFormatOnly
-    - fn [cmdParse](../../src/cli.ts#L1032) (paths: string[], json: boolean) → number <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L1034) (paths: string[], json: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, cli.cli.keylangFiles, lang.parser.parse, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L1044) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1046) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, cli.cli.explainEdge, base.config.loadConfig, map.analyze.within, base.config.toPosix, cli.cli.gitChangedFiles, cli.cli.changedPathSet, cli.cli.deletedModuleIds, features.changed.filterChanged, check.assess.sameFinding, cli.cli.writeCheck
-    - fn [explainEdge](../../src/cli.ts#L1097) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
+    - fn [explainEdge](../../src/cli.ts#L1099) (ids: string[], snapshot: AnalysisSnapshot | null) → number <!-- internal -->
       - calls base.span.compareText
-    - fn [writeCheck](../../src/cli.ts#L1131) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
+    - fn [writeCheck](../../src/cli.ts#L1133) (format: string, lines: string[], verdicts: Verdict[], snapshot: AnalysisSnapshot | null, diags: Diagnostic[]) → void <!-- internal -->
       - calls features.check-results.checkResults, cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleOf](../../src/cli.ts#L1184) (result: CheckResult) → string <!-- internal -->
-    - fn [ruleText](../../src/cli.ts#L1196) (id: string) → string <!-- internal -->
+    - fn [ruleOf](../../src/cli.ts#L1186) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/cli.ts#L1198) (id: string) → string <!-- internal -->
       - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L1202) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L1206) (text: string) → string <!-- internal -->
+    - fn [githubData](../../src/cli.ts#L1204) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/cli.ts#L1208) (text: string) → string <!-- internal -->
       - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L1215) (paths: string[], checkOnly: boolean) → number <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1217) (paths: string[], checkOnly: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.fmt.formatSource, base.diag.formatDiagnostic
-    - fn [printTree](../../src/cli.ts#L1254) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L1256) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L1262) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1264) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
-    - fn [gitChanges](../../src/cli.ts#L1275) (root: string, ref: string) → ChangedLines <!-- internal -->
+    - fn [gitChanges](../../src/cli.ts#L1277) (root: string, ref: string) → ChangedLines <!-- internal -->
       - calls features.draft.diffHunks
   - module [index](../../src/index.ts#L1)
     - diag base.diag

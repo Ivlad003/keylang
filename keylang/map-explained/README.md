@@ -14,9 +14,9 @@ The tree of the map with a brief under each node: the documentation comment from
 | [features](features.md) |  | 137 | 0 | 0 | 95 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 105 | 0 | 0 | 130 |
-| [operations](operations.md) |  | 15 | 0 | 0 | 9 |
-| [tui](tui.md) |  | 252 | 0 | 0 | 192 |
-| **all** | | 844 | 0 | 0 | 777 |
+| [operations](operations.md) |  | 20 | 0 | 0 | 10 |
+| [tui](tui.md) |  | 263 | 0 | 0 | 197 |
+| **all** | | 860 | 0 | 0 | 783 |
 
 ## Index
 
@@ -48,7 +48,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **N** · [nav](tui.md#tui.nav) (tui) · [new-spec](tui.md#tui.new-spec) (tui) · [node-search](features.md#features.node-search) (features) · [node-test](cli.md#cli.node-test) (cli)
 
-**O** · [operations](operations.md#operations.operations) (operations) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
+**O** · [operation-worker](tui.md#tui.operation-worker) (tui) · [operations](operations.md#operations.operations) (operations) · [OperationWorker](tui.md#tui.background.OperationWorker) (tui.background) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
 
 **P** · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
 

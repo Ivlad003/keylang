@@ -160,6 +160,8 @@ export interface OperationRecord {
    * after its inputs changed; a rerun makes a new record.
    */
   outdated: string | null;
+  /** The last progress note of a running operation, or null. Presentation only. */
+  progress: string | null;
 }
 
 /**

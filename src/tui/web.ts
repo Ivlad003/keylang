@@ -302,6 +302,8 @@ export async function serveWeb(options: { root: string; port: number; host?: str
           const ended = sessions.get(id);
           sessions.delete(id);
           if (ended?.timer) clearTimeout(ended.timer);
+          // The session's resources (its operation worker) end with it.
+          ended?.app.close();
           ended?.connection?.send("\x1b[0m\x1b[2J\x1b[H keylang session ended; reload the page for a new one.\r\n");
           ended?.connection?.close(CLOSE_ENDED, "session ended");
         },

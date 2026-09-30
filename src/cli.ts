@@ -16,7 +16,7 @@ import { parse } from "./parser.ts";
 import { formatSource } from "./fmt.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
-import { diffMap, writeMap } from "./map.ts";
+import { writeMap } from "./map.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { checkResults, type CheckResult } from "./check-results.ts";
@@ -34,7 +34,7 @@ import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { featureSummary, gapLine, runOperation } from "./operations.ts";
+import { featureSummary, gapLine, mapCheckLines, runOperation } from "./operations.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { compareText } from "./span.ts";
@@ -968,8 +968,19 @@ function deletedModuleIds(config: Config, files: readonly string[]): string[] {
 
 async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   const root = resolve(process.cwd(), dir);
-  // `map --check` only reads; `map` also leaves the fact cache for the next run.
-  const analyzed = await analyze({ root, specs: [], withoutEvidence: true, persistFacts: !checkOnly });
+  // `map --check` is a printer over the shared read-only operation.
+  if (checkOnly) {
+    const result = await runOperation({ kind: "map-check", root, label: dir });
+    if (result.payload === null) {
+      for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+      return result.exitCode ?? 2;
+    }
+    for (const w of result.payload.warnings) process.stderr.write(`warning: ${w}\n`);
+    for (const line of mapCheckLines(result.payload, (file) => toPosix(relative(process.cwd(), join(root, file))))) process.stdout.write(`${line}\n`);
+    return result.exitCode ?? 2;
+  }
+  // `map` also leaves the fact cache for the next run.
+  const analyzed = await analyze({ root, specs: [], withoutEvidence: true, persistFacts: true });
   const config = analyzed.config;
   const r = analyzed.map;
   if (r === null) throw new Error(`no supported source files under ${dir}; run \`keylang init\``);
@@ -978,15 +989,6 @@ async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   const reportConflict = (p: string): void => {
     process.stdout.write(`${toPosix(relative(process.cwd(), p))}: manual file without keylang:generated marker\n`);
   };
-  if (checkOnly) {
-    const diff = diffMap(config, r);
-    for (const p of diff.conflicts) reportConflict(p);
-    // A manual file blocks `map` itself, so "run keylang map" would not refresh the rest.
-    if (diff.conflicts.length === 0) {
-      for (const p of diff.stale) process.stdout.write(`${toPosix(relative(process.cwd(), p))}: stale, run \`keylang map\`\n`);
-    }
-    return diff.conflicts.length === 0 && diff.stale.length === 0 ? 0 : 1;
-  }
   const { written, removed, conflicts } = writeMap(config, r);
   if (conflicts.length > 0) {
     for (const p of conflicts) reportConflict(p);

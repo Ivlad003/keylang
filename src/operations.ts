@@ -6,12 +6,14 @@
 // time: each feature ticket adds its own, not every handler in advance.
 
 import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { analyze, type Analysis, type AnalysisRequest } from "./analyze.ts";
-import { CONFIG_FILE, loadConfig, type Config } from "./config.ts";
+import { CONFIG_FILE, loadConfig, toPosix, type Config } from "./config.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
+import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
+import { diffMap } from "./map.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
 
@@ -31,7 +33,16 @@ export interface FeatureRequest {
   slug: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest;
+/** Whether the generated map on disk matches the code (`keylang map --check`). Read-only. */
+export interface MapCheckRequest {
+  kind: "map-check";
+  /** Repository root (absolute): the directory `keylang map` is run for. */
+  root: string;
+  /** How messages name the root, as the caller does (`keylang map <dir>`); default `.`. */
+  label?: string;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest;
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -108,10 +119,25 @@ export interface FeaturePayload {
   report: FeatureReport;
 }
 
+/** How the generated map on disk differs from a fresh render. Paths are POSIX, relative to the root. */
+export interface MapCheckPayload {
+  /** Target files that exist without the keylang:generated marker: they block `keylang map`. */
+  conflicts: string[];
+  /** Generated files that are missing, changed, or no longer generated. */
+  stale: string[];
+  /** The graph counts of the fresh snapshot. */
+  stats: Stats;
+  /** The generator's warnings (unreadable directories and the like). */
+  warnings: string[];
+  /** The snapshot id of the fresh render. */
+  snapshot: string;
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
   feature: FeaturePayload;
+  "map-check": MapCheckPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -140,6 +166,7 @@ export interface OperationEnvelope<K extends OperationRequest["kind"]> {
 /** Runs one operation and returns its typed result: the payload type follows the request's kind. */
 export function runOperation(request: DoctorRequest, context?: OperationContext): Promise<OperationEnvelope<"doctor">>;
 export function runOperation(request: FeatureRequest, context?: OperationContext): Promise<OperationEnvelope<"feature">>;
+export function runOperation(request: MapCheckRequest, context?: OperationContext): Promise<OperationEnvelope<"map-check">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -147,7 +174,79 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runDoctor(request, context);
     case "feature":
       return runFeature(request, context);
+    case "map-check":
+      return runMapCheck(request, context);
   }
+}
+
+/**
+ * A result without a payload, for a failure outside the operation (a
+ * transport that could not run it) or a cancellation.
+ */
+export function resultWithout(kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationResult {
+  const base = { status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error" as const, text: error }], written: [], removed: [], proposals: [] };
+  switch (kind) {
+    case "doctor":
+      return { kind, ...base };
+    case "feature":
+      return { kind, ...base };
+    case "map-check":
+      return { kind, ...base };
+  }
+}
+
+function emptyMapCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"map-check"> {
+  return { kind: "map-check", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang map --check`: renders the map from the code and compares it with
+ * the files on disk. It writes nothing — not the map, the index, nor the fact
+ * cache (`persistFacts` stays off). Code 1 for conflicts or stale files, 2
+ * for no supported sources, a broken config or a failed analysis.
+ */
+async function runMapCheck(request: MapCheckRequest, context: OperationContext): Promise<OperationEnvelope<"map-check">> {
+  if (!isAbsolute(request.root)) return emptyMapCheck("failed", 2, "map: root must be an absolute path");
+  if (context.signal?.aborted) return emptyMapCheck("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
+  } catch (error) {
+    return emptyMapCheck("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyMapCheck("cancelled", null);
+  const map = analyzed.map;
+  if (map === null) return emptyMapCheck("failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
+  context.onProgress?.({ text: "comparing with the files on disk" });
+  const diff = diffMap(analyzed.config, map);
+  const rel = (abs: string): string => toPosix(relative(request.root, abs));
+  const payload: MapCheckPayload = {
+    conflicts: diff.conflicts.map(rel),
+    stale: diff.stale.map(rel),
+    stats: map.graph.stats,
+    warnings: [...map.graph.warnings],
+    snapshot: map.index.snapshotId,
+  };
+  const messages: OperationMessage[] = [
+    ...payload.warnings.map((text) => ({ level: "warning" as const, text: `warning: ${text}` })),
+    ...mapCheckLines(payload).map((text) => ({ level: "info" as const, text })),
+  ];
+  const clean = payload.conflicts.length === 0 && payload.stale.length === 0;
+  if (clean) messages.push({ level: "info", text: "the map is up to date" });
+  return { ...emptyMapCheck("completed", clean ? 0 : 1), payload, messages };
+}
+
+/**
+ * The lines `map --check` prints, paths as given (the CLI makes them relative
+ * to its working directory). A manual file blocks `map` itself, so with a
+ * conflict "run keylang map" would not refresh the rest: stale files are then
+ * not listed.
+ */
+export function mapCheckLines(diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file): string[] {
+  const lines = diff.conflicts.map((file) => `${path(file)}: manual file without keylang:generated marker`);
+  if (diff.conflicts.length === 0) for (const file of diff.stale) lines.push(`${path(file)}: stale, run \`keylang map\``);
+  return lines;
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

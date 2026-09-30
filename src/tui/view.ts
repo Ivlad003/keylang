@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { OperationRequest } from "../operations.ts";
+import type { MapCheckPayload, OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -434,12 +434,12 @@ function recordLabel(record: OperationRecord): string {
 
 /** How messages name an operation: `doctor`, `feature pay`. */
 export function operationLabel(request: OperationRequest): string {
-  return request.kind === "feature" ? `feature ${request.slug}` : request.kind;
+  return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind;
 }
 
 /** The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed. */
 export function recordStatus(record: OperationRecord): string {
-  if (record.status === "running") return "running…";
+  if (record.status === "running") return record.progress === null ? "running…" : `running: ${record.progress}…`;
   const code = record.result?.exitCode;
   return `${record.status}${code === null || code === undefined ? "" : ` · code ${code}`}${record.outdated !== null ? " · outdated" : ""}`;
 }
@@ -451,7 +451,14 @@ export function recordSummary(record: OperationRecord): string {
     const { report } = result.payload;
     return `${report.done ? "done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode}`;
   }
+  if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
   return recordStatus(record);
+}
+
+/** `up to date`, `3 stale`, `1 conflict(s)` (conflicts first: they block `keylang map`). */
+function mapCheckOutcome(payload: MapCheckPayload): string {
+  if (payload.conflicts.length > 0) return `${payload.conflicts.length} conflict(s)${payload.stale.length > 0 ? `, ${payload.stale.length} stale` : ""}`;
+  return payload.stale.length > 0 ? `${payload.stale.length} stale` : "up to date";
 }
 
 function timeStr(ms: number): string {
@@ -488,10 +495,21 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     });
     rows.push({ text: `Info (not blocking): tests ${infoSummary(report.info.tests)} · trace ${infoSummary(report.info.trace)}`, style: { ...THEME.panel, fg: 243 } });
     for (const item of [...report.info.tests, ...report.info.trace]) rows.push({ text: `  ${item.verdict} ${item.id}  ${item.file}:${item.line}  ${item.reason}`, style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "map-check" && result.payload !== null) {
+    // Nothing was written: the check compares a fresh render with the files on disk.
+    const { payload } = result;
+    const clean = payload.conflicts.length === 0 && payload.stale.length === 0;
+    rows.push({ text: `Map check · read-only, nothing written · snapshot ${payload.snapshot.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${mapCheckOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(clean ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const file of payload.conflicts) rows.push({ text: `  conflict ${file}: manual file without keylang:generated marker`, style: THEME.panel });
+    for (const file of payload.stale) rows.push({ text: `  stale    ${file}${payload.conflicts.length > 0 ? " (after the conflicts are resolved)" : ""}`, style: THEME.panel });
+    for (const warning of payload.warnings) rows.push({ text: `  warning: ${warning}`, style: { ...THEME.panel, fg: 179 } });
+    const stats = payload.stats;
+    rows.push({ text: `${stats.files} file(s), ${stats.modules} module(s), ${stats.fns} fn, ${stats.types} type(s), ${stats.deps} dep(s)`, style: { ...THEME.panel, fg: 243 } });
   } else if (result) {
     for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
   } else {
-    rows.push({ text: "  running…", style: THEME.hint });
+    rows.push({ text: `  ${record.progress === null ? "running…" : `running: ${record.progress}…`} · x cancels`, style: THEME.hint });
   }
   return rows;
 }
@@ -587,7 +605,8 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const analysis = results.entry === "analysis";
   const record = records[results.index];
   const gaps = record?.result?.kind === "feature" && (record.result.payload?.report.gaps.length ?? 0) > 0;
-  const hint = analysis ? " Enter open · Tab findings · Esc back " : gaps ? (results.scrollReport ? " Enter open gap · Tab entries · Esc back " : " Enter rerun · Tab gaps · Esc back ") : " Enter rerun · Esc back ";
+  // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
+  const hint = analysis ? " Enter open · Tab findings · Esc back " : record?.status === "running" ? " x cancel · Esc back " : gaps ? (results.scrollReport ? " Enter open gap · Tab entries · Esc back " : " Enter rerun · Tab gaps · Esc back ") : " Enter rerun · Esc back ";
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);

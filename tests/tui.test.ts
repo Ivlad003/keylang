@@ -16,8 +16,9 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { analyze, findRoot, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
-import { runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
+import { mapCheckLines, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
+import { OperationWorker } from "../src/tui/background.ts";
 import { findingsOf } from "../src/tui/findings.ts";
 import { navEntries } from "../src/tui/view.ts";
 import { InputDecoder } from "../src/tui/input.ts";
@@ -3326,4 +3327,218 @@ test("tui: a target created on disk before the first save is kept; the typed tex
   await s.app.idle();
   assert.equal(readFileSync(join(root, flow), "utf8"), typed);
   assert.deepEqual(s.app.unsaved(), []);
+});
+
+// ---------- map check in the operation worker (ticket 08) ----------
+
+const GATE_WORKER = new URL("./operation-worker-gate.ts", import.meta.url);
+
+/** A worker entry blocked until `open()`: the real operation worker behind a shared gate. */
+function gatedWorker(): { worker: OperationWorker; open: () => void } {
+  const gate = new SharedArrayBuffer(4);
+  return {
+    worker: new OperationWorker({ entry: GATE_WORKER, workerData: { gate } }),
+    open: () => {
+      Atomics.store(new Int32Array(gate), 0, 1);
+      Atomics.notify(new Int32Array(gate), 0);
+    },
+  };
+}
+
+function cliMapCheck(root: string): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "map", "--check"], { cwd: root, encoding: "utf8" });
+}
+
+function mapCheck(send: (keys: string) => void): void {
+  send(KEY.ctrlP);
+  for (const ch of "map check") send(ch);
+  send(KEY.enter);
+}
+
+/** The lines `map --check` prints for a record, from its payload (the CLI runs at the root). */
+function mapCheckOut(record: App["state"]["records"][number]): string {
+  const result = record.result;
+  assert.ok(result?.kind === "map-check" && result.payload !== null, JSON.stringify(result?.messages));
+  return mapCheckLines(result.payload).map((line) => `${line}\n`).join("");
+}
+
+test("tui: map check in the worker reports what the CLI reports for a fresh, stale and conflicting map, and writes nothing", async (t) => {
+  const root = checkoutRepo(t);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const cases: [string, () => void, number][] = [
+    ["fresh", () => {}, 0],
+    // New code: the generated domain map is stale.
+    ["stale", () => writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n"), 1],
+    // A manual file where a generated one belongs: a conflict, and the stale files are not listed.
+    ["conflict", () => writeFileSync(join(root, "keylang/map/application.md"), "# notes\n\nWritten by hand.\n"), 1],
+  ];
+  for (const [name, change, code] of cases) {
+    change();
+    const before = treeBytes(root);
+    mapCheck(s.send);
+    await s.app.idle();
+    const record = s.app.state.records.at(-1)!;
+    assert.equal(record.status, "completed", `${name}: ${JSON.stringify(record.result?.messages)}`);
+    assert.deepEqual(treeBytes(root), before, `${name}: the TUI check wrote nothing`);
+    const cli = cliMapCheck(root);
+    assert.deepEqual(treeBytes(root), before, `${name}: the CLI check wrote nothing`);
+    assert.equal(cli.status, code, `${name}: ${cli.stderr}`);
+    assert.equal(record.result!.exitCode, cli.status, name);
+    assert.equal(mapCheckOut(record), cli.stdout, name);
+  }
+  const [fresh, stale, conflict] = s.app.state.records.map((record) => (record.result?.kind === "map-check" ? record.result.payload : null));
+  assert.deepEqual([fresh?.stale, fresh?.conflicts], [[], []]);
+  assert.deepEqual(stale?.stale, ["keylang/map/domain.md"]);
+  assert.deepEqual(conflict?.conflicts, ["keylang/map/application.md"]);
+  assert.deepEqual(new Set(s.app.state.records.map((record) => record.id)).size, 3, "each run has its own id");
+  // F6 shows the outcome; the session answers after code 1.
+  s.send(KEY.f6);
+  assert.match(s.text(), /Map: check {2}completed · code 1/);
+  assert.match(s.text(), /conflict keylang\/map\/application\.md: manual file/);
+  assert.match(s.text(), /read-only, nothing written/);
+});
+
+test("tui: a delayed map check in a real worker leaves keys and resize live; Esc folds F6, x cancels with nothing written", async (t) => {
+  const root = checkoutRepo(t);
+  const gated = gatedWorker();
+  const vt = new VirtualTerminal(110, 30);
+  const app = new App({ root, cols: 110, rows: 30, operationWorker: gated.worker });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  t.after(() => app.close());
+  const send = (keys: string): void => app.input(keys);
+  await app.idle();
+  const before = treeBytes(root);
+  mapCheck(send);
+  const first = app.state.records[0]!;
+  assert.equal(first.status, "running");
+  // The worker is blocked, the session thread is not: a key and a resize reach the frame before the result.
+  await sleep(100);
+  send(KEY.down);
+  assert.equal(app.state.cursor.line, 1);
+  assert.doesNotMatch(vt.text(), /FILES/);
+  send("\x1bOQ"); // F2
+  assert.match(vt.text(), /FILES/);
+  vt.resize(80, 20);
+  app.resize(80, 20);
+  assert.equal(vt.lines().length, 20);
+  assert.equal(first.status, "running");
+  // A second job is refused; Esc folds the panel and the work goes on.
+  mapCheck(send);
+  assert.equal(app.state.records.length, 1);
+  send(KEY.f6);
+  assert.match(vt.text(), /x cancel/);
+  send("\x1b");
+  await sleep(40);
+  assert.equal(app.state.results.open, false);
+  assert.equal(first.status, "running");
+  // Cancel: cancelled with no exit code, the worker ends, nothing is written.
+  send(KEY.f6);
+  send("x");
+  assert.equal(first.status, "cancelled");
+  assert.equal(first.result?.exitCode, null);
+  assert.equal(app.state.activeOperation, null);
+  assert.match(vt.text(), /cancelled/);
+  send("\x1b");
+  gated.open();
+  await app.idle();
+  await sleep(100);
+  assert.equal(first.status, "cancelled");
+  assert.deepEqual(treeBytes(root), before);
+  // A new run is a new record with a new id, in a new worker (the gate is open now).
+  mapCheck(send);
+  await app.idle();
+  const second = app.state.records[1]!;
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.status, "completed");
+  assert.equal(second.result?.exitCode, cliMapCheck(root).status);
+  assert.equal(first.status, "cancelled");
+});
+
+test("tui: a result arriving after Cancel changes nothing in the history", async (t) => {
+  const root = checkoutRepo(t);
+  let release: (() => void) | null = null;
+  const operations = async (request: OperationRequest): Promise<OperationResult> => {
+    // Ignores the signal on purpose: the late result must still be dropped.
+    await new Promise<void>((done) => (release = done));
+    return runOperation(request);
+  };
+  const s = session(root, { operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  mapCheck(s.send);
+  await sleep(20);
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  const record = s.app.state.records[0]!;
+  assert.equal(record.status, "cancelled");
+  const finished = record.finished;
+  release!();
+  await s.app.idle();
+  assert.equal(record.status, "cancelled");
+  assert.equal(record.result?.exitCode, null);
+  assert.equal(record.result?.payload, null);
+  assert.equal(record.finished, finished);
+  assert.equal(s.app.state.records.length, 1);
+  assert.equal(s.app.state.activeOperation, null);
+  assert.match(s.app.state.message ?? "", /map check: cancelled/);
+});
+
+test("tui: a worker that cannot start or dies is a code 2 failure; the next run starts a new worker", async (t) => {
+  const root = checkoutRepo(t);
+  // No such module: the worker never starts.
+  const broken = new App({ root, cols: 100, rows: 24, operationWorker: new OperationWorker({ entry: new URL("./no-such-worker.ts", import.meta.url) }) });
+  t.after(() => broken.close());
+  await broken.idle();
+  mapCheck((keys) => broken.input(keys));
+  await broken.idle();
+  assert.equal(broken.state.records[0]!.status, "failed");
+  assert.equal(broken.state.records[0]!.result?.exitCode, 2);
+  assert.match(broken.state.records[0]!.result!.messages[0]!.text, /the operation worker failed/);
+  broken.input(KEY.down);
+  assert.equal(broken.state.cursor.line, 1);
+  // Dies once on start, then works: the failure is visible and the retry succeeds.
+  const crashes = new SharedArrayBuffer(4);
+  Atomics.store(new Int32Array(crashes), 0, 1);
+  const vt = new VirtualTerminal(100, 24);
+  const app = new App({ root, cols: 100, rows: 24, operationWorker: new OperationWorker({ entry: GATE_WORKER, workerData: { crashes } }) });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 100, 24);
+  t.after(() => app.close());
+  await app.idle();
+  mapCheck((keys) => app.input(keys));
+  await app.idle();
+  assert.equal(app.state.records[0]!.status, "failed");
+  assert.match(app.state.records[0]!.result!.messages[0]!.text, /the operation worker exited with code 3/);
+  assert.match(vt.text(), /map check: failed · code 2/);
+  mapCheck((keys) => app.input(keys));
+  await app.idle();
+  assert.equal(app.state.records[1]!.status, "completed");
+  assert.equal(app.state.records[1]!.result?.exitCode, cliMapCheck(root).status);
+});
+
+test("operation worker: every request settles once; close cancels what is pending and refuses new work", async (t) => {
+  const root = checkoutRepo(t);
+  const gated = gatedWorker();
+  const pending = gated.worker.run({ kind: "map-check", root });
+  const progress: string[] = [];
+  const controller = new AbortController();
+  const aborted = gated.worker.run({ kind: "map-check", root }, { signal: controller.signal, onProgress: ({ text }) => progress.push(text) });
+  controller.abort();
+  const cancelled = await aborted;
+  assert.deepEqual([cancelled.status, cancelled.exitCode, cancelled.kind], ["cancelled", null, "map-check"]);
+  // Cancelling one read-only request ended the worker: the other one settles as a failure, once.
+  const other = await pending;
+  assert.deepEqual([other.status, other.exitCode], ["failed", 2]);
+  gated.open();
+  const fresh = await gated.worker.run({ kind: "map-check", root }, { onProgress: ({ text }) => progress.push(text) });
+  assert.equal(fresh.status, "completed");
+  assert.deepEqual(progress, ["reading the sources", "comparing with the files on disk"]);
+  const open = gated.worker.run({ kind: "feature", root, slug: "nope" });
+  gated.worker.close();
+  assert.equal((await open).status, "cancelled");
+  const after = await gated.worker.run({ kind: "map-check", root });
+  assert.deepEqual([after.status, after.exitCode], ["failed", 2]);
 });
