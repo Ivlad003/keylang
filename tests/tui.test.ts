@@ -4308,3 +4308,241 @@ test("tui: invalid JSON blocks every write of the plan; an outside edit before t
   assert.match(s.text(), /step\(s\) done, failed · code 2/);
   assert.match(s.text(), /not written +skill +\.claude\/skills\/keylang-feature\/SKILL\.md/);
 });
+
+// ---------- fmt: format or check specifications (ticket 13) ----------
+
+const MESSY = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/fmt/messy.md"), "utf8");
+const MESSY_EXPECTED = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/fmt/messy.expected"), "utf8");
+const INDENT = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/diagnostics/indent.md"), "utf8");
+
+/** The palette's fmt form; `paths` replaces the default text when given, then the mode. */
+function fmtForm(send: (keys: string) => void, app: App, mode: "write" | "check", paths?: string): void {
+  send(KEY.ctrlP);
+  for (const ch of "format: write or check") send(ch);
+  send(KEY.enter);
+  if (paths !== undefined) {
+    for (const _ of app.state.prompt!.text) send("\x7f");
+    for (const ch of paths) send(ch);
+  }
+  if (mode === "check") send(KEY.down);
+  send(KEY.enter);
+}
+
+function fmtRecord(app: App): Extract<OperationResult, { kind: "fmt" }> & { payload: NonNullable<Extract<OperationResult, { kind: "fmt" }>["payload"]> } {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "fmt" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as Extract<OperationResult, { kind: "fmt" }> & { payload: NonNullable<Extract<OperationResult, { kind: "fmt" }>["payload"]> };
+}
+
+function cliFmt(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "fmt", ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** What the CLI would print for the same result: stdout lines, stderr lines. */
+const fmtStreams = (result: OperationResult): { stdout: string; stderr: string } => ({
+  stdout: result.messages.filter((m) => m.level === "info").map((m) => `${m.text}\n`).join(""),
+  stderr: result.messages.filter((m) => m.level === "error").map((m) => `${m.text}\n`).join(""),
+});
+
+test("tui: fmt of the current spec writes the CLI's bytes and is idempotent; check is 1 and writes nothing; the clean buffer follows", async (t) => {
+  const file = "keylang/notes/messy.md";
+  const root = checkoutRepo(t, { [file]: MESSY });
+  const twin = checkoutRepo(t, { [file]: MESSY });
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of `open ${file}`) s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, file);
+  // The cursor on the last line of the messy text: the formatted text is shorter.
+  s.app.state.cursor.line = MESSY.split("\n").length - 2;
+  // The form defaults to the current spec and shows the real set and both modes.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang fmt") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "fmt");
+  assert.equal(s.app.state.prompt?.text, file);
+  assert.deepEqual(s.app.state.prompt?.items, ["Write: format 1 file(s)", "Check 1 file(s) (writes nothing)"]);
+  assert.match(promptNote(s.app), new RegExp(`^${file} · saved explanations are skipped`));
+  // A directory only when typed: the note lists what it expands to.
+  for (const _ of file) s.send("\x7f");
+  for (const ch of "keylang") s.send(ch);
+  assert.match(promptNote(s.app), /^keylang\/flows\/checkout\.md, keylang\/notes\/messy\.md, keylang\/rules\.md/);
+  for (const ch of "/nope") s.send(ch);
+  assert.match(promptNote(s.app), /keylang\/nope: not found/);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  const before = treeBytes(root);
+  // Check: code 1 and the CLI's line; nothing is written.
+  fmtForm(s.send, s.app, "check");
+  await s.app.idle();
+  let result = fmtRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 1, []]);
+  const cliCheck = cliFmt(twin, ["--check", file]);
+  assert.equal(cliCheck.status, 1);
+  assert.deepEqual(fmtStreams(result), { stdout: cliCheck.stdout, stderr: cliCheck.stderr });
+  assert.deepEqual(treeBytes(root), before, "check writes nothing");
+  const staleCheck = s.app.state.records.at(-1)!;
+  // Write: the CLI's bytes and lines; only the file changes.
+  fmtForm(s.send, s.app, "write");
+  assert.equal(s.app.state.barrier, null, "nothing unsaved, no step");
+  await s.app.idle();
+  result = fmtRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [file]]);
+  const cliWrite = cliFmt(twin, [file]);
+  assert.equal(cliWrite.status, 0, cliWrite.stderr);
+  assert.deepEqual(fmtStreams(result), { stdout: cliWrite.stdout, stderr: cliWrite.stderr });
+  const formatted = readFileSync(join(root, file), "utf8");
+  assert.equal(formatted, readFileSync(join(twin, file), "utf8"));
+  assert.equal(formatted, MESSY_EXPECTED);
+  assert.deepEqual(treeBytes(root), new Map([...before, [file, Buffer.from(formatted).toString("latin1")]]));
+  assert.equal(staleCheck.outdated, "the files were formatted since this run");
+  const buffer = s.app.state.buffers.get(file)!;
+  assert.equal(buffer.text, formatted, "the clean buffer follows the disk");
+  assert.equal(isDirtyBuffer(s.app, file), false);
+  assert.ok(s.app.state.cursor.line < formatted.split("\n").length, "the cursor stays in range");
+  // Idempotent: a second write and a check change nothing and return 0, as the CLI does.
+  fmtForm(s.send, s.app, "write");
+  await s.app.idle();
+  result = fmtRecord(s.app);
+  assert.deepEqual([result.exitCode, result.written, result.payload.files.map((f) => f.state)], [0, [], ["current"]]);
+  fmtForm(s.send, s.app, "check");
+  await s.app.idle();
+  assert.equal(fmtRecord(s.app).exitCode, 0);
+  assert.equal(cliFmt(root, ["--check", file]).status, 0);
+  assert.equal(readFileSync(join(root, file), "utf8"), formatted);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Format: write or check specifications · check · keylang\/notes\/messy\.md/);
+  assert.match(s.text(), /Fmt check · read-only, nothing written · 1 file\(s\)/);
+  assert.match(s.text(), /1 file\(s\) canonical · code 0/);
+  assert.match(s.text(), /canonical +keylang\/notes\/messy\.md/);
+});
+
+function isDirtyBuffer(app: App, path: string): boolean {
+  const buffer = app.state.buffers.get(path)!;
+  return buffer.text !== buffer.saved;
+}
+
+test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explanation files gives the CLI's lines and code 2; the valid ones are written", { skip: process.getuid?.() === 0 ? "root reads unreadable files" : false }, async (t) => {
+  const crlf = "# rules  \r\n\r\n- layers   domain < infrastructure < application < presentation  <!-- порядок 𝒳 -->\r\n";
+  const explanation = "<!-- keylang:explain agent=mock date=2026-09-30 closure=abc lang=en detail=short -->\n*  not   keylang  *\n";
+  const specs = { "keylang/notes/a-messy.md": MESSY, "keylang/notes/b-indent.md": INDENT, "keylang/notes/c-locked.md": MESSY, "keylang/notes/d-crlf.md": crlf, "keylang/explain/x.md": explanation };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  for (const dir of [root, twin]) chmodSync(join(dir, "keylang/notes/c-locked.md"), 0o000);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A clean CRLF buffer takes the LF bytes fmt writes, so a later save keeps them.
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/notes/d-crlf.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.buffers.get("keylang/notes/d-crlf.md")?.eol, "\r\n");
+  fmtForm(s.send, s.app, "write", "keylang");
+  await s.app.idle();
+  const result = fmtRecord(s.app);
+  const cli = cliFmt(twin, ["keylang"]);
+  assert.deepEqual([result.status, result.exitCode, cli.status], ["failed", 2, 2]);
+  const streams = fmtStreams(result);
+  assert.equal(streams.stdout, cli.stdout);
+  assert.equal(streams.stderr.split(root).join("<root>"), cli.stderr.split(twin).join("<root>"));
+  assert.match(cli.stderr, /^keylang\/notes\/b-indent\.md:\d+:\d+: K003 /m);
+  assert.match(cli.stderr, /^keylang\/notes\/c-locked\.md: cannot read: EACCES/m);
+  assert.equal(cli.stdout, "keylang/notes/a-messy.md: formatted\nkeylang/notes/d-crlf.md: formatted\n");
+  const states = Object.fromEntries(result.payload.files.map((f) => [f.path, f.state]));
+  assert.equal(states["keylang/notes/a-messy.md"], "formatted");
+  assert.equal(states["keylang/notes/b-indent.md"], "invalid");
+  assert.equal(states["keylang/notes/c-locked.md"], "unreadable");
+  assert.equal(states["keylang/notes/d-crlf.md"], "formatted");
+  assert.equal(states["keylang/explain/x.md"], "explanation");
+  assert.deepEqual(result.written, ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md"], "the failures do not hide the written files");
+  // The bytes are the CLI's: CRLF becomes LF, Unicode stays; invalid and explanation files are untouched.
+  for (const path of ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md", "keylang/notes/b-indent.md", "keylang/explain/x.md"]) {
+    assert.equal(readFileSync(join(root, path), "utf8"), readFileSync(join(twin, path), "utf8"), path);
+  }
+  const crlfOut = readFileSync(join(root, "keylang/notes/d-crlf.md"), "utf8");
+  assert.ok(!crlfOut.includes("\r") && crlfOut.includes("порядок 𝒳"), crlfOut);
+  const crlfBuffer = s.app.state.buffers.get("keylang/notes/d-crlf.md")!;
+  assert.deepEqual([crlfBuffer.text, crlfBuffer.eol, crlfBuffer.saved], [crlfOut, "\n", crlfOut]);
+  assert.equal(readFileSync(join(root, "keylang/explain/x.md"), "utf8"), explanation);
+  assert.equal(readFileSync(join(root, "keylang/notes/b-indent.md"), "utf8"), INDENT);
+  // A repeat: nothing more to write, the same failures; check writes nothing.
+  const locked = join(root, "keylang/notes/c-locked.md");
+  const readable = (): Map<string, string> => {
+    chmodSync(locked, 0o644);
+    const bytes = treeBytes(root);
+    chmodSync(locked, 0o000);
+    return bytes;
+  };
+  const before = readable();
+  fmtForm(s.send, s.app, "check", "keylang");
+  await s.app.idle();
+  const again = fmtRecord(s.app);
+  assert.deepEqual([again.exitCode, again.written], [2, []]);
+  assert.equal(fmtStreams(again).stdout, "");
+  assert.deepEqual(readable(), before);
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /invalid +keylang\/notes\/b-indent\.md/);
+  assert.match(text, /skipped +keylang\/explain\/x\.md: a saved explanation/);
+  assert.match(text, /unreadable +keylang\/notes\/c-locked\.md: EACCES/);
+});
+
+test("tui: fmt saves the chosen dirty buffer first (Back writes nothing), leaves other dirty buffers, and never writes over a file changed before the commit", async (t) => {
+  const file = "keylang/notes/messy.md";
+  const other = "keylang/notes/other.md";
+  const root = checkoutRepo(t, { [file]: MESSY, [other]: MESSY });
+  let pause: () => void = () => {};
+  const s = session(root, { operations: pausedRunner(() => pause()) });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // Dirty edits in both files; fmt chooses only the first.
+  for (const path of [other, file]) {
+    s.send(KEY.ctrlP);
+    for (const ch of `open ${path}`) s.send(ch);
+    s.send(KEY.enter);
+    s.send("i");
+    s.send("*");
+    await esc(s.send);
+  }
+  assert.equal(s.app.state.current, file);
+  const before = treeBytes(root);
+  fmtForm(s.send, s.app, "write");
+  assert.deepEqual(s.app.state.barrier?.files, [file], "only the chosen file is saved first");
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Back writes nothing");
+  assert.equal(s.app.state.records.length, 0);
+  // Save and continue: the typed text is saved, then formatted from those bytes; the other buffer stays dirty.
+  const typed = s.app.state.buffers.get(file)!.text;
+  fmtForm(s.send, s.app, "write");
+  s.send(KEY.enter);
+  await s.app.idle();
+  let result = fmtRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["completed", 0, [file]]);
+  const expected = formatSource(file, typed);
+  assert.ok(expected.ok);
+  assert.equal(readFileSync(join(root, file), "utf8"), expected.text);
+  assert.equal(s.app.state.buffers.get(file)!.text, expected.text);
+  assert.equal(readFileSync(join(root, other), "utf8"), MESSY, "the other dirty file is not saved or formatted");
+  assert.equal(isDirtyBuffer(s.app, other), true);
+  // Both files on disk, one changed from outside while the plan waits: that one is refused, the other written; code 2.
+  const outside = `${MESSY}\n- outside\n`;
+  writeFileSync(join(root, file), MESSY);
+  const otherTyped = s.app.state.buffers.get(other)!.text;
+  pause = () => writeFileSync(join(root, file), outside);
+  fmtForm(s.send, s.app, "write", "keylang/notes");
+  assert.deepEqual(s.app.state.barrier?.files, [other], "the directory's dirty buffer is saved first");
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = fmtRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 2, [other]]);
+  assert.equal(readFileSync(join(root, file), "utf8"), outside, "the outside bytes stay");
+  const otherExpected = formatSource(other, otherTyped);
+  assert.ok(otherExpected.ok);
+  assert.equal(readFileSync(join(root, other), "utf8"), otherExpected.text);
+  assert.deepEqual(fmtStreams(result).stderr, `${file}: cannot write: changed on disk while it was formatted; nothing written\n`);
+  s.send(KEY.f6);
+  assert.match(s.text(), /1 formatted, 1 not written · code 2/);
+  assert.match(s.text(), /not written +keylang\/notes\/messy\.md: changed on disk/);
+});

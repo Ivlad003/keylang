@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, map-check, map, baseline, agents) is running. */
+  /** An explicit operation (doctor, feature, map-check, map, baseline, agents, fmt) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -113,6 +113,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Project",
     aliases: ["agents", "keylang agents", "harness", "harnesses", "mcp config", "claude codex cursor opencode"],
     // A form chooses the harnesses and the mode and shows what would change; it installs files and never starts a harness.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "fmt",
+    label: "Format: write or check specifications",
+    group: "Edit",
+    aliases: ["fmt", "format", "keylang fmt", "fmt --check", "canonical form"],
+    // A form names the files (the current spec by default, a directory only when typed) and the mode; never on save.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

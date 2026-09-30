@@ -11,17 +11,17 @@
     - node [external.node](external.md#external.node)
     - ir [lang.ir](lang.md#lang.ir)
     - parser [lang.parser](lang.md#lang.parser)
-    - fn [collectMdFiles](../../src/files.ts#L14) (paths: readonly string[]) → string[]
+    - fn [collectMdFiles](../../src/files.ts#L16) (paths: readonly string[], base?: string) → string[]
       <a id="lang.files.collectMdFiles"></a><br>Expand files and directories into a sorted list of `*.md` files. Hidden directories, `node_modules` and `target` are skipped.
       - calls [lang.files.walkDir](lang.md#lang.files.walkDir), [lang.files.realPath](lang.md#lang.files.realPath)
-    - fn [walkDir](../../src/files.ts#L39) (dir: string, out: string[], walked: Set<string>) → void <!-- internal -->
+    - fn [walkDir](../../src/files.ts#L42) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
       <a id="lang.files.walkDir"></a>
       - calls [lang.files.realPath](lang.md#lang.files.realPath), [lang.files.entryType](lang.md#lang.files.entryType)
-    - fn [entryType](../../src/files.ts#L57) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [entryType](../../src/files.ts#L60) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
       <a id="lang.files.entryType"></a><br>What a directory entry is, through a link; a dangling link is neither.
-    - fn [realPath](../../src/files.ts#L67) (path: string) → string <!-- internal -->
+    - fn [realPath](../../src/files.ts#L70) (path: string) → string <!-- internal -->
       <a id="lang.files.realPath"></a>
-    - fn [load](../../src/files.ts#L76) (files: readonly string[]) → Document[]
+    - fn [load](../../src/files.ts#L79) (files: readonly string[]) → Document[]
       <a id="lang.files.load"></a><br>Read and parse files.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
   - module [fmt](../../src/fmt.ts#L1)

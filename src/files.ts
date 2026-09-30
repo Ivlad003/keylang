@@ -9,44 +9,47 @@ import { parse } from "./parser.ts";
  * Expand files and directories into a sorted list of `*.md` files.
  * Hidden directories, `node_modules` and `target` are skipped. A link is
  * followed like the file or directory it points to; a file reached through
- * two paths is one document.
+ * two paths is one document. With `base` (absolute), a relative path is read
+ * from there instead of the working directory; the files are still named as
+ * the paths were given.
  */
-export function collectMdFiles(paths: readonly string[]): string[] {
+export function collectMdFiles(paths: readonly string[], base?: string): string[] {
+  const at = (p: string): string => (base === undefined ? p : resolve(base, p));
   const out: string[] = [];
   const walked = new Set<string>();
   for (const p of paths) {
     let st;
     try {
-      st = statSync(p);
+      st = statSync(at(p));
     } catch {
       throw new Error(`${p}: not found`);
     }
-    if (st.isDirectory()) walkDir(p, out, walked);
+    if (st.isDirectory()) walkDir(p, out, walked, at);
     else out.push(p);
   }
   // `check d ./d/a.md` names one file twice, and so does a link to it; it is one
   // document, not a duplicate declaration. The path without a link names it.
   const chosen = new Map<string, string>();
   for (const file of out) {
-    const key = realPath(file);
+    const key = realPath(at(file));
     const current = chosen.get(key);
-    if (current === undefined || (resolve(current) !== key && resolve(file) === key)) chosen.set(key, file);
+    if (current === undefined || (resolve(at(current)) !== key && resolve(at(file)) === key)) chosen.set(key, file);
   }
   const keep = new Set(chosen.values());
   return out.filter((file) => keep.delete(file));
 }
 
-function walkDir(dir: string, out: string[], walked: Set<string>): void {
+function walkDir(dir: string, out: string[], walked: Set<string>, at: (p: string) => string): void {
   // A link back to an ancestor would walk forever.
-  const real = realPath(dir);
+  const real = realPath(at(dir));
   if (walked.has(real)) return;
   walked.add(real);
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const entries = readdirSync(at(dir), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const p = join(dir, e.name);
-    const type = entryType(e, p);
+    const type = entryType(e, at(p));
     if (type === "dir") {
-      if (!e.name.startsWith(".") && e.name !== "target" && e.name !== "node_modules") walkDir(p, out, walked);
+      if (!e.name.startsWith(".") && e.name !== "target" && e.name !== "node_modules") walkDir(p, out, walked, at);
     } else if (type === "file" && extname(e.name) === ".md") {
       out.push(p);
     }

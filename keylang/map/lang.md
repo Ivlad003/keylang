@@ -7,13 +7,13 @@
     - node external.node
     - ir lang.ir
     - parser lang.parser
-    - fn [collectMdFiles](../../src/files.ts#L14) (paths: readonly string[]) → string[]
+    - fn [collectMdFiles](../../src/files.ts#L16) (paths: readonly string[], base?: string) → string[]
       - calls lang.files.walkDir, lang.files.realPath
-    - fn [walkDir](../../src/files.ts#L39) (dir: string, out: string[], walked: Set<string>) → void <!-- internal -->
+    - fn [walkDir](../../src/files.ts#L42) (dir: string, out: string[], walked: Set<string>, at: (p: string) => string) → void <!-- internal -->
       - calls lang.files.realPath, lang.files.entryType
-    - fn [entryType](../../src/files.ts#L57) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
-    - fn [realPath](../../src/files.ts#L67) (path: string) → string <!-- internal -->
-    - fn [load](../../src/files.ts#L76) (files: readonly string[]) → Document[]
+    - fn [entryType](../../src/files.ts#L60) (e: Dirent, path: string) → "dir" | "file" | null <!-- internal -->
+    - fn [realPath](../../src/files.ts#L70) (path: string) → string <!-- internal -->
+    - fn [load](../../src/files.ts#L79) (files: readonly string[]) → Document[]
       - calls lang.parser.parse
   - module [fmt](../../src/fmt.ts#L1)
     - diag base.diag

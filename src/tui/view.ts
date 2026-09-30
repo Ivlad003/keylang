@@ -15,7 +15,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
-import type { AgentsPayload, AgentsRequest, BaselinePayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
+import type { AgentsPayload, AgentsRequest, BaselinePayload, FmtFile, FmtPayload, MapCheckPayload, MapPayload, OperationRequest } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -431,6 +431,7 @@ function recordLabel(record: OperationRecord): string {
   const label = ACTIONS.find((action) => action.id === record.action)?.label ?? record.action;
   if (record.params.kind === "baseline") return `${label} · ${record.params.check ? "check" : "write"}`;
   if (record.params.kind === "agents") return `${label} · ${record.params.check ? "check" : "write"} · ${choiceText(record.params.harnesses)}`;
+  if (record.params.kind === "fmt") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.paths.join(" ")}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -438,6 +439,7 @@ function recordLabel(record: OperationRecord): string {
 export function operationLabel(request: OperationRequest): string {
   if (request.kind === "baseline") return request.check ? "baseline check" : "baseline write";
   if (request.kind === "agents") return request.check ? "agents check" : "agents write";
+  if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -459,7 +461,23 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "fmt" && result.payload !== null) return `${fmtOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
+}
+
+/** `3 file(s) canonical`, `2 not formatted`, `1 formatted, 1 invalid`, `1 of 2 formatted, cancelled`: what fmt found and really did. */
+function fmtOutcome(status: OperationRecord["status"], payload: FmtPayload): string {
+  const count = (state: FmtFile["state"]): number => payload.files.filter((file) => file.state === state).length;
+  const parts: string[] = [];
+  const planned = count("formatted") + count("failed") + count("not-attempted");
+  if (status === "cancelled" && planned > 0) parts.push(`${count("formatted")} of ${planned} formatted, cancelled`);
+  else if (count("formatted") > 0) parts.push(`${count("formatted")} formatted`);
+  if (count("stale") > 0) parts.push(`${count("stale")} not formatted`);
+  if (count("invalid") > 0) parts.push(`${count("invalid")} invalid`);
+  if (count("failed") > 0) parts.push(`${count("failed")} not written`);
+  if (count("unreadable") > 0) parts.push(`${count("unreadable")} unreadable`);
+  if (parts.length === 0) parts.push(payload.files.length === 0 ? "no Markdown files" : `${count("current")} file(s) canonical`);
+  return parts.join(", ");
 }
 
 /** `auto`, `none`, `claude, codex`: the selection as requested. */
@@ -617,6 +635,30 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     }
     if (payload.steps.length === 0 && payload.refused.length === 0 && record.status === "cancelled") rows.push({ text: "  cancelled before writing: nothing written", style: THEME.panel });
     rows.push({ text: "Files only: no client is started or tested.", style: { ...THEME.panel, fg: 243 } });
+  } else if (result?.kind === "fmt" && result.payload !== null) {
+    // Every file of the selection with what happened to it; a failure never hides the files already written.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Fmt ${payload.check ? "check · read-only, nothing written" : "write"} · ${payload.files.length} file(s)`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${fmtOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    const label: Record<FmtFile["state"], string> = {
+      current: "canonical",
+      stale: payload.check ? "not formatted" : "not written",
+      formatted: "formatted",
+      invalid: "invalid",
+      explanation: "skipped",
+      unreadable: "unreadable",
+      failed: "not written",
+      "not-attempted": "not written",
+    };
+    for (const file of payload.files) {
+      const why = file.state === "explanation" ? ": a saved explanation, not keylang Markdown" : file.state === "not-attempted" ? ": cancelled before it" : file.error === undefined ? "" : `: ${file.error}`;
+      const bad = file.state === "failed" || file.state === "unreadable" || file.state === "invalid";
+      rows.push({ text: `  ${label[file.state].padEnd(13)} ${file.path}${why}`, style: bad ? { ...THEME.panel, ...THEME.error } : file.state === "current" || file.state === "explanation" ? { ...THEME.panel, fg: 243 } : THEME.panel });
+      for (const d of file.diagnostics ?? []) rows.push({ text: `    ${d.span.start.line}:${d.span.start.col} ${d.code} ${d.message}`, style: { ...THEME.panel, ...THEME.error } });
+    }
+    // A message about no one file (the commit could not start) is shown as it is.
+    for (const message of result.messages) if (!payload.files.some((file) => message.text.startsWith(`${file.shown}:`))) rows.push({ text: `  ${message.text}`, style: { ...THEME.panel, ...THEME.error } });
   } else if (result) {
     for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
   } else {
@@ -886,10 +928,10 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : ":";
   grid.write(rect.x, rect.y, `${label}${prompt.text}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(prompt.text)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(prompt.text), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -901,7 +943,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   if (items.length === 0) return;
   const width = Math.min(editor.width, Math.max(...items.map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "fmt" ? "format specifications" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 

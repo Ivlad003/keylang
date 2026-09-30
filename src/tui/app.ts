@@ -1687,6 +1687,13 @@ export class App {
       const isHarness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isHarness });
     }
+    if (request.kind === "fmt") {
+      // Fmt reads the saved bytes of the chosen files and the edition in keylang.json: those dirty
+      // buffers are saved first; other dirty specs stay dirty and are never formatted behind them.
+      const selected = request.paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
+      const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
+    }
     if (request.kind !== "map") return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
     // The map reads the code and the saved keylang.json, not the specs: dirty specs stay dirty
     // and go into the analysis after the commit as overlays. The step names the targets first.
@@ -1742,14 +1749,30 @@ export class App {
     for (const path of touched) {
       const buffer = this.state.buffers.get(path);
       if (!buffer) continue;
-      if (isDirty(buffer)) kept.push(path);
-      else buffer.disk = readText(resolve(this.state.root, path));
+      if (isDirty(buffer)) {
+        kept.push(path);
+        continue;
+      }
+      // A clean buffer takes the new bytes and their line ends now, even when the analysis after this fails.
+      const raw = readText(resolve(this.state.root, path));
+      buffer.disk = raw;
+      if (raw === null) continue;
+      const { text, eol } = splitEol(raw);
+      buffer.eol = eol;
+      if (text !== buffer.text) {
+        setText(buffer, text);
+        buffer.saved = text;
+        this.inputsChanged(`${path} was written since this run`);
+      }
     }
+    this.clampCursor();
     for (const record of this.state.records) {
       if (record.kind === "map-check" && result.kind === "map" && touched.length > 0) record.outdated ??= "the map was written since this run";
       const file = record.result?.kind === "baseline" ? record.result.payload?.file : undefined;
       if (record.params.kind === "baseline" && record.params.check && file !== undefined && touched.includes(file)) record.outdated ??= "the baseline was written since this run";
       if (record.params.kind === "agents" && record.params.check && result.kind === "agents" && touched.length > 0) record.outdated ??= "the harness files were written since this run";
+      const checked = record.params.kind === "fmt" && record.params.check && record.result?.kind === "fmt" ? (record.result.payload?.files ?? []) : [];
+      if (checked.some((file) => touched.includes(file.path))) record.outdated ??= "the files were formatted since this run";
     }
     this.reanalyze(false);
     return kept.length === 0 ? null : `${kept.join(", ")} changed on disk under unsaved edits: the text stays in the buffer (Ctrl+S twice overwrites, Ctrl+Z undoes)`;
@@ -1987,6 +2010,64 @@ export class App {
     const check = prompt.ids?.[prompt.index] === "check";
     this.state.prompt = null;
     this.requestOperation("agents", { kind: "agents", root: this.state.root, harnesses: choice, check });
+  }
+
+  // ---------- fmt ----------
+
+  /** The fmt form: the current spec file by default — a directory only when typed — then the mode. */
+  private openFmtPrompt(): void {
+    const current = this.state.current;
+    const initial = current !== null && extname(current) === ".md" ? current : "";
+    this.state.prompt = { kind: "fmt", text: initial, items: [], ids: ["write", "check"], index: 0 };
+    this.refreshFmtPrompt();
+  }
+
+  /** The typed paths, relative to the root, or why they cannot be formatted. */
+  private fmtPaths(): string[] | { error: string } {
+    const paths = (this.state.prompt?.text ?? "").trim().split(/\s+/).filter((path) => path !== "");
+    if (paths.length === 0) return { error: "type a spec file or a directory, relative to the root" };
+    const outside = paths.find((path) => !within(resolve(this.state.root, path), this.state.root));
+    return outside === undefined ? paths : { error: `${outside}: outside the repository` };
+  }
+
+  /** The form shows the real set the paths expand to, from the disk, and both modes. */
+  private refreshFmtPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "fmt") return;
+    const paths = this.fmtPaths();
+    if (!Array.isArray(paths)) {
+      prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
+      prompt.note = paths.error;
+      return;
+    }
+    let files: string[];
+    try {
+      files = collectMdFiles(paths, this.state.root).map((file) => toPosix(relative(this.state.root, resolve(this.state.root, file))));
+    } catch (error) {
+      prompt.items = ["Write: format the files", "Check the files (writes nothing)"];
+      prompt.note = `${errorText(error)} · a new spec is saved first`;
+      return;
+    }
+    const shown = files.length > 3 ? `${files.slice(0, 3).join(", ")}, …` : files.join(", ");
+    const dirty = files.filter((file) => {
+      const buffer = this.state.buffers.get(file);
+      return buffer !== undefined && isDirty(buffer);
+    }).length;
+    prompt.items = [`Write: format ${files.length} file(s)`, `Check ${files.length} file(s) (writes nothing)`];
+    prompt.note = `${files.length === 0 ? "no Markdown files" : shown}${dirty > 0 ? ` · ${dirty} unsaved, saved first` : ""} · saved explanations are skipped`;
+  }
+
+  /** Enter in the fmt form: the typed paths with the chosen mode run as the session's operation. */
+  private submitFmt(): void {
+    const prompt = this.state.prompt!;
+    const paths = this.fmtPaths();
+    if (!Array.isArray(paths)) {
+      this.state.message = `fmt: ${paths.error}`;
+      return;
+    }
+    const check = prompt.ids?.[prompt.index] === "check";
+    this.state.prompt = null;
+    this.requestOperation("fmt", { kind: "fmt", root: this.state.root, paths, check });
   }
 
   // ---------- new specification ----------
@@ -2511,6 +2592,7 @@ export class App {
     if (prompt.kind === "proposal") this.refreshProposalPrompt();
     if (prompt.kind === "new-spec") this.refreshNewSpec();
     if (prompt.kind === "agents") this.refreshAgentsPrompt();
+    if (prompt.kind === "fmt") this.refreshFmtPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2538,9 +2620,10 @@ export class App {
       if (prompt.kind === "proposal") this.refreshProposalPrompt();
       if (prompt.kind === "new-spec") this.refreshNewSpec();
       if (prompt.kind === "agents") this.refreshAgentsPrompt();
+      if (prompt.kind === "fmt") this.refreshFmtPrompt();
       return;
     }
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "fmt") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -2549,6 +2632,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter" && prompt.kind === "baseline") return this.submitBaseline();
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
+    if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -2627,6 +2711,8 @@ export class App {
         return this.openBaselinePrompt();
       case "agents":
         return this.openAgentsPrompt();
+      case "fmt":
+        return this.openFmtPrompt();
       case "cancel":
         return this.cancelOperation();
       case "find-node":

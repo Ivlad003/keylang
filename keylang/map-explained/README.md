@@ -14,9 +14,9 @@ The tree of the map with a brief under each node: the documentation comment from
 | [features](features.md) |  | 167 | 0 | 0 | 120 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 117 | 0 | 0 | 132 |
-| [operations](operations.md) |  | 32 | 0 | 0 | 13 |
-| [tui](tui.md) |  | 280 | 0 | 0 | 199 |
-| **all** | | 921 | 0 | 0 | 787 |
+| [operations](operations.md) |  | 38 | 0 | 0 | 14 |
+| [tui](tui.md) |  | 285 | 0 | 0 | 199 |
+| **all** | | 932 | 0 | 0 | 788 |
 
 ## Index
 

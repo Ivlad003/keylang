@@ -5,17 +5,22 @@
 // working directory, or writes stdout/stderr. One operation variant at a
 // time: each feature ticket adds its own, not every handler in advance.
 
-import { existsSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
-import { CONFIG_FILE, loadConfig, toPosix, type Config } from "./config.ts";
+import { CONFIG_FILE, assertFormatOnly, loadConfig, toPosix, type Config } from "./config.ts";
+import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
+import { isStoredExplanation } from "./explanations.ts";
+import { collectMdFiles } from "./files.ts";
+import { formatSource } from "./fmt.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmSetup } from "./llm.ts";
 import { commitMap, diffMap, mapPlanProblems, planMap, type CommittedStep, type MapPlan } from "./map.ts";
+import { landing, writeAtomic } from "./safe-write.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
 
@@ -80,10 +85,27 @@ export interface AgentsRequest {
   check: boolean;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest;
+/**
+ * Rewrites Markdown files in the canonical form (`keylang fmt <paths…>`), or
+ * with `check` only compares them (`--check`). Each file is formatted on its
+ * own from its saved bytes by `formatSource`.
+ */
+export interface FmtRequest {
+  kind: "fmt";
+  /** Repository root (absolute): its keylang.json tells the edition. */
+  root: string;
+  /** Files and directories as the caller names them: absolute, or relative to `base`. */
+  paths: string[];
+  /** Where relative `paths` start (absolute); default the root. The CLI passes its working directory. */
+  base?: string;
+  /** Compare only; nothing is written. */
+  check: boolean;
+}
+
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -247,6 +269,33 @@ export interface AgentsPayload {
   steps: HarnessStep[];
 }
 
+/**
+ * One Markdown file of `keylang fmt`, in the order the paths name them.
+ * `current`: already canonical; `stale`: not canonical, and not written (a
+ * check, or a write stopped before it); `formatted`: written by this run;
+ * `invalid`: the tree shape is ambiguous (K003), never rewritten;
+ * `explanation`: a saved explanation, the model's text, left as it is;
+ * `unreadable`, `failed`: the file could not be read or written (`error`);
+ * `not-attempted`: the write was cancelled before this file.
+ */
+export interface FmtFile {
+  /** The file as the given paths name it: what the CLI prints. */
+  shown: string;
+  /** POSIX, relative to the root. */
+  path: string;
+  state: "current" | "stale" | "formatted" | "invalid" | "explanation" | "unreadable" | "failed" | "not-attempted";
+  /** `unreadable`, `failed`: why. */
+  error?: string;
+  /** `invalid`: the structural diagnostics, as `formatSource` gives them. */
+  diagnostics?: Diagnostic[];
+}
+
+/** What `keylang fmt [--check]` found and did, file by file. */
+export interface FmtPayload {
+  check: boolean;
+  files: FmtFile[];
+}
+
 /** The payload type of each operation kind. */
 export interface OperationPayloads {
   doctor: DoctorPayload;
@@ -255,6 +304,7 @@ export interface OperationPayloads {
   map: MapPayload;
   baseline: BaselinePayload;
   agents: AgentsPayload;
+  fmt: FmtPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -287,6 +337,7 @@ export function runOperation(request: MapCheckRequest, context?: OperationContex
 export function runOperation(request: MapRequest, context?: OperationContext): Promise<OperationEnvelope<"map">>;
 export function runOperation(request: BaselineRequest, context?: OperationContext): Promise<OperationEnvelope<"baseline">>;
 export function runOperation(request: AgentsRequest, context?: OperationContext): Promise<OperationEnvelope<"agents">>;
+export function runOperation(request: FmtRequest, context?: OperationContext): Promise<OperationEnvelope<"fmt">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -302,6 +353,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runBaseline(request, context);
     case "agents":
       return runAgents(request, context);
+    case "fmt":
+      return runFmt(request, context);
   }
 }
 
@@ -323,6 +376,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "baseline":
       return { kind, ...base };
     case "agents":
+      return { kind, ...base };
+    case "fmt":
       return { kind, ...base };
   }
 }
@@ -662,6 +717,134 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
     written: done.filter((step) => step.action === "write").map((step) => step.path),
     removed: done.filter((step) => step.action === "remove").map((step) => step.path),
   };
+}
+
+function emptyFmt(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"fmt"> {
+  return { kind: "fmt", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang fmt [--check]` in two phases. Compute: every file is read and
+ * formatted by `formatSource`; one that cannot be read, or whose tree shape
+ * is ambiguous (K003), is reported and the rest go on; a saved explanation
+ * is skipped. Check stops here: code 1 for an unformatted or invalid file,
+ * 2 when one cannot be read; nothing is written. Write, after
+ * `beforeCommit`: each unformatted file in turn is written atomically with
+ * the formatter's bytes, only while it still holds the text it was formatted
+ * from — a file changed meanwhile, or one that cannot be written, fails on
+ * its own and the rest are still written. Code 2 over 1 over 0, as the CLI
+ * has it; null when cancelled (the files written by then are named).
+ */
+async function runFmt(request: FmtRequest, context: OperationContext): Promise<OperationEnvelope<"fmt">> {
+  if (!isAbsolute(request.root)) return emptyFmt("failed", 2, "fmt: root must be an absolute path");
+  const base = request.base ?? request.root;
+  if (!isAbsolute(base)) return emptyFmt("failed", 2, "fmt: base must be an absolute path");
+  if (request.paths.length === 0) return emptyFmt("failed", 2, "fmt: needs at least one path");
+  if (context.signal?.aborted) return emptyFmt("cancelled", null);
+  const planned: { file: FmtFile; abs: string; source: string; text: string }[] = [];
+  const files: FmtFile[] = [];
+  try {
+    // `fmt` reads nothing of the config but the edition it asks for.
+    const config = join(request.root, CONFIG_FILE);
+    if (existsSync(config)) assertFormatOnly(config, readFileSync(config, "utf8"));
+    context.onProgress?.({ text: "reading the files" });
+    for (const shown of collectMdFiles(request.paths, base)) {
+      const abs = resolve(base, shown);
+      const file: FmtFile = { shown, path: toPosix(relative(request.root, abs)), state: "current" };
+      files.push(file);
+      let source: string;
+      try {
+        source = readFileSync(abs, "utf8");
+      } catch (error) {
+        file.state = "unreadable";
+        file.error = messageOf(error);
+        continue;
+      }
+      // The model's text is kept as it was written: formatting it would change a saved answer.
+      if (isStoredExplanation(source)) {
+        file.state = "explanation";
+        continue;
+      }
+      const formatted = formatSource(shown, source);
+      if (!formatted.ok) {
+        file.state = "invalid";
+        file.diagnostics = formatted.diagnostics;
+      } else if (formatted.text !== source) {
+        file.state = "stale";
+        planned.push({ file, abs, source, text: formatted.text });
+      }
+    }
+  } catch (error) {
+    return emptyFmt("failed", 2, messageOf(error));
+  }
+  const payload: FmtPayload = { check: request.check, files };
+  const finish = (status: OperationStatus, written: string[]): OperationEnvelope<"fmt"> => {
+    const failed = files.some((file) => file.state === "unreadable" || file.state === "failed");
+    const findings = files.some((file) => file.state === "invalid" || file.state === "stale");
+    const code = failed ? 2 : findings ? 1 : 0;
+    return { ...emptyFmt(status === "completed" && failed ? "failed" : status, status === "cancelled" ? null : code), payload, messages: fmtMessages(payload), written };
+  };
+  if (context.signal?.aborted) return finish("cancelled", []);
+  if (request.check || planned.length === 0) return finish("completed", []);
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    const stopped = finish("failed", []);
+    return { ...stopped, exitCode: 2, messages: [...stopped.messages, { level: "error", text: messageOf(error) }] };
+  }
+  if (context.signal?.aborted) return finish("cancelled", []);
+  const written: string[] = [];
+  let cancelled = false;
+  for (const step of planned) {
+    if (cancelled || context.signal?.aborted) {
+      cancelled = true;
+      step.file.state = "not-attempted";
+      continue;
+    }
+    context.onProgress?.({ text: `writing ${step.file.path}` });
+    try {
+      commitFormatted(step.abs, step.source, step.text);
+      step.file.state = "formatted";
+      written.push(step.file.path);
+    } catch (error) {
+      step.file.state = "failed";
+      step.file.error = messageOf(error);
+    }
+  }
+  return finish(cancelled ? "cancelled" : "completed", written);
+}
+
+/**
+ * Writes one formatted file: atomically at the file a link names, with the
+ * formatter's bytes (`fmt` turns CRLF into LF, as it always did), and only
+ * when the file still holds `source`. A file that cannot be written in place
+ * (read-only) is not replaced by the rename either.
+ */
+function commitFormatted(abs: string, source: string, text: string): void {
+  const target = landing(abs) ?? abs;
+  if (readFileSync(target, "utf8") !== source) throw new Error("changed on disk while it was formatted; nothing written");
+  closeSync(openSync(target, "r+"));
+  writeAtomic(target, text, { exact: true });
+}
+
+/**
+ * The report, file by file in path order: `info` is what `keylang fmt`
+ * prints to stdout, `error` what it prints to stderr; a `warning` names a
+ * skipped explanation, which the CLI passes over silently.
+ */
+export function fmtMessages(payload: FmtPayload): OperationMessage[] {
+  const out: OperationMessage[] = [];
+  for (const file of payload.files) {
+    if (file.state === "stale") out.push({ level: payload.check ? "info" : "error", text: payload.check ? `${file.shown}: not formatted` : `${file.shown}: not written` });
+    else if (file.state === "formatted") out.push({ level: "info", text: `${file.shown}: formatted` });
+    else if (file.state === "invalid") for (const d of file.diagnostics ?? []) out.push({ level: "error", text: formatDiagnostic(d) });
+    else if (file.state === "unreadable") out.push({ level: "error", text: `${file.shown}: cannot read: ${file.error}` });
+    else if (file.state === "failed") out.push({ level: "error", text: `${file.shown}: cannot write: ${file.error}` });
+    else if (file.state === "not-attempted") out.push({ level: "warning", text: `${file.shown}: not written (cancelled)` });
+    else if (file.state === "explanation") out.push({ level: "warning", text: `${file.shown}: a saved explanation, not keylang Markdown; skipped` });
+  }
+  return out;
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

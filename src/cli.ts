@@ -12,7 +12,6 @@ import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles } from "./files.ts";
 import { parse } from "./parser.ts";
-import { formatSource } from "./fmt.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
 import { analyze, findRoot, within, type Analysis } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
@@ -1169,45 +1168,22 @@ function githubProperty(text: string): string {
 /**
  * Each file is formatted on its own, so one that cannot be read or written
  * does not stop the rest: every such failure is reported, and the code is 2;
- * otherwise 1 for diagnostics or, with `--check`, an unformatted file.
+ * otherwise 1 for diagnostics or, with `--check`, an unformatted file. The
+ * CLI is a printer over the shared fmt operation: stdout for what changed,
+ * stderr for diagnostics and failures; a saved explanation passes silently.
  */
-function cmdFmt(paths: string[], checkOnly: boolean): number {
-  assertConfigFormat();
-  let findings = false;
-  let failed = false;
-  const fail = (file: string, action: string, error: unknown): void => {
-    failed = true;
-    process.stderr.write(`${file}: cannot ${action}: ${error instanceof Error ? error.message : String(error)}\n`);
-  };
-  for (const file of collectMdFiles(paths)) {
-    let src: string;
-    try {
-      src = readFileSync(file, "utf8");
-    } catch (error) {
-      fail(file, "read", error);
-      continue;
-    }
-    // The model's text is kept as it was written: formatting it would change a saved answer.
-    if (isStoredExplanation(src)) continue;
-    const r = formatSource(file, src);
-    if (!r.ok) {
-      findings = true;
-      for (const d of r.diagnostics) process.stderr.write(`${formatDiagnostic(d)}\n`);
-    } else if (r.text !== src) {
-      if (checkOnly) {
-        findings = true;
-        process.stdout.write(`${file}: not formatted\n`);
-        continue;
-      }
-      try {
-        writeFileSync(file, r.text);
-        process.stdout.write(`${file}: formatted\n`);
-      } catch (error) {
-        fail(file, "write", error);
-      }
-    }
+async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
+  const cwd = process.cwd();
+  const result = await runOperation({ kind: "fmt", root: findRoot(cwd), base: cwd, paths, check: checkOnly });
+  if (result.payload === null) {
+    for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  return failed ? 2 : findings ? 1 : 0;
+  for (const message of result.messages) {
+    if (message.level === "info") process.stdout.write(`${message.text}\n`);
+    else if (message.level === "error") process.stderr.write(`${message.text}\n`);
+  }
+  return result.exitCode ?? 2;
 }
 
 function printTree(doc: Document): void {

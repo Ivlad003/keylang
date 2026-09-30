@@ -113,9 +113,10 @@ export interface Prompt {
    * `proposal`: the proposals list, filtered by the typed text (design §2.9);
    * `new-spec`: the form of a new specification, one field at a time (`form`, design §2.8);
    * `baseline`: write or check `<dir>/rules.baseline.md` (the items; `ids` are `write` / `check`);
-   * `agents`: the harness selection as typed (empty is auto, `none`, or names as in `--agents`) and the mode (`ids` are `write` / `check`).
+   * `agents`: the harness selection as typed (empty is auto, `none`, or names as in `--agents`) and the mode (`ids` are `write` / `check`);
+   * `fmt`: the files and directories to format, relative to the root and separated by spaces, and the mode (`ids` are `write` / `check`).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "fmt";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
