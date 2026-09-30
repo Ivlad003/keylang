@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 47 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 40 | 0 | 0 | 57 |
+| [cli](cli.md) |  | 36 | 0 | 0 | 57 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 169 | 0 | 0 | 121 |
+| [features](features.md) |  | 177 | 0 | 0 | 123 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 117 | 0 | 0 | 132 |
-| [operations](operations.md) |  | 55 | 0 | 0 | 18 |
+| [operations](operations.md) |  | 56 | 0 | 0 | 18 |
 | [tui](tui.md) |  | 304 | 0 | 0 | 200 |
-| **all** | | 973 | 0 | 0 | 792 |
+| **all** | | 978 | 0 | 0 | 794 |
 
 ## Index
 
@@ -34,7 +34,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 
-**G** · [ghost](features.md#features.ghost) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
+**G** · [ghost](features.md#features.ghost) (features) · [git-changes](features.md#features.git-changes) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
 
 **H** · [harness](features.md#features.harness) (features)
 

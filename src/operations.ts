@@ -9,6 +9,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
+import { filterChanged } from "./changed.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
@@ -23,8 +24,10 @@ import type { LlmSetup } from "./llm.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan } from "./map.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { sha256, type CoverageItem } from "./snapshot.ts";
+import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
+import { changedPathSet, deletedModuleIds, gitChangedFiles, type ChangedFiles } from "./git-changes.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 
 /** The known operations. `doctor` is the first; new kinds arrive with their feature. */
@@ -140,6 +143,13 @@ export interface CheckRequest {
   strict: boolean;
   /** Overrides `check.static` of keylang.json; omitted leaves the config, then `behavior`. */
   static?: StaticMode;
+  /**
+   * `--changed`: the full analysis, then only the findings that touch the
+   * files git reports changed since `since`. Reads git; a plain check never does.
+   */
+  changed?: boolean;
+  /** `--since <ref>`: the ref of `changed`; default `HEAD`. Only with `changed`. */
+  since?: string;
 }
 
 /**
@@ -403,6 +413,23 @@ export interface CheckPayload {
   };
   /** Paths that hold no specs (the explained map, saved explanations): skipped, as reported. */
   notSpecs: string[];
+  /** The git slice of `--changed`, or null for a full check. `results` and `counts` are the slice. */
+  changed: ChangedSlice | null;
+}
+
+/** What `--changed` kept: the ref, what git reported, and how much of the full report the slice left out. */
+export interface ChangedSlice {
+  /** The ref compared with (`HEAD` by default). */
+  since: string;
+  /** No commit yet: `HEAD` is the empty tree, so every file is changed. */
+  unborn: boolean;
+  /** Changed, added, deleted and untracked files: POSIX, relative to the root, sorted. */
+  files: string[];
+  /** Module ids of deleted source files: a step naming one stays in the slice. */
+  deleted: string[];
+  /** Results of the full report kept in the slice, and left out of it. */
+  shown: number;
+  hidden: number;
 }
 
 /**
@@ -1313,8 +1340,10 @@ function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?:
  * default), the static mode (request, then keylang.json, then `behavior`)
  * and `strict`. Code 1 for a failure, or with `strict` for an unverified
  * verdict; an unverified one without `strict` is code 0 and stays in the
- * report. Code 2 for a broken config or a missing path. It writes nothing,
- * not even the fact cache.
+ * report. Code 2 for a broken config or a missing path. With `changed` the
+ * report is the git slice of the full analysis (`check --changed`); without
+ * git, outside a repository or with an unknown ref it is code 2. It writes
+ * nothing, not even the fact cache.
  */
 async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
   if (!isAbsolute(request.root)) return emptyCheck("failed", 2, "check: root must be an absolute path");
@@ -1331,6 +1360,17 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
   if (request.paths.length === 0 && !existsSync(specDir)) return emptyCheck("failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
   const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
   for (const spec of specs) if (!existsSync(spec)) return emptyCheck("failed", 2, `${relative(base, spec) || spec}: not found`);
+  if (request.since !== undefined && request.changed !== true) return emptyCheck("failed", 2, "check: --since requires --changed");
+  // The git slice is read before the analysis: without git or with an unknown ref the check fails, it never falls back to a full one.
+  const since = request.since ?? "HEAD";
+  let git: ChangedFiles | null = null;
+  if (request.changed === true) {
+    try {
+      git = gitChangedFiles(request.root, since);
+    } catch (error) {
+      return emptyCheck("failed", 2, messageOf(error));
+    }
+  }
   // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
   const withoutCode = !specs.every((spec) => within(spec, specDir));
   const display = (abs: string): string => toPosix(relative(base, abs));
@@ -1349,7 +1389,16 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
   }
   if (context.signal?.aborted) return emptyCheck("cancelled", null);
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
-  const report = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
+  const full = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
+  let report = full;
+  let changed: ChangedSlice | null = null;
+  if (git !== null) {
+    // The whole analysis, then the slice: only findings that touch the changed files stay.
+    const deleted = deletedModuleIds(config, git.deleted);
+    const filtered = filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changedPathSet(request.root, git.paths, base), deleted);
+    report = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
+    changed = { since, unborn: git.unborn, files: [...git.paths].sort(compareText), deleted, shown: report.results.length, hidden: full.results.length - report.results.length };
+  }
   const mode = resolveStatic(request.static, analyzed.config.check.static);
   const payload: CheckPayload = {
     results: report.results,
@@ -1365,6 +1414,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
       withoutCode,
     },
     notSpecs: analyzed.notSpecs,
+    changed,
   };
   const messages: OperationMessage[] = [
     ...payload.notSpecs.map((path) => ({ level: "warning" as const, text: checkSkipNote(path) })),

@@ -4825,7 +4825,7 @@ function cliCheck(root: string, args: string[]): { status: number | null; stdout
  * (null keeps the default), strict and the static mode set with ←→ on their
  * rows, then Enter on the run row.
  */
-function checkForm(app: App, send: (keys: string) => void, options: { paths?: string; strict?: boolean; static?: "config" | "behavior" | "shape" } = {}): void {
+function checkForm(app: App, send: (keys: string) => void, options: { paths?: string; strict?: boolean; static?: "config" | "behavior" | "shape"; changed?: boolean; since?: string } = {}): void {
   send(KEY.ctrlP);
   for (const ch of "keylang check") send(ch);
   send(KEY.enter);
@@ -4834,13 +4834,19 @@ function checkForm(app: App, send: (keys: string) => void, options: { paths?: st
     for (const _ of app.state.prompt!.text) send("\x7f");
     for (const ch of options.paths) send(ch);
   }
-  // The rows: strict, static, run (selected first).
-  send(KEY.up);
-  send(KEY.up);
+  // The rows: strict, static, changed, since, run (selected first).
+  for (let i = 0; i < 4; i++) send(KEY.up);
   if (options.strict) send(KEY.right);
   send(KEY.down);
   const steps = { config: 0, behavior: 1, shape: 2 }[options.static ?? "config"];
   for (let i = 0; i < steps; i++) send(KEY.right);
+  send(KEY.down);
+  if (options.changed) send(KEY.right);
+  send(KEY.down);
+  if (options.since !== undefined) {
+    for (const _ of app.state.prompt!.checkOptions!.since) send("\x7f");
+    for (const ch of options.since) send(ch);
+  }
   send(KEY.down);
   send(KEY.enter);
 }
@@ -4874,7 +4880,13 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
   for (const ch of "keylang check") send(ch);
   send(KEY.enter);
   assert.equal(app.state.prompt?.text, "keylang");
-  assert.deepEqual(app.state.prompt?.items, ["strict: off · unverified stays visible; code 0 unless something fails", "static: behavior, the default", "Run the check (writes nothing)"]);
+  assert.deepEqual(app.state.prompt?.items, [
+    "strict: off · unverified stays visible; code 0 unless something fails",
+    "static: behavior, the default",
+    "changed: off · every finding of the paths; git is not read",
+    "since: HEAD · used with changed on",
+    "Run the check (writes nothing)",
+  ]);
   assert.match(promptNote(app), /^2 spec file\(s\) · ←→ change the selected option$/);
   await esc(send);
   checkForm(app, send);
@@ -4946,8 +4958,8 @@ test("terminal: quitting after a strict check with code 1 and a failed check wit
     term.type(KEY.enter);
     for (const _ of "keylang") term.type("\x7f");
     for (const ch of paths) term.type(ch);
-    term.type(KEY.up);
-    term.type(KEY.up);
+    // From the run row up past since, changed and static to strict.
+    for (let i = 0; i < 4; i++) term.type(KEY.up);
     if (strict) term.type(KEY.right);
     term.type(KEY.enter);
   };
@@ -4995,7 +5007,8 @@ test("tui: static behavior and shape match the CLI on a hook's default and are n
   for (const ch of "keylang check") t2.send(ch);
   t2.send(KEY.enter);
   assert.equal(t2.app.state.prompt?.items[1], "static: shape, from keylang.json check.static");
-  t2.send(KEY.up);
+  // From the run row up past since and changed to static.
+  for (let i = 0; i < 3; i++) t2.send(KEY.up);
   t2.send(KEY.right);
   assert.equal(t2.app.state.prompt?.items[1], "static: behavior, override of keylang.json");
   t2.send(LEFT);
@@ -5104,6 +5117,207 @@ test("tui: the check saves the chosen dirty spec first as its own step — Back 
   assert.equal(record.result!.exitCode, 1);
   assert.deepEqual(checkJson(record), JSON.parse(cliCheck(root, [flow, "--format", "json"]).stdout));
   assert.ok(checkPayload(record).results.some((result) => result.verdict === "fail" && result.evidence.includes("domain.order.nope")));
+});
+
+// ---------- changed check: the git slice of the full check (ticket 16) ----------
+
+/** Git in a temp repository, as an argument array; commits need a name, never the user's config. */
+function gitRun(dir: string, args: string[]): void {
+  const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(r.stderr || r.stdout);
+}
+
+/** The working tree without `.git`: what a read-only check must leave byte for byte. */
+function workTree(root: string): Map<string, string> {
+  return new Map([...treeBytes(root)].filter(([path]) => path !== ".git" && !path.startsWith(".git/")));
+}
+
+/** The checkout repository committed once: the base `HEAD` of a changed check. */
+function committedCheckout(t: { after: (f: () => void) => void }, specs: Record<string, string> = {}): string {
+  const root = checkoutRepo(t, specs);
+  gitRun(root, ["init", "-q"]);
+  gitRun(root, ["add", "."]);
+  gitRun(root, ["commit", "-q", "-m", "base"]);
+  return root;
+}
+
+/** Runs the changed check of the form and returns its record, after comparing it with the CLI's `--changed` JSON. */
+async function changedCheck(s: ReturnType<typeof session>, root: string, options: { since?: string; paths?: string } = {}): Promise<App["state"]["records"][number]> {
+  checkForm(s.app, s.send, { changed: true, ...options });
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  const cli = cliCheck(root, [...(options.paths !== undefined ? [options.paths] : []), "--changed", ...(options.since !== undefined ? ["--since", options.since] : []), "--format", "json"]);
+  assert.equal(record.result!.exitCode, cli.status, cli.stderr);
+  assert.deepEqual(checkJson(record), JSON.parse(cli.stdout));
+  return record;
+}
+
+test("tui: changed check is the CLI's --changed slice for a changed source, an untracked source and a changed spec; the full report and the current analysis stay apart", async (t) => {
+  const other = "# flow other\n\n- trigger infrastructure.store.save\n- step infrastructure.store.nope\n";
+  const root = committedCheckout(t, { "keylang/flows/other.md": other });
+  const s = session(root, { cols: 120, rows: 36 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const analysis = s.app.state.analysis;
+  // The full check first: the other flow fails whatever git says.
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  const full = s.app.state.records.at(-1)!;
+  assert.equal(full.result!.exitCode, 1);
+  assert.equal(checkPayload(full).changed, null, "a full check reads no git");
+  const fullJson = checkJson(full);
+  // A clean tree: nothing touches a change, so every result is hidden and the code is 0.
+  const clean = await changedCheck(s, root);
+  const cleanSlice = checkPayload(clean).changed!;
+  assert.deepEqual([clean.result!.exitCode, checkPayload(clean).results.length], [0, 0]);
+  assert.deepEqual({ ...cleanSlice }, { since: "HEAD", unborn: false, files: [], deleted: [], shown: 0, hidden: checkPayload(full).results.length });
+  assert.deepEqual((clean.params as { changed?: boolean; since?: string }).changed, true);
+  assert.equal((clean.params as { since?: string }).since, undefined, "HEAD is the default ref");
+  // A changed source: the checkout flow steps into it; the other flow stays hidden.
+  const before = workTree(root);
+  writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {\n  return;\n}\n");
+  const source = await changedCheck(s, root);
+  const sourcePayload = checkPayload(source);
+  assert.deepEqual(sourcePayload.changed!.files, ["src/domain/order.ts"]);
+  assert.ok(sourcePayload.results.some((result) => result.file === "keylang/flows/checkout.md"));
+  assert.ok(sourcePayload.results.every((result) => result.file !== "keylang/flows/other.md"));
+  assert.equal(sourcePayload.changed!.shown + sourcePayload.changed!.hidden, checkPayload(full).results.length);
+  // A new untracked source that breaks the layers: K101 in the slice, code 1.
+  writeFileSync(join(root, "src/domain/leak.ts"), 'import { save } from "../infrastructure/store.ts";\nexport function leak(): void {\n  save();\n}\n');
+  const untracked = await changedCheck(s, root);
+  assert.equal(untracked.result!.exitCode, 1);
+  assert.ok(checkPayload(untracked).changed!.files.includes("src/domain/leak.ts"));
+  assert.ok(checkPayload(untracked).results.some((result) => result.code === "K101"));
+  // A changed spec: every finding of that file is in the slice.
+  writeFileSync(join(root, "keylang/flows/checkout.md"), `${CHECKOUT_FLOW}- step domain.order.gone\n`);
+  const spec = await changedCheck(s, root);
+  assert.ok(checkPayload(spec).results.some((result) => result.file === "keylang/flows/checkout.md" && result.verdict === "fail" && result.evidence.includes("domain.order.gone")));
+  // Strict and a chosen path combine with changed as in the CLI.
+  checkForm(s.app, s.send, { changed: true, strict: true, paths: "keylang/flows/checkout.md" });
+  await s.app.idle();
+  const narrow = s.app.state.records.at(-1)!;
+  const cliNarrow = cliCheck(root, ["keylang/flows/checkout.md", "--changed", "--strict", "--format", "json"]);
+  assert.equal(narrow.result!.exitCode, cliNarrow.status);
+  assert.deepEqual(checkJson(narrow), JSON.parse(cliNarrow.stdout));
+  // The disk and the pinned analysis are untouched; the full record keeps its report.
+  const edited = workTree(root);
+  assert.notDeepEqual(edited, before);
+  assert.equal(s.app.state.analysis, analysis);
+  assert.deepEqual(checkJson(full), fullJson);
+  // A second commit: `since` names an older ref, typed in the form.
+  gitRun(root, ["add", "."]);
+  gitRun(root, ["commit", "-q", "-m", "second"]);
+  const head = await changedCheck(s, root);
+  assert.equal(checkPayload(head).results.length, 0, "everything is committed");
+  const older = await changedCheck(s, root, { since: "HEAD~1" });
+  assert.equal(checkPayload(older).changed!.since, "HEAD~1");
+  assert.equal((older.params as { since?: string }).since, "HEAD~1");
+  assert.ok(checkPayload(older).changed!.files.includes("src/domain/leak.ts"));
+  assert.deepEqual(workTree(root), edited, "no check wrote a file");
+  // F6 names the slice: the ref, the changed files, and what the full report had besides.
+  s.send(KEY.f6);
+  const slice = checkPayload(older).changed!;
+  assert.match(s.text(), new RegExp(`changed since HEAD~1 · ${slice.files.length} changed file\\(s\\) · ${slice.shown} of ${slice.shown + slice.hidden} result\\(s\\) shown, ${slice.hidden} hidden`));
+  await esc(s.send);
+});
+
+test("tui: changed check keeps the step into a deleted module and treats a repository without commits as the CLI does", async (t) => {
+  const root = committedCheckout(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  rmSync(join(root, "src/domain/order.ts"));
+  const deleted = await changedCheck(s, root);
+  const payload = checkPayload(deleted);
+  assert.equal(deleted.result!.exitCode, 1);
+  assert.deepEqual(payload.changed!.deleted, ["domain.order"]);
+  assert.ok(payload.results.some((result) => result.code === "K001" && result.evidence.includes("domain.order.create")), JSON.stringify(payload.results));
+  s.send(KEY.f6);
+  assert.match(s.text(), /deleted module\(s\) kept in the slice: domain\.order/);
+  await esc(s.send);
+  // Before the first commit HEAD is the empty tree: every file is changed, no missing-ref error.
+  const unborn = checkoutRepo(t, { "src/domain/leak.ts": 'import { save } from "../infrastructure/store.ts";\nexport function leak(): void {\n  save();\n}\n' });
+  gitRun(unborn, ["init", "-q"]);
+  const u = session(unborn);
+  t.after(() => u.app.close());
+  await u.app.idle();
+  const fresh = await changedCheck(u, unborn);
+  assert.equal(fresh.status, "completed");
+  assert.equal(fresh.result!.exitCode, 1);
+  assert.equal(checkPayload(fresh).changed!.unborn, true);
+  assert.ok(checkPayload(fresh).results.some((result) => result.code === "K101"));
+  assert.equal(checkPayload(fresh).changed!.hidden, 0, "every file is changed");
+  gitRun(unborn, ["add", "."]);
+  const staged = await changedCheck(u, unborn);
+  assert.equal(checkPayload(staged).changed!.unborn, true);
+  u.send(KEY.f6);
+  assert.match(u.text(), /no commit yet: HEAD is the empty tree, every file is changed/);
+});
+
+test("tui: changed check without a repository or with an unknown ref fails with code 2 and the CLI's message; the session goes on; nothing is written", async (t) => {
+  const bare = checkoutRepo(t);
+  const s = session(bare);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = workTree(bare);
+  // A full check never needs git.
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  assert.deepEqual([s.app.state.records.at(-1)!.status, s.app.state.records.at(-1)!.result!.exitCode], ["completed", 0]);
+  checkForm(s.app, s.send, { changed: true });
+  await s.app.idle();
+  const noRepo = s.app.state.records.at(-1)!;
+  const cliNoRepo = cliCheck(bare, ["--changed"]);
+  assert.deepEqual([noRepo.status, noRepo.result!.exitCode, noRepo.result!.payload, cliNoRepo.status], ["failed", 2, null, 2]);
+  assert.match(noRepo.result!.messages[0]!.text, /^check --changed: git /);
+  assert.equal(`keylang: ${noRepo.result!.messages[0]!.text}\n`, cliNoRepo.stderr);
+  // The session goes on: the palette opens again and F6 names the failure.
+  s.send(KEY.f6);
+  assert.match(s.text(), /failed · code 2/);
+  await esc(s.send);
+  const root = committedCheckout(t);
+  const r = session(root);
+  t.after(() => r.app.close());
+  await r.app.idle();
+  const committed = workTree(root);
+  for (const ref of ["no-such-ref", "--output=leak.txt"]) {
+    checkForm(r.app, r.send, { changed: true, since: ref });
+    await r.app.idle();
+    const bad = r.app.state.records.at(-1)!;
+    const cliBad = cliCheck(root, ["--changed", `--since=${ref}`]);
+    assert.deepEqual([bad.status, bad.result!.exitCode, cliBad.status], ["failed", 2, 2], ref);
+    assert.equal(`keylang: ${bad.result!.messages[0]!.text}\n`, cliBad.stderr);
+    assert.equal(cliBad.stdout, "", "no fallback to a full report");
+  }
+  assert.match(r.app.state.records.at(-1)!.result!.messages[0]!.text, /`--output=leak\.txt` is not a git ref/);
+  assert.equal(existsSync(join(root, "leak.txt")), false, "an option-like ref never reaches git");
+  // An empty ref is refused in the form; typing after the failures still works.
+  checkForm(r.app, r.send, { changed: true, since: "" });
+  assert.equal(r.app.state.prompt?.kind, "full-check");
+  assert.match(r.app.state.message ?? "", /check: changed needs a git ref/);
+  await esc(r.send);
+  assert.deepEqual(workTree(bare), before);
+  assert.deepEqual(workTree(root), committed);
+});
+
+test("check operation: --since without --changed and a missing git binary are code 2 with the CLI's message, never an empty success", async (t) => {
+  const root = committedCheckout(t);
+  const lone = await runOperation({ kind: "check", root, paths: [], strict: false, since: "HEAD" });
+  const cliLone = cliCheck(root, ["--since", "HEAD"]);
+  assert.deepEqual([lone.status, lone.exitCode, cliLone.status], ["failed", 2, 2]);
+  assert.equal(`keylang: ${lone.messages[0]!.text}\n`, cliLone.stderr);
+  const path = process.env.PATH;
+  process.env.PATH = join(root, "no-bin");
+  let missing: OperationResult;
+  try {
+    missing = await runOperation({ kind: "check", root, paths: [], strict: false, changed: true });
+  } finally {
+    process.env.PATH = path;
+  }
+  const cliMissing = spawnSync(process.execPath, [BIN, "check", "--changed"], { cwd: root, encoding: "utf8", env: { ...process.env, PATH: join(root, "no-bin") } });
+  assert.deepEqual([missing.status, missing.exitCode, missing.payload, cliMissing.status], ["failed", 2, null, 2]);
+  assert.match(missing.messages[0]!.text, /^check --changed: git is not available/);
+  assert.equal(`keylang: ${missing.messages[0]!.text}\n`, cliMissing.stderr);
 });
 
 // ---------- init: set up a repository in the session (ticket 12) ----------

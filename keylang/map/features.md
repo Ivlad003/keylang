@@ -227,6 +227,24 @@
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
     - fn [ghostSuggestions](../../src/ghost.ts#L29) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null) → Promise<string[]>
       - calls features.agent-context.contextText, lang.ir.sectionNodes, lang.ir.walk, lang.parser.parse
+  - module [git-changes](../../src/git-changes.ts#L1)
+    - node external.node
+    - config base.config
+    - draft features.draft
+    - graph map.graph
+    - type [ChangedFiles](../../src/git-changes.ts#L15)
+    - fn [gitIn](../../src/git-changes.ts#L25) (root: string, label: string) → { run: (args: string[], input?: string) => SpawnSyncReturns<string>; git: (args: string[], input?: string) => string } <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L38) (ref: string, label: string) → void <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L44) (base: string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L46) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [gitChangedFiles](../../src/git-changes.ts#L52) (root: string, ref: string, label = "check --changed") → ChangedFiles
+      - calls features.git-changes.assertRef, features.git-changes.gitIn, features.git-changes.diffArgs, features.draft.deletedDiffPaths, features.draft.diffHunks, features.git-changes.untracked
+    - fn [gitChangedLines](../../src/git-changes.ts#L66) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+      - calls features.git-changes.assertRef, features.git-changes.gitIn, features.draft.diffHunks, features.git-changes.diffArgs, features.git-changes.untracked
+    - fn [changedPathSet](../../src/git-changes.ts#L75) (root: string, files: Iterable<string>, base: string) → Set<string>
+      - calls base.config.toPosix
+    - fn [deletedModuleIds](../../src/git-changes.ts#L85) (config: Config, files: readonly string[]) → string[]
+      - calls map.graph.placeFile
   - module [harness](../../src/harness.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

@@ -445,7 +445,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "init") return request.check ? "init check" : "init";
   if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
   if (request.kind === "wire") return request.check ? "wire check" : "wire write";
-  if (request.kind === "check") return request.strict ? "check --strict" : "check";
+  if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -476,7 +476,12 @@ export function recordSummary(record: OperationRecord): string {
 
 /** The requested check options as the F6 list names them: `keylang · strict · static shape`. */
 function checkParams(request: CheckRequest): string {
-  return [request.paths.length > 0 ? request.paths.join(" ") : "spec directory", request.strict ? "strict" : "not strict", `static ${request.static ?? "from config"}`].join(" · ");
+  return [
+    request.paths.length > 0 ? request.paths.join(" ") : "spec directory",
+    request.strict ? "strict" : "not strict",
+    `static ${request.static ?? "from config"}`,
+    ...(request.changed === true ? [`changed since ${request.since ?? "HEAD"}`] : []),
+  ].join(" · ");
 }
 
 /** `0 fail, 2 unverified, 5 ok`: the CLI's summary line. */
@@ -751,6 +756,13 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     const selected = state.results.scrollReport ? state.results.gap : -1;
     rows.push({ text: `Check · read-only, nothing written · saved files · ${options.paths.join(" ")}`, style: { ...THEME.panel, bold: true } });
     rows.push({ text: `strict ${options.strict ? "on" : "off"} · static ${options.static} (${from}) · snapshot ${payload.snapshotId === null ? "none" : payload.snapshotId.slice(0, 8)}`, style: { ...THEME.panel, fg: 243 } });
+    // The git slice is always named: its ref, what git reported, and what the full report had besides.
+    if (payload.changed !== null) {
+      const slice = payload.changed;
+      rows.push({ text: `changed since ${slice.since} · ${slice.files.length} changed file(s) · ${slice.shown} of ${slice.shown + slice.hidden} result(s) shown, ${slice.hidden} hidden`, style: { ...THEME.panel, fg: 179 } });
+      if (slice.unborn) rows.push({ text: "  no commit yet: HEAD is the empty tree, every file is changed", style: { ...THEME.panel, fg: 243 } });
+      if (slice.deleted.length > 0) rows.push({ text: `  deleted module(s) kept in the slice: ${slice.deleted.join(", ")}`, style: { ...THEME.panel, fg: 243 } });
+    } else rows.push({ text: "scope: every finding of the paths (not changed)", style: { ...THEME.panel, fg: 243 } });
     rows.push({ text: `${checkOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
     // Code 0 is not proof: unverified verdicts stay visible as incomplete evidence.
     if (!options.strict && payload.counts.unverified > 0) rows.push({ text: `  incomplete: ${payload.counts.unverified} unverified, not proven · strict would make it code 1`, style: { ...THEME.panel, fg: 179 } });

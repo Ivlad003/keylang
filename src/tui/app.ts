@@ -2229,7 +2229,7 @@ export class App {
 
   /** The check form: the spec directory by default, not strict, the static mode of keylang.json. */
   private openCheckPrompt(): void {
-    this.state.prompt = { kind: "full-check", text: this.specDir(), items: [], ids: ["strict", "static", "run"], index: 2, checkOptions: { strict: false, static: null } };
+    this.state.prompt = { kind: "full-check", text: this.specDir(), items: [], ids: ["strict", "static", "changed", "since", "run"], index: 4, checkOptions: { strict: false, static: null, changed: false, since: "HEAD" } };
     this.refreshCheckPrompt();
   }
 
@@ -2255,6 +2255,8 @@ export class App {
     prompt.items = [
       options.strict ? "strict: on · an unverified verdict fails (code 1)" : "strict: off · unverified stays visible; code 0 unless something fails",
       options.static === null ? `static: ${effective}, ${configured === undefined ? "the default" : "from keylang.json check.static"}` : `static: ${options.static}, override of keylang.json`,
+      options.changed ? "changed: on · the full analysis, then only findings touching files git reports changed" : "changed: off · every finding of the paths; git is not read",
+      `since: ${options.since}${prompt.ids?.[prompt.index] === "since" ? "▏" : ""}${options.changed ? " · the git ref the working tree is compared with" : " · used with changed on"}`,
       "Run the check (writes nothing)",
     ];
     const paths = this.checkPaths();
@@ -2271,7 +2273,7 @@ export class App {
     }
     const dirty = new Set(this.dirtyInputs());
     const unsaved = files.filter((file) => dirty.has(file)).length + (dirty.has(CONFIG_FILE) ? 1 : 0);
-    prompt.note = `${files.length} spec file(s)${unsaved > 0 ? ` · ${unsaved} unsaved, saved first` : ""} · ←→ change the selected option`;
+    prompt.note = `${files.length} spec file(s)${unsaved > 0 ? ` · ${unsaved} unsaved, saved first` : ""} · ${prompt.ids?.[prompt.index] === "since" ? "type the git ref" : "←→ change the selected option"}`;
   }
 
   /** ←→ on an option of the check form: strict flips; the static mode cycles config → behavior → shape. */
@@ -2280,6 +2282,7 @@ export class App {
     const options = prompt?.checkOptions;
     if (!prompt || !options) return;
     if (prompt.ids?.[prompt.index] === "strict") options.strict = !options.strict;
+    if (prompt.ids?.[prompt.index] === "changed") options.changed = !options.changed;
     if (prompt.ids?.[prompt.index] === "static") {
       const modes: (StaticMode | null)[] = [null, ...STATIC_MODES];
       options.static = modes[(modes.indexOf(options.static) + delta + modes.length) % modes.length]!;
@@ -2289,14 +2292,21 @@ export class App {
 
   /** Enter in the check form, on any row: the typed paths with the chosen options run as the session's operation. */
   private submitCheck(): void {
-    const options = this.state.prompt?.checkOptions ?? { strict: false, static: null };
+    const options = this.state.prompt?.checkOptions ?? { strict: false, static: null, changed: false, since: "HEAD" };
     const paths = this.checkPaths();
     if (!Array.isArray(paths)) {
       this.state.message = `check: ${paths.error}`;
       return;
     }
+    const since = options.since.trim();
+    if (options.changed && since === "") {
+      this.state.message = "check: changed needs a git ref (HEAD by default)";
+      return;
+    }
     this.state.prompt = null;
-    this.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}) });
+    // The ref goes with changed only, as `--since` needs `--changed`; HEAD is the default and is not repeated.
+    const slice = options.changed ? { changed: true, ...(since !== "HEAD" ? { since } : {}) } : {};
+    this.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}), ...slice });
   }
 
   // ---------- new specification ----------
@@ -2822,7 +2832,9 @@ export class App {
     const prompt = this.state.prompt!;
     // The baseline form is a choice of two, not a query.
     if (prompt.kind === "baseline") return;
-    prompt.text += text;
+    // The since row of the check form takes the git ref; every other row types the paths.
+    if (prompt.kind === "full-check" && prompt.checkOptions && prompt.ids?.[prompt.index] === "since") prompt.checkOptions.since += text;
+    else prompt.text += text;
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2853,7 +2865,8 @@ export class App {
       return;
     }
     if (event.name === "backspace") {
-      prompt.text = graphemes(prompt.text).slice(0, -1).join("");
+      if (prompt.kind === "full-check" && prompt.checkOptions && prompt.ids?.[prompt.index] === "since") prompt.checkOptions.since = graphemes(prompt.checkOptions.since).slice(0, -1).join("");
+      else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2871,6 +2884,7 @@ export class App {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
+      if (prompt.kind === "full-check") this.refreshCheckPrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();

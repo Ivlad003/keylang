@@ -118,7 +118,7 @@ export interface Prompt {
    * `init`: the harness selection as in `agents` and the mode (`ids` are `write` / `check`; `notes` say what each does);
    * `fmt`: the files and directories to format, relative to the root and separated by spaces, and the mode (`ids` are `write` / `check`);
    * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
-   * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one).
+   * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one; on the `since` row typing edits the git ref instead of the paths).
    */
   kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check";
   text: string;
@@ -135,8 +135,8 @@ export interface Prompt {
   index: number;
   /** `new-spec`: the field being typed and the fields already chosen. Esc at any field creates nothing. */
   form?: NewSpecForm;
-  /** `full-check`: strict, and the static mode (null: what keylang.json says, then `behavior`). */
-  checkOptions?: { strict: boolean; static: StaticMode | null };
+  /** `full-check`: strict, the static mode (null: what keylang.json says, then `behavior`), and the git slice: `changed` with its ref (`since`, `HEAD` by default). */
+  checkOptions?: { strict: boolean; static: StaticMode | null; changed: boolean; since: string };
 }
 
 /** The kinds of a new specification: its first text follows the kind (design §2.8). */

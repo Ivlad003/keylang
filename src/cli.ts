@@ -1,6 +1,5 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
@@ -13,15 +12,15 @@ import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { collectMdFiles } from "./files.ts";
 import { parse } from "./parser.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node } from "./ir.ts";
-import { analyze, findRoot, within } from "./analyze.ts";
+import { analyze, findRoot } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
-import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
+import type { CheckResult } from "./check-results.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { tracePlan } from "./trace-plan.ts";
-import { changedFlows, codeToSpec, deletedDiffPaths, diffHunks, draftFlow, draftRules, withFlow, withRules, type ChangedLines, type FlowDraft } from "./draft.ts";
-import { placeFile } from "./graph.ts";
+import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
+import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
 import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 import { safeWriteAll } from "./safe-write.ts";
@@ -560,7 +559,7 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
         for (const top of sectionNodes(section)) walk(top, (node) => node.refs.forEach((ref) => named.add(ref.target)));
       }
     }
-    const changes = changedFlows(analysis.snapshot, gitChanges(root, opts.since), named);
+    const changes = changedFlows(analysis.snapshot, gitChangedLines(root, opts.since), named);
     if (changes.named.length > 0) process.stderr.write(`keylang: changed and already in flows (review those): ${changes.named.join(", ")}\n`);
     if (changes.drafts.length === 0) {
       process.stderr.write(`keylang: no fn outside the flows changed since ${opts.since}; nothing proposed\n`);
@@ -854,47 +853,6 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** Git paths are relative to `root`; check prints spec paths relative to `cwd`. Both forms match. */
-function changedPathSet(root: string, files: ReadonlySet<string>, cwd: string): Set<string> {
-  const changed = new Set<string>();
-  for (const file of files) {
-    changed.add(file);
-    changed.add(toPosix(relative(cwd, join(root, file))));
-  }
-  return changed;
-}
-
-/** Files changed since `ref` in the working tree, plus files git does not track yet. `deleted` are paths removed versus `ref`. Paths are relative to `root`. */
-function gitChangedFiles(root: string, ref: string): { paths: Set<string>; deleted: string[] } {
-  const run = (args: string[], input?: string) => spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, input, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  const git = (args: string[], input?: string): string => {
-    const out = run(args, input);
-    if (out.error) throw new Error(`check --changed: git is not available (${out.error.message})`);
-    if (out.status !== 0) throw new Error(`check --changed: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
-    return out.stdout;
-  };
-  // Before the first commit there is no HEAD and every file is new: compare with the empty tree.
-  const unborn = ref === "HEAD" && run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0;
-  const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"], "").trim() : ref;
-  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base, "--"]);
-  const deleted = deletedDiffPaths(diff);
-  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
-  for (const file of git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0")) if (file !== "") paths.add(file);
-  return { paths, deleted };
-}
-
-/** Module id a deleted source file had, so a flow step that named it is still "changed". */
-function deletedModuleIds(config: Config, files: readonly string[]): string[] {
-  const ids: string[] = [];
-  for (const file of files) {
-    const placed = placeFile(config, file);
-    if (placed === null) continue;
-    const id = [placed.layer, ...placed.segments].filter((part) => part !== "").join(".");
-    if (id !== "") ids.push(id);
-  }
-  return ids;
-}
-
 async function cmdMap(dir: string, checkOnly: boolean): Promise<number> {
   const root = resolve(process.cwd(), dir);
   // `map --check` is a printer over the shared read-only operation.
@@ -992,39 +950,22 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
     return explainEdge(paths, analyzed.snapshot);
   }
   const root = findRoot(cwd);
-  if (!opts.changed) {
-    const result = await runOperation({ kind: "check", root, paths, base: cwd, strict: opts.strict, ...(staticMode ? { static: staticMode } : {}) });
-    if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
-    const { payload } = result;
-    for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
-    writeCheck(opts.format, payload);
-    process.stderr.write(`${checkSummary(payload.counts)}\n`);
-    return result.exitCode ?? 2;
-  }
-  // `--changed` narrows the report to a git slice; it runs here until it becomes an operation of its own.
-  const config = loadConfig(root);
-  if (paths.length === 0 && !existsSync(join(root, config.dir))) throw new Error(`no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
-  const specs = paths.length > 0 ? paths.map((p) => resolve(cwd, p)) : [join(root, config.dir)];
-  for (const spec of specs) if (!existsSync(spec)) throw new Error(`${relative(cwd, spec) || spec}: not found`);
-  // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
-  const inRepo = specs.every((spec) => within(spec, join(root, config.dir)));
-  const analyzed = await analyze({
+  const result = await runOperation({
+    kind: "check",
     root,
-    specs,
-    display: (abs) => toPosix(relative(cwd, abs)),
+    paths,
+    base: cwd,
+    strict: opts.strict,
     ...(staticMode ? { static: staticMode } : {}),
-    ...(inRepo ? {} : { withoutCode: true }),
+    ...(opts.changed ? { changed: true } : {}),
+    ...(opts.since !== undefined ? { since: opts.since } : {}),
   });
-  for (const path of analyzed.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
-  const gitChanged = gitChangedFiles(root, opts.since ?? "HEAD");
-  const changed = changedPathSet(root, gitChanged.paths, cwd);
-  const deleted = deletedModuleIds(config, gitChanged.deleted);
-  const filtered = filterChanged({ docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} }, changed, deleted);
-  const snapshotId = analyzed.snapshot?.snapshotId ?? null;
-  const report = checkReport(filtered.verdicts, snapshotId, filtered.diagnostics);
-  writeCheck(opts.format, { ...report, snapshotId, coverage: analyzed.snapshot?.coverage ?? [] });
-  process.stderr.write(`${checkSummary(report.counts)}\n`);
-  return checkExitCode(report.counts, opts.strict);
+  if (result.payload === null) throw new Error(result.messages[0]?.text ?? "check failed");
+  const { payload } = result;
+  for (const path of payload.notSpecs) process.stderr.write(`keylang: ${checkSkipNote(path)}\n`);
+  writeCheck(opts.format, payload);
+  process.stderr.write(`${checkSummary(payload.counts)}\n`);
+  return result.exitCode ?? 2;
 }
 
 function explainEdge(ids: string[], snapshot: AnalysisSnapshot | null): number {
@@ -1181,19 +1122,3 @@ function printNode(n: Node, depth: number): void {
   for (const c of n.children) printNode(c, depth + 1);
 }
 
-/** The lines changed since `ref` in the working tree, and the files git does not track yet, relative to `root`. */
-function gitChanges(root: string, ref: string): ChangedLines {
-  const git = (args: string[]): string => {
-    // Paths as they are, not C-quoted octal escapes, whatever the user's `core.quotePath`.
-    const out = spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-    if (out.error) throw new Error(`code-to-spec --since: git is not available (${out.error.message})`);
-    if (out.status !== 0) throw new Error(`code-to-spec --since: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
-    return out.stdout;
-  };
-  // `--relative`: paths from `root` and only files under it, whatever the repository's top level.
-  // `--no-renames`: a moved file is all new lines (its fns have new IDs); fixed prefixes, whatever `diff.mnemonicPrefix` says.
-  const diff = git(["diff", "--relative", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", ref, "--"]);
-  const changed: Map<string, readonly (readonly [number, number])[] | "all"> = diffHunks(diff);
-  for (const file of git(["ls-files", "-z", "--others", "--exclude-standard"]).split("\0")) if (file !== "") changed.set(file, "all");
-  return changed;
-}
