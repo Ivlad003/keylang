@@ -6,7 +6,7 @@ import { contextPack } from "../agent-context.ts";
 import { CONFIG_FILE } from "../config.ts";
 import { explainCode } from "../explain.ts";
 import { explanationOf } from "../explanations.ts";
-import { ACTIONS, catalog, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { ACTIONS, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
 import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
@@ -16,7 +16,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { WIRE_OUT, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type WirePayload } from "../operations.ts";
+import { WIRE_OUT, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type WirePayload } from "../operations.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -437,6 +437,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "wire") return `${label} · ${record.params.check ? "check" : "write"} · ${record.params.out ?? WIRE_OUT}`;
   if (record.params.kind === "check") return `${label} · ${checkParams(record.params)}`;
   if (record.params.kind === "explain-edge") return `${label} · ${record.params.from} ↔ ${record.params.to}`;
+  if (record.params.kind === "export") return `${label} · ${exportFormat(record.params)} · ${record.params.path}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -448,6 +449,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "fmt") return request.check ? "fmt check" : "fmt write";
   if (request.kind === "wire") return request.check ? "wire check" : "wire write";
   if (request.kind === "explain-edge") return `check --explain-edge ${request.from} ${request.to}`;
+  if (request.kind === "export") return `export ${exportFormat(request)} ${request.path}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
@@ -475,6 +477,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "check" && result.payload !== null) return `${checkOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain-edge" && result.payload !== null) return `${edgeOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "export" && result.payload !== null) return `${exportOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   return recordStatus(record);
 }
 
@@ -491,6 +494,19 @@ function checkParams(request: CheckRequest): string {
 /** `0 fail, 2 unverified, 5 ok`: the CLI's summary line. */
 function checkOutcome(payload: CheckPayload): string {
   return `${payload.counts.fail} fail, ${payload.counts.unverified} unverified, ${payload.counts.ok} ok`;
+}
+
+/** The format an export request writes: an explained edge has only the human lines. */
+function exportFormat(request: ExportRequest): string {
+  return request.source.kind === "check" ? request.source.format : "human";
+}
+
+/** `written`, `replaced`, `refused, nothing written`, `write failed`, `cancelled, nothing written`. */
+function exportOutcome(status: OperationRecord["status"], payload: ExportPayload): string {
+  if (payload.written) return payload.existed ? "replaced" : "written";
+  if (payload.refused.length > 0) return "refused, nothing written";
+  if (payload.error !== null) return "write failed";
+  return `${status}, nothing written`;
 }
 
 /** `2 edge(s)`, `no edge, coverage complete`, `no confirmed edge, 1 unresolved`: what the snapshot says between the two ids. */
@@ -817,6 +833,15 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       if (candidates.length > 0) rows.push({ text: `      ambiguous: one of ${candidates.join(", ")}; no single target is confirmed`, style: { ...THEME.panel, fg: 179 } });
     });
     if (items.length > 0) rows.push({ text: "  Tab, then Enter opens the evidence in the code", style: THEME.hint });
+  } else if (result?.kind === "export" && result.payload !== null) {
+    // One file: the report it came from, the format, and what happened to the target.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    const from = record.params.kind === "export" ? record.params.source.kind : payload.source;
+    rows.push({ text: `Export · ${payload.format} of the ${from === "check" ? "check" : "explain-edge"} report · ${payload.path} · ${payload.bytes} bytes`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${exportOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    rows.push({ text: "  the report as it ran; nothing was checked again", style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "wire" && result.payload !== null) {
     // The generated file with what happened to it; the code itself opens read-only on Enter.
     const { payload } = result;
@@ -951,6 +976,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const record = records[results.index];
   const gaps = record?.result?.kind === "feature" && (record.result.payload?.report.gaps.length ?? 0) > 0;
   const checked = (record?.result?.kind === "check" && (record.result.payload?.results.length ?? 0) > 0) || (record?.result?.kind === "explain-edge" && record.result.payload !== null && edgeItems(record.result.payload).length > 0);
+  const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const hint = analysis
     ? " Enter open · Tab findings · Esc back "
@@ -962,9 +988,11 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
           : " Enter rerun · Tab gaps · Esc back "
         : checked
           ? results.scrollReport
-            ? ` Enter open ${record?.kind === "explain-edge" ? "evidence" : "finding"} · Tab entries · Esc back `
-            : ` Enter rerun · Tab ${record?.kind === "explain-edge" ? "evidence" : "findings"} · Esc back `
-          : " Enter rerun · Esc back ";
+            ? ` Enter open ${record?.kind === "explain-edge" ? "evidence" : "finding"} · Tab entries · e export · Esc back `
+            : ` Enter rerun · Tab ${record?.kind === "explain-edge" ? "evidence" : "findings"} · e export · Esc back `
+          : exportable
+            ? " Enter rerun · e export · Esc back "
+            : " Enter rerun · Esc back ";
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
   grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
@@ -1133,12 +1161,12 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(typed), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -1152,7 +1180,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

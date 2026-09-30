@@ -67,6 +67,25 @@
     - fn [ruleHits](../../src/changed.ts#L99) (spec: SpecIR) → RuleHit[] <!-- internal -->
     - fn [flowLinesTouching](../../src/changed.ts#L116) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       - calls lang.spec-ir.walkFlow
+  - module [check-format](../../src/check-format.ts#L1)
+    - check-results features.check-results
+    - explain features.explain
+    - snapshot map.snapshot
+    - type [CheckFormat](../../src/check-format.ts#L11) = (typeof CHECK_FORMATS)[number]
+    - type [CheckReportData](../../src/check-format.ts#L14)
+    - fn [isCheckFormat](../../src/check-format.ts#L21) (name: string) → name is CheckFormat
+    - fn [checkReportText](../../src/check-format.ts#L26) (format: CheckFormat, report: CheckReportData) → string
+      - calls features.check-format.githubText, features.check-format.sarifLog
+    - fn [githubText](../../src/check-format.ts#L33) (results: readonly CheckResult[]) → string <!-- internal -->
+      - calls features.check-format.githubProperty, features.check-format.ruleOf, features.check-format.githubData
+    - fn [sarifLog](../../src/check-format.ts#L43) (report: CheckReportData) → unknown <!-- internal -->
+      - calls features.check-format.ruleText, features.check-format.ruleOf
+    - fn [ruleOf](../../src/check-format.ts#L78) (result: CheckResult) → string <!-- internal -->
+    - fn [ruleText](../../src/check-format.ts#L90) (id: string) → string <!-- internal -->
+      - calls features.explain.explainCode
+    - fn [githubData](../../src/check-format.ts#L96) (text: string) → string <!-- internal -->
+    - fn [githubProperty](../../src/check-format.ts#L100) (text: string) → string <!-- internal -->
+      - calls features.check-format.githubData
   - module [check-results](../../src/check-results.ts#L1)
     - node external.node
     - assess check.assess

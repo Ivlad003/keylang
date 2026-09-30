@@ -87,7 +87,7 @@
     - analyze [map.analyze](map.md#map.analyze)
     - explain [features.explain](features.md#features.explain)
     - explain-node [features.explain-node](features.md#features.explain-node)
-    - check-results [features.check-results](features.md#features.check-results)
+    - check-format [features.check-format](features.md#features.check-format)
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explanations [map.explanations](map.md#map.explanations)
     - trace-plan [map.trace-plan](map.md#map.trace-plan)
@@ -190,29 +190,16 @@
     - fn [cmdParse](../../src/cli.ts#L922) (paths: string[], json: boolean) → number <!-- internal -->
       <a id="cli.cli.cmdParse"></a>
       - calls [cli.cli.assertConfigFormat](cli.md#cli.cli.assertConfigFormat), [cli.cli.keylangFiles](cli.md#cli.cli.keylangFiles), [lang.parser.parse](lang.md#lang.parser.parse), [cli.cli.printTree](cli.md#cli.cli.printTree), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L934) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L932) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
-      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [cli.cli.writeCheck](cli.md#cli.cli.writeCheck), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary)
-    - fn [writeCheck](../../src/cli.ts#L979) (format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">) → void <!-- internal -->
-      <a id="cli.cli.writeCheck"></a><br>Shows one check report in a format; the report, its verdicts and its code do not depend on the format.
-      - calls [cli.cli.githubProperty](cli.md#cli.cli.githubProperty), [cli.cli.ruleOf](cli.md#cli.cli.ruleOf), [cli.cli.githubData](cli.md#cli.cli.githubData), [cli.cli.ruleText](cli.md#cli.cli.ruleText)
-    - fn [ruleOf](../../src/cli.ts#L1031) (result: CheckResult) → string <!-- internal -->
-      <a id="cli.cli.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
-    - fn [ruleText](../../src/cli.ts#L1043) (id: string) → string <!-- internal -->
-      <a id="cli.cli.ruleText"></a>
-      - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [githubData](../../src/cli.ts#L1049) (text: string) → string <!-- internal -->
-      <a id="cli.cli.githubData"></a>
-    - fn [githubProperty](../../src/cli.ts#L1053) (text: string) → string <!-- internal -->
-      <a id="cli.cli.githubProperty"></a>
-      - calls [cli.cli.githubData](cli.md#cli.cli.githubData)
-    - fn [cmdFmt](../../src/cli.ts#L1064) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary)
+    - fn [cmdFmt](../../src/cli.ts#L983) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [printTree](../../src/cli.ts#L1078) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L997) (doc: Document) → void <!-- internal -->
       <a id="cli.cli.printTree"></a>
       - calls [cli.cli.printNode](cli.md#cli.cli.printNode)
-    - fn [printNode](../../src/cli.ts#L1086) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1005) (n: Node, depth: number) → void <!-- internal -->
       <a id="cli.cli.printNode"></a>
       - calls [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
   - module [index](../../src/index.ts#L1)

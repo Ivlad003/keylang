@@ -61,7 +61,7 @@
     - analyze map.analyze
     - explain features.explain
     - explain-node features.explain-node
-    - check-results features.check-results
+    - check-format features.check-format
     - explain-llm features.explain-llm
     - explanations map.explanations
     - trace-plan map.trace-plan
@@ -134,21 +134,13 @@
       - calls map.analyze.findRoot, base.config.assertFormatOnly
     - fn [cmdParse](../../src/cli.ts#L922) (paths: string[], json: boolean) → number <!-- internal -->
       - calls cli.cli.assertConfigFormat, cli.cli.keylangFiles, lang.parser.parse, cli.cli.printTree, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L934) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.operations.checkSkipNote, cli.cli.writeCheck, operations.operations.checkSummary
-    - fn [writeCheck](../../src/cli.ts#L979) (format: string, report: Pick<CheckPayload, "lines" | "results" | "snapshotId" | "coverage">) → void <!-- internal -->
-      - calls cli.cli.githubProperty, cli.cli.ruleOf, cli.cli.githubData, cli.cli.ruleText
-    - fn [ruleOf](../../src/cli.ts#L1031) (result: CheckResult) → string <!-- internal -->
-    - fn [ruleText](../../src/cli.ts#L1043) (id: string) → string <!-- internal -->
-      - calls features.explain.explainCode
-    - fn [githubData](../../src/cli.ts#L1049) (text: string) → string <!-- internal -->
-    - fn [githubProperty](../../src/cli.ts#L1053) (text: string) → string <!-- internal -->
-      - calls cli.cli.githubData
-    - fn [cmdFmt](../../src/cli.ts#L1064) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L932) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+      - calls features.check-format.isCheckFormat, map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.operations.checkSkipNote, features.check-format.checkReportText, operations.operations.checkSummary
+    - fn [cmdFmt](../../src/cli.ts#L983) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot
-    - fn [printTree](../../src/cli.ts#L1078) (doc: Document) → void <!-- internal -->
+    - fn [printTree](../../src/cli.ts#L997) (doc: Document) → void <!-- internal -->
       - calls cli.cli.printNode
-    - fn [printNode](../../src/cli.ts#L1086) (n: Node, depth: number) → void <!-- internal -->
+    - fn [printNode](../../src/cli.ts#L1005) (n: Node, depth: number) → void <!-- internal -->
       - calls lang.ir.kindLabel
   - module [index](../../src/index.ts#L1)
     - diag base.diag

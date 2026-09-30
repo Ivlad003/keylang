@@ -18,7 +18,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
 import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATIC_MODES, toPosix, type StaticMode } from "../config.ts";
@@ -38,11 +38,12 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
-import { FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { CHECK_FORMATS, type CheckFormat } from "../check-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
-import { actionLabel, catalog, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, catalog, exportRecord, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
@@ -2359,6 +2360,132 @@ export class App {
     this.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from, to });
   }
 
+  // ---------- export ----------
+
+  /**
+   * The export form of the report `exportRecord` picks (design §2.6): the
+   * format, the path (a default per format under `.keylang/export/`) and the
+   * target as it is now. Nothing is written before Save; Esc writes nothing.
+   */
+  private openExportPrompt(): void {
+    if (this.state.activeOperation !== null) {
+      this.state.message = "export: an operation is already running";
+      return;
+    }
+    const found = exportRecord(this.state);
+    if ("reason" in found) {
+      this.state.message = `export: ${found.reason}`;
+      return;
+    }
+    const { record } = found;
+    const formats: readonly CheckFormat[] = record.kind === "check" ? CHECK_FORMATS : ["human"];
+    const format: CheckFormat = record.kind === "check" ? "json" : "human";
+    this.state.prompt = {
+      kind: "export",
+      text: defaultExportPath(record.kind, format),
+      items: [],
+      ids: ["format", "path", "save"],
+      index: 2,
+      exportForm: { record: record.id, formats, format, custom: false, expect: null, problem: null, bytes: this.exportBytes(record, format) },
+    };
+    this.refreshExportPrompt();
+  }
+
+  /** The bytes of the report in a format: exactly what the CLI prints, from the record's payload. */
+  private exportBytes(record: OperationRecord, format: CheckFormat): number {
+    const source = exportSourceOf(record, format);
+    return source === null ? 0 : Buffer.byteLength(exportText(source), "utf8");
+  }
+
+  /** Why the typed target cannot receive the export now, or null. A dirty buffer of it is never written under. */
+  private exportProblem(path: string): string | null {
+    if (path === "") return "type the target path, relative to the root";
+    let problem: string | null;
+    try {
+      problem = exportTargetProblem(this.state.root, path);
+    } catch (error) {
+      problem = errorText(error);
+    }
+    if (problem !== null) return problem;
+    const buffer = this.state.buffers.get(path);
+    return buffer && isDirty(buffer) ? "open with unsaved edits: save or undo them first; an export never writes under them" : null;
+  }
+
+  /** The rows of the form: the report (and whether it is outdated), the target as it is now, and what Save writes. Reading only. */
+  private refreshExportPrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.exportForm;
+    if (prompt?.kind !== "export" || !form) return;
+    const record = this.state.records.find((candidate) => candidate.id === form.record);
+    const path = prompt.text.trim();
+    prompt.items = [
+      `format: ${form.format}${form.formats.length > 1 ? ` · ←→ ${form.formats.join(" / ")}` : " · the only output of an explained edge"}`,
+      `path: ${prompt.text}▏`,
+      `Save ${path === "" ? "…" : path} (writes this one file)`,
+    ];
+    form.problem = this.exportProblem(path);
+    let target: string;
+    if (form.problem !== null) {
+      form.expect = null;
+      target = `refused: ${form.problem}`;
+    } else {
+      // What the form shows is what Save expects: a change after this is a conflict.
+      form.expect = readText(resolve(this.state.root, path));
+      const parent = dirname(path);
+      target =
+        form.expect !== null
+          ? `exists, ${Buffer.byteLength(form.expect, "utf8")} bytes: replaced on Save`
+          : `new file${parent !== "." && !existsSync(resolve(this.state.root, parent)) ? ` · creates ${parent}/` : ""}`;
+    }
+    prompt.details = [
+      record ? `report #${record.id}: ${operationLabel(record.params)} · ${recordSummary(record)}` : "the report is gone",
+      ...(record?.outdated != null ? [`outdated: ${record.outdated} · saved as it ran; nothing is checked again`] : []),
+      `target: ${path === "" ? "—" : path} · ${target}`,
+      `${form.bytes} bytes of ${form.format}: the CLI's stdout, no ANSI, no status lines`,
+    ];
+    prompt.note = form.problem ?? "Enter saves · ←→ format · Esc writes nothing";
+  }
+
+  /** ←→ in the export form: the next format; an untouched default path follows it. */
+  private changeExportFormat(delta: 1 | -1): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.exportForm;
+    if (!prompt || !form) return;
+    const record = this.state.records.find((candidate) => candidate.id === form.record);
+    form.format = form.formats[(form.formats.indexOf(form.format) + delta + form.formats.length) % form.formats.length]!;
+    if (!form.custom && record) prompt.text = defaultExportPath(record.kind, form.format);
+    if (record) form.bytes = this.exportBytes(record, form.format);
+    this.refreshExportPrompt();
+  }
+
+  /**
+   * Enter in the export form, on any row: the report as it ran goes to the
+   * shown target through the file protocol. A refusal keeps the form; the
+   * target is expected as the form last showed it.
+   */
+  private submitExport(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.exportForm;
+    if (prompt?.kind !== "export" || !form) return;
+    const record = this.state.records.find((candidate) => candidate.id === form.record);
+    const source = record ? exportSourceOf(record, form.format) : null;
+    if (!record || source === null) {
+      this.state.prompt = null;
+      this.state.message = "export: the report is gone";
+      return;
+    }
+    const path = prompt.text.trim();
+    const problem = this.exportProblem(path);
+    if (problem !== null || form.problem !== null) {
+      // A target that became writable since the form showed a refusal is shown again first.
+      this.refreshExportPrompt();
+      this.state.message = problem === null ? "export: the target changed; check the form and press Enter again" : `export: ${problem}`;
+      return;
+    }
+    this.state.prompt = null;
+    this.startOperation("export", { kind: "export", root: this.state.root, path, expect: form.expect, source });
+  }
+
   // ---------- new specification ----------
 
   /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
@@ -2550,6 +2677,11 @@ export class App {
       this.state.message = "this operation is still running";
       return;
     }
+    // An export was made from the target as its form showed it: a new one shows the target again first.
+    if (record.params.kind === "export") {
+      this.state.message = "export: select the report and press e: the form shows the target again before Save";
+      return;
+    }
     // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
     if (record.params.kind === "doctor") return this.startOperation(record.action, record.params);
     return this.requestOperation(record.action, record.params);
@@ -2605,6 +2737,8 @@ export class App {
         return this.closeResults();
       case "x":
         return this.cancelOperation();
+      case "e":
+        return this.openExportPrompt();
       case "q":
         return this.quit();
       case "?":
@@ -2890,6 +3024,7 @@ export class App {
       const field = prompt.ids?.[prompt.index];
       if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] += text;
     } else prompt.text += text;
+    if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2901,6 +3036,7 @@ export class App {
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
+    if (prompt.kind === "export") this.refreshExportPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -2926,6 +3062,7 @@ export class App {
       else if (prompt.kind === "explain-edge") {
         if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] = graphemes(prompt.edge[field]).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
+      if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
@@ -2937,15 +3074,18 @@ export class App {
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
+      if (prompt.kind === "export") this.refreshExportPrompt();
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge") && prompt.items.length > 0) {
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
+      if (prompt.kind === "export") this.refreshExportPrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -2956,6 +3096,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
+    if (event.name === "enter" && prompt.kind === "export") return this.submitExport();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -3030,6 +3171,8 @@ export class App {
         return this.openCheckPrompt();
       case "explain-edge":
         return this.openEdgePrompt();
+      case "export":
+        return this.openExportPrompt();
       case "map-check":
         return this.requestOperation("map-check", { kind: "map-check", root: this.state.root });
       case "map":
@@ -3146,6 +3289,23 @@ export class App {
     this.state.selection = null;
     this.merges.start(buffer.path, "text-to-spec", lines, proposed, null, null);
   }
+}
+
+/** Where an export goes unless a path is typed: `.keylang/export/check.json`, `.keylang/export/edge.txt`. */
+function defaultExportPath(kind: OperationRecord["kind"], format: CheckFormat): string {
+  const extension: Record<CheckFormat, string> = { human: "txt", json: "json", sarif: "sarif", github: "github.txt" };
+  return `.keylang/export/${kind === "explain-edge" ? "edge" : "check"}.${extension[format]}`;
+}
+
+/** The typed report of a finished record in a format, or null when it has none. */
+function exportSourceOf(record: OperationRecord, format: CheckFormat): ExportSource | null {
+  const result = record.result;
+  if (result?.kind === "check" && result.payload !== null) {
+    const { results, snapshotId, coverage, lines } = result.payload;
+    return { kind: "check", format, report: { results, snapshotId, coverage, lines } };
+  }
+  if (result?.kind === "explain-edge" && result.payload !== null) return { kind: "explain-edge", lines: result.payload.lines };
+  return null;
 }
 
 function forNodes(doc: Document, visit: (node: Node) => void): void {

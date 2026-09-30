@@ -5,7 +5,7 @@
 // key events. A new action joins this registry with the feature that
 // implements it — an unimplemented generator is not listed as a fake success.
 
-import type { State } from "./state.ts";
+import type { OperationRecord, State } from "./state.ts";
 
 /** What availability predicates may look at. Derived from `State` only. */
 export interface ActionContext {
@@ -25,6 +25,8 @@ export interface ActionContext {
   missingConfig: boolean;
   /** Why there is no code snapshot to act on, or null when there is one. */
   noSnapshot: string | null;
+  /** Why no finished report can be exported now (`exportRecord`), or null. */
+  noExport: string | null;
 }
 
 export interface Action {
@@ -98,6 +100,15 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["explain edge", "check --explain-edge", "edge", "dependency evidence", "why depends", "between ids"],
     // A form takes two ids (the one under the cursor fills the first); it reads the saved code in a worker and never writes.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "export",
+    label: "Export the report to a file",
+    group: "Check",
+    key: "e in F6",
+    aliases: ["export", "save report", "report to file", "check --format", "json", "sarif", "github", "human"],
+    // A form names the format and the path and shows the target first; only Save writes, and the report is never run again.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : ctx.noExport),
   },
   {
     id: "map-check",
@@ -201,6 +212,7 @@ export function catalog(state: State): ActionEntry[] {
 /** The availability context of the current session state. */
 export function availabilityOf(state: State): ActionContext {
   const buffer = state.current !== null ? state.buffers.get(state.current) : undefined;
+  const exported = exportRecord(state);
   return {
     mode: state.mode,
     focus: state.focus,
@@ -211,7 +223,25 @@ export function availabilityOf(state: State): ActionContext {
     start: state.start !== null,
     missingConfig: state.config.kind === "missing-config",
     noSnapshot: noSnapshotReason(state),
+    noExport: "reason" in exported ? exported.reason : null,
   };
+}
+
+/** The operation kinds whose finished report Export saves. */
+export const EXPORTABLE_KINDS: ReadonlySet<OperationRecord["kind"]> = new Set(["check", "explain-edge"]);
+
+/**
+ * The report Export saves: the record selected in F6 while the panel is open,
+ * else the newest check or explain-edge record — exactly that run, as it ran.
+ */
+export function exportRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
+  const { results, records } = state;
+  const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => EXPORTABLE_KINDS.has(candidate.kind));
+  if (!record) return { reason: results.open ? "select a check report in F6: the current analysis is not a saved report" : "no report yet: run a check first" };
+  if (!EXPORTABLE_KINDS.has(record.kind)) return { reason: "only a check or explain-edge report is exported" };
+  if (record.status === "running") return { reason: "the report is still running" };
+  if (!record.result || record.result.payload === null) return { reason: "this run has no report to export" };
+  return { record };
 }
 
 /** Why the session has no code snapshot, or null when it has one. Also the status line's note. */

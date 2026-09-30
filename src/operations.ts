@@ -5,11 +5,12 @@
 // working directory, or writes stdout/stderr. One operation variant at a
 // time: each feature ticket adds its own, not every handler in advance.
 
-import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { filterChanged } from "./changed.ts";
+import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
@@ -18,6 +19,8 @@ import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
 import { isStoredExplanation } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
+import { FACT_CACHE_FILE } from "./fact-cache.ts";
+import { PROPOSALS_DIR } from "./proposals.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
@@ -168,6 +171,30 @@ export interface ExplainEdgeRequest {
 }
 
 /**
+ * The typed result an export writes: a finished check report in one of the
+ * CLI's formats, or the lines of an explained edge (the CLI has only its
+ * human output). A later report kind (parse, trace-plan) joins as a variant.
+ */
+export type ExportSource = { kind: "check"; format: CheckFormat; report: CheckReportData } | { kind: "explain-edge"; lines: string[] };
+
+/**
+ * Saves a report that was already computed to one file: exactly the stdout
+ * the CLI prints for it, without ANSI or status lines. It never runs the
+ * check again. The target is a plain relative path inside the repository, not
+ * a generated artifact; `expect` is the file as the caller showed it before
+ * Save (null: absent) — a different file is a conflict, never overwritten.
+ */
+export interface ExportRequest {
+  kind: "export";
+  /** Repository root (absolute). */
+  root: string;
+  /** The target, relative to the root, POSIX. */
+  path: string;
+  expect: string | null;
+  source: ExportSource;
+}
+
+/**
  * Sets a repository up (`keylang init [dir] [--agents=LIST]`): keylang.json
  * (an existing one is kept), the map, the baseline and the harness files, in
  * that order. With `check` it runs exactly `init --check`: the harness files
@@ -185,10 +212,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -455,6 +482,23 @@ export interface ExplainEdgePayload extends EdgeExplanation {
   lines: string[];
 }
 
+/** What an export did with its one file. */
+export interface ExportPayload {
+  path: string;
+  /** The format written (an explained edge is always `human`). */
+  format: CheckFormat;
+  source: ExportSource["kind"];
+  /** The size of the text in UTF-8 bytes. */
+  bytes: number;
+  /** The target existed when Save was pressed (it is replaced). */
+  existed: boolean;
+  written: boolean;
+  /** Why nothing was written (`path: reason`): the path policy, a generated target, or a change since the form. */
+  refused: string[];
+  /** The I/O error of the write, or null. */
+  error: string | null;
+}
+
 /**
  * What `keylang init [--check]` did, stage by stage. Each stage is the result
  * of its own shared operation, null when it was not run (a check has no map
@@ -499,6 +543,7 @@ export interface OperationPayloads {
   check: CheckPayload;
   "explain-edge": ExplainEdgePayload;
   init: InitPayload;
+  export: ExportPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -536,6 +581,7 @@ export function runOperation(request: WireRequest, context?: OperationContext): 
 export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
 export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
+export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -561,6 +607,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runExplainEdge(request, context);
     case "init":
       return runInit(request, context);
+    case "export":
+      return runExport(request, context);
   }
 }
 
@@ -592,6 +640,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "explain-edge":
       return { kind, ...base };
     case "init":
+      return { kind, ...base };
+    case "export":
       return { kind, ...base };
   }
 }
@@ -1490,6 +1540,98 @@ async function runExplainEdge(request: ExplainEdgeRequest, context: OperationCon
   const explanation = explainEdge(snapshot, request.from, request.to);
   const payload: ExplainEdgePayload = { ...explanation, snapshotId: snapshot.snapshotId, lines: edgeExplanationLines(explanation) };
   return { ...emptyExplainEdge("completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
+}
+
+function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {
+  return { kind: "export", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/** The bytes an export writes: the CLI's stdout for the same report. */
+export function exportText(source: ExportSource): string {
+  return source.kind === "check" ? checkReportText(source.format, source.report) : source.lines.map((line) => `${line}\n`).join("");
+}
+
+/**
+ * Why `path` cannot receive an export, or null: the write policy of every
+ * repository write (plain, relative, inside through links, no directory, no
+ * file with a generation marker) and the artifacts generators own — the map,
+ * the explained map, the index, the fact cache and the proposals — even
+ * before they exist. Reads only; a form may call it as the path is typed.
+ */
+export function exportTargetProblem(root: string, path: string): string | null {
+  const problem = writeProblem(root, path);
+  if (problem !== null) return problem;
+  const target = landing(join(root, path));
+  if (target === null) return "leads through a loop of links";
+  const rel = toPosix(relative(realpathSync(root), target));
+  const dir = specDirOf(root);
+  const owned = [`${dir}/map/`, `${dir}/${EXPLAINED_MAP_DIR}/`, `${PROPOSALS_DIR}/`];
+  if (rel === ".keylang/index.json" || rel === FACT_CACHE_FILE || owned.some((prefix) => rel.startsWith(prefix))) return "a generated artifact: only its generator writes it";
+  return null;
+}
+
+/** The spec directory of keylang.json without the rest of the config (a broken one included): `keylang` unless it says otherwise. */
+function specDirOf(root: string): string {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(join(root, CONFIG_FILE), "utf8"));
+    const dir = typeof raw === "object" && raw !== null && "dir" in raw ? raw.dir : undefined;
+    return typeof dir === "string" && dir !== "" ? dir.replace(/\/+$/, "") : "keylang";
+  } catch {
+    return "keylang";
+  }
+}
+
+/**
+ * Exports a finished report to one file. Nothing is computed again: the text
+ * is the CLI's stdout for the request's report. After `beforeCommit` the
+ * target must pass `exportTargetProblem` and still be the file the form
+ * showed (`expect`); otherwise nothing is written (failed, 1). The write is
+ * atomic, the exact bytes, with missing parent directories created (0; 2 on
+ * an I/O error). Cancelled: null, nothing written.
+ */
+async function runExport(request: ExportRequest, context: OperationContext): Promise<OperationEnvelope<"export">> {
+  if (!isAbsolute(request.root)) return emptyExport("failed", 2, "export: root must be an absolute path");
+  if (context.signal?.aborted) return emptyExport("cancelled", null);
+  const text = exportText(request.source);
+  const payload: ExportPayload = {
+    path: request.path,
+    format: request.source.kind === "check" ? request.source.format : "human",
+    source: request.source.kind,
+    bytes: Buffer.byteLength(text, "utf8"),
+    existed: request.expect !== null,
+    written: false,
+    refused: [],
+    error: null,
+  };
+  context.onProgress?.({ text: "waiting to write" });
+  try {
+    await context.beforeCommit?.();
+  } catch (error) {
+    return { ...emptyExport("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyExport("cancelled", null), payload };
+  let problem: string | null;
+  try {
+    problem = exportTargetProblem(request.root, request.path) ?? writeProblem(request.root, request.path, { expect: request.expect });
+  } catch (error) {
+    return { ...emptyExport("failed", 2, messageOf(error)), payload };
+  }
+  if (problem !== null) {
+    payload.refused = [`${request.path}: ${problem}`];
+    return { ...emptyExport("failed", 1), payload, messages: [{ level: "error", text: payload.refused[0]! }, { level: "info", text: "nothing was written; export the report again to see the file as it is now" }] };
+  }
+  context.onProgress?.({ text: `writing ${request.path}` });
+  try {
+    const abs = landing(join(request.root, request.path));
+    if (abs === null) throw new Error("leads through a loop of links");
+    // The CLI's bytes: no CRLF carried over from a file it replaces.
+    writeAtomic(abs, text, { exact: true });
+  } catch (error) {
+    payload.error = messageOf(error);
+    return { ...emptyExport("failed", 2), payload, messages: [{ level: "error", text: `${request.path}: ${payload.error}` }] };
+  }
+  payload.written = true;
+  return { ...emptyExport("completed", 0), payload, messages: [{ level: "info", text: `${request.path}: written` }], written: [request.path] };
 }
 
 /** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */

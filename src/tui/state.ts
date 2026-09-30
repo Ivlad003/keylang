@@ -2,6 +2,7 @@
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
 
 import type { Analysis } from "../analyze.ts";
+import type { CheckFormat } from "../check-format.ts";
 import type { StaticMode } from "../config.ts";
 import type { StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
@@ -120,8 +121,9 @@ export interface Prompt {
    * `wire`: the generated file, relative to the root (`keylang.gen.ts` by default), and the mode (`ids` are `write` / `check`);
    * `full-check`: the spec files and directories to check, relative to the root and separated by spaces (the spec directory by default), and `checkOptions` (the items; ←→ change the selected one; on the `since` row typing edits the git ref instead of the paths).
    * `explain-edge`: two ids, `edge.from` and `edge.to` (the items `from`, `to`, run; typing edits the selected id row; `text` is unused).
+   * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -140,6 +142,26 @@ export interface Prompt {
   checkOptions?: { strict: boolean; static: StaticMode | null; changed: boolean; since: string };
   /** `explain-edge`: the two ids as typed; the id under the cursor fills only `from`. */
   edge?: { from: string; to: string };
+  /** `export`: the report and what the form showed about the target. */
+  exportForm?: ExportForm;
+}
+
+/**
+ * The export form of one finished report. `expect` is the target as the form
+ * last showed it (null: absent); Save sends it, so a file changed after that
+ * is a conflict, never overwritten. `problem` is why Save is refused now.
+ */
+export interface ExportForm {
+  /** The id of the exported record: the report as it ran, never run again. */
+  record: number;
+  formats: readonly CheckFormat[];
+  format: CheckFormat;
+  /** The path was typed: a format change no longer replaces it with its default. */
+  custom: boolean;
+  expect: string | null;
+  problem: string | null;
+  /** The size of the report in `format`, in UTF-8 bytes. */
+  bytes: number;
 }
 
 /** The kinds of a new specification: its first text follows the kind (design §2.8). */

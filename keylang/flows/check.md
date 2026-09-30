@@ -26,7 +26,7 @@ and static evidence does not depend on a run.
             - step check.resolve.check
             - step check.rules.evaluateRules
             - step check.flows.evaluateFlows
-      - step cli.cli.writeCheck
+      - step features.check-format.checkReportText
       - invariant a denied import is reported as K102 without writing the map
         - test tests/cli.test.ts "check sees a new denied import without writing the map"
       - invariant a flow id resolves against current code, not the committed map

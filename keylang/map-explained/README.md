@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 47 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 36 | 0 | 0 | 56 |
+| [cli](cli.md) |  | 34 | 0 | 0 | 53 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 185 | 0 | 0 | 125 |
+| [features](features.md) |  | 189 | 0 | 0 | 132 |
 | [lang](lang.md) |  | 42 | 0 | 0 | 87 |
 | [map](map.md) |  | 117 | 0 | 0 | 132 |
-| [operations](operations.md) |  | 59 | 0 | 0 | 19 |
-| [tui](tui.md) |  | 309 | 0 | 0 | 200 |
-| **all** | | 994 | 0 | 0 | 796 |
+| [operations](operations.md) |  | 66 | 0 | 0 | 20 |
+| [tui](tui.md) |  | 321 | 0 | 0 | 200 |
+| **all** | | 1015 | 0 | 0 | 801 |
 
 ## Index
 
@@ -26,7 +26,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
 
-**C** · [changed](features.md#features.changed) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
+**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
 
 **D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 

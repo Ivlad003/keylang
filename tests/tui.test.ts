@@ -5737,3 +5737,209 @@ test("tui: an I/O failure after keylang.json names what init wrote, is no succes
   assert.ok(existsSync(join(root, "keylang/rules.baseline.md")));
   assert.equal(cliInit(root, ["--check"]).status, 0);
 });
+
+// ---------- export (ticket 18) ----------
+
+/** A second flow with a step the code does not have: the check fails, so SARIF and GitHub have results. */
+const BROKEN_FLOW = "# flow broken\n\nA step that is not in the code.\n\n- trigger presentation.terminal.checkout\n- step domain.order.nope\n";
+
+/** `e` over the selected F6 record opens the export form; the format is moved with →, the path replaced when given. */
+function exportForm(s: ReturnType<typeof session>, options: { format?: "human" | "json" | "sarif" | "github"; path?: string } = {}): void {
+  s.send("e");
+  assert.equal(s.app.state.prompt?.kind, "export", s.app.state.message ?? "");
+  const form = s.app.state.prompt!.exportForm!;
+  if (options.format !== undefined) while (form.format !== options.format) s.send(KEY.right);
+  if (options.path !== undefined) {
+    for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+    for (const ch of options.path) s.send(ch);
+  }
+}
+
+function exportDetails(app: App): string {
+  return (app.state.prompt?.details ?? []).join("\n");
+}
+
+test("tui: export saves the selected check report in each format byte for byte as the CLI prints it; Esc writes nothing; a new path creates only the file and its parents", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/broken.md": BROKEN_FLOW });
+  const s = session(root, { cols: 160 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  const check = s.app.state.records.at(-1)!;
+  assert.deepEqual([check.kind, check.status, check.result!.exitCode], ["check", "completed", 1]);
+  const checkResult = check.result;
+  const before = treeBytes(root);
+  s.send(KEY.f6);
+  assert.match(s.text(), /e export/);
+  // The form shows the report, the format, the default target and that it is new, before anything is written.
+  exportForm(s);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.text, ".keylang/export/check.json");
+  assert.deepEqual(prompt.items, ["format: json · ←→ human / json / sarif / github", "path: .keylang/export/check.json▏", "Save .keylang/export/check.json (writes this one file)"]);
+  assert.match(exportDetails(s.app), /report #\d+: check · 1 fail, \d+ unverified, \d+ ok · code 1/);
+  assert.match(exportDetails(s.app), /target: \.keylang\/export\/check\.json · new file · creates \.keylang\/export\//);
+  assert.match(exportDetails(s.app), /\d+ bytes of json: the CLI's stdout, no ANSI, no status lines/);
+  assert.equal(promptNote(s.app), "Enter saves · ←→ format · Esc writes nothing");
+  assert.match(s.text(), /export the report/);
+  // An untouched default path follows the format.
+  s.send(KEY.right);
+  assert.equal(s.app.state.prompt!.text, ".keylang/export/check.sarif");
+  await esc(s.send);
+  assert.equal(s.app.state.prompt, null);
+  assert.equal(s.app.state.records.length, 1, "Esc starts no operation");
+  assert.deepEqual(treeBytes(root), before, "the form and Esc wrote nothing, not even a directory");
+  const paths = { human: ".keylang/export/check.txt", json: ".keylang/export/check.json", sarif: ".keylang/export/check.sarif", github: ".keylang/export/check.github.txt" } as const;
+  for (const format of ["human", "json", "sarif", "github"] as const) {
+    assert.equal(s.app.state.records[s.app.state.results.index], check, "the check report stays selected");
+    exportForm(s, { format });
+    assert.equal(s.app.state.prompt!.text, paths[format]);
+    s.send(KEY.enter);
+    await s.app.idle();
+    const record = s.app.state.records.at(-1)!;
+    assert.deepEqual([record.kind, record.status, record.result!.exitCode, record.result!.written], ["export", "completed", 0, [paths[format]]], JSON.stringify(record.result?.messages));
+    const cli = cliCheck(root, ["--format", format]);
+    assert.equal(cli.status, 1);
+    const saved = readFileSync(join(root, paths[format]), "utf8");
+    assert.equal(saved, cli.stdout, `${format}: the file is the CLI's stdout`);
+    assert.doesNotMatch(saved, /\x1b/, `${format}: no ANSI`);
+    assert.doesNotMatch(saved, /\d+ fail, \d+ unverified, \d+ ok/, `${format}: the stderr summary is not in the file`);
+    if (format === "json" || format === "sarif") JSON.parse(saved);
+    if (format === "sarif") assert.ok(saved.includes('"ruleId"'), "a SARIF result");
+    if (format === "github") assert.match(saved, /^::error file=keylang\/flows\/broken\.md,line=\d+,col=\d+,title=/m);
+  }
+  assert.deepEqual(JSON.parse(readFileSync(join(root, paths.json), "utf8")), checkJson(check));
+  // Only the four files and their parents are new; the report was not run again.
+  const after = treeBytes(root);
+  const added = [...after.keys()].filter((path) => !before.has(path)).sort();
+  assert.deepEqual(added, Object.values(paths).sort());
+  for (const [path, bytes] of before) assert.equal(after.get(path), bytes, path);
+  assert.equal(check.result, checkResult, "the exported record keeps its report");
+  assert.equal(s.app.state.records.filter((record) => record.kind === "check").length, 1, "no hidden check");
+  // F6: the export record names its report, format, target and outcome; Enter does not repeat it blindly.
+  s.send(KEY.down);
+  for (let i = 0; i < 4; i++) s.send(KEY.down);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.kind, "export");
+  assert.match(s.text(), /Export · github of the check report · \.keylang\/export\/check\.github\.txt · \d+ bytes/);
+  assert.match(s.text(), /written · code 0/);
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /^export: select the report and press e/);
+  assert.equal(s.app.state.records.length, 5);
+});
+
+test("tui: export refuses a target changed after the form, a generated target, a link out of the repository and a dirty buffer; the session goes on", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/broken.md": BROKEN_FLOW, "out.json": "old\r\n", "gen.md": "<!-- keylang:generated -->\n# map\n" });
+  const outside = mkdtempSync(join(tmpdir(), "keylang-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const s = session(root, { cols: 160 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  checkForm(s.app, s.send);
+  await s.app.idle();
+  const check = s.app.state.records.at(-1)!;
+  s.send(KEY.f6);
+  // An existing target is shown before Save and replaced with the exact bytes (its CRLF is not carried over).
+  exportForm(s, { path: "out.json" });
+  assert.match(exportDetails(s.app), /target: out\.json · exists, 5 bytes: replaced on Save/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const replaced = s.app.state.records.at(-1)!;
+  assert.deepEqual([replaced.status, replaced.result!.exitCode], ["completed", 0]);
+  assert.match(s.text(), /replaced · code 0/);
+  assert.equal(readFileSync(join(root, "out.json"), "utf8"), cliCheck(root, ["--format", "json"]).stdout);
+  // Changed on disk after the form showed it: a conflict, never an overwrite.
+  assert.equal(s.app.state.records[s.app.state.results.index], check, "the check report stays selected");
+  exportForm(s, { path: "out.json", format: "human" });
+  writeFileSync(join(root, "out.json"), "someone else\n");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const conflict = s.app.state.records.at(-1)!;
+  assert.deepEqual([conflict.kind, conflict.status, conflict.result!.exitCode, conflict.result!.written], ["export", "failed", 1, []]);
+  assert.match(conflict.result!.messages[0]!.text, /^out\.json: changed on disk while the change was prepared; nothing written$/);
+  assert.equal(readFileSync(join(root, "out.json"), "utf8"), "someone else\n");
+  assert.match(s.app.state.message ?? "", /export human out\.json: refused, nothing written · code 1/);
+  // Refused in the form: the form stays open and nothing is written.
+  const refusals: [string, RegExp][] = [
+    ["gen.md", /a generated file: only its generator writes it/],
+    ["keylang/map/new.md", /a generated artifact: only its generator writes it/],
+    [".keylang/index.json", /a generated artifact/],
+    ["away/report.json", /leads out of the repository through a link/],
+    ["../report.json", /not a plain relative path/],
+  ];
+  const before = treeBytes(root);
+  symlinkSync(outside, join(root, "away"));
+  for (const [path, why] of refusals) {
+    exportForm(s, { path });
+    assert.match(promptNote(s.app), why, path);
+    assert.match(exportDetails(s.app), new RegExp(`target: ${path.replace(/\./g, "\\.")} · refused: `));
+    s.send(KEY.enter);
+    assert.equal(s.app.state.prompt?.kind, "export", `${path}: the form stays`);
+    assert.match(s.app.state.message ?? "", why);
+    await esc(s.send);
+  }
+  assert.deepEqual(readdirSync(outside), [], "nothing written through the link");
+  rmSync(join(root, "away"));
+  // A dirty buffer of the target: its text is never written under.
+  await esc(s.send);
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  assert.deepEqual(s.app.unsaved(), ["keylang/flows/broken.md"]);
+  s.send(KEY.f6);
+  while (s.app.state.results.index > 0) s.send(KEY.up);
+  assert.equal(s.app.state.records[s.app.state.results.index], check);
+  assert.notEqual(check.outdated, null, "the edit made the report outdated");
+  exportForm(s, { path: "keylang/flows/broken.md" });
+  assert.match(promptNote(s.app), /open with unsaved edits/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "export");
+  // An outdated report is saved as it ran, without a new check: named in the form.
+  for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+  for (const ch of "old-report.txt") s.send(ch);
+  while (s.app.state.prompt!.exportForm!.format !== "human") s.send(KEY.right);
+  assert.match(exportDetails(s.app), /outdated: inputs edited since this run · saved as it ran; nothing is checked again/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.status, "completed");
+  assert.equal(readFileSync(join(root, "old-report.txt"), "utf8"), checkPayload(check).lines.map((line) => `${line}\n`).join(""));
+  assert.equal(s.app.state.records.filter((record) => record.kind === "check").length, 1, "no hidden check");
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), ["old-report.txt"]);
+  assert.equal(readFileSync(join(root, "keylang/flows/broken.md"), "utf8"), BROKEN_FLOW, "the dirty spec stays unsaved");
+  assert.deepEqual(s.app.unsaved(), ["keylang/flows/broken.md"]);
+});
+
+test("tui: export saves an explained edge as the CLI's lines; the palette exports the newest report and says why when there is none", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 160 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "export report") s.send(ch);
+  assert.match(promptNote(s.app), /no report yet: run a check first/);
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /Export the report to a file: no report yet: run a check first/);
+  edgeForm(s.app, s.send, { from: "application.purchase.buy", to: "domain.order" });
+  await s.app.idle();
+  const edge = s.app.state.records.at(-1)!;
+  assert.equal(edge.status, "completed");
+  // F6 closed: the palette takes the newest report.
+  s.send(KEY.ctrlP);
+  for (const ch of "export report") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "export");
+  assert.equal(s.app.state.prompt!.text, ".keylang/export/edge.txt");
+  assert.equal(s.app.state.prompt!.items[0], "format: human · the only output of an explained edge");
+  s.send(KEY.right);
+  assert.equal(s.app.state.prompt!.exportForm!.format, "human");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.deepEqual([record.kind, record.status, record.result!.exitCode], ["export", "completed", 0]);
+  assert.equal(readFileSync(join(root, ".keylang/export/edge.txt"), "utf8"), cliEdge(root, "application.purchase.buy", "domain.order").stdout);
+  // Another kind of record, like the export itself, is not exported: F6 says why.
+  s.send(KEY.f6);
+  s.send("e");
+  assert.equal(s.app.state.prompt, null);
+  assert.match(s.app.state.message ?? "", /^export: only a check or explain-edge report is exported$/);
+});

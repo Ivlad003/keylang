@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -105,6 +105,36 @@
     - fn [flowLinesTouching](../../src/changed.ts#L116) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+  - module [check-format](../../src/check-format.ts#L1)
+    <a id="features.check-format"></a><br>The text of one check report in each `--format`: exactly what `keylang check` prints on stdout. The CLI writes it; the TUI exports the same bytes to a file.
+    - check-results [features.check-results](features.md#features.check-results)
+    - explain [features.explain](features.md#features.explain)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [CheckFormat](../../src/check-format.ts#L11) = (typeof CHECK_FORMATS)[number]
+      <a id="features.check-format.CheckFormat"></a>
+    - type [CheckReportData](../../src/check-format.ts#L14)
+      <a id="features.check-format.CheckReportData"></a><br>What a format shows: the `--format json` data and the human lines of the same report.
+    - fn [isCheckFormat](../../src/check-format.ts#L21) (name: string) → name is CheckFormat
+      <a id="features.check-format.isCheckFormat"></a>
+    - fn [checkReportText](../../src/check-format.ts#L26) (format: CheckFormat, report: CheckReportData) → string
+      <a id="features.check-format.checkReportText"></a><br>The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`.
+      - calls [features.check-format.githubText](features.md#features.check-format.githubText), [features.check-format.sarifLog](features.md#features.check-format.sarifLog)
+    - fn [githubText](../../src/check-format.ts#L33) (results: readonly CheckResult[]) → string <!-- internal -->
+      <a id="features.check-format.githubText"></a>
+      - calls [features.check-format.githubProperty](features.md#features.check-format.githubProperty), [features.check-format.ruleOf](features.md#features.check-format.ruleOf), [features.check-format.githubData](features.md#features.check-format.githubData)
+    - fn [sarifLog](../../src/check-format.ts#L43) (report: CheckReportData) → unknown <!-- internal -->
+      <a id="features.check-format.sarifLog"></a>
+      - calls [features.check-format.ruleText](features.md#features.check-format.ruleText), [features.check-format.ruleOf](features.md#features.check-format.ruleOf)
+    - fn [ruleOf](../../src/check-format.ts#L78) (result: CheckResult) → string <!-- internal -->
+      <a id="features.check-format.ruleOf"></a><br>The SARIF rule and GitHub title: every unverified result is `unverified`, a finding its K-code or evidence kind.
+    - fn [ruleText](../../src/check-format.ts#L90) (id: string) → string <!-- internal -->
+      <a id="features.check-format.ruleText"></a>
+      - calls [features.explain.explainCode](features.md#features.explain.explainCode)
+    - fn [githubData](../../src/check-format.ts#L96) (text: string) → string <!-- internal -->
+      <a id="features.check-format.githubData"></a>
+    - fn [githubProperty](../../src/check-format.ts#L100) (text: string) → string <!-- internal -->
+      <a id="features.check-format.githubProperty"></a>
+      - calls [features.check-format.githubData](features.md#features.check-format.githubData)
   - module [check-results](../../src/check-results.ts#L1)
     <a id="features.check-results"></a><br>The results of `keylang check --format json`: diagnostics and verdicts in one list, a diagnostic joined with the verdict it explains. Shared by the CLI, the MCP server and the TUI (the check operation and the findings panel), so an agent sees exactly what CI sees.
     - node [external.node](external.md#external.node)

@@ -1350,7 +1350,7 @@ test("@flow check: check reports a denied import without writing the map", (t) =
   const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; symbolId?: string; complete?: boolean });
   assert.equal(events.at(-1)?.event, "run");
   assert.equal(events.at(-1)?.complete, true);
-  for (const id of ["cli.cli.main", "cli.cli.cmdCheck", "map.analyze.analyze", "check.rules.evaluateRules", "cli.cli.writeCheck"]) {
+  for (const id of ["cli.cli.main", "cli.cli.cmdCheck", "map.analyze.analyze", "check.rules.evaluateRules", "features.check-format.checkReportText"]) {
     assert.ok(events.some((event) => event.event === "start" && event.symbolId === id), id);
   }
 });
@@ -1380,7 +1380,7 @@ test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
 test("the in-repo check flow reports ID, static, tests, and trace separately", () => {
   const checked = keylang(root, ["check", "--format", "json"]);
   const rows = (JSON.parse(checked.stdout) as { results: { criterion: string; area: string; verdict: string; evidence: string }[] }).results;
-  const steps = ["cli.cli.run", "cli.cli.cmdCheck", "map.analyze.analyze", "map.map.generateMap", "lang.parser.parse", "check.assess.assess", "check.resolve.check", "check.rules.evaluateRules", "check.flows.evaluateFlows", "cli.cli.writeCheck"];
+  const steps = ["cli.cli.run", "cli.cli.cmdCheck", "map.analyze.analyze", "map.map.generateMap", "lang.parser.parse", "check.assess.assess", "check.resolve.check", "check.rules.evaluateRules", "check.flows.evaluateFlows", "features.check-format.checkReportText"];
   for (const id of steps) {
     for (const criterion of ["ID", "static", "trace"]) assert.ok(rows.some((row) => row.criterion === criterion && row.area === id), `${criterion} ${id}`);
     assert.equal(rows.find((row) => row.criterion === "ID" && row.area === id)?.verdict, "ok", id);
