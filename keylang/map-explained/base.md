@@ -93,8 +93,15 @@
     - fn [hasSource](../../src/config.ts#L503) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasSource"></a>
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [layerName](../../src/config.ts#L516) (name: string) → string
-      <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment.
+    - fn [isIdSegment](../../src/config.ts#L516) (s: string) → boolean <!-- internal -->
+      <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
+    - fn [encodeBracketSegment](../../src/config.ts#L544) (name: string) → string <!-- internal -->
+      <a id="base.config.encodeBracketSegment"></a><br>A path segment that is not an ID and contains `()[]`, written so `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`, `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`, `$all-slug`, `$opt-slug`); any other name keeps its letters and writes…
+    - fn [decodeLayerName](../../src/config.ts#L565) (segment: string) → string
+      <a id="base.config.decodeLayerName"></a><br>Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged.
+    - fn [layerName](../../src/config.ts#L589) (name: string) → string
+      <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment. An existing segment is kept.
+      - calls [base.config.isIdSegment](base.md#base.config.isIdSegment), [base.config.encodeBracketSegment](base.md#base.config.encodeBracketSegment)
   - module [diag](../../src/diag.ts#L1)
     <a id="base.diag"></a><br>Diagnostics with stable codes.
     - span [base.span](base.md#base.span)

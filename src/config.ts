@@ -512,8 +512,84 @@ function hasSource(absDir: string, rel: string, exclude: readonly string[]): boo
   return false;
 }
 
-/** Make a directory or file name a valid ID segment. */
+/** Same predicate as `isSegment`. Duplicated so `base` does not import `lang`. */
+function isIdSegment(s: string): boolean {
+  return /^[\p{Alphabetic}_$][\p{Alphabetic}\p{M}\p{N}_$-]*$/u.test(s);
+}
+
+const ID_BODY = /^[\p{Alphabetic}\p{M}\p{N}_-]$/u;
+const ID_START = /^[\p{Alphabetic}_]$/u;
+const utf8 = new TextEncoder();
+const utf8Text = new TextDecoder();
+
+/**
+ * Next-style route segments keep a readable ID: the bracket form becomes a
+ * prefix no hex escape can start (`$g`, `$p`, `$o`, `$al` are not `$HH`).
+ * Longest form first: `[[...x]]` before `[...x]` before `[x]`.
+ */
+const ROUTE_FORMS: readonly { prefix: string; pattern: RegExp; wrap: (inner: string) => string }[] = [
+  { prefix: "$opt-", pattern: /^\[\[\.\.\.([\p{Alphabetic}\p{M}\p{N}_-]+)\]\]$/u, wrap: (inner) => `[[...${inner}]]` },
+  { prefix: "$all-", pattern: /^\[\.\.\.([\p{Alphabetic}\p{M}\p{N}_-]+)\]$/u, wrap: (inner) => `[...${inner}]` },
+  { prefix: "$p-", pattern: /^\[([\p{Alphabetic}\p{M}\p{N}_-]+)\]$/u, wrap: (inner) => `[${inner}]` },
+  { prefix: "$g-", pattern: /^\(([\p{Alphabetic}\p{M}\p{N}_-]+)\)$/u, wrap: (inner) => `(${inner})` },
+];
+
+/**
+ * A path segment that is not an ID and contains `()[]`, written so
+ * `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`,
+ * `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`,
+ * `$all-slug`, `$opt-slug`); any other name keeps its letters and writes each
+ * other UTF-8 byte as `$` plus two lowercase hex digits (`(` is `$28`).
+ */
+function encodeBracketSegment(name: string): string {
+  for (const form of ROUTE_FORMS) {
+    const inner = form.pattern.exec(name)?.[1];
+    if (inner !== undefined) return `${form.prefix}${inner}`;
+  }
+  let out = "";
+  let started = false;
+  for (const ch of name) {
+    const keep = ID_BODY.test(ch) && (started || ID_START.test(ch));
+    if (keep) {
+      out += ch;
+      started = true;
+      continue;
+    }
+    for (const b of utf8.encode(ch)) out += `$${b.toString(16).padStart(2, "0")}`;
+    started = true;
+  }
+  return out;
+}
+
+/** Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged. */
+export function decodeLayerName(segment: string): string {
+  for (const form of ROUTE_FORMS) {
+    if (segment.startsWith(form.prefix)) return form.wrap(segment.slice(form.prefix.length));
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i < segment.length; ) {
+    const hex = segment[i] === "$" ? segment.slice(i + 1, i + 3) : "";
+    if (/^[0-9a-f]{2}$/.test(hex)) {
+      bytes.push(Number.parseInt(hex, 16));
+      i += 3;
+      continue;
+    }
+    const cp = segment.codePointAt(i)!;
+    for (const b of utf8.encode(String.fromCodePoint(cp))) bytes.push(b);
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return utf8Text.decode(Uint8Array.from(bytes));
+}
+
+/**
+ * Make a directory or file name a valid ID segment.
+ * An existing segment is kept. Without `()[]`, any other character becomes `_`.
+ * Brackets (and the rest of that name) are encoded reversibly — see `decodeLayerName`.
+ */
 export function layerName(name: string): string {
+  // Only a name that is not already a segment, and only when it has brackets.
+  // `cats.controller` still collapses the dot; `_shop_` is already a segment.
+  if (/[()[\]]/.test(name) && !isIdSegment(name)) return encodeBracketSegment(name);
   // The same characters as an ID segment (`isSegment`), combining marks included.
   let s = name.replace(/[^\p{Alphabetic}\p{M}\p{N}_$-]/gu, "_");
   if (!/^[\p{Alphabetic}_$]/u.test(s)) s = `_${s}`;

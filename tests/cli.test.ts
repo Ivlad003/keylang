@@ -291,7 +291,7 @@ test("map links are relative, encoded, and round-trip", (t) => {
 
   const parsed = keylang(dir, ["parse", "--json", "keylang/map/main.md"]);
   assert.equal(parsed.status, 0, parsed.stderr);
-  const page = findNode(JSON.parse(parsed.stdout)[0], "main.app._shop_.page");
+  const page = findNode(JSON.parse(parsed.stdout)[0], "main.app.$g-shop.page");
   assert.equal(page.link.path, "../../src/app/(shop)/page.ts");
   assert.equal(page.link.target, "../../src/app/(shop)/page.ts#L1");
   const spaced = findNode(JSON.parse(parsed.stdout)[0], "main.my_file");
@@ -301,6 +301,54 @@ test("map links are relative, encoded, and round-trip", (t) => {
   assert.doesNotMatch(checked.stdout, /K005/);
   assert.doesNotMatch(checked.stdout, /K002/);
   assert.equal(checked.status, 0, checked.stdout);
+});
+
+test("Next route segments (shop) and [id] are different modules and resolve by the encoded id", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-routes-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "app/(shop)/cart"), { recursive: true });
+  mkdirSync(join(dir, "app/[id]"), { recursive: true });
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers: { main: ["app/**"] } }, null, 2)}\n`);
+  writeFileSync(join(dir, "app/(shop)/cart/layout.tsx"), "export function ShopLayout(): number {\n  return 1;\n}\n");
+  writeFileSync(join(dir, "app/(shop)/cart/page.tsx"), "export function CartPage(): number {\n  return 2;\n}\n");
+  writeFileSync(join(dir, "app/[id]/page.tsx"), "export function ItemPage(): number {\n  return 3;\n}\n");
+  const shop = "main.$g-shop.cart.page.CartPage";
+  const item = "main.$p-id.page.ItemPage";
+  writeFileSync(join(dir, "keylang/flows/routes.md"), `# flow routes\n\n- step ${shop}\n- step ${item}\n`);
+
+  const mapped = keylang(dir, ["map"]);
+  assert.equal(mapped.status, 0, mapped.stderr);
+  const map = readFileSync(join(dir, "keylang/map/main.md"), "utf8");
+  assert.match(map, /\$g-shop/);
+  assert.match(map, /\$p-id/);
+  assert.match(map, /app\/%28shop%29\/cart\/page\.tsx#L1/);
+  assert.match(map, /app\/%5Bid%5D\/page\.tsx#L1/);
+  assert.doesNotMatch(map, /_shop_|_id_/);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as {
+    nodes: Record<string, { kind: string; file?: string }>;
+    edges: { source: string; target: string | null }[];
+  };
+  assert.equal(index.nodes["main.$g-shop.cart.page"]?.file, "app/(shop)/cart/page.tsx");
+  assert.equal(index.nodes["main.$p-id.page"]?.file, "app/[id]/page.tsx");
+  assert.equal(index.nodes["main._shop_.cart.page"], undefined);
+  assert.equal(index.nodes["main._id_.page"], undefined);
+  // A layout file and a page file are not an edge just because of the directories.
+  assert.equal(
+    index.edges.some((e) => (e.source.includes("ShopLayout") && (e.target ?? "").includes("CartPage")) || (e.source.includes("CartPage") && (e.target ?? "").includes("ShopLayout"))),
+    false,
+  );
+
+  const resolved = keylang(dir, ["check"]);
+  assert.equal(resolved.status, 0, resolved.stdout);
+  assert.doesNotMatch(resolved.stdout, /K001/);
+
+  writeFileSync(join(dir, "keylang/flows/old.md"), "# flow old\n\n- step main._shop_.cart.page.CartPage\n");
+  const stale = keylang(dir, ["check"]);
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /K001 dangling reference `main\._shop_\.cart\.page\.CartPage`/);
+  assert.doesNotMatch(stale.stdout, /K001 dangling reference `main\.\$g-shop/);
+  assert.doesNotMatch(stale.stdout, /K001 dangling reference `main\.\$p-id/);
 });
 
 test("generated maps of the repo and the fixture parse", () => {

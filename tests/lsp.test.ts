@@ -452,7 +452,7 @@ test("lsp: definition from the map opens the decoded file at the code position",
   const byLink = await s.request<{ uri: string; range: { start: { line: number } } }>("textDocument/definition", { textDocument: { uri: mapUri }, position: { line, character: charOf(map, line, "cart.ts") } });
   assert.equal(byLink.uri, expected);
   assert.equal(byLink.range.start.line, 2);
-  const flow = "# flow pay\n\n- step app.my_shop__x_.cart.pay\n";
+  const flow = "# flow pay\n\n- step app.my$20shop$20$28x$29.cart.pay\n";
   const flowUri = uri(dir, "keylang/flows/pay.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: flow } });
   const fromFlow = await s.request<{ uri: string; range: { start: { line: number; character: number } } }>("textDocument/definition", { textDocument: { uri: flowUri }, position: { line: 2, character: charOf(flow, 2, "pay") } });

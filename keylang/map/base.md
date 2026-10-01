@@ -56,7 +56,11 @@
       - calls base.languages.languageOf, base.config.isExcluded
     - fn [hasSource](../../src/config.ts#L503) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       - calls base.config.skipDir, base.languages.languageOf, base.config.isExcluded
-    - fn [layerName](../../src/config.ts#L516) (name: string) → string
+    - fn [isIdSegment](../../src/config.ts#L516) (s: string) → boolean <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L544) (name: string) → string <!-- internal -->
+    - fn [decodeLayerName](../../src/config.ts#L565) (segment: string) → string
+    - fn [layerName](../../src/config.ts#L589) (name: string) → string
+      - calls base.config.isIdSegment, base.config.encodeBracketSegment
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
