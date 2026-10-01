@@ -176,6 +176,12 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       if (passes.length > 0) fact.passes = passes;
       if (insideClosure(c.node, body)) fact.closure = true;
       out.push(fact);
+      // `jsx(Cart)` is the same call as `<Cart />` when `jsx` is React's. The factory call and its `passes` stay.
+      if (!call) continue;
+      const component = componentOfFactory(call, c.node, body, cls, reactFactories());
+      if (!component) continue;
+      if (insideClosure(c.node, body)) component.closure = true;
+      out.push(component);
     }
     if (!jsxTags) return out;
     for (const c of jsxTags.captures(body)) {
@@ -296,7 +302,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
 
   // `import` declarations hoist, so a wrapped `const` may sit above its
   // import; `require("react")` binds only below itself and is not read here.
-  // Computed on the first wrapper-shaped `const`.
+  // Computed on the first wrapper-shaped `const` or factory call.
   let react: { names: Set<string>; objects: Set<string> } | null = null;
   const reactBindings = (): { names: Set<string>; objects: Set<string> } => {
     if (react === null) {
@@ -315,6 +321,31 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       react = { names, objects };
     }
     return react;
+  };
+
+  let factories: ReactFactories | null = null;
+  const reactFactories = (): ReactFactories => {
+    if (factories === null) {
+      const names = new Set<string>();
+      const members = new Map<string, Set<string>>();
+      for (const stmt of root.namedChildren) {
+        if (stmt.type !== "import_statement") continue;
+        for (const fact of importStatement(stmt)) {
+          if (!REACT_FACTORY_SOURCES.has(fact.source)) continue;
+          for (const b of fact.bindings) {
+            if (b.kind === "named") {
+              if (REACT_FACTORIES.has(b.imported)) names.add(b.local);
+            } else {
+              const props = members.get(b.local) ?? new Set<string>();
+              for (const name of REACT_FACTORIES) props.add(name);
+              members.set(b.local, props);
+            }
+          }
+        }
+      }
+      factories = { names, members };
+    }
+    return factories;
   };
 
   // Declarations exported later by name: `function a() {}; export { a }`.
@@ -512,6 +543,49 @@ function componentOfTag(name: Node, body: Node, cls: ClassScope | null): CallFac
   if (fact) return fact;
   const text = collapse(name.text);
   return text.length < MAX_CALLEE ? callFact(text, name) : opaqueCall(name);
+}
+
+/** `react`, `react/jsx-runtime`, `react/jsx-dev-runtime`: the modules whose factories are component calls. */
+const REACT_FACTORY_SOURCES = new Set(["react", "react/jsx-runtime", "react/jsx-dev-runtime"]);
+
+/** The factory names. Which module bound the callee decides, not the spelling at the call. */
+const REACT_FACTORIES = new Set(["createElement", "jsx", "jsxs", "jsxDEV"]);
+
+/** Named factory imports, and default or namespace imports whose members may be factories. */
+interface ReactFactories {
+  names: Set<string>;
+  members: Map<string, Set<string>>;
+}
+
+/**
+ * The component call hidden in a React factory: `createElement(Cart)`,
+ * `jsx(Cart)`, `jsxs(Cart.Item)`, `jsxDEV(Cart)` are the call `<Cart />`
+ * would be, when the callee is bound by an import from `react`,
+ * `react/jsx-runtime` or `react/jsx-dev-runtime` (`h` for
+ * `createElement as h`, `React.createElement` for a default or namespace
+ * import). A local function or an import from anywhere else is not one, so
+ * a helper named `createElement` keeps a single ordinary call. The first
+ * argument is the component, by the same rule as a tag: a capital
+ * identifier or a member. A string (`"div"`) or a lowercase identifier is
+ * not a call.
+ */
+function componentOfFactory(call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, factories: ReactFactories): CallFact | null {
+  if (call.type !== "call_expression" || !factoryCallee(calleeNode, body, factories)) return null;
+  const arg = call.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
+  return arg ? componentOfTag(unwrapValue(arg), body, cls) : null;
+}
+
+/** The callee node is a React factory binding, and nothing between here and the body shadows it. */
+function factoryCallee(node: Node, body: Node, factories: ReactFactories): boolean {
+  let n = unwrapValue(node);
+  while (n.type === "sequence_expression" && n.namedChildren.length > 0) n = unwrapValue(n.namedChildren.at(-1)!);
+  if (n.type === "identifier") return bindingOf(n, n.text, body) === null && factories.names.has(n.text);
+  if (n.type !== "member_expression") return false;
+  const obj = n.childForFieldName("object");
+  const prop = n.childForFieldName("property");
+  if (obj?.type !== "identifier" || !prop) return false;
+  const allowed = factories.members.get(obj.text);
+  return allowed !== undefined && allowed.has(prop.text) && bindingOf(n, obj.text, body) === null;
 }
 
 /**

@@ -805,3 +805,100 @@ test("jsx: `memo`, `forwardRef` and `lazy` imported from `react` make their `con
     "ui.cart.Input: price → lib.price.price",
   ]);
 });
+
+test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call the component; a string or a lowercase name does not", (t) => {
+  const dir = repo(t, {
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+    "src/ui/cart.ts": "export function Cart() { return null; }\nexport function Badge() { return null; }\n",
+    "src/app/page.ts": [
+      'import { jsx, jsxs } from "react/jsx-runtime";',
+      'import { createElement, createElement as h } from "react";',
+      'import React from "react";',
+      'import { jsxDEV } from "react/jsx-dev-runtime";',
+      'import { Badge, Cart } from "../ui/cart.ts";',
+      "export function div() { return null; }",
+      "export function Fragment() { return null; }",
+      "export function Page() {",
+      "  createElement(Cart, null);",
+      "  jsx(Cart.Item, {});",
+      "  jsxs(Cart, {});",
+      "  jsxDEV(Cart, {}, null, false, undefined, undefined);",
+      '  jsx("div", {});',
+      "  jsx(Fragment, {});",
+      "  jsx(div, {});",
+      "  h(Badge);",
+      "  React.createElement(Badge, null);",
+      "}",
+      "export function List(items: string[]) {",
+      "  return items.map(() => createElement(Cart));",
+      "}",
+      "export function Shadow() {",
+      "  function createElement(type: unknown) { return type; }",
+      "  return createElement(Cart);",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const snap = snapshot(dir);
+  const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}`).sort();
+  assert.deepEqual(calls, [
+    "app.page.List: Cart → ui.cart.Cart (closure)",
+    "app.page.List: items.map → null",
+    "app.page.Page: Badge → ui.cart.Badge",
+    "app.page.Page: Cart → ui.cart.Cart",
+    "app.page.Page: Cart.Item → null",
+    "app.page.Page: Fragment → app.page.Fragment",
+    "app.page.Shadow: createElement → null",
+  ]);
+  assert.ok(!calls.some((line) => line.includes("div")), calls.join("\n"));
+  const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
+    files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
+  };
+  const page = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Page")!;
+  // The factory call stays, with the component as the same `passes` a hook would see, and the component call is added beside it.
+  assert.deepEqual(
+    page.calls.map((c) => c.callee),
+    ["createElement", "Cart", "jsx", "Cart.Item", "jsxs", "Cart", "jsxDEV", "Cart", "jsx", "jsx", "Fragment", "jsx", "h", "Badge", "React.createElement", "Badge"],
+  );
+  assert.deepEqual(page.calls[0]!.passes?.map((p) => `${p.arg}:${p.callee}`), ["0:Cart"]);
+  const shadow = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Shadow")!;
+  assert.deepEqual(shadow.calls.map((c) => c.callee), ["createElement"]);
+  assert.deepEqual(shadow.calls[0]!.passes?.map((p) => `${p.arg}:${p.callee}`), ["0:Cart"]);
+});
+
+test("jsx: a local `createElement` or one imported from another module does not call its first argument", (t) => {
+  const dir = repo(t, {
+    "src/ui/cart.ts": "export function Cart() { return null; }\n",
+    "src/lib/save.ts": "export function save() { return null; }\n",
+    "src/app/dom.ts": "export function createElement(type: unknown, props: unknown) { return props; }\n",
+    "src/app/page.ts": [
+      'import { createElement } from "./dom.ts";',
+      'import { save } from "../lib/save.ts";',
+      'import { Cart } from "../ui/cart.ts";',
+      "export function Page() {",
+      "  return createElement(Cart, { go: save });",
+      "}",
+      "",
+    ].join("\n"),
+    "src/local/own.ts": [
+      "export function Cart() { return null; }",
+      "export function Page() {",
+      "  function createElement(type: unknown, props: { go?: () => void }) { return props; }",
+      "  return createElement(Cart, { go: Page });",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const snap = snapshot(dir);
+  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
+  assert.deepEqual(calls, ["app.page.Page: createElement → app.dom.createElement", "local.own.Page: createElement → null"]);
+  const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
+    files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; path: string; callee: string }[] }[] }[] } }>;
+  };
+  const imported = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Page")!;
+  assert.deepEqual(imported.calls.map((c) => c.callee), ["createElement"]);
+  assert.deepEqual(imported.calls[0]!.passes?.map((p) => `${p.arg}:${p.path}:${p.callee}`), ["0::Cart", "1:go:save"]);
+  const local = facts.files["src/local/own.ts"]!.facts.decls.find((d) => d.name === "Page")!;
+  assert.deepEqual(local.calls.map((c) => c.callee), ["createElement"]);
+  assert.deepEqual(local.calls[0]!.passes?.map((p) => `${p.arg}:${p.path}:${p.callee}`), ["0::Cart", "1:go:Page"]);
+});
