@@ -13,3 +13,8 @@ clip_*.mp4
 docs/agents/
 .cache/
 .local/
+# shiftwork: стан запуску, lock, cooldowns і логи змін (конфіг .pi/shiftwork.json — у репозиторії)
+.pi/shiftwork.lock
+.pi/shiftwork-run.json
+.pi/shiftwork-state.json
+logs/

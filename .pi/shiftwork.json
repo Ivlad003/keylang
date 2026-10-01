@@ -1,0 +1,143 @@
+{
+  "defaultType": "code",
+  "thinking": "medium",
+  "maxAttempts": 3,
+  "maxHandoffs": 3,
+  "softLimitPct": 80,
+  "worktree": {
+    "enabled": true,
+    "setup": [
+      "npm ci --ignore-scripts"
+    ]
+  },
+  "routing": {
+    "git": {
+      "tier": "quick",
+      "thinking": "low"
+    },
+    "docs": {
+      "tier": "quick",
+      "thinking": "low"
+    },
+    "test": {
+      "tier": "standard"
+    },
+    "code": {
+      "tier": "standard"
+    },
+    "refactor": {
+      "tier": "premium"
+    }
+  },
+  "tiers": {
+    "quick": {
+      "chain": [
+        "opencode:opencode-go/deepseek-v4.1-flash",
+        "opencode:opencode-go/glm-5.3",
+        "opencode-go/space-bunny-free",
+        "openrouter/poolside/laguna-s-2.1:free",
+        "openrouter/thinkingmachines/inkling:free",
+        "opencode-go/longcat-2.5-preview-free",
+        "openrouter/qwen/qwen3.8-27b:free",
+        "openrouter/google/gemma-4-31b-it:free"
+      ],
+      "thinking": "low",
+      "budget": {
+        "maxTurns": 40,
+        "maxContextPct": 60,
+        "stallTurns": 5
+      }
+    },
+    "standard": {
+      "chain": [
+        "opencode:opencode-go/kimi-k3",
+        "opencode:opencode-go/glm-5.3",
+        "grok:grok-4.7",
+        "opencode-go/glm-5.3",
+        "opencode-go/deepseek-v4-pro",
+        "opencode-go/kimi-k3",
+        "opencode-go/qwen3.8-max",
+        "xai/grok-4.6",
+        "opencode-go/minimax-m3",
+        "opencode-go/mimo-v2.6-pro"
+      ],
+      "budget": {
+        "maxCostUsd": 1.5,
+        "maxTokens": 3000000
+      }
+    },
+    "premium": {
+      "chain": [
+        "claude:claude-opus-5-5",
+        "grok:grok-4.7",
+        "opencode:opencode-go/kimi-k3",
+        "xai/grok-4.7",
+        "openrouter/anthropic/claude-opus-5"
+      ],
+      "thinking": "high",
+      "budget": {
+        "maxCostUsd": 3,
+        "maxContextPct": 70
+      }
+    }
+  },
+  "budgets": {
+    "default": {
+      "maxTurns": 60,
+      "maxWallMin": 45,
+      "stallTurns": 8
+    },
+    "tiers": {},
+    "models": {},
+    "ticket": {
+      "maxCostUsd": 8,
+      "maxWallMin": 120
+    }
+  },
+  "onExceed": {
+    "maxCostUsd": {
+      "to": "downgrade",
+      "mode": "same-process"
+    },
+    "maxTokens": {
+      "to": "downgrade",
+      "mode": "same-process"
+    },
+    "maxTurns": {
+      "to": "next",
+      "mode": "auto"
+    },
+    "maxContextPct": {
+      "to": "same-tier",
+      "mode": "new-process"
+    },
+    "stallTurns": {
+      "to": "escalate",
+      "mode": "new-process"
+    },
+    "verifyFailed": {
+      "to": "escalate",
+      "mode": "new-process"
+    },
+    "maxWallMin": {
+      "to": "next",
+      "mode": "new-process"
+    }
+  },
+  "cooldown": {
+    "rate": "15m",
+    "usage": "5h",
+    "quota": "24h",
+    "server": "5m"
+  },
+  "crossTier": "none",
+  "allowInPlace": false,
+  "jev": {
+    "enabled": true,
+    "model": [
+      "typesafe/jev-latest",
+      "openrouter/typesafe/jev-1.13",
+      "opencode/jev-1.13-free"
+    ]
+  }
+}
