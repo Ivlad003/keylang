@@ -129,7 +129,7 @@
       - calls lang.ir.sectionNodes, lang.ir.walk, features.draft-llm.lineTree
     - fn [lineTree](../../src/draft-llm.ts#L253) (node: { tokens: { text: string }[]; children: unknown[] }, level: number) → string[] <!-- internal -->
     - type [RulesDraft](../../src/draft-llm.ts#L259)
-    - fn [draftRulesWithModel](../../src/draft-llm.ts#L273) (analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string) → Promise<RulesDraft>
+    - fn [draftRulesWithModel](../../src/draft-llm.ts#L273) (analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string, options: LlmCallOptions = {}) → Promise<RulesDraft>
       - calls features.draft-llm.judgeRule
     - fn [judgeRule](../../src/draft-llm.ts#L317) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
       - calls lang.parser.parse, base.config.resolveStatic, check.assess.assess

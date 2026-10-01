@@ -124,8 +124,9 @@ export interface Prompt {
    * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
+   * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -148,6 +149,16 @@ export interface Prompt {
   exportForm?: ExportForm;
   /** `draft-flow`: the fields as typed; an empty name or target is the CLI's default, shown next to it. */
   draft?: DraftForm;
+  /** `draft-rules`: the fields as typed; an empty target is the CLI's default, shown next to it. */
+  rulesDraft?: RulesDraftForm;
+}
+
+/** The fields of `draft rules [--into] [--mode]` and whether it proposes or only previews. */
+export interface RulesDraftForm {
+  /** Relative to the root, POSIX. */
+  into: string;
+  mode: "algo" | "hybrid" | "llm";
+  output: "proposal" | "preview";
 }
 
 /** The fields of `draft flow <trigger> [--name] [--into] [--mode]` and whether it proposes or only previews. */

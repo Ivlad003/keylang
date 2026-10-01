@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -191,6 +191,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "draft-rules",
+    label: "Draft rules: the rules the code keeps, or the model's (algo, hybrid, llm)",
+    group: "Generate",
+    aliases: ["draft rules", "keylang draft rules", "draft rules --mode hybrid", "draft rules --mode llm", "rules draft", "propose rules"],
+    // A form names the target, the mode and preview or proposal; each model rule is checked alone against the snapshot; the target itself is never written, MERGE applies the proposal.
+    when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "cancel",
     label: "Cancel the running operation",
     group: "Session",
@@ -287,12 +295,21 @@ export function actionLabel(action: Action): string {
 export function matchActions(entries: readonly ActionEntry[], query: string): ActionEntry[] {
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== "");
   if (words.length === 0) return [...entries];
-  return entries.filter((entry) => {
+  const matched = entries.filter((entry) => {
     // Token matching, not one long string: a query never matches across word boundaries
     // ("rules" must not match "infrastructure" via the "keylang" of a repeated alias).
     const tokens = searchText(entry.action).toLowerCase().split(/\s+/);
     return words.every((word) => tokens.some((token) => subsequence(token, word)));
   });
+  // One word that is exactly a file's name opens that file first (`rules` → rules.md, before "Draft rules").
+  const named = (entry: ActionEntry): boolean => words.length === 1 && entry.action.id.startsWith("open:") && fileName(entry.action.id) === words[0];
+  return [...matched.filter(named), ...matched.filter((entry) => !named(entry))];
+}
+
+/** `rules` for `open:keylang/rules.md`: the base name without its extension, lower case. */
+function fileName(id: string): string {
+  const base = id.slice(id.lastIndexOf("/") + 1);
+  return (base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base).toLowerCase();
 }
 
 function searchText(action: Action): string {

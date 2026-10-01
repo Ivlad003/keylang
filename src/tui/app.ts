@@ -38,7 +38,7 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CommitGate, type DraftFlowRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CommitGate, type DraftFlowRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -55,7 +55,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, State } from "./state.ts";
+import type { Buffer, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
@@ -1736,6 +1736,13 @@ export class App {
       const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target}`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
     }
+    if (request.kind === "draft-rules") {
+      // As a flow draft: the saved code and keylang.json (and the saved specs the model's rules are checked
+      // with); only a dirty keylang.json is saved first; the target was refused above when dirty.
+      const isConfig = (path: string): boolean => path === CONFIG_FILE;
+      const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${this.rulesTarget(request.into ?? "")}`] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
+    }
     if (request.kind === "wire") {
       // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
       // A write names its target in that step; without dirty buffers the form already did.
@@ -1883,7 +1890,7 @@ export class App {
       if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
-      if (request.kind === "draft-flow") this.afterDraft(record, origin);
+      if (request.kind === "draft-flow" || request.kind === "draft-rules") this.afterDraft(record, origin);
       this.draw();
     };
     this.cancelActive = () => {
@@ -1924,8 +1931,8 @@ export class App {
    * proposal would be judged against the disk under unsaved edits).
    */
   private commitGate(request: OperationRequest): CommitGate {
-    if (request.kind !== "draft-flow" || request.output !== "proposal") return;
-    const { target } = this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" });
+    if ((request.kind !== "draft-flow" && request.kind !== "draft-rules") || request.output !== "proposal") return;
+    const target = request.kind === "draft-rules" ? this.rulesTarget(request.into ?? "") : this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target;
     const buffer = this.state.buffers.get(target);
     if (buffer && isDirty(buffer)) return { refused: [`${target}: edited in this session while the draft was prepared; save or undo the edits, then draft again`] };
   }
@@ -2750,15 +2757,14 @@ export class App {
    */
   private afterDraft(record: OperationRecord, origin: DraftOrigin): void {
     const result = record.result;
+    if (result?.kind === "draft-rules") return this.afterRulesDraft(record, origin);
     if (result?.kind !== "draft-flow" || result.status !== "completed" || result.payload?.proposal == null) return;
     const { candidate, model } = result.payload;
     const target = candidate.target;
     // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
     const notes = model === null ? "" : [...(model.unknown.length > 0 ? [`still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}`] : []), ...(model.dropped.length > 0 ? [`dropped from the model's draft: ${model.dropped.join("; ")}`] : [])].join("; ");
     const agent = record.action === AGENT_DRAFT;
-    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null ? true : this.state.buffers.get(origin.path)?.version === origin.version);
-    const free = this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.results.open && !this.state.help;
-    if (current && free) {
+    if (this.stillWhereDraftStarted(origin)) {
       this.merges.open(target);
       if (this.state.merge?.path === target) this.state.message = agent && notes ? `agent: ${notes}` : `${agent ? "agent" : "draft flow"}: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${notes ? ` · ${notes}` : ""}`;
       return;
@@ -2767,6 +2773,136 @@ export class App {
     this.state.message = agent
       ? `agent: the draft of flow ${candidate.name} is a proposal for ${target}: m merges it${notes ? `; ${notes}` : ""}`
       : `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${notes ? ` · ${notes}` : ""}`;
+  }
+
+  /** The file, the mode and the text a draft started from are still current and nothing else is open: its proposal may open MERGE by itself. */
+  private stillWhereDraftStarted(origin: DraftOrigin): boolean {
+    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null ? true : this.state.buffers.get(origin.path)?.version === origin.version);
+    return current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.results.open && !this.state.help;
+  }
+
+  /** A finished rules draft: the proposal opens MERGE under the same rule as a flow draft's; its conflicts are named, never taken for the workspace's verdict. */
+  private afterRulesDraft(record: OperationRecord, origin: DraftOrigin): void {
+    const result = record.result;
+    if (result?.kind !== "draft-rules" || result.status !== "completed" || result.payload === null) return;
+    const { candidate, model } = result.payload;
+    const conflicts = model === null || model.conflicts.length === 0 ? "" : ` · ${model.conflicts.length} conflict(s) with the code now: F6 names them`;
+    if (result.payload.proposal === null) {
+      if (conflicts !== "") this.state.message = `${this.state.message ?? ""}${conflicts}`;
+      return;
+    }
+    const target = candidate.target;
+    if (this.stillWhereDraftStarted(origin)) {
+      this.merges.open(target);
+      if (this.state.merge?.path === target) this.state.message = `draft rules: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${conflicts}`;
+      return;
+    }
+    this.state.message = `draft rules: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${conflicts}`;
+  }
+
+  // ---------- draft rules (algo, hybrid, llm) ----------
+
+  /**
+   * The draft-rules form (design §2.4 `draft rules`): the target (empty: the
+   * CLI's `<dir>/rules.md`, shown next to it), the mode (hybrid with a
+   * model, else algo) and preview or proposal.
+   */
+  private openRulesDraftPrompt(): void {
+    const mode = this.agentName() !== null ? "hybrid" : "algo";
+    this.state.prompt = { kind: "draft-rules", text: "", items: [], ids: [], index: 0, rulesDraft: { into: "", mode, output: "proposal" } };
+    this.refreshRulesDraftPrompt();
+  }
+
+  /** The target a rules draft would use: the typed one, else the CLI's default. */
+  private rulesTarget(into: string): string {
+    return into.trim() !== "" ? toPosix(into.trim()) : `${this.merges.specDir()}/rules.md`;
+  }
+
+  /** Why a rules draft may not start now, or null: a model llm needs, then (a proposal only) the target, a pending proposal, an unsaved target. */
+  private rulesDraftProblem(form: RulesDraftForm): { field: string; text: string } | null {
+    if (form.mode === "llm" && this.agentName() === null) return { field: "mode", text: "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts from the snapshot without one)" };
+    if (form.output === "preview") return null;
+    const target = this.rulesTarget(form.into);
+    const problem = proposalProblem(this.state.root, this.merges.specDir(), target, (path) => this.generatedDoc(path));
+    if (problem !== null) return { field: "into", text: `${target}: ${problem}` };
+    if (this.proposalWaiting(target)) return { field: "into", text: `a proposal for ${target} is waiting: merge it first (m, or Proposals)` };
+    const buffer = this.state.buffers.get(target);
+    if (buffer && isDirty(buffer)) return { field: "into", text: `${target} has unsaved changes: save (Ctrl+S) or undo them before a draft into it` };
+    return null;
+  }
+
+  /** The rows, the root and what the model sees, and a note on the selected row. */
+  private refreshRulesDraftPrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.rulesDraft;
+    if (prompt?.kind !== "draft-rules" || !form) return;
+    const selected = prompt.ids?.[prompt.index] ?? "into";
+    const target = this.rulesTarget(form.into);
+    const rows: { id: string; text: string }[] = [
+      { id: "into", text: `target:  ${form.into}${selected === "into" ? "▏" : ""}${form.into.trim() === "" ? `  (default ${target})` : ""}` },
+      { id: "mode", text: `mode:    ${form.mode} · ←→ ${DRAFT_MODES[(DRAFT_MODES.indexOf(form.mode) + 1) % DRAFT_MODES.length]}` },
+      { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
+      { id: "run", text: form.output === "proposal" ? `Create the proposal ${PROPOSALS_DIR}/${target} (the target itself is not written)` : "Preview the draft (writes nothing)" },
+    ];
+    prompt.ids = rows.map((row) => row.id);
+    prompt.items = rows.map((row) => row.text);
+    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
+    prompt.details = [
+      `root: ${this.state.root} · the target is relative to it · ${form.mode === "algo" ? "algo: the rules the code keeps now (layers or deny, no-cycles without a module cycle)" : "the model sees the layers and the edges between them; each of its rules is checked alone: agree, conflict or llm-only — never the workspace's verdict"}`,
+    ];
+    const now = prompt.ids[prompt.index]!;
+    const problem = this.rulesDraftProblem(form);
+    const agent = this.agentName();
+    if (now === "mode")
+      prompt.note =
+        form.mode === "algo"
+          ? "algo: the rules the code keeps now; no model"
+          : agent === null
+            ? form.mode === "hybrid"
+              ? "no model configured (agent in keylang.json): hybrid drafts from the snapshot only, as algo, and says so"
+              : (problem?.text ?? "")
+            : form.mode === "hybrid"
+              ? `${agent} proposes rules; the algo rules it missed are added`
+              : `${agent} proposes rules; each is checked alone against the snapshot`;
+    else if (problem !== null && (problem.field === now || now === "run" || now === "output")) prompt.note = problem.text;
+    else if (now === "into") prompt.note = existsSync(join(this.state.root, target)) ? `${target} exists: its prose and other sections are kept; the rules join its last # rules section` : `${target} is a new file`;
+    else prompt.note = form.output === "proposal" ? "Enter proposes; MERGE applies it hunk by hunk" : "Enter shows the draft in F6; nothing is written";
+  }
+
+  /** ←→ on the mode row (algo, hybrid, llm) or the output row (proposal or preview). */
+  private changeRulesDraftChoice(delta: -1 | 1): void {
+    const prompt = this.state.prompt;
+    const row = prompt?.ids?.[prompt.index];
+    if (prompt?.kind !== "draft-rules" || !prompt.rulesDraft) return;
+    if (row === "mode") prompt.rulesDraft.mode = DRAFT_MODES[(DRAFT_MODES.indexOf(prompt.rulesDraft.mode) + delta + DRAFT_MODES.length) % DRAFT_MODES.length]!;
+    else if (row === "output") prompt.rulesDraft.output = prompt.rulesDraft.output === "proposal" ? "preview" : "proposal";
+    else return;
+    this.refreshRulesDraftPrompt();
+  }
+
+  /** Enter in the rules form: a problem keeps the form with the field selected, else the draft runs as the session's operation. */
+  private submitRulesDraft(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.rulesDraft;
+    if (prompt?.kind !== "draft-rules" || !form) return;
+    const problem = this.rulesDraftProblem(form);
+    if (problem !== null) {
+      prompt.index = Math.max(0, prompt.ids!.indexOf(problem.field));
+      this.refreshRulesDraftPrompt();
+      this.state.message = `draft rules: ${problem.text}`;
+      return;
+    }
+    const into = form.into.trim();
+    this.state.prompt = null;
+    const request: DraftRulesRequest = {
+      kind: "draft-rules",
+      root: this.state.root,
+      ...(into !== "" ? { into: toPosix(into) } : {}),
+      output: form.output,
+      pending: "refuse",
+      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
+    };
+    this.requestOperation("draft-rules", request);
   }
 
   // ---------- export ----------
@@ -3094,7 +3230,7 @@ export class App {
       return;
     }
     // A proposed draft: Enter opens its MERGE (checked again: a proposal merged or rewritten since is judged as it is now).
-    if (record.result?.kind === "draft-flow" && record.result.payload?.proposal != null) {
+    if ((record.result?.kind === "draft-flow" || record.result?.kind === "draft-rules") && record.result.payload?.proposal != null) {
       this.closeResults();
       return this.merges.open(record.result.payload.candidate.target);
     }
@@ -3450,6 +3586,8 @@ export class App {
     } else if (prompt.kind === "draft-flow") {
       const field = prompt.ids?.[prompt.index];
       if (prompt.draft && (field === "trigger" || field === "name" || field === "into")) prompt.draft[field] += text;
+    } else if (prompt.kind === "draft-rules") {
+      if (prompt.rulesDraft && prompt.ids?.[prompt.index] === "into") prompt.rulesDraft.into += text;
     } else prompt.text += text;
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
@@ -3467,6 +3605,7 @@ export class App {
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
     if (prompt.kind === "export") this.refreshExportPrompt();
     if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
+    if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -3493,6 +3632,8 @@ export class App {
         if (prompt.edge && (field === "from" || field === "to")) prompt.edge[field] = graphemes(prompt.edge[field]).slice(0, -1).join("");
       } else if (prompt.kind === "draft-flow") {
         if (prompt.draft && (field === "trigger" || field === "name" || field === "into")) prompt.draft[field] = graphemes(prompt.draft[field]).slice(0, -1).join("");
+      } else if (prompt.kind === "draft-rules") {
+        if (prompt.rulesDraft && field === "into") prompt.rulesDraft.into = graphemes(prompt.rulesDraft.into).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
@@ -3510,12 +3651,14 @@ export class App {
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
       if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
+      if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-rules") return this.changeRulesDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -3524,6 +3667,7 @@ export class App {
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
       if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
+      if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -3538,6 +3682,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
     if (event.name === "enter" && prompt.kind === "export") return this.submitExport();
     if (event.name === "enter" && prompt.kind === "draft-flow") return this.submitDraft();
+    if (event.name === "enter" && prompt.kind === "draft-rules") return this.submitRulesDraft();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -3632,6 +3777,8 @@ export class App {
         return this.openTracePlanPrompt();
       case "draft-flow":
         return this.openDraftPrompt();
+      case "draft-rules":
+        return this.openRulesDraftPrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":

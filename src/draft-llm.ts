@@ -268,9 +268,9 @@ export interface RulesDraft {
  * dependencies; each is checked at once against the current snapshot, alone,
  * as `check` would: `agree` when it holds, `conflict` when the code breaks it
  * (with the edge), `llm-only` when the evidence is not enough. `hybrid` adds
- * the algo rules the model did not give.
+ * the algo rules the model did not give. `options.signal` cancels the request.
  */
-export async function draftRulesWithModel(analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string): Promise<RulesDraft> {
+export async function draftRulesWithModel(analysis: Analysis, client: LlmClient, mode: "llm" | "hybrid", algoText: string, target: string, options: LlmCallOptions = {}): Promise<RulesDraft> {
   const snapshot = analysis.snapshot!;
   const uses = new Map<string, number>();
   for (const e of snapshot.edges) {
@@ -287,7 +287,7 @@ export async function draftRulesWithModel(analysis: Analysis, client: LlmClient,
     ].join("\n\n"),
     prompt: `Layers: ${[...analysis.config.layers.keys()].join(", ")}\n\nDependencies between layers (edges):\n${[...uses].map(([pair, n]) => `${pair}: ${n}`).join("\n") || "none"}`,
     maxTokens: 2048,
-  });
+  }, options);
   const body = (/```(?:markdown|md)?\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).split("\n").filter((line) => /^\s*- /.test(line));
   const counts: Record<DraftStatus, number> = { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 };
   const conflicts: string[] = [];

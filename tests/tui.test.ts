@@ -6814,3 +6814,286 @@ test("tui: without a model the form drafts hybrid as algo and says so, as the CL
   assert.match(s.text(), /Draft flow · algo \(hybrid without a model\) · application\.purchase\.buy/);
   assert.match(s.text(), /drafting from the snapshot only \(--mode algo\)/);
 });
+
+// ---------- rules draft (ticket 24) ----------
+
+/** A rules spec with prose, a rule the draft also finds, and another section: a draft into it keeps all of them. */
+const RULES_SPEC = "# Architecture\n\nWhy the layers are so.\n\n# rules\n\nThe rules we keep.\n\n- layers domain < infrastructure < application < presentation\n\n# flow other\n\n- trigger presentation.terminal.checkout\n";
+
+/** The checkout code with `domain.order` calling back into the terminal: the modules (and the layers) form a cycle. */
+const CYCLIC_ORDER = 'import { checkout } from "../presentation/terminal.ts";\nexport function create(): void {\n  checkout();\n}\n';
+
+/** The palette's draft-rules form with the given fields; Enter on the run row. */
+function rulesForm(s: ReturnType<typeof session>, fields: { into?: string; mode?: "algo" | "hybrid" | "llm"; output?: "proposal" | "preview" } = {}): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "draft rules") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "draft-rules", s.app.state.message ?? "");
+  const row = (id: string): void => {
+    for (let i = 0; i < 8 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
+    assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
+  };
+  if (fields.into !== undefined) {
+    row("into");
+    for (const ch of fields.into) s.send(ch);
+  }
+  if (fields.mode !== undefined && fields.mode !== prompt.rulesDraft!.mode) {
+    row("mode");
+    for (let i = 0; i < 3 && prompt.rulesDraft!.mode !== fields.mode; i++) s.send(KEY.right);
+    assert.equal(prompt.rulesDraft!.mode, fields.mode);
+  }
+  if ((fields.output ?? "proposal") !== prompt.rulesDraft!.output) {
+    row("output");
+    s.send(KEY.right);
+  }
+  row("run");
+  s.send(KEY.enter);
+}
+
+type RulesResult = Extract<OperationResult, { kind: "draft-rules" }> & { payload: NonNullable<Extract<OperationResult, { kind: "draft-rules" }>["payload"]> };
+
+function rulesRecord(app: App): RulesResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "draft-rules" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as RulesResult;
+}
+
+function cliRules(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "draft", "rules", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", OPENROUTER_API_KEY: "", HOME: root } });
+}
+
+test("tui: draft rules (algo) on an acyclic and a cyclic repository is the CLI's text; the proposal keeps the prose and other sections; the rules file stays until w", async (t) => {
+  const specs = { "keylang/rules.md": RULES_SPEC };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The form: the default target and the root are visible; no model, so algo.
+  s.send(KEY.ctrlP);
+  for (const ch of "draft rules") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "draft-rules");
+  assert.equal(prompt.rulesDraft?.mode, "algo");
+  assert.deepEqual(prompt.ids, ["into", "mode", "output", "run"]);
+  assert.equal(prompt.items[0], "target:  ▏  (default keylang/rules.md)");
+  assert.match(prompt.details![0]!, new RegExp(`^root: ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · the target is relative to it · algo: the rules the code keeps now`));
+  assert.equal(promptNote(s.app), "keylang/rules.md exists: its prose and other sections are kept; the rules join its last # rules section");
+  assert.match(s.text(), /draft rules · algo/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Esc writes nothing");
+  // Preview: the CLI's --print byte for byte; nothing written, stats included.
+  rulesForm(s, { output: "preview" });
+  await s.app.idle();
+  const preview = rulesRecord(s.app);
+  assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals], ["completed", 0, [], []]);
+  const printed = cliRules(twin, ["--mode", "algo", "--print"]);
+  assert.deepEqual([printed.status, printed.stderr], [0, ""]);
+  const { candidate } = preview.payload;
+  assert.equal(candidate.rules, printed.stdout);
+  assert.equal(candidate.rules, "# rules\n\n- layers domain < infrastructure < application < presentation <!-- keylang:algo status=algo-only -->\n- no-cycles <!-- keylang:algo status=algo-only -->\n");
+  assert.equal(preview.payload.cyclic, false);
+  assert.deepEqual([candidate.target, candidate.before, candidate.pending, candidate.problem], ["keylang/rules.md", RULES_SPEC, null, null]);
+  // The rule the file has is not repeated; the prose and the flow are kept; no-cycles joins the # rules section.
+  assert.equal(candidate.text, RULES_SPEC.replace("presentation\n\n# flow", "presentation\n- no-cycles <!-- keylang:algo status=algo-only -->\n\n# flow"));
+  assert.deepEqual(treeBytes(root), before, "a preview writes no proposal, no stats, not the target");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Draft rules · algo → keylang\/rules\.md · preview, nothing written/);
+  assert.match(text, /2 rule\(s\), preview, nothing written · code 0/);
+  assert.match(text, /── keylang draft rules --print · stdout ──/);
+  assert.match(text, /── keylang\/rules\.md as proposed ──/);
+  await esc(s.send);
+  // Proposal: the CLI's proposal in the twin, byte for byte; only the proposal is new; MERGE opens since nothing moved.
+  rulesForm(s);
+  await s.app.idle();
+  const proposed = rulesRecord(s.app);
+  const store = ".keylang/proposals/keylang/rules.md";
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.written, proposed.proposals, proposed.payload.proposal], ["completed", 0, [], [store], store]);
+  const cli = cliRules(twin, ["--mode", "algo"]);
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [0, `${store}: proposed rules for keylang/rules.md; merge it with \`m\` in \`keylang\`\n`, ""]);
+  assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), "the CLI's proposal, byte for byte");
+  assert.equal(readFileSync(join(root, store), "utf8"), candidate.text);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), RULES_SPEC);
+  assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)), [store], "only the proposal, no stats");
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), RULES_SPEC, "before w the rules are byte for byte the same");
+  s.send(KEY.f6);
+  assert.match(s.text(), /2 rule\(s\) proposed for keylang\/rules\.md · code 0/);
+  assert.match(s.text(), /Enter open MERGE/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md");
+  for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), candidate.text);
+  assert.ok(!existsSync(join(root, store)));
+  // A cyclic repository: deny pairs instead of an order, no no-cycles — the CLI's text again.
+  const cyclic = checkoutRepo(t, { "src/domain/order.ts": CYCLIC_ORDER });
+  const c = session(cyclic, { cols: 200 });
+  t.after(() => c.app.close());
+  await c.app.idle();
+  rulesForm(c, { output: "preview" });
+  await c.app.idle();
+  const drafted = rulesRecord(c.app);
+  assert.deepEqual([drafted.status, drafted.exitCode], ["completed", 0]);
+  assert.equal(drafted.payload.cyclic, true);
+  assert.equal(drafted.payload.candidate.rules, cliRules(cyclic, ["--mode", "algo", "--print"]).stdout);
+  assert.doesNotMatch(drafted.payload.candidate.rules, /no-cycles|layers/);
+  assert.match(drafted.payload.candidate.rules, /^- deny /m);
+  c.send(KEY.f6);
+  assert.match(c.text(), /the modules form a cycle, so no no-cycles/);
+});
+
+const RULES_ANSWER = "```markdown\n# rules\n\n- deny domain presentation\n- deny application domain\n```";
+
+test("tui: a hybrid rules draft shows the model's conflict with its evidence apart from the workspace, which stays as it was; Cancel and a proposal that appears meanwhile write nothing, not even the stats", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, RULES_ANSWER);
+  const s = session(root, { cols: 220 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  const verdicts = JSON.stringify(s.app.state.analysis!.verdicts);
+  // Preview: the model's rules checked now — one kept, one broken by the code; the algo rules added.
+  rulesForm(s, { output: "preview" });
+  const record = s.app.state.records.at(-1)!;
+  assert.equal(record.params.kind === "draft-rules" ? record.params.mode : null, "hybrid", "with a model the form's default is the CLI's hybrid");
+  await model.requested(1);
+  assert.match(model.prompts[0]!, /application → domain: \d+/, "the layer dependencies go to the model");
+  model.release();
+  await s.app.idle();
+  const preview = rulesRecord(s.app);
+  assert.deepEqual([preview.status, preview.exitCode, preview.proposals], ["completed", 0, []]);
+  assert.equal(preview.payload.mode, "hybrid");
+  assert.equal(preview.payload.summary, "1 agree, 2 algo-only, 1 conflict");
+  assert.deepEqual(preview.payload.model?.counts, { agree: 1, "llm-only": 0, "algo-only": 2, conflict: 1 });
+  assert.equal(preview.payload.model?.conflicts.length, 1);
+  assert.match(preview.payload.model!.conflicts[0]!, /^- deny application domain → src\/application\/purchase\.ts:\d+: K102 /);
+  assert.match(preview.payload.candidate.rules, /- deny application domain <!-- keylang:llm model=anthropic:claude-opus-5 status=conflict -->/);
+  assert.match(preview.payload.candidate.rules, /- deny domain presentation <!-- keylang:llm model=anthropic:claude-opus-5 status=agree -->/);
+  assert.deepEqual(treeBytes(root), before, "a preview of a model draft writes nothing, stats included");
+  assert.equal(JSON.stringify(s.app.state.analysis!.verdicts), verdicts, "the workspace's verdicts are not the draft's");
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Draft rules · hybrid → keylang\/rules\.md · preview, nothing written/);
+  assert.match(text, /conflicts \(1\): the code breaks these rules now/);
+  assert.match(text, /conflict: - deny application domain → src\/application\/purchase\.ts:\d+: K102/);
+  assert.match(text, /not the workspace's verdict/);
+  assert.match(text, /── keylang draft rules --mode hybrid --print · stdout ──/);
+  await esc(s.send);
+  // Cancel while the model answers: cancelled with no code; the request is closed; nothing written.
+  rulesForm(s, { mode: "llm" });
+  await model.requested(2);
+  const cancelled = s.app.state.records.at(-1)!;
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the model request is closed");
+  model.release();
+  await s.app.idle();
+  assert.equal(cancelled.status, "cancelled", "a late answer changes nothing");
+  assert.deepEqual(treeBytes(root), before, "no proposal, no stats");
+  // Another proposal appears while the model answers: it is kept, nothing is counted.
+  const store = join(root, ".keylang/proposals/keylang/rules.md");
+  rulesForm(s);
+  await model.requested(3);
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, "# rules\n\n- foreign\n");
+  model.release();
+  await s.app.idle();
+  const refused = rulesRecord(s.app);
+  assert.deepEqual([refused.status, refused.exitCode], ["failed", 1]);
+  assert.match(refused.payload.refused.join("\n"), /\.keylang\/proposals\/keylang\/rules\.md: .*while the proposal was prepared/);
+  assert.equal(readFileSync(store, "utf8"), "# rules\n\n- foreign\n");
+  assert.deepEqual(draftCounts(root), {});
+  rmSync(join(root, ".keylang/proposals"), { recursive: true });
+  // The proposal: the full text, the stats count its lines; the rules file changes only through MERGE.
+  rulesForm(s);
+  await model.requested(4);
+  model.release();
+  await s.app.idle();
+  const proposed = rulesRecord(s.app);
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.payload.proposal], ["completed", 0, ".keylang/proposals/keylang/rules.md"]);
+  assert.equal(readFileSync(store, "utf8"), proposed.payload.candidate.text);
+  assert.equal(readFileSync(join(root, "keylang/rules.md"), "utf8"), "# rules\n\n- layers domain < infrastructure < application < presentation\n");
+  assert.deepEqual(Object.fromEntries(Object.entries(draftCounts(root)).map(([status, n]) => [status, n.proposed])), { agree: 1, "llm-only": 0, "algo-only": 2, conflict: 1 });
+  assert.equal(s.app.state.merge?.path, "keylang/rules.md", s.app.state.message ?? "");
+  assert.match(s.app.state.message ?? "", /1 conflict\(s\) with the code now: F6 names them/);
+  // Merged as it is, the conflicting rule is a finding of the check — never an ok.
+  for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+  s.send("w");
+  await s.app.idle();
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.ok(s.app.state.analysis!.diagnostics.some((d) => d.code === "K102"), JSON.stringify(s.app.state.analysis!.diagnostics.map((d) => d.code)));
+});
+
+test("tui: without a model the rules form drafts hybrid as algo and says so, as the CLI does; llm, a waiting proposal and an unsaved target are refused before it runs", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "draft rules") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.rulesDraft?.mode, "algo", "no model: the form starts on algo");
+  s.send(KEY.down);
+  s.send(KEY.right);
+  assert.equal(prompt.rulesDraft?.mode, "hybrid");
+  assert.match(prompt.note ?? "", /no model configured .*hybrid drafts from the snapshot only, as algo, and says so/);
+  s.send(KEY.right);
+  assert.equal(prompt.rulesDraft?.mode, "llm");
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "draft-rules", "the form stays");
+  assert.equal(prompt.ids?.[prompt.index], "mode");
+  assert.match(s.app.state.message ?? "", /draft rules: --mode llm needs a model/);
+  assert.equal(s.app.state.records.length, 0);
+  await esc(s.send);
+  // Hybrid preview without a model: algo with the CLI's note.
+  rulesForm(s, { mode: "hybrid", output: "preview" });
+  await s.app.idle();
+  const result = rulesRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.payload.mode, result.payload.model], ["completed", 0, "algo", null]);
+  const cli = cliRules(root, ["--mode", "hybrid", "--print"]);
+  assert.equal(result.payload.candidate.rules, cli.stdout);
+  assert.equal(cli.stderr, `keylang: ${result.payload.fallback}\n`);
+  assert.match(result.payload.fallback ?? "", /; drafting from the snapshot only \(--mode algo\)$/);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Draft rules · algo \(hybrid without a model\) → keylang\/rules\.md/);
+  await esc(s.send);
+  // A waiting proposal and an unsaved target: refused before the run, the bytes as they were.
+  const store = join(root, ".keylang/proposals/keylang/rules.md");
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, "# rules\n\n- waiting\n");
+  const records = s.app.state.records.length;
+  rulesForm(s);
+  assert.equal(s.app.state.prompt?.kind, "draft-rules");
+  assert.match(s.app.state.message ?? "", /a proposal for keylang\/rules\.md is waiting: merge it first/);
+  assert.equal(s.app.state.records.length, records);
+  assert.equal(readFileSync(store, "utf8"), "# rules\n\n- waiting\n");
+  await esc(s.send);
+  rmSync(join(root, ".keylang/proposals"), { recursive: true });
+  s.send("\x1b[12~");
+  const file = locate(s.lines(), "keylang/rules");
+  s.send(click(file.x + 1, file.y));
+  assert.equal(s.app.state.current, "keylang/rules.md", s.app.state.message ?? "");
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  rulesForm(s);
+  assert.match(s.app.state.message ?? "", /keylang\/rules\.md has unsaved changes/);
+  assert.equal(s.app.state.records.length, records);
+  assert.ok(!existsSync(store));
+});

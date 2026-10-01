@@ -16,9 +16,8 @@ import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
-import { changedFlows, codeToSpec, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
+import { changedFlows, codeToSpec, withFlow, type FlowDraft } from "./draft.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
-import { stronglyConnected } from "./scc.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
 import { safeWriteAll } from "./safe-write.ts";
 import { specToCode } from "./spec-to-code.ts";
@@ -639,36 +638,35 @@ async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into:
     process.stderr.write(current === null ? `keylang: no ${CONFIG_FILE}; \`keylang init\` writes this layout\n` : `keylang: printed only; ${CONFIG_FILE} is unchanged\n`);
     return 0;
   }
-  const analysis = await analyze({ root, withoutEvidence: true });
-  if (!analysis.snapshot) throw new Error("draft: no supported source files; run `keylang init`");
-  const adj = new Map<string, Set<string>>();
-  for (const [id, node] of Object.entries(analysis.snapshot.nodes)) if (node.kind === "module") adj.set(id, new Set((node.deps ?? []).filter((d) => analysis.snapshot!.nodes[d]?.layer !== "external")));
-  const algo = draftRules(analysis.snapshot, stronglyConnected(adj).length > 0);
-  let text = algo;
-  let counts: Record<string, number> | null = null;
-  const client = await model();
-  const specDirEarly = toPosix(relative(root, resolve(root, analysis.config.dir)));
-  if (client) {
-    const { draftRulesWithModel } = await import("./draft-llm.ts");
-    const drafted = await draftRulesWithModel(analysis, client, opts.mode as "llm" | "hybrid", algo, toPosix(opts.into ?? `${specDirEarly}/rules.md`));
-    text = drafted.text;
-    for (const conflict of drafted.conflicts) process.stderr.write(`keylang: conflict: ${conflict}\n`);
-    counts = drafted.counts;
+  return draftRulesPrinter(root, opts.mode, opts);
+}
+
+/**
+ * `draft rules [--mode algo|llm|hybrid] [--into] [--print]`: a printer over
+ * the shared `draft-rules` operation. The proposal replaces one already
+ * waiting, as the CLI always did. On stderr: the fallback of a hybrid
+ * without a model, each conflict with its evidence, a stats file not updated.
+ */
+async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }): Promise<number> {
+  const result = await runOperation({
+    kind: "draft-rules",
+    root,
+    mode,
+    ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
+    output: opts.print ? "preview" : "proposal",
+    pending: "replace",
+  });
+  const payload = result.payload;
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.status !== "completed" || payload === null) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  if (opts.print) {
-    process.stdout.write(text);
+  if (payload.output === "preview") {
+    process.stdout.write(payload.candidate.rules);
     return 0;
   }
-  const specDir = toPosix(relative(root, resolve(root, analysis.config.dir)));
-  const target = toPosix(opts.into ?? `${specDir}/rules.md`);
-  const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
-  if (problem) throw new Error(`draft: ${target}: ${problem}`);
-  const abs = join(root, target);
-  // An existing file keeps its text; the draft's rules join its `# rules` section.
-  const proposal = withRules(existsSync(abs) ? readFileSync(abs, "utf8") : null, text);
-  const file = writeProposal(root, target, proposal);
-  if (counts) countProposed(root, counts);
-  process.stdout.write(`${toPosix(relative(process.cwd(), file))}: proposed rules for ${target}; merge it with \`m\` in \`keylang\`\n`);
+  process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed rules for ${payload.candidate.target}; merge it with \`m\` in \`keylang\`\n`);
   return 0;
 }
 

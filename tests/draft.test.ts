@@ -760,3 +760,38 @@ test("draft-flow operation: llm and hybrid through the shared operation; a Cance
   assert.ok(!existsSync(join(dir, ".keylang/proposals")));
   assert.equal(readFileSync(join(dir, ".keylang/stats.json"), "utf8"), before, "a refused draft counts nothing");
 });
+
+test("draft-rules operation: a Cancel during the model's answer is cancelled with nothing written; a pending proposal is refused before the model is asked", async (t) => {
+  const { runOperation } = await import("../src/operations.ts");
+  const dir = copy(t);
+  const config = join(dir, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+  const saved = { url: process.env.ANTHROPIC_BASE_URL, key: process.env.ANTHROPIC_API_KEY, home: process.env.HOME };
+  t.after(() => {
+    for (const [name, value] of [["ANTHROPIC_BASE_URL", saved.url], ["ANTHROPIC_API_KEY", saved.key], ["HOME", saved.home]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  process.env.ANTHROPIC_API_KEY = "k";
+  process.env.HOME = dir;
+  const stalled = await stalledProvider(t, "anthropic");
+  process.env.ANTHROPIC_BASE_URL = stalled.url;
+  const controller = new AbortController();
+  const pending = runOperation({ kind: "draft-rules", root: dir, mode: "hybrid", output: "proposal" }, { signal: controller.signal });
+  await stalled.requested;
+  controller.abort();
+  const cancelled = await pending;
+  assert.deepEqual([cancelled.status, cancelled.exitCode, cancelled.payload, cancelled.proposals], ["cancelled", null, null, []]);
+  await stalled.closed;
+  assert.ok(!existsSync(join(dir, ".keylang")), "no proposal, no stats");
+  // A waiting proposal under `refuse`: code 1 and no request at all.
+  mkdirSync(join(dir, ".keylang/proposals/keylang"), { recursive: true });
+  writeFileSync(join(dir, ".keylang/proposals/keylang/rules.md"), "# rules\n\n- waiting\n");
+  const model = await mockModel(t, ["```markdown\n# rules\n\n- no-cycles\n```"]);
+  process.env.ANTHROPIC_BASE_URL = model.url;
+  const refused = await runOperation({ kind: "draft-rules", root: dir, mode: "llm", output: "proposal" });
+  assert.deepEqual([refused.status, refused.exitCode, model.prompts.length], ["failed", 1, 0]);
+  assert.deepEqual(refused.payload?.refused, [".keylang/proposals/keylang/rules.md: a proposal for keylang/rules.md is waiting; merge it (m) or remove it before a new draft"]);
+  assert.equal(readFileSync(join(dir, ".keylang/proposals/keylang/rules.md"), "utf8"), "# rules\n\n- waiting\n");
+});
