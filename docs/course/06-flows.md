@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/06-flows.md)
 
-A flow is one scenario. Rules say which modules may know each other. A flow says one path through them: a trigger, the steps under it, and the evidence you attach.
+A flow is one scenario. You write it. The agent writes the functions on that path. You do not. Rules say which modules may know each other. A flow says one path through them: a trigger, the steps under it, and the evidence you attach.
 
 `keylang/flows/check.md` describes `keylang check` itself:
 
@@ -91,7 +91,7 @@ The same declaration can live in `keylang/features/<slug>.md`. `keylang feature 
 
 A package nobody imports yet is `planned module external.<pkg>`, with a step from the module that will import it. Until that module imports it, the step stays `unverified`. When it does, the declaration is K202 and the step is static `ok`.
 
-`spec-to-code <id>` proposes a stub that throws `not implemented`, plus a failing test for each missing test file the flows name. After you accept them, the id check can pass and K202 suggests deleting `planned`. The tests stay `fail` until someone writes them. A generated stub is not a passing scenario.
+`spec-to-code <id>` proposes a stub that throws `not implemented`, plus a failing test for each missing test file the flows name. After you accept them, the id check can pass and K202 suggests deleting `planned`. The tests stay `fail` until the agent writes the real function and the real test from the same spec. The stub is not the feature.
 
 ## The mark on the line
 

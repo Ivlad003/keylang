@@ -21,7 +21,9 @@ Domain does not import infrastructure. The edge does not import it either. The t
 - deny presentation infrastructure
 ```
 
-Create the app with its own tool. Then:
+You write this file. The next parts name functions. The agent writes those functions. You do not.
+
+Create the empty app with its own tool. Then:
 
 ```sh
 npx keylang init .

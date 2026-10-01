@@ -4,7 +4,7 @@
 
 New to the words? The [pre-course](pre/README.md) introduces them on the shop.
 
-keylang is Markdown next to the code. You write what the program is allowed to know, and which scenario should still happen. keylang checks that the code still matches.
+keylang is Markdown next to the code. You write the spec: what the program is allowed to know, and which scenario should still happen. You do not write the functions. An agent reads that spec and generates the code. keylang does not start the agent. keylang checks that the generated code still matches.
 
 Take the shop. The screen starts a purchase. The purchase asks the order rules to build an order. The order rules do not know about the screen or the database. That last sentence is a rule. When the code breaks it, the check can fail the build.
 
@@ -53,7 +53,7 @@ The map is a view of the snapshot. Checking the Markdown can confirm that an id 
 
 **When a feature is done.** `keylang/features/<slug>.md` is an ordinary spec: `planned` ids and a flow. `keylang feature <slug>` is done when every `planned` there is implemented (K202, not K201), every step is static `ok`, and no rule `fail` remains, including the baseline. Tests and traces are reported. They do not block that answer. An integration nobody imports yet is `planned module external.<pkg>` plus a step to that module.
 
-**An agent on a repository it has not seen.** `keylang init` writes `keylang.json`, the map, `rules.baseline.md`, and a short managed block in `AGENTS.md`. Where it finds Claude, Codex, Cursor or opencode, it also registers the MCP server and a skill. The agent writes code with its own tools. keylang does not launch it. `check` is still the verdict. Hand-written rules change only as a proposal a person merges. `--agents=none` skips the harness files and still writes the baseline.
+**An agent on a repository it has not seen.** `keylang init` writes `keylang.json`, the map, `rules.baseline.md`, and a short managed block in `AGENTS.md`. Where it finds Claude, Codex, Cursor or opencode, it also registers the MCP server and a skill. The agent generates the program from that spec, with its own tools. You do not write those functions. keylang does not launch the agent. `check` is still the verdict. Hand-written rules change only as a proposal a person merges. `--agents=none` skips the harness files and still writes the baseline.
 
 ## What it leaves alone
 

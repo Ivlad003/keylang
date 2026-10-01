@@ -76,7 +76,7 @@ A run can finish with exit code 0 while some claims are `unverified`. Exit code 
 | Wiring | An optional generated function that builds objects in order. It does not replace the rules |
 | Proposal | Text an agent wants in a spec. It is not in the spec until a person accepts it |
 | Baseline | The deny frame `init` writes from today's dependencies. A later import across a gap fails until you allow it or regenerate |
-| Feature | A file that says when a piece of work is done |
+| Feature | A file you write that says when a piece of work is done. The agent generates the functions |
 | Explained map | The same map with a short note under each node. The check does not read it |
 
 Next: [the principles](03-principles.md).

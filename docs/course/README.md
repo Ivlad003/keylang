@@ -6,7 +6,9 @@
 
 New to the words layer, dependency and flow? Start with the [pre-course](pre/README.md) ([українською](pre/uk/README.md)). It uses the shop, before any command.
 
-This course shows how to read and write keylang, and how to use the CLI, the terminal and the browser. The exact grammar is [`docs/format.md`](../format.md), in Ukrainian. If this course and that file disagree about a diagnostic, the spec wins. Flags are in [`docs/tools.md`](../tools.md). [`docs/design.md`](../design.md) is the target. When it describes something the tool does not do yet, the lesson says so.
+You write the spec. An agent generates the functions from it. You do not write them. keylang does not start the agent. `check` decides.
+
+This course shows how to read and write that spec, and how to use the CLI, the terminal and the browser. The exact grammar is [`docs/format.md`](../format.md), in Ukrainian. If this course and that file disagree about a diagnostic, the spec wins. Flags are in [`docs/tools.md`](../tools.md). [`docs/design.md`](../design.md) is the target. When it describes something the tool does not do yet, the lesson says so.
 
 Screenshots are from this repository, `node bin/keylang.js web` on 2026-09-28, and from `node bin/keylang.js check` on `examples/shop`. The local trace and test report were old, so those marks show as `unverified`.
 
@@ -25,5 +27,5 @@ Start at lesson 1 if you are deciding whether to use it. Start at lesson 2 if yo
 
 Two shorter tracks use the same commands on a job:
 
-- [Adding to a codebase](existing/README.md) — a feature and a package in a repository that already exists.
-- [Starting a project](from-scratch/README.md) — a Telegram bot, a Python CRUD, and a NestJS app. keylang does not create them. It checks the shape while you write them.
+- [Adding to a codebase](existing/README.md) — a feature and a package in a repository that already exists. You write the spec. The agent generates the code.
+- [Starting a project](from-scratch/README.md) — a Telegram bot, a Python CRUD, and a NestJS app. keylang does not create the empty project. An agent generates the code from the spec. You do not write the functions. keylang checks the shape.

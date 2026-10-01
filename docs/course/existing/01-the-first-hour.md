@@ -2,7 +2,7 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/01-the-first-hour.md)
 
-Do not redesign the repository on day one. Point the tool at it, read what it sees, and write the few rules you are willing to keep.
+Do not redesign the repository on day one. Point the tool at it, read what it sees, and write the few rules you are willing to keep. Those rules are the spec. The functions that appear later are the agent's. You do not write them. keylang does not start the agent.
 
 ```sh
 npx keylang init .

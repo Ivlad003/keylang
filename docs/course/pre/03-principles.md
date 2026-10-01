@@ -48,11 +48,11 @@ A name that points nowhere is a failure (`fail`), the `domain.aggregate` mistake
 
 ## 7. Keep the picture and the promise in different files
 
-The map is the picture. The tool draws it from the code. Rules and flows are the promise. You write them.
+The map is the picture. The tool draws it from the code. Rules and flows are the promise. You write them. The agent writes the functions. You do not.
 
 A picture alone is a table of contents. Nothing can be wrong, because the picture follows the code, including the code you regret. A promise alone says what you wanted, and cannot see whether today's code still matches. The check compares the promise to a fresh look at the code, not to yesterday's picture.
 
-Do not edit the picture to make the promise look true. Edit the code, or edit the promise.
+Do not edit the picture to make the promise look true. The agent changes the code from the spec. You change the promise.
 
 ## 8. A flow is one story you can tell without notes
 

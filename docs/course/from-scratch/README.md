@@ -4,9 +4,9 @@
 
 ![Ключ до розробки і розуміння проектів](../images/banner.png)
 
-keylang does not create the app. A bot has its own library. A CRUD app has its own framework. Nest has `nest new`. You create that project first. Then keylang is the short text that says who may know whom, and the check that fails when the code drifts.
+keylang does not create the app. A bot has its own library. A CRUD app has its own framework. Nest has `nest new`. You create that empty project first. Then you write the short text that says who may know whom. An agent generates the code from that text. You do not write the functions. keylang does not start the agent. It fails the check when the code drifts.
 
-Three sketches. The same four files every time: `keylang.json`, `keylang/rules.md`, and one file under `keylang/features/`. The code grows until `keylang feature <slug>` says done.
+Three sketches. The same four files every time: `keylang.json`, `keylang/rules.md`, and one file under `keylang/features/`. The agent fills in the code until `keylang feature <slug>` says done.
 
 If the words are new, read the [pre-course](../pre/README.md) first. The commands in these pages are the same ones as [lesson 2](../02-install-and-check.md).
 

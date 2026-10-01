@@ -2,7 +2,7 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/03-an-integration.md)
 
-A feature calls your code. An integration also calls somebody else's package. The shop is about to take cards. The package is `stripe`. The order rules must not import it.
+A feature calls code the agent generated. An integration also calls somebody else's package. The shop is about to take cards. The package is `stripe`. The order rules must not import it.
 
 `keylang/features/pay.md`:
 
@@ -33,9 +33,9 @@ In `keylang/rules.md`, keep the core away from the package:
 npx keylang feature pay
 ```
 
-Done means the import exists, `charge` exists with that signature, and the body of `buy` reaches `charge` by a call keylang can see. `spec-to-code` can stub `charge` if it is a `planned fn` in TypeScript. It will not add the `stripe` dependency to `package.json`. You install the package yourself.
+Done means the import exists, `charge` exists with that signature, and the body of `buy` reaches `charge` by a call keylang can see. The agent writes `charge` from the planned line. You do not. `spec-to-code` can stub `charge` if it is a `planned fn` in TypeScript. It will not add the `stripe` dependency to `package.json`. You install the package yourself.
 
-A call written as `obj[k]()` or hidden behind a decorator keylang does not know stays `unverified`. The feature stays open. Put the real call in a plain function.
+A call written as `obj[k]()` or hidden behind a decorator keylang does not know stays `unverified`. The feature stays open. The agent puts the real call in a plain function.
 
 The same shape fits any library: mail, a queue, storage. One `planned module external.<pkg>`, one function that is allowed to import it, and a deny for everyone else.
 

@@ -6,7 +6,7 @@
 
 The repository already exists. You need to add a feature, or plug in a library, without the new code reaching into the wrong place.
 
-keylang does not write that feature for you. It keeps a short text of what the new code is allowed to know, and a check that fails when the code drifts.
+You write the spec for the feature. An agent generates the code from it. You do not write the functions. keylang does not start the agent. It checks that the new code stays inside the rules.
 
 If `check` is new, read [lesson 2](../02-install-and-check.md) first. If the words layer and deny are new, the [pre-course](../pre/README.md) is the shop, with no commands.
 

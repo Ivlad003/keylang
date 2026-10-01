@@ -4,7 +4,7 @@
 
 A keylang file is a Markdown file with a small extra grammar. GitHub shows it as headings, lists and paragraphs. The parser reads the same bytes with stricter rules, so what GitHub shows and what `check` believes stay aligned after `fmt`.
 
-This lesson is enough to write a map, a rules file and a flow. The full keyword table is in [`docs/format.md`](../format.md).
+This lesson is enough to write a map, a rules file and a flow. That is the spec. The functions are the agent's. You do not write them. The full keyword table is in [`docs/format.md`](../format.md).
 
 ## Lines
 

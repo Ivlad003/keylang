@@ -2,7 +2,7 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/02-a-feature.md)
 
-The shop already has checkout. A refund does not exist yet. Write that down before you write the function.
+The shop already has checkout. A refund does not exist yet. Write that spec before any function exists. You do not write the function. An agent generates it from this file.
 
 Create `keylang/features/refund.md`. The file name is the slug. `refund` is the slug.
 
@@ -36,10 +36,10 @@ npx keylang spec-to-code application.purchase.refund
 npx keylang spec-to-code application.purchase.refund --apply
 ```
 
-It only builds a `planned fn`. A planned module is yours to create. It writes `node:test` files. For Python and Rust it tells you to write the test yourself. It refuses an id that already exists.
+It only builds a `planned fn`. A planned module is a file the agent creates. This command will not. It writes `node:test` files. For Python and Rust it does not write the test. The agent does, from the same spec. It refuses an id that already exists.
 
 When K202 appears, `feature` can already say done. Delete the `planned` line so the warning goes away.
 
-An agent can write the code. keylang does not start it. `check --changed` blocks a turn only on a new fail. An `unverified` line does not block, so read those yourself. A change to `rules.md` should arrive as a proposal under `.keylang/proposals/`. You merge it, or you don't.
+That file is what you hand the agent. It generates the functions. keylang does not start it. `check --changed` blocks a turn only on a new fail. An `unverified` line does not block, so read those yourself. A change to `rules.md` should arrive as a proposal under `.keylang/proposals/`. You merge it, or you don't.
 
 Next: [an integration](03-an-integration.md).

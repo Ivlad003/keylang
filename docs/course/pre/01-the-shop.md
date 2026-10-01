@@ -62,7 +62,7 @@ application . purchase . buy
 layer         module      function
 ```
 
-`domain.aggregate` points at nothing. `domain.orderAggregate` points at the module. Lesson 2 of the main course shows the command that prints this. You do not need the command yet. When you write a name in this language, you are pointing, not decorating.
+`domain.aggregate` points at nothing. `domain.orderAggregate` points at the module. Lesson 2 of the main course shows the command that prints this. You do not need the command yet. When you write a name in this language, you are pointing, not decorating. The name is yours. The function behind it is the agent's. You do not write it.
 
 ## After this part
 

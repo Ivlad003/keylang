@@ -4,7 +4,7 @@
 
 ![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-keylang is Markdown next to the code. You write which part of the program may know about which, and which scenario should still happen. keylang checks that the code still matches.
+keylang is Markdown next to the code. You write the spec: which part of the program may know about which, and which scenario should still happen. You do not write the functions. An agent generates the code from that spec. keylang does not start the agent. keylang checks that the generated code still matches.
 
 Take a shop. The screen starts a purchase. The purchase asks the order rules to build an order. The order rules do not know the screen or the database. That last sentence is a rule. When the code breaks it, the check can fail the build.
 
@@ -22,7 +22,7 @@ Take a shop. The screen starts a purchase. The purchase asks the order rules to 
 
 These clips were recorded after `npm test`. The trace matches, so the status line reads `✗ 0  ◌ 0  ✓ 34`.
 
-New to these words? Start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). Adding a feature to a repo that already exists: [that track](docs/course/existing/README.md) ([українською](docs/course/existing/uk/README.md)). Starting a Telegram bot, a Python CRUD, or a NestJS app: [that track](docs/course/from-scratch/README.md) ([українською](docs/course/from-scratch/uk/README.md)). The exact grammar is [`docs/format.md`](docs/format.md) (Ukrainian). Commands are in [`docs/tools.md`](docs/tools.md). The target, including work not built yet, is [`docs/design.md`](docs/design.md).
+New to these words? Start with the [pre-course](docs/course/pre/README.md) ([українською](docs/course/pre/uk/README.md)). The guide is the [course](docs/course/README.md) ([українською](docs/course/uk/README.md)). Adding a feature to a repo that already exists: [that track](docs/course/existing/README.md) ([українською](docs/course/existing/uk/README.md)). Starting a Telegram bot, a Python CRUD, or a NestJS app: [that track](docs/course/from-scratch/README.md) ([українською](docs/course/from-scratch/uk/README.md)). The exact grammar is [`docs/format.md`](docs/format.md) (Ukrainian). Commands are in [`docs/tools.md`](docs/tools.md). An agent installs keylang and follows the use / don't-use rules from [`llm.txt`](llm.txt) ([raw](https://raw.githubusercontent.com/Ivlad003/keylang/master/llm.txt)). The target, including work not built yet, is [`docs/design.md`](docs/design.md).
 
 You need Node.js ≥ 22.18. In this checkout, `node bin/keylang.js` runs the TypeScript as it is. A published package is plain JavaScript: `prepack` compiles `src/` to `dist/` before publish. Nothing native is compiled on your machine.
 
@@ -34,7 +34,8 @@ You need Node.js ≥ 22.18. In this checkout, `node bin/keylang.js` runs the Typ
 | `keylang/rules.md` | you | Who may depend on whom: `layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles` |
 | `keylang/flows/*.md` | you | One scenario. Each step reports `ID`, `static`, `tests` and `trace` on its own |
 | `keylang/features/*.md` | you | What to build. `keylang feature <slug>` says when it is done |
-| `.keylang/proposals/` | an agent | A draft. A person merges it piece by piece |
+| `.keylang/proposals/` | an agent | A draft of the spec. A person merges it piece by piece |
+| the program | an agent | The functions, generated from the spec. You do not write them. keylang does not start the agent |
 
 An id looks like `application.purchase.buy`. It names the layer, the module and the function. It is not a line number, so the text survives edits that only move lines.
 

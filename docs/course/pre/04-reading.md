@@ -156,5 +156,6 @@ Read one chapter. In the margin, write who needs whom, which need you would `den
 - Do not start with microservices, event sourcing, or CQRS.
 - Do not invent a layer because a book had a box with that label. Invent a layer when you can say its job, then write the `deny`.
 - Do not expect keylang to check whether the running shop stays up. It checks who may know whom, and the steps of a scenario you named.
+- Do not write the functions. Write the spec. An agent generates the code. keylang does not start the agent.
 
 When the shop's wrong id, the `deny`, and one checkout flow are boring, go to [lesson 1](../01-what-it-is.md).

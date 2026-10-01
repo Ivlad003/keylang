@@ -4,7 +4,7 @@
 
 ![Ключ до розробки і розуміння проектів](docs/course/images/banner.png)
 
-keylang — це Markdown поруч із кодом. Ви пишете, кому що дозволено знати, і який сценарій має досі відбуватись. keylang перевіряє, що код досі збігається.
+keylang — це Markdown поруч із кодом. Ви пишете специфікацію: кому що дозволено знати, і який сценарій має досі відбуватись. Функції ви не пишете. Агент генерує код із цієї специфікації. keylang агента не запускає. keylang перевіряє, що згенерований код досі збігається.
 
 Візьміть крамницю. Екран починає покупку. Покупка просить правила замовлення зібрати замовлення. Правила замовлення не знають про екран і базу. Останнє речення — правило. Коли код його ламає, перевірка може провалити збірку.
 
@@ -22,7 +22,7 @@ keylang — це Markdown поруч із кодом. Ви пишете, ком�
 
 Ролики зняті після `npm test`. Trace збігається, тож рядок стану — `✗ 0  ◌ 0  ✓ 34`.
 
-Слова нові? Почніть із [підготовчого курсу](docs/course/pre/uk/README.md) ([English](docs/course/pre/README.md)). Далі — [курс](docs/course/uk/README.md) ([English](docs/course/README.md)). Фіча в репозиторії, який уже є: [цей маршрут](docs/course/existing/uk/README.md) ([English](docs/course/existing/README.md)). Telegram-бот, Python CRUD або NestJS з нуля: [цей маршрут](docs/course/from-scratch/uk/README.md) ([English](docs/course/from-scratch/README.md)). Точна граматика — [`docs/format.md`](docs/format.md). Команди — у [`docs/tools.md`](docs/tools.md). Ціль, включно з тим, чого інструмент ще не вміє, — [`docs/design.md`](docs/design.md).
+Слова нові? Почніть із [підготовчого курсу](docs/course/pre/uk/README.md) ([English](docs/course/pre/README.md)). Далі — [курс](docs/course/uk/README.md) ([English](docs/course/README.md)). Фіча в репозиторії, який уже є: [цей маршрут](docs/course/existing/uk/README.md) ([English](docs/course/existing/README.md)). Telegram-бот, Python CRUD або NestJS з нуля: [цей маршрут](docs/course/from-scratch/uk/README.md) ([English](docs/course/from-scratch/README.md)). Точна граматика — [`docs/format.md`](docs/format.md). Команди — у [`docs/tools.md`](docs/tools.md). Агент ставить keylang і тримається правил «для чого / для чого ні» з [`llm.txt`](llm.txt) ([сирий файл](https://raw.githubusercontent.com/Ivlad003/keylang/master/llm.txt)). Ціль, включно з тим, чого інструмент ще не вміє, — [`docs/design.md`](docs/design.md).
 
 Потрібен Node.js ≥ 22.18. У цьому чекауті `node bin/keylang.js` виконує TypeScript як є. Опублікований пакет — звичайний JavaScript: перед публікацією `prepack` компілює `src/` у `dist/`. На вашій машині native-код не збирається.
 
@@ -34,7 +34,8 @@ keylang — це Markdown поруч із кодом. Ви пишете, ком�
 | `keylang/rules.md` | ви | Хто від кого може залежати: `layers`, `allow`, `deny`, `entry`, `exports`, `no-cycles` |
 | `keylang/flows/*.md` | ви | Один сценарій. Кожен крок звітує `ID`, `static`, `tests` і `trace` окремо |
 | `keylang/features/*.md` | ви | Що будувати. `keylang feature <slug>` каже, коли готово |
-| `.keylang/proposals/` | агент | Чернетка. Людина зливає її шматок за шматком |
+| `.keylang/proposals/` | агент | Чернетка специфікації. Людина зливає її шматок за шматком |
+| програма | агент | Функції, згенеровані зі специфікації. Ви їх не пишете. keylang агента не запускає |
 
 Ім'я виглядає як `application.purchase.buy`. Це шар, модуль і функція. Це не номер рядка, тож текст переживає правки, які лише зсувають рядки.
 

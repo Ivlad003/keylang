@@ -2,7 +2,7 @@
 
 [Курс](README.md) · [English](../04-map.md) · **Українською**
 
-Карта згенерована. Ви редагуєте `keylang.json` і джерело. `keylang map` пише один Markdown на шар у `keylang/map/` і кеш фактів у `.keylang/index.json`. Кеш у gitignore. Комітите Markdown. `map --check` каже CI, коли він розійшовся.
+Карта згенерована. Ви редагуєте `keylang.json`. Джерело редагує агент. Функції ви не пишете. `keylang map` пише один Markdown на шар у `keylang/map/` і кеш фактів у `.keylang/index.json`. Кеш у gitignore. Комітите Markdown. `map --check` каже CI, коли він розійшовся.
 
 Згенерований файл починається з маркера. Інтерфейс відкриває його лише для читання:
 

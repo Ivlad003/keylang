@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/08-use-cases.md)
 
-Four sessions, from this repository and from `examples/shop`. Each one says what to run, what the picture shows, and the decision it supports.
+Four sessions, from this repository and from `examples/shop`. You write the spec in them. The agent generates the functions. You do not. Each session says what to run, what the picture shows, and the decision it supports.
 
 The UI captures are `keylang web` on 2026-09-28. Trace and test files under `.keylang/` were stale. The CLI summary of that same tree was `0 fail, 22 unverified, 43 ok`.
 
@@ -120,7 +120,7 @@ No screenshot for this one.
 
 Turn on `"explain": {"map": true}`, run `keylang map`, open a layer file and press `t`. Same tree, with a doc comment or a saved brief under each node. `s` finds a node by id or by those words. `check` does not read `keylang/map-explained/`. A green run is not a claim that the paragraph is true.
 
-A piece of work that is not in the code yet is `keylang/features/<slug>.md`: `planned` ids and a flow. An integration nobody imports is `planned module external.<pkg>` and a step from the module that will import it. `keylang feature <slug>` is done when those declarations are implemented, the steps are static `ok`, and no rule fails. The tests and the trace are listed beside that answer. They do not decide it.
+A piece of work that is not in the code yet is `keylang/features/<slug>.md`: `planned` ids and a flow. You write that file. An agent generates the functions from it. You do not write them. keylang does not start the agent. An integration nobody imports is `planned module external.<pkg>` and a step from the module that will import it. `keylang feature <slug>` is done when those declarations are implemented, the steps are static `ok`, and no rule fails. The tests and the trace are listed beside that answer. They do not decide it.
 
 ## When to leave it alone
 

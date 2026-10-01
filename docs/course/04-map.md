@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/04-map.md)
 
-The map is generated. You edit `keylang.json` and the source. `keylang map` writes one Markdown file per layer under `keylang/map/`, and a fact cache at `.keylang/index.json`. The cache is gitignored. The Markdown is what you commit. `map --check` tells CI when it has drifted.
+The map is generated. You edit `keylang.json`. The agent edits the source. You do not write the functions. `keylang map` writes one Markdown file per layer under `keylang/map/`, and a fact cache at `.keylang/index.json`. The cache is gitignored. The Markdown is what you commit. `map --check` tells CI when it has drifted.
 
 A generated file starts with the marker. The UI opens it read-only:
 

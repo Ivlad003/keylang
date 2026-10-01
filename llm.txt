@@ -1,0 +1,253 @@
+# keylang — інструкція для агента
+
+Людина може сказати: прочитай цей файл, встанови keylang і працюй за правилами нижче. Файл каже, для чого інструмент, і для чого ні. Далі англійською: так написані скіл і блок у `AGENTS.md`.
+
+Сире посилання, яке відкривається без GitHub: https://raw.githubusercontent.com/Ivlad003/keylang/master/llm.txt
+
+Сторінка: https://github.com/Ivlad003/keylang/blob/master/llm.txt
+
+---
+
+# keylang — instructions for any agent
+
+You were given this file so you can install and configure keylang, then use it. Follow the steps in order. Do not skip a failing command. Do not invent a command that is not listed here.
+
+keylang is Markdown next to the code. It checks that the code still matches the spec. It does not start you, and it does not create an application.
+
+Two different "agents" exist. Do not mix them up.
+
+- **You** are the external tool (Claude, Codex, Cursor, opencode, or another assistant). You edit the repository with your own tools. keylang talks to you through `AGENTS.md`, a copied skill, MCP, and the CLI.
+- **`agent` in `keylang.json`** is optional. It is only keylang's own model (`anthropic:<model>` or `openrouter:<model>`) for `explain --llm`, `draft`, and ghost text in the terminal UI. You do not need it to install keylang or to write code.
+
+## Install and configure
+
+Work in the repository the person pointed at, not inside a clone of keylang unless that is the repository.
+
+1. Node.js must be **22.18 or newer**. `node -v`. keylang does not compile native code.
+2. From that repository:
+
+```sh
+npx -y keylang init .
+npx -y keylang doctor
+npx -y keylang check
+npx -y keylang map
+```
+
+The first `npx` needs a network. Later `check` and `map` do not.
+
+`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone.
+
+3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude.
+
+```sh
+npx -y keylang agents --agents=claude
+```
+
+Use one or a comma-separated list of `claude`, `codex`, `cursor`, `opencode`. Unknown names exit 2 and print the allowed list. `--agents=none` writes no harness files and still writes the baseline.
+
+That command is idempotent. It copies the skill to `.agents/skills/keylang-feature/SKILL.md` and `.claude/skills/keylang-feature/SKILL.md`, and it registers an MCP server named `keylang` whose command is `npx -y keylang@<version> mcp`, pinned to the version that wrote the config. Claude and Codex also get a Stop hook: `keylang hook stop`. Cursor uses Claude's hooks. opencode does not get a Stop hook. `.codex/` applies only in a trusted project; each hook there is approved on its own.
+
+4. If your tool is not one of those four, do not invent an MCP config. Read the block in `AGENTS.md` and use the CLI in this file.
+5. Restart yourself if that is how you load MCP and skills. Then run `npx -y keylang doctor` again. Exit code 0 with a problem line still means the report was printed. Read the lines.
+6. In CI, both of these must pass. Neither writes files when given `--check` on `map`:
+
+```sh
+npx -y keylang check
+npx -y keylang map --check
+```
+
+Inside the keylang source checkout itself, the same commands are `node bin/keylang.js <command>`. A published package is plain JavaScript.
+
+`keylang` with no subcommand opens a terminal UI. It needs a TTY. You do not drive that UI. Use the CLI and MCP below.
+
+## Use it for this
+
+After install, these rules apply to every task in that repository. keylang checks structure and named steps. The check is the verdict.
+
+- **Find the code.** Read the map first: layer, module, signature, calls. Then MCP `search`, `node`, and `code`. Take ids from `keylang map`.
+- **Keep a boundary in CI.** One `deny` line. `check` looks at imports, calls, type mentions, and re-exports. A confirmed forbidden edge is `fail` (K102) and exit 1. CI runs `check` and `map --check`.
+- **Keep a scenario.** A flow step names an id. The static check looks for a call from the parent step. The trigger is a plain named function.
+- **Know when a feature is done.** `keylang feature <slug>`: every `planned` in that file is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` remains anywhere, including the baseline.
+- **Change a hand-written rule in the open.** `rules.md` and the baseline change only as a proposal the person merges. When the person asks for a feature, you may write `keylang/features/<slug>.md`.
+- **Read a finding.** `npx -y keylang explain K001`, or MCP `explain`, says why. That text is not a second verdict.
+
+A small repository needs little: `keylang.json`, a `layers` line, two or three `deny` lines, and the two CI commands. Add a flow when a scenario is worth a name.
+
+## Do not use it for this
+
+keylang leaves these jobs to another tool. Do the thing on the right.
+
+| Job it does not do | What you do instead |
+|---|---|
+| Decide that the program does the right thing | An invariant sentence stays text. check does not parse "the total is price times quantity." Put that in a test. keylang only records that a named test passed |
+| Treat exit 0 as "everything is proved" | Exit 0 means no `fail`. `unverified` is still a gap. `ok` means the claim held where keylang looked. `--strict` is how CI refuses a gap. The default does not |
+| Let tests or traces decide a feature | They are printed. `feature` ignores them. A stale trace stays `unverified` until the report matches this snapshot |
+| Invent a call the extractor did not see | `obj[k]()`, an unknown decorator, a Rust macro: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
+| Check that prose still matches the code | check will not mark a description stale. A saved explanation prints `fresh` or `stale`. A green gutter is not "the paragraph is true" |
+| Watch deploys, SLOs, threat models, ADRs, or two services sharing a database | Write that in the other document. keylang will not notice |
+| Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, and Rust. Another language is absent. Absence is not a pass |
+| Inject dependencies at runtime, or isolate modules | `keylang wire` emits one TypeScript file, `keylang.gen.ts`. It does not emit Rust or Python. A hand-written import bypasses `wire()`. The `deny` rules catch that import. `tsc` typechecks the generated file |
+| Start you, install a package, store a token, or scaffold Nest `@Module` / `main.ts` | You do that with your own tools when the person asked. keylang does not |
+| Click through the terminal UI | No subcommand opens a UI for a person at the keyboard. You use the CLI and MCP |
+| Quiet a failure by editing the spec in place | Ask, then `apply_diff`. `draft rules` describes what the code already does, or tags the model's lines `agree`, `conflict`, `llm-only`. The person chooses the `deny` |
+| Call a stub finished | `scaffold` and `spec-to-code` give a signature and a failing test. You write the body. Done is `feature_status` |
+| Commit `.keylang/` | The index, proposals, and traces are a local cache and gitignored. Commit the spec and the generated map |
+| Bump `format` | Leave the field as it is. `3` or higher exits 2 and names the field |
+| Read `calls` order as a timeline | Sibling flow steps are "this, then that." Nested steps are "this happens inside" |
+
+If the bug the person cares about never shows up as an import or a call, say so. Do not pretend `check` caught it.
+
+## What the person writes, and what you write
+
+The person writes the spec: `keylang/rules.md`, flows, and feature files. You write the program from that spec.
+
+When the person asks you to add a feature, you may create `keylang/features/<slug>.md` yourself. The slug matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. You still do not hand-edit the rules.
+
+Do not edit these by hand:
+
+- `keylang/map/` and any file whose first lines contain `keylang:generated`. Regenerate the map with `npx -y keylang map`.
+- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`. Where your tool can deny edits, deny `Edit` and `Write` on both rule files.
+- `keylang.gen.ts` (the `keylang wire` output). You do not need `wire` to check a feature.
+
+A deny in the baseline that forbids a call the person still needs is a conversation. It is not a bug in the tool. Ask, then propose the rule change. After the new import is accepted, `npx -y keylang baseline` rewrites the baseline from the graph.
+
+Copy ids from `keylang map`. Do not invent a shorter id. The file name is not always the last segment.
+
+## Skill: a feature is done
+
+This is the same cycle as `resources/keylang-feature/SKILL.md`, which `agents` copies into the repository.
+
+1. Write `keylang/features/<slug>.md`. It is an ordinary flow. Each new function, module, or package is a `planned` line. Steps name those ids.
+
+```markdown
+# flow refund
+
+The buyer sends an order back. The order rules build a refund. The screen does not talk to the database.
+
+- planned fn application.purchase.refund (order: Order) → Refund
+- trigger presentation.terminal.refund
+  - step application.purchase.refund
+    - step domain.orderAggregate.refund
+```
+
+Use ids from the map of the repository you are in. The names above are only the shape.
+
+2. Call MCP `validate_spec` with that path and the full text before you rely on it. Fix every diagnostic. K001 includes a line and a column. A missing function is not K001 while it is `planned`.
+3. Call MCP `scaffold` for each `planned fn`. It returns a path, a stub, and failing tests. It does not write files and does not call a model. An id that already exists is an error and names the file. A planned module is not a stub. You create that file.
+4. Implement the bodies with your own edits. Keep the declared name and signature. Spaces do not matter, and `->` is the same as `→`. A different kind or signature is K201. A match is warning K202.
+5. Call `feature_status` or run `npx -y keylang feature <slug>`. Exit 0 and `done` on stderr means all three: every `planned` in **that file** is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` remains anywhere, including the baseline. Tests and traces are printed. They do not decide. Until then the exit code is 1 and stdout lists the gaps.
+6. When K202 names a `planned` line, delete that line. Leave the feature file.
+
+`npx -y keylang spec-to-code <id> --print` prints the same stub and writes nothing. Without `--print` the files become proposals under `.keylang/proposals/`; a person merges them with `m` in the terminal UI. `--apply` writes the files directly. It only builds a `planned fn`. For TypeScript and JavaScript the test is `node:test`. For Python and Rust it tells you to write the test yourself. It will not add a dependency to `package.json`, and it will not store a token.
+
+Prefer MCP `scaffold`, then your own edit, over `--apply`.
+
+## Skill: an integration
+
+A package the code does not import yet:
+
+```markdown
+- planned module external.stripe
+- planned fn infrastructure.payments.charge (order: Order) → Receipt
+- trigger application.purchase.buy
+  - step infrastructure.payments.charge
+```
+
+One segment: `stripe` is `external.stripe`. A hyphen stays one segment (`node-fetch`). `@scope/pkg` becomes `external.scope-pkg`.
+
+A name already in `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) or in a `Cargo.toml` crate table is a known id even before any file imports it. `requirements.txt` and other Python manifests are not read. `planned module` becomes K202 only when some file imports the package and the snapshot has that node.
+
+Keep the core away from the package in `keylang/rules.md` (as a proposal, not a silent edit):
+
+```markdown
+- deny domain external.stripe
+- deny domain infrastructure.payments
+- deny presentation external.stripe
+```
+
+You install the package yourself when the person asked for that integration. keylang will not.
+
+## Skill: a call the check can see
+
+The trigger of a flow should be a plain named function whose body calls the next step. keylang often cannot see a library or a decorator call your function, and it does not need to. The trigger has no parent. The step under it does.
+
+These stay `unverified`, and `feature` stays not done:
+
+- `bot.start(() => add(...))` with no named function in between
+- a body that only exists under a decorator keylang does not know (`@app.post`, `@Controller`, `@Get`, `@Injectable`)
+- `obj[k]()`
+
+Put the real call in a plain function. The framework function calls that plain function.
+
+A route or a controller that calls the database directly never makes a flow `ok` if the flow goes through another function. There is no static path.
+
+## MCP tools
+
+Server name: `keylang`. Only `apply_diff` writes, and only a proposal.
+
+| Tool | Use |
+|---|---|
+| `search` | Find ids. Start here |
+| `node` | One id: kind, signature, calls, rules, verdicts |
+| `code` | Source of one fn, type, or module |
+| `flows` | Steps and their verdicts |
+| `check` | Same results as `keylang check --format json` |
+| `explain` | Saved prose, or the offline summary. It never calls a model |
+| `context` | The bundle for one id, or for every id in a feature file. Pass exactly one of `id` or `feature` |
+| `validate_spec` | Parse text as the file at `path`. Nothing is written |
+| `scaffold` | Stub and failing tests for one `planned fn`. Nothing is written |
+| `feature_status` | `{slug}`. Done or the gaps |
+| `apply_diff` | Propose the full new text of one hand-written spec |
+
+CLI when MCP is off:
+
+```sh
+npx -y keylang feature <slug> --format json
+npx -y keylang check
+npx -y keylang check --changed
+npx -y keylang spec-to-code <id> --print
+npx -y keylang baseline
+```
+
+`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. The Stop hook prints JSON and exits 0 either way: `{"decision":"block"}` on a new fail, otherwise `{}`.
+
+## Exit codes and answers
+
+- `0` — no blocking finding. `unverified` is still allowed, except `map --check` on a stale map, and `check --strict`.
+- `1` — a real break, a feature that is not done, or a stale generated file under `--check`.
+- `2` — bad invocation or I/O. The message names the file and the field.
+
+On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202. A warning is not a failed verdict.
+
+`parse --json` writes only JSON to stdout. Diagnostics go to stderr. `check` writes findings to stdout and the summary to stderr.
+
+## Languages and layers
+
+Indexed languages are a subset of JavaScript, TypeScript, Python, and Rust. Other files are absent, not a quiet success.
+
+`keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`.
+
+A missing `format` field means edition 1. No `keylang.json` means edition 2. `"format": 3` or higher exits 2 and names the field. Do not bump `format`.
+
+## Optional model inside keylang
+
+Only if the person wants keylang itself to draft or explain:
+
+```json
+{ "agent": "anthropic:<model>" }
+```
+
+or `"openrouter:<model>"`. The key is `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, otherwise `~/.config/keylang/<provider>.key`. A key file that other users can read is rejected. This setting does not install you and does not replace the steps above.
+
+## Where to read the rest
+
+The course is the guide. This file is the install and the working cycle.
+
+- Course, English: https://github.com/Ivlad003/keylang/blob/master/docs/course/README.md
+- Course, Ukrainian: https://github.com/Ivlad003/keylang/blob/master/docs/course/uk/README.md
+- Adding a feature to a repository that already exists: https://github.com/Ivlad003/keylang/blob/master/docs/course/existing/README.md
+- A new Telegram bot, Python CRUD, or NestJS app: https://github.com/Ivlad003/keylang/blob/master/docs/course/from-scratch/README.md
+- Grammar (Ukrainian, normative): https://github.com/Ivlad003/keylang/blob/master/docs/format.md
+- Commands: https://github.com/Ivlad003/keylang/blob/master/docs/tools.md
+
+If this file and `docs/format.md` disagree about a diagnostic, the spec wins.

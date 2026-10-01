@@ -2,7 +2,7 @@
 
 [Course](../README.md) · **English** · [Українською](uk/README.md)
 
-Read this before the [course](../README.md) if you write code but have never drawn an architecture. There are no commands here. The ideas are the shop in [`examples/shop`](../../../examples/shop).
+Read this before the [course](../README.md) if an agent will write the code and you have never drawn an architecture. You write the spec. You do not write the functions. There are no commands here. The ideas are the shop in [`examples/shop`](../../../examples/shop).
 
 You do not need patterns or a catalogue of styles. keylang checks two things: which part of the program may know which other part, and whether a scenario you named still matches the code.
 

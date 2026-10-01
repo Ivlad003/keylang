@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/07-tools.md)
 
-Rules and flows check the code you already have. Three more surfaces sit on the same analysis: a wiring generator, the terminal and browser, and the agent tools. None of them invent a second verdict.
+Rules and flows check the code the agent generated. You wrote the spec, not the functions. keylang does not start the agent. Three more surfaces sit on the same analysis: a wiring generator, the terminal and browser, and the agent tools. None of them invent a second verdict.
 
 ## Wiring
 
@@ -71,7 +71,7 @@ While editing, `Ctrl+S` writes. `Ctrl+Space` completes keywords and ids. `Ctrl+G
 
 ## Agents
 
-keylang does not launch an agent. `init` and `keylang agents` write a short block and, where they find Claude, Codex, Cursor or opencode, the MCP server and the skill. Which directories count is in [lesson 2](02-install-and-check.md). The agent writes code with its own tools. `check` still decides.
+keylang does not launch an agent. `init` and `keylang agents` write a short block and, where they find Claude, Codex, Cursor or opencode, the MCP server and the skill. Which directories count is in [lesson 2](02-install-and-check.md). You write the spec. The agent generates the program from it. You do not write the functions. `check` still decides.
 
 A feature file is an ordinary spec. `keylang feature <slug>` is done when every `planned` is implemented, every step is static `ok`, and no rule `fail` remains. Tests and traces do not block.
 

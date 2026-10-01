@@ -2,7 +2,7 @@
 
 [Course](README.md) · **English** · [Українською](uk/05-rules.md)
 
-Rules are the promise. They live in `keylang/rules.md`, or any file whose heading is `# rules`. They name ids from the snapshot. They do not declare the modules. The map does that.
+Rules are the promise. You write them. The agent writes the functions they name. You do not. They live in `keylang/rules.md`, or any file whose heading is `# rules`. They name ids from the snapshot. They do not declare the modules. The map does that.
 
 This repository checks itself. The gutter is green because every criterion on those lines held:
 

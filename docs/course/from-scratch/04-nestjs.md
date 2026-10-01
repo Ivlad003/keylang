@@ -35,7 +35,7 @@ The controller is the edge. The task function is plain TypeScript. The repositor
 
 Nest marks classes with `@Controller()`, `@Injectable()`, and `@Get()`. keylang does not know those decorators. A call inside that method can stay `unverified`, because the decorator might return another function. `feature` then stays not done.
 
-Keep the use case in a plain function. The controller calls it:
+The agent keeps the use case in a plain function. The controller calls it. You do not type this. This is the shape the agent must generate:
 
 ```ts
 export function create(title: string): Task {
@@ -50,7 +50,7 @@ npx keylang spec-to-code application.create.create
 npx keylang feature tasks
 ```
 
-The stub is TypeScript and a `node:test` file. Nest's module boilerplate is still yours: `@Module`, providers, `main.ts`. keylang does not generate them, and `keylang wire` is a different generator. You do not need it to keep this check.
+The stub is TypeScript and a `node:test` file. The agent also writes `@Module`, providers, and `main.ts` from the same spec. keylang does not generate them, and `keylang wire` is a different generator. You do not need it to keep this check.
 
 What a green feature means: `create` calls `make` and `insert`, and no rule fails. It does not mean the HTTP server started, or that class-injectors were wired. The import rules still catch a controller that imports `src/db` directly.
 

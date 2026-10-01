@@ -2,6 +2,8 @@
 
 [Course](README.md) · **English** · [Українською](uk/02-install-and-check.md)
 
+You write the spec. An agent generates the functions. You do not. keylang does not start the agent. The commands below check the result.
+
 You need Node.js ≥ 22.18. The package does not compile native code. Optional voice modules (`@fugood/whisper.node`, `decibri`) install when the platform has a prebuilt binary. They can be omitted.
 
 ```sh

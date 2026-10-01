@@ -31,7 +31,7 @@ A list of tasks. This page is the create path. Read is the same shape with anoth
 
 `app/tasks/create_task.py` under the glob `app/tasks/**` is the module `application.create_task`. The function inside it has the same name, so the id repeats the last word. Rename the file or the function if you want a shorter id, then copy it from the map.
 
-The trigger is the plain function, not the HTTP route. A route under `@app.post` is a function keylang does not trust: the decorator may replace it, so a call inside it stays `unverified`. Call the plain function from the route. Prove the plain function.
+The trigger is the plain function, not the HTTP route. A route under `@app.post` is a function keylang does not trust: the decorator may replace it, so a call inside it stays `unverified`. The agent calls the plain function from the route. You do not type this. This is the shape the agent must generate:
 
 ```python
 def create_task(title: str) -> Task:
@@ -48,7 +48,7 @@ Python records imports and calls. It does not record type edges. A call on a val
 npx keylang feature create-task
 ```
 
-`spec-to-code` will not write a pytest file. The message says to write the test yourself.
+`spec-to-code` will not write a pytest file. The agent writes that test from the flow. You do not.
 
 A route that calls `insert` directly never makes this flow `ok`: there is no static path through `create_task`. That is the break the check is for.
 
