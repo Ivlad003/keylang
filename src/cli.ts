@@ -9,10 +9,10 @@ import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type Stati
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
-import { explainCode } from "./explain.ts";
+import { isDiagnosticCode, savedAnswer, savedAnswerText, unknownIdMessage } from "./explain-offline.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
-import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
+import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { lineDiff } from "./proposals.ts";
@@ -330,33 +330,26 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
     return 0;
   }
   if (!subject) throw new Error("explain: a code or an id is required");
-  if (/^k\d+$/i.test(subject)) {
-    const text = explainCode(subject);
-    if (!text) throw new Error(`unknown code \`${subject}\``);
-    process.stdout.write(`${text}\n`);
+  // A code, and an ID without the model: a printer over the shared offline operation.
+  if (!opts.llm || isDiagnosticCode(subject)) {
+    const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
+    const result = await runOperation({ kind: "explain", root: findRoot(process.cwd()), subject, ...(detail !== undefined ? { detail } : {}) });
+    for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+    if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
+    process.stdout.write(result.payload.text);
     return 0;
   }
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
   noteOldExplanations(analysis.config);
   const result = summarizeNode(analysis, subject);
-  if ("unknown" in result) throw new Error(`unknown id \`${subject}\`${result.suggestion ? ` (did you mean \`${result.suggestion}\`?)` : ""}`);
+  if ("unknown" in result) throw new Error(unknownIdMessage(subject, result.suggestion));
   const config = analysis.config;
   const { lang } = config.explain;
   const detail: ExplanationDetail = opts.brief ? "brief" : opts.full ? "full" : config.explain.detail;
   const saved = readExplanation(config, subject, detail);
   const show = (e: Explanation): void => {
-    const unknown = unknownIds(analysis, e.text);
-    process.stdout.write(`${e.text}\n\n${e.agent} · ${e.date} · ${isStale(analysis, subject, e) ? "stale" : "fresh"}\n`);
-    if (unknown.length > 0) process.stdout.write(`unknown ids: ${unknown.join(", ")}\n`);
+    process.stdout.write(savedAnswerText(savedAnswer(analysis, subject, e)));
   };
-  if (!opts.llm) {
-    process.stdout.write(`${formatSummary(result.summary)}\n`);
-    if (saved) {
-      process.stdout.write("\n");
-      show(saved);
-    }
-    return 0;
-  }
   // A fresh explanation of the same kind is read, not asked for again: offline and free.
   if (saved && !isStale(analysis, subject, saved) && saved.lang === lang && saved.detail === detail) {
     show(saved);

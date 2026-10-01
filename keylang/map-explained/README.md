@@ -11,12 +11,12 @@ The tree of the map with a brief under each node: the documentation comment from
 | [cli](cli.md) |  | 39 | 0 | 0 | 49 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 198 | 0 | 0 | 133 |
+| [features](features.md) |  | 208 | 0 | 0 | 137 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 119 | 0 | 0 | 131 |
-| [operations](operations.md) |  | 131 | 0 | 0 | 29 |
-| [tui](tui.md) |  | 394 | 0 | 0 | 205 |
-| **all** | | 1173 | 0 | 0 | 813 |
+| [operations](operations.md) |  | 134 | 0 | 0 | 30 |
+| [tui](tui.md) |  | 400 | 0 | 0 | 206 |
+| **all** | | 1192 | 0 | 0 | 819 |
 
 ## Index
 
@@ -30,7 +30,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 
-**E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
+**E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explain-offline](features.md#features.explain-offline) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
 
 **F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 

@@ -16,7 +16,8 @@ import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, r
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
-import { isStoredExplanation } from "./explanations.ts";
+import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, unknownIdMessage, type OfflineExplanation } from "./explain-offline.ts";
+import { isStoredExplanation, type ExplanationDetail } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
@@ -195,6 +196,22 @@ export interface ExplainEdgeRequest {
   /** A node, or an ancestor of nodes (a layer, a directory). */
   from: string;
   to: string;
+}
+
+/**
+ * `keylang explain <code|id>` without `--llm`: the help of a diagnostic code
+ * (`K001`, any case; nothing is read), or the offline summary of a node on a
+ * fresh analysis of the saved code and specs with the explanations saved for
+ * it. Read-only and offline: no model, no write, not even the fact cache.
+ */
+export interface ExplainRequest {
+  kind: "explain";
+  /** Repository root (absolute). */
+  root: string;
+  /** A diagnostic code or an ID. */
+  subject: string;
+  /** Which saved answer is shown (`--full`, `--brief`); default `explain.detail` of keylang.json. */
+  detail?: ExplanationDetail;
 }
 
 /**
@@ -442,7 +459,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code"]);
@@ -1029,6 +1046,14 @@ export interface ExplainEdgePayload extends EdgeExplanation {
   lines: string[];
 }
 
+/** An offline explanation (`explain-offline.ts`) with the snapshot it was read on and the CLI's stdout of it. */
+export type ExplainPayload = OfflineExplanation & {
+  /** The snapshot of a node's analysis; null for a code (nothing is analysed) or a repository without sources. */
+  snapshotId: string | null;
+  /** The CLI's stdout; presentation of the same result. */
+  text: string;
+};
+
 /** What an export did with its one file. */
 export interface ExportPayload {
   path: string;
@@ -1089,6 +1114,7 @@ export interface OperationPayloads {
   wire: WirePayload;
   check: CheckPayload;
   "explain-edge": ExplainEdgePayload;
+  explain: ExplainPayload;
   init: InitPayload;
   export: ExportPayload;
   parse: ParsePayload;
@@ -1135,6 +1161,7 @@ export function runOperation(request: FmtRequest, context?: OperationContext): P
 export function runOperation(request: WireRequest, context?: OperationContext): Promise<OperationEnvelope<"wire">>;
 export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
 export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
+export function runOperation(request: ExplainRequest, context?: OperationContext): Promise<OperationEnvelope<"explain">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
@@ -1168,6 +1195,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runCheck(request, context);
     case "explain-edge":
       return runExplainEdge(request, context);
+    case "explain":
+      return runExplain(request, context);
     case "init":
       return runInit(request, context);
     case "export":
@@ -1217,6 +1246,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "check":
       return { kind, ...base };
     case "explain-edge":
+      return { kind, ...base };
+    case "explain":
       return { kind, ...base };
     case "init":
       return { kind, ...base };
@@ -2135,6 +2166,50 @@ async function runExplainEdge(request: ExplainEdgeRequest, context: OperationCon
   const explanation = explainEdge(snapshot, request.from, request.to);
   const payload: ExplainEdgePayload = { ...explanation, snapshotId: snapshot.snapshotId, lines: edgeExplanationLines(explanation) };
   return { ...emptyExplainEdge("completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
+}
+
+function emptyExplain(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain"> {
+  return { kind: "explain", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang explain <code|id>` offline. A code needs no analysis: its help, or
+ * failed 2 `unknown code`. An ID is read on a fresh analysis of the saved code
+ * and specs (no evidence, no fact cache written): the summary with the saved
+ * answer and brief, or failed 2 with the CLI's `unknown id … (did you mean …)`.
+ * A store of keylang 0.1 is a warning note, which the CLI prints to stderr.
+ * Code 0 with a payload. Nothing is written and no model is asked.
+ */
+async function runExplain(request: ExplainRequest, context: OperationContext): Promise<OperationEnvelope<"explain">> {
+  if (!isAbsolute(request.root)) return emptyExplain("failed", 2, "explain: root must be an absolute path");
+  const subject = request.subject;
+  if (subject === "") return emptyExplain("failed", 2, "explain: a code or an id is required");
+  if (context.signal?.aborted) return emptyExplain("cancelled", null);
+  if (isDiagnosticCode(subject)) {
+    const found = codeExplanation(subject);
+    if (found === null) return emptyExplain("failed", 2, `unknown code \`${subject}\``);
+    const payload: ExplainPayload = { ...found, snapshotId: null, text: offlineExplanationText(found) };
+    return { ...emptyExplain("completed", 0), payload, messages: [{ level: "info", text: `${found.code}: offline help` }] };
+  }
+  context.onProgress?.({ text: "reading the saved code and specs" });
+  const analyzeSaved = context.analyze ?? analyze;
+  let analyzed: Analysis;
+  try {
+    analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
+  } catch (error) {
+    return emptyExplain("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExplain("cancelled", null);
+  const old = oldExplanations(analyzed.config.root);
+  const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
+  const found = nodeExplanation(analyzed, subject, request.detail ?? analyzed.config.explain.detail);
+  if ("unknown" in found) {
+    const failed = emptyExplain("failed", 2);
+    return { ...failed, messages: [...notes, { level: "error", text: unknownIdMessage(subject, found.suggestion) }] };
+  }
+  const payload: ExplainPayload = { ...found, snapshotId: analyzed.snapshot?.snapshotId ?? null, text: offlineExplanationText(found) };
+  const answer = found.saved === null ? "no saved answer" : `saved answer ${found.saved.fresh ? "fresh" : "stale"}`;
+  return { ...emptyExplain("completed", 0), payload, messages: [...notes, { level: "info", text: `${found.summary.kind} ${found.id}: ${answer}` }] };
 }
 
 function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {

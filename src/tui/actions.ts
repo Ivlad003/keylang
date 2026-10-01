@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, explain, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -99,6 +99,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain edge", "check --explain-edge", "edge", "dependency evidence", "why depends", "between ids"],
     // A form takes two ids (the one under the cursor fills the first); it reads the saved code in a worker and never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "explain",
+    label: "Explain: a diagnostic code or an id, offline",
+    group: "Check",
+    aliases: ["explain", "keylang explain", "explain code", "explain id", "diagnostic help", "node summary", "saved explanation", "why"],
+    // A form takes a code (no snapshot, nothing saved first) or an id (a fresh analysis of the saved files in a worker); no model, never writes.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

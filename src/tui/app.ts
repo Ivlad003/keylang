@@ -30,7 +30,8 @@ import type { CheckResult } from "../check-results.ts";
 import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
-import { isStale, readExplanation } from "../explain-llm.ts";
+import { codeExplanation, isDiagnosticCode, nodeExplanation, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
+import { EXPLANATIONS } from "../explain.ts";
 import { loadBriefs } from "../explanations.ts";
 import { FACT_CACHE_FILE } from "../fact-cache.ts";
 import { baselinePath } from "../baseline.ts";
@@ -58,6 +59,7 @@ import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from ".
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
+import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
@@ -520,7 +522,7 @@ export class App {
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
-          : result?.kind === "check" || result?.kind === "explain-edge"
+          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain"
             ? (result.payload?.snapshotId ?? undefined)
             : result?.kind === "trace-plan"
               ? (result.payload?.plan.snapshotId ?? undefined)
@@ -1540,30 +1542,54 @@ export class App {
     this.state.message = `context: ${id} added`;
   }
 
-  /** `e`: the offline summary of the id under the cursor, with its saved explanation (model, date, stale?). */
+  /**
+   * `e`: offline, from the session's analysis as it is shown — the summary of
+   * the ID under the cursor with its saved answer and brief, each with its
+   * provenance, or the help of the line's diagnostic code. Never a model and
+   * never a file read behind the analysis' back, apart from the saved
+   * explanations; the popup says when the analysis has unsaved buffers or is outdated.
+   * The palette's Explain reads the saved files fresh instead.
+   */
   private explainAtCursor(): void {
-    const id = this.idAtCursor();
     const analysis = this.state.analysis;
-    if (!id || !analysis) {
-      this.state.message = analysis ? "no id on this line" : "analysis is still running";
+    if (!analysis) {
+      this.state.message = "analysis is still running";
       return;
     }
-    const result = summarizeNode(analysis, id);
-    if ("unknown" in result) {
-      this.state.message = `unknown id \`${id}\``;
+    const id = this.idAtCursor();
+    const anchor = this.cursorAnchor(0);
+    const x = layout(this.state).editor.x + 2;
+    const found = id === null ? null : nodeExplanation(analysis, id, analysis.config.explain.detail);
+    if (found === null || "unknown" in found) {
+      // No known ID here: the help of the line's diagnostic code (an unknown ID is K001), offline.
+      const unknown = id !== null && found !== null && "unknown" in found ? unknownIdMessage(id, found.suggestion) : null;
+      const buffer = this.buffer();
+      const code = buffer ? evidenceOf(analysis, buffer.path).get(this.state.cursor.line + 1)?.diagnostics[0]?.code : undefined;
+      const help = code === undefined ? null : codeExplanation(code);
+      if (!help) {
+        this.state.message = unknown ?? "no id or diagnostic on this line";
+        return;
+      }
+      const lines: Hover["lines"] = help.text.split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
+      if (unknown !== null) lines.push({ text: unknown, kind: "evidence" });
+      lines.push({ text: `keylang explain ${help.code} · the offline help of the line's diagnostic`, kind: "evidence" });
+      this.state.hover = { x, y: anchor.y, lines, source: "key" };
       return;
     }
-    const saved = readExplanation(analysis.config, id);
-    const lines: Hover["lines"] = formatSummary(result.summary).split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
-    if (saved) {
+    const lines: Hover["lines"] = formatSummary(found.summary).split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
+    const overlay = this.dirtyInputs().some((path) => path.endsWith(".md"));
+    const outdated = this.state.outdated || this.state.updating || this.state.error !== null;
+    lines.push({ text: `the session's analysis${overlay ? " · with unsaved buffers (overlay)" : ""}${outdated ? " · outdated" : ""} · Ctrl+P Explain reads the saved files`, kind: "evidence" });
+    const answer = (label: string, saved: SavedAnswer): void => {
       lines.push({ text: "", kind: "rule" });
       for (const text of saved.text.split("\n")) lines.push({ text, kind: "text" });
-      lines.push({ text: `${saved.agent} · ${saved.date} · ${isStale(analysis, id, saved) ? "stale" : "fresh"}`, kind: "evidence" });
-    } else {
-      lines.push({ text: "no explanation yet: keylang explain <id> --llm", kind: "evidence" });
-    }
-    const anchor = this.cursorAnchor(0);
-    this.state.hover = { x: layout(this.state).editor.x + 2, y: anchor.y, lines, source: "key" };
+      lines.push({ text: `${label} · ${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale"}`, kind: "evidence" });
+      if (saved.unknownIds.length > 0) lines.push({ text: `unknown ids: ${saved.unknownIds.join(", ")}`, kind: "evidence" });
+    };
+    if (found.saved) answer(`saved ${found.saved.detail} answer`, found.saved);
+    if (found.brief) answer("saved brief", found.brief);
+    if (!found.saved) lines.push({ text: `no saved answer · offline: e asks no model (keylang explain ${id} --llm does)`, kind: "evidence" });
+    this.state.hover = { x, y: anchor.y, lines, source: "key" };
   }
 
   private navKey(event: KeyEvent): void {
@@ -1684,7 +1710,9 @@ export class App {
   private inputsChanged(reason: string): void {
     for (const record of this.state.records) {
       const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
-      if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || preview) record.outdated ??= reason;
+      // A code's help reads nothing, so no input makes it outdated.
+      const node = record.params.kind === "explain" && !isDiagnosticCode(record.params.subject);
+      if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || node || preview) record.outdated ??= reason;
     }
   }
 
@@ -1735,6 +1763,13 @@ export class App {
     if (request.kind === "explain-edge") {
       // Explain-edge reads the saved code and keylang.json, never the specs: only a dirty keylang.json is saved first.
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE });
+    }
+    if (request.kind === "explain") {
+      // A code's help reads nothing: no save step. A node's summary reads the saved specs and their
+      // saved explanations under the spec directory, keylang.json and the code: those dirty buffers are saved first.
+      if (isDiagnosticCode(request.subject)) return this.startOperation(action, request);
+      const dir = `${this.specDir()}/`;
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
     }
     if (request.kind === "trace-plan") {
       // The plan reads the saved specs under the spec directory (the flow), keylang.json and the code:
@@ -2498,6 +2533,72 @@ export class App {
     }
     this.state.prompt = null;
     this.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from, to });
+  }
+
+  // ---------- explain (offline) ----------
+
+  /** The explain form: the ID under the cursor, else the code of the line's diagnostic, is the visible default. */
+  private openExplainPrompt(): void {
+    let initial = "";
+    if (this.state.mode !== "merge") {
+      const buffer = this.buffer();
+      const code = buffer && this.state.analysis ? evidenceOf(this.state.analysis, buffer.path).get(this.state.cursor.line + 1)?.diagnostics[0]?.code : undefined;
+      initial = this.idAtCursor() ?? code ?? "";
+    }
+    this.state.prompt = { kind: "explain", text: initial, items: [], ids: [], index: 0 };
+    this.refreshExplainPrompt();
+  }
+
+  /** The codes or the IDs of the session's snapshot matching the typed text (the exact one first). */
+  private refreshExplainPrompt(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "explain") return;
+    const typed = prompt.text.trim();
+    let ids: string[];
+    if (/^k\d*$/i.test(typed)) ids = Object.keys(EXPLANATIONS).filter((code) => code.startsWith(typed.toUpperCase())).sort(compareText);
+    else {
+      const analysis = this.state.analysis;
+      const hits = analysis && typed !== "" ? searchNodes(analysis, this.state.briefs, { query: typed, limit: NODE_HITS, fuzzy: true }).map((hit) => hit.id) : [];
+      ids = [...new Set(hits)].sort((a, b) => Number(b === typed) - Number(a === typed));
+    }
+    prompt.ids = ids;
+    prompt.items = ids;
+    prompt.index = 0;
+    this.explainNote();
+  }
+
+  /** The subject Enter explains: the selected entry of the list, else the typed text. */
+  private explainSubject(): string {
+    const prompt = this.state.prompt!;
+    return prompt.ids?.[prompt.index] ?? prompt.text.trim();
+  }
+
+  private explainNote(): void {
+    const prompt = this.state.prompt!;
+    const subject = this.explainSubject();
+    if (subject === "") {
+      prompt.note = "type a diagnostic code (K001) or an id";
+      return;
+    }
+    if (isDiagnosticCode(subject)) {
+      prompt.note = `${subject.toUpperCase()}: ${codeExplanation(subject) ? "offline help of the code · reads nothing, saves nothing first" : "not a keylang code"}`;
+      return;
+    }
+    const analysis = this.state.analysis;
+    const found = analysis ? nodeExplanation(analysis, subject, analysis.config.explain.detail) : null;
+    const known = found === null ? "" : "unknown" in found ? `: not in the current snapshot${found.suggestion ? ` (did you mean ${found.suggestion}?)` : ""}` : ": in the current snapshot";
+    prompt.note = `${subject}${known} · a fresh analysis of the saved code and specs · offline: no model, writes nothing`;
+  }
+
+  /** Enter in the explain form: the subject runs as the session's operation; an empty one keeps the form. */
+  private submitExplain(): void {
+    const subject = this.explainSubject();
+    if (subject === "") {
+      this.state.message = "explain: a code or an id is required";
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("explain", { kind: "explain", root: this.state.root, subject });
   }
 
   // ---------- trace plan ----------
@@ -4166,6 +4267,8 @@ export class App {
     if (result?.kind === "feature") return (result.payload?.report.gaps ?? []).map((gap: Gap) => ({ file: gap.file, line: gap.line, col: gap.col, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
     if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
+    // A place an explanation names: the node, a related ID the snapshot or a planned declares, a flow, a rule line.
+    if (result?.kind === "explain" && result.payload?.subject === "node") return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
     // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
     // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
     if (result?.kind === "trace-plan") return (result.payload?.plan.symbols ?? []).map((symbol) => ({ file: symbol.file, line: symbol.line, col: symbol.col, text: `${symbol.id} ${symbol.file}:${symbol.line}:${symbol.col}` }));
@@ -4327,6 +4430,7 @@ export class App {
     if (prompt.kind === "fmt") this.refreshFmtPrompt();
     if (prompt.kind === "parse") this.refreshParsePrompt();
     if (prompt.kind === "trace-plan") this.refreshTracePlanPrompt();
+    if (prompt.kind === "explain") this.refreshExplainPrompt();
     if (prompt.kind === "wire") this.refreshWirePrompt();
     if (prompt.kind === "full-check") this.refreshCheckPrompt();
     if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -4379,6 +4483,7 @@ export class App {
       if (prompt.kind === "fmt") this.refreshFmtPrompt();
       if (prompt.kind === "parse") this.refreshParsePrompt();
       if (prompt.kind === "trace-plan") this.refreshTracePlanPrompt();
+      if (prompt.kind === "explain") this.refreshExplainPrompt();
       if (prompt.kind === "wire") this.refreshWirePrompt();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
@@ -4396,11 +4501,12 @@ export class App {
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
       if (prompt.kind === "trace-plan") this.tracePlanNote();
+      if (prompt.kind === "explain") this.explainNote();
       if (prompt.kind === "full-check") this.refreshCheckPrompt();
       if (prompt.kind === "explain-edge") this.refreshEdgePrompt();
       if (prompt.kind === "export") this.refreshExportPrompt();
@@ -4418,6 +4524,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "fmt") return this.submitFmt();
     if (event.name === "enter" && prompt.kind === "parse") return this.submitParse();
     if (event.name === "enter" && prompt.kind === "trace-plan") return this.submitTracePlan();
+    if (event.name === "enter" && prompt.kind === "explain") return this.submitExplain();
     if (event.name === "enter" && prompt.kind === "wire") return this.submitWire();
     if (event.name === "enter" && prompt.kind === "full-check") return this.submitCheck();
     if (event.name === "enter" && prompt.kind === "explain-edge") return this.submitEdge();
@@ -4519,6 +4626,8 @@ export class App {
         return this.openParsePrompt();
       case "trace-plan":
         return this.openTracePlanPrompt();
+      case "explain":
+        return this.openExplainPrompt();
       case "draft-flow":
         return this.openDraftPrompt();
       case "draft-rules":

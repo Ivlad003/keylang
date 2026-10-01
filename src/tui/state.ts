@@ -122,6 +122,7 @@ export interface Prompt {
    * `explain-edge`: two ids, `edge.from` and `edge.to` (the items `from`, `to`, run; typing edits the selected id row; `text` is unused).
    * `parse`: the spec files and directories to parse, relative to the root and separated by spaces (the current spec by default), and the view (`ids` are `tree` / `json`);
    * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
+   * `explain`: a diagnostic code or an ID, typed or taken from the list (`ids` are the matching codes or the IDs of the session's snapshot; the ID under the cursor, else the line's diagnostic code, by default);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
@@ -129,7 +130,7 @@ export interface Prompt {
    * `code-to-spec`: flows from code, `codeDraft` (the rows `source`, then `file`, the source files matching it as `src:<path>` and `line` for a file, or `since` for a git change, then `into`, `mode`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the source, the mode or the output; `text` is unused).
    * `spec-to-code`: code from a planned fn, `specCode` (the rows `id`, the planned fns matching it as `planned:<id>`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "explain" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];

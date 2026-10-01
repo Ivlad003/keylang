@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -358,6 +358,45 @@
       <a id="features.explain-node.nodeHolding"></a><br>The allow, deny, entry item, nested layer, or module line that holds `ref`.
     - fn [formatSummary](../../src/explain-node.ts#L105) (s: NodeSummary) → string
       <a id="features.explain-node.formatSummary"></a><br>The summary as text: one line per fact, empty facts left out.
+  - module [explain-offline](../../src/explain-offline.ts#L1)
+    <a id="features.explain-offline"></a><br>`keylang explain <code|id>` without a model: the help of a diagnostic code, or what the snapshot and the specs say about a node with the explanations saved for it. One result for the CLI, the TUI palette and `e`: the doc comment of the code (in the summary), the saved…
+    - analyze [map.analyze](map.md#map.analyze)
+    - explain [features.explain](features.md#features.explain)
+    - explain-node [features.explain-node](features.md#features.explain-node)
+    - explain-llm [features.explain-llm](features.md#features.explain-llm)
+    - explanations [map.explanations](map.md#map.explanations)
+    - lsp-features [features.lsp-features](features.md#features.lsp-features)
+    - fn [isDiagnosticCode](../../src/explain-offline.ts#L15) (subject: string) → boolean
+      <a id="features.explain-offline.isDiagnosticCode"></a><br>`K001`, `k104`: a diagnostic code, whatever its case, as the CLI tells it from an ID.
+    - type [SavedAnswer](../../src/explain-offline.ts#L20)
+      <a id="features.explain-offline.SavedAnswer"></a><br>An explanation a model wrote, as saved, judged against the current analysis.
+    - type [ExplainLink](../../src/explain-offline.ts#L36)
+      <a id="features.explain-offline.ExplainLink"></a><br>A position the summary names: the node itself, a related ID, a flow or a rule line. Only known places; an ID without one has `file: null`.
+    - type [CodeExplanation](../../src/explain-offline.ts#L49)
+      <a id="features.explain-offline.CodeExplanation"></a>
+    - type [NodeExplanation](../../src/explain-offline.ts#L57)
+      <a id="features.explain-offline.NodeExplanation"></a>
+    - type [OfflineExplanation](../../src/explain-offline.ts#L69) = CodeExplanation | NodeExplanation
+      <a id="features.explain-offline.OfflineExplanation"></a>
+    - fn [codeExplanation](../../src/explain-offline.ts#L72) (code: string) → CodeExplanation | null
+      <a id="features.explain-offline.codeExplanation"></a><br>The help of a diagnostic code, or null for a code keylang does not have.
+      - calls [features.explain.explainCode](features.md#features.explain.explainCode)
+    - fn [unknownIdMessage](../../src/explain-offline.ts#L78) (id: string, suggestion: string | null) → string
+      <a id="features.explain-offline.unknownIdMessage"></a><br>The CLI's error for an ID that is neither in the snapshot nor declared `planned`.
+    - fn [nodeExplanation](../../src/explain-offline.ts#L83) (analysis: Analysis, id: string, detail: ExplanationDetail) → NodeExplanation | { unknown: string; suggestion: string | null }
+      <a id="features.explain-offline.nodeExplanation"></a><br>The offline explanation of `id` on `analysis`, or why there is none.
+      - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-offline.savedAnswer](features.md#features.explain-offline.savedAnswer), [features.explain-offline.summaryLinks](features.md#features.explain-offline.summaryLinks)
+    - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
+      <a id="features.explain-offline.savedAnswer"></a>
+      - calls [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-llm.unknownIds](features.md#features.explain-llm.unknownIds), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
+    - fn [savedAnswerText](../../src/explain-offline.ts#L104) (saved: SavedAnswer) → string
+      <a id="features.explain-offline.savedAnswerText"></a><br>A saved answer as the CLI prints it: the text, a blank line, `agent · date · fresh|stale`, and the made-up IDs.
+    - fn [offlineExplanationText](../../src/explain-offline.ts#L110) (explanation: OfflineExplanation) → string
+      <a id="features.explain-offline.offlineExplanationText"></a><br>The CLI's stdout for an offline explanation, byte for byte.
+      - calls [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-offline.savedAnswerText](features.md#features.explain-offline.savedAnswerText)
+    - fn [summaryLinks](../../src/explain-offline.ts#L117) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
+      <a id="features.explain-offline.summaryLinks"></a><br>The places the summary names, in its order; a related ID is a place only where the snapshot or a `planned` declares it.
+      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)

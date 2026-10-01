@@ -232,6 +232,31 @@
       - calls features.lsp-features.plannedDecl, features.explain-node.nodeHolding, features.lsp-features.flowsUsing
     - fn [nodeHolding](../../src/explain-node.ts#L95) (root: Node, ref: Ref) → Node | null <!-- internal -->
     - fn [formatSummary](../../src/explain-node.ts#L105) (s: NodeSummary) → string
+  - module [explain-offline](../../src/explain-offline.ts#L1)
+    - analyze map.analyze
+    - explain features.explain
+    - explain-node features.explain-node
+    - explain-llm features.explain-llm
+    - explanations map.explanations
+    - lsp-features features.lsp-features
+    - fn [isDiagnosticCode](../../src/explain-offline.ts#L15) (subject: string) → boolean
+    - type [SavedAnswer](../../src/explain-offline.ts#L20)
+    - type [ExplainLink](../../src/explain-offline.ts#L36)
+    - type [CodeExplanation](../../src/explain-offline.ts#L49)
+    - type [NodeExplanation](../../src/explain-offline.ts#L57)
+    - type [OfflineExplanation](../../src/explain-offline.ts#L69) = CodeExplanation | NodeExplanation
+    - fn [codeExplanation](../../src/explain-offline.ts#L72) (code: string) → CodeExplanation | null
+      - calls features.explain.explainCode
+    - fn [unknownIdMessage](../../src/explain-offline.ts#L78) (id: string, suggestion: string | null) → string
+    - fn [nodeExplanation](../../src/explain-offline.ts#L83) (analysis: Analysis, id: string, detail: ExplanationDetail) → NodeExplanation | { unknown: string; suggestion: string | null }
+      - calls features.explain-node.summarizeNode, features.explain-llm.readExplanation, features.explain-offline.savedAnswer, features.explain-offline.summaryLinks
+    - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
+      - calls features.explain-llm.isStale, features.explain-llm.unknownIds, map.explanations.explanationPath
+    - fn [savedAnswerText](../../src/explain-offline.ts#L104) (saved: SavedAnswer) → string
+    - fn [offlineExplanationText](../../src/explain-offline.ts#L110) (explanation: OfflineExplanation) → string
+      - calls features.explain-node.formatSummary, features.explain-offline.savedAnswerText
+    - fn [summaryLinks](../../src/explain-offline.ts#L117) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
+      - calls features.lsp-features.plannedDecl
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
     - fn [explainCode](../../src/explain.ts#L104) (code: string) → string | null

@@ -18,6 +18,7 @@ import { test } from "node:test";
 import { analyze, findRoot, type Analysis, type AnalysisRequest } from "../src/analyze.ts";
 import { formatSource } from "../src/fmt.ts";
 import { mapCheckLines, mapStepLines, runOperation, type OperationContext, type OperationRequest, type OperationResult } from "../src/operations.ts";
+import { currentBaseline } from "../src/explain-llm.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { OperationWorker } from "../src/tui/background.ts";
 import { findingsOf } from "../src/tui/findings.ts";
@@ -8636,4 +8637,238 @@ test("tui: applying a candidate checks every file and input first — a target c
   const kept = await runOperation({ kind: "apply-code", root, candidate, pending: "keep" });
   assert.deepEqual([kept.status, kept.exitCode, kept.written], ["completed", 0, REFUND_FILES]);
   assert.deepEqual(treeBytes(join(root, ".keylang/proposals")), stores, "no proposal is removed");
+});
+
+// ---------- offline explanations (ticket 31) ----------
+
+/** The palette's explain form; `subject` replaces the default when given, then Enter explains the first match (or the typed text). */
+function explainForm(s: ReturnType<typeof session>, subject?: string): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang explain") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "explain", s.app.state.message ?? "");
+  if (subject !== undefined) {
+    for (const _ of s.app.state.prompt!.text) s.send("\x7f");
+    for (const ch of subject) s.send(ch);
+  }
+  s.send(KEY.enter);
+}
+
+type ExplainResult = Extract<OperationResult, { kind: "explain" }> & { payload: NonNullable<Extract<OperationResult, { kind: "explain" }>["payload"]> };
+
+function explainRecord(app: App): ExplainResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "explain" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as ExplainResult;
+}
+
+function cliExplain(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "explain", ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** A repository whose agent is a local mock: every request an action makes is counted. */
+async function explainRepo(t: { after: (f: () => void) => void }, specs: Record<string, string>): Promise<{ root: string; prompts: string[] }> {
+  const root = checkoutRepo(t, specs);
+  const config = join(root, "keylang.json");
+  writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), agent: "anthropic:claude-opus-5" }));
+  const { prompts } = await mockModel(t, "never asked");
+  return { root, prompts };
+}
+
+const storedExplanation = (closure: string, detail: "short" | "brief", text: string): string =>
+  `<!-- keylang:explain agent=anthropic:claude-opus-5 date=2026-09-30 closure=${closure} lang=en detail=${detail} -->\n${text}\n`;
+
+test("tui: explain of a diagnostic code in any case and of an unknown code is the CLI's text and code with no save step; e on a line with K001 shows its help; no model is asked, nothing written", async (t) => {
+  const { root, prompts } = await explainRepo(t, { "keylang/flows/checkout.md": `${CHECKOUT_FLOW}  - step domain.order.nope\n` });
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  const k001 = cliExplain(root, ["K001"]);
+  assert.deepEqual([k001.status, k001.stderr], [0, ""]);
+  assert.equal(cliExplain(root, ["k001"]).stdout, k001.stdout, "the case of a code does not matter");
+  // e on the line of an unknown ID: no node to sum up, the help of the line's K001 instead, as the CLI prints it.
+  s.app.state.cursor = { line: 8, col: 0 };
+  s.send("e");
+  const hover = s.app.state.hover!.lines.map((line) => line.text);
+  assert.deepEqual(hover.slice(0, k001.stdout.trimEnd().split("\n").length), k001.stdout.trimEnd().split("\n"));
+  assert.ok(hover.some((line) => line.startsWith("unknown id `domain.order.nope`")), hover.join("\n"));
+  await esc(s.send);
+  // A dirty spec: a code's help reads nothing, so no save step opens and the buffer stays dirty.
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang explain") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.text, "", "no id or diagnostic on a prose line");
+  for (const ch of "k001") s.send(ch);
+  assert.deepEqual(s.app.state.prompt?.ids, ["K001"]);
+  assert.equal(promptNote(s.app), "K001: offline help of the code · reads nothing, saves nothing first");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.barrier, null);
+  await s.app.idle();
+  const code = explainRecord(s.app);
+  assert.deepEqual([code.status, code.exitCode, code.written], ["completed", 0, []]);
+  assert.equal(code.payload.text, k001.stdout, "the CLI's stdout, byte for byte");
+  assert.ok(code.payload.subject === "code" && code.payload.code === "K001");
+  assert.equal(code.payload.snapshotId, null);
+  const lower = await runOperation({ kind: "explain", root, subject: "k001" });
+  assert.deepEqual([lower.status, lower.exitCode, lower.payload?.text], ["completed", 0, k001.stdout]);
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Explain: a diagnostic code or an id, offline · K001/);
+  assert.match(text, /Explain · K001 · offline help of the code · nothing read, nothing written/);
+  assert.match(text, /K001: offline help · code 0/);
+  await esc(s.send);
+  // An unknown code: failed 2 with the CLI's message, typed in either case.
+  explainForm(s, "K999");
+  await s.app.idle();
+  const unknown = s.app.state.records.at(-1)!;
+  assert.deepEqual([unknown.kind, unknown.status, unknown.result!.exitCode, unknown.result!.payload, unknown.result!.written], ["explain", "failed", 2, null, []]);
+  assert.equal(unknown.result!.messages[0]!.text, "unknown code `K999`");
+  for (const typed of ["K999", "k999"]) {
+    const op = await runOperation({ kind: "explain", root, subject: typed });
+    const cli = cliExplain(root, [typed]);
+    assert.deepEqual([op.status, op.exitCode, cli.status, cli.stdout, cli.stderr], ["failed", 2, 2, "", `keylang: ${op.messages[0]!.text}\n`]);
+  }
+  s.send(KEY.f6);
+  assert.match(s.text(), /unknown code `K999`/);
+  assert.notEqual(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, s.app.state.buffers.get("keylang/flows/checkout.md")!.saved, "still dirty");
+  assert.deepEqual(treeBytes(root), before, "nothing written by the TUI or the CLI");
+  assert.equal(prompts.length, 0, "no request to the model");
+  text = s.text();
+  assert.doesNotMatch(text, /provider|credentials/);
+});
+
+test("tui: explain of an id is the CLI's summary with the doc comment, the saved answer and the brief apart, with their provenance; places open the code; a code change makes the answer stale; a missing answer is no error; an unknown id has the CLI's suggestion; no model is asked", async (t) => {
+  const order = "/** Creates an order. */\nexport function create(): void {}\n";
+  const { root, prompts } = await explainRepo(t, { "src/domain/order.ts": order });
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const id = "domain.order.create";
+  const baseline = currentBaseline(s.app.state.analysis!, id)!;
+  const answerFile = `keylang/explain/${id}.md`;
+  mkdirSync(join(root, "keylang/explain/brief"), { recursive: true });
+  writeFileSync(join(root, answerFile), storedExplanation(baseline, "short", "Creates the order through `domain.order.create`; `domain.order.ghost` is made up."));
+  writeFileSync(join(root, `keylang/explain/brief/${id}.md`), storedExplanation(baseline, "brief", "Makes an order."));
+  const before = treeBytes(root);
+  // e: the session's analysis as shown, with each explanation's origin; no model.
+  s.app.state.cursor = { line: 6, col: 0 };
+  s.send("e");
+  let hover = s.app.state.hover!.lines.map((line) => line.text);
+  assert.equal(hover[0], `fn ${id} () → void`);
+  assert.ok(hover.includes("doc: Creates an order."), hover.join("\n"));
+  assert.ok(hover.includes("the session's analysis · Ctrl+P Explain reads the saved files"), hover.join("\n"));
+  assert.ok(hover.includes("saved short answer · anthropic:claude-opus-5 · 2026-09-30 · fresh"), hover.join("\n"));
+  assert.ok(hover.includes("saved brief · anthropic:claude-opus-5 · 2026-09-30 · fresh"), hover.join("\n"));
+  assert.ok(hover.includes("unknown ids: domain.order.ghost"), hover.join("\n"));
+  await esc(s.send);
+  // The palette: the ID under the cursor by default; a fresh analysis of the saved files in the worker.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang explain") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.text, id);
+  assert.equal(s.app.state.prompt?.ids?.[0], id);
+  assert.equal(promptNote(s.app), `${id}: in the current snapshot · a fresh analysis of the saved code and specs · offline: no model, writes nothing`);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const fresh = explainRecord(s.app);
+  assert.deepEqual([fresh.status, fresh.exitCode, fresh.written], ["completed", 0, []]);
+  const cli = cliExplain(root, [id]);
+  assert.deepEqual([cli.status, cli.stderr], [0, ""]);
+  assert.equal(fresh.payload.text, cli.stdout, "the CLI's stdout, byte for byte");
+  assert.ok(fresh.payload.subject === "node");
+  const node = fresh.payload;
+  assert.equal(node.snapshotId, s.app.state.analysis?.snapshot?.snapshotId);
+  assert.equal(node.summary.doc, "Creates an order.", "the doc comment comes from the code");
+  assert.deepEqual([node.saved?.agent, node.saved?.date, node.saved?.detail, node.saved?.fresh, node.saved?.file, node.saved?.unknownIds], ["anthropic:claude-opus-5", "2026-09-30", "short", true, answerFile, ["domain.order.ghost"]]);
+  assert.deepEqual([node.brief?.text, node.brief?.detail, node.brief?.fresh, node.brief?.file], ["Makes an order.", "brief", true, `keylang/explain/brief/${id}.md`]);
+  assert.doesNotMatch(node.saved!.text, /Makes an order|Creates an order\./, "the answer is neither the brief nor the doc comment");
+  assert.doesNotMatch(cli.stdout, /Makes an order/, "the CLI prints the answer of its detail, not the brief");
+  assert.deepEqual(node.links.map((link) => link.text), [
+    "at src/domain/order.ts:2",
+    "called by application.purchase.buy  src/application/purchase.ts:3",
+    "flow checkout  keylang/flows/checkout.md:1",
+  ]);
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Explain · domain\.order\.create · offline, no model, nothing written · saved code and specs · snapshot/);
+  assert.match(text, /fn domain\.order\.create: saved answer fresh · code 0/);
+  assert.match(text, /doc: Creates an order\./);
+  assert.match(text, /── saved answer · short · anthropic:claude-opus-5 · 2026-09-30 · fresh · keylang\/explain\/domain\.order\.create\.md ──/);
+  assert.match(text, /── saved brief \(the explained map\) · brief · anthropic:claude-opus-5 · 2026-09-30 · fresh/);
+  assert.match(text, /unknown ids \(in no snapshot, no planned; not followed\): domain\.order\.ghost/);
+  // Places: Tab, then ↑↓ and Enter open a known ID's code; nothing is made of the made-up ID.
+  s.send(KEY.tab);
+  s.send(KEY.down);
+  assert.match(s.app.state.message ?? "", /^called by application\.purchase\.buy {2}src\/application\/purchase\.ts:3 · Enter opens src\/application\/purchase\.ts:3$/);
+  s.send(KEY.enter);
+  assert.deepEqual([s.app.state.code?.file, s.app.state.code?.line], ["src/application/purchase.ts", 3]);
+  await esc(s.send);
+  await esc(s.send);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "nothing written: no explanation, cache or stats");
+  // The code changes: the old record is outdated, a rerun and e say stale; the CLI agrees.
+  writeFileSync(join(root, "src/domain/order.ts"), order.replace("{}", "{\n  return;\n}"));
+  s.send(KEY.f5);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)!.outdated, "the code snapshot changed since this run");
+  s.send(KEY.f6);
+  while (s.app.state.results.index < s.app.state.records.length - 1) s.send(KEY.down);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const stale = explainRecord(s.app);
+  assert.ok(stale.payload.subject === "node");
+  assert.deepEqual([stale.payload.saved?.fresh, stale.payload.brief?.fresh], [false, false]);
+  assert.equal(stale.payload.text, cliExplain(root, [id]).stdout);
+  assert.match(stale.payload.text, /anthropic:claude-opus-5 · 2026-09-30 · stale\n/);
+  s.send(KEY.down);
+  assert.equal(s.app.state.records[s.app.state.results.index]?.result, stale);
+  assert.match(s.text(), /stale: the code changed since/);
+  assert.match(s.text(), /Enter rerun · Tab places · Esc back/, "an explanation is no report to export");
+  await esc(s.send);
+  s.app.state.cursor = { line: 6, col: 0 };
+  s.send("e");
+  hover = s.app.state.hover!.lines.map((line) => line.text);
+  assert.ok(hover.includes("saved short answer · anthropic:claude-opus-5 · 2026-09-30 · stale"), hover.join("\n"));
+  await esc(s.send);
+  // No saved answer: the summary alone, completed — not a provider error.
+  rmSync(join(root, answerFile));
+  explainForm(s);
+  await s.app.idle();
+  const missing = explainRecord(s.app);
+  assert.deepEqual([missing.status, missing.exitCode], ["completed", 0]);
+  assert.ok(missing.payload.subject === "node" && missing.payload.saved === null);
+  assert.ok(missing.messages.every((message) => message.level !== "error"));
+  assert.equal(missing.payload.text, cliExplain(root, [id]).stdout);
+  s.send(KEY.f6);
+  assert.match(s.text(), /no saved answer: keylang explain domain\.order\.create --llm asks the model; nothing here does/);
+  await esc(s.send);
+  // An unknown id: failed 2 with the CLI's message and its suggestion, nothing invented.
+  const near = await runOperation({ kind: "explain", root, subject: "domain.order.creat" });
+  const cliNear = cliExplain(root, ["domain.order.creat"]);
+  assert.deepEqual([near.status, near.exitCode, near.payload], ["failed", 2, null]);
+  assert.equal(near.messages[0]!.text, "unknown id `domain.order.creat` (did you mean `domain.order.create`?)");
+  assert.deepEqual([cliNear.status, cliNear.stdout, cliNear.stderr], [2, "", `keylang: ${near.messages[0]!.text}\n`]);
+  explainForm(s, "qqq.zzz");
+  await s.app.idle();
+  const nope = s.app.state.records.at(-1)!;
+  assert.deepEqual([nope.status, nope.result!.exitCode, nope.result!.messages.map((message) => message.text)], ["failed", 2, [cliExplain(root, ["qqq.zzz"]).stderr.replace(/^keylang: |\n$/g, "")]]);
+  // A dirty spec is saved first for an id: Back writes and explains nothing.
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const records = s.app.state.records.length;
+  explainForm(s, id);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/flows/checkout.md"]);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, records);
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW, "Back writes nothing");
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [], "no explanation, cache or stats appeared");
+  assert.equal(prompts.length, 0, "no request to the model");
 });
