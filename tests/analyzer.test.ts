@@ -551,3 +551,114 @@ test("robustness: a file nested thousands deep is opaque, not a crash; a fact ca
   assert.ok(again.edges.some((e) => e.kind === "call" && e.source === "lib.ok.f" && e.target === "lib.ok.g"));
   assert.ok(again.edges.some((e) => e.kind === "call" && e.source === "app.a.main" && e.target === "lib.ok.f"));
 });
+
+test("jsx: a tag naming a component is a call in `.tsx`; intrinsic, fragment and namespace tags are not; a tag in `.map` is a closure; `.ts` has no JSX", (t) => {
+  const page = [
+    'import { Cart } from "../ui/cart.tsx";',
+    'import * as Menu from "../ui/menu.tsx";',
+    'import { div, Fragment } from "../ui/html.tsx";',
+    "type Props = { a: number };",
+    "export function Page({ Comp }: { Comp: () => unknown }) {",
+    "  return (",
+    "    <div>",
+    "      <Cart<Props> a={1} />",
+    "      <Cart></Cart>",
+    "      <Menu.Item />",
+    "      <>x</>",
+    "      <svg:path />",
+    "      <my-button />",
+    "      <Comp />",
+    "    </div>",
+    "  );",
+    "}",
+    "export function List({ items }: { items: string[] }) {",
+    "  return <ul>{items.map(() => <Cart />)}</ul>;",
+    "}",
+    "",
+  ].join("\n");
+  const dir = repo(t, {
+    "src/ui/cart.tsx": "export function Cart(props: { a?: number }) { return null; }\n",
+    "src/ui/menu.tsx": "export function Item() { return null; }\n",
+    "src/ui/html.tsx": "export function div() { return null; }\nexport function Fragment() { return null; }\n",
+    "src/app/page.tsx": page,
+    // The `typescript` grammar has no JSX: `<Cart />` in `.ts` is a syntax error, not a call.
+    "src/app/bad.ts": 'import { Cart } from "../ui/cart.tsx";\nexport function Bad() { return <Cart />; }\n',
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.page.Page\n- step ui.cart.Cart\n- step ui.menu.Item\n\n# flow g\n\n- trigger app.page.List\n- step ui.cart.Cart\n",
+  });
+  const snap = snapshot(dir);
+  // `<Cart<Props> />` and `<Cart></Cart>` are one edge to one target; `<Comp />` through the parameter is unresolved.
+  const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}${e.closure ? " (closure)" : ""}`).sort();
+  assert.deepEqual(calls, [
+    "app.page.List: Cart → ui.cart.Cart (closure)",
+    "app.page.List: items.map → null",
+    "app.page.Page: Cart → ui.cart.Cart",
+    "app.page.Page: Comp → null",
+    "app.page.Page: Menu.Item → ui.menu.Item",
+  ]);
+  assert.equal(snap.nodes["ui.html.div"]?.kind, "fn");
+  assert.equal(snap.nodes["app.bad"]?.members, "opaque");
+  assert.ok(snap.coverage.some((c) => c.kind === "parse-error" && c.file === "src/app/bad.ts"), JSON.stringify(snap.coverage));
+  const lines = statics(dir);
+  assert.equal(lines.length, 3, lines.join("\n"));
+  assert.match(lines[0]!, /static ok ui\.cart\.Cart: called from app\.page\.Page/);
+  assert.match(lines[1]!, /static ok ui\.menu\.Item: called from app\.page\.Page/);
+  assert.match(lines[2]!, /static unverified ui\.cart\.Cart: no resolved path from app\.page\.List; reached only through a closure of app\.page\.List/);
+});
+
+test("jsx: a `.jsx` file goes through the `javascript` grammar and gets the same tag calls", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/ui/cart.jsx": "export function Cart() { return <div />; }\nexport function div() { return null; }\n",
+      "src/app/page.jsx": 'import { Cart, div } from "../ui/cart.jsx";\nexport function Page() {\n  return <section><Cart /><Cart.Item /></section>;\n}\nexport const top = <Cart />;\n',
+    },
+    { languages: ["javascript"] },
+  );
+  const snap = snapshot(dir);
+  const calls = snap.edges.filter((e) => e.kind === "call" && e.source.startsWith("app.")).map((e) => `${e.source}: ${e.text} → ${e.target}`);
+  assert.deepEqual(calls, ["app.page.Page: Cart → ui.cart.Cart", "app.page.Page: Cart.Item → null"]);
+  assert.ok(!snap.edges.some((e) => e.target === "ui.cart.div"), "an intrinsic tag is not a call");
+});
+
+test("jsx: a Nest-style `.ts` file keeps its declarations and calls: decorators, angle assertions, generic arrows and `forwardRef` are what they were", (t) => {
+  const dir = repo(t, {
+    "src/cats/cats.controller.ts": [
+      'import { Controller, Get, Inject, Injectable, Module, forwardRef } from "@nestjs/common";',
+      'import { CatsService } from "./cats.service.ts";',
+      "@Injectable()",
+      "export class CommonService {",
+      "  constructor(@Inject(forwardRef(() => CatsService)) private readonly cats: CatsService) {}",
+      "}",
+      '@Controller("cats")',
+      "export class CatsController {",
+      "  constructor(private readonly cats: CatsService) {}",
+      "  @Get()",
+      "  findAll(): string[] {",
+      "    const raw = <string[]>this.cats.findAll();",
+      "    const id = <T>(x: T) => x;",
+      "    return raw.filter((c) => c.length < 3 && c.length > 0).map(id);",
+      "  }",
+      "}",
+      "export const Common = forwardRef(() => CatsModule);",
+      "@Module({ imports: [forwardRef(() => CatsModule)] })",
+      "export class CatsModule {}",
+      "",
+    ].join("\n"),
+    "src/cats/cats.service.ts": 'import { Injectable } from "@nestjs/common";\n@Injectable()\nexport class CatsService {\n  findAll(): string[] { return []; }\n}\n',
+  });
+  const snap = snapshot(dir);
+  assert.deepEqual(
+    Object.keys(snap.nodes).filter((id) => id.startsWith("cats.cats_controller")),
+    ["cats.cats_controller", "cats.cats_controller.CatsController", "cats.cats_controller.CatsController.constructor", "cats.cats_controller.CatsController.findAll", "cats.cats_controller.CatsModule", "cats.cats_controller.CommonService", "cats.cats_controller.CommonService.constructor"],
+  );
+  assert.equal(snap.nodes["cats.cats_controller"]?.members, "complete");
+  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
+  assert.deepEqual(calls, [
+    "cats.cats_controller.CatsController.findAll: raw.filter → null",
+    "cats.cats_controller.CatsController.findAll: raw.filter((c)=>c.length<3&&c.length>0).map → null",
+    "cats.cats_controller.CatsController.findAll: this.cats.findAll → cats.cats_service.CatsService.findAll",
+    "cats.cats_controller.CommonService.constructor: Inject → null",
+    "cats.cats_controller.CommonService.constructor: forwardRef → null",
+  ]);
+  assert.ok(snap.exports.some((e) => e.module === "cats.cats_controller" && e.name === "Common" && e.kind === "value"), JSON.stringify(snap.exports));
+});

@@ -12,6 +12,17 @@ const CALLS_QUERY = `
 (new_expression constructor: (_) @new)
 `;
 
+/**
+ * A JSX tag that names a component is a call of it. The `typescript` grammar
+ * has no JSX nodes (a `<` there is a type assertion), and a query naming
+ * them fails to compile on it, so this query is built for `tsx` and
+ * `javascript` only. A closing tag is not a second call.
+ */
+const JSX_QUERY = `
+(jsx_self_closing_element name: (_) @tag)
+(jsx_opening_element name: (_) @tag)
+`;
+
 const REQUIRE_QUERY = `
 (call_expression function: (identifier) @fn arguments: (arguments (string (string_fragment) @source)) (#eq? @fn "require"))
 (call_expression function: (import) arguments: (arguments (string (string_fragment) @source)))
@@ -148,6 +159,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     return facts;
   }
   const calls = query(language, g, "calls", CALLS_QUERY);
+  const jsxTags = g === "typescript" ? null : query(language, g, "jsx", JSX_QUERY);
   const requires = query(language, g, "require", REQUIRE_QUERY);
 
   // Bodies whose calls belong to a declaration; every other call is module-level code.
@@ -165,7 +177,16 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       if (insideClosure(c.node, body)) fact.closure = true;
       out.push(fact);
     }
-    return out;
+    if (!jsxTags) return out;
+    for (const c of jsxTags.captures(body)) {
+      if (!keep(c.node)) continue;
+      const fact = componentOfTag(c.node, body, cls);
+      if (!fact) continue;
+      if (insideClosure(c.node, body)) fact.closure = true;
+      out.push(fact);
+    }
+    // Two queries walk the body in turn; the facts are kept in source order.
+    return out.sort((a, b) => a.line - b.line || a.col - b.col);
   };
 
   const visitDecl = (node: Node, exported: boolean): void => {
@@ -444,6 +465,27 @@ function calleeOfCall(node: Node, body: Node, cls: ClassScope | null): CallFact 
     default:
       return FUNCTION_VALUES.has(n.type) ? null : opaqueCall(n);
   }
+}
+
+/**
+ * The call a JSX tag makes, from its name node: `<Cart />` calls `Cart`,
+ * `<Cart.Item />` calls `Cart.Item`, as the call expressions would. Null
+ * when the tag is not a component: an intrinsic element (`<div />`,
+ * `<my-button />`: a lowercase first letter), a namespace name
+ * (`<svg:path />`), or a fragment (no name). A tag through a parameter or
+ * local (`<Comp />`) is bound, a hole, as the call of a parameter is.
+ */
+function componentOfTag(name: Node, body: Node, cls: ClassScope | null): CallFact | null {
+  if (name.type === "identifier") {
+    const first = name.text.codePointAt(0) ?? 0;
+    if (first >= 0x61 && first <= 0x7a) return null;
+    return calleeFact(name, body, cls);
+  }
+  if (name.type !== "member_expression") return null;
+  const fact = calleeFact(name, body, cls);
+  if (fact) return fact;
+  const text = collapse(name.text);
+  return text.length < MAX_CALLEE ? callFact(text, name) : opaqueCall(name);
 }
 
 /**
