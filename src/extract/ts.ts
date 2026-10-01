@@ -221,7 +221,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           // `(() => …) as Handler` and `(function () {}) satisfies T` are the function itself.
           const fnValue = value ? unwrapValue(value) : null;
           // `const Cart = memo(() => …)` is the fn the React wrapper wraps; `let`/`var` stay values.
-          const wrapped = fnValue && node.children.some((c) => c.type === "const") ? reactWrapperFn(fnValue, reactBindings()) : null;
+          const wrapped = fnValue && node.children.some((c) => c.type === "const") ? reactWrapperFn(fnValue, react) : null;
           const fnNode = wrapped ?? (fnValue && FUNCTION_VALUES.has(fnValue.type) ? fnValue : null);
           if (fnNode) {
             facts.decls.push(decl("fn", name, d, signature(fnNode), exported, declCalls(fnNode), collectTypeRefs(fnNode), []));
@@ -300,29 +300,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     }
   };
 
-  // `import` declarations hoist, so a wrapped `const` may sit above its
-  // import; `require("react")` binds only below itself and is not read here.
-  // Computed on the first wrapper-shaped `const` or factory call.
-  let react: { names: Set<string>; objects: Set<string> } | null = null;
-  const reactBindings = (): { names: Set<string>; objects: Set<string> } => {
-    if (react === null) {
-      const names = new Set<string>();
-      const objects = new Set<string>();
-      for (const stmt of root.namedChildren) {
-        if (stmt.type !== "import_statement") continue;
-        for (const fact of importStatement(stmt)) {
-          if (fact.source !== "react") continue;
-          for (const b of fact.bindings) {
-            if (b.kind === "named" && REACT_WRAPPERS.has(b.imported)) names.add(b.local);
-            else if (b.kind === "module" || b.kind === "default") objects.add(b.local);
-          }
-        }
-      }
-      react = { names, objects };
-    }
-    return react;
-  };
-
+  const react = reactBindings(root);
+  // Imports hoist, so a factory call may sit above its import. Read once.
   let factories: ReactFactories | null = null;
   const reactFactories = (): ReactFactories => {
     if (factories === null) {
@@ -461,6 +440,51 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     facts.parseError = { line: errorLine(root), reason: "syntax error" };
   }
   return facts;
+}
+
+/** Local names a value import from `react` binds to a wrapper, and default or namespace objects (`React.memo`). */
+interface ReactBindings {
+  names: Set<string>;
+  objects: Set<string>;
+}
+
+/**
+ * Wrapper bindings of one file. Imports hoist, so a `const` above its import
+ * still counts; `require("react")` binds only below itself and is not read.
+ * `import type` and `import { type memo }` bind no value.
+ */
+function reactBindings(root: Node): ReactBindings {
+  const names = new Set<string>();
+  const objects = new Set<string>();
+  for (const stmt of root.namedChildren) {
+    if (stmt.type !== "import_statement" || typeKeyword(stmt)) continue;
+    for (const fact of importStatement(stmt)) {
+      if (fact.source !== "react") continue;
+      for (const b of fact.bindings) {
+        if (b.kind === "named") {
+          if (REACT_WRAPPERS.has(b.imported) && !typeOnlySpecifier(stmt, b.local)) names.add(b.local);
+        } else if (b.kind === "default" || b.kind === "module") objects.add(b.local);
+      }
+    }
+  }
+  return { names, objects };
+}
+
+/** The `type` keyword of `import type` or `import { type name }` — an unnamed child, not an identifier. */
+function typeKeyword(node: Node): boolean {
+  return node.children.some((c) => c.type === "type");
+}
+
+/** `import { type memo as m }`: the specifier that binds `local` is type-only. */
+function typeOnlySpecifier(stmt: Node, local: string): boolean {
+  const named = stmt.namedChildren.find((c) => c.type === "import_clause")?.namedChildren.find((c) => c.type === "named_imports");
+  for (const s of named?.namedChildren ?? []) {
+    if (s.type !== "import_specifier") continue;
+    const imported = s.childForFieldName("name")?.text;
+    const alias = s.childForFieldName("alias")?.text ?? imported;
+    if (alias === local) return typeKeyword(s);
+  }
+  return false;
 }
 
 function decl(kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]): DeclFact {
@@ -766,15 +790,13 @@ const REACT_WRAPPERS = new Set(["memo", "forwardRef", "lazy"]);
  * not the text. The wrapped function is the first argument; any other shape
  * keeps the declarator a value.
  */
-function reactWrapperFn(value: Node, react: { names: Set<string>; objects: Set<string> }): Node | null {
+function reactWrapperFn(value: Node, react: ReactBindings): Node | null {
   if (value.type !== "call_expression") return null;
   const callee = value.childForFieldName("function");
+  const object = callee?.type === "member_expression" ? callee.childForFieldName("object") : null;
   const wrapped =
     (callee?.type === "identifier" && react.names.has(callee.text)) ||
-    (callee?.type === "member_expression" &&
-      callee.childForFieldName("object")?.type === "identifier" &&
-      react.objects.has(callee.childForFieldName("object")!.text) &&
-      REACT_WRAPPERS.has(callee.childForFieldName("property")?.text ?? ""));
+    (object?.type === "identifier" && react.objects.has(object.text) && REACT_WRAPPERS.has(callee?.childForFieldName("property")?.text ?? ""));
   if (!wrapped) return null;
   const arg = value.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
   const fn = arg ? unwrapValue(arg) : null;

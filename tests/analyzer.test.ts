@@ -663,13 +663,16 @@ test("jsx: a Nest-style `.ts` file keeps its declarations and calls: decorators,
   assert.ok(snap.exports.some((e) => e.module === "cats.cats_controller" && e.name === "Common" && e.kind === "value"), JSON.stringify(snap.exports));
 });
 
-test("jsx: `memo` / `forwardRef` / `lazy` imported from `react` unwrap a `const` into the fn it wraps; the same text from elsewhere does not", (t) => {
+test("jsx: `memo` / `forwardRef` / `lazy` from `react` unwrap a `const` into the fn they wrap; a type import, `let`, a local name or another package stays a value", (t) => {
   const dir = repo(t, {
-    "src/ui/api.ts": "export function fetchCart(): void {}\n",
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", "styled-components": "^6.0.0" } }),
+    "src/ui/api.ts": "export function fetchCart(): void {}\nexport function price(): void {}\n",
     "src/ui/heavy.tsx": "export default function Heavy() { return null; }\n",
     "src/ui/wrapped.tsx": [
       'import React, { memo, forwardRef, lazy } from "react";',
-      'import { fetchCart } from "./api.ts";',
+      'import * as ReactNS from "react";',
+      'import { forwardRef as ref } from "react";',
+      'import { fetchCart, price } from "./api.ts";',
       "export const Cart = memo(() => {",
       "  fetchCart();",
       "  return <div />;",
@@ -683,61 +686,30 @@ test("jsx: `memo` / `forwardRef` / `lazy` imported from `react` unwrap a `const`
       "  fetchCart();",
       "  return null;",
       "});",
+      "export const Ns = ReactNS.memo(() => price());",
+      "export const Field = ref((props, r) => price());",
+      "export const Box = React.memo(function Box() { return <Line />; });",
+      "export let Late = memo(() => price());",
+      "export function Line() { return null; }",
       "",
     ].join("\n"),
-    "src/app/page.tsx": [
-      'import { Cart, Input, Heavy, Named } from "../ui/wrapped.tsx";',
-      "export function Page() {",
-      "  return (",
-      "    <main>",
-      "      <Cart />",
-      "      <Input />",
-      "      <Heavy />",
-      "      <Named />",
-      "    </main>",
-      "  );",
-      "}",
+    "src/ui/typed.tsx": [
+      'import type React from "react";',
+      'import { type memo, forwardRef } from "react";',
+      'import { price } from "./api.ts";',
+      "export const Typed = React.memo(() => price());",
+      "export const TypedName = memo(() => price());",
+      "export const Still = forwardRef(() => price());",
       "",
     ].join("\n"),
-  });
-  const snap = snapshot(dir);
-  // A tag from the JSX ticket resolves to the fn the wrapper hides.
-  const calls = snap.edges
-    .filter((e) => e.kind === "call")
-    .map((e) => `${e.source}: ${e.text} → ${e.target}`)
-    .sort();
-  assert.deepEqual(calls, [
-    "app.page.Page: Cart → ui.wrapped.Cart",
-    "app.page.Page: Heavy → ui.wrapped.Heavy",
-    "app.page.Page: Input → ui.wrapped.Input",
-    "app.page.Page: Named → ui.wrapped.Named",
-    "ui.wrapped.Cart: fetchCart → ui.api.fetchCart",
-    "ui.wrapped.Input: fetchCart → ui.api.fetchCart",
-    "ui.wrapped.Named: fetchCart → ui.api.fetchCart",
-  ]);
-  const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
-    files: Record<string, { facts: { decls: { name: string; kind: string; calls: { callee: string }[] }[]; moduleCalls: { callee: string }[]; exportRows: { name: string; kind: string }[] } }>;
-  };
-  const wrapped = facts.files["src/ui/wrapped.tsx"]!.facts;
-  assert.deepEqual(wrapped.decls.map((d) => `${d.name}:${d.kind}`), ["Cart:fn", "Input:fn", "Heavy:fn", "Named:fn"]);
-  assert.deepEqual(wrapped.decls.map((d) => d.calls.map((c) => c.callee)), [["fetchCart"], ["fetchCart"], [], ["fetchCart"]]);
-  assert.deepEqual(wrapped.exportRows.map((r) => `${r.name}:${r.kind}`), ["Cart:fn", "Input:fn", "Heavy:fn", "Named:fn"]);
-  // The wrapper call itself stays a module-level call; the wrapped body moves into the fn.
-  assert.deepEqual(wrapped.moduleCalls.map((c) => c.callee), ["memo", "forwardRef", "lazy", "React.memo"]);
-
-  // `forwardRef` from `@nestjs/common` is not a component wrapper: the `const` stays a value, the call stays the module's.
-  const nest = repo(t, {
-    "src/cats/cats.module.ts": ['import { forwardRef } from "@nestjs/common";', "export class CatsModule {}", "export const Common = forwardRef(() => CatsModule);", ""].join("\n"),
-  });
-  const nestSnap = snapshot(nest);
-  assert.equal(nestSnap.nodes["cats.cats_module.Common"], undefined);
-  assert.deepEqual(nestSnap.exports.filter((e) => e.module === "cats.cats_module").map((e) => `${e.name}:${e.kind}`).sort(), ["CatsModule:class", "Common:value"]);
-  const nestFacts = (JSON.parse(readFileSync(join(nest, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { decls: { name: string; kind: string }[]; moduleCalls: { callee: string }[] } }> }).files["src/cats/cats.module.ts"]!.facts;
-  assert.deepEqual(nestFacts.decls.map((d) => `${d.name}:${d.kind}`), ["CatsModule:class"]);
-  assert.deepEqual(nestFacts.moduleCalls.map((c) => c.callee), ["forwardRef"]);
-
-  // A local `memo` without a `react` import, and any other wrapper, keep the `const` a value.
-  const own = repo(t, {
+    "src/ui/other.tsx": [
+      'import styled from "styled-components";',
+      'import { price } from "./api.ts";',
+      "function memo(f: unknown) { return f; }",
+      "export const Local = memo(() => price());",
+      "export const Btn = styled(() => price());",
+      "",
+    ].join("\n"),
     "src/local/own.tsx": [
       'import { observer } from "mobx-react";',
       "export function helper(): void {}",
@@ -751,58 +723,71 @@ test("jsx: `memo` / `forwardRef` / `lazy` imported from `react` unwrap a `const`
       "export const Watched = observer(() => null);",
       "",
     ].join("\n"),
-  });
-  const ownSnap = snapshot(own);
-  assert.deepEqual(
-    Object.keys(ownSnap.nodes).filter((id) => id.startsWith("local.own.")).sort(),
-    ["local.own.helper", "local.own.memo"],
-  );
-  assert.deepEqual(ownSnap.exports.filter((e) => e.module === "local.own").map((e) => `${e.name}:${e.kind}`).sort(), ["Cart:value", "Watched:value", "helper:fn"]);
-  assert.match(ownSnap.nodes["local.own.helper"]?.escapes?.reason ?? "", /function value outside declarations/);
-});
-
-test("jsx: `memo`, `forwardRef` and `lazy` imported from `react` make their `const` the fn they wrap; a local or other-package wrapper stays a value", (t) => {
-  const dir = repo(t, {
-    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", "styled-components": "^6.0.0" } }),
-    "src/ui/cart.tsx": [
-      'import { memo, forwardRef as ref, lazy } from "react";',
-      'import React from "react";',
-      'import { price } from "../lib/price.tsx";',
-      "export const Cart = memo(() => {",
-      "  price();",
-      "  return <Line />;",
-      "});",
-      "export const Input = ref((props, r) => price());",
-      'export const Page = lazy(() => import("./line.tsx"));',
-      "export const Box = React.memo(function Box() { return <Line />; });",
-      "export let Late = memo(() => price());",
-      "export function Line() { return null; }",
+    "src/cats/cats.module.ts": ['import { forwardRef } from "@nestjs/common";', "export class CatsModule {}", "export const Common = forwardRef(() => CatsModule);", ""].join("\n"),
+    "src/app/page.tsx": [
+      'import { Box, Cart, Field, Heavy, Input, Named, Ns } from "../ui/wrapped.tsx";',
+      "export function Page() {",
+      "  return (",
+      "    <main>",
+      "      <Cart />",
+      "      <Input />",
+      "      <Heavy />",
+      "      <Named />",
+      "      <Ns />",
+      "      <Field />",
+      "      <Box />",
+      "    </main>",
+      "  );",
+      "}",
       "",
     ].join("\n"),
-    "src/ui/line.tsx": "export default function Line() { return null; }\n",
-    "src/ui/other.tsx": [
-      'import styled from "styled-components";',
-      'import { price } from "../lib/price.tsx";',
-      "function memo(f: unknown) { return f; }",
-      "export const Local = memo(() => price());",
-      "export const Btn = styled(() => price());",
-      "",
-    ].join("\n"),
-    "src/lib/price.tsx": "export function price() { return 1; }\n",
-    "src/app/app.tsx": 'import { Cart } from "../ui/cart.tsx";\nexport function App() { return <Cart />; }\n',
   });
   const snap = snapshot(dir);
-  const kinds = Object.fromEntries(["Cart", "Input", "Page", "Box", "Late", "Local", "Btn"].map((n) => [n, snap.exports.find((e) => e.name === n)?.kind]));
-  assert.deepEqual(kinds, { Cart: "fn", Input: "fn", Page: "fn", Box: "fn", Late: "value", Local: "value", Btn: "value" });
-  for (const id of ["ui.cart.Cart", "ui.cart.Input", "ui.cart.Page", "ui.cart.Box"]) assert.equal(snap.nodes[id]?.kind, "fn", id);
-  for (const id of ["ui.cart.Late", "ui.other.Local", "ui.other.Btn"]) assert.equal(snap.nodes[id], undefined, id);
+  const modules = new Set(["ui.wrapped", "ui.typed", "ui.other", "local.own", "cats.cats_module"]);
+  assert.deepEqual(
+    snap.exports.filter((e) => modules.has(e.module)).map((e) => `${e.module}.${e.name}:${e.kind}`).sort(),
+    [
+      "cats.cats_module.CatsModule:class",
+      "cats.cats_module.Common:value",
+      "local.own.Cart:value",
+      "local.own.Watched:value",
+      "local.own.helper:fn",
+      "ui.other.Btn:value",
+      "ui.other.Local:value",
+      "ui.typed.Still:fn",
+      "ui.typed.Typed:value",
+      "ui.typed.TypedName:value",
+      "ui.wrapped.Box:fn",
+      "ui.wrapped.Cart:fn",
+      "ui.wrapped.Field:fn",
+      "ui.wrapped.Heavy:fn",
+      "ui.wrapped.Input:fn",
+      "ui.wrapped.Late:value",
+      "ui.wrapped.Line:fn",
+      "ui.wrapped.Named:fn",
+      "ui.wrapped.Ns:fn",
+    ],
+  );
+  for (const id of ["ui.wrapped.Cart", "ui.wrapped.Input", "ui.wrapped.Heavy", "ui.wrapped.Named", "ui.wrapped.Ns", "ui.wrapped.Field", "ui.wrapped.Box", "ui.typed.Still"]) assert.equal(snap.nodes[id]?.kind, "fn", id);
+  for (const id of ["ui.wrapped.Late", "ui.typed.Typed", "ui.typed.TypedName", "ui.other.Local", "ui.other.Btn", "local.own.Cart", "local.own.Watched", "cats.cats_module.Common"]) assert.equal(snap.nodes[id], undefined, id);
+  assert.deepEqual(Object.keys(snap.nodes).filter((id) => id.startsWith("local.own.")).sort(), ["local.own.helper", "local.own.memo"]);
+  assert.match(snap.nodes["local.own.helper"]?.escapes?.reason ?? "", /function value outside declarations/);
   const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
   assert.deepEqual(calls, [
-    "app.app.App: Cart → ui.cart.Cart",
-    "ui.cart.Box: Line → ui.cart.Line",
-    "ui.cart.Cart: Line → ui.cart.Line",
-    "ui.cart.Cart: price → lib.price.price",
-    "ui.cart.Input: price → lib.price.price",
+    "app.page.Page: Box → ui.wrapped.Box",
+    "app.page.Page: Cart → ui.wrapped.Cart",
+    "app.page.Page: Field → ui.wrapped.Field",
+    "app.page.Page: Heavy → ui.wrapped.Heavy",
+    "app.page.Page: Input → ui.wrapped.Input",
+    "app.page.Page: Named → ui.wrapped.Named",
+    "app.page.Page: Ns → ui.wrapped.Ns",
+    "ui.typed.Still: price → ui.api.price",
+    "ui.wrapped.Box: Line → ui.wrapped.Line",
+    "ui.wrapped.Cart: fetchCart → ui.api.fetchCart",
+    "ui.wrapped.Field: price → ui.api.price",
+    "ui.wrapped.Input: fetchCart → ui.api.fetchCart",
+    "ui.wrapped.Named: fetchCart → ui.api.fetchCart",
+    "ui.wrapped.Ns: price → ui.api.price",
   ]);
 });
 
