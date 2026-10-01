@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -207,6 +207,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "spec-to-code",
+    label: "Spec to code: a stub and failing tests for a planned fn (template)",
+    group: "Generate",
+    aliases: ["spec-to-code", "keylang spec-to-code", "spec to code", "spec-to-code --mode algo", "scaffold", "planned to code", "code from plan", "stub planned fn", "propose code"],
+    // A form names the planned fn, the code file and preview or proposal; the code and each test are separate proposals, MERGE applies each; no file itself is written.
+    when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
     id: "draft-layout",
     label: "Draft layers: the layout keylang would guess, or the model's (algo, hybrid, llm)",
     group: "Generate",
@@ -320,7 +328,10 @@ export function matchActions(entries: readonly ActionEntry[], query: string): Ac
   });
   // One word that is exactly a file's name opens that file first (`rules` → rules.md, before "Draft rules").
   const named = (entry: ActionEntry): boolean => words.length === 1 && entry.action.id.startsWith("open:") && fileName(entry.action.id) === words[0];
-  return [...matched.filter(named), ...matched.filter((entry) => !named(entry))];
+  // Then an action whose label or alias holds the query as typed: `spec to code` before "Code to spec", whose words it also has.
+  const phrase = words.join(" ");
+  const literal = (entry: ActionEntry): boolean => !named(entry) && [entry.action.label, ...entry.action.aliases].some((text) => text.toLowerCase().includes(phrase));
+  return [...matched.filter(named), ...matched.filter(literal), ...matched.filter((entry) => !named(entry) && !literal(entry))];
 }
 
 /** `rules` for `open:keylang/rules.md`: the base name without its extension, lower case. */

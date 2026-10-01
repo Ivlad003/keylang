@@ -23,7 +23,9 @@ import { sectionNodes, walk, type Document } from "./ir.ts";
 import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
-import { PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal, type ProposalBasis } from "./proposals.ts";
+import { codeProposalProblem, PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal, type ProposalBasis } from "./proposals.ts";
+import { fileDiffText, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
+import type { Verdict } from "./verdict.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
@@ -336,6 +338,28 @@ export type CodeToSpecSource =
     };
 
 /**
+ * `keylang spec-to-code <id> [--into] [--print]` in the template mode: a
+ * stub for the planned fn `id` with its declared signature in the file of
+ * its module, and a failing node:test file for each `test` its flows name
+ * in a file that does not exist yet (`specToCode`). The candidate is
+ * analyzed as the code it would be. `preview` writes nothing; `proposal`
+ * writes each file's full text to `.keylang/proposals/<file>`, never the
+ * file itself — MERGE applies each on its own.
+ */
+export interface SpecToCodeRequest {
+  kind: "spec-to-code";
+  /** Repository root (absolute). */
+  root: string;
+  /** The planned fn. */
+  id: string;
+  /** The code file, relative to the root, POSIX; default the module's file. */
+  into?: string;
+  output: "preview" | "proposal";
+  /** A proposal already waiting for one of the files: `replace` is the CLI's policy, `refuse` (default) the TUI's. */
+  pending?: "refuse" | "replace";
+}
+
+/**
  * The layer layout drafted for `keylang.json` (`keylang draft map --mode
  * algo|llm|hybrid`): `algo` is the layout keylang would guess from the
  * directories (`guessLayout`), `llm` and `hybrid` ask the configured model,
@@ -388,10 +412,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -417,7 +441,7 @@ export interface OperationContext {
 
 /** What a commit is about to write, when the operation names it before it asks (a draft: its target, whose proposal it writes). */
 export interface CommitPlan {
-  /** Specs whose proposals are written, relative to the root, POSIX. */
+  /** The files whose proposals are written (specs, or spec-to-code's code and tests), relative to the root, POSIX. */
   targets: string[];
 }
 
@@ -782,6 +806,51 @@ export interface CodeModelInfo {
   flows: { name: string; rounds: number; unknown: string[]; dropped: string[] }[];
 }
 
+/** One file of a spec-to-code candidate, as its proposal would replace it. */
+export interface CodeProposalTarget {
+  /** `code`: the planned fn's file; `test`: a new e2e test file of its flows. */
+  role: "code" | "test";
+  /** Relative to the root, POSIX. */
+  file: string;
+  /** The file on disk the candidate was built from (null: no file). */
+  before: string | null;
+  /** The file's full proposed text. */
+  after: string;
+  /** The proposal already waiting for the file then (null: none). */
+  pending: string | null;
+  /** The file and its `-`/`+` lines, as `spec-to-code --print` shows it. */
+  diff: string;
+}
+
+/** What spec-to-code builds for a planned fn: every file it proposes, and what `check` would say with them in place. */
+export interface SpecToCodeCandidate {
+  id: string;
+  /** The code file first, then the new test files in path order. */
+  targets: CodeProposalTarget[];
+  /** `test` entries left to the person, each with the reason. */
+  testNotes: string[];
+  /** The candidate's own findings — what `check` would add with it in place: a preview, never the workspace's verdict. */
+  verdicts: Verdict[];
+  diagnostics: Diagnostic[];
+  /** What `spec-to-code <id> --print` writes on stdout. */
+  print: string;
+}
+
+/** What `keylang spec-to-code` built, and the proposals it wrote. */
+export interface SpecToCodePayload {
+  output: "preview" | "proposal";
+  mode: "algo";
+  candidate: SpecToCodeCandidate;
+  /** `code src/a.ts + 1 test file(s)`. */
+  summary: string;
+  /** The proposal files written (`.keylang/proposals/<file>`), in the candidate's order; on a failure part way, the ones written before it. */
+  proposals: string[];
+  /** Why nothing was written: a pending proposal, or a file, proposal or input changed during the work. */
+  refused: string[];
+  /** A write failed with this error. */
+  error: string | null;
+}
+
 /** What `keylang draft map` drafted: the layers, and the config the CLI prints with them. */
 export interface DraftLayoutPayload {
   /** The mode that drafted it: `algo` also for a hybrid without a model (see `fallback`). */
@@ -961,6 +1030,7 @@ export interface OperationPayloads {
   "draft-rules": DraftRulesPayload;
   "draft-layout": DraftLayoutPayload;
   "code-to-spec": CodeToSpecPayload;
+  "spec-to-code": SpecToCodePayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -1005,6 +1075,7 @@ export function runOperation(request: DraftFlowRequest, context?: OperationConte
 export function runOperation(request: DraftRulesRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-rules">>;
 export function runOperation(request: DraftLayoutRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-layout">>;
 export function runOperation(request: CodeToSpecRequest, context?: OperationContext): Promise<OperationEnvelope<"code-to-spec">>;
+export function runOperation(request: SpecToCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"spec-to-code">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -1044,6 +1115,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runDraftLayout(request, context);
     case "code-to-spec":
       return runCodeToSpec(request, context);
+    case "spec-to-code":
+      return runSpecToCode(request, context);
   }
 }
 
@@ -1089,6 +1162,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "draft-layout":
       return { kind, ...base };
     case "code-to-spec":
+      return { kind, ...base };
+    case "spec-to-code":
       return { kind, ...base };
   }
 }
@@ -2669,6 +2744,150 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
       { level: "info", text: `${committed.proposal}: proposed ${names} for ${target} (${payload.summary})` },
     ],
     proposals: [committed.proposal],
+  };
+}
+
+function emptySpecToCode(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"spec-to-code"> {
+  return { kind: "spec-to-code", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/** The candidate as the operation reports it: each file with the proposal waiting for it now (read only when the store passes the write policy). */
+function specToCodeCandidate(root: string, built: CodeCandidate): SpecToCodeCandidate {
+  const target = (role: "code" | "test", file: FileCandidate): CodeProposalTarget => {
+    const store = `${PROPOSALS_DIR}/${file.file}`;
+    const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
+    return { role, file: file.file, before: file.before, after: file.after, pending, diff: fileDiffText(file) };
+  };
+  return {
+    id: built.id,
+    targets: [target("code", built), ...built.tests.map((test) => target("test", test))],
+    testNotes: built.testNotes,
+    verdicts: built.verdicts,
+    diagnostics: built.diagnostics,
+    print: specToCodeText(built),
+  };
+}
+
+/** The hand-written specs the candidate was built from, as they are on disk now: a planned signature or a flow's `test` changed meanwhile makes it unfit. */
+function specTexts(root: string, docs: readonly Document[]): Map<string, string | null> {
+  const texts = new Map<string, string | null>();
+  for (const doc of docs) if (doc.generated === null) texts.set(doc.path, readTextOrNull(resolve(root, doc.path)));
+  return texts;
+}
+
+/**
+ * `keylang spec-to-code <id> [--into]`, template mode. Compute: the analysis
+ * of the saved files (nothing persisted; no snapshot is 2), then
+ * `specToCode` — an ID not planned, implemented (named with its place), a
+ * `deny` its flow breaks or a file not of its module is 2 with the CLI's
+ * message and no payload. A preview ends with the candidate (0). A
+ * proposal checks the whole set before the first write: a file a code
+ * proposal may not change or a store that breaks the write policy is 2, a
+ * proposal waiting for any file under `refuse` is 1, all named. After
+ * `beforeCommit` (which may refuse) every file, its waiting proposal,
+ * keylang.json, the sources and the specs must still be the ones read,
+ * else 1 and nothing is written. Then each proposal is written atomically
+ * in turn; a Cancel or an I/O error part way stops there and the result
+ * names the proposals already written. No stats: the template is no
+ * model's draft.
+ */
+async function runSpecToCode(request: SpecToCodeRequest, context: OperationContext): Promise<OperationEnvelope<"spec-to-code">> {
+  const { root } = request;
+  if (!isAbsolute(root)) return emptySpecToCode("failed", 2, "spec-to-code: root must be an absolute path");
+  if (request.id.trim() === "") return emptySpecToCode("failed", 2, "spec-to-code: a planned id is required");
+  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptySpecToCode("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  const snapshot = analyzed.snapshot;
+  if (!snapshot) return emptySpecToCode("failed", 2, "spec-to-code: no supported source files; run `keylang init`");
+  const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
+  const specs = specTexts(root, analyzed.docs);
+  context.onProgress?.({ text: `building ${request.id} and checking it as code` });
+  let candidate: SpecToCodeCandidate;
+  try {
+    candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, request.into === undefined ? undefined : toPosix(request.into)));
+  } catch (error) {
+    return emptySpecToCode("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  const tests = candidate.targets.length - 1;
+  const payload: SpecToCodePayload = { output: request.output, mode: "algo", candidate, summary: `code ${candidate.targets[0]!.file} + ${tests} test file(s)`, proposals: [], refused: [], error: null };
+  // The test entries the template leaves to the person, as the CLI says them on stderr.
+  const notes: OperationMessage[] = candidate.testNotes.map((text) => ({ level: "warning", text }));
+  const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
+  if (request.output === "preview") return { ...emptySpecToCode("completed", 0), payload, messages: [...notes, { level: "info", text: `${payload.summary} for ${candidate.id}; a preview, nothing written` }] };
+  // The whole set is checked before the first write.
+  for (const target of candidate.targets) {
+    const problem = codeProposalProblem(root, target.file);
+    if (problem !== null) return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: `spec-to-code: ${target.file}: ${problem}` }] };
+    const store = `${PROPOSALS_DIR}/${target.file}`;
+    const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
+    if (storeProblem !== null) return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: `${store}: ${storeProblem}` }] };
+  }
+  if ((request.pending ?? "refuse") === "refuse") {
+    const waiting = candidate.targets.filter((target) => target.pending !== null).map((target) => `${PROPOSALS_DIR}/${target.file}: a proposal for ${target.file} is waiting; merge it (m) or remove it before a new candidate`);
+    if (waiting.length > 0) {
+      payload.refused = waiting;
+      return { ...emptySpecToCode("failed", 1), payload, messages: [...notes, ...waiting.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    }
+  }
+  context.onProgress?.({ text: "waiting to write" });
+  let gate: CommitGate;
+  try {
+    gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
+  } catch (error) {
+    return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: messageOf(error) }] };
+  }
+  if (context.signal?.aborted) return { ...emptySpecToCode("cancelled", null), payload };
+  const refused: string[] = gate ? [...gate.refused] : [];
+  if (refused.length === 0) {
+    try {
+      for (const target of candidate.targets) {
+        const problem = codeProposalProblem(root, target.file);
+        const changed = problem !== null ? `${target.file}: ${problem}` : proposalWriteProblem(root, target.file, { target: target.before, proposal: target.pending });
+        if (changed !== null) refused.push(changed);
+      }
+      refused.push(...sourceInputProblems(analyzed.config, inputs, "the candidate"));
+      for (const [path, text] of specs) if (readTextOrNull(resolve(root, path)) !== text) refused.push(`${path}: changed on disk while the candidate was computed`);
+    } catch (error) {
+      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: messageOf(error) }] };
+    }
+  }
+  if (refused.length > 0) {
+    payload.refused = refused;
+    return { ...emptySpecToCode("failed", 1), payload, messages: [...notes, ...refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+  }
+  // One file at a time, each atomic: what was written before a Cancel or an error is named, never undone behind the person's back.
+  const written: string[] = [];
+  const sofar = (): OperationMessage[] => (written.length === 0 ? [] : [{ level: "info", text: `proposed before it stopped: ${written.join(", ")}` }]);
+  for (const target of candidate.targets) {
+    if (written.length > 0 && context.signal?.aborted) {
+      payload.proposals = [...written];
+      return { ...emptySpecToCode("cancelled", null), payload, messages: [...notes, ...sofar()], proposals: [...written] };
+    }
+    const store = `${PROPOSALS_DIR}/${target.file}`;
+    context.onProgress?.({ text: `writing ${store}` });
+    try {
+      writeProposal(root, target.file, target.after, { target: target.before, proposal: target.pending });
+    } catch (error) {
+      payload.proposals = [...written];
+      payload.error = messageOf(error);
+      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: payload.error }, ...sofar()], proposals: [...written] };
+    }
+    written.push(store);
+  }
+  payload.proposals = written;
+  return {
+    ...emptySpecToCode("completed", 0),
+    payload,
+    messages: [...notes, { level: "info", text: `proposed ${written.join(", ")} for ${candidate.id}; each merges on its own in MERGE` }],
+    proposals: [...written],
   };
 }
 

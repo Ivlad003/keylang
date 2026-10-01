@@ -2838,7 +2838,7 @@ test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks 
   assert.match(s.text(), /planned {2}application\.purchase\.refund {2}keylang\/features\/refund\.md:3:1 {2}pla/);
   assert.match(s.text(), /Info \(not blocking\): tests — · trace unverified 2/);
   s.send(KEY.tab);
-  assert.match(s.app.state.message ?? "", /^planned application\.purchase\.refund: planned `application\.purchase\.refund` is not implemented · Enter opens keylang\/features\/refund\.md:3$/);
+  assert.match(s.app.state.message ?? "", /^planned application\.purchase\.refund: planned `application\.purchase\.refund` is not implemented · Enter opens keylang\/features\/refund\.md:3 · g: spec-to-code$/);
   s.send(KEY.enter);
   assert.equal(s.app.state.results.viewing, true);
   assert.equal(s.app.state.current, "keylang/features/refund.md");
@@ -7873,4 +7873,296 @@ test("code-to-spec operation: a Cancel between two flows asks no second request;
   assert.deepEqual([noModel.status, noModel.exitCode], ["failed", 2]);
   assert.match(noModel.messages.at(-1)!.text, /^code-to-spec --mode llm: /);
   assert.equal(model.prompts.length, 3);
+});
+
+// ---------- spec-to-code: the template for a planned fn (ticket 28) ----------
+
+/** A planned fn of a new module with two tests in new files and one in Python, which the template leaves to the person. */
+const REFUND_PLAN = [
+  "# flow refund",
+  "",
+  "- planned fn application.refund.refund (order: Order) → Order",
+  "- trigger application.refund.refund",
+  '  - test tests/refund.test.ts "refund returns the order"',
+  '  - test tests/refund-audit.test.ts "refund is audited"',
+  '  - test tests/refund.py "refund in python"',
+  "",
+].join("\n");
+
+/** Moves the spec-to-code form's selection to the row `id`. */
+function specRow(s: ReturnType<typeof session>, id: string): void {
+  const prompt = s.app.state.prompt!;
+  for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
+  assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
+}
+
+/** The palette's spec-to-code form with the given fields (an absent one keeps its prefill); Enter on the run row. */
+function specForm(s: ReturnType<typeof session>, fields: { id?: string; into?: string; output?: "proposal" | "preview" }): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "spec to code") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "spec-to-code", s.app.state.message ?? "");
+  const form = s.app.state.prompt!.specCode!;
+  for (const field of ["id", "into"] as const) {
+    const text = fields[field];
+    if (text === undefined) continue;
+    specRow(s, field);
+    for (const _ of form[field]) s.send("\x7f");
+    for (const ch of text) s.send(ch);
+  }
+  if ((fields.output ?? "proposal") !== form.output) {
+    specRow(s, "output");
+    s.send(KEY.right);
+  }
+  specRow(s, "run");
+  s.send(KEY.enter);
+}
+
+type SpecCodeResult = Extract<OperationResult, { kind: "spec-to-code" }> & { payload: NonNullable<Extract<OperationResult, { kind: "spec-to-code" }>["payload"]> };
+
+function specRecord(app: App): SpecCodeResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "spec-to-code" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as SpecCodeResult;
+}
+
+function cliSpec(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "spec-to-code", ...args], { cwd: root, encoding: "utf8" });
+}
+
+const REFUND_STORES = [".keylang/proposals/src/application/refund.ts", ".keylang/proposals/tests/refund-audit.test.ts", ".keylang/proposals/tests/refund.test.ts"];
+
+test("tui: spec-to-code proposes the CLI's code and each test as separate code proposals; the preview writes nothing; each merges on its own and none makes the plan implemented", async (t) => {
+  const specs = { "keylang/flows/refund.md": REFUND_PLAN };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  const idVerdicts = (): string[] => (s.app.state.analysis?.verdicts ?? []).filter((v) => v.area === "application.refund.refund" && v.criterion === "ID").map((v) => v.verdict);
+  const planned = idVerdicts();
+  assert.deepEqual(planned, ["unverified"]);
+  // The form lists the planned fns no code implements; Enter takes one and moves to the target.
+  s.send(KEY.ctrlP);
+  for (const ch of "spec to code") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "spec-to-code", s.app.state.message ?? "");
+  assert.deepEqual(prompt.specCode, { id: "", into: "", output: "proposal" });
+  assert.equal(promptNote(s.app), "type a planned fn · ↓ picks one (1 planned, not implemented)");
+  assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("planned:")), ["planned:application.refund.refund"]);
+  for (const ch of "refu") s.send(ch);
+  s.send(KEY.down);
+  assert.equal(promptNote(s.app), "Enter takes application.refund.refund");
+  s.send(KEY.enter);
+  assert.equal(prompt.specCode?.id, "application.refund.refund");
+  assert.equal(prompt.ids?.[prompt.index], "into");
+  assert.match(prompt.items.join("\n"), /target: {2}▏ {2}\(default src\/application\/refund\.ts\)/);
+  assert.equal(promptNote(s.app), "src/application/refund.ts is a new file");
+  assert.match(s.text(), /spec to code · template/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Esc writes nothing");
+
+  // Preview: the CLI's --print stdout and its test notes; no proposal, no stats, no directory.
+  specForm(s, { id: "application.refund.refund", output: "preview" });
+  await s.app.idle();
+  const preview = specRecord(s.app);
+  assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals, preview.payload.proposals], ["completed", 0, [], [], []]);
+  const printed = cliSpec(twin, ["application.refund.refund", "--print"]);
+  assert.equal(printed.status, 0, printed.stderr);
+  const candidate = preview.payload.candidate;
+  assert.equal(candidate.print, printed.stdout);
+  assert.deepEqual(
+    candidate.testNotes.map((note) => `keylang: ${note}`),
+    printed.stderr.split("\n").filter((line) => line.startsWith("keylang: test ")),
+  );
+  assert.match(candidate.testNotes.join("\n"), /test tests\/refund\.py "refund in python": write it by hand/);
+  assert.deepEqual(
+    candidate.targets.map((target) => [target.role, target.file, target.before, target.pending]),
+    [
+      ["code", "src/application/refund.ts", null, null],
+      ["test", "tests/refund-audit.test.ts", null, null],
+      ["test", "tests/refund.test.ts", null, null],
+    ],
+  );
+  assert.match(candidate.targets[0]!.after, /^export function refund\(order: Order\): Order \{\n {2}throw new Error\("not implemented: application\.refund\.refund"\);\n\}\n$/);
+  assert.match(candidate.targets[2]!.after, /test\("refund returns the order"/);
+  assert.match(candidate.targets[1]!.diff, /^tests\/refund-audit\.test\.ts \(new file\)\n@@ line 1 @@\n\+import assert/);
+  assert.ok(candidate.verdicts.some((v) => v.area === "application.refund.refund" && v.criterion === "ID" && v.verdict === "ok"), "the candidate is checked as code");
+  assert.deepEqual(treeBytes(root), before, "a preview writes no proposal, no stats, no directory");
+  assert.deepEqual(idVerdicts(), planned, "the workspace's verdict is not the candidate's");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Spec to code · template · application\.refund\.refund → 3 file\(s\) · preview, nothing written/);
+  assert.match(text, /code src\/application\/refund\.ts \+ 2 test file\(s\), preview, nothing written · code 0/);
+  assert.match(text, /code src\/application\/refund\.ts \(new file\) · previewed/);
+  assert.match(text, /test tests\/refund-audit\.test\.ts \(new file\) · previewed/);
+  assert.match(text, /a preview of check; not the workspace's verdict, and not the feature done/);
+  assert.match(text, /── keylang spec-to-code application\.refund\.refund --print · stdout ──/);
+  await esc(s.send);
+
+  // Proposal: three separate code proposals, the CLI's bytes; no source or test file; MERGE opens on the code.
+  specForm(s, { id: "application.refund.refund" });
+  await s.app.idle();
+  const proposed = specRecord(s.app);
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.written, proposed.proposals, proposed.payload.proposals], ["completed", 0, [], REFUND_STORES, REFUND_STORES]);
+  const cli = cliSpec(twin, ["application.refund.refund"]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stderr, /keylang: proposed \.keylang\/proposals\/src\/application\/refund\.ts, \.keylang\/proposals\/tests\/refund-audit\.test\.ts, \.keylang\/proposals\/tests\/refund\.test\.ts; merge them hunk by hunk/);
+  for (const [i, store] of REFUND_STORES.entries()) {
+    assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
+    assert.equal(readFileSync(join(root, store), "utf8"), candidate.targets[i]!.after);
+  }
+  assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_STORES].sort(), "only the proposals, no stats");
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.equal(s.app.state.merge?.path, "src/application/refund.ts");
+  assert.match(s.app.state.message ?? "", /then m or Proposals: tests\/refund-audit\.test\.ts, tests\/refund\.test\.ts · run check after: the stub is not the feature done/);
+  await esc(s.send);
+  assert.ok(!existsSync(join(root, "src/application/refund.ts")) && !existsSync(join(root, "tests")), "before MERGE no target is written");
+  await s.app.idle();
+  assert.deepEqual(idVerdicts(), planned, "a proposal makes no plan implemented");
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /code src\/application\/refund\.ts \+ 2 test file\(s\) proposed · code 0/);
+  assert.match(text, /test tests\/refund\.test\.ts \(new file\) · proposed as \.keylang\/proposals\/tests\/refund\.test\.ts/);
+  assert.match(text, /Enter pick a proposal/);
+  // Enter: the proposals list on the code file; any test is reachable and merges alone.
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "proposal");
+  assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], "src/application/refund.ts");
+  specRowOf(s, "tests/refund.test.ts");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "tests/refund.test.ts");
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "tests/refund.test.ts"), "utf8"), candidate.targets[2]!.after);
+  assert.ok(!existsSync(join(root, "src/application/refund.ts")) && !existsSync(join(root, "tests/refund-audit.test.ts")), "the other targets are untouched");
+  assert.ok(existsSync(join(root, REFUND_STORES[0]!)) && existsSync(join(root, REFUND_STORES[1]!)), "their proposals still wait");
+});
+
+/** Moves the proposals list's selection to `path`. */
+function specRowOf(s: ReturnType<typeof session>, path: string): void {
+  const prompt = s.app.state.prompt!;
+  for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== path; i++) s.send(KEY.down);
+  assert.equal(prompt.ids?.[prompt.index], path, JSON.stringify(prompt.ids));
+}
+
+test("tui: spec-to-code refuses an implemented ID with its place, a file of another module and a waiting proposal before the run; a test proposal waiting or a test file created during the work writes nothing; an I/O failure names the proposals written; g on a planned gap opens the form", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN, "keylang/features/later.md": FEATURES["keylang/features/refund.md"]! });
+  const hook: { during: (() => void) | null } = { during: null };
+  const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
+    runOperation(request, {
+      ...context,
+      beforeCommit: async (plan) => {
+        hook.during?.();
+        return context.beforeCommit?.(plan);
+      },
+    });
+  const s = session(root, { cols: 200, rows: 60, operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // An implemented ID: the CLI's reason with the place of the code, on the id row; nothing runs.
+  specForm(s, { id: "application.purchase.buy" });
+  let prompt = s.app.state.prompt!;
+  assert.deepEqual([prompt.kind, prompt.specCode?.id, prompt.ids?.[prompt.index]], ["spec-to-code", "application.purchase.buy", "id"]);
+  const implemented = cliSpec(root, ["application.purchase.buy"]);
+  assert.equal(implemented.status, 2);
+  assert.equal(implemented.stderr, `keylang: ${(s.app.state.message ?? "").replace(/^spec-to-code: /, "")}\n`);
+  assert.match(s.app.state.message ?? "", /`application\.purchase\.buy` is already implemented \(src\/application\/purchase\.ts:3\)/);
+  await esc(s.send);
+  // A file of another module, and one keylang does not read: the CLI's reasons, on the target row.
+  for (const into of ["src/domain/order.ts", "src/application/refund.txt"]) {
+    specForm(s, { id: "application.refund.refund", into });
+    prompt = s.app.state.prompt!;
+    assert.deepEqual([prompt.kind, prompt.ids?.[prompt.index]], ["spec-to-code", "into"], into);
+    const cli = cliSpec(root, ["application.refund.refund", "--into", into]);
+    assert.equal(cli.status, 2);
+    assert.equal(cli.stderr, `keylang: ${(s.app.state.message ?? "").replace(/^spec-to-code: /, "")}\n`);
+    await esc(s.send);
+  }
+  assert.equal(s.app.state.records.length, 0);
+  assert.deepEqual(treeBytes(root), before, "no write for a refused ID or target");
+  // A proposal waiting for the code file: refused by the form.
+  const codeStore = join(root, REFUND_STORES[0]!);
+  mkdirSync(dirname(codeStore), { recursive: true });
+  writeFileSync(codeStore, "someone's code\n");
+  specForm(s, { id: "application.refund.refund" });
+  assert.equal(s.app.state.message, "spec-to-code: a proposal for src/application/refund.ts is waiting: merge it first (m, or Proposals)");
+  await esc(s.send);
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // A proposal waiting for one test: the operation refuses the whole set, code 1; nothing is written, the waiting one stays.
+  const testStore = join(root, REFUND_STORES[2]!);
+  mkdirSync(dirname(testStore), { recursive: true });
+  writeFileSync(testStore, "someone's test\n");
+  specForm(s, { id: "application.refund.refund" });
+  await s.app.idle();
+  let result = specRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.proposals, result.payload.refused], ["failed", 1, [], [`${REFUND_STORES[2]}: a proposal for tests/refund.test.ts is waiting; merge it (m) or remove it before a new candidate`]]);
+  assert.equal(readFileSync(testStore, "utf8"), "someone's test\n");
+  assert.ok(!existsSync(codeStore), "no proposal of the set is written");
+  // The CLI replaces its own, as before.
+  assert.equal(cliSpec(root, ["application.refund.refund"]).status, 0);
+  assert.match(readFileSync(testStore, "utf8"), /refund returns the order/);
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // A test file created while the candidate was prepared: refused, nothing written, the new file kept.
+  hook.during = () => {
+    mkdirSync(join(root, "tests"), { recursive: true });
+    writeFileSync(join(root, "tests/refund.test.ts"), "// mine\n");
+  };
+  specForm(s, { id: "application.refund.refund" });
+  await s.app.idle();
+  result = specRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode, result.proposals], ["failed", 1, []]);
+  assert.deepEqual(result.payload.refused, ["tests/refund.test.ts: created on disk while the proposal was prepared; nothing written"]);
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+  assert.equal(readFileSync(join(root, "tests/refund.test.ts"), "utf8"), "// mine\n");
+  rmSync(join(root, "tests"), { recursive: true, force: true });
+  // A store directory that cannot be written: the code proposal is written, the failure and what was written are named.
+  if (process.getuid?.() !== 0) {
+    hook.during = () => {
+      mkdirSync(join(root, ".keylang/proposals/tests"), { recursive: true });
+      chmodSync(join(root, ".keylang/proposals/tests"), 0o555);
+    };
+    t.after(() => {
+      if (existsSync(join(root, ".keylang/proposals/tests"))) chmodSync(join(root, ".keylang/proposals/tests"), 0o755);
+    });
+    specForm(s, { id: "application.refund.refund" });
+    await s.app.idle();
+    result = specRecord(s.app);
+    assert.deepEqual([result.status, result.exitCode, result.proposals, result.payload.proposals], ["failed", 2, [REFUND_STORES[0]], [REFUND_STORES[0]]]);
+    assert.ok(result.payload.error !== null);
+    assert.equal(result.messages.at(-1)!.text, `proposed before it stopped: ${REFUND_STORES[0]}`);
+    assert.match(s.app.state.message ?? "", /spec-to-code: 1 proposal\(s\) wait: src\/application\/refund\.ts · m, Proposals or Enter in F6 opens them · failed: only these were proposed/);
+    s.send(KEY.f6);
+    assert.match(s.text(), /failed after 1 of 3 proposal\(s\) · code 2/);
+    await esc(s.send);
+    chmodSync(join(root, ".keylang/proposals/tests"), 0o755);
+    hook.during = null;
+  }
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // A planned gap of a feature report: g opens the form with its ID; a proposal does not make the feature done.
+  featureForm(s.send);
+  submitSlug(s.app, s.send, "later");
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send(KEY.tab);
+  assert.match(s.app.state.message ?? "", /planned application\.purchase\.refund: .* · g: spec-to-code/);
+  s.send("g");
+  assert.deepEqual(s.app.state.prompt?.specCode, { id: "application.purchase.refund", into: "", output: "proposal" });
+  assert.equal(promptNote(s.app), "application.purchase.refund: planned fn, its code goes to src/application/purchase.ts");
+  specRow(s, "run");
+  s.send(KEY.enter);
+  await s.app.idle();
+  result = specRecord(s.app);
+  assert.deepEqual([result.status, result.proposals], ["completed", [".keylang/proposals/src/application/purchase.ts"]]);
+  assert.match(readFileSync(join(root, ".keylang/proposals/src/application/purchase.ts"), "utf8"), /^import \{ create \}[\s\S]*\n\nexport function refund\(\): void \{\n {2}throw new Error/);
+  await esc(s.send);
+  featureForm(s.send);
+  submitSlug(s.app, s.send, "later");
+  await s.app.idle();
+  const feature = s.app.state.records.at(-1)!.result!;
+  assert.ok(feature.kind === "feature" && feature.payload !== null && !feature.payload.report.done && feature.exitCode === 1, "the feature is not done by a candidate");
 });

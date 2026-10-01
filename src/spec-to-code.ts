@@ -10,16 +10,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { analyze, type Analysis } from "./analyze.ts";
 import { toPosix, type Config } from "./config.ts";
-import type { Diagnostic } from "./diag.ts";
+import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { globPrefix } from "./glob.ts";
 import { placeFile } from "./graph.ts";
 import { plannedDecl } from "./lsp-features.ts";
-import { codeProposalProblem } from "./proposals.ts";
+import { codeProposalProblem, lineDiff } from "./proposals.ts";
+import { sameFinding } from "./assess.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { allCrlf } from "./safe-write.ts";
 import type { LlmClient } from "./llm.ts";
-import type { Verdict } from "./verdict.ts";
+import { formatVerdict, type Verdict } from "./verdict.ts";
 
 export interface FileCandidate {
   /** POSIX, relative to the root. */
@@ -48,35 +49,14 @@ const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js
  * analyzed the same way before anything is written.
  */
 export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient): Promise<CodeCandidate> {
-  const plan = plannedDecl(analysis.docs, id);
-  if (!plan) {
-    const present = analysis.snapshot?.nodes[id];
-    if (present) throw new Error(`\`${id}\` is already implemented (${present.file ?? "?"}:${present.line ?? 1}); spec-to-code builds planned nodes only`);
-    const near = analysis.index.suggest(id);
-    throw new Error(`\`${id}\` is neither planned nor in the code: fix the reference${near ? ` (did you mean \`${near}\`?)` : ""}, or declare \`planned fn ${id} <signature>\` first`);
-  }
-  if (plan.kind !== "fn") throw new Error(`\`${id}\` is a planned ${plan.kind}; spec-to-code builds planned fns`);
-  // A second run would add a second function of the same name.
-  const implemented = analysis.snapshot?.nodes[id];
-  if (implemented) throw new Error(`\`${id}\` is already implemented (${implemented.file ?? "?"}:${implemented.line ?? 1}); \`keylang check\` says whether the \`planned\` declaration can go (K202)`);
-  // A stub the flow could never reach would contradict the rules it is checked by.
-  for (const caller of callersInFlows(analysis, id)) {
-    if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) throw new Error(`\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first`);
-  }
+  const placed = plannedCodeTarget(analysis, id, into);
+  if ("error" in placed) throw new Error(placed.error);
+  const { file, name, signature } = placed;
   const config = analysis.config;
-  const moduleId = id.slice(0, id.lastIndexOf("."));
-  const name = id.slice(id.lastIndexOf(".") + 1);
-  const existing = analysis.snapshot?.nodes[moduleId];
-  const file = into ?? (existing?.kind === "module" && existing.file ? existing.file : newModuleFile(config, moduleId));
-  const placed = placeFile(config, file);
-  if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) throw new Error(`${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module`);
-  // The rules of a code proposal, before the file is read: inside the repository, not generated (`keylang.gen.ts`).
-  const problem = codeProposalProblem(config.root, file);
-  if (problem) throw new Error(`${file}: ${problem}`);
   const abs = join(config.root, file);
   const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
-  const stub = model ? await modelBody(analysis, model, file, name, id, plan.signature, lf) : stubFor(file, name, id, plan.signature, lf === null);
+  const stub = model ? await modelBody(analysis, model, file, name, id, signature, lf) : stubFor(file, name, id, signature, lf === null);
   const joined = lf === null || lf.trim() === "" ? stub : `${lf.replace(/\n*$/, "")}\n\n${stub}`;
   // A file with CRLF on every line keeps it.
   const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
@@ -85,6 +65,66 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const { verdicts, diagnostics } = introduced(analysis, next);
   const { tests, notes } = await testCandidates(analysis, id, file, after, model);
   return { id, file, before, after, verdicts, diagnostics, tests, testNotes: notes };
+}
+
+/**
+ * Where the code of the planned fn `id` goes, or why spec-to-code builds
+ * none — the checks it makes before any file is read: not planned (with a
+ * suggestion), not a fn, already implemented (with the place), a `deny`
+ * its flow would break (`field: "id"`); a file not of its module, a layer
+ * without one root, a file a code proposal may not change (`field: "into"`).
+ * Reads the analysis and, for links, the file system; writes nothing.
+ */
+export function plannedCodeTarget(analysis: Analysis, id: string, into?: string): { file: string; name: string; signature: string | null } | { error: string; field: "id" | "into" } {
+  const plan = plannedDecl(analysis.docs, id);
+  if (!plan) {
+    const present = analysis.snapshot?.nodes[id];
+    if (present) return { field: "id", error: `\`${id}\` is already implemented (${present.file ?? "?"}:${present.line ?? 1}); spec-to-code builds planned nodes only` };
+    const near = analysis.index.suggest(id);
+    return { field: "id", error: `\`${id}\` is neither planned nor in the code: fix the reference${near ? ` (did you mean \`${near}\`?)` : ""}, or declare \`planned fn ${id} <signature>\` first` };
+  }
+  if (plan.kind !== "fn") return { field: "id", error: `\`${id}\` is a planned ${plan.kind}; spec-to-code builds planned fns` };
+  // A second run would add a second function of the same name.
+  const implemented = analysis.snapshot?.nodes[id];
+  if (implemented) return { field: "id", error: `\`${id}\` is already implemented (${implemented.file ?? "?"}:${implemented.line ?? 1}); \`keylang check\` says whether the \`planned\` declaration can go (K202)` };
+  // A stub the flow could never reach would contradict the rules it is checked by.
+  for (const caller of callersInFlows(analysis, id)) {
+    if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) return { field: "id", error: `\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first` };
+  }
+  const config = analysis.config;
+  const moduleId = id.slice(0, id.lastIndexOf("."));
+  const name = id.slice(id.lastIndexOf(".") + 1);
+  const existing = analysis.snapshot?.nodes[moduleId];
+  let file: string;
+  try {
+    file = into ?? (existing?.kind === "module" && existing.file ? existing.file : newModuleFile(config, moduleId));
+  } catch (error) {
+    return { field: "into", error: error instanceof Error ? error.message : String(error) };
+  }
+  const placed = placeFile(config, file);
+  if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) return { field: "into", error: `${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module` };
+  // The rules of a code proposal, before the file is read: inside the repository, not generated (`keylang.gen.ts`).
+  const problem = codeProposalProblem(config.root, file);
+  if (problem) return { field: "into", error: `${file}: ${problem}` };
+  return { file, name, signature: plan.signature };
+}
+
+/**
+ * What `spec-to-code <id> --print` writes on stdout: each file with its
+ * `-`/`+` lines, and between the code and the tests every finding the
+ * candidate adds (one the diagnostics already name, once, as in `check`).
+ */
+export function specToCodeText(candidate: CodeCandidate): string {
+  let out = `${fileDiffText(candidate)}\n\nwith the candidate in place:\n`;
+  for (const v of candidate.verdicts) if (!sameFinding(v, candidate.diagnostics)) out += `${formatVerdict(v)}\n`;
+  for (const d of candidate.diagnostics) out += `${formatDiagnostic(d)}\n`;
+  for (const t of candidate.tests) out += `\n${fileDiffText(t)}\n`;
+  return out;
+}
+
+/** `src/a.ts (new file)` and its `-`/`+` lines against the file it was built from. */
+export function fileDiffText(file: FileCandidate): string {
+  return `${file.file}${file.before === null ? " (new file)" : ""}\n${lineDiff(file.before ?? "", file.after)}`;
 }
 
 /** Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too). */

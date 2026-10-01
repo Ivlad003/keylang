@@ -127,8 +127,9 @@ export interface Prompt {
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
    * `draft-layout`: the layer layout draft, `layoutDraft` (the rows `mode`, run; ←→ change the mode; `text` is unused).
    * `code-to-spec`: flows from code, `codeDraft` (the rows `source`, then `file`, the source files matching it as `src:<path>` and `line` for a file, or `since` for a git change, then `into`, `mode`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the source, the mode or the output; `text` is unused).
+   * `spec-to-code`: code from a planned fn, `specCode` (the rows `id`, the planned fns matching it as `planned:<id>`, `into`, `output`, run; typing edits the selected field, ←→ change the output; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -157,6 +158,17 @@ export interface Prompt {
   layoutDraft?: { mode: "algo" | "hybrid" | "llm" };
   /** `code-to-spec`: the fields as typed; an empty line is every exported fn, an empty target the CLI's default. */
   codeDraft?: CodeDraftForm;
+  /** `spec-to-code`: the fields as typed; an empty target is the module's file, shown next to it. */
+  specCode?: SpecCodeForm;
+}
+
+/** The fields of `spec-to-code <id> [--into]` (the template) and whether it proposes or only previews. */
+export interface SpecCodeForm {
+  /** The planned fn. */
+  id: string;
+  /** The code file, relative to the root, POSIX; empty: the module's file. */
+  into: string;
+  output: "proposal" | "preview";
 }
 
 /**

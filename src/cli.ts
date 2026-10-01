@@ -17,7 +17,7 @@ import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { codeProposalProblem, lineDiff, PROPOSALS_DIR, writeProposal } from "./proposals.ts";
 import { safeWriteAll } from "./safe-write.ts";
-import { specToCode } from "./spec-to-code.ts";
+import { specToCode, specToCodeText } from "./spec-to-code.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
@@ -485,6 +485,8 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
   if (opts.apply && opts.print) throw new Error("spec-to-code: --apply writes the files, --print writes nothing; give one");
   if (!id) throw new Error("spec-to-code: a planned id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm") throw new Error(`spec-to-code: --mode must be algo or llm, got \`${opts.mode}\``);
+  // The template's preview and proposal go through the shared operation; --apply and the model stay here until they move (tickets 29, 30).
+  if (opts.mode === "algo" && !opts.apply) return specToCodePrinter(findRoot(process.cwd()), id, opts.into === undefined ? undefined : toPosix(opts.into), opts.print);
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
   if (!analysis.snapshot) throw new Error("spec-to-code: no supported source files; run `keylang init`");
   let model;
@@ -495,11 +497,7 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
     model = setup.client;
   }
   const c = await specToCode(analysis, id, opts.into === undefined ? undefined : toPosix(opts.into), model);
-  process.stdout.write(`${c.file}${c.before === null ? " (new file)" : ""}\n${lineDiff(c.before ?? "", c.after)}\n\nwith the candidate in place:\n`);
-  // A finding the diagnostics already name is printed once, as in `check`.
-  for (const v of c.verdicts) if (!sameFinding(v, c.diagnostics)) process.stdout.write(`${formatVerdict(v)}\n`);
-  for (const d of c.diagnostics) process.stdout.write(`${formatDiagnostic(d)}\n`);
-  for (const t of c.tests) process.stdout.write(`\n${t.file} (new file)\n${lineDiff("", t.after)}\n`);
+  process.stdout.write(specToCodeText(c));
   for (const note of c.testNotes) process.stderr.write(`keylang: ${note}\n`);
   const files = [c, ...c.tests];
   if (opts.print) {
@@ -521,6 +519,26 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
   safeWriteAll(root, files.map((f) => ({ path: f.file, text: f.after, options: { expect: f.before } })));
   const next = opts.mode === "llm" ? "review the body and the tests, then run them" : "write the body and its tests";
   process.stderr.write(`keylang: ${files.map((f) => f.file).join(", ")} written; run \`keylang map\`, then ${next}\n`);
+  return 0;
+}
+
+/**
+ * `spec-to-code <id> [--into] [--print]` in the template mode: a printer
+ * over the shared `spec-to-code` operation. stdout is the candidate's
+ * files and findings, stderr the test notes and then what was (not)
+ * written. The proposals replace ones already waiting, as the CLI always did.
+ */
+async function specToCodePrinter(root: string, id: string, into: string | undefined, print: boolean): Promise<number> {
+  const result = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: print ? "preview" : "proposal", pending: "replace" });
+  const payload = result.payload;
+  if (payload !== null) process.stdout.write(payload.candidate.print);
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.status !== "completed" || payload === null) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  if (print) process.stderr.write("keylang: nothing written; without --print the files become proposals, --apply writes them\n");
+  else process.stderr.write(`keylang: proposed ${payload.proposals.join(", ")}; merge them hunk by hunk with \`m\` in \`keylang\` (--apply writes the files directly)\n`);
   return 0;
 }
 

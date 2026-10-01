@@ -38,8 +38,9 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
+import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -56,7 +57,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, State } from "./state.ts";
+import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
@@ -1748,6 +1749,16 @@ export class App {
       const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${target}`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
     }
+    if (request.kind === "spec-to-code") {
+      // The candidate reads the saved specs (the planned signature, the flows' tests), keylang.json and
+      // the code: those dirty buffers are saved first; the step names the proposals it would write.
+      const dir = `${this.specDir()}/`;
+      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+      const placed = this.specCodeTarget({ id: request.id, into: request.into ?? "", output: request.output });
+      const code = placed !== null && "file" in placed ? placed.file : "<the module's file>";
+      const writes = request.output === "proposal" && this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
+    }
     if (request.kind === "draft-rules") {
       // As a flow draft: the saved code and keylang.json (and the saved specs the model's rules are checked
       // with); only a dirty keylang.json is saved first; the target was refused above when dirty.
@@ -1910,6 +1921,7 @@ export class App {
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
       if (request.kind === "draft-flow" || request.kind === "draft-rules") this.afterDraft(record, origin);
       if (request.kind === "code-to-spec") this.afterCodeDraft(record, origin);
+      if (request.kind === "spec-to-code") this.afterSpecCode(record, origin);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
       this.draw();
     };
@@ -1951,7 +1963,7 @@ export class App {
    * proposal would be judged against the disk under unsaved edits).
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
-    if ((request.kind !== "draft-flow" && request.kind !== "draft-rules" && request.kind !== "code-to-spec") || request.output !== "proposal") return;
+    if ((request.kind !== "draft-flow" && request.kind !== "draft-rules" && request.kind !== "code-to-spec" && request.kind !== "spec-to-code") || request.output !== "proposal") return;
     // The operation names the target it resolved; code-to-spec's default target depends on the snapshot it read.
     const targets = plan?.targets ?? (request.kind === "draft-rules" ? [this.rulesTarget(request.into ?? "")] : request.kind === "draft-flow" ? [this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target] : []);
     const edited = targets.filter((target) => {
@@ -3174,6 +3186,149 @@ export class App {
     this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}`;
   }
 
+  // ---------- spec-to-code: a stub and failing tests for a planned fn (template) ----------
+
+  /** The planned fns of the current analysis that no code implements yet: the IDs spec-to-code builds. */
+  private plannedFns(): string[] {
+    const analysis = this.state.analysis;
+    if (!analysis) return [];
+    const nodes = analysis.snapshot?.nodes ?? {};
+    return [...new Set(analysis.spec.planned.filter((item) => item.decl === "fn" && nodes[item.id] === undefined).map((item) => item.id))].sort(compareText);
+  }
+
+  /**
+   * The spec-to-code form (design §2.4 `spec-to-code`): the planned fn —
+   * given (a feature's planned gap), else the one under the cursor, else
+   * typed or picked from the planned fns — the code file (empty: the
+   * module's, shown next to it) and preview or proposal.
+   */
+  private openSpecCodePrompt(id?: string): void {
+    let initial = id ?? "";
+    if (id === undefined && this.state.mode !== "merge") {
+      const at = this.idAtCursor();
+      if (at !== null && this.plannedFns().includes(at)) initial = at;
+    }
+    this.state.prompt = { kind: "spec-to-code", text: "", items: [], ids: [], index: 0, specCode: { id: initial, into: "", output: "proposal" } };
+    this.refreshSpecCodePrompt();
+  }
+
+  /** Where the code would go, or why spec-to-code builds none: its own checks on the current analysis; null without one or without an ID. */
+  private specCodeTarget(form: SpecCodeForm): ReturnType<typeof plannedCodeTarget> | null {
+    const analysis = this.state.analysis;
+    const id = form.id.trim();
+    if (!analysis || id === "") return null;
+    const into = form.into.trim();
+    return plannedCodeTarget(analysis, id, into !== "" ? toPosix(into) : undefined);
+  }
+
+  /** The planned fns containing the typed text, at most eight; none once it is one. */
+  private plannedMatches(typed: string): string[] {
+    const planned = this.plannedFns();
+    if (planned.includes(typed)) return [];
+    const query = typed.toLowerCase();
+    return planned.filter((id) => id.toLowerCase().includes(query)).slice(0, 8);
+  }
+
+  /** Why spec-to-code may not start now, or null: an ID, spec-to-code's own checks, then (a proposal only) a proposal waiting for the code file. */
+  private specCodeProblem(form: SpecCodeForm): { field: string; text: string } | null {
+    if (form.id.trim() === "") return { field: "id", text: "a planned fn id is required" };
+    const placed = this.specCodeTarget(form);
+    if (placed !== null && "error" in placed) return { field: placed.field, text: placed.error };
+    // Without an analysis the operation checks the ID; a test file's waiting proposal it refuses too.
+    if (form.output === "preview" || placed === null) return null;
+    if (this.proposalWaiting(placed.file)) return { field: "into", text: `a proposal for ${placed.file} is waiting: merge it first (m, or Proposals)` };
+    return null;
+  }
+
+  /** The rows, the root and what the template is, and a note on the selected row. */
+  private refreshSpecCodePrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.specCode;
+    if (prompt?.kind !== "spec-to-code" || !form) return;
+    const selected = prompt.ids?.[prompt.index] ?? "id";
+    const caret = (row: string): string => (selected === row ? "▏" : "");
+    const placed = this.specCodeTarget(form);
+    const file = placed !== null && "file" in placed ? placed.file : null;
+    const rows: { id: string; text: string }[] = [
+      { id: "id", text: `id:      ${form.id}${caret("id")}` },
+      ...this.plannedMatches(form.id.trim()).map((id) => ({ id: `planned:${id}`, text: `    planned fn ${id}` })),
+      { id: "into", text: `target:  ${form.into}${caret("into")}${form.into.trim() === "" ? `  (default ${file ?? "the module's file"})` : ""}` },
+      { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
+      { id: "run", text: form.output === "proposal" ? `Create the proposals under ${PROPOSALS_DIR}/: the code and each new test (no file itself is written)` : "Preview the candidate (writes nothing)" },
+    ];
+    prompt.ids = rows.map((row) => row.id);
+    prompt.items = rows.map((row) => row.text);
+    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
+    prompt.details = [`root: ${this.state.root} · the target is relative to it · template: the declared signature with a body that fails until written, a failing node:test per flow test; no model`];
+    const now = prompt.ids[prompt.index]!;
+    const problem = this.specCodeProblem(form);
+    const planned = this.plannedFns();
+    if (now.startsWith("planned:")) prompt.note = `Enter takes ${now.slice(8)}`;
+    else if (now === "id" && form.id.trim() === "") prompt.note = this.state.analysis ? `type a planned fn · ↓ picks one (${planned.length} planned, not implemented)` : "no current analysis to look it up; the operation reads the saved specs";
+    else if (problem !== null && (problem.field === now || now === "run" || now === "output")) prompt.note = problem.text;
+    else if (now === "id") prompt.note = file === null ? "no current analysis to look it up; the operation reads the saved specs" : `${form.id.trim()}: planned fn, its code goes to ${file}`;
+    else if (now === "into") prompt.note = file === null ? "" : existsSync(join(this.state.root, file)) ? `${file} exists: the stub is appended, the rest is kept` : `${file} is a new file`;
+    else prompt.note = form.output === "proposal" ? "Enter proposes the code and its tests; each merges on its own in MERGE" : "Enter shows the candidate in F6; nothing is written";
+  }
+
+  /** ←→ on the output row: proposal or preview. */
+  private changeSpecCodeOutput(): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "spec-to-code" || !prompt.specCode || prompt.ids?.[prompt.index] !== "output") return;
+    prompt.specCode.output = prompt.specCode.output === "proposal" ? "preview" : "proposal";
+    this.refreshSpecCodePrompt();
+  }
+
+  /** Enter in the form: a match takes that ID; elsewhere a problem keeps the form with the field selected, else spec-to-code runs as the session's operation. */
+  private submitSpecCode(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.specCode;
+    if (prompt?.kind !== "spec-to-code" || !form) return;
+    const row = prompt.ids?.[prompt.index] ?? "";
+    if (row.startsWith("planned:")) {
+      form.id = row.slice(8);
+      prompt.index = -1;
+      prompt.ids = [];
+      this.refreshSpecCodePrompt();
+      prompt.index = prompt.ids!.indexOf("into");
+      this.refreshSpecCodePrompt();
+      return;
+    }
+    const problem = this.specCodeProblem(form);
+    if (problem !== null) {
+      prompt.index = Math.max(0, prompt.ids!.indexOf(problem.field));
+      this.refreshSpecCodePrompt();
+      this.state.message = `spec-to-code: ${problem.text}`;
+      return;
+    }
+    const into = form.into.trim();
+    this.state.prompt = null;
+    const request: SpecToCodeRequest = { kind: "spec-to-code", root: this.state.root, id: form.id.trim(), ...(into !== "" ? { into: toPosix(into) } : {}), output: form.output, pending: "refuse" };
+    this.requestOperation("spec-to-code", request);
+  }
+
+  /**
+   * Finished spec-to-code proposals: the code file opens MERGE under the
+   * same rule as a draft's, and the message names the tests waiting next;
+   * otherwise they all wait. A candidate is never the feature done.
+   */
+  private afterSpecCode(record: OperationRecord, origin: DraftOrigin): void {
+    const result = record.result;
+    if (result?.kind !== "spec-to-code" || result.payload === null || result.payload.proposals.length === 0) return;
+    const files = result.payload.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1));
+    const [code, ...rest] = files;
+    const next = rest.length > 0 ? ` · then m or Proposals: ${rest.join(", ")}` : "";
+    const partial = result.status === "completed" ? "" : ` · ${result.status}: only these were proposed`;
+    if (result.status === "completed" && this.stillWhereDraftStarted(origin)) {
+      this.merges.open(code);
+      if (this.state.merge?.path === code) {
+        this.state.message = `spec-to-code: ${PROPOSALS_DIR}/${code} · MERGE: decide the hunks, w writes ${code}${next} · run check after: the stub is not the feature done`;
+        return;
+      }
+    }
+    this.state.message = `spec-to-code: ${files.length} proposal(s) wait: ${files.join(", ")} · m, Proposals or Enter in F6 opens them${partial}`;
+  }
+
   // ---------- draft map: layers into keylang.json's buffer ----------
 
   /** The draft-layout form (design §2.4 `draft map`): the mode (hybrid with a model, else algo), then run; nothing is written. */
@@ -3575,7 +3730,7 @@ export class App {
   }
 
   /** The proposals list (design §2.9): every file under `.keylang/proposals/`, scanned now; viewing writes nothing. */
-  private openProposals(): void {
+  private openProposals(prefer: readonly string[] = []): void {
     this.proposalEntries = this.merges.entries();
     this.state.proposals = this.merges.scan();
     if (this.proposalEntries.length === 0) {
@@ -3583,7 +3738,8 @@ export class App {
       return;
     }
     this.state.prompt = { kind: "proposal", text: "", items: [], ids: [], notes: [], index: 0 };
-    this.refreshProposalPrompt();
+    // `prefer`: the targets of one operation, the first still listed selected.
+    this.refreshProposalPrompt(prefer.find((path) => this.proposalEntries.some((entry) => entry.path === path)));
   }
 
   /** The list entries whose path contains the typed text, in POSIX path order, each with its note. */
@@ -3667,6 +3823,11 @@ export class App {
       this.closeResults();
       return this.merges.open(record.result.payload.candidate.target);
     }
+    // Spec-to-code proposes several files: Enter opens the proposals list on the first still waiting, so each merges on its own.
+    if (record.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0) {
+      this.closeResults();
+      return this.openProposals(record.result.payload!.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1)));
+    }
     // A current layout draft: Enter moves its layers into keylang.json's buffer; an outdated one drafts again.
     if (record.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null) return this.moveLayers(record);
     // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
@@ -3726,6 +3887,10 @@ export class App {
         return this.cancelOperation();
       case "e":
         return this.openExportPrompt();
+      case "g":
+        // Over a planned gap of a feature report: the spec-to-code form for the same ID.
+        if (results.scrollReport) return this.specCodeForGap();
+        return;
       case "q":
         return this.quit();
       case "?":
@@ -3915,7 +4080,26 @@ export class App {
   /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
   private showGapReason(): void {
     const gap = this.selectedGap();
-    if (gap) this.state.message = gap.file === "" ? `${gap.text} · no position in the code` : `${gap.text} · Enter opens ${gap.file}:${gap.line}`;
+    if (gap) this.state.message = `${gap.file === "" ? `${gap.text} · no position in the code` : `${gap.text} · Enter opens ${gap.file}:${gap.line}`}${this.plannedGap() !== null ? " · g: spec-to-code" : ""}`;
+  }
+
+  /** The ID of the selected gap of a feature report when it is a planned fn no code implements yet, else null. */
+  private plannedGap(): string | null {
+    const result = this.state.records[this.state.results.index]?.result;
+    if (result?.kind !== "feature") return null;
+    const gap = result.payload?.report.gaps[this.state.results.gap];
+    return gap?.kind === "planned" && this.plannedFns().includes(gap.id) ? gap.id : null;
+  }
+
+  /** `g` on a planned gap: the spec-to-code form with its ID; the report stays in the history. */
+  private specCodeForGap(): void {
+    const id = this.plannedGap();
+    if (id === null) {
+      this.state.message = "g drafts code for a planned fn gap of a feature report";
+      return;
+    }
+    this.closeResults();
+    this.openSpecCodePrompt(id);
   }
 
   /** Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
@@ -4028,6 +4212,9 @@ export class App {
       // The line is a number: anything but digits is not typed into it.
       if (prompt.codeDraft && (field === "file" || field === "into" || field === "since")) prompt.codeDraft[field] += text;
       else if (prompt.codeDraft && field === "line") prompt.codeDraft.line += text.replace(/[^0-9]/g, "");
+    } else if (prompt.kind === "spec-to-code") {
+      const field = prompt.ids?.[prompt.index];
+      if (prompt.specCode && (field === "id" || field === "into")) prompt.specCode[field] += text;
     } else prompt.text += text;
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
@@ -4047,6 +4234,7 @@ export class App {
     if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
     if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
     if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
+    if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -4077,6 +4265,8 @@ export class App {
         if (prompt.rulesDraft && field === "into") prompt.rulesDraft.into = graphemes(prompt.rulesDraft.into).slice(0, -1).join("");
       } else if (prompt.kind === "code-to-spec") {
         if (prompt.codeDraft && (field === "file" || field === "line" || field === "into" || field === "since")) prompt.codeDraft[field] = graphemes(prompt.codeDraft[field]).slice(0, -1).join("");
+      } else if (prompt.kind === "spec-to-code") {
+        if (prompt.specCode && (field === "id" || field === "into")) prompt.specCode[field] = graphemes(prompt.specCode[field]).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
@@ -4096,15 +4286,17 @@ export class App {
       if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
       if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
       if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
+      if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
       return;
     }
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "spec-to-code") return this.changeSpecCodeOutput();
     if ((event.name === "left" || event.name === "right") && prompt.kind === "code-to-spec") return this.changeCodeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-rules") return this.changeRulesDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -4116,6 +4308,7 @@ export class App {
       if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
       if (prompt.kind === "draft-layout") this.refreshLayoutDraftPrompt();
       if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
+      if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -4133,6 +4326,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "draft-rules") return this.submitRulesDraft();
     if (event.name === "enter" && prompt.kind === "draft-layout") return this.submitLayoutDraft();
     if (event.name === "enter" && prompt.kind === "code-to-spec") return this.submitCodeDraft();
+    if (event.name === "enter" && prompt.kind === "spec-to-code") return this.submitSpecCode();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -4233,6 +4427,8 @@ export class App {
         return this.openLayoutDraftPrompt();
       case "code-to-spec":
         return this.openCodeDraftPrompt();
+      case "spec-to-code":
+        return this.openSpecCodePrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":
