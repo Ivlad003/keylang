@@ -29,7 +29,7 @@ import { ENTER, Grid, LEAVE, renderDiff } from "../src/tui/screen.ts";
 import { inline } from "../src/tui/markdown.ts";
 import { editorCommand, runTerminal, splitCommand, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { textToSpec } from "../src/tui/text-to-spec.ts";
-import { stringWidth } from "../src/tui/width.ts";
+import { sliceCells, stringWidth } from "../src/tui/width.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -450,7 +450,8 @@ test("tui: reading mode renders Markdown and keeps the marks; ? explains the cod
   s.send("?");
   assert.match(s.text(), /K001: A reference names an id that is not declared/);
   assert.match(s.text(), /keys · view/);
-  s.send(KEY.down);
+  s.send("\x1b");
+  await sleep(40);
   assert.equal(s.app.state.help, false);
 });
 
@@ -600,7 +601,9 @@ test("tui: in MERGE the palette shows reasons for blocked actions and still runs
   // An action that would drop the merge is listed with its reason and does not run.
   s.send(KEY.ctrlP);
   for (const ch of "insert") s.send(ch);
-  assert.match(s.text(), /Edit \(i\)/);
+  // In MERGE `i` is no key of Edit: the label does not advertise it.
+  assert.match(s.text(), / Edit {2}/);
+  assert.doesNotMatch(s.text(), /Edit \(i\)/);
   s.send(KEY.enter);
   assert.equal(s.app.state.mode, "merge");
   assert.match(s.lines().at(-2)!, /Edit: finish the merge first/);
@@ -647,9 +650,15 @@ test("tui: help lists the registry keys and the palette actions", async (t) => {
   await s.app.idle();
   s.send("?");
   assert.match(s.text(), /keys · view/);
-  assert.match(s.text(), /actions: F5 Check again/);
-  assert.match(s.text(), /F6 Operation results/);
-  s.send(KEY.down);
+  // The catalogue follows the keys of the mode, grouped, from the same registry as the palette; ↓ scrolls it.
+  assert.match(s.text(), /Actions · Ctrl\+P or : finds each by its name or CLI alias:/);
+  assert.match(s.text(), /Check again · F5/);
+  assert.match(s.text(), /↑↓ PgUp PgDn scroll · any other key closes/);
+  for (let i = 0; i < 400; i++) s.send(KEY.down);
+  assert.equal(s.app.state.help, true);
+  assert.match(s.text(), /Open <file> for each of the \d+ file\(s\)/);
+  assert.match(s.text(), /About keylang/);
+  s.send("x");
   assert.equal(s.app.state.help, false);
   // The palette action "About keylang" shows the version.
   s.send(KEY.ctrlP);
@@ -2312,7 +2321,8 @@ test("tui: t switches a map file to the explained map and back on the same node;
   s.send(KEY.down);
   assert.doesNotMatch(nav(), /\(code\)|\(llm/);
   s.send("?");
-  assert.match(s.text(), /s {18}find a node {4}t {20}explained map/);
+  assert.match(s.text(), /s {18}find a node/);
+  assert.match(s.text(), /t {18}explained map/);
 });
 
 test("tui: t with the explained map off says how to turn it on and changes nothing", async (t) => {
@@ -2836,7 +2846,7 @@ test("tui: Enter on a feature gap opens its line and Esc returns; an edit marks 
   s.send(KEY.f6);
   assert.match(s.text(), /Feature · refund · saved state · keylang\/features\/refund\.md/);
   assert.match(s.text(), /2 gap\(s\) · code 1 · snapshot [0-9a-f]{8}/);
-  assert.match(s.text(), /planned {2}application\.purchase\.refund {2}keylang\/features\/refund\.md:3:1 {2}pla/);
+  assert.match(s.text(), /planned {2}application\.purchase\.refund {2}keylang\/features\/refund\.md:3:1 {2}pl/);
   assert.match(s.text(), /Info \(not blocking\): tests — · trace unverified 2/);
   s.send(KEY.tab);
   assert.match(s.app.state.message ?? "", /^planned application\.purchase\.refund: planned `application\.purchase\.refund` is not implemented · Enter opens keylang\/features\/refund\.md:3 · g: spec-to-code$/);
@@ -5057,7 +5067,12 @@ test("tui: a chosen file narrows the report as the CLI does; an explanation path
   assert.equal(cliSkipped.stderr.split("\n")[0], `keylang: ${skipped.result!.messages[0]!.text}`);
   assert.deepEqual(checkJson(skipped), JSON.parse(cliSkipped.stdout));
   s.send(KEY.f6);
-  assert.match(s.text(), /keylang\/explain: the explained map and saved explanations are not specs/);
+  // The row is cut at the panel's edge with `…`; ←→ after Tab scroll it to its end.
+  assert.match(s.text(), /keylang\/explain: the explained map and saved explanations are not spec/);
+  s.send(KEY.tab);
+  s.send(KEY.right);
+  assert.match(s.text(), /are not specs; skipped/);
+  s.send(KEY.tab);
   await esc(s.send);
   // A missing path: code 2 with the CLI's message; the session goes on.
   checkForm(s.app, s.send, { paths: "keylang/nope" });
@@ -9785,4 +9800,277 @@ test("operation worker: close during a commit lets the current file finish and s
   for (const step of steps.filter((entry) => entry.state === "not-attempted")) assert.equal(now.get(step.path), before.get(step.path), `${step.path} not written`);
   const after = await worker.run({ kind: "map-check", root });
   assert.deepEqual([after.status, after.exitCode], ["failed", 2]);
+});
+
+// 37: the whole catalogue, the help from it, and a narrow terminal.
+
+/** The palette's ids for `query`, as Ctrl+P lists them; Esc closes it again. */
+async function paletteIds(s: ReturnType<typeof session>, query: string): Promise<string[]> {
+  s.send(KEY.ctrlP);
+  for (const ch of query) s.send(ch);
+  const ids = [...(s.app.state.prompt?.ids ?? [])];
+  await esc(s.send);
+  return ids;
+}
+
+test("tui: every CLI alias of the design's matrix finds its action; unavailable ones say why and where to go; protocol servers are not jobs", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const matrix: [string, string][] = [
+    ["init", "init"],
+    ["init --check", "init"],
+    ["map", "map"],
+    ["map --check", "map-check"],
+    ["keylang check", "full-check"],
+    ["check --explain-edge", "explain-edge"],
+    ["fmt --check", "fmt"],
+    ["baseline", "baseline"],
+    ["agents", "agents"],
+    ["feature", "feature"],
+    ["draft flow", "draft-flow"],
+    ["draft rules", "draft-rules"],
+    ["draft map", "draft-layout"],
+    ["code-to-spec --since", "code-to-spec"],
+    ["spec-to-code", "spec-to-code"],
+    ["spec-to-code --apply", "apply-code"],
+    ["wire --check", "wire"],
+    ["explain", "explain"],
+    ["explain --llm", "explain-llm"],
+    ["explain --missing", "explain-plan"],
+    ["explain --stale --llm", "explain-batch"],
+    ["doctor", "doctor"],
+    ["parse --json", "parse"],
+    ["trace-plan", "trace-plan"],
+    ["help", "help"],
+    ["version", "version"],
+    ["text to spec", "text-to-spec"],
+    ["merge", "merge"],
+    ["undo merge", "undo-merge"],
+    ["proposals", "proposals"],
+    ["config", "open-config"],
+    ["context", "context"],
+    ["search", "search"],
+    ["go to code", "go-to-code"],
+    ["explained map", "toggle-map"],
+    ["voice", "voice"],
+    ["agent draft", "agent-draft"],
+    ["export", "export"],
+  ];
+  for (const [query, id] of matrix) assert.ok((await paletteIds(s, query)).includes(id), `${query} → ${id}`);
+  // lsp, mcp, web and hook stay with their clients: no action pretends to run them as a job here.
+  const ids = new Set((await paletteIds(s, "")).filter((id) => !id.startsWith("open:")));
+  for (const transport of ["lsp", "mcp", "web", "hook", "hook-stop"]) assert.ok(!ids.has(transport), transport);
+  // Unavailable: listed with the reason, and the way to what it needs.
+  s.send(KEY.ctrlP);
+  for (const ch of "agent draft") s.send(ch);
+  assert.equal(s.app.state.prompt!.ids![0], "agent-draft");
+  assert.match(s.app.state.prompt!.note ?? "", /no agent in keylang\.json → Open keylang\.json \(set agent\) · Environment diagnostics/);
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /Agent draft of the flow under the cursor \(MERGE\): no agent/);
+  assert.equal(s.app.state.mode, "view");
+  s.send(KEY.ctrlP);
+  for (const ch of "spec-to-code --apply") s.send(ch);
+  assert.match(s.app.state.prompt!.note ?? "", /no spec-to-code run yet → Spec to code/);
+  await esc(s.send);
+  // A model action that still works without one says what is offline and where to set it up.
+  s.send(KEY.ctrlP);
+  for (const ch of "draft rules") s.send(ch);
+  assert.match(s.app.state.prompt!.note ?? "", /algo works offline; the model modes need an agent → Open keylang\.json · Environment diagnostics/);
+  await esc(s.send);
+  // The config is one action away: it opens keylang.json in the editor.
+  s.send(KEY.ctrlP);
+  for (const ch of "config") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang.json");
+});
+
+test("tui: editing types ? and :, so the footer and the palette name Ctrl+P; the help says so and lists the edit keys", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.match(s.lines().at(-1)!, /\? keys · Ctrl\+P actions $/);
+  s.send("i");
+  assert.match(s.lines().at(-1)!, /Esc view · Ctrl\+P actions, help $/);
+  assert.doesNotMatch(s.lines().at(-1)!, /\? keys/);
+  s.send("?");
+  assert.equal(s.app.state.help, false);
+  assert.match(s.app.state.buffers.get("keylang/flows/checkout.md")!.text, /^\?# flow checkout/);
+  // The palette in editing: no plain key is advertised; Ctrl+S, F-keys and Ctrl+G are.
+  s.send(KEY.ctrlP);
+  for (const ch of "help") s.send(ch);
+  assert.equal(s.app.state.prompt!.items[0], "Keys and help");
+  await esc(s.send);
+  s.send(KEY.ctrlP);
+  for (const ch of "save") s.send(ch);
+  assert.equal(s.app.state.prompt!.items[0], "Save the file (Ctrl+S)");
+  await esc(s.send);
+  s.send(KEY.ctrlP);
+  for (const ch of "help") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.help, true);
+  assert.match(s.text(), /keys · edit/);
+  assert.match(s.text(), /\? and :\s+typed here: Ctrl\+P → Keys and help opens this/);
+  assert.match(s.text(), /Tab \/ Alt\+\]\s+ghost line: take \/ next/);
+  assert.match(s.text(), /Actions · Ctrl\+P finds each/);
+  // The file is not written by any of it.
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW);
+});
+
+test("tui: Ctrl+G from the palette over a dirty paragraph keeps the prose and changes only the buffer until Ctrl+S", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 2; i++) s.send(KEY.down);
+  s.send("i");
+  s.send(KEY.end);
+  for (const ch of " Then call application.purchase.buy.") s.send(ch);
+  s.send(KEY.ctrlP);
+  for (const ch of "text to spec") s.send(ch);
+  assert.equal(s.app.state.prompt!.ids![0], "text-to-spec");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "merge");
+  s.send("a");
+  s.send("w");
+  const buffer = s.app.state.buffers.get("keylang/flows/checkout.md")!;
+  assert.match(buffer.text, /Checkout from the terminal\. Then call application\.purchase\.buy\.\n- step application\.purchase\.buy/);
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW);
+  // The old quick keys still work: Ctrl+S writes the buffer.
+  s.send("i");
+  s.send(KEY.ctrlS);
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), buffer.text);
+});
+
+test("tui: on 80×24 search → a two-field form → a field error → Run → F6 → Esc, by keys only", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 80, rows: 24 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  const place = { ...s.app.state.cursor };
+  s.send(KEY.ctrlP);
+  for (const ch of "edge") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "explain-edge");
+  // Run with an empty second id: the error is on its field and the typed first id stays.
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "explain-edge");
+  assert.equal(s.app.state.prompt!.ids![s.app.state.prompt!.index], "to");
+  assert.equal(s.app.state.prompt!.edge!.from, "application.purchase.buy");
+  assert.match(s.lines().at(-2)!, /two ids are needed/);
+  // A note longer than the line is also shown whole in the form's box.
+  for (const ch of "domain.ordr") s.send(ch);
+  assert.match(s.text(), /│ domain\.ordr: not in the current snapshot · did you mean domain\.order\?/);
+  s.send("\x7f");
+  for (const ch of "er") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt, null);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)!.status, "completed");
+  s.send(KEY.f6);
+  // Below 100 columns the panel takes the whole width: no side panel squeezes it.
+  assert.match(s.lines()[1]!, /^ RESULTS · F6 · 1 run\(s\)/);
+  assert.doesNotMatch(s.lines()[2]!, /│ /);
+  assert.match(s.lines()[1]!, /Esc back\s*$/);
+  await esc(s.send);
+  assert.equal(s.app.state.results.open, false);
+  assert.deepEqual(s.app.state.cursor, place);
+  assert.deepEqual(treeBytes(root), before);
+});
+
+test("tui: on 60×18 the help and a long report scroll to their ends; resize 120↔60 keeps a form, a selection and the report place", async (t) => {
+  const root = checkoutRepo(t);
+  const s = session(root, { cols: 60, rows: 18 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The footer keeps the way to the help and the palette on a narrow line.
+  assert.match(s.lines().at(-1)!, /\? keys · Ctrl\+P actions $/);
+  s.send("?");
+  assert.match(s.text(), /keys · view/);
+  for (let i = 0; i < 40; i++) s.send("\x1b[6~");
+  assert.match(s.text(), /Open <file> for each of the \d+ file\(s\) — type its name/);
+  for (const line of s.lines()) assert.equal(stringWidth(line), 60);
+  s.send("x");
+  // A long report: the parse tree; ↓ after Tab and a page reach its end, ←→ its long rows.
+  parseForm(s, "json");
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send(KEY.tab);
+  assert.match(s.lines()[1]!, /←→ scroll · Esc back\s*$/);
+  s.send(KEY.right);
+  assert.equal(s.app.state.results.left, 16);
+  assert.ok(s.lines().some((line) => /^ ▌ …/.test(line)), s.text());
+  s.send("\x1b[D"); // ←
+  assert.equal(s.app.state.results.left, 0);
+  for (let i = 0; i < 40; i++) s.send("\x1b[6~");
+  assert.ok(s.app.state.results.top > 0);
+  // The last page ends at the report's end and stays a full panel.
+  assert.match(s.lines().at(-3)!, /^ ▌ \]/);
+  s.send(KEY.right);
+  const results = { ...s.app.state.results };
+  // Resize while the report is open: the selection, the scroll and the sideways place stay.
+  for (const [cols, rows] of [[120, 30], [60, 18]] as const) {
+    s.vt.resize(cols, rows);
+    s.app.resize(cols, rows);
+    for (const line of s.lines()) assert.equal(stringWidth(line), cols);
+  }
+  assert.deepEqual({ ...s.app.state.results }, results);
+  s.send(KEY.tab);
+  await esc(s.send);
+  // A form with typed fields survives a resize too, and Esc brings back the place.
+  s.send(KEY.ctrlP);
+  for (const ch of "explain edge") s.send(ch);
+  s.send(KEY.enter);
+  for (const ch of "domain.order") s.send(ch);
+  s.send(KEY.down);
+  for (const ch of "infrastructure.store") s.send(ch);
+  const prompt = structuredClone(s.app.state.prompt);
+  s.vt.resize(120, 30);
+  s.app.resize(120, 30);
+  s.vt.resize(60, 18);
+  s.app.resize(60, 18);
+  assert.deepEqual(s.app.state.prompt, prompt);
+  assert.match(s.lines().at(-2)!, /explain edge: domain\.order ↔ infrastructure\.store/);
+  await esc(s.send);
+  assert.equal(s.app.state.prompt, null);
+});
+
+test("tui: below 100 columns one side panel is shown — the focused one, else the last opened; widening shows both again", async (t) => {
+  const s = session(checkoutRepo(t), { cols: 80, rows: 24 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.match(s.text(), /NAVIGATION/);
+  s.send("\x1b[12~"); // F2
+  assert.equal(s.app.state.focus, "files");
+  assert.match(s.text(), /FILES/);
+  assert.doesNotMatch(s.text(), /NAVIGATION/);
+  s.send(KEY.tab);
+  assert.equal(s.app.state.focus, "editor");
+  assert.match(s.text(), /FILES/);
+  s.send(KEY.tab);
+  assert.equal(s.app.state.focus, "nav");
+  assert.match(s.text(), /NAVIGATION/);
+  assert.doesNotMatch(s.text(), /FILES/);
+  s.vt.resize(120, 24);
+  s.app.resize(120, 24);
+  assert.match(s.text(), /NAVIGATION/);
+  assert.match(s.text(), /FILES/);
+  // Under 60 columns no panel fits: the key says so instead of doing nothing visible.
+  s.vt.resize(50, 16);
+  s.app.resize(50, 16);
+  s.send("\x1b[12~");
+  assert.match(s.app.state.message ?? "", /side panels need 60 columns \(now 50\)/);
+});
+
+test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge and marks hidden text", () => {
+  assert.equal(sliceCells("abcdef", 0, 6), "abcdef");
+  assert.equal(sliceCells("abcdefgh", 0, 6), "abcde…");
+  assert.equal(sliceCells("abcdefgh", 2, 4), "…de…");
+  assert.equal(sliceCells("a支付b", 2, 4), "…付b");
+  assert.equal(sliceCells("支付支付支付", 1, 5), "…付…");
+  assert.equal(sliceCells("👨‍👩‍👧 done", 0, 3), "👨‍👩‍👧…");
 });

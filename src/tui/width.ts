@@ -91,6 +91,40 @@ export function padWidth(text: string, width: number): string {
   return cut + "…" + " ".repeat(width - 1 - stringWidth(cut));
 }
 
+/**
+ * The part of `text` seen through a window `width` cells wide scrolled `left`
+ * cells in: whole clusters only (a wide one cut by an edge becomes a blank),
+ * with `…` at an edge that hides more text.
+ */
+export function sliceCells(text: string, left: number, width: number): string {
+  if (width <= 0) return "";
+  let used = 0;
+  let out = "";
+  let cut = false;
+  for (const cluster of graphemes(text)) {
+    const w = graphemeWidth(cluster);
+    const at = used;
+    used += w;
+    if (used <= left) continue;
+    if (at < left) {
+      // Straddles the left edge: its visible half is a blank.
+      out += " ".repeat(used - left);
+      continue;
+    }
+    if (used - left > width) {
+      cut = true;
+      break;
+    }
+    out += cluster;
+  }
+  if (left > 0 && out !== "") {
+    const [first, ...rest] = graphemes(out);
+    out = `…${" ".repeat(Math.max(0, graphemeWidth(first!) - 1))}${rest.join("")}`;
+  }
+  if (cut) out = `${fitWidth(out, width - 1)}…`;
+  return out;
+}
+
 /** Cells a cluster takes in a `Grid`: a tab is drawn as one blank cell. */
 export function cellWidth(cluster: string): number {
   return cluster === "\t" ? 1 : graphemeWidth(cluster);

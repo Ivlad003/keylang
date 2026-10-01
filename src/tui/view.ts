@@ -8,7 +8,7 @@ import { explainCode } from "../explain.ts";
 import { formatSummary } from "../explain-node.ts";
 import type { SavedAnswer } from "../explain-offline.ts";
 import { explanationOf } from "../explanations.ts";
-import { ACTIONS, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { ACTIONS, actionKey, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
 import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
@@ -24,7 +24,7 @@ import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
-import { clusters, fitWidth, graphemes, padWidth, stringWidth, type LineLayout } from "./width.ts";
+import { clusters, fitWidth, graphemes, padWidth, sliceCells, stringWidth, type LineLayout } from "./width.ts";
 
 export interface Rect {
   x: number;
@@ -39,24 +39,46 @@ export interface Layout {
   nav: Rect | null;
   detail: Rect;
   status: Rect;
+  /**
+   * Where F6, help, forms and the modal steps draw: the editor area from 100
+   * columns on; below that the whole body, so one active panel takes the
+   * width instead of every panel being squeezed (design §2).
+   */
+  panel: Rect;
 }
+
+/** From this width on side panels sit beside each other; below it one is shown and overlays take the body. */
+export const WIDE_COLS = 100;
+/** Below this width no side panel fits next to the editor. */
+export const PANEL_MIN_COLS = 60;
 
 export const FILES_WIDTH = 24;
 export const NAV_WIDTH = 32;
 export const CONTEXT_WIDTH = 52;
 
-export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"] }): Layout {
+export function layout(state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }): Layout {
   const bodyTop = 1;
   const bodyHeight = Math.max(1, state.rows - 3);
-  const files = state.showFiles && state.cols >= 60 ? { x: 0, y: bodyTop, width: FILES_WIDTH, height: bodyHeight } : null;
+  const wide = state.cols >= WIDE_COLS;
+  let showFiles = state.showFiles && state.cols >= PANEL_MIN_COLS;
+  let showNav = (state.showNav || state.context?.open === true) && state.cols >= PANEL_MIN_COLS;
+  if (!wide && showFiles && showNav) {
+    // One side panel on a narrow screen: the focused one, else the one opened last.
+    const files = state.focus === "files" || (state.focus !== "nav" && state.focus !== "context" && state.lastPanel === "files");
+    showFiles = files;
+    showNav = !files;
+  }
+  const files = showFiles ? { x: 0, y: bodyTop, width: FILES_WIDTH, height: bodyHeight } : null;
   // The context panel (F4) takes the navigation's place, wider: its labels are IDs and paths.
   const width = state.context?.open === true ? Math.min(CONTEXT_WIDTH, Math.floor(state.cols / 2)) : NAV_WIDTH;
-  const nav = (state.showNav || state.context?.open === true) && state.cols >= 70 ? { x: state.cols - width, y: bodyTop, width, height: bodyHeight } : null;
+  const nav = showNav ? { x: state.cols - width, y: bodyTop, width, height: bodyHeight } : null;
   const left = files ? files.width + 1 : 0;
   const right = nav ? nav.width + 1 : 0;
+  const editor = { x: left, y: bodyTop, width: Math.max(10, state.cols - left - right), height: bodyHeight };
   return {
     files,
-    editor: { x: left, y: bodyTop, width: Math.max(10, state.cols - left - right), height: bodyHeight },
+    editor,
+    panel: wide ? editor : { x: 0, y: bodyTop, width: state.cols, height: bodyHeight },
     nav,
     detail: { x: 0, y: state.rows - 2, width: state.cols, height: 1 },
     status: { x: 0, y: state.rows - 1, width: state.cols, height: 1 },
@@ -1459,9 +1481,13 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
           : exportable
             ? " Enter rerun · e export · Esc back "
             : " Enter rerun · Esc back ";
+  // Sideways scrolling is named only where a row is cut.
+  const wide = !analysis && results.scrollReport && reportOverflow(resultsReportRows(state), rect.width - 4) > 0;
+  const shown = wide ? hint.replace(" · Esc back ", " · ←→ scroll · Esc back ") : hint;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   grid.write(rect.x + 1, rect.y, `RESULTS · F6 · ${records.length} run(s)`, THEME.panelTitle, rect.width - 2);
-  grid.write(rect.x + rect.width - hint.length - 1, rect.y, hint, THEME.panelTitle);
+  // On a narrow panel the keys win over the title: they are the way on and back.
+  grid.write(Math.max(rect.x, rect.x + rect.width - stringWidth(shown) - 1), rect.y, shown, THEME.panelTitle, rect.width);
   const { list: listHeight } = resultsSplit(state, rect.height);
   const entryIndex = analysis ? 0 : results.index + 1;
   const first = Math.max(0, Math.min(entryIndex, records.length + 1 - listHeight));
@@ -1486,14 +1512,27 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   grid.write(rect.x, dividerY, "─".repeat(rect.width), { ...THEME.panel, fg: 238 });
   if (analysis) return drawFindings(grid, state, rect, dividerY);
   const rows = resultsReportRows(state);
+  // A long row is cut at the panel's edge with `…`; ←→ (after Tab) scroll the report sideways to read it whole.
+  const left = Math.max(0, Math.min(results.left, reportOverflow(rows, rect.width - 4)));
   for (let i = 0; i < rect.height - listHeight - 2; i++) {
     const row = rows[results.top + i];
-    if (!row) break;
     const y = dividerY + 1 + i;
+    // Below the report's end the panel stays a panel: the editor never shows through it.
+    if (!row) {
+      grid.fill(rect.x, y, rect.width, 1, THEME.panel);
+      continue;
+    }
     grid.fill(rect.x, y, rect.width, 1, row.style);
     grid.write(rect.x + 1, y, results.scrollReport ? "▌" : " ", { ...row.style, fg: 75 });
-    grid.write(rect.x + 3, y, row.text, row.style, rect.width - 4);
+    grid.write(rect.x + 3, y, sliceCells(row.text, left, rect.width - 4), row.style, rect.width - 4);
   }
+}
+
+/** Cells the widest report row exceeds `width` by: how far ←→ can scroll it. */
+export function reportOverflow(rows: readonly { text: string }[], width: number): number {
+  let widest = 0;
+  for (const row of rows) widest = Math.max(widest, stringWidth(row.text));
+  return Math.max(0, widest - width);
 }
 
 /** The full findings report of the current analysis: counts, filters, the selected finding's details, and the list. */
@@ -1573,55 +1612,149 @@ function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer):
   });
 }
 
-const HELP: Record<string, string[]> = {
+/** The keys of each mode as key and meaning; the help lays them out in two columns where they fit. */
+const HELP: Record<string, [string, string][]> = {
   view: [
-    "↑↓ PgUp PgDn g G   move          Enter / Ctrl+click   go to code",
-    "K / mouse hover    hover          Alt+Enter            go to spec",
-    "Tab                next panel     Ctrl+O               back",
-    "F2 / F3            files / nav    v                    reading mode",
-    "F5                 check again    i                    edit",
-    "m                  merge or list  u                    undo last merge",
-    "/  n               search         : / Ctrl+P           actions",
-    "F6                 results        q / Ctrl+C           quit",
-    "?                  keys, explain",
-    "F4                 agent context  e                    explain id",
-    "s                  find a node    t                    explained map",
-    "Ctrl+Space         agent draft of this flow as MERGE",
-    "  in context: @ add id · x drop · Esc close",
+    ["↑↓ PgUp PgDn g G", "move"],
+    ["Enter / Ctrl+click", "go to code"],
+    ["K / mouse hover", "hover"],
+    ["Alt+Enter", "go to spec"],
+    ["Tab", "next panel"],
+    ["Ctrl+O", "back"],
+    ["F2 / F3", "files / nav"],
+    ["v", "reading mode"],
+    ["F5", "check again"],
+    ["i", "edit"],
+    ["m", "merge or list"],
+    ["u", "undo last merge"],
+    ["/  n", "search"],
+    [": / Ctrl+P", "actions"],
+    ["F6", "results"],
+    ["q / Ctrl+C", "quit"],
+    ["?", "keys, explain"],
+    ["e", "explain id"],
+    ["F4", "agent context"],
+    ["t", "explained map"],
+    ["s", "find a node"],
+    ["Ctrl+Space", "agent draft as MERGE"],
+    ["in context", "@ add id · x drop · Esc close"],
   ],
   edit: [
-    "type               edit           Ctrl+S               save",
-    "Ctrl+Space         complete IDs   Tab / Enter          accept completion",
-    "Shift+↑↓           select lines   Ctrl+G               text → spec (merge)",
-    "Ctrl+Z             undo           Esc                  back to view",
-    "Ctrl+P             action palette F6                   results",
+    ["type", "edit"],
+    ["Ctrl+S", "save"],
+    ["Ctrl+Space", "complete IDs"],
+    ["Tab / Enter", "accept completion"],
+    ["Shift+↑↓", "select lines"],
+    ["Ctrl+G", "text → spec (MERGE)"],
+    ["Ctrl+Z", "undo"],
+    ["Esc", "back to view"],
+    ["Ctrl+R", "voice"],
+    ["Tab / Alt+]", "ghost line: take / next"],
+    ["Ctrl+P", "actions, help"],
+    ["F6", "results"],
+    ["? and :", "typed here: Ctrl+P → Keys and help opens this"],
   ],
   merge: [
-    "n / N  ↑↓          next / previous hunk   a   accept hunk   r   reject hunk",
-    "u                  undo last decision     w   write result  Esc cancel (nothing written)",
-    "Ctrl+P             action catalogue (read-only actions work; the rest explain why)",
+    ["n / N  ↑↓", "next / previous hunk"],
+    ["a / r", "accept / reject hunk"],
+    ["u", "undo last decision"],
+    ["w", "write result"],
+    ["Esc", "cancel (nothing written)"],
+    ["Ctrl+P", "catalogue: read-only actions work, the rest say why"],
   ],
-  code: ["↑↓ PgUp PgDn       scroll         Esc / Ctrl+O / q     back", "Ctrl+P             action palette F6                   results"],
-  read: ["↑↓                 move           Enter                go to code      v / Esc   raw Markdown"],
+  code: [
+    ["↑↓ PgUp PgDn", "scroll"],
+    ["Esc / Ctrl+O / q", "back"],
+    ["Ctrl+P", "action palette"],
+    ["F6", "results"],
+  ],
+  read: [
+    ["↑↓", "move"],
+    ["Enter", "go to code"],
+    ["v / Esc", "raw Markdown"],
+  ],
 };
 
-function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null): void {
-  const lines = [...(HELP[state.mode] ?? HELP.view!)];
+/** The key rows of a mode: two pairs a row where both fit in `width`, else one; a long pair takes its own row. */
+function keyRows(pairs: readonly [string, string][], width: number): string[] {
+  const cells = pairs.map(([key, meaning]) => `${padWidth(key, 18)} ${meaning}`);
+  const column = KEY_COLUMN;
+  const rows: string[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const left = cells[i]!;
+    const right = cells[i + 1];
+    if (width >= column * 2 && stringWidth(left) < column && right !== undefined && stringWidth(right) <= column) {
+      rows.push(`${padWidth(left, column)}${right}`);
+      i++;
+    } else rows.push(left);
+  }
+  return rows;
+}
+
+/** Cells of one column of the help's key rows. */
+const KEY_COLUMN = 36;
+
+/**
+ * The rows of the help popup, wrapped to `width`: the keys of the mode, the
+ * offline help of the line's diagnostic, then the whole catalogue by group —
+ * the same registry the palette searches, with each key as the mode has it
+ * and the reason of each unavailable action.
+ */
+export function helpRows(state: State, width: number): string[] {
+  const buffer = state.current ? (state.buffers.get(state.current) ?? null) : null;
+  const lines: string[] = [];
+  // The diagnostic of the cursor line comes first: it is why `?` was pressed there.
   if (buffer && state.analysis) {
     const item = evidenceOf(state.analysis, buffer.path).get(state.cursor.line + 1);
     const code = item?.diagnostics[0]?.code;
     const explained = code ? explainCode(code) : null;
-    if (explained) lines.push("", ...explained.split("\n"));
+    if (explained) lines.push(...explained.split("\n"), "");
   }
-  // The keyed, currently available actions come from the same registry the palette searches.
-  const keyed = catalog(state)
-    .filter((entry) => entry.action.key !== undefined && entry.reason === null)
-    .map((entry) => `${entry.action.key} ${entry.action.label}`);
-  if (keyed.length > 0) lines.push("", ...wrapWords(`actions: ${keyed.join(" · ")}`, Math.min(64, editor.width - 8)));
-  const width = Math.min(editor.width, Math.max(...lines.map((line) => stringWidth(line))) + 4);
-  const height = Math.min(editor.height, lines.length + 2);
-  drawBox(grid, { x: editor.x + Math.max(0, Math.floor((editor.width - width) / 2)), y: editor.y + 1, width, height }, `keys · ${state.mode}`, THEME.popup, THEME.popupTitle);
-  lines.slice(0, height - 2).forEach((line, i) => grid.write(editor.x + Math.max(0, Math.floor((editor.width - width) / 2)) + 2, editor.y + 2 + i, line, THEME.popup, width - 4));
+  lines.push(...keyRows(HELP[state.mode] ?? HELP.view!, width));
+  const entries = catalog(state);
+  lines.push("", `Actions · Ctrl+P${state.mode === "view" || state.mode === "read" ? " or :" : ""} finds each by its name or CLI alias:`);
+  const groups = [...new Set(ACTIONS.map((action) => action.group))];
+  for (const group of groups) {
+    lines.push(`${group}:`);
+    for (const entry of entries) {
+      if (entry.action.group !== group || entry.action.id.startsWith("open:")) continue;
+      const key = actionKey(entry.action, state.mode);
+      lines.push(`  ${entry.action.label}${key !== null ? ` · ${key}` : ""}${entry.reason !== null ? ` — ${entry.reason}` : ""}`);
+    }
+  }
+  const files = entries.filter((entry) => entry.action.id.startsWith("open:")).length;
+  lines.push(`Files:`, `  Open <file> for each of the ${files} file(s) — type its name`);
+  // A wrapped row goes on under its text, indented past the line's own indent.
+  return lines.flatMap((line) => {
+    const indent = " ".repeat((/^ */.exec(line)?.[0].length ?? 0) + 2);
+    const [first, ...rest] = wrapCells(line, width);
+    return [first!, ...rest.flatMap((row) => wrapCells(`${indent}${row}`, width))];
+  });
+}
+
+/** Where the help popup draws, its rows and how many of them show at once. */
+function helpBox(state: State): { rect: Rect; rows: string[]; visible: number } {
+  const panel = layout(state).panel;
+  const width = Math.max(10, Math.min(panel.width, 96));
+  const rows = helpRows(state, width - 4);
+  const height = Math.min(panel.height, rows.length + 2);
+  // A scrolled help keeps its last row for where it is and how to move.
+  const visible = rows.length > height - 2 ? Math.max(1, height - 3) : height - 2;
+  return { rect: { x: panel.x + Math.max(0, Math.floor((panel.width - width) / 2)), y: panel.y, width, height }, rows, visible };
+}
+
+/** The last first row the help can scroll to. */
+export function helpScrollMax(state: State): number {
+  const box = helpBox(state);
+  return Math.max(0, box.rows.length - box.visible);
+}
+
+function drawHelp(grid: Grid, state: State): void {
+  const { rect, rows, visible } = helpBox(state);
+  const top = Math.max(0, Math.min(state.helpTop, rows.length - visible));
+  drawBox(grid, rect, `keys · ${state.mode}`, THEME.popup, THEME.popupTitle);
+  rows.slice(top, top + visible).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, THEME.popup, rect.width - 4));
+  if (visible < rows.length) grid.write(rect.x + 2, rect.y + rect.height - 2, `${top + 1}–${top + visible} of ${rows.length} · ↑↓ PgUp PgDn scroll · any other key closes`, { ...THEME.popup, fg: 243 }, rect.width - 4);
 }
 
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
@@ -1632,9 +1765,16 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "spec-to-code" && prompt.specCode ? prompt.specCode.id || "?" : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.note) {
+  const kinded = (prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code");
+  // A message (a refused Run: which field and why) wins over the note: the prompt covers the message line.
+  const noteText = state.message ?? (kinded ? prompt.note : undefined) ?? "";
+  const noted = noteText !== "";
+  const noteX = rect.x + 2 + stringWidth(label) + stringWidth(typed);
+  // A note cut by the screen's edge (a field's error, an unavailable action's reason) is also shown whole in the form's box.
+  const noteCut = noted && stringWidth(`  ${noteText}`) > rect.width - noteX;
+  if (noted) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
-    grid.write(rect.x + 2 + stringWidth(label) + stringWidth(typed), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
+    grid.write(noteX, rect.y, `  ${noteText}`, { ...THEME.status, fg: state.message !== null ? 179 : 243 });
   }
   if (prompt.kind === "search" || prompt.kind === "context") return;
   // The list scrolls to keep the selected entry in view.
@@ -1643,11 +1783,12 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const items = prompt.items.slice(first, first + shown);
   if (items.length === 0) return;
   // Rows that describe the form (init: the root, the layout, the files) stand above its choices and are never selected.
-  const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
+  const noteRows = noteCut ? wrapCells(noteText, Math.max(8, editor.width - 4)) : [];
+  const details = [...noteRows, ...(prompt.details ?? [])].slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
   drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
-  details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
+  details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: i < noteRows.length ? 179 : 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
 
@@ -1656,13 +1797,29 @@ function newSpecLabel(field: "kind" | "path" | "name" | undefined): string {
   return field === "path" ? "new spec path: " : field === "name" ? "flow name: " : "new spec kind: ";
 }
 
-const HINTS: Record<string, string> = {
-  view: "Enter code · Alt+Enter spec · / search · s node · F5 check · F6 results · i edit · ? keys",
-  edit: "Ctrl+S save · Ctrl+Space complete · Ctrl+G text→spec · Esc view · ? keys",
-  read: "Enter code · v raw · F5 check · ? keys",
-  code: "Esc back · ↑↓ scroll · ? keys",
-  merge: "a accept · r reject · u undo · n next · w write · Esc cancel",
+/**
+ * The footer keys of each mode: `keys` as many as fit, then `tail`, which
+ * always shows — the way to the help and the palette on any width. In editing
+ * `?` is typed text, so the tail names Ctrl+P there.
+ */
+const HINTS: Record<string, { keys: string[]; tail: string }> = {
+  view: { keys: ["Enter code", "Alt+Enter spec", "/ search", "s node", "F5 check", "F6 results", "i edit"], tail: "? keys · Ctrl+P actions" },
+  edit: { keys: ["Ctrl+S save", "Ctrl+Space complete", "Ctrl+G text→spec", "Esc view"], tail: "Ctrl+P actions, help" },
+  read: { keys: ["Enter code", "v raw", "F5 check"], tail: "? keys · Ctrl+P actions" },
+  code: { keys: ["Esc back", "↑↓ scroll"], tail: "? keys · Ctrl+P actions" },
+  merge: { keys: ["a accept", "r reject", "u undo", "n next", "w write"], tail: "Esc cancel · ? keys" },
 };
+
+/** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */
+export function footerHint(mode: State["mode"], width: number): string {
+  const { keys, tail } = HINTS[mode] ?? HINTS.view!;
+  const shown: string[] = [];
+  for (const key of keys) {
+    if (stringWidth([...shown, key, tail].join(" · ")) > width) break;
+    shown.push(key);
+  }
+  return [...shown, tail].join(" · ");
+}
 
 /**
  * Where the analysis takes its settings from, when that is not a plain saved
@@ -1788,13 +1945,19 @@ export function render(state: State): Grid {
   if (detail) grid.write(1, area.detail.y, detail.text, detail.style, state.cols - 2);
   // Status bar
   grid.fill(0, area.status.y, state.cols, 1, THEME.status);
+  // The footer's tail (help, palette) is kept on any width: the state texts stop before it.
+  const tail = footerHint(state.mode, 0);
+  const end = Math.max(1, state.cols - stringWidth(tail) - 2);
   let x = 1;
+  const put = (text: string, style: Style): void => {
+    x += grid.write(x, area.status.y, text, style, end - x);
+  };
   if (state.analysis) {
     const count = totals(state.analysis);
     const stale = state.updating || state.outdated;
-    x += grid.write(x, area.status.y, `✗ ${count.fail}`, { ...THEME.status, ...MARK_STYLE.fail, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
-    x += grid.write(x, area.status.y, `  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
-    x += grid.write(x, area.status.y, `  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
+    put(`✗ ${count.fail}`, { ...THEME.status, ...MARK_STYLE.fail, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
+    put(`  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
+    put(`  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
   }
   const invalid = state.config.kind === "invalid-config" ? state.config.reason : null;
   const phase = state.updating
@@ -1812,21 +1975,20 @@ export function render(state: State): Grid {
               : "  analyzing…";
   // Where the settings come from goes first: a long failure reason must not cut it off.
   const note = configNote(state);
-  if (note !== null) x += grid.write(x, area.status.y, `  ${note}`, { ...THEME.status, fg: 179 });
-  x += grid.write(x, area.status.y, phase, { ...THEME.status, fg: (state.error || invalid !== null) && !state.updating ? 160 : 179 });
+  if (note !== null) put(`  ${note}`, { ...THEME.status, fg: 179 });
+  put(phase, { ...THEME.status, fg: (state.error || invalid !== null) && !state.updating ? 160 : 179 });
   // A snapshot is its own property: a valid config may find no sources.
-  if (state.analysis && !state.analysis.snapshot) x += grid.write(x, area.status.y, "  no supported source files", { ...THEME.status, fg: 179 });
-  if (state.proposals.length > 0 && state.mode !== "merge") x += grid.write(x, area.status.y, `  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
-  const hints = HINTS[state.mode] ?? HINTS.view!;
-  const hintWidth = stringWidth(hints);
-  if (x + hintWidth + 3 < state.cols) grid.write(state.cols - hintWidth - 1, area.status.y, hints, THEME.status);
+  if (state.analysis && !state.analysis.snapshot) put("  no supported source files", { ...THEME.status, fg: 179 });
+  if (state.proposals.length > 0 && state.mode !== "merge") put(`  ≈ ${state.proposals.length} proposal(s): m`, { ...THEME.status, fg: 141 });
+  const hints = footerHint(state.mode, state.cols - x - 3);
+  grid.write(Math.max(x + 2, state.cols - stringWidth(hints) - 1), area.status.y, hints, THEME.status);
   // Popups
-  if (state.results.open && !state.results.viewing) drawResults(grid, state, area.editor);
+  if (state.results.open && !state.results.viewing) drawResults(grid, state, area.panel);
   if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read")) drawHover(grid, state, area.editor);
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
-  if (state.help) drawHelp(grid, state, area.editor, buffer);
-  if (state.prompt) drawPrompt(grid, state, area.detail, area.editor);
-  if (state.barrier) drawBarrier(grid, state, area.editor);
-  if (state.quit) drawQuit(grid, state, area.editor);
+  if (state.help) drawHelp(grid, state);
+  if (state.prompt) drawPrompt(grid, state, area.detail, area.panel);
+  if (state.barrier) drawBarrier(grid, state, area.panel);
+  if (state.quit) drawQuit(grid, state, area.panel);
   return grid;
 }

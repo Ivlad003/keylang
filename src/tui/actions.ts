@@ -5,6 +5,7 @@
 // key events. A new action joins this registry with the feature that
 // implements it — an unimplemented generator is not listed as a fake success.
 
+import { isDirty } from "./buffer.ts";
 import type { OperationRecord, State } from "./state.ts";
 
 /** What availability predicates may look at. Derived from `State` only. */
@@ -17,7 +18,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, explain-plan, explain-batch, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, explain-plan, explain-batch, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code, apply-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -27,6 +28,12 @@ export interface ActionContext {
   noSnapshot: string | null;
   /** Why no finished report can be exported now (`exportRecord`), or null. */
   noExport: string | null;
+  /** Why no spec-to-code candidate can be applied now (`applyRecord`), or null. */
+  noApply: string | null;
+  /** The current buffer has unsaved edits. */
+  dirty: boolean;
+  /** The `agent` of the saved `keylang.json`, or null when none is set (credentials are checked by the operation). */
+  agent: string | null;
 }
 
 export interface Action {
@@ -37,12 +44,16 @@ export interface Action {
   key?: string;
   /** Why the action cannot run now, or null when it can. */
   when?: (ctx: ActionContext) => string | null;
+  /** A note that does not block it: what part needs setup and the way there (no model → config, doctor). */
+  note?: (ctx: ActionContext) => string | null;
 }
 
 export interface ActionEntry {
   action: Action;
   /** The availability reason, or null when the action can run. */
   reason: string | null;
+  /** The non-blocking note, or null. */
+  note: string | null;
 }
 
 /** The shared reason for actions that would drop an open MERGE. */
@@ -55,6 +66,17 @@ const mergeOnly = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REAS
 const editor = (ctx: ActionContext): string | null => (ctx.merge ? MERGE_REASON : ctx.start ? START_REASON : null);
 const bufferOrMerge = (ctx: ActionContext): string | null => editor(ctx) ?? (ctx.current === null ? "no file open" : null);
 const snapshot = (ctx: ActionContext): string | null => editor(ctx) ?? ctx.noSnapshot;
+const running = (ctx: ActionContext): string | null => (ctx.operation ? "an operation is already running" : null);
+// Keys of the view that act on the id or line under the cursor: in editing Enter and letters type text.
+const viewOnly = (ctx: ActionContext): string | null =>
+  bufferOrMerge(ctx) ?? (ctx.mode === "edit" ? "Esc to the view first: in editing these keys type text" : ctx.mode === "code" ? "back to the spec first (Esc)" : null);
+const writable = (ctx: ActionContext): string | null => bufferOrMerge(ctx) ?? (ctx.readOnly ? "generated map files are read-only" : null);
+
+/** The way to a model when none is set: the config and the diagnostics are actions of this catalogue too. */
+/** Model modes without an agent: the algorithmic one works offline. */
+const ALGO_ONLY_NOTE = "algo works offline; the model modes need an agent → Open keylang.json · Environment diagnostics";
+const EXPLAIN_NO_AGENT_NOTE = "no agent: Enter shows the summary and the saved answer → Open keylang.json · Environment diagnostics";
+export const NO_AGENT_REASON = "no agent in keylang.json → Open keylang.json (set agent) · Environment diagnostics (credentials)";
 
 /** The static actions, in palette order; per-file "open" entries come from `catalog()`. */
 export const ACTIONS: readonly Action[] = [
@@ -115,6 +137,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain --llm", "keylang explain --llm", "explain llm", "ask the model", "model explanation", "explain short", "explain full", "explain brief", "explain --full", "explain --brief"],
     // A form takes an id and a detail; a fresh saved answer is read without a request, a new one is saved to <dir>/explain/ after the commit check.
+    note: (ctx) => (ctx.agent === null ? EXPLAIN_NO_AGENT_NOTE : null),
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -131,6 +154,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain --missing --llm", "explain --stale --llm", "keylang explain --missing --llm", "batch explain", "brief batch", "explain briefs", "explained map briefs"],
     // The inventory form on its batch row (list, limit, jobs): it plans again in a worker, asks jobs at a time within a wave and saves each brief after the commit check.
+    note: (ctx) => (ctx.agent === null ? NO_AGENT_REASON : null),
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -220,6 +244,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Generate",
     aliases: ["draft flow", "keylang draft flow", "draft --mode algo", "draft --mode hybrid", "draft --mode llm", "flow draft", "propose flow", "algo"],
     // A form names the trigger (a fn), the name, the target, the mode and preview or proposal; the target itself is never written, MERGE applies the proposal.
+    note: (ctx) => (ctx.agent === null ? ALGO_ONLY_NOTE : null),
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -228,6 +253,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Generate",
     aliases: ["draft rules", "keylang draft rules", "draft rules --mode hybrid", "draft rules --mode llm", "rules draft", "propose rules"],
     // A form names the target, the mode and preview or proposal; each model rule is checked alone against the snapshot; the target itself is never written, MERGE applies the proposal.
+    note: (ctx) => (ctx.agent === null ? ALGO_ONLY_NOTE : null),
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -236,6 +262,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Generate",
     aliases: ["code-to-spec", "keylang code-to-spec", "code to spec", "code-to-spec --mode algo", "code-to-spec --mode hybrid", "code-to-spec --mode llm", "code-to-spec --since", "flows from changes", "changed fns to flows", "flows from code", "propose flows", "file to flows"],
     // A form names the source (a file with an optional line, or a git ref), the target, the mode and preview or proposal; the target itself is never written, MERGE applies the proposal.
+    note: (ctx) => (ctx.agent === null ? ALGO_ONLY_NOTE : null),
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -244,6 +271,7 @@ export const ACTIONS: readonly Action[] = [
     group: "Generate",
     aliases: ["spec-to-code", "keylang spec-to-code", "spec to code", "spec-to-code --mode algo", "spec-to-code --mode llm", "scaffold", "planned to code", "code from plan", "stub planned fn", "propose code"],
     // A form names the planned fn, the code file, the mode and preview or proposal; the code and each test are separate proposals, MERGE applies each; no file itself is written.
+    note: (ctx) => (ctx.agent === null ? ALGO_ONLY_NOTE : null),
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
@@ -253,7 +281,17 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["draft map", "keylang draft map", "draft map --mode hybrid", "draft map --mode llm", "draft layers", "layer layout", "propose layers"],
     // A form names the mode; F6 shows the layers and moves them into keylang.json's buffer on Enter — never a file, never a proposal.
     // Also on the start screen: without keylang.json the move opens a new, unsaved one.
+    note: (ctx) => (ctx.agent === null ? ALGO_ONLY_NOTE : null),
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "apply-code",
+    label: "Spec to code: apply the whole candidate to its files",
+    group: "Generate",
+    key: "a in F6",
+    aliases: ["spec-to-code --apply", "keylang spec-to-code --apply", "apply code", "apply candidate", "write code"],
+    // The selected finished spec-to-code record in F6, else the newest one; the same checks as `a` there.
+    when: (ctx) => mergeOnly(ctx) ?? running(ctx) ?? ctx.noApply,
   },
   {
     id: "cancel",
@@ -265,8 +303,41 @@ export const ACTIONS: readonly Action[] = [
   },
   { id: "find-node", label: "Find a node", group: "Navigate", aliases: ["find node", "node"], key: "s", when: snapshot },
   { id: "toggle-map", label: "Map / explained map", group: "Navigate", aliases: ["toggle map", "explained map"], key: "t", when: snapshot },
+  { id: "search", label: "Search in the file", group: "Navigate", aliases: ["search", "find text", "find in file"], key: "/", when: viewOnly },
+  { id: "go-to-code", label: "Go to the code of the id under the cursor", group: "Navigate", aliases: ["go to code", "code", "definition", "jump"], key: "Enter", when: viewOnly },
+  { id: "go-to-spec", label: "Go to the spec declaring the id under the cursor", group: "Navigate", aliases: ["go to spec", "declaration", "references"], key: "Alt+Enter", when: viewOnly },
+  { id: "back", label: "Back to the previous place", group: "Navigate", aliases: ["back", "previous place", "jump back"], key: "Ctrl+O", when: mergeOnly },
+  { id: "hover", label: "Hover: what is known about the id under the cursor", group: "Navigate", aliases: ["hover", "signature", "info"], key: "K", when: viewOnly },
+  { id: "explain-cursor", label: "Explain the id or diagnostic under the cursor (popup, offline)", group: "Navigate", aliases: ["explain here", "explain cursor", "popup"], key: "e", when: (ctx) => bufferOrMerge(ctx) ?? (ctx.mode === "code" ? "back to the spec first (Esc)" : null) },
+  {
+    id: "open-config",
+    label: "Open keylang.json",
+    group: "Project",
+    aliases: ["config", "configuration", "settings", "keylang.json", "agent", "set agent", "voice engine"],
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.missingConfig ? "no keylang.json yet → Init (or Draft layers moves a layout into a new one)" : null),
+  },
   // A new buffer, not a file: nothing is written until Ctrl+S (design §2.8).
   { id: "new-spec", label: "New specification", group: "Edit", aliases: ["new spec", "new file", "create"], when: mergeOnly },
+  { id: "save", label: "Save the file", group: "Edit", aliases: ["save", "write file"], key: "Ctrl+S", when: (ctx) => writable(ctx) ?? (ctx.dirty ? null : "no unsaved changes") },
+  { id: "text-to-spec", label: "Text to spec: free text under the cursor into items (MERGE)", group: "Edit", aliases: ["text to spec", "text-to-spec", "prose to items", "ctrl+g"], key: "Ctrl+G", when: writable },
+  {
+    id: "agent-draft",
+    label: "Agent draft of the flow under the cursor (MERGE)",
+    group: "Generate",
+    aliases: ["agent draft", "ctrl+space", "model draft", "draft this flow"],
+    key: "Ctrl+Space",
+    // The same draft-flow operation as Ctrl+Space in the view; never a silent algo draft.
+    when: (ctx) => editor(ctx) ?? (ctx.current === null ? "no file open" : null) ?? running(ctx) ?? (ctx.agent === null ? NO_AGENT_REASON : null),
+  },
+  {
+    id: "voice",
+    label: "Voice: dictate into the editor",
+    group: "Edit",
+    aliases: ["voice", "dictate", "microphone", "speech"],
+    key: "Ctrl+R",
+    // The engine and the microphone are checked when it starts; doctor names what is missing.
+    when: (ctx) => writable(ctx) ?? (ctx.mode === "edit" ? null : "voice goes where the cursor is: i to edit, then Ctrl+R"),
+  },
   { id: "reading", label: "Reading mode", group: "Edit", aliases: ["read", "reading"], key: "v", when: bufferOrMerge },
   {
     id: "edit",
@@ -277,6 +348,7 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => bufferOrMerge(ctx) ?? (ctx.readOnly ? "generated map files are read-only" : null),
   },
   { id: "merge", label: "Merge proposal", group: "Proposals", aliases: ["merge", "proposal"], key: "m", when: (ctx) => (ctx.merge ? "already merging" : ctx.start ? START_REASON : null) },
+  { id: "undo-merge", label: "Undo the last merge", group: "Proposals", aliases: ["undo merge", "revert merge", "undo"], key: "u", when: editor },
   // Every pending target, spec or code, whatever file is open and whatever proposal is still undecided (design §2.9).
   { id: "proposals", label: "Proposals", group: "Proposals", aliases: ["proposals", "pending", "targets", "pick proposal"], when: (ctx) => (ctx.merge ? MERGE_REASON : ctx.start ? START_REASON : null) },
   { id: "help", label: "Keys and help", group: "Help", aliases: ["help", "keys"], key: "?" },
@@ -295,13 +367,14 @@ export function openAction(path: string): Action {
 /** The full catalogue for the current session: static actions plus one "open" entry per file. */
 export function catalog(state: State): ActionEntry[] {
   const ctx = availabilityOf(state);
-  return [...ACTIONS, ...state.files.map((path) => openAction(path))].map((action) => ({ action, reason: action.when?.(ctx) ?? null }));
+  return [...ACTIONS, ...state.files.map((path) => openAction(path))].map((action) => ({ action, reason: action.when?.(ctx) ?? null, note: action.note?.(ctx) ?? null }));
 }
 
 /** The availability context of the current session state. */
 export function availabilityOf(state: State): ActionContext {
   const buffer = state.current !== null ? state.buffers.get(state.current) : undefined;
   const exported = exportRecord(state);
+  const applied = applyRecord(state);
   return {
     mode: state.mode,
     focus: state.focus,
@@ -313,6 +386,9 @@ export function availabilityOf(state: State): ActionContext {
     missingConfig: state.config.kind === "missing-config",
     noSnapshot: noSnapshotReason(state),
     noExport: "reason" in exported ? exported.reason : null,
+    noApply: "reason" in applied ? applied.reason : null,
+    dirty: buffer !== undefined && !buffer.readOnly && isDirty(buffer),
+    agent: state.analysis?.config.agent ?? null,
   };
 }
 
@@ -333,6 +409,21 @@ export function exportRecord(state: Pick<State, "records" | "results">): { recor
   return { record };
 }
 
+/**
+ * The spec-to-code run whose candidate Apply writes: the record selected in F6
+ * while the panel is open, else the newest spec-to-code record. The file
+ * checks (unsaved edits, an open MERGE, a waiting proposal) come when it runs.
+ */
+export function applyRecord(state: Pick<State, "records" | "results">): { record: OperationRecord } | { reason: string } {
+  const { results, records } = state;
+  const record = results.open ? (results.entry === "record" ? records[results.index] : undefined) : records.findLast((candidate) => candidate.kind === "spec-to-code");
+  if (!record || record.kind !== "spec-to-code") return { reason: results.open ? "select a finished spec-to-code run in F6" : "no spec-to-code run yet → Spec to code" };
+  if (record.status === "running") return { reason: "the spec-to-code run is still running" };
+  if (record.status !== "completed" || record.result?.kind !== "spec-to-code" || record.result.payload === null) return { reason: "this spec-to-code run has no candidate" };
+  if (record.outdated !== null) return { reason: `the candidate is outdated (${record.outdated}): Enter in F6 builds it again` };
+  return { record };
+}
+
 /** Why the session has no code snapshot, or null when it has one. Also the status line's note. */
 export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "error" | "updating">): string | null {
   if (state.analysis?.snapshot) return null;
@@ -343,9 +434,22 @@ export function noSnapshotReason(state: Pick<State, "analysis" | "config" | "err
   return state.config.kind === "missing-config" ? "no analysis yet: browse the repository first" : "the analysis is still running";
 }
 
-/** The palette item text of an action: its label, with the key hint when it has one. */
-export function actionLabel(action: Action): string {
-  return action.key !== undefined ? `${action.label} (${action.key})` : action.label;
+/**
+ * The key of an action as the mode has it, or null. A plain key (a letter,
+ * `?`, `/`, Enter) is a key of the view: in editing it types text, and MERGE
+ * and the code viewer give letters their own meaning, so there it is not
+ * advertised — Ctrl+P runs the action instead.
+ */
+export function actionKey(action: Action, mode: State["mode"]): string | null {
+  if (action.key === undefined) return null;
+  const plain = [...action.key].length === 1 || action.key === "Enter" || action.key === "Alt+Enter";
+  return plain && mode !== "view" && mode !== "read" ? null : action.key;
+}
+
+/** The palette item text of an action: its label, with the key hint when the mode has one. */
+export function actionLabel(action: Action, mode: State["mode"] = "view"): string {
+  const key = actionKey(action, mode);
+  return key !== null ? `${action.label} (${key})` : action.label;
 }
 
 /** The catalogue entries matching `query`: every query word is a subsequence of some token of the label, key or aliases. */
@@ -360,10 +464,12 @@ export function matchActions(entries: readonly ActionEntry[], query: string): Ac
   });
   // One word that is exactly a file's name opens that file first (`rules` → rules.md, before "Draft rules").
   const named = (entry: ActionEntry): boolean => words.length === 1 && entry.action.id.startsWith("open:") && fileName(entry.action.id) === words[0];
-  // Then an action whose label or alias holds the query as typed: `spec to code` before "Code to spec", whose words it also has.
   const phrase = words.join(" ");
-  const literal = (entry: ActionEntry): boolean => !named(entry) && [entry.action.label, ...entry.action.aliases].some((text) => text.toLowerCase().includes(phrase));
-  return [...matched.filter(named), ...matched.filter(literal), ...matched.filter((entry) => !named(entry) && !literal(entry))];
+  // Then an action with the query as one of its aliases: `config` opens keylang.json before "Browse with the guessed configuration".
+  const exact = (entry: ActionEntry): boolean => !named(entry) && entry.action.aliases.some((alias) => alias.toLowerCase() === phrase);
+  // Then an action whose label or alias holds the query as typed: `spec to code` before "Code to spec", whose words it also has.
+  const literal = (entry: ActionEntry): boolean => !named(entry) && !exact(entry) && [entry.action.label, ...entry.action.aliases].some((text) => text.toLowerCase().includes(phrase));
+  return [...matched.filter(named), ...matched.filter(exact), ...matched.filter(literal), ...matched.filter((entry) => !named(entry) && !exact(entry) && !literal(entry))];
 }
 
 /** `rules` for `open:keylang/rules.md`: the base name without its extension, lower case. */

@@ -51,7 +51,7 @@ import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
-import { actionLabel, catalog, exportRecord, matchActions, MERGE_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, applyRecord, catalog, exportRecord, matchActions, MERGE_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
@@ -64,7 +64,7 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
+import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -182,6 +182,7 @@ export class App {
       focus: "editor",
       showFiles: false,
       showNav: true,
+      lastPanel: "nav",
       navIndex: 0,
       navTop: 0,
       navExpanded: new Set(),
@@ -198,6 +199,7 @@ export class App {
       selection: null,
       prompt: null,
       help: false,
+      helpTop: 0,
       back: [],
       message: null,
       proposals: [],
@@ -209,7 +211,7 @@ export class App {
       activeOperation: null,
       barrier: null,
       quit: null,
-      results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
+      results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, left: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
     };
     // The helpers reach the session through closures: its private methods stay private.
@@ -1073,10 +1075,8 @@ export class App {
     if (event.name !== "q" && !(event.ctrl && event.name === "c")) this.state.quitArmed = false;
     if (event.ctrl && event.name === "c") return this.quit();
     if (this.state.quit) return this.quitKey(event);
-    if (this.state.help) {
-      this.state.help = false;
-      return;
-    }
+    // The help scrolls with the arrows and a page; any other key closes it.
+    if (this.state.help) return this.helpKey(event);
     if (this.state.barrier) return this.barrierKey(event);
     if (this.state.prompt) return this.promptKey(event);
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
@@ -1117,6 +1117,17 @@ export class App {
         if (this.state.focus === "files") return this.filesKey(event);
         return this.viewKey(event);
     }
+  }
+
+  private helpKey(event: KeyEvent): void {
+    const page = Math.max(1, layout(this.state).panel.height - 4);
+    const step = event.name === "up" || event.name === "k" ? -1 : event.name === "down" || event.name === "j" ? 1 : event.name === "pageup" ? -page : event.name === "pagedown" ? page : 0;
+    if (step === 0) {
+      this.state.help = false;
+      this.state.helpTop = 0;
+      return;
+    }
+    this.state.helpTop = Math.max(0, Math.min(this.state.helpTop + step, helpScrollMax(this.state)));
   }
 
   /**
@@ -1261,6 +1272,19 @@ export class App {
     if (this.state.focus === "nav") this.fixNavIndex(1);
   }
 
+  /** `K`: the hover of the id nearest the cursor, as the mouse would show it. */
+  private hoverAtCursor(): void {
+    const at = this.targetNear(this.state.cursor);
+    const buffer = this.buffer();
+    if (!at || !buffer) {
+      this.state.message = "no id on this line";
+      return;
+    }
+    const anchor = this.cursorAnchor(at.col);
+    this.state.hover = this.hoverAt(at, anchor.x, anchor.y, "key");
+    if (!this.state.hover) this.state.message = this.state.analysis ? "nothing known about this id" : "analysis is still running";
+  }
+
   private viewKey(event: KeyEvent): void {
     if (!event.ctrl && !event.alt && this.common(event)) return;
     if (event.name === "enter" && event.alt) return this.goToSpec(this.idAtCursor());
@@ -1289,18 +1313,8 @@ export class App {
       case "G":
         this.state.cursor = { line: this.lines().length - 1, col: 0 };
         return this.keepVisible();
-      case "K": {
-        const at = this.targetNear(this.state.cursor);
-        const buffer = this.buffer();
-        if (!at || !buffer) {
-          this.state.message = "no id on this line";
-          return;
-        }
-        const anchor = this.cursorAnchor(at.col);
-        this.state.hover = this.hoverAt(at, anchor.x, anchor.y, "key");
-        if (!this.state.hover) this.state.message = this.state.analysis ? "nothing known about this id" : "analysis is still running";
-        return;
-      }
+      case "K":
+        return this.hoverAtCursor();
       case "escape":
         this.state.hover = null;
         this.state.selection = null;
@@ -1551,6 +1565,8 @@ export class App {
 
   private toggleFiles(focusable: boolean): void {
     this.state.showFiles = !this.state.showFiles;
+    if (this.state.showFiles) this.state.lastPanel = "files";
+    this.narrowNote();
     if (this.state.showFiles && focusable) this.state.focus = "files";
     else if (!this.state.showFiles && this.state.focus === "files") this.state.focus = "editor";
     this.keepVisible();
@@ -1558,6 +1574,8 @@ export class App {
 
   private toggleNav(focusable: boolean): void {
     this.state.showNav = !this.state.showNav;
+    if (this.state.showNav) this.state.lastPanel = "nav";
+    this.narrowNote();
     if (!this.state.showNav && this.state.focus === "nav") this.state.focus = "editor";
     this.keepVisible();
   }
@@ -1565,9 +1583,16 @@ export class App {
   private toggleContext(focus = true): void {
     const context = this.state.context;
     context.open = !context.open;
+    if (context.open) this.state.lastPanel = "nav";
+    this.narrowNote();
     if (context.open && focus) this.state.focus = "context";
     else if (!context.open && this.state.focus === "context") this.state.focus = "editor";
     this.keepVisible();
+  }
+
+  /** A side panel needs 60 columns: below that a toggle says so instead of seeming to do nothing. */
+  private narrowNote(): void {
+    if (this.state.cols < PANEL_MIN_COLS) this.state.message = `side panels need ${PANEL_MIN_COLS} columns (now ${this.state.cols}): widen the terminal; Ctrl+P still reaches every action`;
   }
 
   /** The pack for the current buffer and cursor line; null before the first analysis. */
@@ -3795,8 +3820,7 @@ export class App {
    * unsaved edits or open in MERGE, a proposal waiting for one — merging it
    * is the way then; applying never clears it.
    */
-  private applyCandidate(): void {
-    const record = this.state.records[this.state.results.index];
+  private applyCandidate(record: OperationRecord | undefined): void {
     const result = record?.result;
     if (record?.status === "running") {
       this.state.message = "this operation is still running";
@@ -4308,6 +4332,7 @@ export class App {
     results.scrollReport = false;
     results.viewing = false;
     results.top = 0;
+    results.left = 0;
     // The pinned "Current analysis" is the first entry; with records, the newest one stays selected as before.
     results.entry = this.state.records.length > 0 ? "record" : "analysis";
     results.index = Math.max(0, this.state.records.length - 1);
@@ -4359,14 +4384,23 @@ export class App {
     if (this.state.results.entry === "analysis") return this.findingsKey(event);
     const results = this.state.results;
     const records = this.state.records;
-    const page = Math.max(1, layout(this.state).editor.height - 4);
+    const page = Math.max(1, layout(this.state).panel.height - 4);
     const select = (next: number): void => {
       results.index = Math.max(0, Math.min(Math.max(0, records.length - 1), next));
       // Each record shows its report from the top; a selection change never keeps a scroll offset of another report.
       results.top = 0;
+      results.left = 0;
       results.gap = 0;
     };
     switch (event.name) {
+      case "left":
+      case "right": {
+        // Sideways over the report (after Tab): a long row of an edge, a JSON line or a path is read whole.
+        if (!results.scrollReport) return;
+        const max = reportOverflow(resultsReportRows(this.state), layout(this.state).panel.width - 4);
+        results.left = Math.max(0, Math.min(max, results.left + (event.name === "left" ? -SIDE_STEP : SIDE_STEP)));
+        return;
+      }
       case "up":
       case "k":
         if (results.scrollReport) return this.scrollReport(-1);
@@ -4407,7 +4441,7 @@ export class App {
       case "e":
         return this.openExportPrompt();
       case "a":
-        return this.applyCandidate();
+        return this.applyCandidate(this.state.records[this.state.results.index]);
       case "g":
         // Over a planned gap of a feature report: the spec-to-code form for the same ID.
         if (results.scrollReport) return this.specCodeForGap();
@@ -4425,7 +4459,7 @@ export class App {
   /** The keys of the pinned "Current analysis" entry: the findings list with verdict filters. */
   private findingsKey(event: KeyEvent): void {
     const results = this.state.results;
-    const page = Math.max(1, findingsListRows(this.state, layout(this.state).editor));
+    const page = Math.max(1, findingsListRows(this.state, layout(this.state).panel));
     switch (event.name) {
       case "up":
       case "k":
@@ -4486,7 +4520,7 @@ export class App {
     const results = this.state.results;
     const visible = visibleFindings(findingsOf(this.state.analysis), results.filter);
     results.finding = Math.max(0, Math.min(results.finding, Math.max(0, visible.length - 1)));
-    const rows = findingsListRows(this.state, layout(this.state).editor);
+    const rows = findingsListRows(this.state, layout(this.state).panel);
     if (results.finding < results.top) results.top = results.finding;
     if (results.finding >= results.top + rows) results.top = results.finding - rows + 1;
   }
@@ -4567,12 +4601,14 @@ export class App {
       // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
       results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
       const row = rows.findIndex((item) => item.gap === results.gap);
-      const height = Math.max(1, resultsSplit(this.state, layout(this.state).editor.height).report);
+      const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
       if (row < results.top) results.top = row;
       if (row >= results.top + height) results.top = row - height + 1;
       return this.showGapReason();
     }
-    results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - 1)));
+    // The last page ends at the report's last row: a page down never leaves a lone row on an empty panel.
+    const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
+    results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - height)));
   }
 
   /**
@@ -4902,9 +4938,9 @@ export class App {
     const prompt = this.state.prompt;
     if (prompt?.kind !== "palette") return;
     const entries = matchActions(catalog(this.state), prompt.text);
-    prompt.items = entries.map((entry) => actionLabel(entry.action));
+    prompt.items = entries.map((entry) => actionLabel(entry.action, this.state.mode));
     prompt.ids = entries.map((entry) => entry.action.id);
-    prompt.notes = entries.map((entry) => entry.reason ?? entry.action.group);
+    prompt.notes = entries.map((entry) => entry.reason ?? (entry.note === null ? entry.action.group : `${entry.action.group} · ${entry.note}`));
     prompt.index = 0;
     prompt.note = prompt.notes[0] ?? "";
   }
@@ -4989,6 +5025,38 @@ export class App {
         return this.findNodes();
       case "toggle-map":
         return this.toggleMap();
+      case "search":
+        this.state.prompt = { kind: "search", text: this.state.search ?? "", items: [], index: 0 };
+        return;
+      case "go-to-code":
+        return this.goToCode();
+      case "go-to-spec":
+        return this.goToSpec(this.idAtCursor());
+      case "back":
+        return this.goBack();
+      case "hover":
+        return this.hoverAtCursor();
+      case "explain-cursor":
+        return this.explainAtCursor();
+      case "open-config":
+        return this.open(CONFIG_FILE, { line: 0, col: 0 });
+      case "save":
+        return this.save();
+      case "text-to-spec":
+        return this.textToSpec();
+      case "agent-draft":
+        return this.draftAtCursor();
+      case "voice":
+        return this.assist.voice();
+      case "undo-merge":
+        if (this.writingNow()) return;
+        return this.merges.undo();
+      case "apply-code": {
+        const found = applyRecord(this.state);
+        if ("record" in found) return this.applyCandidate(found.record);
+        this.state.message = `${entry.action.label}: ${found.reason}`;
+        return;
+      }
       case "reading": {
         if (!this.buffer()) return;
         this.state.mode = "read";
@@ -5211,6 +5279,9 @@ function proposalSummary(entry: ProposalEntry): string {
   if (entry.problem !== null) parts.push("cannot merge");
   return parts.join(" · ");
 }
+
+/** Cells one ←/→ scrolls a report sideways. */
+const SIDE_STEP = 16;
 
 /** The record action of a `Ctrl+Space` draft: the draft-flow operation asked for by the agent key, not the form. */
 const AGENT_DRAFT = "agent-draft";

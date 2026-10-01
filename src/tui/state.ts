@@ -356,6 +356,8 @@ export interface State {
   focus: Focus;
   showFiles: boolean;
   showNav: boolean;
+  /** The side panel opened last; below 100 columns only one is shown: the focused one, else this. */
+  lastPanel: "files" | "nav";
   navIndex: number;
   navTop: number;
   navExpanded: Set<string>;
@@ -386,6 +388,8 @@ export interface State {
   selection: number | null;
   prompt: Prompt | null;
   help: boolean;
+  /** The first shown row of the help popup: it scrolls with ↑↓ and PgUp/PgDn on a small terminal. */
+  helpTop: number;
   back: Place[];
   message: string | null;
   proposals: string[];
@@ -419,6 +423,8 @@ export interface State {
     gap: number;
     filter: VerdictFilter;
     top: number;
+    /** Cells the report rows of a record are scrolled to the left by (←→ after Tab): a long row is read whole this way. */
+    left: number;
     scrollReport: boolean;
     viewing: boolean;
     origin: { path: string | null; cursor: Cursor; top: number; mode: Mode; code: CodeView | null } | null;
