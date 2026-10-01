@@ -5,15 +5,15 @@ import { join, relative, resolve } from "node:path";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
-import { moveHint, oldExplanations, planBriefs, runBriefs, type BriefBatch } from "./explain-llm.ts";
+import type { BriefBatch } from "./explain-llm.ts";
 import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "./explain-inventory.ts";
-import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
+import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { lineDiff } from "./proposals.ts";
 import { serveLsp } from "./lsp.ts";
@@ -350,27 +350,17 @@ async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise
   const jobs = opts.jobs === undefined ? DEFAULT_BRIEF_JOBS : positiveInteger("--jobs", opts.jobs);
   // The list and the dry run: a printer over the shared read-only plan.
   if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), jobs, estimate: opts.dryRun });
-  const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-  const config = analysis.config;
-  noteOldExplanations(config);
-  if (!analysis.snapshot) throw new Error("no snapshot: explain --missing needs a repository with sources");
-  const briefs = loadBriefs(config);
-  const plan = planBriefs(analysis, batch, briefs).slice(0, limit ?? Infinity);
-  if (plan.length === 0) {
-    process.stdout.write("nothing to explain\n");
-    return 0;
-  }
-  const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(config.agent);
-  if ("missing" in setup) throw new Error(setup.missing);
-  const result = await runBriefs(analysis, setup.client, plan, {
-    jobs,
-    briefs,
-    progress: (done, total, id, failed) => process.stderr.write(`[${done}/${total}] ${id}${failed === null ? "" : `: failed: ${failed}`}\n`),
-  });
-  process.stdout.write(`explained ${result.done.length} of ${plan.length} node(s)\n`);
-  for (const f of result.failed) process.stdout.write(`failed: ${f.id}: ${f.reason}\n`);
-  return result.failed.length > 0 ? 1 : 0;
+  // The batch: a printer over the shared operation; a progress line per node on stderr.
+  const result = await runOperation(
+    { kind: "explain-batch", root: findRoot(process.cwd()), batch, ...(limit !== undefined ? { limit } : {}), jobs },
+    { onProgress: ({ step }) => step && process.stderr.write(`[${step.done}/${step.total}] ${step.id}${step.failed === null ? "" : `: failed: ${step.failed}`}\n`) },
+  );
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
+  process.stdout.write(result.payload.text);
+  // Stopped because an input changed: the reasons; the briefs written before stay.
+  if (result.payload.stopped !== null) for (const reason of result.payload.refused) process.stderr.write(`keylang: ${reason}\n`);
+  return result.exitCode === 0 ? 0 : 1;
 }
 
 /** `explain --stale`, and a brief plan without `--llm`: the note on stderr, the stdout of the shared operation; a failure is the CLI's error. */
@@ -386,12 +376,6 @@ function positiveInteger(flag: string, text: string): number {
   const problem = positiveIntegerProblem(flag, text);
   if (problem !== null) throw new Error(problem);
   return Number(text);
-}
-
-/** One note per command while the store of keylang 0.1 still holds files. */
-function noteOldExplanations(config: Config): void {
-  const count = oldExplanations(config.root);
-  if (count > 0) process.stderr.write(`keylang: note: ${moveHint(config, count)}\n`);
 }
 
 async function cmdDraft(args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }): Promise<number> {

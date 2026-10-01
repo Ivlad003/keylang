@@ -16,8 +16,8 @@ import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, r
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
-import { briefPlan, briefPlanText, DEFAULT_BRIEF_JOBS, staleInventory, staleInventoryText, type BriefPlan, type StaleInventory } from "./explain-inventory.ts";
-import { formatSummary, type NodeSummary } from "./explain-node.ts";
+import { briefPlan, briefPlanText, DEFAULT_BRIEF_JOBS, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
+import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
 import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
@@ -257,6 +257,29 @@ export type ExplainPlanRequest =
       /** `--dry-run`: count the plan and estimate its tokens. */
       estimate?: boolean;
     };
+
+/**
+ * `keylang explain --missing|--stale --llm [--limit N] [--jobs N]`: a brief
+ * for each node of the plan, bottom-up, by the configured model. The plan is
+ * made again on a fresh analysis of the saved files (a preview is never
+ * applied): `briefPlan`, cut to `limit`. Within a wave at most `jobs`
+ * requests are in flight; a parent's prompt carries the briefs its members
+ * got in earlier waves. Each brief is written on its own as soon as it is
+ * answered, after the commit check: its file must still hold the bytes the
+ * plan read, and keylang.json, the sources and the specs must be the ones
+ * the plan was made from. The dry run is `explain-plan` with `estimate`.
+ */
+export interface ExplainBatchRequest {
+  kind: "explain-batch";
+  /** Repository root (absolute). */
+  root: string;
+  /** `missing` also asks again for stale briefs; `stale` only for them. */
+  batch: BriefBatch;
+  /** `--limit`: a whole number of at least 1; absent for every candidate. */
+  limit?: number;
+  /** `--jobs`: requests in flight within a wave, a whole number of at least 1; default 4. */
+  jobs?: number;
+}
 
 /**
  * The typed result an export writes: a finished check report in one of the
@@ -503,17 +526,17 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
   /** Cancellation: the caller reports `cancelled`, never a success. */
   signal?: AbortSignal;
   /** Progress notes. Presentation only; never a source of domain data. */
-  onProgress?: (progress: { text: string }) => void;
+  onProgress?: (progress: OperationProgress) => void;
   /**
    * The analysis to run on the saved files; default `analyze`. A session
    * passes its own, which builds the snapshot off the UI thread.
@@ -528,6 +551,23 @@ export interface OperationContext {
    * nothing written).
    */
   beforeCommit?: (plan?: CommitPlan) => Promise<CommitGate> | CommitGate;
+}
+
+/** A progress note; a batch adds the step it just finished (`[done/total] id` on the CLI's stderr). */
+export interface OperationProgress {
+  text: string;
+  step?: BatchStep;
+}
+
+/** One node of a batch finished: written, or failed with the reason. */
+export interface BatchStep {
+  /** Nodes finished so far, this one included. */
+  done: number;
+  /** Nodes in the plan. */
+  total: number;
+  id: string;
+  /** The reason the node failed, or null when its brief was written. */
+  failed: string | null;
 }
 
 /** What a commit is about to write, when the operation names it before it asks (a draft: its target, whose proposal it writes). */
@@ -1140,6 +1180,39 @@ export type ExplainPlanPayload = (({ list: "stale-saved" } & StaleInventory) | (
   text: string;
 };
 
+/**
+ * What a brief batch planned, wrote and left. `stopped`: null — the batch
+ * ran to the end of its plan (failed nodes are named, code 1); `cancelled`
+ * — Cancel, no new request was started and the ones in flight were closed;
+ * `outdated` — keylang.json, a source or a spec changed while it ran, so no
+ * further brief was written or asked for (`refused` names the changes);
+ * `refused` — the session refused the commit (`refused`). Briefs written
+ * before the stop stay: there is no rollback.
+ */
+export interface ExplainBatchPayload {
+  batch: BriefBatch;
+  limit: number | null;
+  jobs: number;
+  /** The agent that answered (keylang.json `agent`). */
+  agent: string;
+  /** `explain.lang` of keylang.json. */
+  lang: string;
+  /** The plan the batch made on its own analysis, in the order it asks. */
+  plan: PlannedBriefEntry[];
+  /** Briefs written, in the order they landed; `file` relative to the root. */
+  done: { id: string; file: string }[];
+  /** Nodes whose request or write failed, by id: the other nodes went on. */
+  failed: { id: string; reason: string }[];
+  /** Planned nodes neither written nor failed: not started after the stop, or closed in flight; in plan order. */
+  notStarted: string[];
+  stopped: "cancelled" | "outdated" | "refused" | null;
+  /** The changed inputs (`outdated`) or the session's reasons (`refused`). */
+  refused: string[];
+  snapshotId: string | null;
+  /** The CLI's stdout: `explained N of M node(s)` and a `failed: <id>: <reason>` line each. */
+  text: string;
+}
+
 /** What an export did with its one file. */
 export interface ExportPayload {
   path: string;
@@ -1203,6 +1276,7 @@ export interface OperationPayloads {
   explain: ExplainPayload;
   "explain-llm": ExplainLlmPayload;
   "explain-plan": ExplainPlanPayload;
+  "explain-batch": ExplainBatchPayload;
   init: InitPayload;
   export: ExportPayload;
   parse: ParsePayload;
@@ -1252,6 +1326,7 @@ export function runOperation(request: ExplainEdgeRequest, context?: OperationCon
 export function runOperation(request: ExplainRequest, context?: OperationContext): Promise<OperationEnvelope<"explain">>;
 export function runOperation(request: ExplainLlmRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-llm">>;
 export function runOperation(request: ExplainPlanRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-plan">>;
+export function runOperation(request: ExplainBatchRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-batch">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
@@ -1291,6 +1366,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runExplainLlm(request, context);
     case "explain-plan":
       return runExplainPlan(request, context);
+    case "explain-batch":
+      return runExplainBatch(request, context);
     case "init":
       return runInit(request, context);
     case "export":
@@ -1346,6 +1423,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "explain-llm":
       return { kind, ...base };
     case "explain-plan":
+      return { kind, ...base };
+    case "explain-batch":
       return { kind, ...base };
     case "init":
       return { kind, ...base };
@@ -2489,6 +2568,176 @@ async function runExplainPlan(request: ExplainPlanRequest, context: OperationCon
   const payload: ExplainPlanPayload = { list: "briefs", ...plan, snapshotId, text: briefPlanText(plan) };
   const summary = plan.plan.length === 0 ? "nothing to explain" : `${plan.plan.length} brief(s) planned${plan.estimate === null ? "" : `, ~${plan.estimate.input} in, ~${plan.estimate.output} out (approximate)`}`;
   return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
+}
+
+function emptyExplainBatch(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-batch"> {
+  return { kind: "explain-batch", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/** `explained 5 of 6 node(s)` and `failed: <id>: <reason>` lines: the CLI's stdout of a batch. */
+function explainBatchText(payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">): string {
+  return `explained ${payload.done.length} of ${payload.plan.length} node(s)\n${payload.failed.map((f) => `failed: ${f.id}: ${f.reason}\n`).join("")}`;
+}
+
+/**
+ * `explain --missing|--stale --llm`. Compute: limit and jobs as the CLI
+ * checks them (2), a fresh analysis of the saved files (no snapshot is 2
+ * with the CLI's message), the plan (`briefPlan`; empty is `nothing to
+ * explain`, 0, no model needed), the model (none is 2). The inputs are
+ * fixed: keylang.json, the sources, the specs and the bytes of every planned
+ * brief file. Then the waves: at most `jobs` requests at a time within one;
+ * a failure of a node (the model's error, an empty answer, its brief file
+ * changed, a write error) is named and the others go on. `beforeCommit` is
+ * asked once, before the first write; after it Cancel closes the requests in
+ * flight and starts none, and what was written stays. A changed input stops
+ * the batch: no brief is written or asked for after it. Ran to the end: 0,
+ * or 1 with failed nodes (the CLI's batch exception: a failed write of one
+ * brief is 1 too); stopped by a change or a refusal: 1; cancelled: null.
+ */
+async function runExplainBatch(request: ExplainBatchRequest, context: OperationContext): Promise<OperationEnvelope<"explain-batch">> {
+  const { root } = request;
+  if (!isAbsolute(root)) return emptyExplainBatch("failed", 2, "explain: root must be an absolute path");
+  for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 1)) return emptyExplainBatch("failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
+  }
+  if (context.signal?.aborted) return emptyExplainBatch("cancelled", null);
+  context.onProgress?.({ text: "reading the saved code, specs and briefs" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyExplainBatch("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExplainBatch("cancelled", null);
+  const config = analyzed.config;
+  const old = oldExplanations(config.root);
+  const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
+  if (!analyzed.snapshot) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
+  const jobs = request.jobs ?? DEFAULT_BRIEF_JOBS;
+  const { plan } = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs, estimate: false });
+  const { lang } = config.explain;
+  const payload: ExplainBatchPayload = {
+    batch: request.batch,
+    limit: request.limit ?? null,
+    jobs,
+    agent: config.agent ?? "",
+    lang,
+    plan,
+    done: [],
+    failed: [],
+    notStarted: [],
+    stopped: null,
+    refused: [],
+    snapshotId: analyzed.snapshot.snapshotId,
+    text: "",
+  };
+  if (plan.length === 0) {
+    payload.text = "nothing to explain\n";
+    return { ...emptyExplainBatch("completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
+  }
+  const { llmClient, LlmCancelled } = await import("./llm.ts");
+  const setup = llmClient(config.agent);
+  if ("missing" in setup) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
+  const client = setup.client;
+  payload.agent = client.agent;
+  // What every brief is computed from: each write checks these are still the files on disk.
+  const inputs = sourceInputs(config, analyzed.snapshot.manifest.files);
+  const specs = specHashes(root, analyzed.docs);
+  const files = new Map(plan.map((entry) => [entry.id, explanationPath(config, entry.id, "brief")]));
+  const expected = new Map([...files.values()].map((file) => [file, readTextOrNull(resolve(root, file))]));
+  const briefs = loadBriefs(config);
+  // Stops the requests in flight when the batch stops for a change or a refusal; Cancel is the caller's signal.
+  const halt = new AbortController();
+  const signal = context.signal ? AbortSignal.any([context.signal, halt.signal]) : halt.signal;
+  const cancelled = (): boolean => context.signal?.aborted === true;
+  const stop = (why: "cancelled" | "outdated" | "refused", reasons: string[] = []): void => {
+    if (payload.stopped !== null) return;
+    payload.stopped = why;
+    payload.refused = reasons;
+    halt.abort();
+  };
+  const notStarted = new Set<string>();
+  const written: string[] = [];
+  let gate: Promise<CommitGate> | null = null;
+  let finished = 0;
+  const finish = (id: string, failed: string | null): void => {
+    if (failed !== null) payload.failed.push({ id, reason: failed });
+    finished++;
+    context.onProgress?.({ text: `${finished}/${plan.length} · ${id}${failed === null ? "" : `: failed: ${failed}`}`, step: { done: finished, total: plan.length, id, failed } });
+  };
+  /** The brief of one node: asked, checked, written; a stop leaves it not started. */
+  const one = async (id: string): Promise<void> => {
+    if (cancelled()) stop("cancelled");
+    if (payload.stopped !== null) return void notStarted.add(id);
+    const summary = summarizeNode(analyzed, id);
+    if ("unknown" in summary) return finish(id, "the id is gone from the snapshot");
+    let answer: string;
+    try {
+      answer = await client.complete(explanationRequest(analyzed, summary.summary, { lang, detail: "brief", briefs }), { signal });
+    } catch (error) {
+      if (cancelled()) stop("cancelled");
+      if (error instanceof LlmCancelled || signal.aborted) return void notStarted.add(id);
+      return finish(id, messageOf(error));
+    }
+    if (cancelled()) stop("cancelled");
+    if (payload.stopped !== null) return void notStarted.add(id);
+    const text = briefText(answer);
+    if (text === "") return finish(id, `${client.agent} answered without text; nothing written`);
+    // Asked once, before the first write: from here on the session defers its own writes and Cancel stops between briefs.
+    gate ??= Promise.resolve()
+      .then(() => context.beforeCommit?.({ targets: [...files.values()] }))
+      .catch((error: unknown) => ({ refused: [messageOf(error)] }));
+    const answered = await gate;
+    if (cancelled()) stop("cancelled");
+    if (answered && answered.refused.length > 0) stop("refused", answered.refused);
+    if (payload.stopped !== null) return void notStarted.add(id);
+    const file = files.get(id)!;
+    let target: string | null;
+    let changed: string[];
+    try {
+      target = writeProblem(root, file, { under: explainDir(config), expect: expected.get(file) ?? null });
+      changed = [...sourceInputProblems(config, inputs, "the batch"), ...specProblems(root, specs, "the batch")];
+    } catch (error) {
+      return finish(id, messageOf(error));
+    }
+    if (changed.length > 0) {
+      stop("outdated", changed);
+      return void notStarted.add(id);
+    }
+    if (target !== null) return finish(id, `${file}: ${target}`);
+    const e: Explanation = { agent: client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail: "brief", text };
+    try {
+      writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
+    } catch (error) {
+      return finish(id, messageOf(error));
+    }
+    // A parent asked later reads this brief in its members.
+    briefs.set(id, e);
+    payload.done.push({ id, file });
+    written.push(file);
+    finish(id, null);
+  };
+  context.onProgress?.({ text: `asking ${client.agent}: ${plan.length} brief(s), ${jobs} at a time` });
+  const waves = [...new Set(plan.map((entry) => entry.wave))];
+  for (const wave of waves) {
+    const queue = plan.filter((entry) => entry.wave === wave).map((entry) => entry.id);
+    const workers = Array.from({ length: Math.min(jobs, queue.length) }, async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) await one(id);
+    });
+    await Promise.all(workers);
+  }
+  payload.failed.sort((a, b) => compareText(a.id, b.id));
+  payload.notStarted = plan.map((entry) => entry.id).filter((id) => notStarted.has(id));
+  payload.text = explainBatchText(payload);
+  const counts = `${payload.done.length} of ${plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
+  const failures = payload.failed.map((f) => ({ level: "error" as const, text: `${f.id}: ${f.reason}` }));
+  const result = (status: OperationStatus, exitCode: 0 | 1 | null, messages: OperationMessage[]): OperationEnvelope<"explain-batch"> => ({ ...emptyExplainBatch(status, exitCode), payload, messages: [...notes, ...messages], written });
+  if (payload.stopped === "cancelled") return result("cancelled", null, [...failures, { level: "info", text: `cancelled: ${counts}; the written briefs stay` }]);
+  if (payload.stopped !== null) {
+    const why = payload.stopped === "outdated" ? "the inputs changed while the batch ran: no further brief was asked for or written" : "the session refused the write";
+    return result("failed", 1, [...payload.refused.map((text) => ({ level: "error" as const, text })), ...failures, { level: "info", text: `${why}; ${counts}; the written briefs stay` }]);
+  }
+  return result("completed", payload.failed.length > 0 ? 1 : 0, [...failures, { level: "info", text: counts }]);
 }
 
 function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {

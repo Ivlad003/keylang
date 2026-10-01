@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, explain-plan, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, explain-plan, explain-batch, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -123,6 +123,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain --stale", "explain --missing", "explain --dry-run", "keylang explain --stale", "keylang explain --missing", "missing briefs", "stale explanations", "brief plan", "dry run", "estimate tokens"],
     // A form picks the list (stale saved explanations, or the missing/stale brief plan with limit and jobs); a fresh analysis in a worker, no model, never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "explain-batch",
+    label: "Explain briefs with the model: the missing or stale batch, bottom-up",
+    group: "Check",
+    aliases: ["explain --missing --llm", "explain --stale --llm", "keylang explain --missing --llm", "batch explain", "brief batch", "explain briefs", "explained map briefs"],
+    // The inventory form on its batch row (list, limit, jobs): it plans again in a worker, asks jobs at a time within a wave and saves each brief after the commit check.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

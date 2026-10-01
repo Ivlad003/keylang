@@ -18,7 +18,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -447,6 +447,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "explain") return `${label} · ${record.params.subject}`;
   if (record.params.kind === "explain-llm") return `${label} · ${record.params.detail ?? "default detail"} · ${record.params.id}`;
   if (record.params.kind === "explain-plan") return `${label} · ${operationLabel(record.params)}`;
+  if (record.params.kind === "explain-batch") return `${label} · ${operationLabel(record.params)}`;
   if (record.params.kind === "draft-flow") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.trigger}`;
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
@@ -469,6 +470,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "explain") return `explain ${request.subject}`;
   if (request.kind === "explain-plan") return explainPlanLabel(request);
+  if (request.kind === "explain-batch") return explainBatchLabel(request);
   if (request.kind === "explain-llm") return `explain ${request.id} --llm${request.detail === "full" ? " --full" : request.detail === "brief" ? " --brief" : ""}`;
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
@@ -515,6 +517,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "explain" && result.payload !== null) return `${explainOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain-plan" && result.payload !== null) return `${explainPlanOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain-llm" && result.payload !== null) return `${explainLlmOutcome(result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "explain-batch" && result.payload !== null) return `${explainBatchOutcome(result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-flow" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-rules" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "code-to-spec" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -575,6 +578,29 @@ function explainPlanOutcome(payload: ExplainPlanPayload): string {
   if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
   const cut = payload.candidates > payload.plan.length ? ` of ${payload.candidates}` : "";
   return `${payload.plan.length}${cut} brief(s) planned${payload.estimate === null ? "" : `, ~${payload.estimate.input} in, ~${payload.estimate.output} out tokens (approximate)`}`;
+}
+
+/** The CLI command of a batch: `explain --missing --llm --limit 3 --jobs 2`. */
+function explainBatchLabel(request: ExplainBatchRequest): string {
+  return [`explain --${request.batch} --llm`, ...(request.limit !== undefined ? ["--limit", String(request.limit)] : []), ...(request.jobs !== undefined ? ["--jobs", String(request.jobs)] : [])].join(" ");
+}
+
+/** `6 of 6 brief(s) written`, `5 of 6 brief(s) written, 1 failed`, `cancelled: 1 of 6 written, 5 not started`, `outdated: …`. */
+function explainBatchOutcome(payload: ExplainBatchPayload): string {
+  if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
+  const counts = `${payload.done.length} of ${payload.plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
+  if (payload.stopped === "cancelled") return `cancelled: ${counts}`;
+  if (payload.stopped === "outdated") return `outdated, stopped: ${counts}`;
+  if (payload.stopped === "refused") return `refused: ${counts}`;
+  return payload.failed.length > 0 ? `partial: ${counts}` : counts;
+}
+
+/** What became of one planned node of a batch: `written <file>`, `failed: <reason>`, `not started`. */
+export function batchState(payload: ExplainBatchPayload, id: string): string {
+  const done = payload.done.find((entry) => entry.id === id);
+  if (done) return `written ${done.file}`;
+  const failed = payload.failed.find((entry) => entry.id === id);
+  return failed ? `failed: ${failed.reason}` : "not started";
 }
 
 /** A saved answer or brief: its provenance on one row, then its text and the IDs it made up. */
@@ -1042,7 +1068,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       rows.push({ text: `  ${counts["fn/type"]} fn/type, ${counts["class/module"]} class/module, ${counts.layer} layer · ${payload.waves.length} wave(s) bottom-up · jobs ${payload.jobs} · limit ${payload.limit ?? "none"}${payload.candidates > payload.plan.length ? ` (${payload.candidates - payload.plan.length} more left out)` : ""}`, style: THEME.panel });
       if (payload.estimate !== null) rows.push({ text: `  approximate tokens: ~${payload.estimate.input} in, ~${payload.estimate.output} out — about 4 characters a token and 80 a brief; not the API's count or cost`, style: THEME.panel });
       rows.push({ text: `  left out: ${payload.skipped.documented} node(s) with a doc comment, ${payload.skipped.fresh} with a fresh brief${payload.gone.length > 0 ? ` · gone, never asked for: ${payload.gone.join(", ")}` : ""}`, style: { ...THEME.panel, fg: 243 } });
-      rows.push({ text: "  a preview, not a permission: the batch runs in the CLI (keylang explain --missing --llm) and plans again on its own analysis", style: { ...THEME.panel, fg: 243 } });
+      rows.push({ text: "  a preview, not a permission: the batch (the form's last row, or keylang explain --missing --llm) plans again on its own analysis", style: { ...THEME.panel, fg: 243 } });
       let index = 0;
       payload.waves.forEach((wave, number) => {
         rows.push({ text: `── wave ${number + 1} · ${wave.level} · ${wave.ids.length} ──`, style: { ...THEME.panel, fg: 243 } });
@@ -1056,6 +1082,28 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     }
     const listed = payload.list === "stale-saved" ? payload.entries.length : payload.plan.length;
     if (listed > 0) rows.push({ text: "  Tab, then ↑↓ select a node and Enter opens its code", style: THEME.hint });
+  } else if (result?.kind === "explain-batch" && result.payload !== null) {
+    // A batch: what it planned, what landed, what failed with why, what was never asked; Tab, then Enter opens a node.
+    const { payload } = result;
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Explain briefs with the model · keylang ${explainBatchLabel({ kind: "explain-batch", root: "", batch: payload.batch, ...(payload.limit !== null ? { limit: payload.limit } : {}), jobs: payload.jobs })} · lang ${payload.lang} · agent ${payload.agent || "none"} · snapshot ${payload.snapshotId === null ? "none" : payload.snapshotId.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${explainBatchOutcome(payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    if (payload.stopped === "cancelled") rows.push({ text: "  cancelled: no request was started after it, the ones in flight were closed; the briefs written before stay (no rollback)", style: { ...THEME.panel, fg: 179 } });
+    if (payload.stopped === "outdated") rows.push({ text: "  the inputs changed while the batch ran: nothing was asked for or written after it; the briefs written before stay — run the batch again", style: { ...THEME.panel, fg: 179 } });
+    if (payload.stopped === "refused") rows.push({ text: "  the session refused the write: nothing was written", style: { ...THEME.panel, fg: 179 } });
+    for (const message of result.messages) if (message.level === "warning" || (message.level === "error" && payload.refused.includes(message.text))) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : { ...THEME.panel, fg: 179 } });
+    if (payload.plan.length > 0) rows.push({ text: `  ${payload.plan.length} planned · ${payload.done.length} written · ${payload.failed.length} failed · ${payload.notStarted.length} not started · jobs ${payload.jobs} · limit ${payload.limit ?? "none"} · a run again asks only for what is still missing or stale`, style: { ...THEME.panel, fg: 243 } });
+    let wave: number | null = null;
+    payload.plan.forEach((entry, index) => {
+      if (entry.wave !== wave) rows.push({ text: `── ${entry.level} ──`, style: { ...THEME.panel, fg: 243 } });
+      wave = entry.wave;
+      const now = batchState(payload, entry.id);
+      const style = index === selected ? THEME.selected : now.startsWith("failed") ? { ...THEME.panel, ...THEME.error } : now === "not started" ? { ...THEME.panel, fg: 243 } : THEME.panel;
+      rows.push({ text: `  ${entry.id} (${entry.level}) · ${now}`, style, gap: index });
+    });
+    if (payload.plan.length === 0) rows.push({ text: "  zero work: no node needs a brief; no request was made", style: THEME.panel });
+    if (payload.plan.length > 0) rows.push({ text: "  Tab, then ↑↓ select a node and Enter opens its code", style: THEME.hint });
   } else if (result?.kind === "explain-llm" && result.payload !== null) {
     // The model's answer with where it came from (cache, model, none), the summary it was asked about, and what was written.
     const { payload } = result;
@@ -1381,8 +1429,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
     (record?.result?.kind === "trace-plan" && (record.result.payload?.plan.symbols.length ?? 0) > 0) ||
     (record?.result?.kind === "explain" && record.result.payload?.subject === "node" && record.result.payload.links.length > 0) ||
     (record?.result?.kind === "explain-llm" && (record.result.payload?.links.length ?? 0) > 0) ||
-    (record?.result?.kind === "explain-plan" && record.result.payload !== null && (record.result.payload.list === "stale-saved" ? record.result.payload.entries.length : record.result.payload.plan.length) > 0);
-  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : record?.kind === "explain-plan" ? "node" : "finding";
+    (record?.result?.kind === "explain-plan" && record.result.payload !== null && (record.result.payload.list === "stale-saved" ? record.result.payload.entries.length : record.result.payload.plan.length) > 0) ||
+    (record?.result?.kind === "explain-batch" && (record.result.payload?.plan.length ?? 0) > 0);
+  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : record?.kind === "explain-plan" || record?.kind === "explain-batch" ? "node" : "finding";
   const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec") && record.result.payload?.proposal != null;
@@ -1597,7 +1646,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · no model, writes nothing" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

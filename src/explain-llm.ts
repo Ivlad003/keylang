@@ -11,11 +11,10 @@ import type { Analysis } from "./analyze.ts";
 import { briefOf } from "./brief.ts";
 import type { Config } from "./config.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
-import { explainDir, explanationOf, explanationPath, formatStoredExplanation, OLD_EXPLAIN_DIR, readStoredExplanation, snapshotBaseline, storedIds, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
+import { explainDir, explanationOf, explanationPath, OLD_EXPLAIN_DIR, readStoredExplanation, snapshotBaseline, storedIds, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
-import type { LlmClient, LlmRequest } from "./llm.ts";
+import type { LlmRequest } from "./llm.ts";
 import { plannedDecl } from "./lsp-features.ts";
-import { safeWrite } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
 export type Explanation = StoredExplanation;
@@ -24,10 +23,6 @@ export type Explanation = StoredExplanation;
 export function readExplanation(config: Config, id: string, detail: ExplanationDetail = "short"): Explanation | null {
   const e = readStoredExplanation(config.root, explanationPath(config, id, detail));
   return e !== null && (e.detail === "brief") === (detail === "brief") ? e : null;
-}
-
-export function writeExplanation(config: Config, id: string, e: Explanation): void {
-  safeWrite(config.root, explanationPath(config, id, e.detail), formatStoredExplanation(e), { under: explainDir(config) });
 }
 
 /** IDs of every saved explanation (`answers`) or brief, sorted. */
@@ -191,51 +186,4 @@ export function estimateTokens(analysis: Analysis, plan: readonly PlannedBrief[]
     chars += request.system.length + request.prompt.length;
   }
   return { input: Math.ceil(chars / 4), output: plan.length * 80 };
-}
-
-export interface BatchResult {
-  done: string[];
-  failed: { id: string; reason: string }[];
-}
-
-/**
- * Ask for every planned brief, `jobs` at a time within a wave, and save each
- * one as soon as it arrives: an interrupted or failed batch keeps what it got,
- * and the next run asks only for the rest. A failure of one node does not stop the others.
- */
-export async function runBriefs(
-  analysis: Analysis,
-  client: LlmClient,
-  plan: readonly PlannedBrief[],
-  options: { jobs: number; briefs: Map<string, StoredExplanation>; progress: (done: number, total: number, id: string, failed: string | null) => void },
-): Promise<BatchResult> {
-  const result: BatchResult = { done: [], failed: [] };
-  const { lang } = analysis.config.explain;
-  let finished = 0;
-  const one = async (id: string): Promise<void> => {
-    let failure: string | null = null;
-    try {
-      const summary = summarizeNode(analysis, id);
-      if ("unknown" in summary) throw new Error("the id is gone from the snapshot");
-      const answer = await client.complete(explanationRequest(analysis, summary.summary, { lang, detail: "brief", briefs: options.briefs }));
-      const e: Explanation = { agent: client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analysis, id) ?? "", lang, detail: "brief", text: briefText(answer) };
-      writeExplanation(analysis.config, id, e);
-      options.briefs.set(id, e);
-      result.done.push(id);
-    } catch (error) {
-      failure = error instanceof Error ? error.message : String(error);
-      result.failed.push({ id, reason: failure });
-    }
-    options.progress(++finished, plan.length, id, failure);
-  };
-  const waves = [...new Set(plan.map((p) => p.wave))];
-  for (const wave of waves) {
-    const queue = plan.filter((p) => p.wave === wave).map((p) => p.id);
-    const workers = Array.from({ length: Math.min(options.jobs, queue.length) }, async () => {
-      for (let id = queue.shift(); id !== undefined; id = queue.shift()) await one(id);
-    });
-    await Promise.all(workers);
-  }
-  result.failed.sort((a, b) => compareText(a.id, b.id));
-  return result;
 }

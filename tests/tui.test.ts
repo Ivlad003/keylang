@@ -9222,7 +9222,7 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
 
   // The missing plan: stale briefs included, the doc comment and the fresh brief left out, bottom-up; the estimate approximate.
   explainPlanForm(s, { steps: 1, submit: false });
-  assert.deepEqual(s.app.state.prompt?.ids, ["list", "limit", "jobs", "run"]);
+  assert.deepEqual(s.app.state.prompt?.ids, ["list", "limit", "jobs", "run", "batch"], "the last row is the batch itself (ticket 34)");
   assert.match(s.app.state.prompt!.details![0]!, /^keylang explain --missing --dry-run: .*stale briefs included$/);
   s.send(KEY.enter);
   await s.app.idle();
@@ -9320,4 +9320,244 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
   const after = treeBytes(root);
   assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [], "no explanation, cache, stats or proposal appeared");
   assert.equal(prompts.length, 0, "no request to the model");
+});
+
+// ---------- brief batch with the model (ticket 34) ----------
+
+/** The node a brief request is about: the first line of its summary. */
+function askedId(prompt: string): string {
+  return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
+}
+
+/** The palette's batch: the inventory form on its batch row; `limit` and `jobs` typed into their rows, then back to the batch row; Enter unless `submit` is false. */
+function explainBatchForm(s: ReturnType<typeof session>, options: { limit?: string; jobs?: string; submit?: boolean } = {}): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "explain --missing --llm") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = (): NonNullable<typeof s.app.state.prompt> => s.app.state.prompt!;
+  assert.ok(s.app.state.prompt?.kind === "explain" && s.app.state.prompt.explainPlan?.list === "missing", s.app.state.message ?? "");
+  assert.equal(prompt().ids![prompt().index], "batch");
+  for (const [row, value] of [["limit", options.limit], ["jobs", options.jobs]] as const) {
+    if (value === undefined) continue;
+    while (prompt().ids![prompt().index] !== row) s.send(KEY.up);
+    for (const ch of value) s.send(ch);
+  }
+  while (prompt().ids![prompt().index] !== "batch") s.send(KEY.down);
+  if (options.submit !== false) s.send(KEY.enter);
+}
+
+type ExplainBatchResult = Extract<OperationResult, { kind: "explain-batch" }> & { payload: NonNullable<Extract<OperationResult, { kind: "explain-batch" }>["payload"]> };
+
+function explainBatchRecord(app: App): ExplainBatchResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "explain-batch" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as ExplainBatchResult;
+}
+
+/** `keylang explain …` run without blocking this process, so the held model in it can answer. */
+function cliExplainAsync(root: string, args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [BIN, "explain", ...args], { cwd: root });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+const BATCH_FNS = ["application.purchase.buy", "domain.order.create", "infrastructure.store.save", "presentation.terminal.checkout"];
+const BATCH_MODULES = ["application.purchase", "domain.order", "infrastructure.store", "presentation.terminal"];
+const BATCH_LAYERS = ["application", "domain", "infrastructure", "presentation"];
+const briefReply = (prompt: string): string => `Brief of ${askedId(prompt)}.`;
+
+test("tui: the brief batch plans again and asks jobs at a time within a wave, bottom-up, the parent's prompt carrying its members' new briefs; each brief is saved as it lands; a node that cannot be written fails alone with code 1, as in the CLI; a rerun asks only for it", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, briefReply);
+  // The brief of checkout cannot be written: a directory stands at its path.
+  const blocked = "keylang/explain/brief/presentation.terminal.checkout.md";
+  mkdirSync(join(root, blocked), { recursive: true });
+  const s = session(root, { cols: 240, rows: 70 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = outsideExplain(root);
+  explainBatchForm(s, { jobs: "2", submit: false });
+  await s.app.idle();
+  assert.equal(promptNote(s.app), "explain --missing --llm --jobs 2 · asks anthropic:claude-opus-5 once a brief · plans again on a fresh analysis of the saved files; 2 request(s) at a time within a wave, bottom-up; each brief saved to keylang/explain/brief/ as it lands");
+  assert.equal(model.prompts.length, 0, "the form asks nothing");
+  // The dry run of the same form asks nothing and writes nothing.
+  const tree = treeBytes(root);
+  s.send(KEY.up);
+  assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], "run");
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(explainPlanRecord(s.app).payload.text, cliExplain(root, ["--missing", "--dry-run", "--jobs", "2"]).stdout);
+  assert.deepEqual([model.prompts.length, treeBytes(root)], [0, tree]);
+  explainBatchForm(s, { jobs: "2" });
+  const record = s.app.state.records.at(-1)!;
+  await model.requested(2);
+  await sleep(150);
+  assert.equal(model.prompts.length, 2, "jobs 2: a third request waits for one of them");
+  assert.equal(record.status, "running");
+  // Release what is held, round by round: never more than two requests in flight.
+  const inFlight: number[] = [];
+  const progress = new Set<string>();
+  let released = 0;
+  while (record.status === "running") {
+    if (record.progress !== null) progress.add(record.progress);
+    inFlight.push(model.prompts.length - released);
+    released = model.prompts.length;
+    model.release();
+    await sleep(30);
+  }
+  await s.app.idle();
+  assert.ok(Math.max(...inFlight) === 2, inFlight.join(" "));
+  assert.ok([...progress].some((text) => /^\d+\/12 · \S+$/.test(text)), [...progress].join(" | "));
+  assert.equal(s.app.state.results.open, false, "progress and the result never open F6");
+  // Bottom-up: the functions, then the modules, then the layers.
+  const asked = model.prompts.map(askedId);
+  assert.deepEqual([asked.slice(0, 4).sort(), asked.slice(4, 8).sort(), asked.slice(8).sort()], [BATCH_FNS, BATCH_MODULES, BATCH_LAYERS]);
+  const promptOf = (id: string): string => model.prompts.find((prompt) => askedId(prompt) === id)!;
+  assert.match(promptOf("application.purchase"), /^- fn `application\.purchase\.buy`: Brief of application\.purchase\.buy\.$/m);
+  assert.match(promptOf("application"), /^- module `application\.purchase`: Brief of application\.purchase\.$/m);
+  assert.match(promptOf("presentation.terminal"), /^- fn `presentation\.terminal\.checkout`$/m, "a failed brief is not in its parent's prompt");
+  const batch = explainBatchRecord(s.app);
+  const reason = `${blocked}: a directory`;
+  assert.deepEqual([batch.status, batch.exitCode, batch.payload.stopped, batch.payload.failed, batch.payload.notStarted], ["completed", 1, null, [{ id: "presentation.terminal.checkout", reason }], []]);
+  assert.equal(batch.payload.done.length, 11);
+  assert.deepEqual(batch.written, batch.payload.done.map((entry) => entry.file));
+  assert.equal(batch.payload.text, `explained 11 of 12 node(s)\nfailed: presentation.terminal.checkout: ${reason}\n`);
+  const today = new Date().toISOString().slice(0, 10);
+  const closure = currentBaseline(s.app.state.analysis!, "application.purchase.buy")!;
+  assert.equal(readFileSync(join(root, "keylang/explain/brief/application.purchase.buy.md"), "utf8"), `<!-- keylang:explain agent=anthropic:claude-opus-5 date=${today} closure=${closure} lang=en detail=brief -->\nBrief of application.purchase.buy.\n`);
+  assert.equal(s.app.state.briefs.get("domain")?.text, "Brief of domain.", "the session reads the new briefs");
+  assert.deepEqual(outsideExplain(root), before, "only briefs are written: no map, spec, code or cache");
+  assert.match(s.app.state.message ?? "", /explain --missing --llm --jobs 2: partial: 11 of 12 brief\(s\) written, 1 failed · code 1 · F6 shows the report/);
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Explain briefs with the model · keylang explain --missing --llm --jobs 2 · lang en · agent anthropic:claude-opus-5/);
+  assert.match(text, /12 planned · 11 written · 1 failed · 0 not started · jobs 2 · limit none/);
+  assert.match(text, /application\.purchase\.buy \(fn\/type\) · written keylang\/explain\/brief\/application\.purchase\.buy\.md/);
+  assert.match(text, /presentation\.terminal\.checkout \(fn\/type\) · failed: keylang\/explain\/brief\/presentation\.terminal\.checkout\.md: a directory/);
+  assert.match(text, /── layer ──/);
+  // Enter on a node opens its code.
+  s.send(KEY.tab);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.code?.file, "src/application/purchase.ts");
+  await esc(s.send);
+  await esc(s.send);
+  await esc(s.send);
+
+  // The CLI plans the same one node and fails it the same way: code 1, the per-node line, the progress line.
+  const cli = await answerAll(model, cliExplainAsync(root, ["--missing", "--llm"]));
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [1, `explained 0 of 1 node(s)\nfailed: presentation.terminal.checkout: ${reason}\n`, `[1/1] presentation.terminal.checkout: failed: ${reason}\n`]);
+  // Once the path is free, a rerun asks only for that node: the fresh briefs are not asked for again.
+  rmSync(join(root, blocked), { recursive: true });
+  const asks = model.prompts.length;
+  explainBatchForm(s);
+  const rerun = s.app.state.records.at(-1)!;
+  while (rerun.status === "running") {
+    model.release();
+    await sleep(20);
+  }
+  await s.app.idle();
+  const again = explainBatchRecord(s.app);
+  assert.deepEqual([again.status, again.exitCode, again.payload.done.map((entry) => entry.id), again.payload.text], ["completed", 0, ["presentation.terminal.checkout"], "explained 1 of 1 node(s)\n"]);
+  assert.deepEqual(model.prompts.slice(asks).map(askedId), ["presentation.terminal.checkout"]);
+  const cliAgain = cliExplain(root, ["--missing", "--llm"]);
+  assert.deepEqual([cliAgain.status, cliAgain.stdout], [0, "nothing to explain\n"]);
+});
+
+test("tui: Cancel after the first brief keeps it and writes no other — cancelled, not done — and a rerun asks only for the rest; a source changed during a batch stops it as outdated with the new bytes kept; a brief written meanwhile is not written over", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, briefReply);
+  const s = session(root, { cols: 240, rows: 70 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const first = join(root, "keylang/explain/brief/application.purchase.buy.md");
+  explainBatchForm(s, { jobs: "1" });
+  const record = s.app.state.records.at(-1)!;
+  await model.requested(1);
+  model.release();
+  await model.requested(2);
+  assert.ok(existsSync(first), "the first brief landed before the second request");
+  // While the batch writes, a save waits with the text kept in the buffer; resize and Esc change nothing.
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  const edited = s.app.state.buffers.get("keylang/flows/checkout.md")!.text;
+  assert.notEqual(edited, CHECKOUT_FLOW);
+  s.send(KEY.ctrlS);
+  assert.match(s.app.state.message ?? "", /is writing files: try again when it finishes; your text stays in the buffer/);
+  await esc(s.send);
+  s.vt.resize(100, 30);
+  s.app.resize(100, 30);
+  s.vt.resize(240, 70);
+  s.app.resize(240, 70);
+  await esc(s.send);
+  assert.deepEqual([s.app.state.buffers.get("keylang/flows/checkout.md")!.text, readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), record.status], [edited, CHECKOUT_FLOW, "running"]);
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  await s.app.idle();
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the request in flight is closed");
+  const cancelled = explainBatchRecord(s.app);
+  assert.deepEqual([record.status, cancelled.status, cancelled.exitCode, cancelled.payload.stopped], ["cancelled", "cancelled", null, "cancelled"]);
+  assert.deepEqual(cancelled.payload.done, [{ id: "application.purchase.buy", file: "keylang/explain/brief/application.purchase.buy.md" }]);
+  assert.deepEqual(cancelled.written, ["keylang/explain/brief/application.purchase.buy.md"]);
+  assert.deepEqual(cancelled.payload.notStarted, [...BATCH_FNS.slice(1), ...BATCH_MODULES, ...BATCH_LAYERS]);
+  assert.deepEqual(readdirSync(join(root, "keylang/explain/brief")), ["application.purchase.buy.md"], "no pending brief is written");
+  model.release();
+  await sleep(50);
+  assert.equal(model.prompts.length, 2, "no request starts after Cancel");
+  assert.match(s.app.state.message ?? "", /cancelled: 1 of 12 brief\(s\) written, 11 not started/);
+  s.send(KEY.f6);
+  assert.match(s.text(), /cancelled: no request was started after it, the ones in flight were closed; the briefs written before stay/);
+  await esc(s.send);
+  // After the batch the save goes through; the rerun plans again: the fresh brief is not asked for.
+  s.send("i");
+  s.send(KEY.ctrlS);
+  assert.match(s.app.state.message ?? "", /keylang\/flows\/checkout\.md: saved/);
+  await esc(s.send);
+  await s.app.idle();
+  assert.notEqual(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW);
+  explainBatchForm(s);
+  const rerun = s.app.state.records.at(-1)!;
+  while (rerun.status === "running") {
+    model.release();
+    await sleep(20);
+  }
+  await s.app.idle();
+  const rest = explainBatchRecord(s.app);
+  assert.deepEqual([rest.status, rest.exitCode, rest.payload.done.length], ["completed", 0, 11]);
+  assert.ok(!model.prompts.slice(2).map(askedId).includes("application.purchase.buy"));
+  assert.equal(model.prompts.length, 13);
+
+  // A source changed while the model answers: nothing is written, no further request, the new bytes stay.
+  rmSync(join(root, "keylang/explain"), { recursive: true });
+  const order = join(root, "src/domain/order.ts");
+  const asks = model.prompts.length;
+  const outdated = runOperation({ kind: "explain-batch", root, batch: "missing", jobs: 1 });
+  await model.requested(asks + 1);
+  const changed = `${readFileSync(order, "utf8")}// changed during the batch\n`;
+  writeFileSync(order, changed);
+  const stopped = await answerAll(model, outdated);
+  assert.deepEqual([stopped.status, stopped.exitCode, stopped.written, stopped.payload?.stopped, stopped.payload?.done], ["failed", 1, [], "outdated", []]);
+  assert.deepEqual(stopped.payload?.refused, ["src/domain/order.ts: changed on disk while the batch was computed"]);
+  assert.equal(stopped.payload?.notStarted.length, 12);
+  assert.equal(model.prompts.length, asks + 1, "no request after the change");
+  assert.equal(readFileSync(order, "utf8"), changed);
+  assert.ok(!existsSync(join(root, "keylang/explain")), "no brief written");
+  // The brief file appears while its request waits: its bytes stay, the node fails alone.
+  const mine = storedExplanation("old", "brief", "Mine.");
+  const raced = runOperation({ kind: "explain-batch", root, batch: "missing", limit: 1 });
+  await model.requested(asks + 2);
+  mkdirSync(dirname(first), { recursive: true });
+  writeFileSync(first, mine);
+  const one = await answerAll(model, raced);
+  assert.deepEqual([one.status, one.exitCode, one.written, one.payload?.failed], ["completed", 1, [], [{ id: "application.purchase.buy", reason: "keylang/explain/brief/application.purchase.buy.md: created on disk while the change was prepared; nothing written" }]]);
+  assert.equal(readFileSync(first, "utf8"), mine);
 });

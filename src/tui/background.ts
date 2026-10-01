@@ -220,7 +220,7 @@ export class OperationWorker {
       const pending = this.pending.get(reply.operationId);
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
-      if (reply.type === "progress") pending.onProgress?.({ text: reply.text });
+      if (reply.type === "progress") pending.onProgress?.({ text: reply.text, ...(reply.step ? { step: reply.step } : {}) });
       else if (reply.type === "commit") this.commit(worker, reply.operationId, reply.plan);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
       else this.settle(reply.operationId, resultWithout(pending.kind, "failed", 2, reply.error));

@@ -8,14 +8,14 @@
 // `cancel` during the commit stops it between two file steps.
 
 import { parentPort } from "node:worker_threads";
-import { runOperation, type CommitGate, type CommitPlan, type OperationRequest, type OperationResult } from "../operations.ts";
+import { runOperation, type BatchStep, type CommitGate, type CommitPlan, type OperationRequest, type OperationResult } from "../operations.ts";
 
 /** A message to the worker: run a request, let its commit go ahead, or cancel it. */
 export type OperationCall = { type: "run"; operationId: number; request: OperationRequest } | { type: "commit"; operationId: number; refused?: string[] } | { type: "cancel"; operationId: number };
 
 /** A reply of the worker: any number of progress notes, at most one commit request, then one result or one error. */
 export type OperationReply =
-  | { operationId: number; type: "progress"; text: string }
+  | { operationId: number; type: "progress"; text: string; step?: BatchStep }
   | { operationId: number; type: "commit"; plan?: CommitPlan }
   | { operationId: number; type: "result"; result: OperationResult }
   | { operationId: number; type: "error"; error: string };
@@ -43,7 +43,7 @@ parentPort?.on("message", (call: OperationCall) => {
       entry.proceed = proceed;
       post({ operationId, type: "commit", ...(plan ? { plan } : {}) });
     });
-  runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text }) => post({ operationId, type: "progress", text }) })
+  runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text, step }) => post({ operationId, type: "progress", text, ...(step ? { step } : {}) }) })
     .then(
       (result) => post({ operationId, type: "result", result }),
       (error: unknown) => post({ operationId, type: "error", error: error instanceof Error ? error.message : String(error) }),

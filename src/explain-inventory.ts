@@ -2,7 +2,7 @@
 // the stale and gone saved explanations (`explain --stale`), and the plan of
 // a brief batch (`explain --missing|--stale` without `--llm`) with its
 // dry-run size. One result for the CLI and the TUI; the batch itself asks
-// the model through `runBriefs` (`explain-llm.ts`).
+// the model through the `explain-batch` operation (`operations.ts`).
 
 import type { Analysis } from "./analyze.ts";
 import { currentBaseline, estimateTokens, explainedIds, isStale, planBriefs, readExplanation, type BriefBatch, type BriefLevel, type PlannedBrief } from "./explain-llm.ts";

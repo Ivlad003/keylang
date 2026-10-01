@@ -35,7 +35,7 @@ import { readExplanation } from "../explain-llm.ts";
 import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "../explain-inventory.ts";
 import type { LlmSetup } from "../llm.ts";
 import { EXPLANATIONS } from "../explain.ts";
-import { explanationPath, loadBriefs, type ExplanationDetail } from "../explanations.ts";
+import { explainDir, explanationPath, loadBriefs, type ExplanationDetail } from "../explanations.ts";
 import { FACT_CACHE_FILE } from "../fact-cache.ts";
 import { baselinePath } from "../baseline.ts";
 import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "../harness.ts";
@@ -44,7 +44,7 @@ import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
 import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -64,7 +64,7 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
+import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -527,7 +527,7 @@ export class App {
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
-          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain" || result?.kind === "explain-llm" || result?.kind === "explain-plan"
+          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain" || result?.kind === "explain-llm" || result?.kind === "explain-plan" || result?.kind === "explain-batch"
             ? (result.payload?.snapshotId ?? undefined)
             : result?.kind === "trace-plan"
               ? (result.payload?.plan.snapshotId ?? undefined)
@@ -1716,7 +1716,7 @@ export class App {
     for (const record of this.state.records) {
       const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
       // A code's help reads nothing, so no input makes it outdated.
-      const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm" || record.params.kind === "explain-plan";
+      const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm" || record.params.kind === "explain-plan" || record.params.kind === "explain-batch";
       if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || node || preview) record.outdated ??= reason;
     }
   }
@@ -1780,6 +1780,14 @@ export class App {
       // The inventory reads the saved explanations and specs under the spec directory, keylang.json and the code: those dirty buffers are saved first.
       const dir = `${this.specDir()}/`;
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
+    }
+    if (request.kind === "explain-batch") {
+      // As the plan: the saved specs and explanations under the spec directory, keylang.json and the code
+      // are saved first; the step names the briefs the batch writes.
+      const dir = `${this.specDir()}/`;
+      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+      const writes = this.dirtyInputs().some(isInput) ? { writes: [`${explainDir({ dir: this.specDir() })}/brief/<id>.md of each planned node`] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
     if (request.kind === "explain-llm") {
       // As a node's offline summary: the saved specs and explanations under the spec directory, keylang.json
@@ -2030,7 +2038,7 @@ export class App {
    * proposal would be judged against the disk under unsaved edits).
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
-    if (request.kind === "explain-llm") {
+    if (request.kind === "explain-llm" || request.kind === "explain-batch") {
       // A saved explanation edited in a buffer while the model answered keeps its text: the answer is not written over it.
       const edited = (plan?.targets ?? []).filter((target) => {
         const buffer = this.state.buffers.get(target);
@@ -2716,9 +2724,20 @@ export class App {
   // ---------- explanations to do (inventory, brief plan, dry run) ----------
 
   /** The inventory form: the stale saved explanations by default; limit and jobs empty (every candidate, 4). */
-  private openExplainPlanPrompt(): void {
-    this.state.prompt = { kind: "explain", text: "", items: [], ids: [], index: 0, explainPlan: { list: "stale-saved", limit: "", jobs: "" } };
+  private openExplainPlanPrompt(row: "list" | "batch" = "list"): void {
+    this.state.prompt = { kind: "explain", text: "", items: [], ids: [row], index: 0, explainPlan: { list: row === "batch" ? "missing" : "stale-saved", limit: "", jobs: "" } };
     this.refreshExplainPlanPrompt();
+    if (row !== "batch" || this.llmSetup !== null) return;
+    // The batch row names the model it would ask; the client module loads off the key path.
+    this.track(
+      import("../llm.ts").then(({ llmClient }) => {
+        this.llmSetup = (agent) => llmClient(agent);
+        if (this.state.prompt?.kind === "explain" && this.state.prompt.explainPlan) {
+          this.refreshExplainPlanPrompt();
+          this.draw();
+        }
+      }),
+    );
   }
 
   /** The request the form makes, or the field it refuses with the CLI's message. */
@@ -2751,6 +2770,7 @@ export class App {
       rows.push({ id: "jobs", text: `jobs:   ${form.jobs}${selected === "jobs" ? "▏" : ""}${form.jobs.trim() === "" ? `  (empty: ${DEFAULT_BRIEF_JOBS}, the requests a batch keeps in flight)` : ""}` });
     }
     rows.push({ id: "run", text: form.list === "stale-saved" ? "List them (reads the saved files, no model, writes nothing)" : "Plan and estimate: a dry run (no model, writes nothing)" });
+    if (form.list !== "stale-saved") rows.push({ id: "batch", text: "Ask the model for them: the batch (plans again, saves each brief)" });
     prompt.ids = rows.map((row) => row.id);
     prompt.items = rows.map((row) => row.text);
     prompt.index = Math.max(0, prompt.ids.indexOf(selected));
@@ -2766,6 +2786,10 @@ export class App {
     if ("field" in request) prompt.note = now === request.field || now === "run" ? request.text : `${request.field}: ${request.text}`;
     else if (now === "limit") prompt.note = "a whole number of at least 1: the plan is cut to it before the estimate";
     else if (now === "jobs") prompt.note = "a whole number of at least 1, for the batch the plan is for; a dry run asks nothing";
+    else if (now === "batch") {
+      const batch = this.explainBatchRequest(request);
+      prompt.note = `${operationLabel(batch)} · ${this.explainBatchAsk()} · plans again on a fresh analysis of the saved files; ${batch.jobs ?? DEFAULT_BRIEF_JOBS} request(s) at a time within a wave, bottom-up; each brief saved to ${explainDir({ dir: this.specDir() })}/brief/ as it lands`;
+    }
     else prompt.note = `${operationLabel(request)} · a fresh analysis of the saved code and specs · no model, writes nothing`;
   }
 
@@ -2791,7 +2815,21 @@ export class App {
       return;
     }
     this.state.prompt = null;
+    if (prompt.ids?.[prompt.index] === "batch") return this.requestOperation("explain-batch", this.explainBatchRequest(request));
     this.requestOperation("explain-plan", request);
+  }
+
+  /** The batch of a brief plan's form: the same list, limit and jobs, no estimate. */
+  private explainBatchRequest(plan: ExplainPlanRequest): ExplainBatchRequest {
+    const batch = plan.list === "briefs" ? plan.batch : "missing";
+    const limit = plan.list === "briefs" ? plan.limit : undefined;
+    return { kind: "explain-batch", root: this.state.root, batch, ...(limit !== undefined ? { limit } : {}), jobs: (plan.list === "briefs" ? plan.jobs : undefined) ?? DEFAULT_BRIEF_JOBS };
+  }
+
+  /** Who the batch row would ask, by the session's configuration, or why no request can be made. */
+  private explainBatchAsk(): string {
+    const setup = this.llmSetup === null ? null : this.llmSetup(this.state.analysis?.config.agent ?? null);
+    return setup === null ? "checking the model…" : "missing" in setup ? `no request can be made: ${setup.missing}` : `asks ${setup.client.agent} once a brief`;
   }
 
   // ---------- trace plan ----------
@@ -4467,6 +4505,8 @@ export class App {
       const entries = result.payload.list === "stale-saved" ? result.payload.entries.map((entry) => ({ place: entry.place, text: `${entry.id}${entry.kind === "brief" ? " (brief)" : ""}: ${entry.state}` })) : result.payload.plan.map((entry) => ({ place: entry.place, text: `${entry.id} (${entry.level}): ${entry.reason}` }));
       return entries.map(({ place, text }) => ({ file: place?.file ?? "", line: place?.line ?? 1, col: place?.col ?? 1, text }));
     }
+    // A node of the batch's plan, with what became of it.
+    if (result?.kind === "explain-batch" && result.payload !== null) return result.payload.plan.map((entry) => ({ file: entry.place?.file ?? "", line: entry.place?.line ?? 1, col: entry.place?.col ?? 1, text: `${entry.id} (${entry.level}): ${batchState(result.payload!, entry.id)}` }));
     if (result?.kind === "explain-llm" && result.payload !== null) return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
     // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
     // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
@@ -4839,6 +4879,8 @@ export class App {
         return this.openExplainModelPrompt();
       case "explain-plan":
         return this.openExplainPlanPrompt();
+      case "explain-batch":
+        return this.openExplainPlanPrompt("batch");
       case "draft-flow":
         return this.openDraftPrompt();
       case "draft-rules":

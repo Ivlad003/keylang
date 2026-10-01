@@ -124,7 +124,7 @@ export interface Prompt {
    * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
    * `explain`: a diagnostic code or an ID, typed or taken from the list (`ids` are the matching codes or the IDs of the session's snapshot; the ID under the cursor, else the line's diagnostic code, by default);
    *   with `explainModel` it is the model's explanation of one ID (`ids` are IDs only; ←→ change the detail);
-   *   with `explainPlan` it is the explanation inventory (the rows `list`, then `limit` and `jobs` for a brief plan, run; ←→ change the list, typing edits the limit or the jobs; `text` is unused);
+   *   with `explainPlan` it is the explanation inventory (the rows `list`, then `limit` and `jobs` for a brief plan, run, and `batch` for a brief plan — the model batch itself; ←→ change the list, typing edits the limit or the jobs; `text` is unused);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
