@@ -1676,9 +1676,16 @@ export class App {
 
   // ---------- operations and results (F6) ----------
 
-  /** Records that an input changed: a feature or check result computed before it is outdated from now on. */
+  /**
+   * Records that an input changed: a feature or check result computed before
+   * it is outdated from now on, and so is a spec-to-code preview (one still
+   * running too: a model's answer to the old bytes is not the current code).
+   */
   private inputsChanged(reason: string): void {
-    for (const record of this.state.records) if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan") record.outdated ??= reason;
+    for (const record of this.state.records) {
+      const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
+      if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || preview) record.outdated ??= reason;
+    }
   }
 
   /**
@@ -1754,7 +1761,7 @@ export class App {
       // the code: those dirty buffers are saved first; the step names the proposals it would write.
       const dir = `${this.specDir()}/`;
       const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const placed = this.specCodeTarget({ id: request.id, into: request.into ?? "", output: request.output });
+      const placed = this.specCodeTarget({ id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
       const code = placed !== null && "file" in placed ? placed.file : "<the module's file>";
       const writes = request.output === "proposal" && this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
@@ -3186,7 +3193,7 @@ export class App {
     this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}`;
   }
 
-  // ---------- spec-to-code: a stub and failing tests for a planned fn (template) ----------
+  // ---------- spec-to-code: a stub and failing tests for a planned fn (template), or the model's code ----------
 
   /** The planned fns of the current analysis that no code implements yet: the IDs spec-to-code builds. */
   private plannedFns(): string[] {
@@ -3200,7 +3207,8 @@ export class App {
    * The spec-to-code form (design §2.4 `spec-to-code`): the planned fn —
    * given (a feature's planned gap), else the one under the cursor, else
    * typed or picked from the planned fns — the code file (empty: the
-   * module's, shown next to it) and preview or proposal.
+   * module's, shown next to it), the mode (the offline template unless
+   * llm is chosen) and preview or proposal.
    */
   private openSpecCodePrompt(id?: string): void {
     let initial = id ?? "";
@@ -3208,7 +3216,7 @@ export class App {
       const at = this.idAtCursor();
       if (at !== null && this.plannedFns().includes(at)) initial = at;
     }
-    this.state.prompt = { kind: "spec-to-code", text: "", items: [], ids: [], index: 0, specCode: { id: initial, into: "", output: "proposal" } };
+    this.state.prompt = { kind: "spec-to-code", text: "", items: [], ids: [], index: 0, specCode: { id: initial, into: "", mode: "algo", output: "proposal" } };
     this.refreshSpecCodePrompt();
   }
 
@@ -3229,11 +3237,12 @@ export class App {
     return planned.filter((id) => id.toLowerCase().includes(query)).slice(0, 8);
   }
 
-  /** Why spec-to-code may not start now, or null: an ID, spec-to-code's own checks, then (a proposal only) a proposal waiting for the code file. */
+  /** Why spec-to-code may not start now, or null: an ID, spec-to-code's own checks, a model llm needs, then (a proposal only) a proposal waiting for the code file. */
   private specCodeProblem(form: SpecCodeForm): { field: string; text: string } | null {
     if (form.id.trim() === "") return { field: "id", text: "a planned fn id is required" };
     const placed = this.specCodeTarget(form);
     if (placed !== null && "error" in placed) return { field: placed.field, text: placed.error };
+    if (form.mode === "llm" && this.agentName() === null) return { field: "mode", text: "--mode llm needs a model: set `agent` in keylang.json (algo writes the template without one)" };
     // Without an analysis the operation checks the ID; a test file's waiting proposal it refuses too.
     if (form.output === "preview" || placed === null) return null;
     if (this.proposalWaiting(placed.file)) return { field: "into", text: `a proposal for ${placed.file} is waiting: merge it first (m, or Proposals)` };
@@ -3253,17 +3262,30 @@ export class App {
       { id: "id", text: `id:      ${form.id}${caret("id")}` },
       ...this.plannedMatches(form.id.trim()).map((id) => ({ id: `planned:${id}`, text: `    planned fn ${id}` })),
       { id: "into", text: `target:  ${form.into}${caret("into")}${form.into.trim() === "" ? `  (default ${file ?? "the module's file"})` : ""}` },
+      { id: "mode", text: `mode:    ${form.mode} · ←→ ${form.mode === "algo" ? "llm" : "algo"}` },
       { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
       { id: "run", text: form.output === "proposal" ? `Create the proposals under ${PROPOSALS_DIR}/: the code and each new test (no file itself is written)` : "Preview the candidate (writes nothing)" },
     ];
     prompt.ids = rows.map((row) => row.id);
     prompt.items = rows.map((row) => row.text);
     prompt.index = Math.max(0, prompt.ids.indexOf(selected));
-    prompt.details = [`root: ${this.state.root} · the target is relative to it · template: the declared signature with a body that fails until written, a failing node:test per flow test; no model`];
+    const how =
+      form.mode === "algo"
+        ? "template: the declared signature with a body that fails until written, a failing node:test per flow test; no model"
+        : "llm: the model writes the function and each new test file; checked as code, proposed for MERGE, never accepted for you; the tests are not run";
+    prompt.details = [`root: ${this.state.root} · the target is relative to it · ${how}`];
     const now = prompt.ids[prompt.index]!;
     const problem = this.specCodeProblem(form);
     const planned = this.plannedFns();
+    const agent = this.agentName();
     if (now.startsWith("planned:")) prompt.note = `Enter takes ${now.slice(8)}`;
+    else if (now === "mode")
+      prompt.note =
+        form.mode === "algo"
+          ? "algo: the template, offline; no model"
+          : agent === null
+            ? (problem?.text ?? "")
+            : `${agent} writes the code, then each new test file: one request each; its credentials are checked before the first`;
     else if (now === "id" && form.id.trim() === "") prompt.note = this.state.analysis ? `type a planned fn · ↓ picks one (${planned.length} planned, not implemented)` : "no current analysis to look it up; the operation reads the saved specs";
     else if (problem !== null && (problem.field === now || now === "run" || now === "output")) prompt.note = problem.text;
     else if (now === "id") prompt.note = file === null ? "no current analysis to look it up; the operation reads the saved specs" : `${form.id.trim()}: planned fn, its code goes to ${file}`;
@@ -3271,11 +3293,14 @@ export class App {
     else prompt.note = form.output === "proposal" ? "Enter proposes the code and its tests; each merges on its own in MERGE" : "Enter shows the candidate in F6; nothing is written";
   }
 
-  /** ←→ on the output row: proposal or preview. */
+  /** ←→ on the mode row (algo or llm) or the output row (proposal or preview). */
   private changeSpecCodeOutput(): void {
     const prompt = this.state.prompt;
-    if (prompt?.kind !== "spec-to-code" || !prompt.specCode || prompt.ids?.[prompt.index] !== "output") return;
-    prompt.specCode.output = prompt.specCode.output === "proposal" ? "preview" : "proposal";
+    const row = prompt?.ids?.[prompt.index];
+    if (prompt?.kind !== "spec-to-code" || !prompt.specCode) return;
+    if (row === "mode") prompt.specCode.mode = prompt.specCode.mode === "algo" ? "llm" : "algo";
+    else if (row === "output") prompt.specCode.output = prompt.specCode.output === "proposal" ? "preview" : "proposal";
+    else return;
     this.refreshSpecCodePrompt();
   }
 
@@ -3303,7 +3328,7 @@ export class App {
     }
     const into = form.into.trim();
     this.state.prompt = null;
-    const request: SpecToCodeRequest = { kind: "spec-to-code", root: this.state.root, id: form.id.trim(), ...(into !== "" ? { into: toPosix(into) } : {}), output: form.output, pending: "refuse" };
+    const request: SpecToCodeRequest = { kind: "spec-to-code", root: this.state.root, id: form.id.trim(), ...(into !== "" ? { into: toPosix(into) } : {}), output: form.output, pending: "refuse", ...(form.mode === "llm" ? { mode: "llm" as const } : {}) };
     this.requestOperation("spec-to-code", request);
   }
 
@@ -3322,7 +3347,8 @@ export class App {
     if (result.status === "completed" && this.stillWhereDraftStarted(origin)) {
       this.merges.open(code);
       if (this.state.merge?.path === code) {
-        this.state.message = `spec-to-code: ${PROPOSALS_DIR}/${code} · MERGE: decide the hunks, w writes ${code}${next} · run check after: the stub is not the feature done`;
+        const after = result.payload.mode === "llm" ? `the model's code is a candidate: review it, run its tests, then check` : "run check after: the stub is not the feature done";
+        this.state.message = `spec-to-code: ${PROPOSALS_DIR}/${code} · MERGE: decide the hunks, w writes ${code}${next} · ${after}`;
         return;
       }
     }

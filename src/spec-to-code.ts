@@ -19,7 +19,7 @@ import { sameFinding } from "./assess.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { walkFlow, type Flow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { allCrlf } from "./safe-write.ts";
-import type { LlmClient } from "./llm.ts";
+import type { LlmCallOptions, LlmClient } from "./llm.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
 export interface FileCandidate {
@@ -46,9 +46,11 @@ const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js
 /**
  * `model`: the body comes from the model instead of the stub — the whole
  * function with the declared signature, in one fenced block — and is
- * analyzed the same way before anything is written.
+ * analyzed the same way before anything is written. `options.signal`
+ * cancels the model's requests (`LlmCancelled`); the file is read before
+ * the first one, so the candidate's `before` is the text it was asked about.
  */
-export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient): Promise<CodeCandidate> {
+export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}): Promise<CodeCandidate> {
   const placed = plannedCodeTarget(analysis, id, into);
   if ("error" in placed) throw new Error(placed.error);
   const { file, name, signature } = placed;
@@ -56,14 +58,14 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const abs = join(config.root, file);
   const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
-  const stub = model ? await modelBody(analysis, model, file, name, id, signature, lf) : stubFor(file, name, id, signature, lf === null);
+  const stub = model ? await modelBody(analysis, model, file, name, id, signature, lf, options) : stubFor(file, name, id, signature, lf === null);
   const joined = lf === null || lf.trim() === "" ? stub : `${lf.replace(/\n*$/, "")}\n\n${stub}`;
   // A file with CRLF on every line keeps it.
   const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
   // The candidate is checked as the code it would be, without touching the disk, against the code without it.
   const next = await analyze({ root: config.root, overlay: new Map([[abs, after]]), withoutEvidence: true });
   const { verdicts, diagnostics } = introduced(analysis, next);
-  const { tests, notes } = await testCandidates(analysis, id, file, after, model);
+  const { tests, notes } = await testCandidates(analysis, id, file, after, model, options);
   return { id, file, before, after, verdicts, diagnostics, tests, testNotes: notes };
 }
 
@@ -180,7 +182,7 @@ function flowOwns(spec: SpecIR, flow: Flow, line: number): boolean {
  * existing file, or in a language without a `node:test` shape, is a note:
  * editing someone's test file is theirs to do.
  */
-async function testCandidates(analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined): Promise<{ tests: FileCandidate[]; notes: string[] }> {
+async function testCandidates(analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined, options: LlmCallOptions): Promise<{ tests: FileCandidate[]; notes: string[] }> {
   const root = analysis.config.root;
   const byFile = new Map<string, { flow: string; name: string }[]>();
   const notes: string[] = [];
@@ -209,7 +211,7 @@ async function testCandidates(analysis: Analysis, id: string, codeFile: string, 
   for (const [file, entries] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
     let from = toPosix(relative(dirname(file), codeFile));
     if (!from.startsWith(".")) from = `./${from}`;
-    const after = model ? await modelTest(model, file, from, name, id, code, entries) : testStub(from, name, entries);
+    const after = model ? await modelTest(model, file, from, name, id, code, entries, options) : testStub(from, name, entries);
     tests.push({ file, before: null, after });
   }
   return { tests, notes };
@@ -223,7 +225,7 @@ function testStub(from: string, name: string, entries: readonly { flow: string; 
 }
 
 /** The e2e test file from the model; each declared test name must be in it verbatim. */
-async function modelTest(model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]): Promise<string> {
+async function modelTest(model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
   const answer = await model.complete({
     system: `You write one end-to-end test file with node:test and node:assert/strict. Import \`${name}\` from ${JSON.stringify(from)}. Use exactly the test names given. Answer with the whole file only, in one fenced code block.`,
     prompt: [
@@ -232,7 +234,7 @@ async function modelTest(model: LlmClient, file: string, from: string, name: str
       `\`${id}\` as it will be:\n\`\`\`\n${code}\n\`\`\``,
     ].join("\n\n"),
     maxTokens: 8192,
-  });
+  }, options);
   const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const missing = entries.filter((e) => !text.includes(JSON.stringify(e.name)) && !text.includes(`'${e.name}'`));
   if (missing.length > 0) throw new Error(`the model's ${file} has no test ${missing.map((e) => JSON.stringify(e.name)).join(", ")}; nothing written`);
@@ -284,7 +286,7 @@ function stubFor(file: string, name: string, id: string, signature: string | nul
 }
 
 /** The function from the model, with its declared name; the rest of its answer is dropped. */
-async function modelBody(analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null): Promise<string> {
+async function modelBody(analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null, options: LlmCallOptions): Promise<string> {
   const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
   const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
   const answer = await model.complete({
@@ -295,7 +297,7 @@ async function modelBody(analysis: Analysis, model: LlmClient, file: string, nam
       `File ${file}:\n\`\`\`\n${before ?? ""}\n\`\`\``,
     ].join("\n\n"),
     maxTokens: 8192,
-  });
+  }, options);
   const code = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
   const declares = new RegExp(`\\b(function|def|fn)\\s+${name.replace(/[$]/g, "\\$")}\\b`);
   if (!declares.test(code)) throw new Error(`the model did not return a function named \`${name}\`; nothing written`);

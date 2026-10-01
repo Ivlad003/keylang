@@ -5,7 +5,7 @@
 // text → spec, and the pure pieces (input decoding, hunks, widths).
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -7897,7 +7897,7 @@ function specRow(s: ReturnType<typeof session>, id: string): void {
 }
 
 /** The palette's spec-to-code form with the given fields (an absent one keeps its prefill); Enter on the run row. */
-function specForm(s: ReturnType<typeof session>, fields: { id?: string; into?: string; output?: "proposal" | "preview" }): void {
+function specForm(s: ReturnType<typeof session>, fields: { id?: string; into?: string; mode?: "algo" | "llm"; output?: "proposal" | "preview" }): void {
   s.send(KEY.ctrlP);
   for (const ch of "spec to code") s.send(ch);
   s.send(KEY.enter);
@@ -7909,6 +7909,10 @@ function specForm(s: ReturnType<typeof session>, fields: { id?: string; into?: s
     specRow(s, field);
     for (const _ of form[field]) s.send("\x7f");
     for (const ch of text) s.send(ch);
+  }
+  if ((fields.mode ?? "algo") !== form.mode) {
+    specRow(s, "mode");
+    s.send(KEY.right);
   }
   if ((fields.output ?? "proposal") !== form.output) {
     specRow(s, "output");
@@ -7949,7 +7953,7 @@ test("tui: spec-to-code proposes the CLI's code and each test as separate code p
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
   assert.equal(prompt.kind, "spec-to-code", s.app.state.message ?? "");
-  assert.deepEqual(prompt.specCode, { id: "", into: "", output: "proposal" });
+  assert.deepEqual(prompt.specCode, { id: "", into: "", mode: "algo", output: "proposal" }, "the offline template unless llm is chosen");
   assert.equal(promptNote(s.app), "type a planned fn · ↓ picks one (1 planned, not implemented)");
   assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("planned:")), ["planned:application.refund.refund"]);
   for (const ch of "refu") s.send(ch);
@@ -8151,7 +8155,7 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
   s.send(KEY.tab);
   assert.match(s.app.state.message ?? "", /planned application\.purchase\.refund: .* · g: spec-to-code/);
   s.send("g");
-  assert.deepEqual(s.app.state.prompt?.specCode, { id: "application.purchase.refund", into: "", output: "proposal" });
+  assert.deepEqual(s.app.state.prompt?.specCode, { id: "application.purchase.refund", into: "", mode: "algo", output: "proposal" });
   assert.equal(promptNote(s.app), "application.purchase.refund: planned fn, its code goes to src/application/purchase.ts");
   specRow(s, "run");
   s.send(KEY.enter);
@@ -8165,4 +8169,252 @@ test("tui: spec-to-code refuses an implemented ID with its place, a file of anot
   await s.app.idle();
   const feature = s.app.state.records.at(-1)!.result!;
   assert.ok(feature.kind === "feature" && feature.payload !== null && !feature.payload.report.done && feature.exitCode === 1, "the feature is not done by a candidate");
+});
+
+// ---------- spec-to-code with the model (ticket 29) ----------
+
+/** The model's answers for REFUND_PLAN: the function for the code request, a test file with the declared names for each test request. */
+function refundReply(prompt: string): string {
+  if (/^Planned: `application\.refund\.refund`/.test(prompt)) return "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
+  const names = [...prompt.matchAll(/- flow refund: ("[^"]+")/g)].map((m) => m[1]!);
+  const cases = names.map((name) => `test(${name}, () => {\n  assert.equal(typeof refund, "function");\n});\n`).join("\n");
+  return `\`\`\`ts\nimport assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { refund } from "../src/application/refund.ts";\n\n${cases}\`\`\``;
+}
+
+/** `keylang spec-to-code` run without blocking this process, so the held model in it can answer. */
+function cliSpecAsync(root: string, args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [BIN, "spec-to-code", ...args], { cwd: root });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+/** Releases the held model's answers one request at a time until `done` settles. */
+async function answerAll<T>(model: Awaited<ReturnType<typeof heldModel>>, done: Promise<T>): Promise<T> {
+  let settled = false;
+  void done.then(() => (settled = true));
+  while (!settled) {
+    model.release();
+    await sleep(20);
+  }
+  return done;
+}
+
+test("tui: spec-to-code with the model shows the CLI's llm candidate with its provenance; the proposal lands for the target it started with without taking the focus; nothing is accepted and the plan stays planned", async (t) => {
+  // A feature whose flow reaches the planned fn: its status is the code's, never the candidate's.
+  const specs = { "keylang/flows/refund.md": REFUND_PLAN, "keylang/features/refunds.md": "# flow refunds\n\n- trigger application.refund.refund\n" };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  withConfig(twin, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, refundReply);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  const idVerdicts = (): string[] => (s.app.state.analysis?.verdicts ?? []).filter((v) => v.area === "application.refund.refund" && v.criterion === "ID").map((v) => v.verdict);
+  const planned = idVerdicts();
+  assert.ok(planned.length > 0 && planned.every((verdict) => verdict === "unverified"), JSON.stringify(planned));
+  const featureReport = async (): Promise<string> => {
+    const feature = await runOperation({ kind: "feature", root, slug: "refunds" });
+    assert.ok(feature.payload !== null, JSON.stringify(feature.messages));
+    return JSON.stringify([feature.exitCode, feature.payload.report]);
+  };
+  const featureBefore = await featureReport();
+  // The mode row: algo by default even with a model; llm names the agent and what it writes.
+  s.send(KEY.ctrlP);
+  for (const ch of "spec to code") s.send(ch);
+  s.send(KEY.enter);
+  for (const ch of "application.refund.refund") s.send(ch);
+  specRow(s, "mode");
+  assert.equal(promptNote(s.app), "algo: the template, offline; no model");
+  s.send(KEY.right);
+  assert.equal(s.app.state.prompt?.specCode?.mode, "llm");
+  assert.equal(promptNote(s.app), "anthropic:claude-opus-5 writes the code, then each new test file: one request each; its credentials are checked before the first");
+  assert.match(s.text(), /spec to code · llm/);
+  await esc(s.send);
+  assert.equal(model.prompts.length, 0, "the form asks nothing");
+
+  // Preview: three requests (the code, then each new TS test), the CLI's --mode llm --print bytes; nothing written.
+  specForm(s, { id: "application.refund.refund", mode: "llm", output: "preview" });
+  const previewRecord = s.app.state.records.at(-1)!;
+  assert.equal(previewRecord.params.kind === "spec-to-code" ? previewRecord.params.mode : null, "llm");
+  await model.requested(1);
+  assert.match(model.prompts[0]!, /^Planned: `application\.refund\.refund` \(order: Order\) → Order/);
+  assert.equal(previewRecord.status, "running");
+  for (let i = 0; i < 100 && !/asking anthropic:claude-opus-5/.test(previewRecord.progress ?? ""); i++) await sleep(10);
+  assert.match(previewRecord.progress ?? "", /asking anthropic:claude-opus-5/, "the progress of the same operation names the model");
+  const preview = await answerAll(model, s.app.idle().then(() => specRecord(s.app)));
+  assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals], ["completed", 0, [], []]);
+  assert.deepEqual([preview.payload.mode, preview.payload.model], ["llm", { agent: "anthropic:claude-opus-5", requests: 3 }]);
+  assert.match(model.prompts[1]!, /^Test file: tests\/refund-audit\.test\.ts/);
+  assert.match(model.prompts[2]!, /^Test file: tests\/refund\.test\.ts/);
+  const candidate = preview.payload.candidate;
+  assert.equal(candidate.targets[0]!.after, "export function refund(order: Order): Order {\n  return order;\n}\n");
+  assert.ok(candidate.verdicts.some((v) => v.area === "application.refund.refund" && v.criterion === "ID" && v.verdict === "ok"), "the model's code is checked as code");
+  assert.deepEqual(treeBytes(root), before, "a preview writes nothing");
+  const printed = await answerAll(model, cliSpecAsync(twin, ["application.refund.refund", "--mode", "llm", "--print"]));
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.equal(candidate.print, printed.stdout, "the CLI's candidate byte for byte");
+  assert.deepEqual(
+    candidate.testNotes.map((note) => `keylang: ${note}`),
+    printed.stderr.split("\n").filter((line) => line.startsWith("keylang: test ")),
+  );
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Spec to code · llm · application\.refund\.refund → 3 file\(s\) · preview, nothing written/);
+  assert.match(text, /written by anthropic:claude-opus-5 in 3 request\(s\): provenance, not evidence — review each hunk in MERGE; nothing is accepted for you/);
+  assert.match(text, /── keylang spec-to-code application\.refund\.refund --mode llm --print · stdout ──/);
+  await esc(s.send);
+
+  // Proposal: another file is opened while the model answers; the proposals are the CLI's, MERGE does not take the focus.
+  const asked = model.prompts.length;
+  specForm(s, { id: "application.refund.refund", mode: "llm" });
+  await model.requested(asked + 1);
+  assert.notEqual(s.app.state.current, "keylang/flows/refund.md");
+  s.send("\x1b[12~");
+  const other = locate(s.lines(), "keylang/flows/refund");
+  s.send(click(other.x + 1, other.y));
+  assert.equal(s.app.state.current, "keylang/flows/refund.md");
+  const proposed = await answerAll(model, s.app.idle().then(() => specRecord(s.app)));
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.written, proposed.proposals], ["completed", 0, [], REFUND_STORES]);
+  assert.equal(s.app.state.current, "keylang/flows/refund.md", "the focus is not taken");
+  assert.notEqual(s.app.state.mode, "merge", "an unrelated navigation only drops the auto-open");
+  assert.match(s.app.state.message ?? "", /spec-to-code: 3 proposal\(s\) wait: src\/application\/refund\.ts, tests\/refund-audit\.test\.ts, tests\/refund\.test\.ts/);
+  const cli = await answerAll(model, cliSpecAsync(twin, ["application.refund.refund", "--mode", "llm"]));
+  assert.equal(cli.status, 0, cli.stderr);
+  for (const store of REFUND_STORES) assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
+  assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_STORES].sort(), "only the proposals: no source, test, spec or stats");
+  await s.app.idle();
+  assert.deepEqual(idVerdicts(), planned, "the model's candidate does not make the plan implemented");
+  assert.equal(await featureReport(), featureBefore, "nor changes the feature's status");
+  assert.ok(featureBefore.includes("application.refund.refund"), featureBefore);
+  // The same MERGE and proposals list: the code merges on its own; the tests wait.
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "proposal");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "src/application/refund.ts");
+  s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "src/application/refund.ts"), "utf8"), candidate.targets[0]!.after);
+  assert.ok(!existsSync(join(root, "tests/refund.test.ts")) && existsSync(join(root, REFUND_STORES[2]!)), "the tests still wait as proposals");
+});
+
+test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout write nothing; a spec changed during the answer refuses the proposal and keeps the new bytes; an edit makes a preview outdated; no model is refused before any request", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN });
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  let reply: (prompt: string) => string = refundReply;
+  const model = await heldModel(t, (prompt) => reply(prompt));
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // Cancel from the palette while the second request is answered: cancelled, no payload, the request closed, nothing written.
+  specForm(s, { id: "application.refund.refund", mode: "llm" });
+  const cancelled = s.app.state.records.at(-1)!;
+  await model.requested(1);
+  model.release();
+  await model.requested(2);
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the request is closed");
+  model.release();
+  await s.app.idle();
+  assert.equal(cancelled.status, "cancelled", "a late answer changes nothing");
+  assert.deepEqual(treeBytes(root), before);
+
+  // An edit while a preview is answered: the preview is outdated, the edited text kept.
+  specForm(s, { id: "application.refund.refund", mode: "llm", output: "preview" });
+  const preview = s.app.state.records.at(-1)!;
+  await model.requested(3);
+  assert.equal(s.app.state.current, FLOW_PATH);
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  await answerAll(model, s.app.idle());
+  assert.equal(preview.status, "completed");
+  assert.equal(preview.outdated, "inputs edited since this run");
+  assert.notEqual(s.app.state.buffers.get(FLOW_PATH)!.text, CHECKOUT_FLOW, "the edit is kept");
+  s.send(KEY.f6);
+  assert.match(s.text(), /outdated: inputs edited since this run · Enter reruns/);
+  await esc(s.send);
+
+  // The operation itself, as the session runs it: an empty answer and a function of another name are 2 with nothing written.
+  const request = { kind: "spec-to-code", root, id: "application.refund.refund", output: "proposal", mode: "llm" } as const;
+  for (const [answer, message] of [
+    ["", /^claude-opus-5 answered without text/],
+    ["```ts\n```", /^the model did not return a function named `refund`; nothing written$/],
+    ["```ts\nexport function reimburse(): void {}\n```", /^the model did not return a function named `refund`; nothing written$/],
+  ] as const) {
+    reply = () => answer;
+    const failed = await answerAll(model, runOperation(request, {}));
+    assert.deepEqual([failed.status, failed.exitCode, failed.payload, failed.proposals], ["failed", 2, null, []]);
+    assert.match(failed.messages.at(-1)!.text, message);
+  }
+  reply = refundReply;
+  assert.deepEqual(treeBytes(root), before, "no proposal for a bad answer");
+  // A spec changed on disk during the answer: refused (1), the new bytes kept, no proposal.
+  const asked = model.prompts.length;
+  const stale = runOperation(request, {});
+  await model.requested(asked + 1);
+  const edited = `${REFUND_PLAN}\n<!-- edited meanwhile -->\n`;
+  writeFileSync(join(root, "keylang/flows/refund.md"), edited);
+  const refused = await answerAll(model, stale);
+  assert.deepEqual([refused.status, refused.exitCode, refused.proposals], ["failed", 1, []]);
+  assert.ok(refused.payload?.refused.includes("keylang/flows/refund.md: changed on disk while the candidate was computed"), JSON.stringify(refused.messages));
+  assert.equal(readFileSync(join(root, "keylang/flows/refund.md"), "utf8"), edited);
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+  writeFileSync(join(root, "keylang/flows/refund.md"), REFUND_PLAN);
+  // A timeout is 2 with the provider's message.
+  process.env.KEYLANG_LLM_TIMEOUT_MS = "200";
+  t.after(() => delete process.env.KEYLANG_LLM_TIMEOUT_MS);
+  const timedOut = await runOperation(request, {});
+  delete process.env.KEYLANG_LLM_TIMEOUT_MS;
+  assert.deepEqual([timedOut.status, timedOut.exitCode, timedOut.payload], ["failed", 2, null]);
+  assert.match(timedOut.messages.at(-1)!.text, /^anthropic: no answer within 200 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/);
+  // A proposal waiting for the code file: refused before the model is asked.
+  const waiting = join(root, REFUND_STORES[0]!);
+  mkdirSync(dirname(waiting), { recursive: true });
+  writeFileSync(waiting, "someone's code\n");
+  const count = model.prompts.length;
+  const pending = await runOperation(request, {});
+  assert.deepEqual([pending.status, pending.exitCode, pending.proposals], ["failed", 1, []]);
+  assert.equal(pending.messages[0]!.text, `${REFUND_STORES[0]}: a proposal for src/application/refund.ts is waiting; merge it (m) or remove it before a new candidate`);
+  assert.equal(model.prompts.length, count, "no request");
+  assert.equal(readFileSync(waiting, "utf8"), "someone's code\n");
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // Credentials missing: 2 with the CLI's message, before any request.
+  const key = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  const noKey = await runOperation(request, {});
+  process.env.ANTHROPIC_API_KEY = key;
+  assert.deepEqual([noKey.status, noKey.exitCode], ["failed", 2]);
+  assert.match(noKey.messages.at(-1)!.text, /^spec-to-code --mode llm: /);
+  assert.equal(model.prompts.length, count);
+  // Without `agent` the form refuses llm on its mode row; algo still runs offline.
+  const { agent: _agent, ...withoutAgent } = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+  writeFileSync(join(root, "keylang.json"), `${JSON.stringify(withoutAgent, null, 2)}\n`);
+  await s.app.idle();
+  const offline = session(root, { cols: 200, rows: 60 });
+  t.after(() => offline.app.close());
+  await offline.app.idle();
+  specForm(offline, { id: "application.refund.refund", mode: "llm" });
+  assert.deepEqual([offline.app.state.prompt?.kind, offline.app.state.prompt?.ids?.[offline.app.state.prompt.index]], ["spec-to-code", "mode"]);
+  assert.equal(offline.app.state.message, "spec-to-code: --mode llm needs a model: set `agent` in keylang.json (algo writes the template without one)");
+  await esc(offline.send);
+  assert.equal(offline.app.state.records.length, 0);
+  specForm(offline, { id: "application.refund.refund", output: "preview" });
+  await offline.app.idle();
+  const algo = specRecord(offline.app);
+  assert.deepEqual([algo.status, algo.payload.mode, algo.payload.model], ["completed", "algo", null]);
+  assert.equal(model.prompts.length, count, "the template asks no model");
 });

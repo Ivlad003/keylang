@@ -208,10 +208,10 @@ export const ACTIONS: readonly Action[] = [
   },
   {
     id: "spec-to-code",
-    label: "Spec to code: a stub and failing tests for a planned fn (template)",
+    label: "Spec to code: a planned fn's stub and failing tests, or the model's code and tests (algo, llm)",
     group: "Generate",
-    aliases: ["spec-to-code", "keylang spec-to-code", "spec to code", "spec-to-code --mode algo", "scaffold", "planned to code", "code from plan", "stub planned fn", "propose code"],
-    // A form names the planned fn, the code file and preview or proposal; the code and each test are separate proposals, MERGE applies each; no file itself is written.
+    aliases: ["spec-to-code", "keylang spec-to-code", "spec to code", "spec-to-code --mode algo", "spec-to-code --mode llm", "scaffold", "planned to code", "code from plan", "stub planned fn", "propose code"],
+    // A form names the planned fn, the code file, the mode and preview or proposal; the code and each test are separate proposals, MERGE applies each; no file itself is written.
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

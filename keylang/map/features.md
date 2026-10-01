@@ -511,31 +511,31 @@
     - verdict check.verdict
     - type [FileCandidate](../../src/spec-to-code.ts#L25)
     - type [CodeCandidate](../../src/spec-to-code.ts#L33) extends FileCandidate
-    - fn [specToCode](../../src/spec-to-code.ts#L51) (analysis: Analysis, id: string, into?: string, model?: LlmClient) → Promise<CodeCandidate>
+    - fn [specToCode](../../src/spec-to-code.ts#L53) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
       - calls features.spec-to-code.plannedCodeTarget, features.spec-to-code.modelBody, features.spec-to-code.stubFor, base.safe-write.allCrlf, map.analyze.analyze, features.spec-to-code.introduced, features.spec-to-code.testCandidates
-    - fn [plannedCodeTarget](../../src/spec-to-code.ts#L78) (analysis: Analysis, id: string, into?: string) → { file: string; name: string; signature: string | null } | { error: string; field: "id" | "into" }
+    - fn [plannedCodeTarget](../../src/spec-to-code.ts#L80) (analysis: Analysis, id: string, into?: string) → { file: string; name: string; signature: string | null } | { error: string; field: "id" | "into" }
       - calls features.lsp-features.plannedDecl, features.spec-to-code.callersInFlows, check.rules.blocksDependency, check.rules.dependencyKindOf, features.spec-to-code.newModuleFile, map.graph.placeFile, features.proposals.codeProposalProblem
-    - fn [specToCodeText](../../src/spec-to-code.ts#L117) (candidate: CodeCandidate) → string
+    - fn [specToCodeText](../../src/spec-to-code.ts#L119) (candidate: CodeCandidate) → string
       - calls features.spec-to-code.fileDiffText, check.assess.sameFinding, check.verdict.formatVerdict, base.diag.formatDiagnostic
-    - fn [fileDiffText](../../src/spec-to-code.ts#L126) (file: FileCandidate) → string
+    - fn [fileDiffText](../../src/spec-to-code.ts#L128) (file: FileCandidate) → string
       - calls features.proposals.lineDiff
-    - fn [introduced](../../src/spec-to-code.ts#L131) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
-    - fn [flowTests](../../src/spec-to-code.ts#L142) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
+    - fn [introduced](../../src/spec-to-code.ts#L133) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
+    - fn [flowTests](../../src/spec-to-code.ts#L144) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
       - calls features.spec-to-code.flowsMentioning, lang.spec-ir.walkFlow
-    - fn [flowsMentioning](../../src/spec-to-code.ts#L155) (analysis: Analysis, id: string) → Flow[] <!-- internal -->
+    - fn [flowsMentioning](../../src/spec-to-code.ts#L157) (analysis: Analysis, id: string) → Flow[] <!-- internal -->
       - calls features.spec-to-code.flowMentions
-    - fn [flowMentions](../../src/spec-to-code.ts#L160) (spec: SpecIR, flow: Flow, id: string) → boolean <!-- internal -->
+    - fn [flowMentions](../../src/spec-to-code.ts#L162) (spec: SpecIR, flow: Flow, id: string) → boolean <!-- internal -->
       - calls features.spec-to-code.flowOwns, lang.spec-ir.walkFlow
-    - fn [flowOwns](../../src/spec-to-code.ts#L173) (spec: SpecIR, flow: Flow, line: number) → boolean <!-- internal -->
-    - fn [testCandidates](../../src/spec-to-code.ts#L183) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+    - fn [flowOwns](../../src/spec-to-code.ts#L175) (spec: SpecIR, flow: Flow, line: number) → boolean <!-- internal -->
+    - fn [testCandidates](../../src/spec-to-code.ts#L185) (analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined, options: LlmCallOptions) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
       - calls features.spec-to-code.flowTests, features.proposals.codeProposalProblem, base.config.toPosix, features.spec-to-code.modelTest, features.spec-to-code.testStub
-    - fn [testStub](../../src/spec-to-code.ts#L218) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
-    - fn [modelTest](../../src/spec-to-code.ts#L226) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[]) → Promise<string> <!-- internal -->
-    - fn [callersInFlows](../../src/spec-to-code.ts#L243) (analysis: Analysis, id: string) → string[] <!-- internal -->
-    - fn [newModuleFile](../../src/spec-to-code.ts#L256) (config: Config, moduleId: string) → string <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L220) (from: string, name: string, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L228) (model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L245) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L258) (config: Config, moduleId: string) → string <!-- internal -->
       - calls base.glob.globPrefix
-    - fn [stubFor](../../src/spec-to-code.ts#L271) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
-    - fn [modelBody](../../src/spec-to-code.ts#L287) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null) → Promise<string> <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L273) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L289) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       - calls features.spec-to-code.flowsMentioning
   - module [stats](../../src/stats.ts#L1)
     - node external.node

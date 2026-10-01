@@ -446,7 +446,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
   if (record.params.kind === "code-to-spec") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
-  if (record.params.kind === "spec-to-code") return `${label} · ${record.params.output} · ${record.params.id}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
+  if (record.params.kind === "spec-to-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.id}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -464,7 +464,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "code-to-spec") return `code-to-spec ${codeSource(request)} --mode ${request.mode ?? "algo"}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
-  if (request.kind === "spec-to-code") return `spec-to-code ${request.id}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
+  if (request.kind === "spec-to-code") return `spec-to-code ${request.id}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.mode === "llm" ? " --mode llm" : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
@@ -1052,9 +1052,10 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     const { candidate } = payload;
     const ok = result.exitCode === 0;
     const muted = { ...THEME.panel, fg: 243 };
-    rows.push({ text: `Spec to code · template · ${candidate.id} → ${candidate.targets.length} file(s) · ${payload.output === "preview" ? "preview, nothing written" : "proposals; no source or test file itself is written"}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `Spec to code · ${payload.mode === "llm" ? "llm" : "template"} · ${candidate.id} → ${candidate.targets.length} file(s) · ${payload.output === "preview" ? "preview, nothing written" : "proposals; no source or test file itself is written"}`, style: { ...THEME.panel, bold: true } });
     rows.push({ text: `${specCodeOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
     for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : message.level === "warning" ? { ...THEME.panel, fg: 179 } : THEME.panel });
+    if (payload.model !== null) rows.push({ text: `  written by ${payload.model.agent} in ${payload.model.requests} request(s): provenance, not evidence — review each hunk in MERGE; nothing is accepted for you and its tests are not run`, style: muted });
     for (const target of candidate.targets) {
       const store = `${PROPOSALS_DIR}/${target.file}`;
       const state = payload.proposals.includes(store) ? `proposed as ${store}` : target.pending !== null ? `a proposal was waiting at ${store}` : payload.output === "preview" ? "previewed" : "not proposed";
@@ -1063,7 +1064,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     rows.push({ text: `  with the candidate in place: ${candidate.verdicts.length} verdict(s), ${candidate.diagnostics.length} diagnostic(s) — the candidate's, a preview of check; not the workspace's verdict, and not the feature done`, style: muted });
     if (payload.proposals.length > 0) rows.push({ text: "  Enter opens the proposals list: each file merges on its own (m and Proposals too)", style: THEME.hint });
     else if (payload.output === "preview") rows.push({ text: "  Enter builds it again · the form's proposal output writes the proposals", style: THEME.hint });
-    rows.push({ text: `── keylang spec-to-code ${candidate.id} --print · stdout ──`, style: muted });
+    rows.push({ text: `── keylang spec-to-code ${candidate.id}${payload.mode === "llm" ? " --mode llm" : ""} --print · stdout ──`, style: muted });
     const lines = candidate.print.replace(/\r\n/g, "\n").split("\n");
     if (lines.at(-1) === "") lines.pop();
     for (const line of lines) rows.push({ text: line, style: THEME.panel });
@@ -1425,7 +1426,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? "spec to code · template" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

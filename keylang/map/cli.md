@@ -92,7 +92,7 @@
       - calls operations.operations.runOperation, base.config.toPosix
     - fn [cmdSpecToCode](../../src/cli.ts#L484) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       - calls cli.cli.specToCodePrinter, map.analyze.findRoot, base.config.toPosix, map.analyze.analyze, features.spec-to-code.specToCode, features.spec-to-code.specToCodeText, features.proposals.codeProposalProblem, features.proposals.writeProposal, base.safe-write.safeWriteAll
-    - fn [specToCodePrinter](../../src/cli.ts#L531) (root: string, id: string, into: string | undefined, print: boolean) → Promise<number> <!-- internal -->
+    - fn [specToCodePrinter](../../src/cli.ts#L531) (root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm") → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation
     - fn [cmdCodeToSpec](../../src/cli.ts#L545) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, map.analyze.analyze, base.config.toPosix, cli.cli.codeToSpecPrinter

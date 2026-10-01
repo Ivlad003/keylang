@@ -485,8 +485,8 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
   if (opts.apply && opts.print) throw new Error("spec-to-code: --apply writes the files, --print writes nothing; give one");
   if (!id) throw new Error("spec-to-code: a planned id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm") throw new Error(`spec-to-code: --mode must be algo or llm, got \`${opts.mode}\``);
-  // The template's preview and proposal go through the shared operation; --apply and the model stay here until they move (tickets 29, 30).
-  if (opts.mode === "algo" && !opts.apply) return specToCodePrinter(findRoot(process.cwd()), id, opts.into === undefined ? undefined : toPosix(opts.into), opts.print);
+  // Preview and proposal, of the template and the model, go through the shared operation; --apply stays here until it moves (ticket 30).
+  if (!opts.apply) return specToCodePrinter(findRoot(process.cwd()), id, opts.into === undefined ? undefined : toPosix(opts.into), opts.print, opts.mode);
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
   if (!analysis.snapshot) throw new Error("spec-to-code: no supported source files; run `keylang init`");
   let model;
@@ -523,13 +523,13 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
 }
 
 /**
- * `spec-to-code <id> [--into] [--print]` in the template mode: a printer
+ * `spec-to-code <id> [--into] [--mode algo|llm] [--print]`: a printer
  * over the shared `spec-to-code` operation. stdout is the candidate's
  * files and findings, stderr the test notes and then what was (not)
  * written. The proposals replace ones already waiting, as the CLI always did.
  */
-async function specToCodePrinter(root: string, id: string, into: string | undefined, print: boolean): Promise<number> {
-  const result = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: print ? "preview" : "proposal", pending: "replace" });
+async function specToCodePrinter(root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm"): Promise<number> {
+  const result = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: print ? "preview" : "proposal", pending: "replace", ...(mode === "llm" ? { mode } : {}) });
   const payload = result.payload;
   if (payload !== null) process.stdout.write(payload.candidate.print);
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);

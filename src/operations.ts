@@ -24,7 +24,7 @@ import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
 import { codeProposalProblem, PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal, type ProposalBasis } from "./proposals.ts";
-import { fileDiffText, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
+import { fileDiffText, plannedCodeTarget, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
 import type { Verdict } from "./verdict.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
@@ -338,13 +338,14 @@ export type CodeToSpecSource =
     };
 
 /**
- * `keylang spec-to-code <id> [--into] [--print]` in the template mode: a
- * stub for the planned fn `id` with its declared signature in the file of
- * its module, and a failing node:test file for each `test` its flows name
- * in a file that does not exist yet (`specToCode`). The candidate is
- * analyzed as the code it would be. `preview` writes nothing; `proposal`
- * writes each file's full text to `.keylang/proposals/<file>`, never the
- * file itself — MERGE applies each on its own.
+ * `keylang spec-to-code <id> [--into] [--mode algo|llm] [--print]`: for the
+ * planned fn `id`, in the file of its module, a stub with its declared
+ * signature (`algo`) or the model's function (`llm`), and for each `test`
+ * its flows name in a file that does not exist yet a failing node:test
+ * file (`algo`) or the model's test (`llm`) (`specToCode`). The candidate
+ * is analyzed as the code it would be. `preview` writes nothing;
+ * `proposal` writes each file's full text to `.keylang/proposals/<file>`,
+ * never the file itself — MERGE applies each on its own.
  */
 export interface SpecToCodeRequest {
   kind: "spec-to-code";
@@ -357,6 +358,8 @@ export interface SpecToCodeRequest {
   output: "preview" | "proposal";
   /** A proposal already waiting for one of the files: `replace` is the CLI's policy, `refuse` (default) the TUI's. */
   pending?: "refuse" | "replace";
+  /** Default `algo`: the template, no model. `llm` needs the configured model (no hybrid: there is no contract for mixing a stub with the model's body). */
+  mode?: "algo" | "llm";
 }
 
 /**
@@ -836,11 +839,20 @@ export interface SpecToCodeCandidate {
   print: string;
 }
 
+/** The model behind an `llm` spec-to-code candidate. */
+export interface SpecCodeModelInfo {
+  agent: string;
+  /** One for the code, one per new test file. */
+  requests: number;
+}
+
 /** What `keylang spec-to-code` built, and the proposals it wrote. */
 export interface SpecToCodePayload {
   output: "preview" | "proposal";
-  mode: "algo";
+  mode: "algo" | "llm";
   candidate: SpecToCodeCandidate;
+  /** Who wrote the code and the tests of an `llm` candidate; null for the template. Provenance only: the candidate is reviewed in MERGE, never accepted for it. */
+  model: SpecCodeModelInfo | null;
   /** `code src/a.ts + 1 test file(s)`. */
   summary: string;
   /** The proposal files written (`.keylang/proposals/<file>`), in the candidate's order; on a failure part way, the ones written before it. */
@@ -2789,12 +2801,25 @@ function specTexts(root: string, docs: readonly Document[]): Map<string, string 
  * else 1 and nothing is written. Then each proposal is written atomically
  * in turn; a Cancel or an I/O error part way stops there and the result
  * names the proposals already written. No stats: the template is no
- * model's draft.
+ * model's draft, and the model's code is not counted either (as the CLI
+ * never did).
+ *
+ * `llm`: the configured model writes the function and each new test file
+ * (`llm` without a model is 2 with the CLI's message, before any request).
+ * The analysis, the specs, the sources and the code file are read before
+ * the first request, so a change during an answer makes the candidate
+ * unfit at the commit (1, the new bytes kept). For a proposal the code
+ * file's store and waiting proposal are checked before the model is asked.
+ * An answer without the function or a declared test is 2 and nothing is
+ * written; a Cancel before or during any answer is `cancelled` with no
+ * payload; a timeout or a provider error is 2 with its message.
  */
 async function runSpecToCode(request: SpecToCodeRequest, context: OperationContext): Promise<OperationEnvelope<"spec-to-code">> {
   const { root } = request;
   if (!isAbsolute(root)) return emptySpecToCode("failed", 2, "spec-to-code: root must be an absolute path");
   if (request.id.trim() === "") return emptySpecToCode("failed", 2, "spec-to-code: a planned id is required");
+  const mode = request.mode ?? "algo";
+  if (mode !== "algo" && mode !== "llm") return emptySpecToCode("failed", 2, `spec-to-code: --mode must be algo or llm, got \`${String(mode)}\``);
   if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
@@ -2808,19 +2833,59 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   if (!snapshot) return emptySpecToCode("failed", 2, "spec-to-code: no supported source files; run `keylang init`");
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   const specs = specTexts(root, analyzed.docs);
-  context.onProgress?.({ text: `building ${request.id} and checking it as code` });
+  const into = request.into === undefined ? undefined : toPosix(request.into);
+  const setup = await modelSetup(mode, analyzed.config.agent, "spec-to-code");
+  if ("error" in setup) return emptySpecToCode("failed", 2, setup.error);
+  const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
+  const model = setup.client;
+  if (model !== null && request.output === "proposal") {
+    // Checked before the model is asked: a code file whose proposal cannot be written costs no request. The ID's own problems are specToCode's.
+    const placed = plannedCodeTarget(analyzed, request.id, into);
+    if (!("error" in placed)) {
+      const store = `${PROPOSALS_DIR}/${placed.file}`;
+      const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
+      if (storeProblem !== null) return emptySpecToCode("failed", 2, `${store}: ${storeProblem}`);
+      if ((request.pending ?? "refuse") === "refuse" && existingText(join(root, store)) !== null) {
+        return { ...emptySpecToCode("failed", 1), messages: [{ level: "error", text: `${store}: a proposal for ${placed.file} is waiting; merge it (m) or remove it before a new candidate` }, nothingWritten] };
+      }
+    }
+  }
+  // The model's requests in order: one for the code, then one per new test file; each named in the progress.
+  let requests = 0;
+  const counted: LlmClient | undefined =
+    model === null
+      ? undefined
+      : {
+          ...model,
+          complete: (llmRequest, options) => {
+            requests++;
+            context.onProgress?.({ text: `asking ${model.agent} (request ${requests}: ${requests === 1 ? "the code" : "a test file"})` });
+            return model.complete(llmRequest, options);
+          },
+        };
+  context.onProgress?.({ text: model === null ? `building ${request.id} and checking it as code` : `asking ${model.agent} for ${request.id}` });
+  const { LlmCancelled } = await import("./llm.ts");
   let candidate: SpecToCodeCandidate;
   try {
-    candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, request.into === undefined ? undefined : toPosix(request.into)));
+    candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, into, counted, context.signal ? { signal: context.signal } : {}));
   } catch (error) {
+    if (error instanceof LlmCancelled || context.signal?.aborted) return emptySpecToCode("cancelled", null);
     return emptySpecToCode("failed", 2, messageOf(error));
   }
   if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
   const tests = candidate.targets.length - 1;
-  const payload: SpecToCodePayload = { output: request.output, mode: "algo", candidate, summary: `code ${candidate.targets[0]!.file} + ${tests} test file(s)`, proposals: [], refused: [], error: null };
-  // The test entries the template leaves to the person, as the CLI says them on stderr.
+  const payload: SpecToCodePayload = {
+    output: request.output,
+    mode,
+    candidate,
+    model: model === null ? null : { agent: model.agent, requests },
+    summary: `code ${candidate.targets[0]!.file} + ${tests} test file(s)`,
+    proposals: [],
+    refused: [],
+    error: null,
+  };
+  // The test entries left to the person, as the CLI says them on stderr.
   const notes: OperationMessage[] = candidate.testNotes.map((text) => ({ level: "warning", text }));
-  const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
   if (request.output === "preview") return { ...emptySpecToCode("completed", 0), payload, messages: [...notes, { level: "info", text: `${payload.summary} for ${candidate.id}; a preview, nothing written` }] };
   // The whole set is checked before the first write.
   for (const target of candidate.targets) {
