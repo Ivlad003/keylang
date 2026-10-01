@@ -9138,3 +9138,186 @@ test("tui: explain with the model keeps the saved answer on Cancel, a timeout, a
   assert.equal(model.prompts.length, asked + 2, "no request without credentials");
   assert.deepEqual(treeBytes(root), before);
 });
+
+// ---------- explanations to do: inventory and dry run (ticket 33) ----------
+
+/** The palette's inventory form: `steps` → on the list row, then `limit` and `jobs` typed into their rows; Enter unless `submit` is false. */
+function explainPlanForm(s: ReturnType<typeof session>, options: { steps?: number; limit?: string; jobs?: string; submit?: boolean } = {}): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "explain --stale") s.send(ch);
+  s.send(KEY.enter);
+  assert.ok(s.app.state.prompt?.kind === "explain" && s.app.state.prompt.explainPlan, s.app.state.message ?? "");
+  for (let i = 0; i < (options.steps ?? 0); i++) s.send(KEY.right);
+  for (const [row, value] of [["limit", options.limit], ["jobs", options.jobs]] as const) {
+    if (value === undefined) continue;
+    while (s.app.state.prompt!.ids![s.app.state.prompt!.index] !== row) s.send(KEY.down);
+    for (const ch of value) s.send(ch);
+  }
+  if (options.submit !== false) s.send(KEY.enter);
+}
+
+type ExplainPlanResult = Extract<OperationResult, { kind: "explain-plan" }> & { payload: NonNullable<Extract<OperationResult, { kind: "explain-plan" }>["payload"]> };
+
+function explainPlanRecord(app: App): ExplainPlanResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "explain-plan" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as ExplainPlanResult;
+}
+
+test("tui: explanations to do — the stale saved list and the missing/stale brief plans are the CLI's, with waves, counts and an approximate estimate; limit and jobs are checked as the CLI checks them; an empty plan is zero work; no model, nothing written", async (t) => {
+  const order = "/** Creates an order. */\nexport function create(): void {}\n";
+  const { root, prompts } = await explainRepo(t, { "src/domain/order.ts": order });
+  const s = session(root, { cols: 220, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const analysis = s.app.state.analysis!;
+  // A doc comment (domain.order.create), a fresh brief (save), a stale brief and answer (buy), no brief (checkout), a gone brief and answer.
+  mkdirSync(join(root, "keylang/explain/brief"), { recursive: true });
+  writeFileSync(join(root, "keylang/explain/brief/infrastructure.store.save.md"), storedExplanation(currentBaseline(analysis, "infrastructure.store.save")!, "brief", "Saves."));
+  writeFileSync(join(root, "keylang/explain/brief/application.purchase.buy.md"), storedExplanation("old", "brief", "Buys."));
+  writeFileSync(join(root, "keylang/explain/application.purchase.buy.md"), storedExplanation("old", "short", "Buys the order."));
+  writeFileSync(join(root, "keylang/explain/brief/domain.order.ghost.md"), storedExplanation("old", "brief", "Gone."));
+  writeFileSync(join(root, "keylang/explain/domain.old.thing.md"), storedExplanation("old", "short", "Gone."));
+  const before = treeBytes(root);
+  const cli = (args: string[]): string => {
+    const run = cliExplain(root, args);
+    assert.deepEqual([run.status, run.stderr], [0, ""], args.join(" "));
+    return run.stdout;
+  };
+
+  // The stale saved list: answers and briefs, stale and gone, as `explain --stale` prints them.
+  explainPlanForm(s, { submit: false });
+  assert.deepEqual(s.app.state.prompt?.ids, ["list", "run"], "the inventory takes no limit or jobs");
+  assert.match(s.app.state.prompt!.details![0]!, /^keylang explain --stale: every saved answer and brief .*not the brief plan$/);
+  assert.equal(promptNote(s.app), "explain --stale · a fresh analysis of the saved code and specs · no model, writes nothing");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const saved = explainPlanRecord(s.app);
+  assert.deepEqual([saved.status, saved.exitCode, saved.written], ["completed", 0, []]);
+  assert.equal(saved.payload.text, cli(["--stale"]), "the CLI's stdout, byte for byte");
+  assert.ok(saved.payload.list === "stale-saved");
+  assert.deepEqual(saved.payload.entries.map((entry) => [entry.id, entry.kind, entry.state, entry.place?.file ?? null]), [
+    ["application.purchase.buy", "answer", "stale", "src/application/purchase.ts"],
+    ["domain.old.thing", "answer", "gone", null],
+    ["application.purchase.buy", "brief", "stale", "src/application/purchase.ts"],
+    ["domain.order.ghost", "brief", "gone", null],
+  ]);
+  assert.equal(saved.payload.saved, 5);
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Explanations to do · stale saved answers and briefs \(keylang explain --stale\) · no model, nothing written/);
+  assert.match(text, /2 stale, 2 gone of 5 saved explanation\(s\) · code 0/);
+  assert.match(text, /the saved explanations themselves, not the brief plan/);
+  assert.match(text, /domain\.order\.ghost \(brief\): gone \(explained 2026-09-30\) · keylang\/explain\/brief\/domain\.order\.ghost\.md · not in the snapshot, not planned/);
+  // A known node opens its code; a gone ID has no place.
+  s.send(KEY.tab);
+  s.send(KEY.down);
+  assert.match(s.app.state.message ?? "", /^domain\.old\.thing: gone · no position in the code$/);
+  s.send(KEY.up);
+  s.send(KEY.enter);
+  assert.deepEqual([s.app.state.code?.file, s.app.state.code?.line], ["src/application/purchase.ts", 3]);
+  await esc(s.send);
+  await esc(s.send);
+  await esc(s.send);
+
+  // The missing plan: stale briefs included, the doc comment and the fresh brief left out, bottom-up; the estimate approximate.
+  explainPlanForm(s, { steps: 1, submit: false });
+  assert.deepEqual(s.app.state.prompt?.ids, ["list", "limit", "jobs", "run"]);
+  assert.match(s.app.state.prompt!.details![0]!, /^keylang explain --missing --dry-run: .*stale briefs included$/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const missing = explainPlanRecord(s.app);
+  assert.ok(missing.payload.list === "briefs");
+  assert.equal(missing.payload.text, cli(["--missing", "--dry-run"]));
+  assert.equal(missing.payload.text, cli(["--missing", "--llm", "--dry-run"]), "--llm with --dry-run asks nothing");
+  const listed = cli(["--missing"]);
+  assert.equal(missing.payload.plan.map((entry) => `${entry.id} (${entry.level})\n`).join(""), listed, "the same planner as the CLI's list");
+  const ids = missing.payload.plan.map((entry) => entry.id);
+  assert.ok(!ids.includes("domain.order.create") && !ids.includes("infrastructure.store.save") && !ids.includes("domain.order.ghost"), ids.join(" "));
+  assert.deepEqual(missing.payload.plan.filter((entry) => entry.level === "fn/type").map((entry) => [entry.id, entry.reason]), [
+    ["application.purchase.buy", "stale"],
+    ["presentation.terminal.checkout", "missing"],
+  ]);
+  assert.deepEqual(missing.payload.waves.map((wave) => wave.level), ["fn/type", "class/module", "layer"]);
+  assert.deepEqual([missing.payload.jobs, missing.payload.limit, missing.payload.skipped, missing.payload.gone], [4, null, { documented: 1, fresh: 1 }, ["domain.order.ghost"]]);
+  assert.ok(missing.payload.estimate !== null && missing.payload.estimate.input > 0 && missing.payload.estimate.output === ids.length * 80);
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /Explanations to do · brief plan: missing and stale briefs \(keylang explain --missing --dry-run --jobs 4\) · a preview: no model, nothing written/);
+  assert.match(text, /approximate tokens: ~\d+ in, ~\d+ out — about 4 characters a token and 80 a brief; not the API's count or cost/);
+  assert.match(text, /left out: 1 node\(s\) with a doc comment, 1 with a fresh brief · gone, never asked for: domain\.order\.ghost/);
+  assert.match(text, /a preview, not a permission/);
+  assert.match(text, /── wave 1 · fn\/type · 2 ──/);
+  assert.match(text, /application\.purchase\.buy \(fn\/type\) · stale brief {2}src\/application\/purchase\.ts:3/);
+  await esc(s.send);
+
+  // A limit cuts the plan before the estimate; jobs are the batch's.
+  explainPlanForm(s, { steps: 1, limit: "2", jobs: "2" });
+  await s.app.idle();
+  const limited = explainPlanRecord(s.app);
+  assert.ok(limited.payload.list === "briefs");
+  assert.equal(limited.payload.text, cli(["--missing", "--dry-run", "--limit", "2", "--jobs", "2"]));
+  assert.equal(limited.payload.plan.map((entry) => `${entry.id} (${entry.level})\n`).join(""), cli(["--missing", "--limit", "2"]));
+  assert.deepEqual([limited.payload.plan.length, limited.payload.candidates, limited.payload.jobs, limited.payload.estimate!.output], [2, ids.length, 2, 160]);
+  assert.ok(limited.payload.estimate!.input < missing.payload.estimate!.input);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Explanations to do: stale saved answers, or a brief plan with a dry-run estimate · explain --missing --dry-run --limit 2 --jobs 2/);
+  assert.match(s.text(), /2 of \d+ brief\(s\) planned, ~\d+ in, ~160 out tokens \(approximate\)/);
+  await esc(s.send);
+
+  // 0, a fraction, a word: the form stays on the field with the CLI's message; nothing runs.
+  const records = s.app.state.records.length;
+  for (const [row, value] of [["limit", "0"], ["limit", "1.5"], ["limit", "abc"], ["jobs", "0"]] as const) {
+    explainPlanForm(s, { steps: 1, [row]: value });
+    const flag = `--${row}`;
+    const run = cliExplain(root, ["--missing", "--dry-run", flag, value]);
+    assert.deepEqual([run.status, run.stdout], [2, ""]);
+    assert.equal(s.app.state.message, `explain: ${run.stderr.replace(/^keylang: |\n$/g, "")}`);
+    assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], row);
+    await esc(s.send);
+    const op = await runOperation({ kind: "explain-plan", root, list: "briefs", batch: "missing", [row]: Number(value) });
+    assert.deepEqual([op.status, op.exitCode, op.payload], ["failed", 2, null]);
+  }
+  assert.equal(s.app.state.records.length, records);
+
+  // The stale brief plan is not the stale list: only buy's brief, no answer, no gone ID.
+  explainPlanForm(s, { steps: 2 });
+  await s.app.idle();
+  const stale = explainPlanRecord(s.app);
+  assert.ok(stale.payload.list === "briefs");
+  assert.deepEqual(stale.payload.plan.map((entry) => entry.id), ["application.purchase.buy"]);
+  assert.equal(stale.payload.text, cli(["--stale", "--dry-run"]));
+  assert.equal(stale.payload.plan.map((entry) => `${entry.id} (${entry.level})\n`).join(""), cli(["--stale", "--limit", "5"]));
+  assert.notEqual(stale.payload.text, saved.payload.text);
+  assert.deepEqual(treeBytes(root), before, "nothing written: no explanation, cache, stats or proposal");
+
+  // Nothing stale: zero work, no error and no request.
+  rmSync(join(root, "keylang/explain/brief/application.purchase.buy.md"));
+  explainPlanForm(s, { steps: 2 });
+  await s.app.idle();
+  const empty = explainPlanRecord(s.app);
+  assert.ok(empty.payload.list === "briefs");
+  assert.deepEqual([empty.status, empty.exitCode, empty.payload.plan, empty.payload.estimate], ["completed", 0, [], { input: 0, output: 0 }]);
+  assert.equal(empty.payload.text, cli(["--stale", "--dry-run"]));
+  assert.ok(empty.messages.every((message) => message.level !== "error"));
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /nothing to explain: zero work, no request · code 0/);
+  assert.match(text, /zero work: no node needs a brief; no request would be made/);
+  await esc(s.send);
+
+  // A dirty spec is saved first: Back plans nothing and writes nothing.
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const count = s.app.state.records.length;
+  explainPlanForm(s, { steps: 1 });
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/flows/checkout.md"]);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, count);
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW, "Back writes nothing");
+  const after = treeBytes(root);
+  assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [], "no explanation, cache, stats or proposal appeared");
+  assert.equal(prompts.length, 0, "no request to the model");
+});

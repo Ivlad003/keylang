@@ -176,6 +176,26 @@
     - fn [holeLine](../../src/explain-edge.ts#L67) (hole: CoverageItem) → string
     - fn [edgeExplanationLines](../../src/explain-edge.ts#L72) (explanation: EdgeExplanation) → string[]
       - calls features.explain-edge.edgeLine
+  - module [explain-inventory](../../src/explain-inventory.ts#L1)
+    - analyze map.analyze
+    - explain-llm features.explain-llm
+    - explanations map.explanations
+    - graph map.graph
+    - lsp-features features.lsp-features
+    - fn [positiveIntegerProblem](../../src/explain-inventory.ts#L17) (flag: string, text: string) → string | null
+    - type [NodePlace](../../src/explain-inventory.ts#L23)
+    - type [StaleExplanation](../../src/explain-inventory.ts#L32)
+    - type [StaleInventory](../../src/explain-inventory.ts#L48)
+    - type [PlannedBriefEntry](../../src/explain-inventory.ts#L55) extends PlannedBrief
+    - type [BriefPlan](../../src/explain-inventory.ts#L66)
+    - fn [nodePlace](../../src/explain-inventory.ts#L87) (analysis: Analysis, id: string) → NodePlace | null <!-- internal -->
+      - calls features.lsp-features.plannedDecl
+    - fn [staleInventory](../../src/explain-inventory.ts#L96) (analysis: Analysis) → StaleInventory
+      - calls features.explain-llm.explainedIds, features.explain-llm.readExplanation, map.explanations.explanationPath, features.explain-llm.currentBaseline, features.explain-llm.isStale, features.explain-inventory.nodePlace
+    - fn [staleInventoryText](../../src/explain-inventory.ts#L113) (inventory: StaleInventory) → string
+    - fn [briefPlan](../../src/explain-inventory.ts#L123) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
+      - calls map.explanations.loadBriefs, features.explain-llm.planBriefs, features.explain-inventory.nodePlace, map.explanations.snapshotBaseline, features.explain-llm.currentBaseline, features.explain-llm.estimateTokens
+    - fn [briefPlanText](../../src/explain-inventory.ts#L161) (plan: BriefPlan) → string
   - module [explain-llm](../../src/explain-llm.ts#L1)
     - node external.node
     - agent-context features.agent-context

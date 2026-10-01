@@ -18,7 +18,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -446,6 +446,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "trace-plan") return `${label} · ${record.params.flow}`;
   if (record.params.kind === "explain") return `${label} · ${record.params.subject}`;
   if (record.params.kind === "explain-llm") return `${label} · ${record.params.detail ?? "default detail"} · ${record.params.id}`;
+  if (record.params.kind === "explain-plan") return `${label} · ${operationLabel(record.params)}`;
   if (record.params.kind === "draft-flow") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.trigger}`;
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
@@ -467,6 +468,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "parse") return request.format === "json" ? "parse --json" : "parse";
   if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "explain") return `explain ${request.subject}`;
+  if (request.kind === "explain-plan") return explainPlanLabel(request);
   if (request.kind === "explain-llm") return `explain ${request.id} --llm${request.detail === "full" ? " --full" : request.detail === "brief" ? " --brief" : ""}`;
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
@@ -511,6 +513,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "parse" && result.payload !== null) return `${parseOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "trace-plan" && result.payload !== null) return `${tracePlanOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain" && result.payload !== null) return `${explainOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "explain-plan" && result.payload !== null) return `${explainPlanOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain-llm" && result.payload !== null) return `${explainLlmOutcome(result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-flow" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-rules" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -555,6 +558,23 @@ function explainLlmOutcome(payload: ExplainLlmPayload): string {
   if (payload.written !== null) return `${what}: new ${payload.detail} answer saved to ${payload.written}`;
   if (payload.refused.length > 0) return `${what}: refused, nothing written`;
   return `${what}: the model failed, nothing written`;
+}
+
+/** The CLI command of an inventory: `explain --stale`, `explain --missing --dry-run --limit 3 --jobs 2`. */
+function explainPlanLabel(request: ExplainPlanRequest): string {
+  if (request.list === "stale-saved") return "explain --stale";
+  return [`explain --${request.batch}`, ...(request.estimate === true ? ["--dry-run"] : []), ...(request.limit !== undefined ? ["--limit", String(request.limit)] : []), ...(request.jobs !== undefined ? ["--jobs", String(request.jobs)] : [])].join(" ");
+}
+
+/** `2 stale, 1 gone of 5 saved explanation(s)`, `nothing to explain: zero work, no request`, `6 brief(s) planned, ~1200 in, ~480 out tokens (approximate)`. */
+function explainPlanOutcome(payload: ExplainPlanPayload): string {
+  if (payload.list === "stale-saved") {
+    const stale = payload.entries.filter((entry) => entry.state === "stale").length;
+    return payload.entries.length === 0 ? `every one of ${payload.saved} saved explanation(s) is fresh` : `${stale} stale, ${payload.entries.length - stale} gone of ${payload.saved} saved explanation(s)`;
+  }
+  if (payload.plan.length === 0) return "nothing to explain: zero work, no request";
+  const cut = payload.candidates > payload.plan.length ? ` of ${payload.candidates}` : "";
+  return `${payload.plan.length}${cut} brief(s) planned${payload.estimate === null ? "" : `, ~${payload.estimate.input} in, ~${payload.estimate.output} out tokens (approximate)`}`;
 }
 
 /** A saved answer or brief: its provenance on one row, then its text and the IDs it made up. */
@@ -997,6 +1017,45 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       });
       if (payload.links.length > 0) rows.push({ text: "  Tab, then ↑↓ select a place and Enter opens it", style: THEME.hint });
     }
+  } else if (result?.kind === "explain-plan" && result.payload !== null) {
+    // What needs explaining: the stale and gone saved explanations, or a brief plan in waves with its approximate size; Tab, then Enter opens a known node.
+    const { payload } = result;
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    const snapshot = `snapshot ${payload.snapshotId === null ? "none" : payload.snapshotId.slice(0, 8)}`;
+    const place = (where: { file: string; line: number } | null): string => (where === null ? "" : `  ${where.file}:${where.line}`);
+    if (payload.list === "stale-saved") {
+      rows.push({ text: `Explanations to do · stale saved answers and briefs (keylang explain --stale) · no model, nothing written · saved code and specs · ${snapshot}`, style: { ...THEME.panel, bold: true } });
+      rows.push({ text: `${explainPlanOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...MARK_STYLE.ok, bg: THEME.panel.bg! } });
+      for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: { ...THEME.panel, fg: 179 } });
+      rows.push({ text: "  the saved explanations themselves, not the brief plan: a stale one is asked again by its command; a gone id is only listed, nothing generates it", style: { ...THEME.panel, fg: 243 } });
+      payload.entries.forEach((entry, index) => {
+        const what = `${entry.id}${entry.kind === "brief" ? " (brief)" : ""}`;
+        const text = entry.state === "gone" ? `${what}: gone (explained ${entry.date}) · ${entry.file} · not in the snapshot, not planned` : `${what}: stale (explained ${entry.date}) · ${entry.again}${place(entry.place)}`;
+        rows.push({ text: `  ${text}`, style: index === selected ? THEME.selected : entry.state === "gone" ? { ...THEME.panel, fg: 243 } : THEME.panel, gap: index });
+      });
+    } else {
+      const command = `keylang explain --${payload.batch}${payload.estimate === null ? "" : " --dry-run"}${payload.limit === null ? "" : ` --limit ${payload.limit}`} --jobs ${payload.jobs}`;
+      rows.push({ text: `Explanations to do · brief plan: ${payload.batch === "missing" ? "missing and stale briefs" : "stale briefs only"} (${command}) · a preview: no model, nothing written · ${snapshot}`, style: { ...THEME.panel, bold: true } });
+      rows.push({ text: `${explainPlanOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...MARK_STYLE.ok, bg: THEME.panel.bg! } });
+      for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: { ...THEME.panel, fg: 179 } });
+      const { counts } = payload;
+      rows.push({ text: `  ${counts["fn/type"]} fn/type, ${counts["class/module"]} class/module, ${counts.layer} layer · ${payload.waves.length} wave(s) bottom-up · jobs ${payload.jobs} · limit ${payload.limit ?? "none"}${payload.candidates > payload.plan.length ? ` (${payload.candidates - payload.plan.length} more left out)` : ""}`, style: THEME.panel });
+      if (payload.estimate !== null) rows.push({ text: `  approximate tokens: ~${payload.estimate.input} in, ~${payload.estimate.output} out — about 4 characters a token and 80 a brief; not the API's count or cost`, style: THEME.panel });
+      rows.push({ text: `  left out: ${payload.skipped.documented} node(s) with a doc comment, ${payload.skipped.fresh} with a fresh brief${payload.gone.length > 0 ? ` · gone, never asked for: ${payload.gone.join(", ")}` : ""}`, style: { ...THEME.panel, fg: 243 } });
+      rows.push({ text: "  a preview, not a permission: the batch runs in the CLI (keylang explain --missing --llm) and plans again on its own analysis", style: { ...THEME.panel, fg: 243 } });
+      let index = 0;
+      payload.waves.forEach((wave, number) => {
+        rows.push({ text: `── wave ${number + 1} · ${wave.level} · ${wave.ids.length} ──`, style: { ...THEME.panel, fg: 243 } });
+        for (const id of wave.ids) {
+          const entry = payload.plan[index]!;
+          rows.push({ text: `  ${id} (${entry.level}) · ${entry.reason === "stale" ? "stale brief" : "no brief"}${place(entry.place)}`, style: index === selected ? THEME.selected : entry.place === null ? { ...THEME.panel, fg: 243 } : THEME.panel, gap: index });
+          index++;
+        }
+      });
+      if (payload.plan.length === 0) rows.push({ text: "  zero work: no node needs a brief; no request would be made", style: THEME.panel });
+    }
+    const listed = payload.list === "stale-saved" ? payload.entries.length : payload.plan.length;
+    if (listed > 0) rows.push({ text: "  Tab, then ↑↓ select a node and Enter opens its code", style: THEME.hint });
   } else if (result?.kind === "explain-llm" && result.payload !== null) {
     // The model's answer with where it came from (cache, model, none), the summary it was asked about, and what was written.
     const { payload } = result;
@@ -1321,8 +1380,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
     (record?.result?.kind === "parse" && (record.result.payload?.diagnostics.length ?? 0) > 0) ||
     (record?.result?.kind === "trace-plan" && (record.result.payload?.plan.symbols.length ?? 0) > 0) ||
     (record?.result?.kind === "explain" && record.result.payload?.subject === "node" && record.result.payload.links.length > 0) ||
-    (record?.result?.kind === "explain-llm" && (record.result.payload?.links.length ?? 0) > 0);
-  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : "finding";
+    (record?.result?.kind === "explain-llm" && (record.result.payload?.links.length ?? 0) > 0) ||
+    (record?.result?.kind === "explain-plan" && record.result.payload !== null && (record.result.payload.list === "stale-saved" ? record.result.payload.entries.length : record.result.payload.plan.length) > 0);
+  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : record?.kind === "explain-plan" ? "node" : "finding";
   const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec") && record.result.payload?.proposal != null;
@@ -1518,7 +1578,7 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : prompt.explainPlan ? "explain " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "spec-to-code" && prompt.specCode ? prompt.specCode.id || "?" : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
@@ -1537,7 +1597,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · no model, writes nothing" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

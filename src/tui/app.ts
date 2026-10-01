@@ -32,6 +32,7 @@ import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
 import { readExplanation } from "../explain-llm.ts";
+import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "../explain-inventory.ts";
 import type { LlmSetup } from "../llm.ts";
 import { EXPLANATIONS } from "../explain.ts";
 import { explanationPath, loadBriefs, type ExplanationDetail } from "../explanations.ts";
@@ -43,7 +44,7 @@ import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
 import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -60,7 +61,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
+import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, layout, navEntries, navListHeight, operationLabel, readCursorRow, recordSummary, render, resultsReportRows, resultsSplit } from "./view.ts";
@@ -526,7 +527,7 @@ export class App {
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
-          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain" || result?.kind === "explain-llm"
+          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain" || result?.kind === "explain-llm" || result?.kind === "explain-plan"
             ? (result.payload?.snapshotId ?? undefined)
             : result?.kind === "trace-plan"
               ? (result.payload?.plan.snapshotId ?? undefined)
@@ -1715,7 +1716,7 @@ export class App {
     for (const record of this.state.records) {
       const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
       // A code's help reads nothing, so no input makes it outdated.
-      const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm";
+      const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm" || record.params.kind === "explain-plan";
       if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || node || preview) record.outdated ??= reason;
     }
   }
@@ -1772,6 +1773,11 @@ export class App {
       // A code's help reads nothing: no save step. A node's summary reads the saved specs and their
       // saved explanations under the spec directory, keylang.json and the code: those dirty buffers are saved first.
       if (isDiagnosticCode(request.subject)) return this.startOperation(action, request);
+      const dir = `${this.specDir()}/`;
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
+    }
+    if (request.kind === "explain-plan") {
+      // The inventory reads the saved explanations and specs under the spec directory, keylang.json and the code: those dirty buffers are saved first.
       const dir = `${this.specDir()}/`;
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
     }
@@ -2573,6 +2579,7 @@ export class App {
   private refreshExplainPrompt(): void {
     const prompt = this.state.prompt;
     if (prompt?.kind !== "explain") return;
+    if (prompt.explainPlan) return this.refreshExplainPlanPrompt();
     const typed = prompt.text.trim();
     let ids: string[];
     if (!prompt.explainModel && /^k\d*$/i.test(typed)) ids = Object.keys(EXPLANATIONS).filter((code) => code.startsWith(typed.toUpperCase())).sort(compareText);
@@ -2596,6 +2603,7 @@ export class App {
   private explainNote(): void {
     const prompt = this.state.prompt!;
     if (prompt.explainModel) return this.explainModelNote(prompt.explainModel.detail);
+    if (prompt.explainPlan) return this.refreshExplainPlanPrompt();
     const subject = this.explainSubject();
     if (subject === "") {
       prompt.note = "type a diagnostic code (K001) or an id";
@@ -2613,6 +2621,7 @@ export class App {
 
   /** Enter in the explain form: the subject runs as the session's operation; an empty one keeps the form. */
   private submitExplain(): void {
+    if (this.state.prompt?.explainPlan) return this.submitExplainPlan();
     const subject = this.explainSubject();
     if (subject === "") {
       this.state.message = "explain: a code or an id is required";
@@ -2702,6 +2711,87 @@ export class App {
           ? `no request can be made: ${setup.missing}; Enter shows the summary and the saved answer`
           : `asks ${setup.client.agent} once, then saves ${explanationPath(analysis!.config, id, detail)}`;
     prompt.note = `${id}: ${why} · ${ask} · ${settings}`;
+  }
+
+  // ---------- explanations to do (inventory, brief plan, dry run) ----------
+
+  /** The inventory form: the stale saved explanations by default; limit and jobs empty (every candidate, 4). */
+  private openExplainPlanPrompt(): void {
+    this.state.prompt = { kind: "explain", text: "", items: [], ids: [], index: 0, explainPlan: { list: "stale-saved", limit: "", jobs: "" } };
+    this.refreshExplainPlanPrompt();
+  }
+
+  /** The request the form makes, or the field it refuses with the CLI's message. */
+  private explainPlanRequest(form: ExplainPlanForm): ExplainPlanRequest | { field: "limit" | "jobs"; text: string } {
+    if (form.list === "stale-saved") return { kind: "explain-plan", root: this.state.root, list: "stale-saved" };
+    const limit = form.limit.trim();
+    const jobs = form.jobs.trim();
+    const limitProblem = limit === "" ? null : positiveIntegerProblem("--limit", limit);
+    if (limitProblem !== null) return { field: "limit", text: limitProblem };
+    const jobsProblem = jobs === "" ? null : positiveIntegerProblem("--jobs", jobs);
+    if (jobsProblem !== null) return { field: "jobs", text: jobsProblem };
+    return { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list, ...(limit !== "" ? { limit: Number(limit) } : {}), jobs: jobs === "" ? DEFAULT_BRIEF_JOBS : Number(jobs), estimate: true };
+  }
+
+  /** The rows (the list; limit and jobs for a brief plan; run), what the selected list is and is not, and a note on the selected row. */
+  private refreshExplainPlanPrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.explainPlan;
+    if (prompt?.kind !== "explain" || !form) return;
+    const selected = prompt.ids?.[prompt.index] ?? "list";
+    const names: Record<ExplainPlanForm["list"], string> = {
+      "stale-saved": "stale saved explanations (answers and briefs)",
+      missing: "brief plan: missing and stale briefs",
+      stale: "brief plan: stale briefs only",
+    };
+    const next = EXPLAIN_PLAN_LISTS[(EXPLAIN_PLAN_LISTS.indexOf(form.list) + 1) % EXPLAIN_PLAN_LISTS.length]!;
+    const rows: { id: string; text: string }[] = [{ id: "list", text: `list:   ${names[form.list]} · ←→ ${names[next]}` }];
+    if (form.list !== "stale-saved") {
+      rows.push({ id: "limit", text: `limit:  ${form.limit}${selected === "limit" ? "▏" : ""}${form.limit.trim() === "" ? "  (empty: every candidate)" : ""}` });
+      rows.push({ id: "jobs", text: `jobs:   ${form.jobs}${selected === "jobs" ? "▏" : ""}${form.jobs.trim() === "" ? `  (empty: ${DEFAULT_BRIEF_JOBS}, the requests a batch keeps in flight)` : ""}` });
+    }
+    rows.push({ id: "run", text: form.list === "stale-saved" ? "List them (reads the saved files, no model, writes nothing)" : "Plan and estimate: a dry run (no model, writes nothing)" });
+    prompt.ids = rows.map((row) => row.id);
+    prompt.items = rows.map((row) => row.text);
+    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
+    prompt.details = [
+      form.list === "stale-saved"
+        ? "keylang explain --stale: every saved answer and brief whose code changed since (stale) or whose id is gone; each is asked again one by one (explain <id> --llm); not the brief plan"
+        : form.list === "missing"
+          ? "keylang explain --missing --dry-run: the briefs a batch would ask for, bottom-up — nodes with no doc comment and no fresh brief, stale briefs included"
+          : "keylang explain --stale --dry-run: only the stale briefs a batch would ask for again — not the saved answers, not gone ids, not missing briefs",
+    ];
+    const request = this.explainPlanRequest(form);
+    const now = prompt.ids[prompt.index]!;
+    if ("field" in request) prompt.note = now === request.field || now === "run" ? request.text : `${request.field}: ${request.text}`;
+    else if (now === "limit") prompt.note = "a whole number of at least 1: the plan is cut to it before the estimate";
+    else if (now === "jobs") prompt.note = "a whole number of at least 1, for the batch the plan is for; a dry run asks nothing";
+    else prompt.note = `${operationLabel(request)} · a fresh analysis of the saved code and specs · no model, writes nothing`;
+  }
+
+  /** ←→ on the list row. */
+  private changeExplainPlanList(delta: -1 | 1): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.explainPlan;
+    if (!form || prompt.ids?.[prompt.index] !== "list") return;
+    form.list = EXPLAIN_PLAN_LISTS[(EXPLAIN_PLAN_LISTS.indexOf(form.list) + delta + EXPLAIN_PLAN_LISTS.length) % EXPLAIN_PLAN_LISTS.length]!;
+    this.refreshExplainPlanPrompt();
+  }
+
+  /** Enter: a refused limit or jobs keeps the form with the field selected, else the inventory runs as the session's operation. */
+  private submitExplainPlan(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.explainPlan;
+    if (!form) return;
+    const request = this.explainPlanRequest(form);
+    if ("field" in request) {
+      prompt.index = Math.max(0, prompt.ids!.indexOf(request.field));
+      this.refreshExplainPlanPrompt();
+      this.state.message = `explain: ${request.text}`;
+      return;
+    }
+    this.state.prompt = null;
+    this.requestOperation("explain-plan", request);
   }
 
   // ---------- trace plan ----------
@@ -4372,6 +4462,11 @@ export class App {
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
     // A place an explanation names: the node, a related ID the snapshot or a planned declares, a flow, a rule line.
     if (result?.kind === "explain" && result.payload?.subject === "node") return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
+    // A node the inventory lists: its code (or its planned line); a gone ID has no place.
+    if (result?.kind === "explain-plan" && result.payload !== null) {
+      const entries = result.payload.list === "stale-saved" ? result.payload.entries.map((entry) => ({ place: entry.place, text: `${entry.id}${entry.kind === "brief" ? " (brief)" : ""}: ${entry.state}` })) : result.payload.plan.map((entry) => ({ place: entry.place, text: `${entry.id} (${entry.level}): ${entry.reason}` }));
+      return entries.map(({ place, text }) => ({ file: place?.file ?? "", line: place?.line ?? 1, col: place?.col ?? 1, text }));
+    }
     if (result?.kind === "explain-llm" && result.payload !== null) return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
     // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
     // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
@@ -4522,6 +4617,10 @@ export class App {
     } else if (prompt.kind === "spec-to-code") {
       const field = prompt.ids?.[prompt.index];
       if (prompt.specCode && (field === "id" || field === "into")) prompt.specCode[field] += text;
+    } else if (prompt.kind === "explain" && prompt.explainPlan) {
+      // Typed as is: 0, 1.5 or a word are refused on Enter with the CLI's message.
+      const field = prompt.ids?.[prompt.index];
+      if (field === "limit" || field === "jobs") prompt.explainPlan[field] += text;
     } else prompt.text += text;
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
@@ -4575,6 +4674,8 @@ export class App {
         if (prompt.codeDraft && (field === "file" || field === "line" || field === "into" || field === "since")) prompt.codeDraft[field] = graphemes(prompt.codeDraft[field]).slice(0, -1).join("");
       } else if (prompt.kind === "spec-to-code") {
         if (prompt.specCode && (field === "id" || field === "into")) prompt.specCode[field] = graphemes(prompt.specCode[field]).slice(0, -1).join("");
+      } else if (prompt.kind === "explain" && prompt.explainPlan) {
+        if (field === "limit" || field === "jobs") prompt.explainPlan[field] = graphemes(prompt.explainPlan[field]).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
@@ -4599,6 +4700,7 @@ export class App {
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "spec-to-code") return this.changeSpecCodeOutput();
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "explain" && prompt.explainPlan) return this.changeExplainPlanList(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "explain" && prompt.explainModel) return this.changeExplainDetail(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "code-to-spec") return this.changeCodeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
@@ -4735,6 +4837,8 @@ export class App {
         return this.openExplainPrompt();
       case "explain-llm":
         return this.openExplainModelPrompt();
+      case "explain-plan":
+        return this.openExplainPlanPrompt();
       case "draft-flow":
         return this.openDraftPrompt();
       case "draft-rules":
@@ -4982,6 +5086,9 @@ const AGENT_DRAFT = "agent-draft";
 
 /** The draft form's modes in ←→ order. */
 const DRAFT_MODES = ["algo", "hybrid", "llm"] as const;
+
+/** The lists of the inventory form, in ←→ order. */
+const EXPLAIN_PLAN_LISTS = ["stale-saved", "missing", "stale"] as const;
 
 /** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
 /** What a layout draft was made against: keylang.json's buffer (null: none open), the file, the code snapshot. */

@@ -15,7 +15,8 @@ import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
-import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type Explanation } from "./explain-llm.ts";
+import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
+import { briefPlan, briefPlanText, DEFAULT_BRIEF_JOBS, staleInventory, staleInventoryText, type BriefPlan, type StaleInventory } from "./explain-inventory.ts";
 import { formatSummary, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
 import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
@@ -233,6 +234,29 @@ export interface ExplainLlmRequest {
   /** `--full`, `--brief`; default `explain.detail` of keylang.json. */
   detail?: ExplanationDetail;
 }
+
+/**
+ * What explanations need work, read-only and offline: `stale-saved` is
+ * `explain --stale` (saved answers and briefs that are stale or gone);
+ * `briefs` is the plan of a brief batch (`explain --missing|--stale` without
+ * `--llm`), `estimate` its `--dry-run` size. No model, no write, not even the fact cache.
+ */
+export type ExplainPlanRequest =
+  | { kind: "explain-plan"; root: string; list: "stale-saved" }
+  | {
+      kind: "explain-plan";
+      /** Repository root (absolute). */
+      root: string;
+      list: "briefs";
+      /** `missing` also plans stale briefs; `stale` plans only them. */
+      batch: BriefBatch;
+      /** `--limit`: a whole number of at least 1; absent for every candidate. */
+      limit?: number;
+      /** `--jobs` of the batch it plans: a whole number of at least 1; default 4. */
+      jobs?: number;
+      /** `--dry-run`: count the plan and estimate its tokens. */
+      estimate?: boolean;
+    };
 
 /**
  * The typed result an export writes: a finished check report in one of the
@@ -479,7 +503,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm"]);
@@ -1109,6 +1133,13 @@ export interface ExplainLlmPayload {
   text: string;
 }
 
+/** What explanations need work (`explain-inventory.ts`), on the snapshot it was read on, with the CLI's stdout of it. */
+export type ExplainPlanPayload = (({ list: "stale-saved" } & StaleInventory) | ({ list: "briefs" } & BriefPlan)) & {
+  snapshotId: string | null;
+  /** The CLI's stdout; presentation of the same result. */
+  text: string;
+};
+
 /** What an export did with its one file. */
 export interface ExportPayload {
   path: string;
@@ -1171,6 +1202,7 @@ export interface OperationPayloads {
   "explain-edge": ExplainEdgePayload;
   explain: ExplainPayload;
   "explain-llm": ExplainLlmPayload;
+  "explain-plan": ExplainPlanPayload;
   init: InitPayload;
   export: ExportPayload;
   parse: ParsePayload;
@@ -1219,6 +1251,7 @@ export function runOperation(request: CheckRequest, context?: OperationContext):
 export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
 export function runOperation(request: ExplainRequest, context?: OperationContext): Promise<OperationEnvelope<"explain">>;
 export function runOperation(request: ExplainLlmRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-llm">>;
+export function runOperation(request: ExplainPlanRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-plan">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
@@ -1256,6 +1289,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runExplain(request, context);
     case "explain-llm":
       return runExplainLlm(request, context);
+    case "explain-plan":
+      return runExplainPlan(request, context);
     case "init":
       return runInit(request, context);
     case "export":
@@ -1309,6 +1344,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "explain":
       return { kind, ...base };
     case "explain-llm":
+      return { kind, ...base };
+    case "explain-plan":
       return { kind, ...base };
     case "init":
       return { kind, ...base };
@@ -2408,6 +2445,50 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   payload.written = file;
   payload.text = savedAnswerText(payload.answer);
   return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: ${client.agent} wrote the ${detail} answer to ${file}` }], written: [file] };
+}
+
+function emptyExplainPlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-plan"> {
+  return { kind: "explain-plan", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `explain --stale` and the plan of `explain --missing|--stale` (with
+ * `--dry-run` its estimate) on a fresh analysis of the saved code and specs
+ * (no evidence, no fact cache written). A brief plan needs a snapshot: failed
+ * 2 with the CLI's message without one. An empty plan is completed 0 (zero
+ * work). A store of keylang 0.1 is a warning note. No model, nothing written.
+ */
+async function runExplainPlan(request: ExplainPlanRequest, context: OperationContext): Promise<OperationEnvelope<"explain-plan">> {
+  if (!isAbsolute(request.root)) return emptyExplainPlan("failed", 2, "explain: root must be an absolute path");
+  if (request.list === "briefs") {
+    for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
+      if (value !== undefined && (!Number.isInteger(value) || value < 1)) return emptyExplainPlan("failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
+    }
+  }
+  if (context.signal?.aborted) return emptyExplainPlan("cancelled", null);
+  context.onProgress?.({ text: "reading the saved code, specs and explanations" });
+  const analyzeSaved = context.analyze ?? analyze;
+  let analyzed: Analysis;
+  try {
+    analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
+  } catch (error) {
+    return emptyExplainPlan("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExplainPlan("cancelled", null);
+  const old = oldExplanations(analyzed.config.root);
+  const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
+  const snapshotId = analyzed.snapshot?.snapshotId ?? null;
+  if (request.list === "stale-saved") {
+    const inventory = staleInventory(analyzed);
+    const payload: ExplainPlanPayload = { list: "stale-saved", ...inventory, snapshotId, text: staleInventoryText(inventory) };
+    const stale = inventory.entries.filter((entry) => entry.state === "stale").length;
+    return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: `${stale} stale, ${inventory.entries.length - stale} gone of ${inventory.saved} saved explanation(s)` }] };
+  }
+  if (!analyzed.snapshot) return { ...emptyExplainPlan("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
+  const plan = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs: request.jobs ?? DEFAULT_BRIEF_JOBS, estimate: request.estimate === true });
+  const payload: ExplainPlanPayload = { list: "briefs", ...plan, snapshotId, text: briefPlanText(plan) };
+  const summary = plan.plan.length === 0 ? "nothing to explain" : `${plan.plan.length} brief(s) planned${plan.estimate === null ? "" : `, ~${plan.estimate.input} in, ~${plan.estimate.output} out (approximate)`}`;
+  return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
 }
 
 function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {

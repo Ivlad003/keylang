@@ -11,14 +11,15 @@ import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
-import { currentBaseline, estimateTokens, explainedIds, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, type BriefBatch, type BriefLevel } from "./explain-llm.ts";
+import { moveHint, oldExplanations, planBriefs, runBriefs, type BriefBatch } from "./explain-llm.ts";
+import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "./explain-inventory.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { lineDiff } from "./proposals.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
@@ -313,21 +314,7 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
     return cmdExplainBatch(opts.missing ? "missing" : "stale", opts);
   }
   if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs need --missing or --stale");
-  if (opts.stale) {
-    const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-    noteOldExplanations(analysis.config);
-    for (const kind of ["answers", "briefs"] as const) {
-      for (const id of explainedIds(analysis.config, kind)) {
-        const e = readExplanation(analysis.config, id, kind === "briefs" ? "brief" : "short");
-        if (!e) continue;
-        const what = kind === "briefs" ? `${id} (brief)` : id;
-        const again = `keylang explain ${id} --llm${kind === "briefs" ? " --brief" : ""}`;
-        if (currentBaseline(analysis, id) === null) process.stdout.write(`${what}: gone (explained ${e.date})\n`);
-        else if (isStale(analysis, id, e)) process.stdout.write(`${what}: stale (explained ${e.date}); run \`${again}\`\n`);
-      }
-    }
-    return 0;
-  }
+  if (opts.stale) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "stale-saved" });
   if (!subject) throw new Error("explain: a code or an id is required");
   // A code, and an ID without the model: a printer over the shared offline operation.
   if (!opts.llm || isDiagnosticCode(subject)) {
@@ -359,25 +346,16 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
  * `--dry-run` counts them and estimates tokens. Exit 1 when some nodes failed.
  */
 async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise<number> {
-  const limit = opts.limit === undefined ? Infinity : positiveInteger("--limit", opts.limit);
-  const jobs = opts.jobs === undefined ? DEFAULT_JOBS : positiveInteger("--jobs", opts.jobs);
+  const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
+  const jobs = opts.jobs === undefined ? DEFAULT_BRIEF_JOBS : positiveInteger("--jobs", opts.jobs);
+  // The list and the dry run: a printer over the shared read-only plan.
+  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), jobs, estimate: opts.dryRun });
   const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
   const config = analysis.config;
   noteOldExplanations(config);
   if (!analysis.snapshot) throw new Error("no snapshot: explain --missing needs a repository with sources");
   const briefs = loadBriefs(config);
-  const plan = planBriefs(analysis, batch, briefs).slice(0, limit);
-  if (opts.dryRun) {
-    const count = (level: BriefLevel): number => plan.filter((p) => p.level === level).length;
-    const tokens = estimateTokens(analysis, plan, briefs);
-    process.stdout.write(`would explain ${plan.length} node(s): ${count("fn/type")} fn/type, ${count("class/module")} class/module, ${count("layer")} layer\n`);
-    process.stdout.write(`estimated tokens: ~${tokens.input} in, ~${tokens.output} out\n`);
-    return 0;
-  }
-  if (!opts.llm) {
-    for (const p of plan) process.stdout.write(`${p.id} (${p.level})\n`);
-    return 0;
-  }
+  const plan = planBriefs(analysis, batch, briefs).slice(0, limit ?? Infinity);
   if (plan.length === 0) {
     process.stdout.write("nothing to explain\n");
     return 0;
@@ -395,13 +373,19 @@ async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise
   return result.failed.length > 0 ? 1 : 0;
 }
 
-/** Requests a batch keeps in flight: enough to be quick, few enough for a provider's rate limit. */
-const DEFAULT_JOBS = 4;
+/** `explain --stale`, and a brief plan without `--llm`: the note on stderr, the stdout of the shared operation; a failure is the CLI's error. */
+async function explainPlanPrinter(request: ExplainPlanRequest): Promise<number> {
+  const result = await runOperation(request);
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
+  process.stdout.write(result.payload.text);
+  return 0;
+}
 
 function positiveInteger(flag: string, text: string): number {
-  const n = Number(text);
-  if (!Number.isInteger(n) || n < 1) throw new Error(`${flag} must be a positive whole number, got \`${text}\``);
-  return n;
+  const problem = positiveIntegerProblem(flag, text);
+  if (problem !== null) throw new Error(problem);
+  return Number(text);
 }
 
 /** One note per command while the store of keylang 0.1 still holds files. */

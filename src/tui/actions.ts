@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, explain-plan, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -115,6 +115,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain --llm", "keylang explain --llm", "explain llm", "ask the model", "model explanation", "explain short", "explain full", "explain brief", "explain --full", "explain --brief"],
     // A form takes an id and a detail; a fresh saved answer is read without a request, a new one is saved to <dir>/explain/ after the commit check.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "explain-plan",
+    label: "Explanations to do: stale saved answers, or a brief plan with a dry-run estimate",
+    group: "Check",
+    aliases: ["explain --stale", "explain --missing", "explain --dry-run", "keylang explain --stale", "keylang explain --missing", "missing briefs", "stale explanations", "brief plan", "dry run", "estimate tokens"],
+    // A form picks the list (stale saved explanations, or the missing/stale brief plan with limit and jobs); a fresh analysis in a worker, no model, never writes.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
