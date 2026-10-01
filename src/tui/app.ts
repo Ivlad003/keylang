@@ -21,7 +21,7 @@ import { createRequire } from "node:module";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
-import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATIC_MODES, toPosix, type StaticMode } from "../config.ts";
+import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATIC_MODES, toPosix, withLayers, type StaticMode } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
@@ -38,14 +38,14 @@ import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "..
 import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CommitGate, type DraftFlowRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CommitGate, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
-import { actionLabel, catalog, exportRecord, matchActions, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, catalog, exportRecord, matchActions, MERGE_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
@@ -123,6 +123,8 @@ export class App {
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
+  /** What each layout draft was made against (by record id): its layers move into keylang.json's buffer only while that still holds. */
+  private layoutBases = new Map<number, LayoutBasis>();
   /** Bumped on every buffer change; an analysis started before the last one is outdated on arrival. */
   private edits = 0;
   private running = 0;
@@ -676,6 +678,8 @@ export class App {
    * form), and the target must still not exist.
    */
   private newFileProblem(buffer: Buffer): string | null {
+    // A new keylang.json (layers moved in without one) lands in the root, where nothing may be yet.
+    if (buffer.path === CONFIG_FILE) return existsSync(resolve(this.state.root, CONFIG_FILE)) ? "the file was created on disk after this buffer opened; it is kept as it is" : null;
     const problem = newSpecProblem(this.state.root, this.merges.specDir(), buffer.path, (path) => this.generatedDoc(path));
     if (problem !== null) return problem;
     return existsSync(resolve(this.state.root, buffer.path)) ? "the file was created on disk after this buffer opened; it is kept as it is" : null;
@@ -694,7 +698,7 @@ export class App {
       if (problem !== null) throw new Error(problem);
     }
     // A save stays in the repository, even through a link whose target does not exist yet; a new spec stays in the spec directory.
-    const boundary = buffer.newFile ? resolve(this.state.root, this.merges.specDir()) : this.state.root;
+    const boundary = buffer.newFile && buffer.path !== CONFIG_FILE ? resolve(this.state.root, this.merges.specDir()) : this.state.root;
     writeInside(boundary, resolve(this.state.root, buffer.path), written);
     buffer.saved = buffer.text;
     buffer.disk = written;
@@ -1743,6 +1747,11 @@ export class App {
       const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${this.rulesTarget(request.into ?? "")}`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
     }
+    if (request.kind === "draft-layout") {
+      // The layout reads the saved keylang.json and the code and writes nothing: no save step. A dirty
+      // keylang.json stays dirty — the move goes into that buffer, and only after it was edited does it refuse.
+      return this.startOperation(action, request);
+    }
     if (request.kind === "wire") {
       // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
       // A write names its target in that step; without dirty buffers the form already did.
@@ -1872,6 +1881,7 @@ export class App {
     const buffer = this.state.current === null ? undefined : this.state.buffers.get(this.state.current);
     const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null };
     this.state.records.push(record);
+    if (request.kind === "draft-layout") this.layoutBases.set(record.id, this.layoutBasis());
     this.state.activeOperation = record.id;
     this.state.message = `${label}: running…`;
     // One explicit operation at a time: no ghost request is made (or shown) until it ends.
@@ -1891,6 +1901,7 @@ export class App {
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
       if (request.kind === "draft-flow" || request.kind === "draft-rules") this.afterDraft(record, origin);
+      if (request.kind === "draft-layout") this.afterLayoutDraft(record);
       this.draw();
     };
     this.cancelActive = () => {
@@ -2905,6 +2916,170 @@ export class App {
     this.requestOperation("draft-rules", request);
   }
 
+  // ---------- draft map: layers into keylang.json's buffer ----------
+
+  /** The draft-layout form (design §2.4 `draft map`): the mode (hybrid with a model, else algo), then run; nothing is written. */
+  private openLayoutDraftPrompt(): void {
+    const mode = this.agentName() !== null ? "hybrid" : "algo";
+    this.state.prompt = { kind: "draft-layout", text: "", items: [], ids: [], index: 0, layoutDraft: { mode } };
+    this.refreshLayoutDraftPrompt();
+  }
+
+  private refreshLayoutDraftPrompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.layoutDraft;
+    if (prompt?.kind !== "draft-layout" || !form) return;
+    const selected = prompt.ids?.[prompt.index] ?? "mode";
+    const rows = [
+      { id: "mode", text: `mode:    ${form.mode} · ←→ ${DRAFT_MODES[(DRAFT_MODES.indexOf(form.mode) + 1) % DRAFT_MODES.length]}` },
+      { id: "run", text: "Draft the layers (writes nothing; F6 shows them, Enter there moves them into keylang.json's buffer)" },
+    ];
+    prompt.ids = rows.map((row) => row.id);
+    prompt.items = rows.map((row) => row.text);
+    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
+    const exists = existsSync(join(this.state.root, CONFIG_FILE));
+    prompt.details = [
+      `root: ${this.state.root} · drafted from the saved ${CONFIG_FILE}${exists ? "" : " (none: the inferred one)"} and the code · only layers change, in the buffer, until Ctrl+S`,
+    ];
+    const agent = this.agentName();
+    const problem = this.layoutDraftProblem(form.mode);
+    if (prompt.ids[prompt.index] === "mode")
+      prompt.note =
+        form.mode === "algo"
+          ? "algo: the layers keylang would guess from the directories; no model"
+          : agent === null
+            ? form.mode === "hybrid"
+              ? "no model configured (agent in keylang.json): hybrid drafts as algo, and says so"
+              : (problem ?? "")
+            : `${agent} groups the source files into layers, validated as keylang.json`;
+    else prompt.note = problem ?? "Enter drafts; nothing is written, not even a proposal";
+  }
+
+  /** Why a layout draft may not start: llm needs a model. */
+  private layoutDraftProblem(mode: "algo" | "hybrid" | "llm"): string | null {
+    return mode === "llm" && this.agentName() === null ? "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts as algo without one)" : null;
+  }
+
+  private changeLayoutDraftMode(delta: -1 | 1): void {
+    const prompt = this.state.prompt;
+    if (prompt?.kind !== "draft-layout" || !prompt.layoutDraft || prompt.ids?.[prompt.index] !== "mode") return;
+    prompt.layoutDraft.mode = DRAFT_MODES[(DRAFT_MODES.indexOf(prompt.layoutDraft.mode) + delta + DRAFT_MODES.length) % DRAFT_MODES.length]!;
+    this.refreshLayoutDraftPrompt();
+  }
+
+  private submitLayoutDraft(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.layoutDraft;
+    if (prompt?.kind !== "draft-layout" || !form) return;
+    const problem = this.layoutDraftProblem(form.mode);
+    if (problem !== null) {
+      prompt.index = 0;
+      this.refreshLayoutDraftPrompt();
+      this.state.message = `draft map: ${problem}`;
+      return;
+    }
+    this.state.prompt = null;
+    const request: DraftLayoutRequest = { kind: "draft-layout", root: this.state.root, ...(form.mode !== "algo" ? { mode: form.mode } : {}) };
+    this.requestOperation("draft-layout", request);
+  }
+
+  /** keylang.json as the session has it now: its buffer's version, the file, the code snapshot. */
+  private layoutBasis(): LayoutBasis {
+    return { version: this.state.buffers.get(CONFIG_FILE)?.version ?? null, disk: readText(join(this.state.root, CONFIG_FILE)), snapshot: this.state.analysis?.snapshot?.snapshotId ?? null };
+  }
+
+  /** Why the layers of a layout draft no longer fit the session, or null: keylang.json was edited, saved or changed on disk, or the code moved on. */
+  private layoutStale(record: OperationRecord): string | null {
+    const basis = this.layoutBases.get(record.id);
+    if (!basis) return "the draft's basis is unknown";
+    const now = this.layoutBasis();
+    const buffer = this.state.buffers.get(CONFIG_FILE);
+    // A buffer opened after the start is an edit only when its text is not the file the draft read.
+    const edited = basis.version !== null ? now.version !== basis.version : buffer !== undefined && (buffer.newFile || buffer.text !== splitEol(basis.disk ?? "").text);
+    if (edited) return `${CONFIG_FILE} was edited in this session since the draft started`;
+    if (now.disk !== basis.disk) return `${CONFIG_FILE} changed on disk since the draft started`;
+    if (basis.snapshot !== null && now.snapshot !== null && now.snapshot !== basis.snapshot) return "the code snapshot changed since the draft started";
+    return null;
+  }
+
+  /** A finished layout draft: nothing moves by itself; an edit made meanwhile makes it outdated at once. */
+  private afterLayoutDraft(record: OperationRecord): void {
+    if (record.result?.kind !== "draft-layout" || record.status !== "completed" || record.result.payload === null) return;
+    const stale = this.layoutStale(record);
+    if (stale !== null) {
+      record.outdated ??= stale;
+      this.state.message = `draft map: outdated: ${stale}; your text is kept · Enter in F6 drafts again`;
+      return;
+    }
+    this.state.message = `draft map: ${Object.keys(record.result.payload.layers).length} layer(s), nothing written · F6, Enter moves them into ${CONFIG_FILE}'s buffer`;
+  }
+
+  /**
+   * Enter on a finished layout draft in F6: its layers replace only `layers`
+   * of keylang.json's buffer — every other field stays, unknown ones too — as
+   * one undoable edit; nothing is written until Ctrl+S. Without keylang.json
+   * a new buffer opens with the inferred config and these layers. A buffer
+   * edited (or a file changed) since the draft started makes it outdated:
+   * nothing moves, Enter drafts again. Text that is not a JSON object is
+   * opened with its reason, never repaired.
+   */
+  private moveLayers(record: OperationRecord): void {
+    const result = record.result;
+    if (result?.kind !== "draft-layout" || result.payload === null) return;
+    if (this.state.merge !== null) {
+      this.state.message = MERGE_REASON;
+      return;
+    }
+    const stale = this.layoutStale(record);
+    if (stale !== null) {
+      record.outdated = stale;
+      this.state.message = `draft map: outdated: ${stale}; nothing moved, your text is kept · Enter drafts again`;
+      return;
+    }
+    const { layers, preview } = result.payload;
+    const existing = this.state.buffers.get(CONFIG_FILE);
+    const onDisk = existing === undefined && existsSync(join(this.state.root, CONFIG_FILE));
+    const buffer = existing ?? (onDisk ? this.load(CONFIG_FILE) : newFileBuffer(CONFIG_FILE, ""));
+    // Without keylang.json the base is the config `draft map` printed: the inferred one, as `init` writes it.
+    const base = existing === undefined && !onDisk ? preview : buffer.text;
+    const moved = withLayers(CONFIG_FILE, base, layers);
+    if ("error" in moved) {
+      this.closeResults();
+      this.openConfig(moved.error, true);
+      this.state.message = `draft map: ${moved.error} — nothing was changed; fix it, then draft again (Enter in F6)`;
+      return;
+    }
+    if (moved.text === buffer.text && !buffer.newFile) {
+      this.state.message = `draft map: ${CONFIG_FILE} already has these layers; nothing changed`;
+      return;
+    }
+    if (!this.state.buffers.has(CONFIG_FILE)) this.state.buffers.set(CONFIG_FILE, buffer);
+    if (buffer.newFile && !this.state.files.includes(CONFIG_FILE)) this.state.files = sortFiles([...this.state.files, CONFIG_FILE], this.state.analysis);
+    this.closeResults();
+    this.open(CONFIG_FILE, { line: 0, col: 0 });
+    // In the editor, as after any edit: Ctrl+S and Ctrl+Z act on it at once.
+    this.state.mode = "edit";
+    // One edit: Ctrl+Z gives the text back as it was before the move.
+    if (this.state.lastMerge?.path === CONFIG_FILE) this.state.lastMerge = null;
+    buffer.undo.push({ text: buffer.text, cursor: { ...this.state.cursor } });
+    if (buffer.undo.length > 200) buffer.undo.shift();
+    setText(buffer, moved.text);
+    const at = moved.text.split("\n").findIndex((line) => line.startsWith('  "layers"'));
+    this.state.cursor = { line: Math.max(0, at), col: 0 };
+    this.clampCursor();
+    this.state.top = Math.max(0, this.state.cursor.line - 3);
+    this.keepVisible();
+    // The move is done; the record does not move the same layers twice.
+    record.outdated = `its layers were moved into ${CONFIG_FILE}'s buffer`;
+    let invalid: string | null = null;
+    try {
+      parseConfig(CONFIG_FILE, moved.text);
+    } catch (error) {
+      invalid = errorText(error);
+    }
+    this.state.message = `draft map: layers moved into ${CONFIG_FILE} (unsaved): Ctrl+S saves and analyses with them, Ctrl+Z undoes${invalid === null ? "" : ` · still invalid apart from layers: ${invalid}`}`;
+  }
+
   // ---------- export ----------
 
   /**
@@ -3234,6 +3409,8 @@ export class App {
       this.closeResults();
       return this.merges.open(record.result.payload.candidate.target);
     }
+    // A current layout draft: Enter moves its layers into keylang.json's buffer; an outdated one drafts again.
+    if (record.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null) return this.moveLayers(record);
     // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
     if (record.params.kind === "doctor") return this.startOperation(record.action, record.params);
     return this.requestOperation(record.action, record.params);
@@ -3576,8 +3753,8 @@ export class App {
 
   private promptType(text: string): void {
     const prompt = this.state.prompt!;
-    // The baseline form is a choice of two, not a query.
-    if (prompt.kind === "baseline") return;
+    // The baseline and layout forms are choices, not queries.
+    if (prompt.kind === "baseline" || prompt.kind === "draft-layout") return;
     // The since row of the check form takes the git ref; every other row types the paths.
     if (prompt.kind === "full-check" && prompt.checkOptions && prompt.ids?.[prompt.index] === "since") prompt.checkOptions.since += text;
     else if (prompt.kind === "explain-edge") {
@@ -3656,9 +3833,10 @@ export class App {
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-rules") return this.changeRulesDraftChoice(event.name === "left" ? -1 : 1);
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -3668,6 +3846,7 @@ export class App {
       if (prompt.kind === "export") this.refreshExportPrompt();
       if (prompt.kind === "draft-flow") this.refreshDraftPrompt();
       if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
+      if (prompt.kind === "draft-layout") this.refreshLayoutDraftPrompt();
       return;
     }
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
@@ -3683,6 +3862,7 @@ export class App {
     if (event.name === "enter" && prompt.kind === "export") return this.submitExport();
     if (event.name === "enter" && prompt.kind === "draft-flow") return this.submitDraft();
     if (event.name === "enter" && prompt.kind === "draft-rules") return this.submitRulesDraft();
+    if (event.name === "enter" && prompt.kind === "draft-layout") return this.submitLayoutDraft();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
     if (event.name === "enter") {
@@ -3779,6 +3959,8 @@ export class App {
         return this.openDraftPrompt();
       case "draft-rules":
         return this.openRulesDraftPrompt();
+      case "draft-layout":
+        return this.openLayoutDraftPrompt();
       case "wire":
         return this.openWirePrompt();
       case "cancel":
@@ -4018,6 +4200,13 @@ const AGENT_DRAFT = "agent-draft";
 const DRAFT_MODES = ["algo", "hybrid", "llm"] as const;
 
 /** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
+/** What a layout draft was made against: keylang.json's buffer (null: none open), the file, the code snapshot. */
+interface LayoutBasis {
+  version: number | null;
+  disk: string | null;
+  snapshot: string | null;
+}
+
 interface DraftOrigin {
   path: string | null;
   mode: Mode;

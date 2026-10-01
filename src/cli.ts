@@ -6,7 +6,7 @@ import { join, relative, resolve } from "node:path";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs } from "node:util";
-import { CONFIG_FILE, STATIC_MODES, configToJson, guessLayers, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk } from "./ir.ts";
@@ -610,35 +610,25 @@ function countProposed(root: string, counts: Record<string, number>): void {
 async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }): Promise<number> {
   if (opts.mode !== "algo" && opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`draft ${what}: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
   const root = findRoot(process.cwd());
-  const model = async (): Promise<import("./llm.ts").LlmClient | null> => {
-    if (opts.mode === "algo") return null;
-    const { llmClient } = await import("./llm.ts");
-    const setup = llmClient(loadConfig(root).agent);
-    if ("missing" in setup) {
-      if (opts.mode === "llm") throw new Error(`draft ${what} --mode llm: ${setup.missing}`);
-      process.stderr.write(`keylang: ${setup.missing}; drafting from the snapshot only (--mode algo)\n`);
-      return null;
-    }
-    return setup.client;
-  };
-  if (what === "map") {
-    const client = await model();
-    if (client) {
-      const analysis = await analyze({ root, withoutEvidence: true });
-      const { draftLayoutWithModel } = await import("./draft-llm.ts");
-      const layers = await draftLayoutWithModel(analysis, client, analysis.snapshot?.manifest.files.map((f) => f.path) ?? []);
-      process.stdout.write(configToJson({ ...analysis.config, layers: new Map(Object.entries(layers)), guessed: false }));
-      process.stderr.write(`keylang: proposed by ${client.agent}; printed only; ${CONFIG_FILE} is unchanged\n`);
-      return 0;
-    }
-    const config = loadConfig(root);
-    const guessed = configToJson({ ...config, layers: guessLayers(root, config.exclude), guessed: true });
-    const current = existsSync(join(root, CONFIG_FILE)) ? readFileSync(join(root, CONFIG_FILE), "utf8") : null;
-    process.stdout.write(guessed);
-    process.stderr.write(current === null ? `keylang: no ${CONFIG_FILE}; \`keylang init\` writes this layout\n` : `keylang: printed only; ${CONFIG_FILE} is unchanged\n`);
-    return 0;
+  return what === "map" ? draftMapPrinter(root, opts.mode) : draftRulesPrinter(root, opts.mode, opts);
+}
+
+/**
+ * `draft map [--mode algo|llm|hybrid]`: a printer over the shared
+ * `draft-layout` operation. Stdout: the config with the drafted layers; on
+ * stderr the fallback of a hybrid without a model, then that nothing was
+ * written. keylang.json never changes.
+ */
+async function draftMapPrinter(root: string, mode: "algo" | "llm" | "hybrid"): Promise<number> {
+  const result = await runOperation({ kind: "draft-layout", root, mode });
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.status !== "completed" || result.payload === null) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
   }
-  return draftRulesPrinter(root, opts.mode, opts);
+  process.stdout.write(result.payload.preview);
+  for (const message of result.messages) if (message.level === "info") process.stderr.write(`keylang: ${message.text}\n`);
+  return 0;
 }
 
 /**

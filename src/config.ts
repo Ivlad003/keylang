@@ -309,6 +309,26 @@ export function configToJson(c: Config): string {
   return `${JSON.stringify(out, null, 2)}\n`;
 }
 
+/**
+ * `text` (a `keylang.json` as written or being edited) with only its
+ * `layers` replaced: every other field stays, unknown ones included, in
+ * its order; a missing `layers` is appended. Whitespace is not kept (the
+ * result is 2-space JSON). Text that is not a JSON object is never repaired
+ * by guessing: its reason, named as `parseConfig` names it.
+ */
+export function withLayers(file: string, text: string, layers: Readonly<Record<string, readonly string[]>>): { text: string } | { error: string } {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (e) {
+    return { error: `${file}: invalid JSON: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (!isObject(value)) return { error: `${file}: \`(root)\` must be an object, got ${JSON.stringify(value)}` };
+  // Assigning keeps the key's place when it exists; JSON.parse makes even `__proto__` an own key, so nothing is lost.
+  value.layers = Object.fromEntries(Object.entries(layers).map(([name, globs]) => [name, [...globs]]));
+  return { text: `${JSON.stringify(value, null, 2)}\n` };
+}
+
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
   return walkSources(c, (rel) => !isExcluded(rel, c.exclude)).files;

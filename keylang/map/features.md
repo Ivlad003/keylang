@@ -133,7 +133,7 @@
       - calls features.draft-llm.judgeRule
     - fn [judgeRule](../../src/draft-llm.ts#L317) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
       - calls lang.parser.parse, base.config.resolveStatic, check.assess.assess
-    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L351) (analysis: Analysis, client: LlmClient, files: readonly string[]) → Promise<Record<string, string[]>>
+    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L352) (analysis: Analysis, client: LlmClient, files: readonly string[], options: LlmCallOptions = {}) → Promise<Record<string, string[]>>
       - calls base.config.parseConfig
   - module [draft](../../src/draft.ts#L1)
     - ir lang.ir

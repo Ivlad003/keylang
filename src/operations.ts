@@ -287,6 +287,24 @@ export interface DraftRulesRequest {
 }
 
 /**
+ * The layer layout drafted for `keylang.json` (`keylang draft map --mode
+ * algo|llm|hybrid`): `algo` is the layout keylang would guess from the
+ * directories (`guessLayout`), `llm` and `hybrid` ask the configured model,
+ * whose layers pass the validation of a written `keylang.json`. Without a
+ * model `hybrid` drafts as `algo` with a visible note and `llm` fails. It
+ * writes nothing, ever: no proposal (the proposal store holds specs, not
+ * JSON), not keylang.json. Moving the layers into the config is the
+ * caller's explicit edit of its buffer.
+ */
+export interface DraftLayoutRequest {
+  kind: "draft-layout";
+  /** Repository root (absolute). */
+  root: string;
+  /** Default `algo`: no model. */
+  mode?: "algo" | "llm" | "hybrid";
+}
+
+/**
  * Saves a report that was already computed to one file: exactly the stdout
  * the CLI prints for it, without ANSI or status lines. It never runs the
  * check again. The target is a plain relative path inside the repository, not
@@ -321,7 +339,7 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules"]);
@@ -634,6 +652,22 @@ export interface DraftRulesPayload {
   error: string | null;
 }
 
+/** What `keylang draft map` drafted: the layers, and the config the CLI prints with them. */
+export interface DraftLayoutPayload {
+  /** The mode that drafted it: `algo` also for a hybrid without a model (see `fallback`). */
+  mode: "algo" | "llm" | "hybrid";
+  /** Layer name → globs, in the order drafted; valid as `layers` of keylang.json. */
+  layers: Record<string, string[]>;
+  /** What `draft map` prints: the saved (or inferred) config as `init` writes it, with these layers. Never written. */
+  preview: string;
+  /** keylang.json existed when the layout was drafted. */
+  configExists: boolean;
+  /** The model that proposed the layers; null for algo. */
+  agent: string | null;
+  /** A hybrid without a model: why, as the CLI says it before it drafts from the snapshot only. */
+  fallback: string | null;
+}
+
 /** Who proposed the rules and how each compares with the code now. */
 export interface RulesModelInfo {
   agent: string;
@@ -795,6 +829,7 @@ export interface OperationPayloads {
   "trace-plan": TracePlanPayload;
   "draft-flow": DraftFlowPayload;
   "draft-rules": DraftRulesPayload;
+  "draft-layout": DraftLayoutPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -837,6 +872,7 @@ export function runOperation(request: ParseRequest, context?: OperationContext):
 export function runOperation(request: TracePlanRequest, context?: OperationContext): Promise<OperationEnvelope<"trace-plan">>;
 export function runOperation(request: DraftFlowRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-flow">>;
 export function runOperation(request: DraftRulesRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-rules">>;
+export function runOperation(request: DraftLayoutRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-layout">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -872,6 +908,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runDraftFlow(request, context);
     case "draft-rules":
       return runDraftRules(request, context);
+    case "draft-layout":
+      return runDraftLayout(request, context);
   }
 }
 
@@ -913,6 +951,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "draft-flow":
       return { kind, ...base };
     case "draft-rules":
+      return { kind, ...base };
+    case "draft-layout":
       return { kind, ...base };
   }
 }
@@ -2051,7 +2091,7 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   // What the draft was computed from: a commit checks that keylang.json and the sources are still these.
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
-  const setup = await modelSetup(mode, analyzed);
+  const setup = await modelSetup(mode, analyzed.config.agent);
   if ("error" in setup) return emptyDraftFlow("failed", 2, setup.error);
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
@@ -2171,7 +2211,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   for (const [id, node] of Object.entries(snapshot.nodes)) if (node.kind === "module") modules.set(id, new Set((node.deps ?? []).filter((dep) => snapshot.nodes[dep]?.layer !== "external")));
   const cyclic = stronglyConnected(modules).length > 0;
   const algo = draftRules(snapshot, cyclic);
-  const setup = await modelSetup(mode, analyzed, "draft rules");
+  const setup = await modelSetup(mode, analyzed.config.agent, "draft rules");
   if ("error" in setup) return emptyDraftRules("failed", 2, setup.error);
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
@@ -2243,6 +2283,66 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
     ],
     proposals: [committed.proposal],
   };
+}
+
+function emptyDraftLayout(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"draft-layout"> {
+  return { kind: "draft-layout", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang draft map [--mode algo|llm|hybrid]`. The saved keylang.json (or
+ * the inferred one without it) first: invalid, it fails (2) as the CLI
+ * does. Algo guesses the layers from the directories and needs no
+ * analysis; a model mode with a model analyses the saved files (nothing
+ * persisted) and asks for the layers of its source files. Invalid layers
+ * from the model fail (2) and are never returned; Cancel is `cancelled`.
+ * Nothing is written in any case.
+ */
+async function runDraftLayout(request: DraftLayoutRequest, context: OperationContext): Promise<OperationEnvelope<"draft-layout">> {
+  const { root } = request;
+  const mode = request.mode ?? "algo";
+  if (!isAbsolute(root)) return emptyDraftLayout("failed", 2, "draft map: root must be an absolute path");
+  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  let config: Config;
+  try {
+    config = loadConfig(root);
+  } catch (error) {
+    return emptyDraftLayout("failed", 2, messageOf(error));
+  }
+  const configExists = existsSync(join(root, CONFIG_FILE));
+  const setup = await modelSetup(mode, config.agent, "draft map");
+  if ("error" in setup) return emptyDraftLayout("failed", 2, setup.error);
+  const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
+  if (setup.client === null) {
+    const layers = guessLayout(root, config.exclude).layers;
+    const payload: DraftLayoutPayload = { mode: "algo", layers: Object.fromEntries(layers), preview: configToJson({ ...config, layers, guessed: true }), configExists, agent: null, fallback: setup.fallback };
+    // The CLI's closing note on stderr.
+    const note = configExists ? `printed only; ${CONFIG_FILE} is unchanged` : `no ${CONFIG_FILE}; \`keylang init\` writes this layout`;
+    return { ...emptyDraftLayout("completed", 0), payload, messages: [...fallbackNote, { level: "info", text: note }] };
+  }
+  const client = setup.client;
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyDraftLayout("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  context.onProgress?.({ text: `asking ${client.agent}` });
+  const { LlmCancelled } = await import("./llm.ts");
+  const { draftLayoutWithModel } = await import("./draft-llm.ts");
+  let layers: Record<string, string[]>;
+  try {
+    layers = await draftLayoutWithModel(analyzed, client, analyzed.snapshot?.manifest.files.map((file) => file.path) ?? [], context.signal ? { signal: context.signal } : {});
+  } catch (error) {
+    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+    return emptyDraftLayout("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  const preview = configToJson({ ...analyzed.config, layers: new Map(Object.entries(layers)), guessed: false });
+  const payload: DraftLayoutPayload = { mode, layers, preview, configExists, agent: client.agent, fallback: null };
+  return { ...emptyDraftLayout("completed", 0), payload, messages: [{ level: "info", text: `proposed by ${client.agent}; printed only; ${CONFIG_FILE} is unchanged` }] };
 }
 
 /** `2 rule(s)`: the list items of a drafted `# rules` section. */
@@ -2334,10 +2434,10 @@ function countProposed(root: string, counts: Record<DraftStatus, number>): strin
  * configured, and `llm` fails as the CLI does (`<command> --mode llm: …`)
  * while `hybrid` drafts as algo, saying why. Algo: no client.
  */
-async function modelSetup(mode: "algo" | "llm" | "hybrid", analyzed: Analysis, command = "draft"): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
+async function modelSetup(mode: "algo" | "llm" | "hybrid", agent: string | null, command = "draft"): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
   if (mode === "algo") return { client: null, fallback: null };
   const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(analyzed.config.agent);
+  const setup = llmClient(agent);
   if (!("missing" in setup)) return { client: setup.client, fallback: null };
   if (mode === "llm") return { error: `${command} --mode llm: ${setup.missing}` };
   return { client: null, fallback: `${setup.missing}; drafting from the snapshot only (--mode algo)` };

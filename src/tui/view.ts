@@ -443,6 +443,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "trace-plan") return `${label} · ${record.params.flow}`;
   if (record.params.kind === "draft-flow") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.trigger}`;
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
+  if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -459,6 +460,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
+  if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
@@ -491,6 +493,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "trace-plan" && result.payload !== null) return `${tracePlanOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "draft-flow" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-rules" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "draft-layout" && result.payload !== null) return `${Object.keys(result.payload.layers).length} layer(s), nothing written · code ${result.exitCode}`;
   return recordStatus(record);
 }
 
@@ -978,6 +981,23 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       if (lines.at(-1) === "") lines.pop();
       for (const line of lines) rows.push({ text: line, style: THEME.panel });
     }
+  } else if (result?.kind === "draft-layout" && result.payload !== null) {
+    // The drafted layers, then what Enter does with them, then the CLI's stdout.
+    const { payload } = result;
+    rows.push({ text: `Draft layers · ${payload.mode}${payload.fallback !== null ? " (hybrid without a model)" : ""} · nothing written, not even a proposal`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${recordSummary(record)}`, style: { ...THEME.panel, ...MARK_STYLE.ok, bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: THEME.panel });
+    rows.push({ text: `  ${payload.agent === null ? "algo: the layers keylang would guess from the directories" : `proposed by ${payload.agent}, validated as keylang.json: a proposal, never assigned without you`}`, style: { ...THEME.panel, fg: 243 } });
+    for (const [name, globs] of Object.entries(payload.layers)) rows.push({ text: `  ${name}  ${globs.join(", ")}`, style: THEME.panel });
+    if (record.outdated === null)
+      rows.push({
+        text: `  Enter: move the layers into ${payload.configExists ? "keylang.json's buffer — only layers change, every other field stays" : "a new keylang.json buffer, the inferred config with these layers"}; written only by Ctrl+S, Ctrl+Z undoes`,
+        style: THEME.hint,
+      });
+    rows.push({ text: `── keylang draft map${payload.mode !== "algo" ? ` --mode ${payload.mode}` : ""} · stdout ──`, style: { ...THEME.panel, fg: 243 } });
+    const lines = payload.preview.split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    for (const line of lines) rows.push({ text: line, style: THEME.panel });
   } else if (result?.kind === "fmt" && result.payload !== null) {
     // Every file of the selection with what happened to it; a failure never hides the files already written.
     const { payload } = result;
@@ -1116,6 +1136,8 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
       ? " x cancel · Esc back "
       : proposed
         ? " Enter open MERGE · Esc back "
+        : record?.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null
+        ? " Enter move layers into keylang.json · Esc back "
         : gaps
         ? results.scrollReport
           ? " Enter open gap · Tab entries · Esc back "
@@ -1295,12 +1317,12 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
-  const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.text;
+  const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
-  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules") && prompt.note) {
+  if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout") && prompt.note) {
     // The selected action's group, or why it is unavailable; never a reason to hide it.
     grid.write(rect.x + 2 + stringWidth(label) + stringWidth(typed), rect.y, `  ${prompt.note}`, { ...THEME.status, fg: 243 });
   }
@@ -1314,7 +1336,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -197,6 +197,15 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["draft rules", "keylang draft rules", "draft rules --mode hybrid", "draft rules --mode llm", "rules draft", "propose rules"],
     // A form names the target, the mode and preview or proposal; each model rule is checked alone against the snapshot; the target itself is never written, MERGE applies the proposal.
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "draft-layout",
+    label: "Draft layers: the layout keylang would guess, or the model's (algo, hybrid, llm)",
+    group: "Generate",
+    aliases: ["draft map", "keylang draft map", "draft map --mode hybrid", "draft map --mode llm", "draft layers", "layer layout", "propose layers"],
+    // A form names the mode; F6 shows the layers and moves them into keylang.json's buffer on Enter — never a file, never a proposal.
+    // Also on the start screen: without keylang.json the move opens a new, unsaved one.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
     id: "cancel",

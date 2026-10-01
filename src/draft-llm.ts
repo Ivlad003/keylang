@@ -345,15 +345,16 @@ function judgeRule(analysis: Analysis, others: readonly Document[], target: stri
 
 /**
  * `draft map --mode llm|hybrid`: the model proposes layers (name → globs),
- * validated as `keylang.json` would be. Only printed: layers are never
- * assigned without a person (design §5.1 p.4).
+ * validated as `keylang.json` would be. Never written: layers are never
+ * assigned without a person (design §5.1 p.4) — the CLI prints them, the
+ * TUI moves them into the config buffer on an explicit action.
  */
-export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient, files: readonly string[]): Promise<Record<string, string[]>> {
+export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient, files: readonly string[], options: LlmCallOptions = {}): Promise<Record<string, string[]>> {
   const answer = await client.complete({
     system: "You group the source files of a repository into architecture layers. Answer with one JSON object only: layer name (one lowercase word) → array of POSIX globs relative to the root.",
     prompt: `Current layers: ${JSON.stringify(Object.fromEntries(analysis.config.layers))}\n\nSource files:\n${files.slice(0, 400).join("\n")}${files.length > 400 ? `\n… ${files.length - 400} more files not shown` : ""}`,
     maxTokens: 2048,
-  });
+  }, options);
   const json = /\{[\s\S]*\}/.exec(answer)?.[0] ?? "";
   // The same validation as a written keylang.json: names, globs, shape.
   const raw = parseConfig("proposed layers", JSON.stringify({ layers: JSON.parse(json) as unknown }));

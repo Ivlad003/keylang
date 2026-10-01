@@ -7097,3 +7097,237 @@ test("tui: without a model the rules form drafts hybrid as algo and says so, as 
   assert.equal(s.app.state.records.length, records);
   assert.ok(!existsSync(store));
 });
+
+// ---------- layer layout draft (ticket 25) ----------
+
+/** The palette's draft-layout form with the given mode; Enter on the run row. */
+function layoutForm(s: ReturnType<typeof session>, mode?: "algo" | "hybrid" | "llm"): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "draft layers") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "draft-layout", s.app.state.message ?? "");
+  for (let i = 0; i < 3 && mode !== undefined && prompt.layoutDraft!.mode !== mode; i++) s.send(KEY.right);
+  if (mode !== undefined) assert.equal(prompt.layoutDraft!.mode, mode);
+  s.send(KEY.down);
+  assert.equal(prompt.ids?.[prompt.index], "run");
+  s.send(KEY.enter);
+}
+
+type LayoutResult = Extract<OperationResult, { kind: "draft-layout" }> & { payload: NonNullable<Extract<OperationResult, { kind: "draft-layout" }>["payload"]> };
+
+function layoutRecord(app: App): LayoutResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "draft-layout" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as LayoutResult;
+}
+
+function cliMap(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "draft", "map", ...args], { cwd: root, encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", OPENROUTER_API_KEY: "", HOME: root } });
+}
+
+/** The guess for the checkout repository: a layer per directory under src/, in name order. */
+const GUESSED_LAYERS = { application: ["src/application/**"], domain: ["src/domain/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] };
+
+test("tui: draft map (algo) is the CLI's layout; Enter moves only layers into keylang.json's buffer — agent, explain, check, exclude and $schema stay; nothing is written before Ctrl+S, Ctrl+Z gives the text back", async (t) => {
+  const root = checkoutRepo(t);
+  const config = join(root, "keylang.json");
+  const fields = { $schema: "https://example.test/keylang.schema.json", languages: ["typescript"], layers: { core: ["src/domain/**"], rest: ["src/application/**", "src/infrastructure/**", "src/presentation/**"] }, exclude: ["src/legacy/**"], check: { trace: ".keylang/trace/*.jsonl", static: "shape" }, agent: "anthropic:claude-opus-5", explain: { lang: "uk", detail: "full" } };
+  writeFileSync(config, `${JSON.stringify(fields, null, 2)}\n`);
+  const original = readFileSync(config, "utf8");
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The form: with a model, hybrid by default; algo chosen; the root is shown.
+  s.send(KEY.ctrlP);
+  for (const ch of "draft map") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "draft-layout");
+  assert.equal(prompt.layoutDraft?.mode, "hybrid");
+  assert.deepEqual(prompt.ids, ["mode", "run"]);
+  assert.match(prompt.details![0]!, /drafted from the saved keylang\.json and the code · only layers change, in the buffer, until Ctrl\+S/);
+  await esc(s.send);
+  layoutForm(s, "algo");
+  await s.app.idle();
+  const drafted = layoutRecord(s.app);
+  assert.deepEqual([drafted.status, drafted.exitCode, drafted.written, drafted.proposals], ["completed", 0, [], []]);
+  assert.deepEqual(drafted.payload.layers, GUESSED_LAYERS);
+  const cli = cliMap(root, ["--mode", "algo"]);
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [0, drafted.payload.preview, "keylang: printed only; keylang.json is unchanged\n"], "the CLI prints the same layout");
+  assert.deepEqual(treeBytes(root), before, "the draft writes nothing: no proposal, not keylang.json, not the map");
+  // F6: the layers and the move.
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Draft layers · algo · nothing written, not even a proposal/);
+  assert.match(text, /infrastructure {2}src\/infrastructure\/\*\*/);
+  assert.match(text, /Enter: move the layers into keylang\.json's buffer — only layers change/);
+  assert.match(text, /── keylang draft map · stdout ──/);
+  assert.match(text, /Enter move layers into keylang\.json/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang.json", s.app.state.message ?? "");
+  assert.equal(s.app.state.mode, "edit");
+  const buffer = s.app.state.buffers.get("keylang.json")!;
+  const moved = JSON.parse(buffer.text) as Record<string, unknown>;
+  assert.deepEqual(moved, { ...fields, layers: GUESSED_LAYERS }, "semantically only layers changed");
+  assert.deepEqual(Object.keys(moved), Object.keys(fields), "the fields keep their order");
+  assert.equal(buffer.text.split("\n")[s.app.state.cursor.line], '  "layers": {');
+  assert.match(s.app.state.message ?? "", /layers moved into keylang\.json \(unsaved\)/);
+  assert.deepEqual(treeBytes(root), before, "before Ctrl+S the disk and the proposals are unchanged");
+  assert.equal(s.app.state.records.at(-1)!.outdated, "its layers were moved into keylang.json's buffer");
+  // Ctrl+Z: the move is one edit.
+  s.send("\x1a");
+  assert.equal(buffer.text, original.replace(/\n$/, "\n"));
+  assert.equal(buffer.text, buffer.saved, "clean again");
+  // The moved record drafts again on Enter; the new one moves again; Ctrl+S writes and the analysis reads it.
+  await esc(s.send);
+  s.send(KEY.f6);
+  assert.match(s.text(), /outdated: its layers were moved into keylang\.json's buffer · Enter reruns/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.length, 2);
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "edit");
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  const saved = JSON.parse(readFileSync(config, "utf8")) as Record<string, unknown>;
+  assert.deepEqual(saved, { ...fields, layers: GUESSED_LAYERS });
+  assert.equal(s.app.state.config.kind, "configured");
+  assert.deepEqual([...s.app.state.analysis!.config.layers.keys()], Object.keys(GUESSED_LAYERS), "the saved layers are the analysis's");
+  assert.equal(s.app.state.analysis!.config.agent, "anthropic:claude-opus-5");
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+});
+
+test("tui: without keylang.json draft map moves the layers into a new buffer with the inferred config; the file appears only with Ctrl+S", async (t) => {
+  const root = repoWith(t, CHECKOUT_FILES);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  assert.equal(s.app.state.config.kind, "missing-config");
+  const before = treeBytes(root);
+  layoutForm(s);
+  await s.app.idle();
+  const drafted = layoutRecord(s.app);
+  assert.deepEqual([drafted.payload.mode, drafted.payload.configExists, drafted.payload.layers], ["algo", false, GUESSED_LAYERS]);
+  const cli = cliMap(root, ["--mode", "algo"]);
+  assert.deepEqual([cli.stdout, cli.stderr], [drafted.payload.preview, "keylang: no keylang.json; `keylang init` writes this layout\n"]);
+  s.send(KEY.f6);
+  assert.match(s.text(), /Enter: move the layers into a new keylang\.json buffer, the inferred config with these layers/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang.json", s.app.state.message ?? "");
+  const buffer = s.app.state.buffers.get("keylang.json")!;
+  assert.equal(buffer.newFile, true);
+  assert.equal(buffer.text, drafted.payload.preview, "the inferred config as init writes it, with the drafted layers");
+  assert.deepEqual(treeBytes(root), before, "no file before Ctrl+S");
+  s.send(KEY.ctrlS);
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang.json"), "utf8"), drafted.payload.preview);
+  assert.equal(s.app.state.config.kind, "configured");
+  assert.deepEqual([...s.app.state.analysis!.config.layers.keys()], Object.keys(GUESSED_LAYERS));
+});
+
+const LAYOUT_ANSWER = '{"core": ["src/domain/**"], "edge": ["src/application/**", "src/infrastructure/**", "src/presentation/**"]}';
+
+test("tui: a model layout is the validated answer; an edit of keylang.json during the request makes it outdated with the new text kept; Cancel closes the request; a hybrid without a model and invalid JSON in the buffer move nothing", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, `Here:\n${LAYOUT_ANSWER}`);
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // keylang.json is opened and edited while the model answers.
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang.json") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang.json");
+  layoutForm(s, "llm");
+  await model.requested(1);
+  assert.match(model.prompts[0]!, /src\/application\/purchase\.ts/, "the model sees the source files");
+  s.send("i");
+  s.send(" ");
+  await esc(s.send);
+  const edited = s.app.state.buffers.get("keylang.json")!.text;
+  model.release();
+  await s.app.idle();
+  const late = layoutRecord(s.app);
+  assert.deepEqual([late.status, late.payload.mode, late.payload.agent, late.payload.layers], ["completed", "llm", "anthropic:claude-opus-5", JSON.parse(LAYOUT_ANSWER)]);
+  assert.match(s.app.state.records.at(-1)!.outdated ?? "", /keylang\.json was edited in this session since the draft started/);
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.buffers.get("keylang.json")!.text, edited, "an outdated draft never lands over the new text");
+  assert.equal(s.app.state.records.length, 2, "Enter drafts again");
+  await model.requested(2);
+  model.release();
+  await s.app.idle();
+  s.send(KEY.down);
+  s.send(KEY.enter);
+  const buffer = s.app.state.buffers.get("keylang.json")!;
+  assert.deepEqual((JSON.parse(buffer.text) as { layers: unknown }).layers, JSON.parse(LAYOUT_ANSWER));
+  assert.equal((JSON.parse(buffer.text) as { agent: string }).agent, "anthropic:claude-opus-5");
+  assert.deepEqual(treeBytes(root), before, "nothing written, the edit stays in the buffer");
+  s.send("\x1a");
+  assert.equal(buffer.text, edited, "Ctrl+Z gives back the text with the edit");
+  await esc(s.send);
+  // Cancel while the model answers: cancelled, no code, the request closed.
+  layoutForm(s, "llm");
+  await model.requested(3);
+  const cancelled = s.app.state.records.at(-1)!;
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1);
+  model.release();
+  await s.app.idle();
+  assert.equal(buffer.text, edited);
+  // Invalid JSON in the buffer: the layers are not moved, the text is not repaired; keylang.json is shown with the reason.
+  s.send("i");
+  s.send("{");
+  await esc(s.send);
+  const broken = buffer.text;
+  layoutForm(s, "algo");
+  await s.app.idle();
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  assert.equal(buffer.text, broken);
+  assert.equal(s.app.state.current, "keylang.json");
+  assert.match(s.app.state.message ?? "", /draft map: keylang\.json: invalid JSON: .* nothing was changed/);
+  assert.deepEqual(treeBytes(root), before);
+  // A hybrid without a model: algo with the CLI's note.
+  const plain = checkoutRepo(t);
+  const p = session(plain, { cols: 200 });
+  t.after(() => p.app.close());
+  await p.app.idle();
+  layoutForm(p, "hybrid");
+  await p.app.idle();
+  const fallback = layoutRecord(p.app);
+  assert.deepEqual([fallback.payload.mode, fallback.payload.layers], ["algo", GUESSED_LAYERS]);
+  const cli = cliMap(plain, []);
+  assert.equal(cli.stdout, fallback.payload.preview);
+  assert.equal(cli.stderr, `keylang: ${fallback.payload.fallback}\nkeylang: printed only; keylang.json is unchanged\n`);
+  p.send(KEY.f6);
+  assert.match(p.text(), /Draft layers · algo \(hybrid without a model\)/);
+});
+
+test("tui: invalid layers from the model are a failed draft (2) with the reason; nothing can be moved", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, '{"core.domain": ["src/domain/**"]}');
+  const s = session(root, { cols: 200 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  layoutForm(s, "llm");
+  await model.requested(1);
+  model.release();
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.deepEqual([record.status, record.result?.exitCode, record.result?.payload], ["failed", 2, null]);
+  assert.match(record.result!.messages.map((m) => m.text).join("\n"), /layer name `core\.domain` must be one ID segment/);
+  assert.equal(s.app.state.buffers.get("keylang.json"), undefined, "keylang.json was not even opened");
+  assert.deepEqual(treeBytes(root), before);
+});
