@@ -2,7 +2,10 @@
 // the bundled xterm.js; a WebSocket (`ws`) carries ANSI frames to xterm.js and
 // its keyboard, mouse, paste and resize events back to an `App` in this
 // process. No PTY and no CDN. A session outlives its socket for a while, so a
-// reload or a dropped connection reattaches to the same state.
+// reload or a dropped connection reattaches to the same state. Operations
+// belong to that `App`, not to a socket: a drop leaves a running one and its
+// F6 record as they are, and only the session's end (`q`, expiry,
+// `server.close()`) cancels it, through the same lifecycle as a terminal.
 //
 // The server listens on localhost by default, and every socket needs the
 // random token printed at start: the TUI can write spec files. The token is in
@@ -21,7 +24,7 @@ import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { analyze } from "../analyze.ts";
-import { App, type Analyzer } from "./app.ts";
+import { App, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
 
@@ -163,7 +166,18 @@ function offeredToken(request: IncomingMessage): string | null {
   return null;
 }
 
-export async function serveWeb(options: { root: string; port: number; host?: string; analyzer?: Analyzer; /** How long a detached session waits for a reconnect. */ keepMs?: number }): Promise<WebServer> {
+export interface WebOptions {
+  root: string;
+  port: number;
+  host?: string;
+  analyzer?: Analyzer;
+  /** Every session's operation runner (tests inject a gated one); default: the session's own worker, as in a terminal. */
+  operations?: OperationRunner;
+  /** How long a detached session waits for a reconnect. */
+  keepMs?: number;
+}
+
+export async function serveWeb(options: WebOptions): Promise<WebServer> {
   const host = options.host ?? "127.0.0.1";
   const token = randomBytes(16).toString("hex");
   const worker = new SnapshotWorker();
@@ -298,6 +312,7 @@ export async function serveWeb(options: { root: string; port: number; host?: str
         cols,
         rows,
         analyzer,
+        ...(options.operations ? { operations: options.operations } : {}),
         onQuit: () => {
           const ended = sessions.get(id);
           sessions.delete(id);

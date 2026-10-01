@@ -1109,27 +1109,28 @@
     - app tui.app
     - background tui.background
     - screen tui.screen
-    - type [AssetName](../../src/tui/web.ts#L47) = keyof typeof ASSETS <!-- internal -->
-    - fn [assetPath](../../src/tui/web.ts#L50) (name: AssetName) → string | null
-    - type [WebServer](../../src/tui/web.ts#L64)
-    - type [Session](../../src/tui/web.ts#L76) <!-- internal -->
-    - fn [control](../../src/tui/web.ts#L85) (message: object) → string <!-- internal -->
-    - module [AudioQueue](../../src/tui/web.ts#L93) <!-- internal -->
-      - fn [push](../../src/tui/web.ts#L100) (chunk: Int16Array) → void
+    - type [AssetName](../../src/tui/web.ts#L50) = keyof typeof ASSETS <!-- internal -->
+    - fn [assetPath](../../src/tui/web.ts#L53) (name: AssetName) → string | null
+    - type [WebServer](../../src/tui/web.ts#L67)
+    - type [Session](../../src/tui/web.ts#L79) <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L88) (message: object) → string <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L96) <!-- internal -->
+      - fn [push](../../src/tui/web.ts#L103) (chunk: Int16Array) → void
         - calls tui.web.AudioQueue.wake
-      - fn [end](../../src/tui/web.ts#L107) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L110) (failure: Error | null = null) → void
         - calls tui.web.AudioQueue.wake
-      - fn [wake](../../src/tui/web.ts#L113) () → void <!-- internal -->
-      - fn [chunks](../../src/tui/web.ts#L120) () → AsyncGenerator<Int16Array>
-    - fn [pcmOf](../../src/tui/web.ts#L135) (data: unknown) → Int16Array | null <!-- internal -->
-    - fn [clampSize](../../src/tui/web.ts#L145) (value: unknown, fallback: number, max: number) → number
-    - fn [sameSecret](../../src/tui/web.ts#L150) (given: string | null | undefined, token: string) → boolean <!-- internal -->
-    - fn [offeredToken](../../src/tui/web.ts#L158) (request: IncomingMessage) → string | null <!-- internal -->
-    - fn [serveWeb](../../src/tui/web.ts#L166) (options: { root: string; port: number; host?: string; analyzer?: Analyzer; /** How long a detached session waits for a reconnect. */ keepMs?: number }) → Promise<WebServer>
+      - fn [wake](../../src/tui/web.ts#L116) () → void <!-- internal -->
+      - fn [chunks](../../src/tui/web.ts#L123) () → AsyncGenerator<Int16Array>
+    - fn [pcmOf](../../src/tui/web.ts#L138) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [clampSize](../../src/tui/web.ts#L148) (value: unknown, fallback: number, max: number) → number
+    - fn [sameSecret](../../src/tui/web.ts#L153) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L161) (request: IncomingMessage) → string | null <!-- internal -->
+    - type [WebOptions](../../src/tui/web.ts#L169)
+    - fn [serveWeb](../../src/tui/web.ts#L180) (options: WebOptions) → Promise<WebServer>
       - calls tui.background.SnapshotWorker, map.analyze.analyze, tui.web.sameSecret, tui.web.offeredToken, tui.web.pathOf, tui.web.reply, tui.web.assetPath, tui.web.page, tui.web.clampSize, tui.web.pcmOf, tui.app.App, tui.web.AudioQueue, tui.web.control, tui.web.AudioQueue.chunks, tui.web.AudioQueue.end, tui.background.SnapshotWorker.close
-    - fn [pathOf](../../src/tui/web.ts#L380) (target: string | undefined) → string | null <!-- internal -->
-    - fn [reply](../../src/tui/web.ts#L388) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-    - fn [page](../../src/tui/web.ts#L394) () → string <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L395) (target: string | undefined) → string | null <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L403) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L409) () → string <!-- internal -->
   - module [width](../../src/tui/width.ts#L1)
     - fn [graphemes](../../src/tui/width.ts#L9) (text: string) → string[]
     - fn [clusters](../../src/tui/width.ts#L16) (text: string) → Generator<string>

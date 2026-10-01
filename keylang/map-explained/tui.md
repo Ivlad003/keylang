@@ -1708,44 +1708,46 @@
     - app [tui.app](tui.md#tui.app)
     - background [tui.background](tui.md#tui.background)
     - screen [tui.screen](tui.md#tui.screen)
-    - type [AssetName](../../src/tui/web.ts#L47) = keyof typeof ASSETS <!-- internal -->
+    - type [AssetName](../../src/tui/web.ts#L50) = keyof typeof ASSETS <!-- internal -->
       <a id="tui.web.AssetName"></a>
-    - fn [assetPath](../../src/tui/web.ts#L50) (name: AssetName) → string | null
+    - fn [assetPath](../../src/tui/web.ts#L53) (name: AssetName) → string | null
       <a id="tui.web.assetPath"></a><br>The published package carries the assets in `dist/web/`; a checkout reads them from `node_modules`.
-    - type [WebServer](../../src/tui/web.ts#L64)
+    - type [WebServer](../../src/tui/web.ts#L67)
       <a id="tui.web.WebServer"></a>
-    - type [Session](../../src/tui/web.ts#L76) <!-- internal -->
+    - type [Session](../../src/tui/web.ts#L79) <!-- internal -->
       <a id="tui.web.Session"></a>
-    - fn [control](../../src/tui/web.ts#L85) (message: object) → string <!-- internal -->
+    - fn [control](../../src/tui/web.ts#L88) (message: object) → string <!-- internal -->
       <a id="tui.web.control"></a><br>A control message for the page: a frame that starts with NUL, which no ANSI frame does.
-    - module [AudioQueue](../../src/tui/web.ts#L93) <!-- internal -->
+    - module [AudioQueue](../../src/tui/web.ts#L96) <!-- internal -->
       <a id="tui.web.AudioQueue"></a><br>PCM chunks from the page, read by the session's recognizer as they arrive.
-      - fn [push](../../src/tui/web.ts#L100) (chunk: Int16Array) → void
+      - fn [push](../../src/tui/web.ts#L103) (chunk: Int16Array) → void
         <a id="tui.web.AudioQueue.push"></a>
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [end](../../src/tui/web.ts#L107) (failure: Error | null = null) → void
+      - fn [end](../../src/tui/web.ts#L110) (failure: Error | null = null) → void
         <a id="tui.web.AudioQueue.end"></a>
         - calls [tui.web.AudioQueue.wake](tui.md#tui.web.AudioQueue.wake)
-      - fn [wake](../../src/tui/web.ts#L113) () → void <!-- internal -->
+      - fn [wake](../../src/tui/web.ts#L116) () → void <!-- internal -->
         <a id="tui.web.AudioQueue.wake"></a>
-      - fn [chunks](../../src/tui/web.ts#L120) () → AsyncGenerator<Int16Array>
+      - fn [chunks](../../src/tui/web.ts#L123) () → AsyncGenerator<Int16Array>
         <a id="tui.web.AudioQueue.chunks"></a><br>The chunks as they come, until `end`.
-    - fn [pcmOf](../../src/tui/web.ts#L135) (data: unknown) → Int16Array | null <!-- internal -->
+    - fn [pcmOf](../../src/tui/web.ts#L138) (data: unknown) → Int16Array | null <!-- internal -->
       <a id="tui.web.pcmOf"></a><br>s16le PCM from base64; an odd byte count or bad base64 is dropped, not trusted.
-    - fn [clampSize](../../src/tui/web.ts#L145) (value: unknown, fallback: number, max: number) → number
+    - fn [clampSize](../../src/tui/web.ts#L148) (value: unknown, fallback: number, max: number) → number
       <a id="tui.web.clampSize"></a><br>A size from the client: an integer within the grid limits, else the fallback.
-    - fn [sameSecret](../../src/tui/web.ts#L150) (given: string | null | undefined, token: string) → boolean <!-- internal -->
+    - fn [sameSecret](../../src/tui/web.ts#L153) (given: string | null | undefined, token: string) → boolean <!-- internal -->
       <a id="tui.web.sameSecret"></a>
-    - fn [offeredToken](../../src/tui/web.ts#L158) (request: IncomingMessage) → string | null <!-- internal -->
+    - fn [offeredToken](../../src/tui/web.ts#L161) (request: IncomingMessage) → string | null <!-- internal -->
       <a id="tui.web.offeredToken"></a><br>The token a socket offers among its subprotocols.
-    - fn [serveWeb](../../src/tui/web.ts#L166) (options: { root: string; port: number; host?: string; analyzer?: Analyzer; /** How long a detached session waits for a reconnect. */ keepMs?: number }) → Promise<WebServer>
+    - type [WebOptions](../../src/tui/web.ts#L169)
+      <a id="tui.web.WebOptions"></a>
+    - fn [serveWeb](../../src/tui/web.ts#L180) (options: WebOptions) → Promise<WebServer>
       <a id="tui.web.serveWeb"></a>
       - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.reply](tui.md#tui.web.reply), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.page](tui.md#tui.web.page), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
-    - fn [pathOf](../../src/tui/web.ts#L380) (target: string | undefined) → string | null <!-- internal -->
+    - fn [pathOf](../../src/tui/web.ts#L395) (target: string | undefined) → string | null <!-- internal -->
       <a id="tui.web.pathOf"></a><br>The path of a request target, or null when it is not a URL at all.
-    - fn [reply](../../src/tui/web.ts#L388) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
+    - fn [reply](../../src/tui/web.ts#L403) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
       <a id="tui.web.reply"></a>
-    - fn [page](../../src/tui/web.ts#L394) () → string <!-- internal -->
+    - fn [page](../../src/tui/web.ts#L409) () → string <!-- internal -->
       <a id="tui.web.page"></a><br>The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session.
   - module [width](../../src/tui/width.ts#L1)
     <a id="tui.width"></a><br>Terminal cell width of text: graphemes, not code units. A wide character (CJK, most emoji) takes two cells, combining marks and joiners none.

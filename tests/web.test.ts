@@ -5,19 +5,21 @@
 // terminal.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import xterm from "@xterm/headless";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { App } from "../src/tui/app.ts";
+import { runOperation } from "../src/operations.ts";
+import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
-import { checkoutRepo, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -520,4 +522,317 @@ test("web: t switches the map to the explained map on the same node, the screen 
   assert.deepEqual(client.vt.lines(), explained);
   client.input("t");
   await waitFor(() => client.vt.lines()[0]!.includes("keylang/map/application.md"), "the map again");
+});
+
+// ---------- operations across a socket's life (ticket 36) ----------
+
+/** What a test drives: a terminal session in this process or a browser tab over the socket. */
+interface Screen {
+  input(keys: string): void;
+  text(): string;
+  lines(): string[];
+}
+
+function typeInto(screen: Screen, text: string): void {
+  for (const ch of text) screen.input(ch);
+}
+
+/** The palette, an action by its words, Enter. */
+function palette(screen: Screen, words: string): void {
+  screen.input(KEY.ctrlP);
+  typeInto(screen, words);
+  screen.input(KEY.enter);
+}
+
+/** The repository's files, the index's `generated` time taken out: what two runs must share. */
+function artifacts(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) walk(abs);
+      else out.set(abs.slice(root.length + 1), readFileSync(abs, "latin1"));
+    }
+  };
+  walk(root);
+  const index = out.get(".keylang/index.json");
+  if (index !== undefined) out.set(".keylang/index.json", index.replace(/"generated": "[^"]*"/, '"generated": "…"'));
+  return out;
+}
+
+/** The checkout code with no keylang.json and a codex harness: the start screen. */
+function uninitializedRepo(t: { after: (f: () => void) => void }): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-web-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(CHECKOUT_FILES)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  mkdirSync(join(dir, ".codex"), { recursive: true });
+  return dir;
+}
+
+const analysed = (screen: Screen): boolean => /✗ 0 /.test(screen.lines().at(-1) ?? "") && !/updating|analyzing/.test(screen.text());
+
+/** The F6 list: one line per record, its label and outcome. */
+function recordLines(screen: Screen): string[] {
+  return screen
+    .lines()
+    .map((line) => line.split("│")[0]!.trimEnd())
+    .filter((line) => /^ \d+ {2}\S/.test(line) && !/Current analysis/.test(line));
+}
+
+/**
+ * init from the start screen → a new feature, edited, saved, read → code from the map → map write → feature;
+ * the F6 list at the end.
+ */
+async function firstProject(screen: Screen): Promise<string[]> {
+  await waitFor(() => screen.text().includes("> Init: set up keylang in this repository"), "the start screen");
+  screen.input(KEY.enter);
+  screen.input(KEY.enter);
+  await waitFor(() => screen.text().includes("init: set up: map, baseline, agents · code 0") && analysed(screen), "init");
+  // Code from the map: the built-in viewer, never a server-side `$EDITOR`.
+  for (let i = 0; i < 8; i++) screen.input(KEY.down);
+  screen.input(KEY.enter);
+  await waitFor(() => /▶ +3 export function buy/.test(screen.text()), "the code viewer");
+  palette(screen, "new specification");
+  typeInto(screen, "feature");
+  screen.input(KEY.enter);
+  typeInto(screen, "refunds.md");
+  screen.input(KEY.enter);
+  await waitFor(() => screen.lines()[0]!.includes("keylang/features/refunds.md [+ new, not on disk]"), "the new feature buffer");
+  typeInto(screen, "Refunds go back to the card.");
+  screen.input(KEY.ctrlS);
+  await waitFor(() => screen.text().includes("keylang/features/refunds.md: saved") && analysed(screen), "the save");
+  screen.input("\x1b");
+  await new Promise((done) => setTimeout(done, 60));
+  screen.input("v");
+  await waitFor(() => /READ $/.test(screen.lines()[0]!), "reading");
+  palette(screen, "map write");
+  await waitFor(() => screen.text().includes("[Continue]"), "the map targets");
+  screen.input(KEY.enter);
+  await waitFor(() => /map write: \d+ written · code 0/.test(screen.text()), "the map write");
+  palette(screen, "feature readiness");
+  screen.input(KEY.enter);
+  await waitFor(() => screen.text().includes("feature refunds: done · code 0"), "the feature");
+  screen.input(KEY.f6);
+  await waitFor(() => recordLines(screen).length >= 3, "the F6 list");
+  return recordLines(screen);
+}
+
+test("web: init → new feature → edit → read → map → feature over the real transport leaves the terminal's files and records; code opens in the viewer, not $EDITOR", async (t) => {
+  const terminalRoot = uninitializedRepo(t);
+  const webRoot = uninitializedRepo(t);
+  const cols = 110;
+  const rows = 30;
+  const vt = new VirtualTerminal(cols, rows);
+  const app = new App({ root: terminalRoot, cols, rows });
+  t.after(() => app.close());
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  const inTerminal = await firstProject({ input: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() });
+
+  // An editor that leaves a mark if anything ever ran it.
+  const mark = join(webRoot, "..", `${webRoot.split("/").at(-1)}-editor-ran`);
+  t.after(() => rmSync(mark, { force: true }));
+  const editor = `${process.execPath} -e require('fs').writeFileSync(${JSON.stringify(mark)},'')`;
+  const { url } = await startWeb(t, webRoot, { EDITOR: editor, VISUAL: editor });
+  const client = new Client(url, "session-first-project", cols, rows);
+  t.after(() => client.close());
+  await client.opened;
+  const inBrowser = await firstProject(clientScreen(client));
+
+  assert.deepEqual(inBrowser, inTerminal, "the same records, labels and outcomes");
+  assert.equal(inBrowser.length, 3, inBrowser.join("\n"));
+  assert.match(inBrowser[0]!, /Init: set up keylang .* completed · code/);
+  assert.match(inBrowser[1]!, /Map: write +completed · code 0/);
+  assert.match(inBrowser[2]!, /Feature readiness · refunds +completed · code 0/);
+  assert.deepEqual(artifacts(webRoot), artifacts(terminalRoot), "the same files, byte for byte");
+  assert.equal(existsSync(mark), false, "no editor ran on the server");
+  // Actions add no HTTP endpoint: only the page, its assets and the socket.
+  for (const path of ["/run", "/operations", "/api/map", "/ws/run"]) assert.equal((await status(url, path)).status, 404, path);
+});
+
+/** A runner on this thread that holds every operation before its commit until `release`, counting its runs. */
+function heldRunner(): { runner: OperationRunner; release: () => void; runs: () => number; signals: AbortSignal[]; settled: () => number } {
+  let open: () => void = () => {};
+  let gate = new Promise<void>((done) => (open = done));
+  let runs = 0;
+  let settled = 0;
+  const signals: AbortSignal[] = [];
+  return {
+    runner: async (request, context) => {
+      runs++;
+      if (context.signal) signals.push(context.signal);
+      // The session's analyzer serves the screen; like the operation worker, the run analyses on its own.
+      const { analyze: _screen, ...own } = context;
+      try {
+        return await runOperation(request, {
+          ...own,
+          beforeCommit: async (plan) => {
+            await gate;
+            return context.beforeCommit?.(plan);
+          },
+        });
+      } finally {
+        settled++;
+      }
+    },
+    release: () => {
+      open();
+      gate = new Promise<void>((done) => (open = done));
+    },
+    runs: () => runs,
+    signals,
+    settled: () => settled,
+  };
+}
+
+function clientScreen(client: Client): Screen {
+  return { input: (keys) => client.input(keys), text: () => client.vt.text(), lines: () => client.vt.lines() };
+}
+
+test("web: a dropped socket leaves a running map write to its session; the reconnect shows one record with its progress and result, the disk matches it, and Cancel works after a reconnect", async (t) => {
+  const root = checkoutRepo(t);
+  const twin = checkoutRepo(t);
+  const held = heldRunner();
+  const server = await serveWeb({ root, port: 0, operations: held.runner, keepMs: 60000 });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const first = new Client(url, "session-drop", 110, 30);
+  t.after(() => first.close());
+  await first.opened;
+  await waitFor(() => analysed(clientScreen(first)), "the first analysis");
+  const before = artifacts(root);
+  palette(clientScreen(first), "map write");
+  await waitFor(() => first.vt.text().includes("[Continue]"), "the map targets");
+  first.input(KEY.enter);
+  await waitFor(() => first.vt.text().includes("map write: waiting to write"), "the pause before the commit");
+  first.close();
+  await waitFor(() => first.closed, "the drop");
+  // Nobody watches: the operation goes on, once, and writes what the CLI writes.
+  held.release();
+  await waitFor(() => held.settled() === 1, "the write");
+  assert.equal(held.runs(), 1);
+  assert.equal(held.signals[0]!.aborted, false, "the drop cancelled nothing");
+  assert.equal(spawnCli(twin, ["map"]), 0);
+  assert.deepEqual(artifacts(root), artifacts(twin));
+  assert.notDeepEqual(artifacts(root), before);
+
+  const again = new Client(url, "session-drop", 110, 30);
+  t.after(() => again.close());
+  await again.opened;
+  await waitFor(() => /map write: \d+ written · code 0 · F6 shows the report/.test(again.vt.text()), "the result in the same session");
+  again.input(KEY.f6);
+  await waitFor(() => recordLines(clientScreen(again)).length >= 1, "the F6 list");
+  assert.deepEqual(recordLines(clientScreen(again)).map((line) => line.replace(/^ \d+ {2}/, "")), ["Map: write  completed · code 0"], "one record, not a second run");
+  assert.match(again.vt.text(), /written {2}keylang\/map\/application\.md/);
+  assert.match(again.vt.text(), /6 written · code 0/);
+  assert.equal(held.runs(), 1);
+
+  // A second write, dropped while held and cancelled from the tab that came back: nothing is written.
+  again.input(KEY.f6);
+  writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n");
+  const written = artifacts(root);
+  palette(clientScreen(again), "map write");
+  await waitFor(() => again.vt.text().includes("[Continue]"), "the map targets");
+  again.input(KEY.enter);
+  await waitFor(() => again.vt.text().includes("map write: waiting to write"), "the second pause");
+  again.close();
+  await waitFor(() => again.closed, "the second drop");
+  const back = new Client(url, "session-drop", 110, 30);
+  t.after(() => back.close());
+  await back.opened;
+  await waitFor(() => back.vt.text().includes("map write: waiting to write"), "the running operation after the reconnect");
+  back.input(KEY.f6);
+  await waitFor(() => /Map: write +running/.test(back.vt.text()), "the running record");
+  back.input("x");
+  await waitFor(() => /Map: write +cancelled/.test(back.vt.text()), "cancelled");
+  held.release();
+  await waitFor(() => held.settled() === 2, "the held operation to end");
+  assert.equal(held.runs(), 2);
+  assert.deepEqual(artifacts(root), written, "the cancelled write wrote nothing");
+  assert.deepEqual(recordLines(clientScreen(back)).map((line) => line.replace(/^ \d+ {2}/, "")), ["Map: write  completed · code 0", "Map: write  cancelled"]);
+});
+
+function spawnCli(cwd: string, args: string[]): number | null {
+  return spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8" }).status;
+}
+
+test("web: a tab that lost its session to another starts nothing; the new owner's run is the only one", async (t) => {
+  const root = checkoutRepo(t);
+  const held = heldRunner();
+  const server = await serveWeb({ root, port: 0, operations: held.runner });
+  t.after(() => server.close());
+  const url = new URL(server.url);
+  const first = new Client(url, "session-owner", 110, 30);
+  t.after(() => first.close());
+  await first.opened;
+  await waitFor(() => analysed(clientScreen(first)), "the first analysis");
+  const second = new Client(url, "session-owner", 110, 30);
+  t.after(() => second.close());
+  await second.opened;
+  await waitFor(() => second.raw.length > 0, "the second tab's first frame");
+  // The old tab's keys after the takeover: whether they reach the server or not, they drive nothing.
+  palette(clientScreen(first), "map write");
+  first.input(KEY.enter);
+  await waitFor(() => first.closed, "the old tab told");
+  assert.equal(first.closeCode, 4000);
+  await new Promise((done) => setTimeout(done, 200));
+  assert.equal(held.runs(), 0, "the old tab started no operation");
+  palette(clientScreen(second), "map write");
+  await waitFor(() => second.vt.text().includes("[Continue]"), "the map targets");
+  second.input(KEY.enter);
+  await waitFor(() => held.runs() === 1, "the owner's run");
+  held.release();
+  await waitFor(() => /map write: \d+ written · code 0/.test(second.vt.text()), "the write");
+  assert.equal(held.runs(), 1);
+});
+
+test("web: the expiry of a detached session and server.close() cancel a held write; nothing is written after them and no job is left", async (t) => {
+  const root = checkoutRepo(t);
+  const held = heldRunner();
+  const server = await serveWeb({ root, port: 0, operations: held.runner, keepMs: 200 });
+  let closed = false;
+  t.after(() => (closed ? undefined : server.close()));
+  const url = new URL(server.url);
+  const before = artifacts(root);
+  const start = async (session: string): Promise<Client> => {
+    const client = new Client(url, session, 110, 30);
+    t.after(() => client.close());
+    await client.opened;
+    await waitFor(() => analysed(clientScreen(client)), "the first analysis");
+    palette(clientScreen(client), "map write");
+    await waitFor(() => client.vt.text().includes("[Continue]"), "the map targets");
+    client.input(KEY.enter);
+    await waitFor(() => client.vt.text().includes("map write: waiting to write"), "the pause before the commit");
+    return client;
+  };
+  const tab = await start("session-expiry");
+  tab.close();
+  // The keep time passes with the write held: the session ends as `q` would, the operation is cancelled.
+  await waitFor(() => held.signals[0]?.aborted === true, "the expiry to cancel the write");
+  held.release();
+  await waitFor(() => held.settled() === 1, "the cancelled run to end");
+  assert.deepEqual(artifacts(root), before, "the cancelled write wrote nothing");
+  // The same session ID now opens a new session: no record of the old one, no job running.
+  const fresh = new Client(url, "session-expiry", 110, 30);
+  t.after(() => fresh.close());
+  await fresh.opened;
+  await waitFor(() => analysed(clientScreen(fresh)), "the new session");
+  fresh.input(KEY.f6);
+  await waitFor(() => fresh.vt.text().includes("Current analysis"), "the F6 list");
+  assert.deepEqual(recordLines(clientScreen(fresh)), []);
+  fresh.input(KEY.f6);
+  fresh.close();
+
+  // server.close() with a write held in an attached session.
+  const open = await start("session-server-close");
+  await server.close();
+  closed = true;
+  assert.equal(held.signals[1]?.aborted, true, "the close cancelled the write");
+  await waitFor(() => open.closed, "the tab told");
+  held.release();
+  await waitFor(() => held.settled() === 2, "the cancelled run to end");
+  assert.equal(held.runs(), 2);
+  assert.deepEqual(artifacts(root), before, "nothing written after the close");
 });
