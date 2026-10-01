@@ -284,6 +284,19 @@ export interface OperationRecord {
 }
 
 /**
+ * `q` or Ctrl+C while an explicit operation runs (design §5): Stay, or Cancel
+ * and exit. `waiting`: Cancel and exit was chosen and the operation is
+ * finishing its current file step; once it settles, the usual question about
+ * unsaved buffers is asked again — the cancel is no leave to drop their text.
+ */
+export interface QuitStep {
+  /** The running operation, as messages name it (`map write`). */
+  label: string;
+  choice: "stay" | "cancel";
+  waiting: boolean;
+}
+
+/**
  * The step before an operation that reads the disk (design §2.5): the dirty
  * spec and config buffers it would not see, and what it would write. Save and continue writes them in
  * order and starts the operation only when every write succeeded; Back writes
@@ -386,6 +399,8 @@ export interface State {
   activeOperation: number | null;
   /** The save step before an operation, or null. It is modal: keys go to it until Save and continue or Back. */
   barrier: SaveBarrier | null;
+  /** The quit step while an operation runs, or null. It is modal like the save step. */
+  quit: QuitStep | null;
   /**
    * The F6 panel: the pinned current analysis and the history of operation
    * records. `top` is the first report row of a record or the first finding

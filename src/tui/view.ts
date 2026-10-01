@@ -1705,6 +1705,31 @@ function drawBarrier(grid: Grid, state: State, editor: Rect): void {
   grid.write(x + 2, y + height - 2, "←→ choose · Enter do it · Esc back", { ...THEME.popup, fg: 243 }, width - 4);
 }
 
+/** The quit step while an operation runs (design §5), over the editor area. */
+function drawQuit(grid: Grid, state: State, editor: Rect): void {
+  const step = state.quit!;
+  const rows = step.waiting
+    ? [`Cancelling ${step.label}: waiting for its current file step.`, "The session ends when it settles; unsaved buffers are asked about first."]
+    : [`${step.label} is running.`, "Cancel and exit stops it after its current file step; what it wrote stays.", "Unsaved buffers are asked about after it."];
+  const width = Math.min(editor.width, Math.max(44, ...rows.map((row) => stringWidth(row) + 4)));
+  const height = Math.min(editor.height, rows.length + 5);
+  const x = editor.x + Math.max(0, Math.floor((editor.width - width) / 2));
+  const y = editor.y + 1;
+  drawBox(grid, { x, y, width, height }, "Quit while an operation runs", THEME.popup, THEME.popupTitle);
+  rows.slice(0, height - 4).forEach((row, i) => grid.write(x + 2, y + 1 + i, row, THEME.popup, width - 4));
+  const buttonsY = y + height - 3;
+  if (step.waiting) {
+    grid.write(x + 2, buttonsY, "cancelling…", { ...THEME.popup, fg: 179 }, width - 4);
+    grid.write(x + 2, y + height - 2, "Esc stay in the session (the cancel goes on)", { ...THEME.popup, fg: 243 }, width - 4);
+    return;
+  }
+  let bx = x + 2;
+  bx += grid.write(bx, buttonsY, "[Stay]", step.choice === "stay" ? THEME.selected : THEME.popup, x + width - 2 - bx);
+  bx += grid.write(bx, buttonsY, "    ", THEME.popup, x + width - 2 - bx);
+  grid.write(bx, buttonsY, "[Cancel and exit]", step.choice === "cancel" ? THEME.selected : THEME.popup, x + width - 2 - bx);
+  grid.write(x + 2, y + height - 2, "←→ choose · Enter do it · Esc stay · q cancel and exit", { ...THEME.popup, fg: 243 }, width - 4);
+}
+
 /** The start screen of a repository without `keylang.json` (design §2.1): what was found and what can be done. */
 function drawStart(grid: Grid, state: State, rect: Rect): void {
   if (state.config.kind !== "missing-config") return;
@@ -1802,5 +1827,6 @@ export function render(state: State): Grid {
   if (state.help) drawHelp(grid, state, area.editor, buffer);
   if (state.prompt) drawPrompt(grid, state, area.detail, area.editor);
   if (state.barrier) drawBarrier(grid, state, area.editor);
+  if (state.quit) drawQuit(grid, state, area.editor);
   return grid;
 }

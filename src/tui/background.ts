@@ -153,13 +153,20 @@ export class OperationWorker {
   };
 
   /**
-   * Ends the worker; every pending request settles as cancelled. A commit
-   * under way is cut short too: each file step is atomic, but the report of
-   * what landed is lost (waiting for it is the quit dialog's job).
+   * Ends the worker and refuses new work. A request before its commit settles
+   * as cancelled at once. One in its commit is asked to stop between file
+   * steps and keeps the worker until its result (`cancelled` with the steps
+   * it did) settles it: a file write is never cut short, and the worker stays
+   * referenced, so the process does not exit under it.
    */
   close(): void {
     this.closed = true;
-    this.stop((kind) => resultWithout(kind, "cancelled", null));
+    const committing = [...this.pending].filter(([, pending]) => pending.committing);
+    if (committing.length === 0) return this.stop((kind) => resultWithout(kind, "cancelled", null));
+    for (const [operationId, pending] of [...this.pending]) {
+      if (pending.committing) this.post({ type: "cancel", operationId });
+      else this.settle(operationId, resultWithout(pending.kind, "cancelled", null));
+    }
   }
 
   /**
@@ -249,6 +256,12 @@ export class OperationWorker {
     this.pending.delete(operationId);
     pending.release();
     if (this.pending.size === 0) this.worker?.unref();
+    // Closed while a commit finished: the worker ends with its last result.
+    if (this.closed && this.pending.size === 0 && this.worker) {
+      const worker = this.worker;
+      this.worker = null;
+      void worker.terminate();
+    }
     pending.resolve(result);
   }
 }

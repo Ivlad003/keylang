@@ -34,11 +34,11 @@ import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
-function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
+function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}) });
+  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
   app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
@@ -9560,4 +9560,229 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   const one = await answerAll(model, raced);
   assert.deepEqual([one.status, one.exitCode, one.written, one.payload?.failed], ["completed", 1, [], [{ id: "application.purchase.buy", reason: "keylang/explain/brief/application.purchase.buy.md: created on disk while the change was prepared; nothing written" }]]);
   assert.equal(readFileSync(first, "utf8"), mine);
+});
+
+// ---------- quitting, cancelling and racing during an operation (ticket 35) ----------
+
+/** The screen a terminal shows after everything `runTerminal` wrote. */
+function screenOf(out: readonly string[], cols = 100, rows = 30): string {
+  const vt = new VirtualTerminal(cols, rows);
+  vt.feed(out.join(""));
+  return vt.text();
+}
+
+test("terminal: q during a held read-only operation asks first; Stay keeps it; Cancel and exit ends the worker, restores the screen and returns 0", async (t) => {
+  const root = checkoutRepo(t);
+  const gated = gatedWorker();
+  const term = fakeTerminal();
+  const running = runTerminal(root, term.host, { operationWorker: gated.worker });
+  let ended = false;
+  void running.then(() => (ended = true));
+  await waitUntil(() => /✗ 0/.test(screenOf(term.out)), "the first analysis");
+  const before = treeBytes(root);
+  term.type(KEY.ctrlP);
+  for (const ch of "map check") term.type(ch);
+  term.type(KEY.enter);
+  await waitUntil(() => /map check: running/.test(screenOf(term.out)), "the held check");
+  term.type("q");
+  assert.match(screenOf(term.out), /Quit while an operation runs/);
+  assert.match(screenOf(term.out), /\[Stay\] +\[Cancel and exit\]/);
+  // Esc (and Enter on the default Stay) keep the session and the operation.
+  term.type("\x1b");
+  await sleep(40);
+  assert.match(screenOf(term.out), /map check: still running; the session stays/);
+  term.type("q");
+  term.type(KEY.enter);
+  await sleep(20);
+  assert.equal(ended, false);
+  assert.equal(term.raw(), true);
+  // Cancel and exit: the held read-only check is cancelled at once, the worker ends, the screen is restored.
+  term.type("q");
+  term.type(KEY.right);
+  term.type(KEY.enter);
+  assert.equal(await running, 0);
+  assert.equal(term.out.at(-1), LEAVE, "the screen is restored");
+  assert.equal(term.raw(), false);
+  const after = await gated.worker.run({ kind: "map-check", root });
+  assert.deepEqual([after.status, after.exitCode, after.messages.map((message) => message.text)], ["failed", 2, ["the session is closed"]], "the session's worker is closed");
+  assert.deepEqual(treeBytes(root), before, "nothing was written");
+});
+
+test("tui: Cancel and exit before the commit quits with nothing written; during it the session waits for the current file, names what landed, and the disk matches the report", async (t) => {
+  // Paused at the commit gate, before the session hears of it: nothing is written, the session ends at once.
+  const early = checkoutRepo(t);
+  let quits = 0;
+  let resume = (): void => {};
+  const held = session(early, { onQuit: () => quits++, operations: pausedRunner(() => new Promise<void>((done) => (resume = done))) });
+  t.after(() => held.app.close());
+  await held.app.idle();
+  const before = treeBytes(early);
+  mapWrite(held.send);
+  held.send(KEY.enter);
+  await waitUntil(() => held.app.state.records.at(-1)?.progress === "waiting to write", "the pause before the commit");
+  held.send("q");
+  held.send("q");
+  assert.equal(quits, 1, "nothing is being written: the session ends");
+  resume();
+  await held.app.idle();
+  assert.equal(held.app.state.records.at(-1)!.status, "cancelled");
+  assert.deepEqual(treeBytes(early), before, "the cancelled map wrote nothing after the pause");
+
+  // Cancel and exit while a file step runs: the step finishes, no later one starts, then the session ends.
+  const root = checkoutRepo(t);
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  writeFileSync(join(root, "src/domain/order.ts"), "export function create(): void {}\nexport function cancel(): void {}\n");
+  const disk = treeBytes(root);
+  let quit = 0;
+  let during: { quit: number; waiting: boolean | undefined; message: string | null } | null = null;
+  let s: ReturnType<typeof session> | null = null;
+  s = session(root, {
+    onQuit: () => quit++,
+    operations: pausedRunner(
+      () => {},
+      (text) => {
+        if (text !== "writing .keylang/index.json" || !s) return;
+        s.send("q");
+        s.send(KEY.right);
+        s.send(KEY.enter);
+        during = { quit, waiting: s.app.state.quit?.waiting, message: s.app.state.message };
+      },
+    ),
+  });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  mapWrite(s.send);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.deepEqual(during, { quit: 0, waiting: true, message: "map write: cancelling after the current file; the session ends when it settles" }, "the session waits for the write");
+  assert.equal(quit, 1, "the session ended once the operation settled");
+  const result = mapRecord(s.app);
+  assert.deepEqual([result.status, result.exitCode], ["cancelled", null]);
+  const completed = result.payload.steps.filter((step) => step.state === "completed").map((step) => step.path);
+  assert.deepEqual(completed, ["keylang/map/domain.md", ".keylang/index.json"], "the current file finished; no later one started");
+  assert.deepEqual(result.written, completed);
+  const now = treeBytes(root);
+  for (const [path, text] of disk) if (!completed.includes(path)) assert.equal(now.get(path), text, `${path} is as it was`);
+  for (const path of completed) assert.notEqual(now.get(path), disk.get(path), `${path} was written`);
+  assert.match(readFileSync(join(root, "keylang/map/domain.md"), "utf8"), /cancel/);
+});
+
+test("tui: quitting during a brief batch with a brief written and a dirty spec names the written brief and asks about the unsaved text again; q then quits", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, briefReply);
+  let quit = 0;
+  const s = session(root, { cols: 240, rows: 70, onQuit: () => quit++ });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  explainBatchForm(s, { jobs: "1" });
+  const record = s.app.state.records.at(-1)!;
+  await model.requested(1);
+  model.release();
+  await model.requested(2);
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const edited = s.app.state.buffers.get(FLOW_PATH)!.text;
+  // The first q asks about the operation; q again is Cancel and exit, which waits for the batch to settle.
+  s.send("q");
+  assert.equal(s.app.state.quit?.waiting, false);
+  assert.match(s.text(), /explain .* is running/);
+  s.send("q");
+  await s.app.idle();
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(record.status, "cancelled");
+  assert.equal(quit, 0, "Cancel and exit is no leave to drop the unsaved text");
+  assert.equal(s.app.state.quit, null);
+  const message = s.app.state.message ?? "";
+  assert.match(message, /cancelled: 1 of 12 brief\(s\) written, 11 not started/);
+  assert.match(message, /written: keylang\/explain\/brief\/application\.purchase\.buy\.md/);
+  assert.match(message, /unsaved changes in keylang\/flows\/checkout\.md: Ctrl\+S saves, q or Ctrl\+C again quits/);
+  assert.deepEqual(readdirSync(join(root, "keylang/explain/brief")), ["application.purchase.buy.md"], "the written brief stays, no other lands");
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, edited);
+  assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), CHECKOUT_FLOW, "nothing saved the buffer");
+  model.release();
+  await sleep(30);
+  assert.equal(model.prompts.length, 2, "no request after the cancel");
+  s.send("q");
+  assert.equal(quit, 1);
+});
+
+test("tui: a cancelled model draft answering late, with a ghost-eligible edit and another current file, inserts, saves and opens nothing", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND });
+  withConfig(root, { agent: "anthropic:claude-opus-5", ghost: { delay: 0 } });
+  const model = await heldModel(t, BUY_ANSWER);
+  let quit = 0;
+  const s = session(root, { cols: 200, onQuit: () => quit++ });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  draftForm(s, { trigger: "application.purchase.buy", into: "keylang/flows/buying.md", mode: "llm" });
+  const record = s.app.state.records.at(-1)!;
+  await model.requested(1);
+  // A new flow item while the draft runs: no ghost request is made.
+  s.app.state.cursor = { line: 0, col: 0 };
+  s.send("i");
+  for (let i = 0; i < 7; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  await sleep(60);
+  assert.equal(model.prompts.length, 1, "no ghost request during the draft");
+  await esc(s.send);
+  const edited = s.app.state.buffers.get(FLOW_PATH)!.text;
+  s.send(KEY.ctrlP);
+  for (const ch of "open keylang/flows/refund.md") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.current, "keylang/flows/refund.md");
+  // Stay keeps the draft; Cancel and exit cancels it and then asks about the unsaved checkout flow.
+  s.send("q");
+  s.send(KEY.enter);
+  assert.deepEqual([s.app.state.quit, record.status], [null, "running"]);
+  s.send("q");
+  s.send(KEY.right);
+  s.send(KEY.enter);
+  assert.equal(record.status, "cancelled");
+  assert.equal(quit, 0);
+  assert.match(s.app.state.message ?? "", /draft flow .*: cancelled.* · nothing written · unsaved changes in keylang\/flows\/checkout\.md/);
+  const before = treeBytes(root);
+  model.release();
+  await s.app.idle();
+  await sleep(30);
+  assert.equal(record.status, "cancelled", "the late answer changes nothing");
+  assert.deepEqual(treeBytes(root), before, "no proposal, stats or save");
+  assert.deepEqual([s.app.state.current, s.app.state.mode, s.app.state.ghost], ["keylang/flows/refund.md", "view", null]);
+  assert.equal(s.app.state.buffers.get(FLOW_PATH)!.text, edited);
+  assert.equal(model.prompts.length, 1);
+  s.send("q");
+  assert.equal(quit, 1);
+});
+
+test("operation worker: close during a commit lets the current file finish and settles with the steps that landed; the worker then refuses work", async (t) => {
+  const root = checkoutRepo(t);
+  const before = treeBytes(root);
+  const worker = new OperationWorker();
+  let closedAt: string | null = null;
+  const result = await worker.run(
+    { kind: "map", root },
+    {
+      beforeCommit: () => {},
+      onProgress: ({ text }) => {
+        // A file step's note (`writing keylang/map/…`), not the phase's "writing the map".
+        if (closedAt !== null || !/^writing \S+\//.test(text)) return;
+        closedAt = text;
+        worker.close();
+      },
+    },
+  );
+  assert.ok(result.kind === "map" && result.payload !== null, `the report is kept: ${JSON.stringify(result)}`);
+  assert.equal(result.status, "cancelled");
+  const steps = result.payload.steps;
+  const completed = steps.filter((step) => step.state === "completed").map((step) => step.path);
+  assert.ok(completed.length >= 1 && steps.some((step) => step.state === "not-attempted"), JSON.stringify(steps));
+  assert.deepEqual(result.written, completed);
+  const now = treeBytes(root);
+  for (const path of completed) assert.ok(now.has(path), `${path} landed`);
+  for (const step of steps.filter((entry) => entry.state === "not-attempted")) assert.equal(now.get(step.path), before.get(step.path), `${step.path} not written`);
+  const after = await worker.run({ kind: "map-check", root });
+  assert.deepEqual([after.status, after.exitCode], ["failed", 2]);
 });

@@ -208,6 +208,7 @@ export class App {
       records: [],
       activeOperation: null,
       barrier: null,
+      quit: null,
       results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
     };
@@ -271,6 +272,8 @@ export class App {
   }
 
   input(chunk: string): void {
+    // A closed session takes no keys: nothing may start an analysis, a save or an operation after it.
+    if (this.closed) return;
     if (this.escTimer) clearTimeout(this.escTimer);
     this.escTimer = null;
     const events = this.decoder.feed(chunk);
@@ -335,7 +338,9 @@ export class App {
     this.settleTimer = null;
     this.assist.close();
     this.surface = null;
-    // A running operation settles as cancelled and the worker ends: no pending promise outlives the session.
+    // A running operation is cancelled and the worker ends: before a commit at once, during one after its
+    // current file step (a signal's end of the session waits for that write, not for a rollback).
+    this.state.quit = null;
     this.cancelActive?.();
     this.operationWorker?.close();
     this.wake();
@@ -466,6 +471,7 @@ export class App {
 
   /** Typing: mark results outdated now, analyse once the typing settles. */
   private reanalyzeSoon(): void {
+    if (this.closed) return;
     this.edits++;
     this.state.outdated = true;
     this.inputsChanged("inputs edited since this run");
@@ -1053,11 +1059,11 @@ export class App {
     if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
     // The save step is modal: the pointer and pasted text do not reach what is under it.
     if (event.type === "mouse") {
-      if (!this.state.barrier) this.mouse(event);
+      if (!this.state.barrier && !this.state.quit) this.mouse(event);
       return;
     }
     if (event.type === "paste") {
-      if (this.state.results.open || this.state.barrier) return;
+      if (this.state.results.open || this.state.barrier || this.state.quit) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = "paste: press i to edit first";
@@ -1066,6 +1072,7 @@ export class App {
     this.state.message = null;
     if (event.name !== "q" && !(event.ctrl && event.name === "c")) this.state.quitArmed = false;
     if (event.ctrl && event.name === "c") return this.quit();
+    if (this.state.quit) return this.quitKey(event);
     if (this.state.help) {
       this.state.help = false;
       return;
@@ -1112,15 +1119,91 @@ export class App {
     }
   }
 
+  /**
+   * `q` / Ctrl+C. While an operation runs, the quit step asks first (Stay or
+   * Cancel and exit; `q` again in it is Cancel and exit); then unsaved
+   * buffers ask once more; then the session ends.
+   */
   private quit(): void {
+    const step = this.state.quit;
+    if (step?.waiting) {
+      this.state.message = `${step.label}: cancelling after the current file; the session ends when it settles (Esc stays)`;
+      return;
+    }
+    if (this.state.activeOperation !== null) {
+      if (step) return this.cancelAndQuit();
+      const label = this.activeLabel();
+      this.state.quit = { label, choice: "stay", waiting: false };
+      this.state.message = `${label} is running: stay, or cancel it and quit (q again)`;
+      return;
+    }
+    this.state.quit = null;
+    this.quitIfSaved();
+  }
+
+  /** The ordinary end of a session: unsaved buffers ask once (the second q quits), then it closes. */
+  private quitIfSaved(note?: string): void {
     const dirty = this.unsaved();
     if (dirty.length > 0 && !this.state.quitArmed) {
       this.state.quitArmed = true;
-      this.state.message = `unsaved changes in ${dirty.join(", ")}: Ctrl+S saves, q or Ctrl+C again quits`;
+      this.state.message = `${note === undefined ? "" : `${note} · `}unsaved changes in ${dirty.join(", ")}: Ctrl+S saves, q or Ctrl+C again quits`;
       return;
     }
     this.close();
     this.onQuit();
+  }
+
+  /** How messages name the running operation. */
+  private activeLabel(): string {
+    const record = this.state.records.find((entry) => entry.id === this.state.activeOperation);
+    return record ? operationLabel(record.params) : "an operation";
+  }
+
+  /** The keys of the quit step: ←→/Tab choose, Enter does it, Esc stays; while it waits only Esc (stay) counts. */
+  private quitKey(event: KeyEvent): void {
+    const step = this.state.quit!;
+    if (event.name === "q") return this.quit();
+    if (event.name === "escape" || (event.name === "enter" && step.choice === "stay" && !step.waiting)) {
+      this.state.quit = null;
+      this.state.message = step.waiting ? `${step.label}: the cancel goes on; the session stays` : `${step.label}: still running; the session stays`;
+      return;
+    }
+    if (step.waiting) return this.quit();
+    if (event.name === "left" || event.name === "right" || event.name === "tab" || event.name === "h" || event.name === "l") step.choice = step.choice === "stay" ? "cancel" : "stay";
+    else if (event.name === "enter") this.cancelAndQuit();
+  }
+
+  /**
+   * Cancel and exit: the operation is cancelled — before a commit at once,
+   * during one after its current file step — and the session ends when it
+   * settles (`quitAfterSettle`), never in the middle of a file write.
+   */
+  private cancelAndQuit(): void {
+    const step = this.state.quit!;
+    step.waiting = true;
+    this.cancelActive?.();
+    // Still waiting: the operation is in its commit and finishes the current file step first.
+    if (this.state.quit === step) this.state.message = `${step.label}: cancelling after the current file; the session ends when it settles`;
+  }
+
+  /**
+   * An operation settled under the quit step. After Cancel and exit the
+   * unsaved buffers decide again, with what the operation wrote named; an
+   * operation that ended by itself while the step asked only closes the step.
+   */
+  private quitAfterSettle(record: OperationRecord): void {
+    const step = this.state.quit;
+    if (!step) return;
+    this.state.quit = null;
+    const result = record.result;
+    const written = result === null ? [] : [...result.written, ...result.removed];
+    const outcome = `${step.label}: ${recordSummary(record)} · ${written.length === 0 ? "nothing written" : `written: ${written.join(", ")}`}`;
+    if (!step.waiting) {
+      this.state.message = `${outcome} · q quits`;
+      return;
+    }
+    this.state.quitArmed = false;
+    this.quitIfSaved(outcome);
   }
 
   private move(lines: number): void {
@@ -1988,6 +2071,11 @@ export class App {
       record.finished = Date.now();
       this.state.activeOperation = null;
       this.cancelActive = null;
+      // A result after the session closed is recorded only: no message, merge, open file or analysis follows it.
+      if (this.closed) {
+        this.committing = null;
+        return;
+      }
       const note = WRITING_KINDS.has(request.kind) ? this.endCommit(result) : null;
       // After init the saved keylang.json decides (endCommit read it again): with it, the start screen is done.
       if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
@@ -1998,6 +2086,7 @@ export class App {
       if (request.kind === "spec-to-code") this.afterSpecCode(record, origin);
       if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
+      this.quitAfterSettle(record);
       this.draw();
     };
     this.cancelActive = () => {

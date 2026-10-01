@@ -9,7 +9,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import { App, type Surface } from "./app.ts";
+import { App, type AppOptions, type Surface } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { analyze } from "../analyze.ts";
 import { ENTER, LEAVE } from "./screen.ts";
@@ -111,7 +111,8 @@ export function processHost(): TerminalHost {
   };
 }
 
-export async function runTerminal(root: string, host: TerminalHost = processHost()): Promise<number> {
+/** `session`: the operation runner or worker the session uses instead of its own (tests hold an operation with it). */
+export async function runTerminal(root: string, host: TerminalHost = processHost(), session: Pick<AppOptions, "operations" | "operationWorker"> = {}): Promise<number> {
   const { stdin, stdout } = host;
   const worker = new SnapshotWorker();
   let finish: (code: number) => void = () => {};
@@ -129,6 +130,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     rows: size()[1],
     analyzer: (request) => analyze({ ...request, generate: worker.generate }),
     onQuit: () => end(0),
+    ...session,
   });
   const onData = (chunk: string): void => app.input(chunk);
   const onResize = (): void => app.resize(...size());
