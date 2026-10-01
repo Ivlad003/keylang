@@ -18,7 +18,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -445,6 +445,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "parse") return `${label} · ${record.params.format} · ${record.params.paths.join(" ")}`;
   if (record.params.kind === "trace-plan") return `${label} · ${record.params.flow}`;
   if (record.params.kind === "explain") return `${label} · ${record.params.subject}`;
+  if (record.params.kind === "explain-llm") return `${label} · ${record.params.detail ?? "default detail"} · ${record.params.id}`;
   if (record.params.kind === "draft-flow") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.trigger}`;
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
@@ -466,6 +467,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "parse") return request.format === "json" ? "parse --json" : "parse";
   if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "explain") return `explain ${request.subject}`;
+  if (request.kind === "explain-llm") return `explain ${request.id} --llm${request.detail === "full" ? " --full" : request.detail === "brief" ? " --brief" : ""}`;
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "code-to-spec") return `code-to-spec ${codeSource(request)} --mode ${request.mode ?? "algo"}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
@@ -509,6 +511,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "parse" && result.payload !== null) return `${parseOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "trace-plan" && result.payload !== null) return `${tracePlanOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "explain" && result.payload !== null) return `${explainOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "explain-llm" && result.payload !== null) return `${explainLlmOutcome(result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-flow" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-rules" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "code-to-spec" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -542,6 +545,16 @@ function exportFormat(request: ExportRequest): string {
 function explainOutcome(payload: ExplainPayload): string {
   if (payload.subject === "code") return `${payload.code}: offline help`;
   return `${payload.summary.kind} ${payload.id}: ${payload.saved === null ? "no saved answer" : `saved answer ${payload.saved.fresh ? "fresh" : "stale"}`}`;
+}
+
+/** `fn a.b: the fresh saved answer, no request`, `…: new short answer saved`, `…: no model, nothing asked`, `…: refused, nothing written`. */
+function explainLlmOutcome(payload: ExplainLlmPayload): string {
+  const what = `${payload.summary.kind} ${payload.id}`;
+  if (payload.source === "cache") return `${what}: the fresh saved ${payload.detail} answer, no request`;
+  if (payload.source === "offline") return `${what}: no model, nothing asked; ${payload.answer === null ? "no saved answer" : `saved answer ${payload.answer.fresh ? "fresh" : "stale"}`}`;
+  if (payload.written !== null) return `${what}: new ${payload.detail} answer saved to ${payload.written}`;
+  if (payload.refused.length > 0) return `${what}: refused, nothing written`;
+  return `${what}: the model failed, nothing written`;
 }
 
 /** A saved answer or brief: its provenance on one row, then its text and the IDs it made up. */
@@ -984,6 +997,33 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       });
       if (payload.links.length > 0) rows.push({ text: "  Tab, then ↑↓ select a place and Enter opens it", style: THEME.hint });
     }
+  } else if (result?.kind === "explain-llm" && result.payload !== null) {
+    // The model's answer with where it came from (cache, model, none), the summary it was asked about, and what was written.
+    const { payload } = result;
+    const selected = state.results.scrollReport ? state.results.gap : -1;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Explain with the model · ${payload.id} · ${payload.detail} · lang ${payload.lang} · agent ${payload.agent ?? "none"} · saved code and specs · snapshot ${payload.snapshotId === null ? "none" : payload.snapshotId.slice(0, 8)}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${explainLlmOutcome(payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    const why = payload.reason === "missing" ? "no saved answer" : payload.reason === "stale" ? "the saved answer was stale" : payload.reason === "lang" ? `the saved answer was in ${payload.previous?.lang ?? "another language"}` : payload.reason === "detail" ? `the saved answer was ${payload.previous?.detail ?? "another detail"}` : null;
+    if (payload.source === "cache") rows.push({ text: "  read from the saved file: fresh, same detail and language; the model was not asked, nothing was written", style: { ...THEME.panel, fg: 243 } });
+    if (payload.source === "model" && why !== null) rows.push({ text: `  ${why}: the model was asked once${payload.written === null ? "" : `; the map is not written (the explained map follows keylang map)`}`, style: { ...THEME.panel, fg: 243 } });
+    for (const message of result.messages) if (message.level !== "info") rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : { ...THEME.panel, fg: 179 } });
+    rows.push({ text: "── the snapshot and the specs (doc: is the code's documentation comment) ──", style: { ...THEME.panel, fg: 243 } });
+    for (const line of formatSummary(payload.summary).split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+    if (payload.source === "model" && payload.answer !== null) savedRows(rows, payload.written === null ? "the model's answer, not written" : "new answer, saved", payload.answer);
+    if (payload.source === "model" && payload.written === null) {
+      if (payload.previous !== null) savedRows(rows, "saved answer, kept", payload.previous);
+      else rows.push({ text: "  no saved answer: nothing was written", style: { ...THEME.panel, fg: 243 } });
+    }
+    if (payload.source !== "model") {
+      if (payload.answer !== null) savedRows(rows, payload.source === "cache" ? "saved answer, read" : "saved answer", payload.answer);
+      else rows.push({ text: "  no saved answer", style: { ...THEME.panel, fg: 243 } });
+    }
+    if (payload.links.length > 0) rows.push({ text: "── places ──", style: { ...THEME.panel, fg: 243 } });
+    payload.links.forEach((link, index) => {
+      rows.push({ text: `  ${link.text}`, style: index === selected ? THEME.selected : link.file === null ? { ...THEME.panel, fg: 243 } : THEME.panel, gap: index });
+    });
+    if (payload.links.length > 0) rows.push({ text: "  Tab, then ↑↓ select a place and Enter opens it", style: THEME.hint });
   } else if (result?.kind === "trace-plan" && result.payload !== null) {
     // The plan an adapter reads: a summary, each symbol (Tab, then Enter opens it in the code), then the CLI's stdout.
     const { payload } = result;
@@ -1280,8 +1320,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
     (record?.result?.kind === "explain-edge" && record.result.payload !== null && edgeItems(record.result.payload).length > 0) ||
     (record?.result?.kind === "parse" && (record.result.payload?.diagnostics.length ?? 0) > 0) ||
     (record?.result?.kind === "trace-plan" && (record.result.payload?.plan.symbols.length ?? 0) > 0) ||
-    (record?.result?.kind === "explain" && record.result.payload?.subject === "node" && record.result.payload.links.length > 0);
-  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" ? "place" : "finding";
+    (record?.result?.kind === "explain" && record.result.payload?.subject === "node" && record.result.payload.links.length > 0) ||
+    (record?.result?.kind === "explain-llm" && (record.result.payload?.links.length ?? 0) > 0);
+  const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : "finding";
   const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
   const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec") && record.result.payload?.proposal != null;
@@ -1477,7 +1518,7 @@ function drawHelp(grid: Grid, state: State, editor: Rect, buffer: Buffer | null)
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? "explain: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "spec-to-code" && prompt.specCode ? prompt.specCode.id || "?" : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
@@ -1496,7 +1537,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? `${prompt.items.length} match(es): explain offline` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

@@ -143,9 +143,9 @@
       <a id="map.explanations.parseStoredExplanation"></a><br>The saved form; null for a file keylang did not write, which is not an explanation it can date.
     - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
       <a id="map.explanations.formatStoredExplanation"></a>
-    - fn [explainDir](../../src/explanations.ts#L47) (config: Config) → string
+    - fn [explainDir](../../src/explanations.ts#L47) (config: Pick<Config, "dir">) → string
       <a id="map.explanations.explainDir"></a><br>Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map.
-    - fn [explanationPath](../../src/explanations.ts#L55) (config: Config, id: string, detail: ExplanationDetail) → string
+    - fn [explanationPath](../../src/explanations.ts#L55) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       <a id="map.explanations.explanationPath"></a><br>File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
     - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null

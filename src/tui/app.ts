@@ -30,9 +30,11 @@ import type { CheckResult } from "../check-results.ts";
 import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
-import { codeExplanation, isDiagnosticCode, nodeExplanation, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
+import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
+import { readExplanation } from "../explain-llm.ts";
+import type { LlmSetup } from "../llm.ts";
 import { EXPLANATIONS } from "../explain.ts";
-import { loadBriefs } from "../explanations.ts";
+import { explanationPath, loadBriefs, type ExplanationDetail } from "../explanations.ts";
 import { FACT_CACHE_FILE } from "../fact-cache.ts";
 import { baselinePath } from "../baseline.ts";
 import { harnessChoice, HARNESS_PATHS, planAgents, type HarnessChoice } from "../harness.ts";
@@ -134,6 +136,8 @@ export class App {
   private running = 0;
   private waiters: (() => void)[] = [];
   private closed = false;
+  /** `llmClient`, loaded with the first model form: the form says before a run why no model can be asked. */
+  private llmSetup: ((agent: string | null) => LlmSetup) | null = null;
   /** The id of the next operation record. */
   private nextRecord = 1;
   /** The proposals list as scanned when it was opened or last refreshed; Enter scans again. */
@@ -522,7 +526,7 @@ export class App {
       const computedOn =
         result?.kind === "feature" || result?.kind === "map-check" || (result?.kind === "baseline" && result.payload?.check === true)
           ? (result.payload?.snapshot ?? undefined)
-          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain"
+          : result?.kind === "check" || result?.kind === "explain-edge" || result?.kind === "explain" || result?.kind === "explain-llm"
             ? (result.payload?.snapshotId ?? undefined)
             : result?.kind === "trace-plan"
               ? (result.payload?.plan.snapshotId ?? undefined)
@@ -1588,7 +1592,7 @@ export class App {
     };
     if (found.saved) answer(`saved ${found.saved.detail} answer`, found.saved);
     if (found.brief) answer("saved brief", found.brief);
-    if (!found.saved) lines.push({ text: `no saved answer · offline: e asks no model (keylang explain ${id} --llm does)`, kind: "evidence" });
+    if (!found.saved) lines.push({ text: `no saved answer · offline: e asks no model (Ctrl+P Explain with the model, or keylang explain ${id} --llm, does)`, kind: "evidence" });
     this.state.hover = { x, y: anchor.y, lines, source: "key" };
   }
 
@@ -1711,7 +1715,7 @@ export class App {
     for (const record of this.state.records) {
       const preview = record.params.kind === "spec-to-code" && record.params.output === "preview";
       // A code's help reads nothing, so no input makes it outdated.
-      const node = record.params.kind === "explain" && !isDiagnosticCode(record.params.subject);
+      const node = (record.params.kind === "explain" && !isDiagnosticCode(record.params.subject)) || record.params.kind === "explain-llm";
       if (record.kind === "feature" || record.kind === "check" || record.kind === "parse" || record.kind === "trace-plan" || node || preview) record.outdated ??= reason;
     }
   }
@@ -1770,6 +1774,14 @@ export class App {
       if (isDiagnosticCode(request.subject)) return this.startOperation(action, request);
       const dir = `${this.specDir()}/`;
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
+    }
+    if (request.kind === "explain-llm") {
+      // As a node's offline summary: the saved specs and explanations under the spec directory, keylang.json
+      // and the code are saved first; the step names the explanation a new answer would replace.
+      const dir = `${this.specDir()}/`;
+      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+      const writes = this.dirtyInputs().some(isInput) ? { writes: [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
     if (request.kind === "trace-plan") {
       // The plan reads the saved specs under the spec directory (the flow), keylang.json and the code:
@@ -2012,6 +2024,14 @@ export class App {
    * proposal would be judged against the disk under unsaved edits).
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
+    if (request.kind === "explain-llm") {
+      // A saved explanation edited in a buffer while the model answered keeps its text: the answer is not written over it.
+      const edited = (plan?.targets ?? []).filter((target) => {
+        const buffer = this.state.buffers.get(target);
+        return buffer !== undefined && isDirty(buffer);
+      });
+      return edited.length > 0 ? { refused: edited.map((target) => `${target}: edited in this session while the model answered; save or undo the edits, then ask again`) } : undefined;
+    }
     if (request.kind === "apply-code") {
       const conflicts = this.applyConflicts(request.candidate.targets.map((target) => target.file), false);
       return conflicts.length > 0 ? { refused: conflicts } : undefined;
@@ -2555,7 +2575,7 @@ export class App {
     if (prompt?.kind !== "explain") return;
     const typed = prompt.text.trim();
     let ids: string[];
-    if (/^k\d*$/i.test(typed)) ids = Object.keys(EXPLANATIONS).filter((code) => code.startsWith(typed.toUpperCase())).sort(compareText);
+    if (!prompt.explainModel && /^k\d*$/i.test(typed)) ids = Object.keys(EXPLANATIONS).filter((code) => code.startsWith(typed.toUpperCase())).sort(compareText);
     else {
       const analysis = this.state.analysis;
       const hits = analysis && typed !== "" ? searchNodes(analysis, this.state.briefs, { query: typed, limit: NODE_HITS, fuzzy: true }).map((hit) => hit.id) : [];
@@ -2575,6 +2595,7 @@ export class App {
 
   private explainNote(): void {
     const prompt = this.state.prompt!;
+    if (prompt.explainModel) return this.explainModelNote(prompt.explainModel.detail);
     const subject = this.explainSubject();
     if (subject === "") {
       prompt.note = "type a diagnostic code (K001) or an id";
@@ -2597,8 +2618,90 @@ export class App {
       this.state.message = "explain: a code or an id is required";
       return;
     }
+    const model = this.state.prompt?.explainModel;
+    if (model) {
+      if (isDiagnosticCode(subject)) {
+        this.state.message = `explain --llm: ${subject.toUpperCase()} is a diagnostic code: its help is offline (Ctrl+P Explain)`;
+        return;
+      }
+      this.state.prompt = null;
+      this.requestOperation("explain-llm", { kind: "explain-llm", root: this.state.root, id: subject, detail: model.detail });
+      return;
+    }
     this.state.prompt = null;
     this.requestOperation("explain", { kind: "explain", root: this.state.root, subject });
+  }
+
+  // ---------- explain with the model ----------
+
+  /** The model's explanation form: the ID under the cursor and the detail of keylang.json by default. */
+  private openExplainModelPrompt(): void {
+    const initial = this.state.mode === "merge" ? "" : (this.idAtCursor() ?? "");
+    const detail = this.state.analysis?.config.explain.detail ?? "short";
+    this.state.prompt = { kind: "explain", text: initial, items: [], ids: [], index: 0, explainModel: { detail } };
+    this.refreshExplainPrompt();
+    if (this.llmSetup !== null) return;
+    this.track(
+      import("../llm.ts").then(({ llmClient }) => {
+        this.llmSetup = (agent) => llmClient(agent);
+        if (this.state.prompt?.kind === "explain" && this.state.prompt.explainModel) {
+          this.explainNote();
+          this.draw();
+        }
+      }),
+    );
+  }
+
+  /** ←→ in the model's form: short, full, brief. */
+  private changeExplainDetail(step: number): void {
+    const model = this.state.prompt?.explainModel;
+    if (!model) return;
+    const details: ExplanationDetail[] = ["short", "full", "brief"];
+    model.detail = details[(details.indexOf(model.detail) + step + details.length) % details.length]!;
+    this.explainNote();
+  }
+
+  /**
+   * What Enter would do, by the session's analysis: read a fresh saved answer
+   * (no request), ask the model once and save, or — no model — show the
+   * summary and the saved answer; with the detail, the language and the agent.
+   */
+  private explainModelNote(detail: ExplanationDetail): void {
+    const prompt = this.state.prompt!;
+    const id = this.explainSubject();
+    const analysis = this.state.analysis;
+    const agent = analysis?.config.agent ?? null;
+    const lang = analysis?.config.explain.lang ?? "en";
+    const settings = `${detail} (←→) · lang ${lang} · agent ${agent ?? "none"} · keylang.json sets lang and agent`;
+    if (id === "") {
+      prompt.note = `type an id · ${settings}`;
+      return;
+    }
+    if (isDiagnosticCode(id)) {
+      prompt.note = `${id.toUpperCase()} is a diagnostic code: its help is offline (Ctrl+P Explain) · ${settings}`;
+      return;
+    }
+    const found = analysis ? nodeExplanation(analysis, id, detail) : null;
+    if (found === null || "unknown" in found) {
+      const near = found !== null && found.suggestion ? ` (did you mean ${found.suggestion}?)` : "";
+      prompt.note = `${id}: ${found === null ? "analysis is still running" : `not in the current snapshot${near}`} · ${settings}`;
+      return;
+    }
+    const saved = readExplanation(analysis!.config, id, detail);
+    const miss = savedAnswerMiss(analysis!, id, saved, lang, detail);
+    if (miss === null && saved !== null) {
+      prompt.note = `${id}: the saved ${detail} answer (${saved.agent} · ${saved.date}) is fresh: read, no request, nothing written · ${settings}`;
+      return;
+    }
+    const why = miss === "missing" || saved === null ? `no saved ${detail === "brief" ? "brief" : "answer"}` : miss === "stale" ? "the saved answer is stale" : miss === "lang" ? `the saved answer is in ${saved.lang}` : `the saved answer is ${saved.detail}`;
+    const setup = this.llmSetup === null ? null : this.llmSetup(agent);
+    const ask =
+      setup === null
+        ? "checking the model…"
+        : "missing" in setup
+          ? `no request can be made: ${setup.missing}; Enter shows the summary and the saved answer`
+          : `asks ${setup.client.agent} once, then saves ${explanationPath(analysis!.config, id, detail)}`;
+    prompt.note = `${id}: ${why} · ${ask} · ${settings}`;
   }
 
   // ---------- trace plan ----------
@@ -4269,6 +4372,7 @@ export class App {
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
     // A place an explanation names: the node, a related ID the snapshot or a planned declares, a flow, a rule line.
     if (result?.kind === "explain" && result.payload?.subject === "node") return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
+    if (result?.kind === "explain-llm" && result.payload !== null) return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
     // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
     // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
     if (result?.kind === "trace-plan") return (result.payload?.plan.symbols ?? []).map((symbol) => ({ file: symbol.file, line: symbol.line, col: symbol.col, text: `${symbol.id} ${symbol.file}:${symbol.line}:${symbol.col}` }));
@@ -4495,6 +4599,7 @@ export class App {
       return;
     }
     if ((event.name === "left" || event.name === "right") && prompt.kind === "spec-to-code") return this.changeSpecCodeOutput();
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "explain" && prompt.explainModel) return this.changeExplainDetail(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "code-to-spec") return this.changeCodeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-rules") return this.changeRulesDraftChoice(event.name === "left" ? -1 : 1);
@@ -4628,6 +4733,8 @@ export class App {
         return this.openTracePlanPrompt();
       case "explain":
         return this.openExplainPrompt();
+      case "explain-llm":
+        return this.openExplainModelPrompt();
       case "draft-flow":
         return this.openDraftPrompt();
       case "draft-rules":

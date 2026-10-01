@@ -8872,3 +8872,269 @@ test("tui: explain of an id is the CLI's summary with the doc comment, the saved
   assert.deepEqual([...after.keys()].filter((path) => !before.has(path)), [], "no explanation, cache or stats appeared");
   assert.equal(prompts.length, 0, "no request to the model");
 });
+
+// ---------- one explanation by the model (ticket 32) ----------
+
+/** The palette's model form; `id` replaces the default when given, ←→ step the detail, then Enter. */
+function explainModelForm(s: ReturnType<typeof session>, options: { id?: string; steps?: number; submit?: boolean } = {}): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "explain --llm") s.send(ch);
+  s.send(KEY.enter);
+  assert.ok(s.app.state.prompt?.kind === "explain" && s.app.state.prompt.explainModel, s.app.state.message ?? "");
+  if (options.id !== undefined) {
+    for (const _ of s.app.state.prompt.text) s.send("\x7f");
+    for (const ch of options.id) s.send(ch);
+  }
+  for (let i = 0; i < (options.steps ?? 0); i++) s.send(KEY.right);
+  if (options.submit !== false) s.send(KEY.enter);
+}
+
+type ExplainLlmResult = Extract<OperationResult, { kind: "explain-llm" }> & { payload: NonNullable<Extract<OperationResult, { kind: "explain-llm" }>["payload"]> };
+
+function explainLlmRecord(app: App): ExplainLlmResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "explain-llm" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as ExplainLlmResult;
+}
+
+/** Every file but the explanation store: what an explanation must leave as it was (the map, the baseline, the specs, the code). */
+function outsideExplain(root: string): Map<string, string> {
+  return new Map([...treeBytes(root)].filter(([path]) => !path.startsWith("keylang/explain/")));
+}
+
+const EXPLAIN_ID = "domain.order.create";
+const EXPLAIN_FILE = `keylang/explain/${EXPLAIN_ID}.md`;
+const EXPLAIN_REPLY = "Creates an order through `domain.order.create`; `domain.order.ghost` is made up.\n\nIt is called from the checkout.";
+
+test("tui: explain with the model asks once for a missing answer and saves it with its provenance; a fresh one is read with no request, as the CLI reads it; brief and full ask again; the map, the baseline and the check stay as they were", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  let reply = EXPLAIN_REPLY;
+  const model = await heldModel(t, () => reply);
+  // The map and the baseline exist, so the test sees that neither is written with an explanation.
+  assert.equal(spawnSync(process.execPath, [BIN, "map"], { cwd: root, encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync(process.execPath, [BIN, "baseline"], { cwd: root, encoding: "utf8" }).status, 0);
+  const check = spawnSync(process.execPath, [BIN, "check"], { cwd: root, encoding: "utf8" });
+  const s = session(root, { cols: 220 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = outsideExplain(root);
+  // The form: the ID under the cursor, the detail, the language and the agent of keylang.json; what Enter would do.
+  s.app.state.cursor = { line: 6, col: 0 };
+  explainModelForm(s, { submit: false });
+  await s.app.idle();
+  assert.equal(s.app.state.prompt?.text, EXPLAIN_ID);
+  assert.equal(promptNote(s.app), `${EXPLAIN_ID}: no saved answer · asks anthropic:claude-opus-5 once, then saves ${EXPLAIN_FILE} · short (←→) · lang en · agent anthropic:claude-opus-5 · keylang.json sets lang and agent`);
+  assert.equal(model.prompts.length, 0, "the form asks nothing");
+  s.send(KEY.enter);
+  await model.requested(1);
+  assert.equal(s.app.state.records.at(-1)!.status, "running");
+  assert.match(model.prompts[0]!, /Node:\nfn domain\.order\.create/);
+  model.release();
+  await s.app.idle();
+  const asked = explainLlmRecord(s.app);
+  assert.deepEqual([asked.status, asked.exitCode, asked.written, asked.payload.source, asked.payload.reason, asked.payload.written], ["completed", 0, [EXPLAIN_FILE], "model", "missing", EXPLAIN_FILE]);
+  const today = new Date().toISOString().slice(0, 10);
+  const closure = currentBaseline(s.app.state.analysis!, EXPLAIN_ID)!;
+  assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8"), `<!-- keylang:explain agent=anthropic:claude-opus-5 date=${today} closure=${closure} lang=en detail=short -->\n${EXPLAIN_REPLY}\n`);
+  assert.deepEqual([asked.payload.answer?.agent, asked.payload.answer?.date, asked.payload.answer?.lang, asked.payload.answer?.detail, asked.payload.answer?.fresh, asked.payload.answer?.unknownIds], ["anthropic:claude-opus-5", today, "en", "short", true, ["domain.order.ghost"]]);
+  assert.equal(asked.payload.text, `${EXPLAIN_REPLY}\n\nanthropic:claude-opus-5 · ${today} · fresh\nunknown ids: domain.order.ghost\n`);
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Explain with the model · domain\.order\.create · short · lang en · agent anthropic:claude-opus-5/);
+  assert.match(text, /fn domain\.order\.create: new short answer saved to keylang\/explain\/domain\.order\.create\.md · code 0/);
+  assert.match(text, /no saved answer: the model was asked once; the map is not written/);
+  assert.match(text, /── new answer, saved · short · anthropic:claude-opus-5 · \d{4}-\d\d-\d\d · fresh · keylang\/explain\/domain\.order\.create\.md ──/);
+  assert.match(text, /unknown ids \(in no snapshot, no planned; not followed\): domain\.order\.ghost/);
+  await esc(s.send);
+  // e reads the new answer at once; the made-up ID is named, no node is made of it.
+  s.app.state.cursor = { line: 6, col: 0 };
+  s.send("e");
+  const hover = s.app.state.hover!.lines.map((line) => line.text);
+  assert.ok(hover.includes(`saved short answer · anthropic:claude-opus-5 · ${today} · fresh`), hover.join("\n"));
+  assert.ok(hover.includes("unknown ids: domain.order.ghost"), hover.join("\n"));
+  assert.equal(s.app.state.analysis?.snapshot?.nodes["domain.order.ghost"], undefined);
+  await esc(s.send);
+  // A fresh answer of the same detail and language: read, no request, nothing written — the CLI's stdout.
+  const saved = treeBytes(root);
+  explainModelForm(s, { submit: false });
+  await s.app.idle();
+  assert.equal(promptNote(s.app), `${EXPLAIN_ID}: the saved short answer (anthropic:claude-opus-5 · ${today}) is fresh: read, no request, nothing written · short (←→) · lang en · agent anthropic:claude-opus-5 · keylang.json sets lang and agent`);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const cached = explainLlmRecord(s.app);
+  assert.deepEqual([cached.status, cached.exitCode, cached.written, cached.payload.source, cached.payload.reason], ["completed", 0, [], "cache", null]);
+  const cli = cliExplain(root, [EXPLAIN_ID, "--llm"]);
+  assert.deepEqual([cli.status, cli.stderr, cli.stdout], [0, "", cached.payload.text]);
+  assert.equal(cached.payload.text, asked.payload.text);
+  assert.equal(model.prompts.length, 1, "neither the session nor the CLI asked again");
+  assert.deepEqual(treeBytes(root), saved);
+  s.send(KEY.f6);
+  assert.match(s.text(), /fn domain\.order\.create: the fresh saved short answer, no request · code 0/);
+  assert.match(s.text(), /read from the saved file: fresh, same detail and language; the model was not asked, nothing was written/);
+  await esc(s.send);
+  // brief (two steps right): its own file, cut by the brief rule, in the session's explained map after the write.
+  reply = "Makes an order.\n\nMore than a brief.";
+  explainModelForm(s, { steps: 2, submit: false });
+  await s.app.idle();
+  assert.match(promptNote(s.app), /^domain\.order\.create: no saved brief · asks anthropic:claude-opus-5 once, then saves keylang\/explain\/brief\/domain\.order\.create\.md · brief \(←→\)/);
+  s.send(KEY.enter);
+  await model.requested(2);
+  model.release();
+  await s.app.idle();
+  const brief = explainLlmRecord(s.app);
+  assert.deepEqual([brief.status, brief.written, brief.payload.detail, brief.payload.answer?.text], ["completed", [`keylang/explain/brief/${EXPLAIN_ID}.md`], "brief", "Makes an order."]);
+  assert.equal(s.app.state.briefs.get(EXPLAIN_ID)?.text, "Makes an order.", "the session reads the new brief");
+  assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8").includes(EXPLAIN_REPLY), true, "the short answer stays");
+  reply = EXPLAIN_REPLY;
+  // full: the saved answer is short, so the model is asked once more and the shared file takes the full one.
+  explainModelForm(s, { steps: 1, submit: false });
+  await s.app.idle();
+  assert.match(promptNote(s.app), /^domain\.order\.create: the saved answer is short · asks anthropic:claude-opus-5 once/);
+  s.send(KEY.enter);
+  await model.requested(3);
+  model.release();
+  await s.app.idle();
+  const full = explainLlmRecord(s.app);
+  assert.deepEqual([full.status, full.payload.reason, full.payload.previous?.detail, full.payload.answer?.detail], ["completed", "detail", "short", "full"]);
+  assert.match(readFileSync(join(root, EXPLAIN_FILE), "utf8"), / detail=full -->/);
+  assert.equal(cliExplain(root, [EXPLAIN_ID, "--llm", "--full"]).stdout, full.payload.text, "the CLI reads the full answer now");
+  assert.equal(model.prompts.length, 3);
+  // Only the explanation store changed: no map, baseline, spec, code or cache written; the check is the same.
+  assert.deepEqual(outsideExplain(root), before);
+  assert.deepEqual(spawnSync(process.execPath, [BIN, "check"], { cwd: root, encoding: "utf8" }).stdout, check.stdout);
+  // A dirty spec is saved first: the step names it; Back asks nothing and writes nothing.
+  s.app.state.cursor = { line: 2, col: 0 };
+  s.send("i");
+  s.send("x");
+  await esc(s.send);
+  const records = s.app.state.records.length;
+  s.app.state.cursor = { line: 6, col: 0 };
+  explainModelForm(s);
+  assert.deepEqual(s.app.state.barrier?.files, ["keylang/flows/checkout.md"]);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, records);
+  assert.equal(readFileSync(join(root, "keylang/flows/checkout.md"), "utf8"), CHECKOUT_FLOW);
+  assert.equal(model.prompts.length, 3);
+});
+
+test("tui: explain with the model keeps the saved answer on Cancel, a timeout, an empty answer, a stream error and when a source or the saved file changes while it waits; without a model the form says why and Enter is the CLI's offline summary", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  let reply = EXPLAIN_REPLY;
+  const model = await heldModel(t, () => reply);
+  const s = session(root, { cols: 220 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // A stale saved answer: every request below may replace it, none that fails does.
+  const old = storedExplanation("old-closure", "short", "The old answer.");
+  mkdirSync(join(root, "keylang/explain"), { recursive: true });
+  writeFileSync(join(root, EXPLAIN_FILE), old);
+  const before = treeBytes(root);
+  s.app.state.cursor = { line: 6, col: 0 };
+  explainModelForm(s, { submit: false });
+  await s.app.idle();
+  assert.match(promptNote(s.app), /^domain\.order\.create: the saved answer is stale · asks anthropic:claude-opus-5 once/);
+  s.send(KEY.enter);
+  const cancelled = s.app.state.records.at(-1)!;
+  await model.requested(1);
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([cancelled.status, cancelled.result?.exitCode, cancelled.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the request is closed");
+  model.release();
+  await s.app.idle();
+  assert.equal(cancelled.status, "cancelled", "a late answer changes nothing");
+  assert.deepEqual(treeBytes(root), before);
+  // The operation as the session runs it: Cancel through the signal, then the failures of the model.
+  const request = { kind: "explain-llm", root, id: EXPLAIN_ID, detail: "short" } as const;
+  const controller = new AbortController();
+  const aborted = runOperation(request, { signal: controller.signal });
+  await model.requested(2);
+  controller.abort();
+  const stopped = await aborted;
+  assert.deepEqual([stopped.status, stopped.exitCode, stopped.written], ["cancelled", null, []]);
+  model.release();
+  reply = "";
+  const blank = await answerAll(model, runOperation(request, {}));
+  assert.deepEqual([blank.status, blank.exitCode, blank.written, blank.payload?.previous?.text], ["failed", 2, [], "The old answer."]);
+  assert.match(blank.messages.at(-1)!.text, /^claude-opus-5 answered without text/);
+  reply = EXPLAIN_REPLY;
+  process.env.KEYLANG_LLM_TIMEOUT_MS = "200";
+  t.after(() => delete process.env.KEYLANG_LLM_TIMEOUT_MS);
+  const timedOut = await runOperation(request, {});
+  delete process.env.KEYLANG_LLM_TIMEOUT_MS;
+  assert.deepEqual([timedOut.status, timedOut.exitCode, timedOut.written], ["failed", 2, []]);
+  assert.equal(timedOut.messages.at(-1)!.text, "anthropic: no answer within 200 ms (KEYLANG_LLM_TIMEOUT_MS)");
+  model.release();
+  assert.deepEqual(treeBytes(root), before, "no failure touched the saved answer");
+  // A source changed while the model answered: refused (1), the saved answer kept, the new code kept.
+  const asked = model.prompts.length;
+  const changing = runOperation(request, {});
+  await model.requested(asked + 1);
+  const code = "export function create(): void {\n  return;\n}\n";
+  writeFileSync(join(root, "src/domain/order.ts"), code);
+  const refused = await answerAll(model, changing);
+  assert.deepEqual([refused.status, refused.exitCode, refused.written], ["failed", 1, []]);
+  assert.deepEqual(refused.payload?.refused, ["src/domain/order.ts: changed on disk while the explanation was computed"]);
+  assert.equal(refused.messages.at(-1)!.text, `nothing was written; ${EXPLAIN_FILE} keeps the saved answer`);
+  assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8"), old);
+  assert.equal(readFileSync(join(root, "src/domain/order.ts"), "utf8"), code);
+  writeFileSync(join(root, "src/domain/order.ts"), CHECKOUT_FILES["src/domain/order.ts"]!);
+  // The saved answer changed while the model answered: the old candidate does not overwrite the new one.
+  const waiting = runOperation(request, {});
+  await model.requested(asked + 2);
+  const newer = storedExplanation("someone-else", "short", "A newer answer.");
+  writeFileSync(join(root, EXPLAIN_FILE), newer);
+  const overwritten = await answerAll(model, waiting);
+  assert.deepEqual([overwritten.status, overwritten.exitCode, overwritten.payload?.refused], ["failed", 1, [`${EXPLAIN_FILE}: changed on disk while the change was prepared; nothing written`]]);
+  assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8"), newer);
+  writeFileSync(join(root, EXPLAIN_FILE), old);
+  // An unknown ID: the CLI's message, no request.
+  const unknown = await runOperation({ ...request, id: "domain.order.creat" });
+  assert.deepEqual([unknown.status, unknown.exitCode, unknown.messages.at(-1)?.text], ["failed", 2, "unknown id `domain.order.creat` (did you mean `domain.order.create`?)"]);
+  assert.equal(model.prompts.length, asked + 2);
+  // A stream error of OpenRouter: 2, the saved answer kept.
+  const sse = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.end('data: {"choices":[{"delta":{"content":"Half an"}}]}\n\ndata: {"error":{"message":"overloaded"}}\n\n');
+  });
+  await new Promise<void>((resolve) => sse.listen(0, "127.0.0.1", resolve));
+  t.after(() => sse.close());
+  withConfig(root, { agent: "openrouter:some/model" });
+  process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${(sse.address() as AddressInfo).port}`;
+  process.env.OPENROUTER_API_KEY = "test";
+  t.after(() => {
+    delete process.env.OPENROUTER_BASE_URL;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+  const streamed = await runOperation(request, {});
+  assert.deepEqual([streamed.status, streamed.exitCode, streamed.written, streamed.messages.at(-1)?.text], ["failed", 2, [], "openrouter: overloaded"]);
+  assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8"), old);
+  // No credentials: a new session's form says why before the run; Enter is the CLI's offline summary with its note.
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const key = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  t.after(() => (process.env.ANTHROPIC_API_KEY = key));
+  const offline = session(root, { cols: 220 });
+  t.after(() => offline.app.close());
+  await offline.app.idle();
+  offline.app.state.cursor = { line: 6, col: 0 };
+  explainModelForm(offline, { submit: false });
+  await offline.app.idle();
+  assert.match(promptNote(offline.app), /^domain\.order\.create: the saved answer is stale · no request can be made: no Anthropic credentials: .*; Enter shows the summary and the saved answer · short/);
+  offline.send(KEY.enter);
+  await offline.app.idle();
+  const summary = explainLlmRecord(offline.app);
+  const cli = spawnSync(process.execPath, [BIN, "explain", EXPLAIN_ID, "--llm"], { cwd: root, encoding: "utf8", env: { ...process.env, HOME: root } });
+  assert.deepEqual([summary.status, summary.exitCode, summary.written, summary.payload.source], ["completed", 0, [], "offline"]);
+  assert.equal(summary.payload.text, cli.stdout);
+  assert.equal(cli.stderr, `keylang: ${summary.messages.find((message) => message.level === "warning")!.text}\n`);
+  assert.match(summary.payload.text, /The old answer\.\n\nanthropic:claude-opus-5 · 2026-09-30 · stale\n$/);
+  offline.send(KEY.f6);
+  assert.match(offline.text(), /fn domain\.order\.create: no model, nothing asked; saved answer stale · code 0/);
+  assert.equal(model.prompts.length, asked + 2, "no request without credentials");
+  assert.deepEqual(treeBytes(root), before);
+});

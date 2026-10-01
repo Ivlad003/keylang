@@ -100,6 +100,17 @@ export function savedAnswer(analysis: Analysis, id: string, e: Explanation): Sav
   return { agent: e.agent, date: e.date, lang: e.lang, detail: e.detail, text: e.text, fresh: !isStale(analysis, id, e), unknownIds: unknownIds(analysis, e.text), file: explanationPath(analysis.config, id, e.detail) };
 }
 
+/** Why a saved explanation does not answer `explain <id> --llm`: none, stale, another language or another detail. */
+export type AnswerMiss = "missing" | "stale" | "lang" | "detail";
+
+/** Why `saved` does not answer a request of `lang` and `detail`, or null when it does: a fresh one is read, never asked for again. */
+export function savedAnswerMiss(analysis: Analysis, id: string, saved: Explanation | null, lang: string, detail: ExplanationDetail): AnswerMiss | null {
+  if (saved === null) return "missing";
+  if (isStale(analysis, id, saved)) return "stale";
+  if (saved.lang !== lang) return "lang";
+  return saved.detail === detail ? null : "detail";
+}
+
 /** A saved answer as the CLI prints it: the text, a blank line, `agent · date · fresh|stale`, and the made-up IDs. */
 export function savedAnswerText(saved: SavedAnswer): string {
   const unknown = saved.unknownIds.length > 0 ? `unknown ids: ${saved.unknownIds.join(", ")}\n` : "";

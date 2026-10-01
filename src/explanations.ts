@@ -44,7 +44,7 @@ export function formatStoredExplanation(e: StoredExplanation): string {
 }
 
 /** Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map. */
-export function explainDir(config: Config): string {
+export function explainDir(config: Pick<Config, "dir">): string {
   return `${config.dir}/explain`;
 }
 
@@ -52,7 +52,7 @@ export function explainDir(config: Config): string {
 export const OLD_EXPLAIN_DIR = ".keylang/explain";
 
 /** File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`. */
-export function explanationPath(config: Config, id: string, detail: ExplanationDetail): string {
+export function explanationPath(config: Pick<Config, "dir">, id: string, detail: ExplanationDetail): string {
   return detail === "brief" ? `${explainDir(config)}/brief/${id}.md` : `${explainDir(config)}/${id}.md`;
 }
 

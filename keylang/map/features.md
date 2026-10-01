@@ -252,10 +252,13 @@
       - calls features.explain-node.summarizeNode, features.explain-llm.readExplanation, features.explain-offline.savedAnswer, features.explain-offline.summaryLinks
     - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
       - calls features.explain-llm.isStale, features.explain-llm.unknownIds, map.explanations.explanationPath
-    - fn [savedAnswerText](../../src/explain-offline.ts#L104) (saved: SavedAnswer) → string
-    - fn [offlineExplanationText](../../src/explain-offline.ts#L110) (explanation: OfflineExplanation) → string
+    - type [AnswerMiss](../../src/explain-offline.ts#L104) = "missing" | "stale" | "lang" | "detail"
+    - fn [savedAnswerMiss](../../src/explain-offline.ts#L107) (analysis: Analysis, id: string, saved: Explanation | null, lang: string, detail: ExplanationDetail) → AnswerMiss | null
+      - calls features.explain-llm.isStale
+    - fn [savedAnswerText](../../src/explain-offline.ts#L115) (saved: SavedAnswer) → string
+    - fn [offlineExplanationText](../../src/explain-offline.ts#L121) (explanation: OfflineExplanation) → string
       - calls features.explain-node.formatSummary, features.explain-offline.savedAnswerText
-    - fn [summaryLinks](../../src/explain-offline.ts#L117) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
+    - fn [summaryLinks](../../src/explain-offline.ts#L128) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
       - calls features.lsp-features.plannedDecl
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag

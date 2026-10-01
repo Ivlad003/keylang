@@ -9,10 +9,9 @@ import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type Stati
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
-import { isDiagnosticCode, savedAnswer, savedAnswerText, unknownIdMessage } from "./explain-offline.ts";
-import { formatSummary, summarizeNode } from "./explain-node.ts";
+import { isDiagnosticCode } from "./explain-offline.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
-import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
+import { currentBaseline, estimateTokens, explainedIds, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, type BriefBatch, type BriefLevel } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { lineDiff } from "./proposals.ts";
@@ -339,39 +338,18 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
     process.stdout.write(result.payload.text);
     return 0;
   }
-  const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-  noteOldExplanations(analysis.config);
-  const result = summarizeNode(analysis, subject);
-  if ("unknown" in result) throw new Error(unknownIdMessage(subject, result.suggestion));
-  const config = analysis.config;
-  const { lang } = config.explain;
-  const detail: ExplanationDetail = opts.brief ? "brief" : opts.full ? "full" : config.explain.detail;
-  const saved = readExplanation(config, subject, detail);
-  const show = (e: Explanation): void => {
-    process.stdout.write(savedAnswerText(savedAnswer(analysis, subject, e)));
-  };
-  // A fresh explanation of the same kind is read, not asked for again: offline and free.
-  if (saved && !isStale(analysis, subject, saved) && saved.lang === lang && saved.detail === detail) {
-    show(saved);
-    return 0;
+  // An ID with the model: a printer over the shared operation (a fresh saved answer is read, not asked for again).
+  const detail: ExplanationDetail | undefined = opts.brief ? "brief" : opts.full ? "full" : undefined;
+  const result = await runOperation({ kind: "explain-llm", root: findRoot(process.cwd()), id: subject, ...(detail !== undefined ? { detail } : {}) });
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (result.status !== "completed" || result.payload === null) {
+    const errors = result.messages.filter((message) => message.level === "error");
+    if (result.exitCode !== 1 || errors.length === 0) throw new Error(errors[0]?.text ?? "explain failed");
+    // Refused: the saved answer stays; every reason is named.
+    for (const message of result.messages) if (message.level !== "warning") process.stderr.write(`keylang: ${message.text}\n`);
+    return 1;
   }
-  // The SDK loads only when a model is asked: other commands start without it.
-  const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(config.agent);
-  if ("missing" in setup) {
-    process.stderr.write(`keylang: ${setup.missing}; showing what the snapshot says\n`);
-    process.stdout.write(`${formatSummary(result.summary)}\n`);
-    if (saved) {
-      process.stdout.write("\n");
-      show(saved);
-    }
-    return 0;
-  }
-  const answer = await setup.client.complete(explanationRequest(analysis, result.summary, { lang, detail, briefs: loadBriefs(config) }));
-  const text = detail === "brief" ? briefText(answer) : answer;
-  const e: Explanation = { agent: setup.client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analysis, subject) ?? "", lang, detail, text };
-  writeExplanation(config, subject, e);
-  show(e);
+  process.stdout.write(result.payload.text);
   return 0;
 }
 

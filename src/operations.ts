@@ -15,9 +15,10 @@ import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
-import { explainedIds, moveHint, oldExplanations } from "./explain-llm.ts";
-import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, unknownIdMessage, type OfflineExplanation } from "./explain-offline.ts";
-import { isStoredExplanation, type ExplanationDetail } from "./explanations.ts";
+import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type Explanation } from "./explain-llm.ts";
+import { formatSummary, type NodeSummary } from "./explain-node.ts";
+import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
+import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
@@ -211,6 +212,25 @@ export interface ExplainRequest {
   /** A diagnostic code or an ID. */
   subject: string;
   /** Which saved answer is shown (`--full`, `--brief`); default `explain.detail` of keylang.json. */
+  detail?: ExplanationDetail;
+}
+
+/**
+ * `keylang explain <id> --llm [--full|--brief]`: one node's explanation by
+ * the configured model. A fresh saved answer of the same detail and language
+ * is read instead of asking (no request, no write); without a usable model
+ * the offline summary and the saved answer are shown, as the CLI does. A new
+ * answer is saved to `<dir>/explain/<id>.md` (a brief to `brief/<id>.md`)
+ * only after the commit check. The language and the agent come from
+ * keylang.json (`explain.lang`, `agent`); the request names neither.
+ */
+export interface ExplainLlmRequest {
+  kind: "explain-llm";
+  /** Repository root (absolute). */
+  root: string;
+  /** A node of the snapshot or a declared `planned` ID; a diagnostic code is the offline `explain`. */
+  id: string;
+  /** `--full`, `--brief`; default `explain.detail` of keylang.json. */
   detail?: ExplanationDetail;
 }
 
@@ -459,10 +479,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -1054,6 +1074,41 @@ export type ExplainPayload = OfflineExplanation & {
   text: string;
 };
 
+/**
+ * What `explain <id> --llm` showed and saved. `source`: `cache` — a fresh
+ * saved answer of the same detail and language, read; `model` — a new
+ * answer, saved (or refused, failed, with `previous` kept); `offline` — no
+ * model could be asked (`unavailable`), the summary and the saved answer.
+ */
+export interface ExplainLlmPayload {
+  id: string;
+  summary: NodeSummary;
+  detail: ExplanationDetail;
+  /** `explain.lang` of keylang.json. */
+  lang: string;
+  /** `agent` of keylang.json; null when none is configured. */
+  agent: string | null;
+  source: "cache" | "model" | "offline";
+  /** Why the saved answer did not do (`savedAnswerMiss`); null when it did (cache). */
+  reason: AnswerMiss | null;
+  /** Why no model could be asked (the CLI's note), or null. */
+  unavailable: string | null;
+  /** The saved answer of this detail before the run, judged against the run's analysis; kept unless `written`. */
+  previous: SavedAnswer | null;
+  /** The answer shown: the cached one, the new one (written or not), or the saved one offline; null offline without one. */
+  answer: SavedAnswer | null;
+  /** The file written, relative to the root; null when nothing was written. */
+  written: string | null;
+  /** Why the new answer was not written: its file, keylang.json, a source or a spec changed while the model answered, or the session refused. */
+  refused: string[];
+  /** The model's or the write's error, or null. */
+  error: string | null;
+  links: ExplainLink[];
+  snapshotId: string | null;
+  /** The CLI's stdout (empty when it prints none: a failure). */
+  text: string;
+}
+
 /** What an export did with its one file. */
 export interface ExportPayload {
   path: string;
@@ -1115,6 +1170,7 @@ export interface OperationPayloads {
   check: CheckPayload;
   "explain-edge": ExplainEdgePayload;
   explain: ExplainPayload;
+  "explain-llm": ExplainLlmPayload;
   init: InitPayload;
   export: ExportPayload;
   parse: ParsePayload;
@@ -1162,6 +1218,7 @@ export function runOperation(request: WireRequest, context?: OperationContext): 
 export function runOperation(request: CheckRequest, context?: OperationContext): Promise<OperationEnvelope<"check">>;
 export function runOperation(request: ExplainEdgeRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-edge">>;
 export function runOperation(request: ExplainRequest, context?: OperationContext): Promise<OperationEnvelope<"explain">>;
+export function runOperation(request: ExplainLlmRequest, context?: OperationContext): Promise<OperationEnvelope<"explain-llm">>;
 export function runOperation(request: InitRequest, context?: OperationContext): Promise<OperationEnvelope<"init">>;
 export function runOperation(request: ExportRequest, context?: OperationContext): Promise<OperationEnvelope<"export">>;
 export function runOperation(request: ParseRequest, context?: OperationContext): Promise<OperationEnvelope<"parse">>;
@@ -1197,6 +1254,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runExplainEdge(request, context);
     case "explain":
       return runExplain(request, context);
+    case "explain-llm":
+      return runExplainLlm(request, context);
     case "init":
       return runInit(request, context);
     case "export":
@@ -1248,6 +1307,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "explain-edge":
       return { kind, ...base };
     case "explain":
+      return { kind, ...base };
+    case "explain-llm":
       return { kind, ...base };
     case "init":
       return { kind, ...base };
@@ -2212,6 +2273,143 @@ async function runExplain(request: ExplainRequest, context: OperationContext): P
   return { ...emptyExplain("completed", 0), payload, messages: [...notes, { level: "info", text: `${found.summary.kind} ${found.id}: ${answer}` }] };
 }
 
+function emptyExplainLlm(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-llm"> {
+  return { kind: "explain-llm", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang explain <id> --llm`. The analysis of the saved files (no
+ * evidence, nothing persisted); an unknown ID is 2 with the CLI's message.
+ * A fresh saved answer of the same detail and language is the result (0),
+ * nothing asked or written. No usable model: the offline summary and the
+ * saved answer with the CLI's note (0), nothing asked. Otherwise the inputs
+ * are fixed — keylang.json, the sources, the specs and the saved file's
+ * bytes — and the model is asked once (a brief is cut by `briefText`). A
+ * Cancel during the answer is cancelled; a timeout, an empty answer or a
+ * provider error is 2; both keep the saved file. After `beforeCommit`
+ * (which may refuse: 1) the inputs and the saved file must still be the
+ * ones read (else 1, nothing written); then the file is written atomically
+ * (0; 2 on an I/O error). The map is never written here: the explained map
+ * follows the next `keylang map`.
+ */
+async function runExplainLlm(request: ExplainLlmRequest, context: OperationContext): Promise<OperationEnvelope<"explain-llm">> {
+  const { root, id } = request;
+  if (!isAbsolute(root)) return emptyExplainLlm("failed", 2, "explain: root must be an absolute path");
+  if (id === "") return emptyExplainLlm("failed", 2, "explain: a code or an id is required");
+  if (isDiagnosticCode(id)) return emptyExplainLlm("failed", 2, `explain --llm: \`${id}\` is a diagnostic code: its help is offline (explain ${id})`);
+  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  context.onProgress?.({ text: "reading the saved code and specs" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyExplainLlm("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  const config = analyzed.config;
+  const old = oldExplanations(config.root);
+  const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
+  const detail = request.detail ?? config.explain.detail;
+  const found = nodeExplanation(analyzed, id, detail);
+  if ("unknown" in found) return { ...emptyExplainLlm("failed", 2), messages: [...notes, { level: "error", text: unknownIdMessage(id, found.suggestion) }] };
+  const { lang } = config.explain;
+  const file = explanationPath(config, id, detail);
+  // The saved file as read: the commit writes only over these bytes.
+  const savedBytes = readTextOrNull(resolve(root, file));
+  const saved = readExplanation(config, id, detail);
+  const previous = saved === null ? null : savedAnswer(analyzed, id, saved);
+  const reason = savedAnswerMiss(analyzed, id, saved, lang, detail);
+  const payload: ExplainLlmPayload = {
+    id,
+    summary: found.summary,
+    detail,
+    lang,
+    agent: config.agent,
+    source: "cache",
+    reason,
+    unavailable: null,
+    previous,
+    answer: previous,
+    written: null,
+    refused: [],
+    error: null,
+    links: found.links,
+    snapshotId: analyzed.snapshot?.snapshotId ?? null,
+    text: "",
+  };
+  const what = `${found.summary.kind} ${id}`;
+  if (reason === null && previous !== null) {
+    payload.text = savedAnswerText(previous);
+    return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
+  }
+  const { llmClient, LlmCancelled } = await import("./llm.ts");
+  const setup = llmClient(config.agent);
+  if ("missing" in setup) {
+    payload.source = "offline";
+    payload.unavailable = setup.missing;
+    payload.text = `${formatSummary(found.summary)}\n${previous === null ? "" : `\n${savedAnswerText(previous)}`}`;
+    return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "warning", text: `${setup.missing}; showing what the snapshot says` }] };
+  }
+  const client = setup.client;
+  payload.source = "model";
+  payload.answer = null;
+  // What the answer is computed from: a commit checks these are still the files on disk.
+  const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
+  const specs = specHashes(root, analyzed.docs);
+  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"explain-llm"> => ({ ...emptyExplainLlm("failed", exitCode), payload, messages: [...notes, ...messages] });
+  context.onProgress?.({ text: `asking ${client.agent}` });
+  let answer: string;
+  try {
+    answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), context.signal ? { signal: context.signal } : {});
+  } catch (error) {
+    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+    payload.error = messageOf(error);
+    return failed(2, [{ level: "error", text: payload.error }]);
+  }
+  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  const text = detail === "brief" ? briefText(answer) : answer.trim();
+  if (text === "") {
+    payload.error = `${client.agent} answered without text; nothing written`;
+    return failed(2, [{ level: "error", text: payload.error }]);
+  }
+  const e: Explanation = { agent: client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail, text };
+  payload.answer = savedAnswer(analyzed, id, e);
+  const keep = { level: "info" as const, text: previous === null ? "nothing was written" : `nothing was written; ${file} keeps the saved answer` };
+  context.onProgress?.({ text: "waiting to write" });
+  let gate: CommitGate;
+  try {
+    gate = await context.beforeCommit?.({ targets: [file] });
+  } catch (error) {
+    payload.error = messageOf(error);
+    return failed(2, [{ level: "error", text: payload.error }]);
+  }
+  if (context.signal?.aborted) return { ...emptyExplainLlm("cancelled", null), payload };
+  const refuse = (reasons: string[]): OperationEnvelope<"explain-llm"> => {
+    payload.refused = reasons;
+    return failed(1, [...reasons.map((reason) => ({ level: "error" as const, text: reason })), keep]);
+  };
+  if (gate && gate.refused.length > 0) return refuse(gate.refused);
+  let problems: string[];
+  try {
+    const target = writeProblem(root, file, { under: explainDir(config), expect: savedBytes });
+    problems = [...(target === null ? [] : [`${file}: ${target}`]), ...sourceInputProblems(config, inputs, "the explanation"), ...specProblems(root, specs, "the explanation")];
+  } catch (error) {
+    payload.error = messageOf(error);
+    return failed(2, [{ level: "error", text: payload.error }]);
+  }
+  if (problems.length > 0) return refuse(problems);
+  context.onProgress?.({ text: `writing ${file}` });
+  try {
+    writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
+  } catch (error) {
+    payload.error = messageOf(error);
+    return failed(2, [{ level: "error", text: payload.error }]);
+  }
+  payload.written = file;
+  payload.text = savedAnswerText(payload.answer);
+  return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: ${client.agent} wrote the ${detail} answer to ${file}` }], written: [file] };
+}
+
 function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {
   return { kind: "export", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
@@ -2927,8 +3125,8 @@ function hashOrNull(text: string | null): string | null {
 }
 
 /** `path: changed on disk while the candidate was computed` for each spec of the basis that is not the same now. */
-function specProblems(root: string, specs: CandidateBasis["specs"]): string[] {
-  return specs.filter((spec) => hashOrNull(readTextOrNull(resolve(root, spec.path))) !== spec.sha256).map((spec) => `${spec.path}: changed on disk while the candidate was computed`);
+function specProblems(root: string, specs: CandidateBasis["specs"], subject = "the candidate"): string[] {
+  return specs.filter((spec) => hashOrNull(readTextOrNull(resolve(root, spec.path))) !== spec.sha256).map((spec) => `${spec.path}: changed on disk while ${subject} was computed`);
 }
 
 /**

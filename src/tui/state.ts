@@ -3,7 +3,7 @@
 
 import type { Analysis } from "../analyze.ts";
 import type { StaticMode } from "../config.ts";
-import type { StoredExplanation } from "../explanations.ts";
+import type { ExplanationDetail, StoredExplanation } from "../explanations.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { ExportFormat, OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
@@ -123,6 +123,7 @@ export interface Prompt {
    * `parse`: the spec files and directories to parse, relative to the root and separated by spaces (the current spec by default), and the view (`ids` are `tree` / `json`);
    * `trace-plan`: the flow's name, typed or taken from the list of the flows of the current documents (`ids` are the matching names; the one under the cursor by default);
    * `explain`: a diagnostic code or an ID, typed or taken from the list (`ids` are the matching codes or the IDs of the session's snapshot; the ID under the cursor, else the line's diagnostic code, by default);
+   *   with `explainModel` it is the model's explanation of one ID (`ids` are IDs only; ←→ change the detail);
    * `export`: the target path of a finished report, relative to the root (`text`), and `exportForm` (the items `format`, `path`, save; ←→ change the format).
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
@@ -161,6 +162,8 @@ export interface Prompt {
   codeDraft?: CodeDraftForm;
   /** `spec-to-code`: the fields as typed; an empty target is the module's file, shown next to it. */
   specCode?: SpecCodeForm;
+  /** `explain` with the model (`explain <id> --llm`): the detail asked for; the language and the agent are keylang.json's. */
+  explainModel?: { detail: ExplanationDetail };
 }
 
 /** The fields of `spec-to-code <id> [--into] [--mode]`, and whether it proposes or only previews. */

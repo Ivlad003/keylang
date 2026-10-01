@@ -389,12 +389,17 @@
     - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
       <a id="features.explain-offline.savedAnswer"></a>
       - calls [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-llm.unknownIds](features.md#features.explain-llm.unknownIds), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
-    - fn [savedAnswerText](../../src/explain-offline.ts#L104) (saved: SavedAnswer) → string
+    - type [AnswerMiss](../../src/explain-offline.ts#L104) = "missing" | "stale" | "lang" | "detail"
+      <a id="features.explain-offline.AnswerMiss"></a><br>Why a saved explanation does not answer `explain <id> --llm`: none, stale, another language or another detail.
+    - fn [savedAnswerMiss](../../src/explain-offline.ts#L107) (analysis: Analysis, id: string, saved: Explanation | null, lang: string, detail: ExplanationDetail) → AnswerMiss | null
+      <a id="features.explain-offline.savedAnswerMiss"></a><br>Why `saved` does not answer a request of `lang` and `detail`, or null when it does: a fresh one is read, never asked for again.
+      - calls [features.explain-llm.isStale](features.md#features.explain-llm.isStale)
+    - fn [savedAnswerText](../../src/explain-offline.ts#L115) (saved: SavedAnswer) → string
       <a id="features.explain-offline.savedAnswerText"></a><br>A saved answer as the CLI prints it: the text, a blank line, `agent · date · fresh|stale`, and the made-up IDs.
-    - fn [offlineExplanationText](../../src/explain-offline.ts#L110) (explanation: OfflineExplanation) → string
+    - fn [offlineExplanationText](../../src/explain-offline.ts#L121) (explanation: OfflineExplanation) → string
       <a id="features.explain-offline.offlineExplanationText"></a><br>The CLI's stdout for an offline explanation, byte for byte.
       - calls [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-offline.savedAnswerText](features.md#features.explain-offline.savedAnswerText)
-    - fn [summaryLinks](../../src/explain-offline.ts#L117) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
+    - fn [summaryLinks](../../src/explain-offline.ts#L128) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
       <a id="features.explain-offline.summaryLinks"></a><br>The places the summary names, in its order; a related ID is a place only where the snapshot or a `planned` declares it.
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
   - module [explain](../../src/explain.ts#L1)

@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, explain, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, explain, explain-llm, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec, spec-to-code) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -107,6 +107,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Check",
     aliases: ["explain", "keylang explain", "explain code", "explain id", "diagnostic help", "node summary", "saved explanation", "why"],
     // A form takes a code (no snapshot, nothing saved first) or an id (a fresh analysis of the saved files in a worker); no model, never writes.
+    when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "explain-llm",
+    label: "Explain with the model: one id, short, full or brief",
+    group: "Check",
+    aliases: ["explain --llm", "keylang explain --llm", "explain llm", "ask the model", "model explanation", "explain short", "explain full", "explain brief", "explain --full", "explain --brief"],
+    // A form takes an id and a detail; a fresh saved answer is read without a request, a new one is saved to <dir>/explain/ after the commit check.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

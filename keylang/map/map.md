@@ -94,8 +94,8 @@
     - fn [isStoredExplanation](../../src/explanations.ts#L31) (text: string) → boolean
     - fn [parseStoredExplanation](../../src/explanations.ts#L36) (text: string) → StoredExplanation | null
     - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
-    - fn [explainDir](../../src/explanations.ts#L47) (config: Config) → string
-    - fn [explanationPath](../../src/explanations.ts#L55) (config: Config, id: string, detail: ExplanationDetail) → string
+    - fn [explainDir](../../src/explanations.ts#L47) (config: Pick<Config, "dir">) → string
+    - fn [explanationPath](../../src/explanations.ts#L55) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       - calls map.explanations.explainDir
     - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null
       - calls map.explanations.parseStoredExplanation
