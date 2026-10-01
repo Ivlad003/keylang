@@ -10,7 +10,7 @@ import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type Stati
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { sectionNodes, walk } from "./ir.ts";
-import { analyze, findRoot } from "./analyze.ts";
+import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
@@ -534,6 +534,20 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
   const root = findRoot(process.cwd());
   const analysis = await analyze({ root, withoutEvidence: true });
   if (!analysis.snapshot) throw new Error("code-to-spec: no supported source files; run `keylang init`");
+  if (at !== undefined) {
+    // A path in algo, or in a hybrid without a model, is the shared code-to-spec operation; the model and --since stay here for now.
+    let fallback: string | null = null;
+    let shared = opts.mode === "algo";
+    if (opts.mode === "hybrid") {
+      const { llmClient } = await import("./llm.ts");
+      const setup = llmClient(analysis.config.agent);
+      if ("missing" in setup) {
+        shared = true;
+        fallback = `${setup.missing}; drafting from the snapshot only (--mode algo)`;
+      }
+    }
+    if (shared) return codeToSpecPrinter(root, at, analysis, fallback, opts);
+  }
   let name: string;
   let algo: FlowDraft[];
   if (opts.since !== undefined) {
@@ -595,6 +609,43 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
   const proposal = writeProposal(root, target, text!);
   if (counts) countProposed(root, counts);
   process.stdout.write(`${toPosix(relative(process.cwd(), proposal))}: proposed ${drafts.map((d) => `\`${d.name}\``).join(", ")} for ${target}; merge it with \`m\` in \`keylang\`\n`);
+  return 0;
+}
+
+/**
+ * `code-to-spec <path[:line]> [--into] [--print]` in algo: a printer over the
+ * shared `code-to-spec` operation, on the analysis already made. The path is
+ * relative to the working directory, `--into` to the root. The proposal
+ * replaces one already waiting, as the CLI always did. A hybrid without a
+ * model says so on stderr once the position named its fns.
+ */
+async function codeToSpecPrinter(root: string, at: string, analysis: Analysis, fallback: string | null, opts: { into: string | undefined; print: boolean }): Promise<number> {
+  const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
+  const file = toPosix(relative(root, resolve(process.cwd(), m[1]!)));
+  const result = await runOperation(
+    {
+      kind: "code-to-spec",
+      root,
+      file,
+      ...(m[2] !== undefined ? { line: Number(m[2]) } : {}),
+      ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
+      output: opts.print ? "preview" : "proposal",
+      pending: "replace",
+    },
+    { analyze: async () => analysis },
+  );
+  const payload = result.payload;
+  if (fallback !== null && payload !== null) process.stderr.write(`keylang: ${fallback}\n`);
+  if (result.status !== "completed" || payload === null) {
+    for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return result.exitCode ?? 2;
+  }
+  if (payload.output === "preview") {
+    process.stdout.write(payload.candidate.print);
+    return 0;
+  }
+  const names = payload.candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
+  process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed ${names} for ${payload.candidate.target}; merge it with \`m\` in \`keylang\`\n`);
   return 0;
 }
 

@@ -233,20 +233,22 @@
       - calls [features.draft.layerOrder](features.md#features.draft.layerOrder)
     - fn [layerOrder](../../src/draft.ts#L178) (layers: readonly string[], uses: ReadonlyMap<string, ReadonlySet<string>>) → string[] | null <!-- internal -->
       <a id="features.draft.layerOrder"></a><br>Layers with those used first (Kahn, ties by name); null for a cycle.
-    - fn [codeToSpec](../../src/draft.ts#L195) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
-      <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file without a line — each as a flow draft.
-      - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
-    - type [ChangedLines](../../src/draft.ts#L219)
+    - fn [codeToSpecTriggers](../../src/draft.ts#L197) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; triggers: string[] }
+      <a id="features.draft.codeToSpecTriggers"></a><br>`code-to-spec <path[:line]>`: the functions the code position names — the innermost fn whose range holds the line, or every exported fn of the file in declaration order without a line — and the spec's name: the fn's, or the file's module's. Reads the snapshot only; a position…
+    - fn [codeToSpec](../../src/draft.ts#L220) (snapshot: AnalysisSnapshot, file: string, line: number | null) → { name: string; drafts: FlowDraft[] }
+      <a id="features.draft.codeToSpec"></a><br>`code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names.
+      - calls [features.draft.codeToSpecTriggers](features.md#features.draft.codeToSpecTriggers), [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
+    - type [ChangedLines](../../src/draft.ts#L227)
       <a id="features.draft.ChangedLines"></a><br>Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet.
-    - fn [diffHunks](../../src/draft.ts#L225) (diff: string) → Map<string, [number, number][]>
+    - fn [diffHunks](../../src/draft.ts#L233) (diff: string) → Map<string, [number, number][]>
       <a id="features.draft.diffHunks"></a><br>The new-side line ranges of `git diff --unified=0`. A deletion is the line it happened after, so the fn around it counts as changed.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [deletedDiffPaths](../../src/draft.ts#L248) (diff: string) → string[]
+    - fn [deletedDiffPaths](../../src/draft.ts#L256) (diff: string) → string[]
       <a id="features.draft.deletedDiffPaths"></a><br>Paths removed in `git diff` (`--- a/file` then `+++ /dev/null`). `diffHunks` follows the new side, so a deletion has no hunk to land on.
       - calls [features.draft.gitPath](features.md#features.draft.gitPath)
-    - fn [gitPath](../../src/draft.ts#L262) (text: string) → string <!-- internal -->
+    - fn [gitPath](../../src/draft.ts#L270) (text: string) → string <!-- internal -->
       <a id="features.draft.gitPath"></a><br>A path as `git diff` prints it: C-quoted (`"b/\303\251.ts"`, `"b/a\"b.ts"`) when it holds a quote, a backslash or a control byte.
-    - fn [changedFlows](../../src/draft.ts#L290) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
+    - fn [changedFlows](../../src/draft.ts#L298) (snapshot: AnalysisSnapshot, changed: ChangedLines, named: ReadonlySet<string>) → { drafts: FlowDraft[]; named: string[] }
       <a id="features.draft.changedFlows"></a><br>`code-to-spec --since <ref>`: a flow draft for each fn the change touches. A fn some hand-written spec already names is reported, not drafted again — its flow is the place to look.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft.distinctNames](features.md#features.draft.distinctNames)
   - module [explain-edge](../../src/explain-edge.ts#L1)

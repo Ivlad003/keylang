@@ -7331,3 +7331,260 @@ test("tui: invalid layers from the model are a failed draft (2) with the reason;
   assert.equal(s.app.state.buffers.get("keylang.json"), undefined, "keylang.json was not even opened");
   assert.deepEqual(treeBytes(root), before);
 });
+
+// ---------- code-to-spec from a file or a line (ticket 26) ----------
+
+/** Two exported fns and a private one between them: `buy` calls `create` and the private `audit`, which calls `save`. */
+const PURCHASE_TWO = [
+  'import { create } from "../domain/order.ts";',
+  'import { save } from "../infrastructure/store.ts";',
+  "export function buy(): void {",
+  "  create();",
+  "  audit();",
+  "}",
+  "function audit(): void {",
+  "  save();",
+  "}",
+  "export function refund(): void {",
+  "  save();",
+  "}",
+  "",
+].join("\n");
+
+/** The default target of the file: prose, the flow `buy` (replaced by the draft) and a hand-written flow (kept). */
+const PURCHASE_SPEC = "# Purchase\n\nWhy we buy.\n\n# flow buy\n\n- trigger application.purchase.buy\n\n# flow manual\n\n- trigger presentation.terminal.checkout\n";
+
+/** Moves the code-to-spec form's selection to the row `id`. */
+function codeRow(s: ReturnType<typeof session>, id: string): void {
+  const prompt = s.app.state.prompt!;
+  for (let i = 0; i < 20 && prompt.ids?.[prompt.index] !== id; i++) s.send(KEY.down);
+  assert.equal(prompt.ids?.[prompt.index], id, JSON.stringify(prompt.ids));
+}
+
+/** Replaces the text of a field row of the code-to-spec form. */
+function codeField(s: ReturnType<typeof session>, id: "file" | "line" | "into", text: string): void {
+  codeRow(s, id);
+  for (const _ of s.app.state.prompt!.codeDraft![id]) s.send("\x7f");
+  for (const ch of text) s.send(ch);
+}
+
+/** The palette's code-to-spec form with the given fields (an absent one keeps its prefill); Enter on the run row. */
+function codeForm(s: ReturnType<typeof session>, fields: { file?: string; line?: string; into?: string; output?: "proposal" | "preview" }): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "code-to-spec", s.app.state.message ?? "");
+  if (fields.file !== undefined) codeField(s, "file", fields.file);
+  if (fields.line !== undefined) codeField(s, "line", fields.line);
+  if (fields.into !== undefined) codeField(s, "into", fields.into);
+  if ((fields.output ?? "proposal") !== s.app.state.prompt!.codeDraft!.output) {
+    codeRow(s, "output");
+    s.send(KEY.right);
+  }
+  codeRow(s, "run");
+  s.send(KEY.enter);
+}
+
+type CodeResult = Extract<OperationResult, { kind: "code-to-spec" }> & { payload: NonNullable<Extract<OperationResult, { kind: "code-to-spec" }>["payload"]> };
+
+function codeRecord(app: App): CodeResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "code-to-spec" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as CodeResult;
+}
+
+function cliCode(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "code-to-spec", ...args, "--mode", "algo"], { cwd: root, encoding: "utf8" });
+}
+
+test("tui: code-to-spec of a file with two exports and a private fn is the CLI's file mode; a line picks the fn holding it; the proposal keeps the prose and the other flow; source and target stay until w", async (t) => {
+  const specs = { "src/application/purchase.ts": PURCHASE_TWO, "keylang/flows/purchase.md": PURCHASE_SPEC };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // No ID under the cursor: empty fields; a typed part lists the source files; Enter takes one and moves to the line.
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  const prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "code-to-spec");
+  assert.deepEqual(prompt.codeDraft, { file: "", line: "", into: "", output: "proposal" });
+  assert.equal(promptNote(s.app), "type a source file · ↓ picks a match");
+  assert.deepEqual(prompt.details, [`root: ${root} · the file and the target are relative to it · algo: only the calls the snapshot resolved; no model, no search beyond the file`]);
+  for (const ch of "purch") s.send(ch);
+  assert.deepEqual(prompt.ids?.filter((id) => id.startsWith("src:")), ["src:src/application/purchase.ts"]);
+  s.send(KEY.down);
+  assert.equal(promptNote(s.app), "Enter takes src/application/purchase.ts as the file");
+  s.send(KEY.enter);
+  assert.equal(prompt.codeDraft?.file, "src/application/purchase.ts");
+  assert.equal(prompt.ids?.[prompt.index], "line");
+  assert.equal(promptNote(s.app), "2 exported fn(s): application.purchase.buy, application.purchase.refund");
+  assert.match(prompt.items.join("\n"), /target: {4}\(default keylang\/flows\/purchase\.md\)/);
+  // The line takes digits only; inside the private fn it names that fn and its own target.
+  for (const ch of "8x") s.send(ch);
+  assert.equal(prompt.codeDraft?.line, "8");
+  assert.equal(promptNote(s.app), "line 8 is in application.purchase.audit");
+  assert.match(prompt.items.join("\n"), /target: {4}\(default keylang\/flows\/audit\.md\)/);
+  assert.match(s.text(), /code to spec · algo/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Esc writes nothing");
+  // Preview of the file: the CLI's --print byte for byte (both exports, not the private fn); nothing is written.
+  codeForm(s, { file: "src/application/purchase.ts", output: "preview" });
+  await s.app.idle();
+  const preview = codeRecord(s.app);
+  assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals], ["completed", 0, [], []]);
+  const printed = cliCode(twin, ["src/application/purchase.ts", "--print"]);
+  assert.deepEqual([printed.status, printed.stderr], [0, ""]);
+  const { candidate } = preview.payload;
+  assert.equal(candidate.print, printed.stdout);
+  assert.deepEqual(candidate.flows.map((flow) => [flow.name, flow.trigger, flow.steps]), [
+    ["buy", "application.purchase.buy", ["application.purchase.buy", "domain.order.create", "application.purchase.audit", "infrastructure.store.save"]],
+    ["refund", "application.purchase.refund", ["application.purchase.refund", "infrastructure.store.save"]],
+  ]);
+  assert.deepEqual([candidate.name, candidate.target, candidate.before, candidate.pending, candidate.problem], ["purchase", "keylang/flows/purchase.md", PURCHASE_SPEC, null, null]);
+  assert.ok(candidate.text!.startsWith("# Purchase\n\nWhy we buy.\n\n# flow buy\n"), "the prose stays; the flow buy is replaced in place");
+  assert.match(candidate.text!, /# flow manual\n\n- trigger presentation\.terminal\.checkout\n/);
+  assert.ok(candidate.text!.endsWith(candidate.flows[1]!.flow), "refund is appended");
+  assert.deepEqual(treeBytes(root), before, "a preview writes no proposal, no stats, not the target");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Code to spec · algo · src\/application\/purchase\.ts → keylang\/flows\/purchase\.md · preview, nothing written/);
+  assert.match(text, /2 flow\(s\), 6 step\(s\), preview, nothing written · code 0/);
+  assert.match(text, /── keylang code-to-spec src\/application\/purchase\.ts --mode algo --print · stdout ──/);
+  assert.match(text, /── keylang\/flows\/purchase\.md as proposed ──/);
+  await esc(s.send);
+  // A line inside a fn: the same fn as the CLI's :line, and the same target.
+  codeForm(s, { file: "src/application/purchase.ts", line: "8", output: "preview" });
+  await s.app.idle();
+  const atLine = codeRecord(s.app).payload.candidate;
+  assert.equal(atLine.print, cliCode(twin, ["src/application/purchase.ts:8", "--print"]).stdout);
+  assert.deepEqual([atLine.line, atLine.name, atLine.target, atLine.flows.map((flow) => flow.trigger)], [8, "audit", "keylang/flows/audit.md", ["application.purchase.audit"]]);
+  // Proposal of the file: the CLI's proposal in the twin byte for byte; only the proposal is new; MERGE opens since nothing moved.
+  codeForm(s, { file: "src/application/purchase.ts" });
+  await s.app.idle();
+  const proposed = codeRecord(s.app);
+  const store = ".keylang/proposals/keylang/flows/purchase.md";
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.written, proposed.proposals, proposed.payload.proposal], ["completed", 0, [], [store], store]);
+  const cli = cliCode(twin, ["src/application/purchase.ts"]);
+  assert.deepEqual([cli.status, cli.stdout, cli.stderr], [0, `${store}: proposed \`buy\`, \`refund\` for keylang/flows/purchase.md; merge it with \`m\` in \`keylang\`\n`, ""]);
+  assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), "the CLI's proposal, byte for byte");
+  assert.equal(readFileSync(join(root, store), "utf8"), candidate.text);
+  assert.equal(readFileSync(join(root, "keylang/flows/purchase.md"), "utf8"), PURCHASE_SPEC);
+  assert.equal(readFileSync(join(root, "src/application/purchase.ts"), "utf8"), PURCHASE_TWO, "the source is never written");
+  assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)), [store], "only the proposal, no stats");
+  assert.equal(s.app.state.mode, "merge", s.app.state.message ?? "");
+  assert.equal(s.app.state.merge?.path, "keylang/flows/purchase.md");
+  assert.match(s.app.state.message ?? "", /code-to-spec: \.keylang\/proposals\/keylang\/flows\/purchase\.md \(buy, refund\) · MERGE/);
+  await esc(s.send);
+  assert.equal(readFileSync(join(root, "keylang/flows/purchase.md"), "utf8"), PURCHASE_SPEC, "before w the target is byte for byte the same");
+  s.send(KEY.f6);
+  text = s.text();
+  assert.match(text, /2 flow\(s\), 6 step\(s\) proposed for keylang\/flows\/purchase\.md · code 0/);
+  assert.match(text, /flow buy · trigger application\.purchase\.buy · 4 step\(s\)/);
+  assert.match(text, /flow refund · trigger application\.purchase\.refund · 2 step\(s\)/);
+  assert.match(text, /Enter open MERGE/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.merge?.path, "keylang/flows/purchase.md");
+  for (let i = 0; i < s.app.state.merge!.hunks.length; i++) s.send("a");
+  s.send("w");
+  await s.app.idle();
+  assert.equal(readFileSync(join(root, "keylang/flows/purchase.md"), "utf8"), candidate.text);
+  assert.ok(!existsSync(join(root, store)));
+});
+
+test("tui: code-to-spec takes the code viewer's or the cursor's position; a line outside every fn, a file that is not source, a waiting proposal and an unsaved target keep the form; a target edited during the work gets no proposal", async (t) => {
+  const root = checkoutRepo(t, { "src/application/purchase.ts": PURCHASE_TWO });
+  const hook: { during: (() => void) | null } = { during: null };
+  // The operation on this thread, with a hook before the session's own answer to the commit.
+  const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
+    runOperation(request, {
+      ...context,
+      beforeCommit: async (plan) => {
+        hook.during?.();
+        return context.beforeCommit?.(plan);
+      },
+    });
+  const s = session(root, { cols: 200, operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  // The ID under the cursor (a fn): its file and line.
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual(s.app.state.prompt?.codeDraft, { file: "src/application/purchase.ts", line: "3", into: "", output: "proposal" });
+  assert.equal(promptNote(s.app), "line 3 is in application.purchase.buy");
+  await esc(s.send);
+  // The code viewer: its file and line.
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "code");
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual(s.app.state.prompt?.codeDraft, { file: "src/application/purchase.ts", line: "3", into: "", output: "proposal" });
+  await esc(s.send);
+  s.send(KEY.ctrlO);
+  assert.equal(s.app.state.mode, "view");
+  // A line outside every fn: the CLI's reason, the typed values stay, the line is selected, nothing runs.
+  codeForm(s, { file: "src/application/purchase.ts", line: "1" });
+  let prompt = s.app.state.prompt!;
+  assert.equal(prompt.kind, "code-to-spec");
+  assert.deepEqual([prompt.codeDraft?.file, prompt.codeDraft?.line, prompt.ids?.[prompt.index]], ["src/application/purchase.ts", "1", "line"]);
+  assert.equal(s.app.state.message, "code-to-spec: src/application/purchase.ts:1: no function holds this line");
+  assert.equal(cliCode(root, ["src/application/purchase.ts:1"]).stderr, "keylang: src/application/purchase.ts:1: no function holds this line\n");
+  codeField(s, "line", "0");
+  codeRow(s, "run");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.message, "code-to-spec: line `0`: a whole number from 1, or empty for every exported fn of the file");
+  await esc(s.send);
+  // Not a source file: the CLI's reason on the file row.
+  codeForm(s, { file: "keylang.json", line: "" });
+  prompt = s.app.state.prompt!;
+  assert.deepEqual([prompt.codeDraft?.file, prompt.ids?.[prompt.index]], ["keylang.json", "file"]);
+  assert.equal(s.app.state.message, "code-to-spec: keylang.json: no function of the snapshot is declared here");
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  assert.deepEqual(treeBytes(root), before);
+  // A proposal waiting for the target: refused before the run, its bytes stay; the CLI still replaces its own.
+  const store = join(root, ".keylang/proposals/keylang/flows/purchase.md");
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, "someone's proposal\n");
+  codeForm(s, { file: "src/application/purchase.ts", line: "" });
+  assert.equal(s.app.state.message, "code-to-spec: a proposal for keylang/flows/purchase.md is waiting: merge it first (m, or Proposals)");
+  assert.equal(s.app.state.prompt?.codeDraft?.file, "src/application/purchase.ts");
+  await esc(s.send);
+  assert.equal(readFileSync(store, "utf8"), "someone's proposal\n");
+  assert.equal(cliCode(root, ["src/application/purchase.ts"]).status, 0);
+  assert.equal(readFileSync(store, "utf8"), cliCode(root, ["src/application/purchase.ts", "--print"]).stdout);
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  // An unsaved target: refused before the run; the buffer keeps its text.
+  const flow = "keylang/flows/checkout.md";
+  s.send("i");
+  for (const ch of "Draft me. ") s.send(ch);
+  await esc(s.send);
+  const typed = s.app.state.buffers.get(flow)!.text;
+  codeForm(s, { file: "src/application/purchase.ts", line: "10", into: flow });
+  assert.equal(s.app.state.message, `code-to-spec: ${flow} has unsaved changes: save (Ctrl+S) or undo them before a draft into it`);
+  await esc(s.send);
+  assert.equal(s.app.state.buffers.get(flow)!.text, typed);
+  const buffer = s.app.state.buffers.get(flow)!;
+  for (let i = 0; i < 20 && buffer.text !== buffer.saved; i++) s.send("\x1a"); // Ctrl+Z
+  assert.equal(buffer.text, buffer.saved);
+  // The target edited in the session while the draft was prepared: the operation names it, the session refuses, nothing is written.
+  hook.during = () => {
+    s.send("i");
+    s.send("x");
+    s.send("\x1b");
+  };
+  codeForm(s, { file: "src/application/purchase.ts", line: "10", into: flow });
+  await s.app.idle();
+  const refused = s.app.state.records.at(-1)!.result!;
+  assert.deepEqual([refused.kind, refused.status, refused.exitCode, refused.proposals], ["code-to-spec", "failed", 1, []]);
+  assert.equal(refused.messages[0]!.text, `${flow}: edited in this session while the draft was prepared; save or undo the edits, then draft again`);
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+  assert.equal(readFileSync(join(root, flow), "utf8"), CHECKOUT_FLOW);
+});

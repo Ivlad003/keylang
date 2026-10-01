@@ -97,44 +97,46 @@
     - fn [cmdSpecToCode](../../src/cli.ts#L488) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       - calls map.analyze.analyze, map.analyze.findRoot, features.spec-to-code.specToCode, base.config.toPosix, features.proposals.lineDiff, check.assess.sameFinding, check.verdict.formatVerdict, base.diag.formatDiagnostic, features.proposals.codeProposalProblem, features.proposals.writeProposal, base.safe-write.safeWriteAll
     - fn [cmdCodeToSpec](../../src/cli.ts#L531) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
-      - calls map.analyze.findRoot, map.analyze.analyze, lang.ir.sectionNodes, lang.ir.walk, features.draft.changedFlows, features.git-changes.gitChangedLines, base.config.toPosix, features.draft.codeToSpec, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
-    - fn [countProposed](../../src/cli.ts#L602) (root: string, counts: Record<string, number>) → void <!-- internal -->
+      - calls map.analyze.findRoot, map.analyze.analyze, cli.cli.codeToSpecPrinter, lang.ir.sectionNodes, lang.ir.walk, features.draft.changedFlows, features.git-changes.gitChangedLines, base.config.toPosix, features.draft.codeToSpec, features.proposals.proposalProblem, features.draft.withFlow, features.proposals.writeProposal, cli.cli.countProposed
+    - fn [codeToSpecPrinter](../../src/cli.ts#L622) (root: string, at: string, analysis: Analysis, fallback: string | null, opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      - calls base.config.toPosix, operations.operations.runOperation
+    - fn [countProposed](../../src/cli.ts#L653) (root: string, counts: Record<string, number>) → void <!-- internal -->
       - calls features.stats.updateStats, features.stats.addDrafts
-    - fn [cmdDraftLayout](../../src/cli.ts#L610) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraftLayout](../../src/cli.ts#L661) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       - calls map.analyze.findRoot, cli.cli.draftMapPrinter, cli.cli.draftRulesPrinter
-    - fn [draftMapPrinter](../../src/cli.ts#L622) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
+    - fn [draftMapPrinter](../../src/cli.ts#L673) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation
-    - fn [draftRulesPrinter](../../src/cli.ts#L640) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftRulesPrinter](../../src/cli.ts#L691) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, base.config.toPosix
-    - fn [cmdWire](../../src/cli.ts#L664) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdWire](../../src/cli.ts#L715) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, base.config.toPosix
-    - fn [cmdDoctor](../../src/cli.ts#L678) () → Promise<number> <!-- internal -->
+    - fn [cmdDoctor](../../src/cli.ts#L729) () → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot
-    - fn [cmdTracePlan](../../src/cli.ts#L693) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L744) (flow: string | undefined) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot
-    - fn [needPaths](../../src/cli.ts#L701) (cmd: string, paths: string[]) → void <!-- internal -->
-    - fn [cmdInit](../../src/cli.ts#L706) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L752) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L757) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       - calls features.harness.harnessChoice, operations.operations.initSources, operations.operations.runOperation, cli.cli.printAgents, cli.cli.printBaseline, cli.cli.printMap
-    - fn [cmdAgents](../../src/cli.ts#L749) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdAgents](../../src/cli.ts#L800) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls cli.cli.printAgents, operations.operations.runOperation
-    - fn [printAgents](../../src/cli.ts#L754) (result: OperationEnvelope<"agents">) → number <!-- internal -->
-    - fn [cmdBaseline](../../src/cli.ts#L773) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L805) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L824) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls cli.cli.printBaseline, operations.operations.runOperation
-    - fn [printBaseline](../../src/cli.ts#L777) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
-    - fn [cmdFeature](../../src/cli.ts#L792) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [printBaseline](../../src/cli.ts#L828) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L843) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, operations.operations.gapLine, operations.operations.featureSummary
-    - fn [cmdHook](../../src/cli.ts#L807) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L858) (name: string | undefined) → Promise<number> <!-- internal -->
       - calls features.changed.parseHookEvent, cli.cli.readStdin, features.changed.hookDecision, map.analyze.findRoot, map.analyze.analyze, features.git-changes.gitChangedFiles, features.git-changes.changedPathSet, features.changed.filterChanged, features.git-changes.deletedModuleIds, features.changed.hookFails
-    - fn [readStdin](../../src/cli.ts#L827) () → Promise<string> <!-- internal -->
-    - fn [cmdMap](../../src/cli.ts#L833) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L878) () → Promise<string> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L884) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, operations.operations.mapCheckLines, base.config.toPosix, cli.cli.printMap
-    - fn [printMap](../../src/cli.ts#L851) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L902) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       - calls base.config.toPosix, operations.operations.mapConflictLines, operations.operations.mapStepLines, operations.operations.mapSummary
-    - fn [cmdParse](../../src/cli.ts#L882) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L933) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L893) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L944) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       - calls features.check-format.isCheckFormat, map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.operations.checkSkipNote, features.check-format.checkReportText, operations.operations.checkSummary
-    - fn [cmdFmt](../../src/cli.ts#L944) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L995) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot
   - module [index](../../src/index.ts#L1)
     - diag base.diag

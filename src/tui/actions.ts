@@ -17,7 +17,7 @@ export interface ActionContext {
   current: string | null;
   /** The current buffer is a generated, read-only file. */
   readOnly: boolean;
-  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout) is running. */
+  /** An explicit operation (doctor, feature, check, explain-edge, map-check, map, baseline, agents, init, fmt, wire, parse, trace-plan, export, draft-flow, draft-rules, draft-layout, code-to-spec) is running. */
   operation: boolean;
   /** The start screen of a repository without `keylang.json` is open. */
   start: boolean;
@@ -196,6 +196,14 @@ export const ACTIONS: readonly Action[] = [
     group: "Generate",
     aliases: ["draft rules", "keylang draft rules", "draft rules --mode hybrid", "draft rules --mode llm", "rules draft", "propose rules"],
     // A form names the target, the mode and preview or proposal; each model rule is checked alone against the snapshot; the target itself is never written, MERGE applies the proposal.
+    when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "code-to-spec",
+    label: "Code to spec: flows from a source file or a line of it (algo)",
+    group: "Generate",
+    aliases: ["code-to-spec", "keylang code-to-spec", "code to spec", "code-to-spec --mode algo", "flows from code", "propose flows", "file to flows"],
+    // A form names the source file, an optional line, the target and preview or proposal; the target itself is never written, MERGE applies the proposal.
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

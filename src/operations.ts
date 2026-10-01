@@ -24,7 +24,7 @@ import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
 import { PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal, type ProposalBasis } from "./proposals.ts";
-import { draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
+import { codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
@@ -287,6 +287,32 @@ export interface DraftRulesRequest {
 }
 
 /**
+ * Flows drafted from a code position (`keylang code-to-spec <path[:line]>
+ * --mode algo`): with a line, the innermost fn holding it; without one,
+ * every exported fn of the file in declaration order — each drafted as
+ * `draft flow --mode algo` drafts it (`codeToSpec`). The spec is named after
+ * that fn, or the file's module; same-named fns get distinct flow names. No
+ * repository search, no call graph beyond the snapshot's edges. `preview`
+ * writes nothing (`--print`: the target is not even read for it to work);
+ * `proposal` writes the target's full text, every flow merged into it by
+ * `withFlow`, to `.keylang/proposals/<target>`. The target is never written.
+ */
+export interface CodeToSpecRequest {
+  kind: "code-to-spec";
+  /** Repository root (absolute). */
+  root: string;
+  /** The source file, relative to the root, POSIX. */
+  file: string;
+  /** A 1-based line of the file; absent: every exported fn. */
+  line?: number;
+  /** The target spec, relative to the root, POSIX; default `<dir>/flows/<name>.md`. */
+  into?: string;
+  output: "preview" | "proposal";
+  /** As in `DraftFlowRequest`: `replace` is the CLI's policy, `refuse` (default) the TUI's. */
+  pending?: "refuse" | "replace";
+}
+
+/**
  * The layer layout drafted for `keylang.json` (`keylang draft map --mode
  * algo|llm|hybrid`): `algo` is the layout keylang would guess from the
  * directories (`guessLayout`), `llm` and `hybrid` ask the configured model,
@@ -339,10 +365,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -363,7 +389,13 @@ export interface OperationContext {
    * may refuse the write with reasons (draft-flow reads it: failed, code 1,
    * nothing written).
    */
-  beforeCommit?: () => Promise<CommitGate> | CommitGate;
+  beforeCommit?: (plan?: CommitPlan) => Promise<CommitGate> | CommitGate;
+}
+
+/** What a commit is about to write, when the operation names it before it asks (a draft: its target, whose proposal it writes). */
+export interface CommitPlan {
+  /** Specs whose proposals are written, relative to the root, POSIX. */
+  targets: string[];
 }
 
 /** The caller's answer before a commit: nothing (go ahead) or the reasons the files must stay as they are. */
@@ -652,6 +684,58 @@ export interface DraftRulesPayload {
   error: string | null;
 }
 
+/** One flow of a code-to-spec draft: its trigger, name, steps and section. */
+export interface CodeFlow {
+  trigger: string;
+  name: string;
+  /** IDs of the steps, trigger first. */
+  steps: string[];
+  /** The `# flow` section alone. */
+  flow: string;
+}
+
+/**
+ * The flows drafted from a code position and what they make of their
+ * target, as `FlowCandidate`: `before` and `pending` are the expected state
+ * of a later write.
+ */
+export interface CodeToSpecCandidate {
+  /** The source file, relative to the root, POSIX. */
+  file: string;
+  line: number | null;
+  /** The spec's name: the fn's with a line, else the file's module's. */
+  name: string;
+  /** In the order `code-to-spec` drafts them. */
+  flows: CodeFlow[];
+  /** The flow sections joined: what `code-to-spec --print` writes. */
+  print: string;
+  /** The target spec, relative to the root, POSIX. */
+  target: string;
+  /** Why the target cannot take a proposal (or be read), or null; with a problem the target is not read. */
+  problem: string | null;
+  /** The target on disk the candidate was built from (null: no file). */
+  before: string | null;
+  /** The proposal already waiting for the target then (null: none). */
+  pending: string | null;
+  /** The target's full proposed text: each flow merged by `withFlow`, the other sections kept. Null with a problem. */
+  text: string | null;
+}
+
+/** What `keylang code-to-spec <path[:line]>` drafted, and the proposal it wrote. */
+export interface CodeToSpecPayload {
+  output: "preview" | "proposal";
+  mode: "algo";
+  candidate: CodeToSpecCandidate;
+  /** `2 flow(s), 5 step(s)`. */
+  summary: string;
+  /** The proposal file written (`.keylang/proposals/<target>`), or null. */
+  proposal: string | null;
+  /** Why nothing was written: a pending proposal, or a target, proposal or input changed during the work. */
+  refused: string[];
+  /** The write failed with this error. */
+  error: string | null;
+}
+
 /** What `keylang draft map` drafted: the layers, and the config the CLI prints with them. */
 export interface DraftLayoutPayload {
   /** The mode that drafted it: `algo` also for a hybrid without a model (see `fallback`). */
@@ -830,6 +914,7 @@ export interface OperationPayloads {
   "draft-flow": DraftFlowPayload;
   "draft-rules": DraftRulesPayload;
   "draft-layout": DraftLayoutPayload;
+  "code-to-spec": CodeToSpecPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -873,6 +958,7 @@ export function runOperation(request: TracePlanRequest, context?: OperationConte
 export function runOperation(request: DraftFlowRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-flow">>;
 export function runOperation(request: DraftRulesRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-rules">>;
 export function runOperation(request: DraftLayoutRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-layout">>;
+export function runOperation(request: CodeToSpecRequest, context?: OperationContext): Promise<OperationEnvelope<"code-to-spec">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -910,6 +996,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runDraftRules(request, context);
     case "draft-layout":
       return runDraftLayout(request, context);
+    case "code-to-spec":
+      return runCodeToSpec(request, context);
   }
 }
 
@@ -953,6 +1041,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "draft-rules":
       return { kind, ...base };
     case "draft-layout":
+      return { kind, ...base };
+    case "code-to-spec":
       return { kind, ...base };
   }
 }
@@ -2345,6 +2435,112 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
   return { ...emptyDraftLayout("completed", 0), payload, messages: [{ level: "info", text: `proposed by ${client.agent}; printed only; ${CONFIG_FILE} is unchanged` }] };
 }
 
+function emptyCodeToSpec(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"code-to-spec"> {
+  return { kind: "code-to-spec", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * The candidate of the flows drafted from a code position for `target`. As
+ * `flowCandidate`: a target a proposal may not change is named and not
+ * read; otherwise the text on disk and the waiting proposal are read once,
+ * here, and `withFlow` merges every flow into it in order. Reads only; a
+ * target that cannot be read throws.
+ */
+export function codeToSpecCandidate(root: string, specDir: string, generated: (path: string) => boolean, drafted: { file: string; line: number | null; name: string; drafts: readonly FlowDraft[] }, target: string): CodeToSpecCandidate {
+  const base = codePosition(drafted, target);
+  const problem = proposalProblem(root, specDir, target, generated);
+  if (problem !== null) return { ...base, problem, before: null, pending: null, text: null };
+  const store = `${PROPOSALS_DIR}/${target}`;
+  const before = existingText(join(root, target));
+  const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
+  let text = before;
+  for (const draft of drafted.drafts) text = withFlow(text, draft);
+  return { ...base, problem: null, before, pending, text };
+}
+
+/** The drafted flows of a code position as a candidate shows them, before the target is read. */
+function codePosition(drafted: { file: string; line: number | null; name: string; drafts: readonly FlowDraft[] }, target: string): Pick<CodeToSpecCandidate, "file" | "line" | "name" | "flows" | "print" | "target"> {
+  const flows = drafted.drafts.map((draft) => ({ trigger: draft.steps[0]!, name: draft.name, steps: draft.steps, flow: draft.text }));
+  return { file: drafted.file, line: drafted.line, name: drafted.name, flows, print: drafted.drafts.map((draft) => draft.text).join("\n"), target };
+}
+
+/**
+ * `keylang code-to-spec <path[:line]> --mode algo`. Compute: the analysis
+ * of the saved files (nothing persisted), the fns the position names
+ * (`codeToSpec`: a line outside every fn, a file without a fn of the
+ * snapshot or without an exported one is 2 with the CLI's message), each
+ * drafted from the snapshot's calls, then the candidate against the target
+ * on disk. A preview ends there (0) and never needs the target. A proposal
+ * follows `runDraftFlow`: a target a proposal may not change is 2, a waiting
+ * proposal under `refuse` is 1; after `beforeCommit` the target, the waiting
+ * proposal, keylang.json and the sources must still be the ones read (else
+ * 1, nothing written); then the full text is written atomically (0; 2 on an
+ * I/O error). Cancelled: null, nothing written.
+ */
+async function runCodeToSpec(request: CodeToSpecRequest, context: OperationContext): Promise<OperationEnvelope<"code-to-spec">> {
+  const { root, file } = request;
+  const line = request.line ?? null;
+  if (!isAbsolute(root)) return emptyCodeToSpec("failed", 2, "code-to-spec: root must be an absolute path");
+  if (line !== null && !(Number.isInteger(line) && line >= 0)) return emptyCodeToSpec("failed", 2, `code-to-spec: ${file}:${line}: a line is a whole number`);
+  if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
+  context.onProgress?.({ text: "reading the sources" });
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyCodeToSpec("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
+  const snapshot = analyzed.snapshot;
+  if (!snapshot) return emptyCodeToSpec("failed", 2, "code-to-spec: no supported source files; run `keylang init`");
+  const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
+  let drafted: { name: string; drafts: FlowDraft[] };
+  try {
+    drafted = codeToSpec(snapshot, file, line);
+  } catch (error) {
+    return emptyCodeToSpec("failed", 2, messageOf(error));
+  }
+  const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
+  const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
+  const target = toPosix(request.into ?? `${specDir}/flows/${drafted.name}.md`);
+  const position = { file, line, name: drafted.name, drafts: drafted.drafts };
+  let candidate: CodeToSpecCandidate;
+  let unreadable: string | null = null;
+  try {
+    candidate = codeToSpecCandidate(root, specDir, generated, position, target);
+  } catch (error) {
+    unreadable = messageOf(error);
+    candidate = { ...codePosition(position, target), problem: unreadable, before: null, pending: null, text: null };
+  }
+  const steps = candidate.flows.reduce((sum, flow) => sum + flow.steps.length, 0);
+  const summary = `${candidate.flows.length} flow(s), ${steps} step(s)`;
+  const names = candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
+  const payload: CodeToSpecPayload = { output: request.output, mode: "algo", candidate, summary, proposal: null, refused: [], error: null };
+  // A target that cannot be read (a directory) fails a proposal with the read's error, as the CLI did; a preview, like `--print`, never needs it.
+  if (unreadable !== null && request.output === "proposal") return { ...emptyCodeToSpec("failed", 2, unreadable), payload };
+  if (request.output === "preview") {
+    return { ...emptyCodeToSpec("completed", 0), payload, messages: [{ level: "info", text: `${names} for ${target} (${summary}); a preview, nothing written` }] };
+  }
+  const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" };
+  const refusal = proposalRefusal(root, candidate, request.pending, "code-to-spec");
+  if (refusal !== null) {
+    payload.refused = refusal.refused;
+    return { ...emptyCodeToSpec("failed", refusal.exitCode), payload, messages: [{ level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])] };
+  }
+  const committed = await commitProposal({ root, specDir, generated, target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: analyzed.config, inputs }, context);
+  if ("cancelled" in committed) return { ...emptyCodeToSpec("cancelled", null), payload };
+  if ("refused" in committed) {
+    payload.refused = committed.refused;
+    return { ...emptyCodeToSpec("failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+  }
+  if ("failed" in committed) {
+    if (committed.writing) payload.error = committed.failed;
+    return { ...emptyCodeToSpec("failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
+  }
+  payload.proposal = committed.proposal;
+  return { ...emptyCodeToSpec("completed", 0), payload, messages: [{ level: "info", text: `${committed.proposal}: proposed ${names} for ${target} (${summary})` }], proposals: [committed.proposal] };
+}
+
 /** `2 rule(s)`: the list items of a drafted `# rules` section. */
 function rulesCountText(rules: string): string {
   return `${rules.split("\n").filter((line) => line.startsWith("- ")).length} rule(s)`;
@@ -2356,9 +2552,9 @@ function rulesCountText(rules: string): string {
  * as in the CLI), a store that breaks the write policy (2), a proposal
  * already waiting under `pending: refuse` (1, named in `refused`).
  */
-function proposalRefusal(root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined): { exitCode: 1 | 2; error: string; refused: string[] } | null {
+function proposalRefusal(root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft"): { exitCode: 1 | 2; error: string; refused: string[] } | null {
   const store = `${PROPOSALS_DIR}/${candidate.target}`;
-  if (candidate.problem !== null) return { exitCode: 2, error: `draft: ${candidate.target}: ${candidate.problem}`, refused: [] };
+  if (candidate.problem !== null) return { exitCode: 2, error: `${command}: ${candidate.target}: ${candidate.problem}`, refused: [] };
   const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
   if (storeProblem !== null) return { exitCode: 2, error: `${store}: ${storeProblem}`, refused: [] };
   if ((pending ?? "refuse") === "refuse" && candidate.pending !== null) {
@@ -2394,7 +2590,7 @@ async function commitProposal(commit: ProposalCommit, context: OperationContext)
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
   try {
-    gate = await context.beforeCommit?.();
+    gate = await context.beforeCommit?.({ targets: [target] });
   } catch (error) {
     return { failed: messageOf(error), writing: false };
   }

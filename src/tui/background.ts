@@ -12,7 +12,7 @@
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
 import { generateMap, type MapResult } from "../map.ts";
-import { resultWithout, type CommitGate, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
 
 interface Reply {
@@ -184,7 +184,7 @@ export class OperationWorker {
    * (`beforeCommit`), then the worker goes ahead — or is cancelled when the
    * signal was aborted meanwhile, with nothing written.
    */
-  private commit(worker: Worker, operationId: number): void {
+  private commit(worker: Worker, operationId: number, plan: CommitPlan | undefined): void {
     const pending = this.pending.get(operationId);
     if (!pending) return;
     const answer = (gate: CommitGate): void => {
@@ -196,7 +196,7 @@ export class OperationWorker {
     };
     let told: Promise<CommitGate> | CommitGate;
     try {
-      told = pending.beforeCommit?.();
+      told = pending.beforeCommit?.(plan);
     } catch {
       return this.post({ type: "cancel", operationId });
     }
@@ -221,7 +221,7 @@ export class OperationWorker {
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
       if (reply.type === "progress") pending.onProgress?.({ text: reply.text });
-      else if (reply.type === "commit") this.commit(worker, reply.operationId);
+      else if (reply.type === "commit") this.commit(worker, reply.operationId, reply.plan);
       else if (reply.type === "result") this.settle(reply.operationId, reply.result);
       else this.settle(reply.operationId, resultWithout(pending.kind, "failed", 2, reply.error));
     });

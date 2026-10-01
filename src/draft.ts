@@ -190,9 +190,11 @@ function layerOrder(layers: readonly string[], uses: ReadonlyMap<string, Readonl
 /**
  * `code-to-spec <path[:line]>`: the functions the code position names — the
  * innermost fn whose range holds the line, or every exported fn of the file
- * without a line — each as a flow draft.
+ * in declaration order without a line — and the spec's name: the fn's, or
+ * the file's module's. Reads the snapshot only; a position that names no fn
+ * throws the CLI's message.
  */
-export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: number | null): { name: string; drafts: FlowDraft[] } {
+export function codeToSpecTriggers(snapshot: AnalysisSnapshot, file: string, line: number | null): { name: string; triggers: string[] } {
   const fns = Object.entries(snapshot.nodes).filter(([, n]) => n.kind === "fn" && n.file === file && n.line !== null);
   if (fns.length === 0) throw new Error(`${file}: no function of the snapshot is declared here`);
   if (line !== null) {
@@ -201,8 +203,7 @@ export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: numbe
       .sort(([, a], [, b]) => (b.line ?? 0) - (a.line ?? 0));
     const [id] = holding[0] ?? [];
     if (!id) throw new Error(`${file}:${line}: no function holds this line`);
-    const draft = draftFlow(snapshot, id);
-    return { name: draft.name, drafts: [draft] };
+    return { name: id.slice(id.lastIndexOf(".") + 1), triggers: [id] };
   }
   const exported = fns.filter(([, n]) => n.exported === true).map(([id]) => id).sort((a, b) => (snapshot.nodes[a]!.line ?? 0) - (snapshot.nodes[b]!.line ?? 0));
   if (exported.length === 0) throw new Error(`${file}: no exported function; name a line`);
@@ -212,7 +213,14 @@ export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: numbe
       .filter(([, n]) => n.kind === "module" && n.file === file)
       .map(([id]) => id)
       .sort((a, b) => a.length - b.length)[0] ?? exported[0]!.slice(0, exported[0]!.lastIndexOf("."));
-  return { name: moduleId.slice(moduleId.lastIndexOf(".") + 1), drafts: distinctNames(exported.map((id) => draftFlow(snapshot, id))) };
+  return { name: moduleId.slice(moduleId.lastIndexOf(".") + 1), triggers: exported };
+}
+
+/** `code-to-spec <path[:line]>`: each fn `codeToSpecTriggers` names as a flow draft; same-named fns get distinct flow names. */
+export function codeToSpec(snapshot: AnalysisSnapshot, file: string, line: number | null): { name: string; drafts: FlowDraft[] } {
+  const { name, triggers } = codeToSpecTriggers(snapshot, file, line);
+  const drafts = triggers.map((id) => draftFlow(snapshot, id));
+  return { name, drafts: line !== null ? drafts : distinctNames(drafts) };
 }
 
 /** Changed lines per file, 1-based and inclusive; `all` for a file git does not track yet. */

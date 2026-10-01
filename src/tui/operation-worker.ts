@@ -8,7 +8,7 @@
 // `cancel` during the commit stops it between two file steps.
 
 import { parentPort } from "node:worker_threads";
-import { runOperation, type CommitGate, type OperationRequest, type OperationResult } from "../operations.ts";
+import { runOperation, type CommitGate, type CommitPlan, type OperationRequest, type OperationResult } from "../operations.ts";
 
 /** A message to the worker: run a request, let its commit go ahead, or cancel it. */
 export type OperationCall = { type: "run"; operationId: number; request: OperationRequest } | { type: "commit"; operationId: number; refused?: string[] } | { type: "cancel"; operationId: number };
@@ -16,7 +16,7 @@ export type OperationCall = { type: "run"; operationId: number; request: Operati
 /** A reply of the worker: any number of progress notes, at most one commit request, then one result or one error. */
 export type OperationReply =
   | { operationId: number; type: "progress"; text: string }
-  | { operationId: number; type: "commit" }
+  | { operationId: number; type: "commit"; plan?: CommitPlan }
   | { operationId: number; type: "result"; result: OperationResult }
   | { operationId: number; type: "error"; error: string };
 
@@ -38,10 +38,10 @@ parentPort?.on("message", (call: OperationCall) => {
   }
   const entry = { controller: new AbortController(), proceed: null as ((gate: CommitGate) => void) | null };
   running.set(operationId, entry);
-  const beforeCommit = (): Promise<CommitGate> =>
+  const beforeCommit = (plan?: CommitPlan): Promise<CommitGate> =>
     new Promise<CommitGate>((proceed) => {
       entry.proceed = proceed;
-      post({ operationId, type: "commit" });
+      post({ operationId, type: "commit", ...(plan ? { plan } : {}) });
     });
   runOperation(call.request, { signal: entry.controller.signal, beforeCommit, onProgress: ({ text }) => post({ operationId, type: "progress", text }) })
     .then(

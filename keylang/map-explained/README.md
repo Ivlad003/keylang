@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 48 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 37 | 0 | 0 | 49 |
+| [cli](cli.md) |  | 38 | 0 | 0 | 49 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 110 | 0 | 0 | 64 |
-| [features](features.md) |  | 194 | 0 | 0 | 133 |
+| [features](features.md) |  | 195 | 0 | 0 | 133 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 119 | 0 | 0 | 131 |
-| [operations](operations.md) |  | 101 | 0 | 0 | 25 |
-| [tui](tui.md) |  | 364 | 0 | 0 | 205 |
-| **all** | | 1107 | 0 | 0 | 809 |
+| [operations](operations.md) |  | 109 | 0 | 0 | 26 |
+| [tui](tui.md) |  | 374 | 0 | 0 | 205 |
+| **all** | | 1127 | 0 | 0 | 810 |
 
 ## Index
 

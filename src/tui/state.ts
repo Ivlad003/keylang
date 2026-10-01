@@ -126,8 +126,9 @@ export interface Prompt {
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
    * `draft-layout`: the layer layout draft, `layoutDraft` (the rows `mode`, run; ←→ change the mode; `text` is unused).
+   * `code-to-spec`: flows from a code position, `codeDraft` (the rows `file`, the source files matching it as `src:<path>`, `line`, `into`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the output; `text` is unused).
    */
-  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout";
+  kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -154,6 +155,19 @@ export interface Prompt {
   rulesDraft?: RulesDraftForm;
   /** `draft-layout`: the mode of `draft map`. */
   layoutDraft?: { mode: "algo" | "hybrid" | "llm" };
+  /** `code-to-spec`: the fields as typed; an empty line is every exported fn, an empty target the CLI's default. */
+  codeDraft?: CodeDraftForm;
+}
+
+/** The fields of `code-to-spec <path[:line]> [--into] --mode algo` and whether it proposes or only previews. */
+export interface CodeDraftForm {
+  /** The source file, relative to the root, POSIX. */
+  file: string;
+  /** The 1-based line as typed (digits only); empty: every exported fn of the file. */
+  line: string;
+  /** Relative to the root, POSIX. */
+  into: string;
+  output: "proposal" | "preview";
 }
 
 /** The fields of `draft rules [--into] [--mode]` and whether it proposes or only previews. */

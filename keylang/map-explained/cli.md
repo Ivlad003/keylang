@@ -135,64 +135,67 @@
       - calls [map.analyze.analyze](map.md#map.analyze.analyze), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.spec-to-code.specToCode](features.md#features.spec-to-code.specToCode), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [check.assess.sameFinding](check.md#check.assess.sameFinding), [check.verdict.formatVerdict](check.md#check.verdict.formatVerdict), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [base.safe-write.safeWriteAll](base.md#base.safe-write.safeWriteAll)
     - fn [cmdCodeToSpec](../../src/cli.ts#L531) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCodeToSpec"></a>
-      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.draft.changedFlows](features.md#features.draft.changedFlows), [features.git-changes.gitChangedLines](features.md#features.git-changes.gitChangedLines), [base.config.toPosix](base.md#base.config.toPosix), [features.draft.codeToSpec](features.md#features.draft.codeToSpec), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [cli.cli.countProposed](cli.md#cli.cli.countProposed)
-    - fn [countProposed](../../src/cli.ts#L602) (root: string, counts: Record<string, number>) → void <!-- internal -->
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [cli.cli.codeToSpecPrinter](cli.md#cli.cli.codeToSpecPrinter), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.draft.changedFlows](features.md#features.draft.changedFlows), [features.git-changes.gitChangedLines](features.md#features.git-changes.gitChangedLines), [base.config.toPosix](base.md#base.config.toPosix), [features.draft.codeToSpec](features.md#features.draft.codeToSpec), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.draft.withFlow](features.md#features.draft.withFlow), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [cli.cli.countProposed](cli.md#cli.cli.countProposed)
+    - fn [codeToSpecPrinter](../../src/cli.ts#L622) (root: string, at: string, analysis: Analysis, fallback: string | null, opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.codeToSpecPrinter"></a><br>`code-to-spec <path[:line]> [--into] [--print]` in algo: a printer over the shared `code-to-spec` operation, on the analysis already made. The path is relative to the working directory, `--into` to the root.
+      - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [countProposed](../../src/cli.ts#L653) (root: string, counts: Record<string, number>) → void <!-- internal -->
       <a id="cli.cli.countProposed"></a><br>The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the command.
       - calls [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
-    - fn [cmdDraftLayout](../../src/cli.ts#L610) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdDraftLayout](../../src/cli.ts#L661) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDraftLayout"></a>
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.draftMapPrinter](cli.md#cli.cli.draftMapPrinter), [cli.cli.draftRulesPrinter](cli.md#cli.cli.draftRulesPrinter)
-    - fn [draftMapPrinter](../../src/cli.ts#L622) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
+    - fn [draftMapPrinter](../../src/cli.ts#L673) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
       <a id="cli.cli.draftMapPrinter"></a><br>`draft map [--mode algo|llm|hybrid]`: a printer over the shared `draft-layout` operation. Stdout: the config with the drafted layers; on stderr the fallback of a hybrid without a model, then that nothing was written. keylang.json never changes.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [draftRulesPrinter](../../src/cli.ts#L640) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftRulesPrinter](../../src/cli.ts#L691) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.draftRulesPrinter"></a><br>`draft rules [--mode algo|llm|hybrid] [--into] [--print]`: a printer over the shared `draft-rules` operation. The proposal replaces one already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdWire](../../src/cli.ts#L664) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdWire](../../src/cli.ts#L715) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWire"></a><br>`keylang wire [--check]`: the CLI is a printer over the shared wire operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDoctor](../../src/cli.ts#L678) () → Promise<number> <!-- internal -->
+    - fn [cmdDoctor](../../src/cli.ts#L729) () → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdDoctor"></a><br>What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [cmdTracePlan](../../src/cli.ts#L693) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L744) (flow: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdTracePlan"></a><br>A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [needPaths](../../src/cli.ts#L701) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L752) (cmd: string, paths: string[]) → void <!-- internal -->
       <a id="cli.cli.needPaths"></a>
-    - fn [cmdInit](../../src/cli.ts#L706) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L757) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
       - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.operations.initSources](operations.md#operations.operations.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [cmdAgents](../../src/cli.ts#L749) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdAgents](../../src/cli.ts#L800) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
       - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printAgents](../../src/cli.ts#L754) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L805) (result: OperationEnvelope<"agents">) → number <!-- internal -->
       <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
-    - fn [cmdBaseline](../../src/cli.ts#L773) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L824) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
       - calls [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printBaseline](../../src/cli.ts#L777) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+    - fn [printBaseline](../../src/cli.ts#L828) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
       <a id="cli.cli.printBaseline"></a>
-    - fn [cmdFeature](../../src/cli.ts#L792) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L843) (slug: string | undefined, format: string) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.gapLine](operations.md#operations.operations.gapLine), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L807) (name: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdHook](../../src/cli.ts#L858) (name: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHook"></a>
       - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [readStdin](../../src/cli.ts#L827) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L878) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a>
-    - fn [cmdMap](../../src/cli.ts#L833) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L884) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdMap"></a>
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [printMap](../../src/cli.ts#L851) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L902) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       <a id="cli.cli.printMap"></a><br>The lines of a map write: paths relative to the working directory; failures and the summary to stderr.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
-    - fn [cmdParse](../../src/cli.ts#L882) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L933) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdParse"></a><br>A printer over the shared parse operation: the tree or the JSON to stdout and nothing else; the notes on skipped explanations and the diagnostics to stderr.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L893) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L944) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheck"></a>
       - calls [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary)
-    - fn [cmdFmt](../../src/cli.ts#L944) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L995) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
   - module [index](../../src/index.ts#L1)
