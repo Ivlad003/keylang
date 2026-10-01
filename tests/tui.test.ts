@@ -5,10 +5,11 @@
 // text → spec, and the pure pieces (input decoding, hunks, widths).
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import childProcess, { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,7 @@ import { textToSpec } from "../src/tui/text-to-spec.ts";
 import { sliceCells, stringWidth } from "../src/tui/width.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { CYCLE_AUTHOR_CODE, CYCLE_CONFIG_LINE, CYCLE_FEATURE_TEXT, CYCLE_FILES, CYCLE_TEMPLATE_CODE, refundCycle } from "./cycle-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
@@ -10073,4 +10075,239 @@ test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge 
   assert.equal(sliceCells("a支付b", 2, 4), "…付b");
   assert.equal(sliceCells("支付支付支付", 1, 5), "…付…");
   assert.equal(sliceCells("👨‍👩‍👧 done", 0, 3), "👨‍👩‍👧…");
+});
+
+// ---------- 38: the whole cycle, in one session, against the CLI ----------
+
+/** Like `cliFeature`, from any root. */
+function cliRun(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** The repository with every proposal taken in whole, as MERGE with every hunk accepted leaves it (the emptied store directories stay). */
+function acceptProposals(root: string): void {
+  const store = join(root, ".keylang/proposals");
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) walk(abs);
+      else {
+        const target = join(root, abs.slice(store.length + 1));
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, readFileSync(abs));
+        rmSync(abs);
+      }
+    }
+  };
+  walk(store);
+}
+
+test("tui: one session goes from a repository without keylang.json to a done feature — init, config, a new feature with planned, check, spec-to-code, the proposals list and MERGE, an outside proposal, map — with the CLI's bytes and codes at each step and no nested process", async (t) => {
+  const root = repoWith(t, CYCLE_FILES);
+  const twin = repoWith(t, CYCLE_FILES);
+  const s = session(root, { cols: 110, rows: 30 });
+  t.after(() => s.app.close());
+  // A spawn from the session's thread while the cycle runs would be a nested process; the CLI twin runs between stages.
+  let inCycle = true;
+  const spawned: string[] = [];
+  let twinRuns = 0;
+  for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"] as const) {
+    const original = childProcess[name] as (...args: unknown[]) => unknown;
+    t.mock.method(childProcess, name, (...args: unknown[]) => {
+      if (inCycle) spawned.push(`${name} ${String(args[0])}`);
+      else twinRuns++;
+      return original(...args);
+    });
+  }
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  const last = <K extends OperationResult["kind"]>(kind: K): Extract<OperationResult, { kind: K }> => {
+    const result = s.app.state.records.at(-1)?.result;
+    assert.equal(result?.kind, kind, JSON.stringify(result?.messages));
+    return result as Extract<OperationResult, { kind: K }>;
+  };
+  const featureOf = (kind: "feature"): NonNullable<Extract<OperationResult, { kind: "feature" }>["payload"]> => {
+    const result = last(kind);
+    assert.ok(result.payload !== null, JSON.stringify(result.messages));
+    return result.payload;
+  };
+  const sameFeature = (code: number): void => {
+    const result = last("feature");
+    const cli = cliRun(twin, ["feature", "refund", "--format", "json"]);
+    assert.deepEqual([result.status, result.exitCode, cli.status], ["completed", code, code], cli.stderr);
+    assert.deepEqual(featureOf("feature").report, JSON.parse(cli.stdout), "the CLI's report on the twin");
+  };
+  const stages: string[] = [];
+  let initConfig = "";
+  await refundCycle({ input: (keys) => s.send(keys), text: () => s.text(), lines: () => s.lines() }, async (stage) => {
+    inCycle = false;
+    stages.push(stage);
+    switch (stage) {
+      case "init": {
+        const result = last("init");
+        const cli = cliRun(twin, ["init"]);
+        assert.deepEqual([result.status, result.exitCode, cli.status], ["completed", 0, 0], cli.stderr);
+        assert.equal(stdoutOf(result), cli.stdout);
+        assert.deepEqual(artifacts(root), artifacts(twin), "init writes the CLI's files");
+        assert.equal(configKind(s.app), "configured", "the workspace opened without a restart");
+        initConfig = readFileSync(join(root, "keylang.json"), "utf8");
+        break;
+      }
+      case "config": {
+        const text = initConfig.replace("{\n", `{\n${CYCLE_CONFIG_LINE}`);
+        assert.equal(readFileSync(join(root, "keylang.json"), "utf8"), text, "Ctrl+S wrote the edit");
+        writeFileSync(join(twin, "keylang.json"), text);
+        break;
+      }
+      case "unsaved":
+        assert.equal(existsSync(join(root, "keylang/features")), false, "a new spec is a buffer until Ctrl+S");
+        assert.ok(s.app.state.analysis?.docs.some((doc) => doc.path === "keylang/features/refund.md"), "the analysis reads the unsaved buffer");
+        break;
+      case "saved": {
+        const text = readFileSync(join(root, "keylang/features/refund.md"), "utf8");
+        assert.equal(text, `## refund\n${CYCLE_FEATURE_TEXT}`);
+        mkdirSync(join(twin, "keylang/features"), { recursive: true });
+        writeFileSync(join(twin, "keylang/features/refund.md"), text);
+        const cli = cliRun(twin, ["check", "--format", "json"]);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.deepEqual(findingsOf(s.app.state.analysis), (JSON.parse(cli.stdout) as { results: unknown[] }).results, "the editor's findings are the CLI's once saved");
+        break;
+      }
+      case "check": {
+        const result = last("check");
+        const json = cliRun(twin, ["check", "--format", "json"]);
+        const human = cliRun(twin, ["check"]);
+        assert.deepEqual([result.status, result.exitCode, json.status, human.status], ["completed", 0, 0, 0]);
+        assert.deepEqual(checkJson(s.app.state.records.at(-1)), JSON.parse(json.stdout));
+        assert.equal(checkPayload(s.app.state.records.at(-1)).lines.map((line) => `${line}\n`).join(""), human.stdout);
+        assert.ok(checkPayload(s.app.state.records.at(-1)).results.some((r) => r.area === "app.order.refund" && r.verdict === "unverified"), "planned is not green");
+        break;
+      }
+      case "gaps":
+        sameFeature(1);
+        assert.deepEqual(featureOf("feature").report.gaps.map((gap) => `${gap.kind} ${gap.id}`), ["planned app.order.refund", "static app.order.refund"]);
+        break;
+      case "proposed": {
+        const result = last("spec-to-code");
+        const cli = cliRun(twin, ["spec-to-code", "app.order.refund"]);
+        assert.deepEqual([result.status, result.exitCode, cli.status], ["completed", 0, 0], cli.stderr);
+        const stores = [".keylang/proposals/src/app/order.ts", ".keylang/proposals/tests/refund.test.ts"];
+        assert.deepEqual(result.proposals, stores);
+        assert.deepEqual(result.written, [], "a proposal is not a write of its target");
+        for (const store of stores) assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"), `${store}: the CLI's bytes`);
+        assert.equal(readFileSync(join(root, "src/app/order.ts"), "utf8"), CYCLE_FILES["src/app/order.ts"], "the code waits for MERGE");
+        break;
+      }
+      case "template":
+        acceptProposals(twin);
+        assert.equal(readFileSync(join(root, "src/app/order.ts"), "utf8"), CYCLE_TEMPLATE_CODE);
+        assert.equal(existsSync(join(root, ".keylang/proposals/src/app/order.ts")) || existsSync(join(root, ".keylang/proposals/tests/refund.test.ts")), false, "both merged");
+        assert.deepEqual(specTree(root), specTree(twin), "MERGE with every hunk accepted leaves the proposals' text");
+        break;
+      case "gap":
+        // The stub implements the planned fn; the call checkout → refund is still not in the code.
+        sameFeature(1);
+        assert.deepEqual(featureOf("feature").report.gaps.map((gap) => `${gap.kind} ${gap.id}`), ["static app.order.refund"]);
+        break;
+      case "author":
+        propose(root, "src/app/order.ts", CYCLE_AUTHOR_CODE);
+        writeFileSync(join(twin, "src/app/order.ts"), CYCLE_AUTHOR_CODE);
+        break;
+      case "merged":
+        assert.equal(readFileSync(join(root, "src/app/order.ts"), "utf8"), CYCLE_AUTHOR_CODE);
+        assert.deepEqual(specTree(root), specTree(twin));
+        // F5 and every analysis after the merges left the map alone: it is stale until the map action.
+        assert.deepEqual([cliMapCheck(root).status, cliMapCheck(twin).status], [1, 1]);
+        break;
+      case "map": {
+        const result = last("map");
+        const cli = cliRun(twin, ["map"]);
+        assert.deepEqual([result.status, result.exitCode, cli.status], ["completed", 0, 0], cli.stderr);
+        assert.ok(result.payload !== null);
+        assert.equal(mapStepLines(result.payload.steps).map((line) => `${line}\n`).join(""), cli.stdout);
+        assert.deepEqual(artifacts(root), artifacts(twin), "the same repository, byte for byte, but for the index's time");
+        break;
+      }
+      case "done": {
+        sameFeature(0);
+        const report = featureOf("feature").report;
+        assert.deepEqual([report.done, report.gaps], [true, []]);
+        assert.deepEqual(report.info.tests.map((info) => `${info.verdict} ${info.id}`), ['unverified test tests/refund.test.ts "refund"'], "the test is reported apart and does not block");
+        s.send(KEY.f6);
+        assert.match(s.text(), /Feature · refund · saved state/);
+        assert.match(s.text(), /Done · code 0/);
+        assert.match(s.text(), /Info \(not blocking\): tests unverified 1 · trace —/);
+        s.send(KEY.f6);
+        for (const dir of [root, twin]) {
+          assert.equal(cliRun(dir, ["check"]).status, 0);
+          assert.equal(cliMapCheck(dir).status, 0);
+        }
+        break;
+      }
+    }
+    inCycle = true;
+  });
+  assert.deepEqual(stages, ["init", "config", "unsaved", "saved", "check", "gaps", "proposed", "template", "gap", "author", "merged", "map", "done"]);
+  assert.ok(twinRuns >= 15, "the spy sees named imports of node:child_process: the CLI twin's runs went through it");
+  assert.deepEqual(spawned, [], "the cycle runs in the session and its worker; no keylang process is started");
+  assert.deepEqual(
+    s.app.state.records.map((record) => `${record.action} ${record.status} ${record.result?.exitCode}`),
+    ["init completed 0", "full-check completed 0", "feature completed 1", "spec-to-code completed 0", "feature completed 1", "map completed 0", "feature completed 0"],
+  );
+});
+
+test("tui: on a 50-column terminal a held operation keeps x cancel, the quit step keeps Stay and Cancel and exit, and the save step keeps Save and continue and Back — each whole on screen and working", async (t) => {
+  const root = checkoutRepo(t, FEATURES);
+  const gated = gatedWorker();
+  const vt = new VirtualTerminal(50, 16);
+  const app = new App({ root, cols: 50, rows: 16, operationWorker: gated.worker });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 50, 16);
+  t.after(() => app.close());
+  const send = (keys: string): void => app.input(keys);
+  await app.idle();
+  const before = treeBytes(root);
+  // A held map check: x in F6 cancels it.
+  mapCheck(send);
+  assert.equal(app.state.records.at(-1)?.status, "running");
+  send(KEY.f6);
+  assert.match(vt.text(), /x cancel/);
+  send("x");
+  assert.equal(app.state.records.at(-1)?.status, "cancelled");
+  await esc(send);
+  // The quit step during another held check: both choices are on screen; Stay keeps the session and the check.
+  mapCheck(send);
+  assert.equal(app.state.records.at(-1)?.status, "running");
+  send("q");
+  assert.match(vt.text(), /\[Stay\]/);
+  assert.match(vt.text(), /\[Cancel and exit\]/);
+  send(KEY.enter);
+  assert.equal(app.state.quit, null);
+  assert.equal(app.state.records.at(-1)?.status, "running");
+  gated.open();
+  await waitUntil(() => app.state.records.at(-1)?.status === "completed", "the check after the gate");
+  assert.deepEqual(treeBytes(root), before, "the checks write nothing");
+  // A dirty feature: the save step before feature; Back writes nothing and runs nothing.
+  send(KEY.ctrlP);
+  for (const ch of "open keylang/features/buy.md") send(ch);
+  send(KEY.enter);
+  send("i");
+  send("x");
+  await esc(send);
+  await app.idle();
+  const dirty = treeBytes(root);
+  const records = app.state.records.length;
+  featureForm(send);
+  send(KEY.enter);
+  assert.deepEqual(app.state.barrier?.files, ["keylang/features/buy.md"]);
+  assert.match(vt.text(), /\[Save and continue\]/);
+  assert.match(vt.text(), /\[Back\]/);
+  assert.ok(vt.lines().every((line) => stringWidth(line) <= 50));
+  send(KEY.right);
+  send(KEY.enter);
+  assert.equal(app.state.barrier, null);
+  assert.equal(app.state.records.length, records, "Back runs nothing");
+  assert.deepEqual(treeBytes(root), dirty, "Back writes nothing");
 });

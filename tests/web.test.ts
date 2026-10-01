@@ -21,6 +21,7 @@ import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
 import { checkoutRepo, CHECKOUT_FILES, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
+import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -650,6 +651,58 @@ test("web: init → new feature → edit → read → map → feature over the r
   assert.equal(existsSync(mark), false, "no editor ran on the server");
   // Actions add no HTTP endpoint: only the page, its assets and the socket.
   for (const path of ["/run", "/operations", "/api/map", "/ws/run"]) assert.equal((await status(url, path)).status, 404, path);
+});
+
+/** The repository of the ticket-38 cycle, without keylang.json. */
+function cycleRepo(t: { after: (f: () => void) => void }): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-web-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(CYCLE_FILES)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+/** The outside author's proposal lands at the "author" stage; every other stage needs nothing from the caller. */
+function author(dir: string): (stage: CycleStage) => void {
+  return (stage) => {
+    if (stage !== "author") return;
+    mkdirSync(join(dir, ".keylang/proposals/src/app"), { recursive: true });
+    writeFileSync(join(dir, ".keylang/proposals/src/app/order.ts"), CYCLE_AUTHOR_CODE);
+  };
+}
+
+test("web: the whole cycle — init → config → new feature → check → spec-to-code → proposals and MERGE → an outside proposal → map → feature done — gives the terminal's records and files over the real transport", async (t) => {
+  const terminalRoot = cycleRepo(t);
+  const webRoot = cycleRepo(t);
+  const cols = 110;
+  const rows = 30;
+  const vt = new VirtualTerminal(cols, rows);
+  const app = new App({ root: terminalRoot, cols, rows });
+  t.after(() => app.close());
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  const terminal = { input: (keys: string) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
+  await refundCycle(terminal, author(terminalRoot));
+  terminal.input(KEY.f6);
+  await waitFor(() => recordLines(terminal).length >= 7, "the terminal's F6 list");
+  const inTerminal = recordLines(terminal);
+
+  const { url } = await startWeb(t, webRoot);
+  const client = new Client(url, "session-cycle", cols, rows);
+  t.after(() => client.close());
+  await client.opened;
+  const browser = clientScreen(client);
+  await refundCycle(browser, author(webRoot));
+  browser.input(KEY.f6);
+  await waitFor(() => recordLines(browser).length >= 7, "the browser's F6 list");
+  const inBrowser = recordLines(browser);
+
+  assert.deepEqual(inBrowser, inTerminal, "the same records, labels and outcomes");
+  assert.equal(inBrowser.length, 7, inBrowser.join("\n"));
+  assert.match(inBrowser[3]!, /Spec to code: a planned fn/);
+  assert.match(inBrowser[6]!, /Feature readiness · refund +completed · code 0/);
+  assert.deepEqual(artifacts(webRoot), artifacts(terminalRoot), "the same files, byte for byte");
 });
 
 /** A runner on this thread that holds every operation before its commit until `release`, counting its runs. */
