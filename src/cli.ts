@@ -1,6 +1,5 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
-import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
@@ -9,23 +8,20 @@ import { parseArgs } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type Config, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
-import { sectionNodes, walk } from "./ir.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode } from "./explain-node.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
-import { changedFlows, codeToSpec, withFlow, type FlowDraft } from "./draft.ts";
-import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines } from "./git-changes.ts";
-import { codeProposalProblem, lineDiff, PROPOSALS_DIR, proposalProblem, writeProposal } from "./proposals.ts";
+import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
+import { codeProposalProblem, lineDiff, PROPOSALS_DIR, writeProposal } from "./proposals.ts";
 import { safeWriteAll } from "./safe-write.ts";
 import { specToCode } from "./spec-to-code.ts";
-import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type OperationEnvelope } from "./operations.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
@@ -534,112 +530,52 @@ async function cmdCodeToSpec(at: string | undefined, opts: { into: string | unde
   const root = findRoot(process.cwd());
   const analysis = await analyze({ root, withoutEvidence: true });
   if (!analysis.snapshot) throw new Error("code-to-spec: no supported source files; run `keylang init`");
+  let source: CodeToSpecSource;
   if (at !== undefined) {
-    // A path in algo, or in a hybrid without a model, is the shared code-to-spec operation; the model and --since stay here for now.
-    let fallback: string | null = null;
-    let shared = opts.mode === "algo";
-    if (opts.mode === "hybrid") {
-      const { llmClient } = await import("./llm.ts");
-      const setup = llmClient(analysis.config.agent);
-      if ("missing" in setup) {
-        shared = true;
-        fallback = `${setup.missing}; drafting from the snapshot only (--mode algo)`;
-      }
-    }
-    if (shared) return codeToSpecPrinter(root, at, analysis, fallback, opts);
-  }
-  let name: string;
-  let algo: FlowDraft[];
-  if (opts.since !== undefined) {
-    const named = new Set<string>();
-    for (const doc of analysis.docs) {
-      if (doc.generated !== null) continue;
-      for (const section of doc.sections) {
-        if (section.kind !== "flow") continue;
-        for (const top of sectionNodes(section)) walk(top, (node) => node.refs.forEach((ref) => named.add(ref.target)));
-      }
-    }
-    const changes = changedFlows(analysis.snapshot, gitChangedLines(root, opts.since), named);
-    if (changes.named.length > 0) process.stderr.write(`keylang: changed and already in flows (review those): ${changes.named.join(", ")}\n`);
-    if (changes.drafts.length === 0) {
-      process.stderr.write(`keylang: no fn outside the flows changed since ${opts.since}; nothing proposed\n`);
-      return 0;
-    }
-    name = "changes";
-    algo = changes.drafts;
+    const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
+    source = { file: toPosix(relative(root, resolve(process.cwd(), m[1]!))), ...(m[2] !== undefined ? { line: Number(m[2]) } : {}) };
   } else {
-    const m = /^(.*?)(?::(\d+))?$/.exec(at!)!;
-    const file = toPosix(relative(root, resolve(process.cwd(), m[1]!)));
-    ({ name, drafts: algo } = codeToSpec(analysis.snapshot, file, m[2] === undefined ? null : Number(m[2])));
+    source = { since: opts.since! };
   }
-  let drafts: { name: string; text: string }[] = algo;
-  let counts: Record<string, number> | null = null;
-  if (opts.mode !== "algo") {
-    if (opts.mode !== "llm" && opts.mode !== "hybrid") throw new Error(`code-to-spec: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
-    const { llmClient } = await import("./llm.ts");
-    const setup = llmClient(analysis.config.agent);
-    if ("missing" in setup) {
-      if (opts.mode === "llm") throw new Error(`code-to-spec --mode llm: ${setup.missing}`);
-      process.stderr.write(`keylang: ${setup.missing}; drafting from the snapshot only (--mode algo)\n`);
-    } else {
-      const { draftFlowWithModel } = await import("./draft-llm.ts");
-      const mode = opts.mode;
-      drafts = [];
-      counts = {};
-      for (const d of algo) {
-        const model = await draftFlowWithModel(analysis, d.steps[0]!, setup.client, mode, d.name);
-        if (model.unknown.length > 0) process.stderr.write(`keylang: still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}\n`);
-        for (const line of model.dropped) process.stderr.write(`keylang: dropped from the model's draft: ${line}\n`);
-        for (const [status, n] of Object.entries(model.counts)) counts[status] = (counts[status] ?? 0) + n;
-        drafts.push(model);
-      }
-    }
-  }
-  if (opts.print) {
-    process.stdout.write(drafts.map((d) => d.text).join("\n"));
-    return 0;
-  }
-  const specDir = toPosix(relative(root, resolve(root, analysis.config.dir)));
-  const target = toPosix(opts.into ?? `${specDir}/flows/${name}.md`);
-  const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
-  if (problem) throw new Error(`code-to-spec: ${target}: ${problem}`);
-  const abs = join(root, target);
-  let text = existsSync(abs) ? readFileSync(abs, "utf8") : null;
-  for (const draft of drafts) text = withFlow(text, draft);
-  const proposal = writeProposal(root, target, text!);
-  if (counts) countProposed(root, counts);
-  process.stdout.write(`${toPosix(relative(process.cwd(), proposal))}: proposed ${drafts.map((d) => `\`${d.name}\``).join(", ")} for ${target}; merge it with \`m\` in \`keylang\`\n`);
-  return 0;
+  return codeToSpecPrinter(root, source, analysis, opts);
 }
 
 /**
- * `code-to-spec <path[:line]> [--into] [--print]` in algo: a printer over the
- * shared `code-to-spec` operation, on the analysis already made. The path is
- * relative to the working directory, `--into` to the root. The proposal
- * replaces one already waiting, as the CLI always did. A hybrid without a
- * model says so on stderr once the position named its fns.
+ * `code-to-spec <path[:line]> | --since <ref> [--mode] [--into] [--print]`:
+ * a printer over the shared `code-to-spec` operation, on the analysis
+ * already made. The path is relative to the working directory, `--into` to
+ * the root. The proposal replaces one already waiting, as the CLI always
+ * did. On stderr, as each comes: the changed fns already in flows, the
+ * fallback of a hybrid without a model, the model's notes, a stats file not
+ * updated. An unknown mode is refused once the source named its fns, as
+ * before: the source is drafted as an algo preview first, and a change with
+ * nothing to draft is still the success it always was.
  */
-async function codeToSpecPrinter(root: string, at: string, analysis: Analysis, fallback: string | null, opts: { into: string | undefined; print: boolean }): Promise<number> {
-  const m = /^(.*?)(?::(\d+))?$/.exec(at)!;
-  const file = toPosix(relative(root, resolve(process.cwd(), m[1]!)));
+async function codeToSpecPrinter(root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }): Promise<number> {
+  const mode = opts.mode === "algo" || opts.mode === "llm" || opts.mode === "hybrid" ? opts.mode : null;
   const result = await runOperation(
     {
       kind: "code-to-spec",
       root,
-      file,
-      ...(m[2] !== undefined ? { line: Number(m[2]) } : {}),
+      ...source,
       ...(opts.into !== undefined ? { into: toPosix(opts.into) } : {}),
-      output: opts.print ? "preview" : "proposal",
+      output: opts.print || mode === null ? "preview" : "proposal",
+      mode: mode ?? "algo",
       pending: "replace",
     },
     { analyze: async () => analysis },
   );
+  for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
   const payload = result.payload;
-  if (fallback !== null && payload !== null) process.stderr.write(`keylang: ${fallback}\n`);
   if (result.status !== "completed" || payload === null) {
     for (const message of result.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
     return result.exitCode ?? 2;
   }
+  if (payload.candidate === null) {
+    for (const message of result.messages) if (message.level === "info") process.stderr.write(`keylang: ${message.text}\n`);
+    return 0;
+  }
+  if (mode === null) throw new Error(`code-to-spec: --mode must be algo, llm or hybrid, got \`${opts.mode}\``);
   if (payload.output === "preview") {
     process.stdout.write(payload.candidate.print);
     return 0;
@@ -647,15 +583,6 @@ async function codeToSpecPrinter(root: string, at: string, analysis: Analysis, f
   const names = payload.candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
   process.stdout.write(`${toPosix(relative(process.cwd(), join(root, payload.proposal!)))}: proposed ${names} for ${payload.candidate.target}; merge it with \`m\` in \`keylang\`\n`);
   return 0;
-}
-
-/** The drafted lines count as proposed once the proposal exists; a count that cannot be written never fails the command. */
-function countProposed(root: string, counts: Record<string, number>): void {
-  try {
-    updateStats(root, (stats) => addDrafts(stats, counts, "proposed"));
-  } catch (e) {
-    process.stderr.write(`keylang: ${STATS_FILE} not updated: ${e instanceof Error ? e.message : String(e)}\n`);
-  }
 }
 
 async function cmdDraftLayout(what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }): Promise<number> {

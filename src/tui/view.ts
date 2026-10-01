@@ -444,7 +444,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "draft-flow") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.trigger}`;
   if (record.params.kind === "draft-rules") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
-  if (record.params.kind === "code-to-spec") return `${label} · algo · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
+  if (record.params.kind === "code-to-spec") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -461,10 +461,16 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "trace-plan") return `trace-plan ${request.flow}`;
   if (request.kind === "draft-flow") return `draft flow ${request.trigger}${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
-  if (request.kind === "code-to-spec") return `code-to-spec ${request.file}${request.line !== undefined ? `:${request.line}` : ""} --mode algo${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
+  if (request.kind === "code-to-spec") return `code-to-spec ${codeSource(request)} --mode ${request.mode ?? "algo"}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
+}
+
+/** The source of a code-to-spec as the CLI names it: `src/a.ts:8` or `--since HEAD`. */
+function codeSource(source: { file?: string | null | undefined; line?: number | null | undefined; since?: string | null | undefined }): string {
+  if (source.since !== undefined && source.since !== null) return `--since ${source.since}`;
+  return `${source.file ?? ""}${source.line !== undefined && source.line !== null ? `:${source.line}` : ""}`;
 }
 
 /** The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed. */
@@ -527,6 +533,7 @@ function tracePlanOutcome(payload: TracePlanPayload): string {
 
 /** `3 step(s), preview, nothing written`, `3 step(s) proposed for <target>`, `refused, nothing written`, `write failed`. */
 function draftOutcome(status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload): string {
+  if (payload.candidate === null) return `no fn outside the flows changed since ${"since" in payload ? payload.since : ""}, nothing written`;
   if (payload.output === "preview") return `${payload.summary}, preview, nothing written`;
   if (payload.proposal !== null) return `${payload.summary} proposed for ${payload.candidate.target}`;
   if (payload.refused.length > 0) return "refused, nothing written";
@@ -985,30 +992,44 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       for (const line of lines) rows.push({ text: line, style: THEME.panel });
     }
   } else if (result?.kind === "code-to-spec" && result.payload !== null) {
-    // The flows the position names, what they make of the target, the CLI's --print, and for a preview the whole proposed text.
+    // The flows the source names, the model's notes, what they make of the target, the CLI's --print, and for a preview the whole proposed text.
     const { payload } = result;
     const { candidate } = payload;
     const ok = result.exitCode === 0;
-    const position = `${candidate.file}${candidate.line !== null ? `:${candidate.line}` : ""}`;
-    rows.push({ text: `Code to spec · algo · ${position} → ${candidate.target} · ${payload.output === "preview" ? "preview, nothing written" : "proposal; the target itself is not written"}`, style: { ...THEME.panel, bold: true } });
+    const position = codeSource({ file: candidate?.file, line: candidate?.line, since: payload.since });
+    const mode = `${payload.mode}${payload.fallback !== null ? " (hybrid without a model)" : ""}`;
+    rows.push({ text: `Code to spec · ${mode} · ${position}${candidate !== null ? ` → ${candidate.target} · ${payload.output === "preview" ? "preview, nothing written" : "proposal; the target itself is not written"}` : " · nothing to draft, nothing written"}`, style: { ...THEME.panel, bold: true } });
     rows.push({ text: `${draftOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
-    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
-    rows.push({ text: `  ${candidate.line !== null ? `line ${candidate.line}: the innermost fn holding it` : "every exported fn of the file, in declaration order"}; the spec is named ${candidate.name}`, style: { ...THEME.panel, fg: 243 } });
-    for (const flow of candidate.flows) rows.push({ text: `  flow ${flow.name} · trigger ${flow.trigger} · ${flow.steps.length} step(s)`, style: THEME.panel });
-    const kept = candidate.before === null ? "a new file" : "exists: its other sections are kept, a section of the same flow is replaced";
-    rows.push({ text: `  target ${candidate.target}: ${candidate.problem ?? kept}`, style: candidate.problem !== null ? { ...THEME.panel, fg: 179 } : { ...THEME.panel, fg: 243 } });
-    rows.push({ text: "  only the calls the snapshot resolved are steps; an unresolved one is a comment on its caller", style: { ...THEME.panel, fg: 243 } });
-    if (payload.proposal !== null) rows.push({ text: `  Enter opens MERGE of ${candidate.target} (m and Proposals too)`, style: THEME.hint });
-    else if (payload.output === "preview") rows.push({ text: "  Enter drafts again · the form's proposal output writes it", style: THEME.hint });
-    rows.push({ text: `── keylang code-to-spec ${position} --mode algo --print · stdout ──`, style: { ...THEME.panel, fg: 243 } });
-    const printLines = candidate.print.split("\n");
-    if (printLines.at(-1) === "") printLines.pop();
-    for (const line of printLines) rows.push({ text: line, style: THEME.panel });
-    if (payload.output === "preview" && candidate.text !== null && candidate.text !== candidate.print) {
-      rows.push({ text: `── ${candidate.target} as proposed ──`, style: { ...THEME.panel, fg: 243 } });
-      const lines = candidate.text.replace(/\r\n/g, "\n").split("\n");
-      if (lines.at(-1) === "") lines.pop();
-      for (const line of lines) rows.push({ text: line, style: THEME.panel });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : message.level === "warning" ? { ...THEME.panel, fg: 179 } : THEME.panel });
+    const scope =
+      payload.since !== null
+        ? `every fn changed in the working tree since ${payload.since}, untracked files whole; a fn already in a hand-written flow is named for review, not drafted again`
+        : candidate !== null && candidate.line !== null
+          ? `line ${candidate.line}: the innermost fn holding it`
+          : "every exported fn of the file, in declaration order";
+    rows.push({ text: `  ${scope}${candidate !== null ? `; the spec is named ${candidate.name}` : ""}`, style: { ...THEME.panel, fg: 243 } });
+    if (payload.described.length > 0) rows.push({ text: `  already in flows (review those): ${payload.described.join(", ")}`, style: { ...THEME.panel, fg: 179 } });
+    if (candidate !== null) {
+      for (const flow of candidate.flows) rows.push({ text: `  flow ${flow.name} · trigger ${flow.trigger} · ${flow.steps.length} step(s)`, style: THEME.panel });
+      const kept = candidate.before === null ? "a new file" : "exists: its other sections are kept, a section of the same flow is replaced";
+      rows.push({ text: `  target ${candidate.target}: ${candidate.problem ?? kept}`, style: candidate.problem !== null ? { ...THEME.panel, fg: 179 } : { ...THEME.panel, fg: 243 } });
+      if (payload.model === null) rows.push({ text: "  only the calls the snapshot resolved are steps; an unresolved one is a comment on its caller", style: { ...THEME.panel, fg: 243 } });
+      else {
+        rows.push({ text: `  drafted by ${payload.model.agent}, one request per flow: agree — the snapshot's calls have it; llm-only — the model's alone; conflict — not a fn`, style: { ...THEME.panel, fg: 243 } });
+        rows.push({ text: "  the statuses are provenance, not evidence: only check decides a verdict", style: { ...THEME.panel, fg: 243 } });
+      }
+      if (payload.proposal !== null) rows.push({ text: `  Enter opens MERGE of ${candidate.target} (m and Proposals too)`, style: THEME.hint });
+      else if (payload.output === "preview") rows.push({ text: "  Enter drafts again · the form's proposal output writes it", style: THEME.hint });
+      rows.push({ text: `── keylang code-to-spec ${position} --mode ${payload.mode} --print · stdout ──`, style: { ...THEME.panel, fg: 243 } });
+      const printLines = candidate.print.split("\n");
+      if (printLines.at(-1) === "") printLines.pop();
+      for (const line of printLines) rows.push({ text: line, style: THEME.panel });
+      if (payload.output === "preview" && candidate.text !== null && candidate.text !== candidate.print) {
+        rows.push({ text: `── ${candidate.target} as proposed ──`, style: { ...THEME.panel, fg: 243 } });
+        const lines = candidate.text.replace(/\r\n/g, "\n").split("\n");
+        if (lines.at(-1) === "") lines.pop();
+        for (const line of lines) rows.push({ text: line, style: THEME.panel });
+      }
     }
   } else if (result?.kind === "draft-layout" && result.payload !== null) {
     // The drafted layers, then what Enter does with them, then the CLI's stdout.
@@ -1348,7 +1369,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
   const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
-  const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "code-to-spec" && prompt.codeDraft ? `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}` : prompt.text;
+  const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
   if ((prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec") && prompt.note) {
@@ -1365,7 +1386,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = (prompt.details ?? []).slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? "code to spec · algo" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

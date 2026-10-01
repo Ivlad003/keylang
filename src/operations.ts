@@ -24,7 +24,7 @@ import { parse } from "./parser.ts";
 import { parseReportText, type ParseFormat } from "./parse-format.ts";
 import { FACT_CACHE_FILE } from "./fact-cache.ts";
 import { PROPOSALS_DIR, proposalProblem, proposalWriteProblem, writeProposal, type ProposalBasis } from "./proposals.ts";
-import { codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
+import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
@@ -38,7 +38,7 @@ import { sha256, type CoverageItem } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
-import { changedPathSet, deletedModuleIds, gitChangedFiles, type ChangedFiles } from "./git-changes.ts";
+import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines, type ChangedFiles } from "./git-changes.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 import { tracePlan, tracePlanText, type TracePlan } from "./trace-plan.ts";
 
@@ -287,30 +287,53 @@ export interface DraftRulesRequest {
 }
 
 /**
- * Flows drafted from a code position (`keylang code-to-spec <path[:line]>
- * --mode algo`): with a line, the innermost fn holding it; without one,
- * every exported fn of the file in declaration order — each drafted as
- * `draft flow --mode algo` drafts it (`codeToSpec`). The spec is named after
- * that fn, or the file's module; same-named fns get distinct flow names. No
- * repository search, no call graph beyond the snapshot's edges. `preview`
- * writes nothing (`--print`: the target is not even read for it to work);
- * `proposal` writes the target's full text, every flow merged into it by
- * `withFlow`, to `.keylang/proposals/<target>`. The target is never written.
+ * Flows drafted from code (`keylang code-to-spec <path[:line]> | --since
+ * <ref> [--mode algo|llm|hybrid]`). The source is a code position or a git
+ * change, never both. A position: with a line, the innermost fn holding
+ * it; without one, every exported fn of the file in declaration order
+ * (`codeToSpec`); the spec is named after that fn, or the file's module. A
+ * change (`changedFlows`): each fn whose lines changed in the working tree
+ * since the ref, or that lives in a file git does not track yet; a fn a
+ * hand-written flow already names is reported (`described`), not drafted
+ * again; the spec is `changes`. No changed fn left is a success that writes
+ * nothing. `algo` drafts each fn from the snapshot's calls; `llm` and
+ * `hybrid` ask the configured model once per flow (`draftFlowWithModel`),
+ * and without a model `hybrid` drafts as algo with a visible note while
+ * `llm` fails. `preview` writes nothing (`--print`: the target is not even
+ * read for it to work); `proposal` writes the target's full text, every
+ * flow merged into it by `withFlow`, to `.keylang/proposals/<target>`. The
+ * target is never written.
  */
-export interface CodeToSpecRequest {
+export type CodeToSpecRequest = {
   kind: "code-to-spec";
   /** Repository root (absolute). */
   root: string;
-  /** The source file, relative to the root, POSIX. */
-  file: string;
-  /** A 1-based line of the file; absent: every exported fn. */
-  line?: number;
   /** The target spec, relative to the root, POSIX; default `<dir>/flows/<name>.md`. */
   into?: string;
   output: "preview" | "proposal";
+  /** Default `algo`: no model. */
+  mode?: "algo" | "llm" | "hybrid";
+  /** As in `DraftFlowRequest`: what the developer chose to show the model, taken when the draft started; a model mode only. */
+  context?: string;
   /** As in `DraftFlowRequest`: `replace` is the CLI's policy, `refuse` (default) the TUI's. */
   pending?: "refuse" | "replace";
-}
+} & CodeToSpecSource;
+
+/** Where code-to-spec drafts from: a code position or a git change, never both. */
+export type CodeToSpecSource =
+  | {
+      /** The source file, relative to the root, POSIX. */
+      file: string;
+      /** A 1-based line of the file; absent: every exported fn. */
+      line?: number;
+      since?: undefined;
+    }
+  | {
+      /** A git ref: the fns changed in the working tree since it (`HEAD`: the uncommitted ones), untracked files whole. */
+      since: string;
+      file?: undefined;
+      line?: undefined;
+    };
 
 /**
  * The layer layout drafted for `keylang.json` (`keylang draft map --mode
@@ -700,10 +723,12 @@ export interface CodeFlow {
  * of a later write.
  */
 export interface CodeToSpecCandidate {
-  /** The source file, relative to the root, POSIX. */
-  file: string;
+  /** The source file, relative to the root, POSIX; null for a git change. */
+  file: string | null;
   line: number | null;
-  /** The spec's name: the fn's with a line, else the file's module's. */
+  /** The git ref of a change, or null for a code position. */
+  since: string | null;
+  /** The spec's name: the fn's with a line, the file's module's without, `changes` for a git change. */
   name: string;
   /** In the order `code-to-spec` drafts them. */
   flows: CodeFlow[];
@@ -721,19 +746,40 @@ export interface CodeToSpecCandidate {
   text: string | null;
 }
 
-/** What `keylang code-to-spec <path[:line]>` drafted, and the proposal it wrote. */
+/** What `keylang code-to-spec` drafted, and the proposal it wrote. */
 export interface CodeToSpecPayload {
   output: "preview" | "proposal";
-  mode: "algo";
-  candidate: CodeToSpecCandidate;
-  /** `2 flow(s), 5 step(s)`. */
+  /** The mode that drafted it: `algo` also for a hybrid without a model (see `fallback`). */
+  mode: "algo" | "llm" | "hybrid";
+  /** The git ref of a change, or null for a code position. */
+  since: string | null;
+  /** A git change: the changed fns a hand-written flow already names — reported for review, not drafted again. */
+  described: string[];
+  /** Null only for a git change with no fn left to draft: nothing proposed, no target. */
+  candidate: CodeToSpecCandidate | null;
+  /** `2 flow(s), 5 step(s)` for algo, `2 flow(s), 3 agree, 1 llm-only` for a model draft; `nothing to draft` without a candidate. */
   summary: string;
+  /** The model's drafts beyond their text; null for algo. Its statuses are provenance, never evidence. */
+  model: CodeModelInfo | null;
+  /** A hybrid without a model: why, as the CLI says it before it drafts from the snapshot only. */
+  fallback: string | null;
+  /** The model's counts could not go to `.keylang/stats.json`: why. The proposal stays written. */
+  statsError: string | null;
   /** The proposal file written (`.keylang/proposals/<target>`), or null. */
   proposal: string | null;
   /** Why nothing was written: a pending proposal, or a target, proposal or input changed during the work. */
   refused: string[];
   /** The write failed with this error. */
   error: string | null;
+}
+
+/** Who drafted the flows of a code-to-spec, and what each of its answers adds to its text. */
+export interface CodeModelInfo {
+  agent: string;
+  /** Summed over the flows. */
+  counts: Record<DraftStatus, number>;
+  /** One per flow, in the candidate's order. */
+  flows: { name: string; rounds: number; unknown: string[]; dropped: string[] }[];
 }
 
 /** What `keylang draft map` drafted: the layers, and the config the CLI prints with them. */
@@ -2439,48 +2485,86 @@ function emptyCodeToSpec(status: OperationStatus, exitCode: 0 | 1 | 2 | null, er
   return { kind: "code-to-spec", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
+/** What code-to-spec drafted from its source, before the target is read. */
+interface CodeDrafted {
+  file: string | null;
+  line: number | null;
+  since: string | null;
+  name: string;
+  drafts: readonly FlowDraft[];
+}
+
 /**
- * The candidate of the flows drafted from a code position for `target`. As
+ * The candidate of the flows drafted from code for `target`. As
  * `flowCandidate`: a target a proposal may not change is named and not
  * read; otherwise the text on disk and the waiting proposal are read once,
  * here, and `withFlow` merges every flow into it in order. Reads only; a
  * target that cannot be read throws.
  */
-export function codeToSpecCandidate(root: string, specDir: string, generated: (path: string) => boolean, drafted: { file: string; line: number | null; name: string; drafts: readonly FlowDraft[] }, target: string): CodeToSpecCandidate {
+export function codeToSpecCandidate(root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string): CodeToSpecCandidate {
   const base = codePosition(drafted, target);
   const problem = proposalProblem(root, specDir, target, generated);
   if (problem !== null) return { ...base, problem, before: null, pending: null, text: null };
   const store = `${PROPOSALS_DIR}/${target}`;
   const before = existingText(join(root, target));
   const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
-  let text = before;
-  for (const draft of drafted.drafts) text = withFlow(text, draft);
-  return { ...base, problem: null, before, pending, text };
+  return { ...base, problem: null, before, pending, text: mergedFlows(before, drafted.drafts) };
 }
 
-/** The drafted flows of a code position as a candidate shows them, before the target is read. */
-function codePosition(drafted: { file: string; line: number | null; name: string; drafts: readonly FlowDraft[] }, target: string): Pick<CodeToSpecCandidate, "file" | "line" | "name" | "flows" | "print" | "target"> {
+/** The target's text with each flow merged by `withFlow`, in order. */
+function mergedFlows(before: string | null, drafts: readonly FlowDraft[]): string | null {
+  let text = before;
+  for (const draft of drafts) text = withFlow(text, draft);
+  return text;
+}
+
+/** The drafted flows as a candidate shows them, before the target is read. */
+function codePosition(drafted: CodeDrafted, target: string): Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> {
   const flows = drafted.drafts.map((draft) => ({ trigger: draft.steps[0]!, name: draft.name, steps: draft.steps, flow: draft.text }));
-  return { file: drafted.file, line: drafted.line, name: drafted.name, flows, print: drafted.drafts.map((draft) => draft.text).join("\n"), target };
+  return { file: drafted.file, line: drafted.line, since: drafted.since, name: drafted.name, flows, print: drafted.drafts.map((draft) => draft.text).join("\n"), target };
+}
+
+/** The IDs the hand-written flows name: a changed fn among them already has a flow to review. */
+function describedIds(docs: readonly Document[]): Set<string> {
+  const named = new Set<string>();
+  for (const doc of docs) {
+    if (doc.generated !== null) continue;
+    for (const section of doc.sections) {
+      if (section.kind !== "flow") continue;
+      for (const top of sectionNodes(section)) walk(top, (node) => node.refs.forEach((ref) => named.add(ref.target)));
+    }
+  }
+  return named;
 }
 
 /**
- * `keylang code-to-spec <path[:line]> --mode algo`. Compute: the analysis
- * of the saved files (nothing persisted), the fns the position names
- * (`codeToSpec`: a line outside every fn, a file without a fn of the
- * snapshot or without an exported one is 2 with the CLI's message), each
- * drafted from the snapshot's calls, then the candidate against the target
- * on disk. A preview ends there (0) and never needs the target. A proposal
- * follows `runDraftFlow`: a target a proposal may not change is 2, a waiting
- * proposal under `refuse` is 1; after `beforeCommit` the target, the waiting
+ * `keylang code-to-spec <path[:line]> | --since <ref> [--mode]`. Compute:
+ * the analysis of the saved files (nothing persisted), then the source — a
+ * position (`codeToSpec`: a line outside every fn, a file without a fn of
+ * the snapshot or without an exported one is 2 with the CLI's message) or
+ * a git change read in the root (`gitChangedLines`: no git, no repository,
+ * a bad ref is 2; no fn left to draft is 0 with no candidate and nothing
+ * written) — each fn drafted from the snapshot's calls, then the model
+ * mode's client (`llm` without one is 2), then the candidate against the
+ * target on disk. A proposal is checked before the model is asked: a
+ * target a proposal may not change is 2, a waiting proposal under `refuse`
+ * is 1. The model drafts each flow in turn; a Cancel before or during any
+ * of its answers is `cancelled` with no payload, an error is 2 — never a
+ * partial candidate. A preview ends with the candidate (0). A proposal
+ * follows `runDraftFlow`: after `beforeCommit` the target, the waiting
  * proposal, keylang.json and the sources must still be the ones read (else
- * 1, nothing written); then the full text is written atomically (0; 2 on an
- * I/O error). Cancelled: null, nothing written.
+ * 1, nothing written); then the full text is written atomically (0; 2 on
+ * an I/O error) and a model draft's counts go to the stats.
  */
 async function runCodeToSpec(request: CodeToSpecRequest, context: OperationContext): Promise<OperationEnvelope<"code-to-spec">> {
-  const { root, file } = request;
+  const { root } = request;
+  const mode = request.mode ?? "algo";
+  const file = request.file;
+  const since = request.since;
   const line = request.line ?? null;
   if (!isAbsolute(root)) return emptyCodeToSpec("failed", 2, "code-to-spec: root must be an absolute path");
+  if (file !== undefined && since !== undefined) return emptyCodeToSpec("failed", 2, "code-to-spec: give a path or --since, not both");
+  if (file === undefined && since === undefined) return emptyCodeToSpec("failed", 2, "code-to-spec: a path, optionally with :line, or --since <git-ref> is required");
   if (line !== null && !(Number.isInteger(line) && line >= 0)) return emptyCodeToSpec("failed", 2, `code-to-spec: ${file}:${line}: a line is a whole number`);
   if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
@@ -2494,51 +2578,143 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   const snapshot = analyzed.snapshot;
   if (!snapshot) return emptyCodeToSpec("failed", 2, "code-to-spec: no supported source files; run `keylang init`");
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
-  let drafted: { name: string; drafts: FlowDraft[] };
-  try {
-    drafted = codeToSpec(snapshot, file, line);
-  } catch (error) {
-    return emptyCodeToSpec("failed", 2, messageOf(error));
+  // What the text does not show, in the order the CLI says it on stderr.
+  const notes: OperationMessage[] = [];
+  let drafted: CodeDrafted;
+  let described: string[] = [];
+  if (since !== undefined) {
+    context.onProgress?.({ text: `reading the git changes since ${since}` });
+    let changes: ReturnType<typeof changedFlows>;
+    try {
+      changes = changedFlows(snapshot, gitChangedLines(root, since), describedIds(analyzed.docs));
+    } catch (error) {
+      return emptyCodeToSpec("failed", 2, messageOf(error));
+    }
+    described = changes.named;
+    if (described.length > 0) notes.push({ level: "warning", text: `changed and already in flows (review those): ${described.join(", ")}` });
+    if (changes.drafts.length === 0) {
+      const payload: CodeToSpecPayload = { output: request.output, mode: "algo", since, described, candidate: null, summary: "nothing to draft", model: null, fallback: null, statsError: null, proposal: null, refused: [], error: null };
+      return { ...emptyCodeToSpec("completed", 0), payload, messages: [...notes, { level: "info", text: `no fn outside the flows changed since ${since}; nothing proposed` }] };
+    }
+    drafted = { file: null, line: null, since, name: "changes", drafts: changes.drafts };
+  } else {
+    try {
+      const position = codeToSpec(snapshot, file!, line);
+      drafted = { file: file!, line, since: null, name: position.name, drafts: position.drafts };
+    } catch (error) {
+      return emptyCodeToSpec("failed", 2, messageOf(error));
+    }
   }
+  const setup = await modelSetup(mode, analyzed.config.agent, "code-to-spec");
+  if ("error" in setup) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: setup.error }] };
+  if (setup.fallback !== null) notes.push({ level: "warning", text: setup.fallback });
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
   const target = toPosix(request.into ?? `${specDir}/flows/${drafted.name}.md`);
-  const position = { file, line, name: drafted.name, drafts: drafted.drafts };
-  let candidate: CodeToSpecCandidate;
+  // The target and its waiting proposal as they are now, before any model answers: the basis of the write.
+  let basis: CodeToSpecCandidate;
   let unreadable: string | null = null;
   try {
-    candidate = codeToSpecCandidate(root, specDir, generated, position, target);
+    basis = codeToSpecCandidate(root, specDir, generated, drafted, target);
   } catch (error) {
     unreadable = messageOf(error);
-    candidate = { ...codePosition(position, target), problem: unreadable, before: null, pending: null, text: null };
+    basis = { ...codePosition(drafted, target), problem: unreadable, before: null, pending: null, text: null };
   }
-  const steps = candidate.flows.reduce((sum, flow) => sum + flow.steps.length, 0);
-  const summary = `${candidate.flows.length} flow(s), ${steps} step(s)`;
-  const names = candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
-  const payload: CodeToSpecPayload = { output: request.output, mode: "algo", candidate, summary, proposal: null, refused: [], error: null };
-  // A target that cannot be read (a directory) fails a proposal with the read's error, as the CLI did; a preview, like `--print`, never needs it.
-  if (unreadable !== null && request.output === "proposal") return { ...emptyCodeToSpec("failed", 2, unreadable), payload };
-  if (request.output === "preview") {
-    return { ...emptyCodeToSpec("completed", 0), payload, messages: [{ level: "info", text: `${names} for ${target} (${summary}); a preview, nothing written` }] };
-  }
+  const draftedMode = setup.client === null ? "algo" : mode;
+  const payload: CodeToSpecPayload = { output: request.output, mode: draftedMode, since: drafted.since, described, candidate: basis, summary: codeSummary(basis.flows, null), model: null, fallback: setup.fallback, statsError: null, proposal: null, refused: [], error: null };
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" };
-  const refusal = proposalRefusal(root, candidate, request.pending, "code-to-spec");
-  if (refusal !== null) {
-    payload.refused = refusal.refused;
-    return { ...emptyCodeToSpec("failed", refusal.exitCode), payload, messages: [{ level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])] };
+  if (request.output === "proposal") {
+    // A target that cannot be read (a directory) fails a proposal with the read's error, as the CLI did; a preview, like `--print`, never needs it.
+    if (unreadable !== null) return { ...emptyCodeToSpec("failed", 2), payload, messages: [...notes, { level: "error", text: unreadable }] };
+    // Checked before the model is asked: a target that cannot take the proposal costs no request.
+    const refusal = proposalRefusal(root, basis, request.pending, "code-to-spec");
+    if (refusal !== null) {
+      payload.refused = refusal.refused;
+      return { ...emptyCodeToSpec("failed", refusal.exitCode), payload, messages: [...notes, { level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])] };
+    }
+  }
+  let candidate = basis;
+  if (setup.client !== null) {
+    const drafts = await modelFlows(request, mode === "llm" ? "llm" : "hybrid", analyzed, setup.client, drafted.drafts, notes, context);
+    if ("cancelled" in drafts) return emptyCodeToSpec("cancelled", null);
+    if ("error" in drafts) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: drafts.error }] };
+    const modelled = { ...drafted, drafts: drafts.drafts };
+    candidate = { ...basis, ...codePosition(modelled, target), text: basis.problem === null ? mergedFlows(basis.before, drafts.drafts) : null };
+    payload.model = drafts.model;
+    payload.candidate = candidate;
+  }
+  payload.summary = codeSummary(candidate.flows, payload.model);
+  const names = candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
+  if (request.output === "preview") {
+    return { ...emptyCodeToSpec("completed", 0), payload, messages: [...notes, { level: "info", text: `${names} for ${target} (${payload.summary}); a preview, nothing written` }] };
   }
   const committed = await commitProposal({ root, specDir, generated, target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: analyzed.config, inputs }, context);
   if ("cancelled" in committed) return { ...emptyCodeToSpec("cancelled", null), payload };
   if ("refused" in committed) {
     payload.refused = committed.refused;
-    return { ...emptyCodeToSpec("failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    return { ...emptyCodeToSpec("failed", 1), payload, messages: [...notes, ...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
   }
   if ("failed" in committed) {
     if (committed.writing) payload.error = committed.failed;
-    return { ...emptyCodeToSpec("failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
+    return { ...emptyCodeToSpec("failed", 2), payload, messages: [...notes, { level: "error", text: committed.failed }] };
   }
   payload.proposal = committed.proposal;
-  return { ...emptyCodeToSpec("completed", 0), payload, messages: [{ level: "info", text: `${committed.proposal}: proposed ${names} for ${target} (${summary})` }], proposals: [committed.proposal] };
+  if (payload.model !== null) payload.statsError = countProposed(root, payload.model.counts);
+  return {
+    ...emptyCodeToSpec("completed", 0),
+    payload,
+    messages: [
+      ...notes,
+      ...(payload.statsError === null ? [] : [{ level: "warning" as const, text: `${STATS_FILE} not updated: ${payload.statsError}` }]),
+      { level: "info", text: `${committed.proposal}: proposed ${names} for ${target} (${payload.summary})` },
+    ],
+    proposals: [committed.proposal],
+  };
+}
+
+/** `2 flow(s), 6 step(s)` for algo; `2 flow(s), 3 agree, 1 llm-only` for a model draft. */
+function codeSummary(flows: readonly CodeFlow[], model: CodeModelInfo | null): string {
+  if (model !== null) return `${flows.length} flow(s), ${draftCountsText(model.counts)}`;
+  return `${flows.length} flow(s), ${flows.reduce((sum, flow) => sum + flow.steps.length, 0)} step(s)`;
+}
+
+/**
+ * The model's draft of each flow in turn, judged against the snapshot. The
+ * notes of each answer (unknown IDs, dropped lines) join `notes` as it
+ * comes, as the CLI prints them. A Cancel is checked before every request
+ * and during each answer: `cancelled`, never the flows drafted so far.
+ */
+async function modelFlows(
+  request: CodeToSpecRequest,
+  mode: "llm" | "hybrid",
+  analyzed: Analysis,
+  client: LlmClient,
+  algo: readonly FlowDraft[],
+  notes: OperationMessage[],
+  context: OperationContext,
+): Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> {
+  const { LlmCancelled } = await import("./llm.ts");
+  const { draftFlowWithModel } = await import("./draft-llm.ts");
+  const drafts: FlowDraft[] = [];
+  const model: CodeModelInfo = { agent: client.agent, counts: { agree: 0, "llm-only": 0, "algo-only": 0, conflict: 0 }, flows: [] };
+  for (const [i, flow] of algo.entries()) {
+    if (context.signal?.aborted) return { cancelled: true };
+    const trigger = flow.steps[0]!;
+    context.onProgress?.({ text: `asking ${client.agent}${algo.length > 1 ? ` (flow ${i + 1} of ${algo.length}: ${flow.name})` : ""}` });
+    try {
+      const answer = await draftFlowWithModel(analyzed, trigger, client, mode, flow.name, request.context, context.signal ? { signal: context.signal } : {});
+      if (context.signal?.aborted) return { cancelled: true };
+      if (answer.unknown.length > 0) notes.push({ level: "warning", text: `still unknown after ${answer.rounds} round(s): ${answer.unknown.join(", ")}` });
+      for (const line of answer.dropped) notes.push({ level: "warning", text: `dropped from the model's draft: ${line}` });
+      for (const [status, n] of Object.entries(answer.counts) as [DraftStatus, number][]) model.counts[status] += n;
+      model.flows.push({ name: answer.name, rounds: answer.rounds, unknown: answer.unknown, dropped: answer.dropped });
+      drafts.push({ name: answer.name, text: answer.text, steps: flowSteps(answer.text, trigger) });
+    } catch (error) {
+      if (error instanceof LlmCancelled || context.signal?.aborted) return { cancelled: true };
+      return { error: messageOf(error) };
+    }
+  }
+  return { drafts, model };
 }
 
 /** `2 rule(s)`: the list items of a drafted `# rules` section. */

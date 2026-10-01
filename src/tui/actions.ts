@@ -200,10 +200,10 @@ export const ACTIONS: readonly Action[] = [
   },
   {
     id: "code-to-spec",
-    label: "Code to spec: flows from a source file or a line of it (algo)",
+    label: "Code to spec: flows from code — a file, a line or the git changes (algo, hybrid, llm)",
     group: "Generate",
-    aliases: ["code-to-spec", "keylang code-to-spec", "code to spec", "code-to-spec --mode algo", "flows from code", "propose flows", "file to flows"],
-    // A form names the source file, an optional line, the target and preview or proposal; the target itself is never written, MERGE applies the proposal.
+    aliases: ["code-to-spec", "keylang code-to-spec", "code to spec", "code-to-spec --mode algo", "code-to-spec --mode hybrid", "code-to-spec --mode llm", "code-to-spec --since", "flows from changes", "changed fns to flows", "flows from code", "propose flows", "file to flows"],
+    // A form names the source (a file with an optional line, or a git ref), the target, the mode and preview or proposal; the target itself is never written, MERGE applies the proposal.
     when: (ctx) => editor(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {

@@ -6575,7 +6575,7 @@ const F4 = "\x1bOS";
  * operation worker reaches it through the environment set here, before the
  * session starts. `dropped` counts requests the client closed unanswered.
  */
-async function heldModel(t: { after: (f: () => void) => void }, reply: string): Promise<{ prompts: string[]; requested: (n: number) => Promise<void>; release: () => void; dropped: () => number }> {
+async function heldModel(t: { after: (f: () => void) => void }, reply: string | ((prompt: string) => string)): Promise<{ prompts: string[]; requested: (n: number) => Promise<void>; release: () => void; dropped: () => number }> {
   const prompts: string[] = [];
   const held: (() => void)[] = [];
   const waiters: { n: number; resolve: () => void }[] = [];
@@ -6584,12 +6584,14 @@ async function heldModel(t: { after: (f: () => void) => void }, reply: string): 
     let data = "";
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      const prompt = (JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content;
+      prompts.push(prompt);
       for (const waiter of waiters) if (prompts.length >= waiter.n) waiter.resolve();
+      const text = typeof reply === "string" ? reply : reply(prompt);
       held.push(() => {
         if (res.destroyed) return;
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
+        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
       });
     });
     res.on("close", () => {
@@ -7362,7 +7364,7 @@ function codeRow(s: ReturnType<typeof session>, id: string): void {
 }
 
 /** Replaces the text of a field row of the code-to-spec form. */
-function codeField(s: ReturnType<typeof session>, id: "file" | "line" | "into", text: string): void {
+function codeField(s: ReturnType<typeof session>, id: "file" | "line" | "into" | "since", text: string): void {
   codeRow(s, id);
   for (const _ of s.app.state.prompt!.codeDraft![id]) s.send("\x7f");
   for (const ch of text) s.send(ch);
@@ -7411,7 +7413,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   s.send(KEY.enter);
   const prompt = s.app.state.prompt!;
   assert.equal(prompt.kind, "code-to-spec");
-  assert.deepEqual(prompt.codeDraft, { file: "", line: "", into: "", output: "proposal" });
+  assert.deepEqual(prompt.codeDraft, { source: "file", file: "", line: "", since: "HEAD", into: "", mode: "algo", output: "proposal" });
   assert.equal(promptNote(s.app), "type a source file · ↓ picks a match");
   assert.deepEqual(prompt.details, [`root: ${root} · the file and the target are relative to it · algo: only the calls the snapshot resolved; no model, no search beyond the file`]);
   for (const ch of "purch") s.send(ch);
@@ -7438,7 +7440,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   assert.deepEqual([preview.status, preview.exitCode, preview.written, preview.proposals], ["completed", 0, [], []]);
   const printed = cliCode(twin, ["src/application/purchase.ts", "--print"]);
   assert.deepEqual([printed.status, printed.stderr], [0, ""]);
-  const { candidate } = preview.payload;
+  const candidate = preview.payload.candidate!;
   assert.equal(candidate.print, printed.stdout);
   assert.deepEqual(candidate.flows.map((flow) => [flow.name, flow.trigger, flow.steps]), [
     ["buy", "application.purchase.buy", ["application.purchase.buy", "domain.order.create", "application.purchase.audit", "infrastructure.store.save"]],
@@ -7459,7 +7461,7 @@ test("tui: code-to-spec of a file with two exports and a private fn is the CLI's
   // A line inside a fn: the same fn as the CLI's :line, and the same target.
   codeForm(s, { file: "src/application/purchase.ts", line: "8", output: "preview" });
   await s.app.idle();
-  const atLine = codeRecord(s.app).payload.candidate;
+  const atLine = codeRecord(s.app).payload.candidate!;
   assert.equal(atLine.print, cliCode(twin, ["src/application/purchase.ts:8", "--print"]).stdout);
   assert.deepEqual([atLine.line, atLine.name, atLine.target, atLine.flows.map((flow) => flow.trigger)], [8, "audit", "keylang/flows/audit.md", ["application.purchase.audit"]]);
   // Proposal of the file: the CLI's proposal in the twin byte for byte; only the proposal is new; MERGE opens since nothing moved.
@@ -7516,7 +7518,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   s.send(KEY.ctrlP);
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
-  assert.deepEqual(s.app.state.prompt?.codeDraft, { file: "src/application/purchase.ts", line: "3", into: "", output: "proposal" });
+  assert.deepEqual(s.app.state.prompt?.codeDraft, { source: "file", file: "src/application/purchase.ts", line: "3", since: "HEAD", into: "", mode: "algo", output: "proposal" });
   assert.equal(promptNote(s.app), "line 3 is in application.purchase.buy");
   await esc(s.send);
   // The code viewer: its file and line.
@@ -7525,7 +7527,7 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   s.send(KEY.ctrlP);
   for (const ch of "code to spec") s.send(ch);
   s.send(KEY.enter);
-  assert.deepEqual(s.app.state.prompt?.codeDraft, { file: "src/application/purchase.ts", line: "3", into: "", output: "proposal" });
+  assert.deepEqual(s.app.state.prompt?.codeDraft, { source: "file", file: "src/application/purchase.ts", line: "3", since: "HEAD", into: "", mode: "algo", output: "proposal" });
   await esc(s.send);
   s.send(KEY.ctrlO);
   assert.equal(s.app.state.mode, "view");
@@ -7587,4 +7589,288 @@ test("tui: code-to-spec takes the code viewer's or the cursor's position; a line
   assert.equal(refused.messages[0]!.text, `${flow}: edited in this session while the draft was prepared; save or undo the edits, then draft again`);
   assert.ok(!existsSync(join(root, ".keylang/proposals")));
   assert.equal(readFileSync(join(root, flow), "utf8"), CHECKOUT_FLOW);
+});
+
+// ---------- code-to-spec from the git changes and with a model (ticket 27) ----------
+
+/** PURCHASE_TWO after an edit of `buy` (already in the checkout flow) and of `refund` (in no flow). */
+const PURCHASE_CHANGED = PURCHASE_TWO.replace("  audit();\n", "  audit(); // audited\n").replace("export function refund(): void {\n  save();\n", "export function refund(): void {\n  save(); // refunded\n");
+
+/** The changes of a committed checkout: two edited fns of purchase.ts and a new untracked source. */
+function changeCheckout(root: string): void {
+  writeFileSync(join(root, "src/application/purchase.ts"), PURCHASE_CHANGED);
+  writeFileSync(join(root, "src/domain/payment.ts"), "export function pay(): void {}\n");
+}
+
+/**
+ * The palette's code-to-spec form drafting from the git changes: a file and a
+ * line are typed first and must not be sent; then the source is switched,
+ * the fields set (an absent one keeps its default), and Enter on run.
+ */
+function sinceForm(s: ReturnType<typeof session>, fields: { since?: string; into?: string; mode?: "algo" | "hybrid" | "llm"; output?: "proposal" | "preview" }): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "code-to-spec", s.app.state.message ?? "");
+  codeField(s, "file", "src/application/purchase.ts");
+  codeField(s, "line", "3");
+  codeRow(s, "source");
+  s.send(KEY.right);
+  const form = s.app.state.prompt!.codeDraft!;
+  assert.equal(form.source, "since");
+  assert.ok(!s.app.state.prompt!.ids!.includes("file") && !s.app.state.prompt!.ids!.includes("line"), "the file's rows are hidden");
+  if (fields.since !== undefined) codeField(s, "since", fields.since);
+  if (fields.into !== undefined) codeField(s, "into", fields.into);
+  if (fields.mode !== undefined) {
+    codeRow(s, "mode");
+    for (let i = 0; i < 3 && form.mode !== fields.mode; i++) s.send(KEY.right);
+    assert.equal(form.mode, fields.mode);
+  }
+  if ((fields.output ?? "proposal") !== form.output) {
+    codeRow(s, "output");
+    s.send(KEY.right);
+  }
+  codeRow(s, "run");
+  s.send(KEY.enter);
+}
+
+/** `keylang code-to-spec --since=<ref> …`: the `=` form, so a ref that looks like an option reaches the command. */
+function cliSince(root: string, [ref, ...args]: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, "code-to-spec", `--since=${ref}`, ...args], { cwd: root, encoding: "utf8" });
+}
+
+test("tui: code-to-spec from the git changes is the CLI's --since: a changed fn and an untracked file drafted, a fn already in a flow named; no change is a no-op that writes nothing; a bad ref or no git is code 2", async (t) => {
+  const files = { "src/application/purchase.ts": PURCHASE_TWO };
+  const root = committedCheckout(t, files);
+  const twin = committedCheckout(t, files);
+  changeCheckout(root);
+  changeCheckout(twin);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = workTree(root);
+  // The form switches the source explicitly; the git rows show the default ref and the default target.
+  s.send(KEY.ctrlP);
+  for (const ch of "code to spec") s.send(ch);
+  s.send(KEY.enter);
+  codeRow(s, "source");
+  s.send(KEY.right);
+  let prompt = s.app.state.prompt!;
+  assert.deepEqual(prompt.ids, ["source", "since", "into", "mode", "output", "run"]);
+  assert.match(prompt.items.join("\n"), /since: {3}HEAD/);
+  assert.match(prompt.items.join("\n"), /target: {4}\(default keylang\/flows\/changes\.md\)/);
+  codeField(s, "since", "");
+  codeRow(s, "run");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.message, "code-to-spec: a git ref is required (HEAD: the changes not committed yet)");
+  assert.equal(s.app.state.prompt?.ids?.[s.app.state.prompt.index], "since");
+  // llm without a model is refused before it runs.
+  codeField(s, "since", "HEAD");
+  codeRow(s, "mode");
+  s.send("\x1b[D");
+  assert.equal(s.app.state.prompt?.codeDraft?.mode, "llm", "← goes back from algo to llm");
+  codeRow(s, "run");
+  s.send(KEY.enter);
+  assert.match(s.app.state.message ?? "", /^code-to-spec: --mode llm needs a model/);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, 0);
+  // Preview: the CLI's --print byte for byte; the typed file and line are not sent; nothing is written.
+  sinceForm(s, { output: "preview" });
+  await s.app.idle();
+  const record = s.app.state.records.at(-1)!;
+  assert.equal(record.params.kind === "code-to-spec" ? [record.params.since, "file" in record.params, "line" in record.params].join(" ") : "", "HEAD false false", "only the chosen source is sent");
+  const preview = codeRecord(s.app);
+  const printed = cliSince(twin, ["HEAD", "--mode", "algo", "--print"]);
+  assert.deepEqual([preview.status, preview.exitCode, printed.status], ["completed", 0, 0]);
+  assert.equal(printed.stderr, "keylang: changed and already in flows (review those): application.purchase.buy\n");
+  assert.deepEqual(preview.messages.filter((m) => m.level === "warning").map((m) => `keylang: ${m.text}\n`).join(""), printed.stderr);
+  const candidate = preview.payload.candidate!;
+  assert.equal(candidate.print, printed.stdout);
+  assert.deepEqual(preview.payload.described, ["application.purchase.buy"]);
+  assert.deepEqual([candidate.since, candidate.file, candidate.name, candidate.target], ["HEAD", null, "changes", "keylang/flows/changes.md"]);
+  assert.deepEqual(candidate.flows.map((flow) => flow.trigger), ["application.purchase.refund", "domain.payment.pay"], "the changed fn and the untracked file; not the fn already in a flow");
+  assert.deepEqual(workTree(root), before, "a preview writes nothing");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /Code to spec · algo · --since HEAD → keylang\/flows\/changes\.md · preview, nothing written/);
+  assert.match(text, /already in flows \(review those\): application\.purchase\.buy/);
+  assert.match(text, /── keylang code-to-spec --since HEAD --mode algo --print · stdout ──/);
+  await esc(s.send);
+  // Hybrid without a model drafts as algo and says so, as the CLI's default mode does.
+  sinceForm(s, { mode: "hybrid", output: "preview" });
+  await s.app.idle();
+  const fallback = codeRecord(s.app);
+  const cliHybrid = cliSince(twin, ["HEAD", "--print"]);
+  assert.deepEqual([fallback.payload.mode, fallback.payload.candidate!.print], ["algo", cliHybrid.stdout]);
+  assert.ok(fallback.payload.fallback !== null);
+  assert.equal(fallback.messages.filter((m) => m.level === "warning").map((m) => `keylang: ${m.text}\n`).join(""), cliHybrid.stderr);
+  // Proposal: the CLI's in the twin byte for byte; only the proposal is new; MERGE opens.
+  sinceForm(s, {});
+  await s.app.idle();
+  const proposed = codeRecord(s.app);
+  const store = ".keylang/proposals/keylang/flows/changes.md";
+  assert.deepEqual([proposed.status, proposed.exitCode, proposed.proposals], ["completed", 0, [store]]);
+  const cli = cliSince(twin, ["HEAD", "--mode", "algo"]);
+  assert.deepEqual([cli.status, cli.stdout], [0, `${store}: proposed \`refund\`, \`pay\` for keylang/flows/changes.md; merge it with \`m\` in \`keylang\`\n`]);
+  assert.equal(readFileSync(join(root, store), "utf8"), readFileSync(join(twin, store), "utf8"));
+  assert.deepEqual([...workTree(root).keys()].filter((path) => !before.has(path)), [".keylang", ".keylang/proposals", ".keylang/proposals/keylang", ".keylang/proposals/keylang/flows", store].filter((path) => workTree(root).has(path)));
+  assert.equal(readFileSync(join(root, "src/application/purchase.ts"), "utf8"), PURCHASE_CHANGED, "the source is never written");
+  assert.equal(s.app.state.merge?.path, "keylang/flows/changes.md", s.app.state.message ?? "");
+  assert.match(s.app.state.message ?? "", /already in flows \(review those\): application\.purchase\.buy/);
+  await esc(s.send);
+  // Nothing changed since the ref: a success with no candidate, no proposal, no stats, no directory.
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  rmSync(join(twin, ".keylang"), { recursive: true, force: true });
+  for (const dir of [root, twin]) {
+    gitRun(dir, ["add", "."]);
+    gitRun(dir, ["commit", "-q", "-m", "changes"]);
+  }
+  const clean = workTree(root);
+  sinceForm(s, {});
+  await s.app.idle();
+  const noop = codeRecord(s.app);
+  assert.deepEqual([noop.status, noop.exitCode, noop.payload.candidate, noop.proposals, noop.written], ["completed", 0, null, [], []]);
+  assert.deepEqual(workTree(root), clean, "a no-op writes nothing at all");
+  const cliNoop = cliSince(twin, ["HEAD", "--mode", "algo"]);
+  assert.deepEqual([cliNoop.status, cliNoop.stdout, cliNoop.stderr], [0, "", "keylang: no fn outside the flows changed since HEAD; nothing proposed\n"]);
+  assert.equal(noop.messages.map((m) => `keylang: ${m.text}\n`).join(""), cliNoop.stderr);
+  assert.match(s.app.state.message ?? "", /no fn outside the flows changed since HEAD, nothing written/);
+  // An earlier ref sees the committed changes again; a bad ref and an option-like ref are code 2 with the CLI's message.
+  sinceForm(s, { since: "HEAD~1", output: "preview" });
+  await s.app.idle();
+  assert.equal(codeRecord(s.app).payload.candidate!.print, cliSince(twin, ["HEAD~1", "--mode", "algo", "--print"]).stdout);
+  for (const ref of ["no-such-ref", "--output=leak.txt"]) {
+    sinceForm(s, { since: ref, output: "preview" });
+    await s.app.idle();
+    const failed = s.app.state.records.at(-1)!.result!;
+    const cliBad = cliSince(twin, [ref, "--mode", "algo", "--print"]);
+    assert.deepEqual([failed.status, failed.exitCode, failed.payload, cliBad.status, cliBad.stdout], ["failed", 2, null, 2, ""]);
+    assert.equal(`keylang: ${failed.messages[0]!.text}\n`, cliBad.stderr);
+  }
+  assert.ok(!existsSync(join(root, "leak.txt")) && !existsSync(join(twin, "leak.txt")));
+  assert.deepEqual(workTree(root), clean);
+  // Without a repository: code 2 with the CLI's message; the session goes on.
+  const bare = checkoutRepo(t);
+  const s2 = session(bare, { cols: 200 });
+  t.after(() => s2.app.close());
+  await s2.app.idle();
+  sinceForm(s2, { output: "preview" });
+  await s2.app.idle();
+  const nogit = s2.app.state.records.at(-1)!.result!;
+  const cliNogit = cliSince(bare, ["HEAD", "--mode", "algo", "--print"]);
+  assert.deepEqual([nogit.status, nogit.exitCode, nogit.payload, cliNogit.status], ["failed", 2, null, 2]);
+  assert.equal(`keylang: ${nogit.messages[0]!.text}\n`, cliNogit.stderr);
+  s2.send(KEY.f6);
+  text = s2.text();
+  assert.match(text, /Code to spec: flows from code .* failed · code 2/);
+});
+
+/** The model's flow for the trigger it is asked about: the trigger and one step of the snapshot. */
+function flowReply(prompt: string): string {
+  const [, name, trigger] = /Draft `# flow ([^`]+)` for the trigger `([^`]+)`/.exec(prompt)!;
+  return `\`\`\`markdown\n# flow ${name}\n\n- trigger ${trigger}\n  - step infrastructure.store.save\n\`\`\``;
+}
+
+test("tui: a hybrid code-to-spec from the git changes asks the model once per flow and proposes them together; Cancel during the second answer leaves no partial proposal and counts nothing", async (t) => {
+  const root = committedCheckout(t, { "src/application/purchase.ts": PURCHASE_TWO });
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  gitRun(root, ["commit", "-q", "-am", "agent"]);
+  changeCheckout(root);
+  const model = await heldModel(t, flowReply);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = workTree(root);
+  // With a model the form's default is the CLI's hybrid.
+  sinceForm(s, {});
+  const record = s.app.state.records.at(-1)!;
+  assert.equal(record.params.kind === "code-to-spec" ? record.params.mode : null, "hybrid");
+  await model.requested(1);
+  assert.match(model.prompts[0]!, /Draft `# flow refund` for the trigger `application\.purchase\.refund`/);
+  assert.equal(record.status, "running");
+  model.release();
+  await model.requested(2);
+  assert.match(model.prompts[1]!, /Draft `# flow pay` for the trigger `domain\.payment\.pay`/);
+  assert.equal(record.status, "running", "one proposal for both flows, not one per answer");
+  assert.ok(!existsSync(join(root, ".keylang/proposals")));
+  model.release();
+  await s.app.idle();
+  const done = codeRecord(s.app);
+  assert.deepEqual([done.status, done.exitCode, done.payload.mode, done.payload.model?.agent, done.payload.model?.flows.map((flow) => flow.name)], ["completed", 0, "hybrid", "anthropic:claude-opus-5", ["refund", "pay"]]);
+  assert.equal(done.payload.summary, "2 flow(s), 3 agree, 1 llm-only");
+  const store = join(root, ".keylang/proposals/keylang/flows/changes.md");
+  assert.equal(readFileSync(store, "utf8"), done.payload.candidate!.text);
+  assert.match(done.payload.candidate!.text!, /# flow refund\n\n- trigger application\.purchase\.refund <!-- keylang:llm model=anthropic:claude-opus-5 status=agree -->/);
+  assert.match(done.payload.candidate!.text!, /# flow pay\n\n- trigger domain\.payment\.pay <!-- keylang:llm [^>]*-->\n {2}- step infrastructure\.store\.save <!-- keylang:llm model=anthropic:claude-opus-5 status=llm-only -->/);
+  assert.ok(!existsSync(join(root, "keylang/flows/changes.md")), "a proposal, not the spec");
+  assert.deepEqual([draftCounts(root).agree?.proposed, draftCounts(root)["llm-only"]?.proposed], [3, 1], "the model's lines count once the proposal exists");
+  s.send(KEY.f6);
+  const text = s.text();
+  assert.match(text, /Code to spec · hybrid · --since HEAD → keylang\/flows\/changes\.md/);
+  assert.match(text, /drafted by anthropic:claude-opus-5, one request per flow/);
+  assert.match(text, /the statuses are provenance, not evidence/);
+  await esc(s.send);
+  await esc(s.send);
+  // Again, cancelled while the model answers the second flow: no proposal, no stats, the first answer is not a result.
+  rmSync(join(root, ".keylang"), { recursive: true, force: true });
+  assert.deepEqual(workTree(root), before);
+  sinceForm(s, {});
+  const second = s.app.state.records.at(-1)!;
+  await model.requested(3);
+  model.release();
+  await model.requested(4);
+  s.send(KEY.ctrlP);
+  for (const ch of "cancel") s.send(ch);
+  s.send(KEY.enter);
+  assert.deepEqual([second.status, second.result?.exitCode, second.result?.payload], ["cancelled", null, null]);
+  for (let i = 0; i < 100 && model.dropped() === 0; i++) await sleep(10);
+  assert.equal(model.dropped(), 1, "the second request is closed");
+  model.release();
+  await s.app.idle();
+  assert.equal(second.status, "cancelled", "a late answer changes nothing");
+  assert.deepEqual(workTree(root), before, "no proposal, no stats");
+});
+
+test("code-to-spec operation: a Cancel between two flows asks no second request; a source changed while the model answers is refused with nothing written; llm without a model is 2", async (t) => {
+  const root = committedCheckout(t, { "src/application/purchase.ts": PURCHASE_TWO });
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  gitRun(root, ["commit", "-q", "-am", "agent"]);
+  changeCheckout(root);
+  const model = await heldModel(t, flowReply);
+  const before = workTree(root);
+  const request = { kind: "code-to-spec", root, since: "HEAD", output: "proposal", mode: "llm" } as const;
+  // Abort once the first answer is in, before the second flow is asked.
+  const controller = new AbortController();
+  const between = runOperation(request, {
+    signal: controller.signal,
+    onProgress: ({ text }) => {
+      if (/flow 2 of 2/.test(text)) controller.abort();
+    },
+  });
+  await model.requested(1);
+  model.release();
+  const cancelled = await between;
+  assert.deepEqual([cancelled.status, cancelled.exitCode, cancelled.payload, cancelled.proposals], ["cancelled", null, null, []]);
+  await sleep(30);
+  assert.equal(model.prompts.length, 1, "no request for the second flow");
+  assert.deepEqual(workTree(root), before);
+  // The source changes on disk while the model answers: the candidate is not current, nothing is written or counted.
+  const stale = runOperation(request, {});
+  await model.requested(2);
+  writeFileSync(join(root, "src/domain/payment.ts"), "export function pay(): void {\n  return;\n}\n");
+  model.release();
+  await model.requested(3);
+  model.release();
+  const refused = await stale;
+  assert.deepEqual([refused.status, refused.exitCode, refused.proposals], ["failed", 1, []]);
+  assert.ok(refused.messages.some((m) => m.level === "error" && m.text === "src/domain/payment.ts: changed on disk while the draft was computed"), JSON.stringify(refused.messages));
+  assert.ok(!existsSync(join(root, ".keylang")), "no proposal, no stats");
+  // llm without a model: 2 with the CLI's message, before any request.
+  const config = join(root, "keylang.json");
+  const { agent: _agent, ...withoutAgent } = JSON.parse(readFileSync(config, "utf8")) as Record<string, unknown>;
+  writeFileSync(config, JSON.stringify(withoutAgent));
+  const noModel = await runOperation(request, {});
+  assert.deepEqual([noModel.status, noModel.exitCode], ["failed", 2]);
+  assert.match(noModel.messages.at(-1)!.text, /^code-to-spec --mode llm: /);
+  assert.equal(model.prompts.length, 3);
 });

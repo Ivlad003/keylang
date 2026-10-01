@@ -126,7 +126,7 @@ export interface Prompt {
    * `draft-flow`: the flow draft, `draft` (the rows `trigger`, the callable IDs matching it as `fn:<id>`, `name`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
    * `draft-rules`: the rules draft, `rulesDraft` (the rows `into`, `mode`, `output`, run; typing edits the target, ←→ change the mode or the output; `text` is unused).
    * `draft-layout`: the layer layout draft, `layoutDraft` (the rows `mode`, run; ←→ change the mode; `text` is unused).
-   * `code-to-spec`: flows from a code position, `codeDraft` (the rows `file`, the source files matching it as `src:<path>`, `line`, `into`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the output; `text` is unused).
+   * `code-to-spec`: flows from code, `codeDraft` (the rows `source`, then `file`, the source files matching it as `src:<path>` and `line` for a file, or `since` for a git change, then `into`, `mode`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the source, the mode or the output; `text` is unused).
    */
   kind: "search" | "palette" | "context" | "node" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec";
   text: string;
@@ -159,14 +159,23 @@ export interface Prompt {
   codeDraft?: CodeDraftForm;
 }
 
-/** The fields of `code-to-spec <path[:line]> [--into] --mode algo` and whether it proposes or only previews. */
+/**
+ * The fields of `code-to-spec <path[:line]> | --since <ref> [--into]
+ * [--mode]` and whether it proposes or only previews. `source` picks the
+ * fields the request takes: the other source's fields stay as typed but are
+ * never sent.
+ */
 export interface CodeDraftForm {
+  source: "file" | "since";
   /** The source file, relative to the root, POSIX. */
   file: string;
   /** The 1-based line as typed (digits only); empty: every exported fn of the file. */
   line: string;
+  /** The git ref as typed (`HEAD` by default): the fns changed in the working tree since it. */
+  since: string;
   /** Relative to the root, POSIX. */
   into: string;
+  mode: "algo" | "hybrid" | "llm";
   output: "proposal" | "preview";
 }
 

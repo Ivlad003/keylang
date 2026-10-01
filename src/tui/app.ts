@@ -39,7 +39,7 @@ import { EXPLAINED_MAP_DIR } from "../map.ts";
 import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -1744,7 +1744,7 @@ export class App {
     if (request.kind === "code-to-spec") {
       // As a flow draft: the saved code and keylang.json; the target was refused above when dirty. Only a dirty keylang.json is saved first.
       const isConfig = (path: string): boolean => path === CONFIG_FILE;
-      const target = this.codeDraftTarget({ file: request.file, line: request.line === undefined ? "" : String(request.line), into: request.into ?? "", output: request.output });
+      const target = this.codeDraftTarget(this.codeDraftFormOf(request));
       const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${target}`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
     }
@@ -2929,13 +2929,15 @@ export class App {
     this.requestOperation("draft-rules", request);
   }
 
-  // ---------- code-to-spec: flows from a source file or a line (algo) ----------
+  // ---------- code-to-spec: flows from a source file, a line or the git changes (algo, hybrid, llm) ----------
 
   /**
-   * The code-to-spec form (design §2.4 `code-to-spec`): the code viewer's
-   * file and line, else the file (and, for a fn, the line) of the ID under
-   * the cursor, else empty fields and a list of the source files. An empty
+   * The code-to-spec form (design §2.4 `code-to-spec`): the source is a
+   * file — the code viewer's file and line, else the file (and, for a fn,
+   * the line) of the ID under the cursor, else empty fields and a list of
+   * the source files — or the git changes since a ref (`HEAD`). An empty
    * line drafts every exported fn; an empty target is the CLI's default.
+   * The mode is the model's (hybrid) when one is configured, else algo.
    */
   private openCodeDraftPrompt(): void {
     const code = this.state.mode === "code" ? this.state.code : null;
@@ -2949,19 +2951,21 @@ export class App {
         line = node.kind === "fn" && node.line !== null && node.line !== undefined ? String(node.line) : "";
       }
     }
-    this.state.prompt = { kind: "code-to-spec", text: "", items: [], ids: [], index: 0, codeDraft: { file, line, into: "", output: "proposal" } };
+    const mode = this.agentName() !== null ? "hybrid" : "algo";
+    this.state.prompt = { kind: "code-to-spec", text: "", items: [], ids: [], index: 0, codeDraft: { source: "file", file, line, since: "HEAD", into: "", mode, output: "proposal" } };
     this.refreshCodeDraftPrompt();
   }
 
   /**
    * What the current snapshot says of the form's position: the fns it
    * names and the spec's name, or why it names none (the CLI's message);
-   * null without a snapshot or a file. Reads the snapshot only.
+   * null without a snapshot or a file, and for a git change (git decides
+   * when the draft runs). Reads the snapshot only.
    */
   private codePosition(form: CodeDraftForm): { name: string; triggers: string[] } | { error: string; field: "file" | "line" } | null {
     const snapshot = this.state.analysis?.snapshot ?? null;
     const file = toPosix(form.file.trim());
-    if (snapshot === null || file === "") return null;
+    if (form.source !== "file" || snapshot === null || file === "") return null;
     const line = form.line.trim() === "" ? null : Number(form.line.trim());
     try {
       return codeToSpecTriggers(snapshot, file, line);
@@ -2971,10 +2975,11 @@ export class App {
     }
   }
 
-  /** The target the draft would use: the typed one, else the CLI's default for the position (`<name>` while it names no fn). */
+  /** The target the draft would use: the typed one, else the CLI's default — `changes` for a git change, the position's name for a file (`<name>` while it names no fn). */
   private codeDraftTarget(form: CodeDraftForm): string {
     const into = form.into.trim();
     if (into !== "") return toPosix(into);
+    if (form.source === "since") return `${this.merges.specDir()}/flows/changes.md`;
     const position = this.codePosition(form);
     return `${this.merges.specDir()}/flows/${position !== null && "name" in position ? position.name : "<name>"}.md`;
   }
@@ -2989,16 +2994,22 @@ export class App {
     return [...files].filter((file) => file.toLowerCase().includes(query)).sort(compareText).slice(0, 8);
   }
 
-  /** Why the draft may not start now, or null: the file and line, then (a proposal only) the target, a pending proposal, an unsaved target. */
+  /** Why the draft may not start now, or null: the source's fields, a model llm needs, then (a proposal only) the target, a pending proposal, an unsaved target. */
   private codeDraftProblem(form: CodeDraftForm): { field: string; text: string } | null {
-    if (form.file.trim() === "") return { field: "file", text: "a source file is required, relative to the root" };
-    const line = form.line.trim();
-    if (line !== "" && !(/^\d+$/.test(line) && Number(line) >= 1)) return { field: "line", text: `line \`${line}\`: a whole number from 1, or empty for every exported fn of the file` };
-    const position = this.codePosition(form);
-    if (position !== null && "error" in position) return { field: position.field, text: position.error };
+    let position: ReturnType<App["codePosition"]> = null;
+    if (form.source === "since") {
+      if (form.since.trim() === "") return { field: "since", text: "a git ref is required (HEAD: the changes not committed yet)" };
+    } else {
+      if (form.file.trim() === "") return { field: "file", text: "a source file is required, relative to the root" };
+      const line = form.line.trim();
+      if (line !== "" && !(/^\d+$/.test(line) && Number(line) >= 1)) return { field: "line", text: `line \`${line}\`: a whole number from 1, or empty for every exported fn of the file` };
+      position = this.codePosition(form);
+      if (position !== null && "error" in position) return { field: position.field, text: position.error };
+    }
+    if (form.mode === "llm" && this.agentName() === null) return { field: "mode", text: "--mode llm needs a model: set `agent` in keylang.json (hybrid drafts from the snapshot without one)" };
     if (form.output === "preview") return null;
-    // Without a snapshot the default target is not known yet: the operation checks it.
-    if (form.into.trim() === "" && position === null) return null;
+    // Without a snapshot the default target of a file is not known yet: the operation checks it.
+    if (form.source === "file" && form.into.trim() === "" && position === null) return null;
     const target = this.codeDraftTarget(form);
     const problem = proposalProblem(this.state.root, this.merges.specDir(), target, (path) => this.generatedDoc(path));
     if (problem !== null) return { field: "into", text: `${target}: ${problem}` };
@@ -3008,46 +3019,105 @@ export class App {
     return null;
   }
 
-  /** The rows, the root, and a note on the selected row: what the position names, the target's state or why it cannot run. */
+  /** The rows, the root, and a note on the selected row: what the source names, the mode, the target's state or why it cannot run. */
   private refreshCodeDraftPrompt(): void {
     const prompt = this.state.prompt;
     const form = prompt?.codeDraft;
     if (prompt?.kind !== "code-to-spec" || !form) return;
-    const selected = prompt.ids?.[prompt.index] ?? "file";
+    const selected = prompt.ids?.[prompt.index] ?? (form.source === "file" ? "file" : "since");
     const caret = (row: string): string => (selected === row ? "▏" : "");
     const target = this.codeDraftTarget(form);
-    const matches = this.sourceMatches(toPosix(form.file.trim()));
+    // Only the chosen source's rows: the other source's fields are kept as typed but never sent.
+    const sourceRows: { id: string; text: string }[] =
+      form.source === "file"
+        ? [
+            { id: "file", text: `file:    ${form.file}${caret("file")}` },
+            ...this.sourceMatches(toPosix(form.file.trim())).map((file) => ({ id: `src:${file}`, text: `    ${file}` })),
+            { id: "line", text: `line:    ${form.line}${caret("line")}${form.line.trim() === "" ? "  (none: every exported fn of the file)" : ""}` },
+          ]
+        : [{ id: "since", text: `since:   ${form.since}${caret("since")}  (git ref: the fns changed in the working tree since it)` }];
     const rows: { id: string; text: string }[] = [
-      { id: "file", text: `file:    ${form.file}${caret("file")}` },
-      ...matches.map((file) => ({ id: `src:${file}`, text: `    ${file}` })),
-      { id: "line", text: `line:    ${form.line}${caret("line")}${form.line.trim() === "" ? "  (none: every exported fn of the file)" : ""}` },
+      { id: "source", text: `source:  ${form.source === "file" ? "a file or a line" : "git changes"} · ←→ ${form.source === "file" ? "git changes" : "a file or a line"}` },
+      ...sourceRows,
       { id: "into", text: `target:  ${form.into}${caret("into")}${form.into.trim() === "" ? `  (default ${target})` : ""}` },
+      { id: "mode", text: `mode:    ${form.mode} · ←→ ${DRAFT_MODES[(DRAFT_MODES.indexOf(form.mode) + 1) % DRAFT_MODES.length]}` },
       { id: "output", text: `output:  ${form.output} · ←→ ${form.output === "proposal" ? "preview" : "proposal"}` },
       { id: "run", text: form.output === "proposal" ? `Create the proposal ${PROPOSALS_DIR}/${target} (the target itself is not written)` : "Preview the flows (writes nothing)" },
     ];
     prompt.ids = rows.map((row) => row.id);
     prompt.items = rows.map((row) => row.text);
-    prompt.index = Math.max(0, prompt.ids.indexOf(selected));
-    prompt.details = [`root: ${this.state.root} · the file and the target are relative to it · algo: only the calls the snapshot resolved; no model, no search beyond the file`];
+    const fallbackRow = selected === "file" || selected === "line" || selected.startsWith("src:") ? "since" : selected === "since" ? "file" : selected;
+    prompt.index = Math.max(0, prompt.ids.indexOf(prompt.ids.includes(selected) ? selected : fallbackRow));
+    const scope = form.source === "file" ? "the file and the target are relative to it" : "the target is relative to it; git runs in it and only reads";
+    const how = form.mode === "algo" ? `algo: only the calls the snapshot resolved; no model, no search beyond the ${form.source === "file" ? "file" : "changed fns"}` : "the model drafts each flow; its steps are marked agree, llm-only or conflict; never evidence";
+    prompt.details = [`root: ${this.state.root} · ${scope} · ${how}`];
     const now = prompt.ids[prompt.index]!;
     const problem = this.codeDraftProblem(form);
     const position = this.codePosition(form);
     const named = position !== null && "triggers" in position ? (form.line.trim() === "" ? `${position.triggers.length} exported fn(s): ${position.triggers.join(", ")}` : `line ${form.line.trim()} is in ${position.triggers[0]}`) : null;
+    const agent = this.agentName();
     if (now.startsWith("src:")) prompt.note = `Enter takes ${now.slice(4)} as the file`;
+    else if (now === "source") prompt.note = form.source === "file" ? "the fn at a line, or every exported fn of a file" : "every fn changed since the ref, untracked files whole; a fn already in a hand-written flow is named, not drafted again";
     else if (now === "file" && form.file.trim() === "") prompt.note = "type a source file · ↓ picks a match";
+    else if (now === "mode")
+      prompt.note =
+        form.mode === "algo"
+          ? "algo: only the calls the snapshot resolved; no model"
+          : agent === null
+            ? form.mode === "hybrid"
+              ? "no model configured (agent in keylang.json): hybrid drafts from the snapshot only, as algo, and says so"
+              : (problem?.text ?? "")
+            : `${agent} drafts each flow in turn with the context pack (F4)${form.mode === "hybrid" ? "; the steps it missed come from the snapshot" : "; each step is judged against the snapshot"}`;
     else if (problem !== null && (problem.field === now || now === "run" || now === "output")) prompt.note = problem.text;
     else if (now === "file" || now === "line")
       prompt.note = named ?? (this.state.analysis?.snapshot ? "" : "no current snapshot to look it up; the operation reads the saved code");
+    else if (now === "since") prompt.note = "the saved working tree against the ref: no checkout, no commit";
     else if (now === "into") prompt.note = existsSync(join(this.state.root, target)) ? `${target} exists: its other sections are kept, a section of the same flow is replaced` : `${target} is a new file`;
     else prompt.note = form.output === "proposal" ? `Enter proposes${named ? ` ${named}` : ""}; MERGE applies it hunk by hunk` : "Enter shows the flows in F6; nothing is written";
   }
 
-  /** ←→ on the output row: proposal or preview. */
-  private changeCodeDraftOutput(): void {
+  /** ←→ on the source row (a file or the git changes), the mode row (algo, hybrid, llm) or the output row (proposal or preview). */
+  private changeCodeDraftChoice(delta: -1 | 1): void {
     const prompt = this.state.prompt;
-    if (prompt?.kind !== "code-to-spec" || !prompt.codeDraft || prompt.ids?.[prompt.index] !== "output") return;
-    prompt.codeDraft.output = prompt.codeDraft.output === "proposal" ? "preview" : "proposal";
+    const form = prompt?.codeDraft;
+    const row = prompt?.ids?.[prompt.index];
+    if (prompt?.kind !== "code-to-spec" || !form) return;
+    if (row === "source") form.source = form.source === "file" ? "since" : "file";
+    else if (row === "mode") form.mode = DRAFT_MODES[(DRAFT_MODES.indexOf(form.mode) + delta + DRAFT_MODES.length) % DRAFT_MODES.length]!;
+    else if (row === "output") form.output = form.output === "proposal" ? "preview" : "proposal";
+    else return;
     this.refreshCodeDraftPrompt();
+  }
+
+  /** The request of the form: only the chosen source's fields; the model's context as F4 shows it now. */
+  private codeDraftRequest(form: CodeDraftForm): CodeToSpecRequest {
+    const line = form.line.trim();
+    const into = form.into.trim();
+    const pack = form.mode === "algo" ? null : this.contextPack();
+    const source: CodeToSpecSource = form.source === "since" ? { since: form.since.trim() } : { file: toPosix(form.file.trim()), ...(line !== "" ? { line: Number(line) } : {}) };
+    return {
+      kind: "code-to-spec",
+      root: this.state.root,
+      ...source,
+      ...(into !== "" ? { into: toPosix(into) } : {}),
+      output: form.output,
+      pending: "refuse",
+      ...(form.mode !== "algo" ? { mode: form.mode } : {}),
+      ...(pack ? { context: contextText(pack) } : {}),
+    };
+  }
+
+  /** The form a request was made from, enough to name its default target. */
+  private codeDraftFormOf(request: CodeToSpecRequest): CodeDraftForm {
+    return {
+      source: request.since !== undefined ? "since" : "file",
+      file: request.file ?? "",
+      line: request.line === undefined ? "" : String(request.line),
+      since: request.since ?? "",
+      into: request.into ?? "",
+      mode: request.mode ?? "algo",
+      output: request.output,
+    };
   }
 
   /**
@@ -3076,33 +3146,32 @@ export class App {
       this.state.message = `code-to-spec: ${problem.text}`;
       return;
     }
-    const line = form.line.trim();
-    const into = form.into.trim();
+    // The model sees the context pack as F4 shows it now: taken once, before anything else opens.
+    const request = this.codeDraftRequest(form);
     this.state.prompt = null;
-    const request: CodeToSpecRequest = {
-      kind: "code-to-spec",
-      root: this.state.root,
-      file: toPosix(form.file.trim()),
-      ...(line !== "" ? { line: Number(line) } : {}),
-      ...(into !== "" ? { into: toPosix(into) } : {}),
-      output: form.output,
-      pending: "refuse",
-    };
     this.requestOperation("code-to-spec", request);
   }
 
-  /** A finished code-to-spec draft: the proposal opens MERGE under the same rule as a flow draft's, naming every flow it proposes. */
+  /** A finished code-to-spec draft: the proposal opens MERGE under the same rule as a flow draft's, naming every flow it proposes and the model's notes. */
   private afterCodeDraft(record: OperationRecord, origin: DraftOrigin): void {
     const result = record.result;
-    if (result?.kind !== "code-to-spec" || result.status !== "completed" || result.payload?.proposal == null) return;
-    const { candidate } = result.payload;
-    const flows = candidate.flows.map((flow) => flow.name).join(", ");
-    if (this.stillWhereDraftStarted(origin)) {
-      this.merges.open(candidate.target);
-      if (this.state.merge?.path === candidate.target) this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) · MERGE: decide the hunks, w writes ${candidate.target}`;
+    if (result?.kind !== "code-to-spec" || result.status !== "completed" || result.payload === null) return;
+    const { candidate, model, described } = result.payload;
+    const review = described.length > 0 ? ` · already in flows (review those): ${described.join(", ")}` : "";
+    if (candidate === null || result.payload.proposal === null) {
+      if (review !== "") this.state.message = `${this.state.message ?? ""}${review}`;
       return;
     }
-    this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE`;
+    const flows = candidate.flows.map((flow) => flow.name).join(", ");
+    const unknown = model === null ? [] : model.flows.flatMap((flow) => flow.unknown);
+    const dropped = model === null ? 0 : model.flows.reduce((sum, flow) => sum + flow.dropped.length, 0);
+    const notes = `${review}${unknown.length > 0 ? ` · still unknown: ${unknown.join(", ")}` : ""}${dropped > 0 ? ` · ${dropped} line(s) dropped from the model's drafts: F6 names them` : ""}`;
+    if (this.stillWhereDraftStarted(origin)) {
+      this.merges.open(candidate.target);
+      if (this.state.merge?.path === candidate.target) this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) · MERGE: decide the hunks, w writes ${candidate.target}${notes}`;
+      return;
+    }
+    this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}`;
   }
 
   // ---------- draft map: layers into keylang.json's buffer ----------
@@ -3594,7 +3663,7 @@ export class App {
       return;
     }
     // A proposed draft: Enter opens its MERGE (checked again: a proposal merged or rewritten since is judged as it is now).
-    if ((record.result?.kind === "draft-flow" || record.result?.kind === "draft-rules" || record.result?.kind === "code-to-spec") && record.result.payload?.proposal != null) {
+    if ((record.result?.kind === "draft-flow" || record.result?.kind === "draft-rules" || record.result?.kind === "code-to-spec") && record.result.payload?.proposal != null && record.result.payload.candidate !== null) {
       this.closeResults();
       return this.merges.open(record.result.payload.candidate.target);
     }
@@ -3957,7 +4026,7 @@ export class App {
     } else if (prompt.kind === "code-to-spec") {
       const field = prompt.ids?.[prompt.index];
       // The line is a number: anything but digits is not typed into it.
-      if (prompt.codeDraft && (field === "file" || field === "into")) prompt.codeDraft[field] += text;
+      if (prompt.codeDraft && (field === "file" || field === "into" || field === "since")) prompt.codeDraft[field] += text;
       else if (prompt.codeDraft && field === "line") prompt.codeDraft.line += text.replace(/[^0-9]/g, "");
     } else prompt.text += text;
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
@@ -4007,7 +4076,7 @@ export class App {
       } else if (prompt.kind === "draft-rules") {
         if (prompt.rulesDraft && field === "into") prompt.rulesDraft.into = graphemes(prompt.rulesDraft.into).slice(0, -1).join("");
       } else if (prompt.kind === "code-to-spec") {
-        if (prompt.codeDraft && (field === "file" || field === "line" || field === "into")) prompt.codeDraft[field] = graphemes(prompt.codeDraft[field]).slice(0, -1).join("");
+        if (prompt.codeDraft && (field === "file" || field === "line" || field === "into" || field === "since")) prompt.codeDraft[field] = graphemes(prompt.codeDraft[field]).slice(0, -1).join("");
       } else prompt.text = graphemes(prompt.text).slice(0, -1).join("");
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
@@ -4029,7 +4098,7 @@ export class App {
       if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
       return;
     }
-    if ((event.name === "left" || event.name === "right") && prompt.kind === "code-to-spec") return this.changeCodeDraftOutput();
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "code-to-spec") return this.changeCodeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-flow") return this.changeDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-rules") return this.changeRulesDraftChoice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
