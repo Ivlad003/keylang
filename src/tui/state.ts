@@ -281,6 +281,8 @@ export interface SaveBarrier {
    * With targets the step opens even without unsaved buffers.
    */
   writes: string[] | null;
+  /** The line above `writes`; null: generated files only (a manual file stops the operation). */
+  writesNote: string | null;
   choice: "save" | "back";
   error: string | null;
 }

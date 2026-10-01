@@ -722,11 +722,11 @@ export class App {
    * once; with them the save step opens: Save and continue or Back. Every
    * operation that reads the disk goes through here; doctor and help do not.
    */
-  private withSavedInputs(action: string, run: () => void, options: { writes?: string[]; inputs?: (path: string) => boolean } = {}): void {
+  private withSavedInputs(action: string, run: () => void, options: { writes?: string[]; writesNote?: string; inputs?: (path: string) => boolean } = {}): void {
     const inputs = options.inputs ?? (() => true);
     const files = this.dirtyInputs().filter(inputs);
     if (files.length === 0 && options.writes === undefined) return run();
-    this.state.barrier = { action, files, writes: options.writes ?? null, choice: "save", error: null };
+    this.state.barrier = { action, files, writes: options.writes ?? null, writesNote: options.writesNote ?? null, choice: "save", error: null };
     this.afterSave = run;
     this.barrierInputs = inputs;
   }
@@ -1766,6 +1766,12 @@ export class App {
       const writes = request.output === "proposal" && this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
+    if (request.kind === "apply-code") {
+      // Nothing is computed again: no dirty buffer is read or saved. The step names every file the
+      // candidate writes, so the write is a decision of its own, never the end of a generation.
+      const files = request.candidate.targets.map((target) => target.file);
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: () => false, writes: files, writesNote: "Writes these files directly, as spec-to-code --apply (no proposal, no test is run):" });
+    }
     if (request.kind === "draft-rules") {
       // As a flow draft: the saved code and keylang.json (and the saved specs the model's rules are checked
       // with); only a dirty keylang.json is saved first; the target was refused above when dirty.
@@ -1929,6 +1935,7 @@ export class App {
       if (request.kind === "draft-flow" || request.kind === "draft-rules") this.afterDraft(record, origin);
       if (request.kind === "code-to-spec") this.afterCodeDraft(record, origin);
       if (request.kind === "spec-to-code") this.afterSpecCode(record, origin);
+      if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
       this.draw();
     };
@@ -1970,6 +1977,10 @@ export class App {
    * proposal would be judged against the disk under unsaved edits).
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
+    if (request.kind === "apply-code") {
+      const conflicts = this.applyConflicts(request.candidate.targets.map((target) => target.file), false);
+      return conflicts.length > 0 ? { refused: conflicts } : undefined;
+    }
     if ((request.kind !== "draft-flow" && request.kind !== "draft-rules" && request.kind !== "code-to-spec" && request.kind !== "spec-to-code") || request.output !== "proposal") return;
     // The operation names the target it resolved; code-to-spec's default target depends on the snapshot it read.
     const targets = plan?.targets ?? (request.kind === "draft-rules" ? [this.rulesTarget(request.into ?? "")] : request.kind === "draft-flow" ? [this.draftTarget({ trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target] : []);
@@ -3355,6 +3366,67 @@ export class App {
     this.state.message = `spec-to-code: ${files.length} proposal(s) wait: ${files.join(", ")} · m, Proposals or Enter in F6 opens them${partial}`;
   }
 
+  /**
+   * `a` in F6 on a finished spec-to-code record: applies the entire
+   * candidate (`spec-to-code --apply`) after a step that names every file.
+   * Refused before that step: a run that did not finish, an outdated
+   * candidate (an input saved or its files written since), a file with
+   * unsaved edits or open in MERGE, a proposal waiting for one — merging it
+   * is the way then; applying never clears it.
+   */
+  private applyCandidate(): void {
+    const record = this.state.records[this.state.results.index];
+    const result = record?.result;
+    if (record?.status === "running") {
+      this.state.message = "this operation is still running";
+      return;
+    }
+    if (!record || result?.kind !== "spec-to-code" || result.payload === null || record.status !== "completed") {
+      this.state.message = "a applies a spec-to-code candidate: select a finished spec-to-code run";
+      return;
+    }
+    if (record.outdated !== null) {
+      this.state.message = `spec-to-code --apply: not started: the candidate is outdated (${record.outdated}); Enter builds it again`;
+      return;
+    }
+    const { candidate, mode } = result.payload;
+    const conflicts = this.applyConflicts(candidate.targets.map((target) => target.file), true);
+    if (conflicts.length > 0) {
+      this.state.message = `spec-to-code --apply: not started: ${conflicts.join("; ")}`;
+      return;
+    }
+    this.requestOperation("apply-code", { kind: "apply-code", root: this.state.root, candidate, mode, pending: "refuse" });
+  }
+
+  /** What in this session stops applying `files`: an open MERGE on one, unsaved edits, and (before the run) a waiting proposal. */
+  private applyConflicts(files: readonly string[], proposals: boolean): string[] {
+    const conflicts: string[] = [];
+    for (const file of files) {
+      const buffer = this.state.buffers.get(file);
+      if (this.state.merge?.path === file) conflicts.push(`MERGE is open on ${file}: write it (w) or leave it (Esc) first`);
+      else if (buffer !== undefined && isDirty(buffer)) conflicts.push(`${file} has unsaved edits: save or undo them first; they are kept`);
+      else if (proposals && existsSync(join(this.state.root, PROPOSALS_DIR, file))) conflicts.push(`a proposal for ${file} is waiting: merge it in MERGE (Enter in F6, m or Proposals) instead; applying never removes it`);
+    }
+    return conflicts;
+  }
+
+  /**
+   * After an apply: every spec-to-code candidate for a file it wrote is
+   * outdated (applying it again would overwrite newer code), and the message
+   * says what was written. `u` stays the undo of the last MERGE.
+   */
+  private afterApplyCode(record: OperationRecord): void {
+    const result = record.result;
+    if (result?.kind !== "apply-code") return;
+    const written = new Set(result.written);
+    if (written.size > 0) {
+      for (const other of this.state.records) {
+        if (other.result?.kind === "spec-to-code" && other.result.payload?.candidate.targets.some((target) => written.has(target.file))) other.outdated ??= "its files were written since this run";
+      }
+    }
+    if (result.status === "completed") this.state.message = `spec-to-code --apply: ${result.written.join(", ")} written · no test was run; run them, then check · u undoes only the last MERGE, not this write`;
+  }
+
   // ---------- draft map: layers into keylang.json's buffer ----------
 
   /** The draft-layout form (design §2.4 `draft map`): the mode (hybrid with a model, else algo), then run; nothing is written. */
@@ -3913,6 +3985,8 @@ export class App {
         return this.cancelOperation();
       case "e":
         return this.openExportPrompt();
+      case "a":
+        return this.applyCandidate();
       case "g":
         // Over a planned gap of a feature report: the spec-to-code form for the same ID.
         if (results.scrollReport) return this.specCodeForGap();

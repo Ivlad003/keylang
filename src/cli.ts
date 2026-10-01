@@ -15,9 +15,7 @@ import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts
 import { briefText, currentBaseline, estimateTokens, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, planBriefs, readExplanation, runBriefs, unknownIds, writeExplanation, type BriefBatch, type BriefLevel, type Explanation } from "./explain-llm.ts";
 import { loadBriefs, type ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
-import { codeProposalProblem, lineDiff, PROPOSALS_DIR, writeProposal } from "./proposals.ts";
-import { safeWriteAll } from "./safe-write.ts";
-import { specToCode, specToCodeText } from "./spec-to-code.ts";
+import { lineDiff } from "./proposals.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
@@ -485,41 +483,40 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
   if (opts.apply && opts.print) throw new Error("spec-to-code: --apply writes the files, --print writes nothing; give one");
   if (!id) throw new Error("spec-to-code: a planned id is required");
   if (opts.mode !== "algo" && opts.mode !== "llm") throw new Error(`spec-to-code: --mode must be algo or llm, got \`${opts.mode}\``);
-  // Preview and proposal, of the template and the model, go through the shared operation; --apply stays here until it moves (ticket 30).
-  if (!opts.apply) return specToCodePrinter(findRoot(process.cwd()), id, opts.into === undefined ? undefined : toPosix(opts.into), opts.print, opts.mode);
-  const analysis = await analyze({ root: findRoot(process.cwd()), withoutEvidence: true });
-  if (!analysis.snapshot) throw new Error("spec-to-code: no supported source files; run `keylang init`");
-  let model;
-  if (opts.mode === "llm") {
-    const { llmClient } = await import("./llm.ts");
-    const setup = llmClient(analysis.config.agent);
-    if ("missing" in setup) throw new Error(`spec-to-code --mode llm: ${setup.missing}`);
-    model = setup.client;
+  const root = findRoot(process.cwd());
+  const into = opts.into === undefined ? undefined : toPosix(opts.into);
+  if (opts.apply) return specToCodeApplyPrinter(root, id, into, opts.mode);
+  return specToCodePrinter(root, id, into, opts.print, opts.mode);
+}
+
+/**
+ * `spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is
+ * built as a preview (stdout and the test notes as `--print`), then the
+ * shared `apply-code` operation writes its files; a proposal waiting for one
+ * stays, as it always did. Any file not written ends with 2, as `--apply`
+ * always did — a file changed meanwhile too; part way, the error is followed
+ * by what was written and what was not.
+ */
+async function specToCodeApplyPrinter(root: string, id: string, into: string | undefined, mode: "algo" | "llm"): Promise<number> {
+  const built = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: "preview", ...(mode === "llm" ? { mode } : {}) });
+  const payload = built.payload;
+  if (payload !== null) process.stdout.write(payload.candidate.print);
+  for (const message of built.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
+  if (built.status !== "completed" || payload === null) {
+    for (const message of built.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+    return built.exitCode ?? 2;
   }
-  const c = await specToCode(analysis, id, opts.into === undefined ? undefined : toPosix(opts.into), model);
-  process.stdout.write(specToCodeText(c));
-  for (const note of c.testNotes) process.stderr.write(`keylang: ${note}\n`);
-  const files = [c, ...c.tests];
-  if (opts.print) {
-    process.stderr.write(`keylang: nothing written; without --print the files become proposals, --apply writes them\n`);
+  const applied = await runOperation({ kind: "apply-code", root, candidate: payload.candidate, mode, pending: "keep" });
+  if (applied.status === "completed" && applied.payload !== null) {
+    const next = mode === "llm" ? "review the body and the tests, then run them" : "write the body and its tests";
+    process.stderr.write(`keylang: ${applied.written.join(", ")} written; run \`keylang map\`, then ${next}\n`);
     return 0;
   }
-  const root = analysis.config.root;
-  // The rules of a code proposal hold for --apply too: inside the repository through links, never `keylang.gen.ts`.
-  for (const f of files) {
-    const problem = codeProposalProblem(root, f.file);
-    if (problem) throw new Error(`spec-to-code: ${f.file}: ${problem}`);
+  for (const message of applied.messages) if (message.level === "error") process.stderr.write(`keylang: ${message.text}\n`);
+  if (applied.payload?.error != null) {
+    for (const file of applied.payload.files) if (file.state !== "failed") process.stderr.write(`keylang: ${file.file}: ${file.state === "completed" ? "written" : "not written"}\n`);
   }
-  if (!opts.apply) {
-    for (const f of files) writeProposal(root, f.file, f.after);
-    process.stderr.write(`keylang: proposed ${files.map((f) => `${PROPOSALS_DIR}/${f.file}`).join(", ")}; merge them hunk by hunk with \`m\` in \`keylang\` (--apply writes the files directly)\n`);
-    return 0;
-  }
-  // Each file must still be what the candidate was built from: an edit made meanwhile (during a model call) is never overwritten.
-  safeWriteAll(root, files.map((f) => ({ path: f.file, text: f.after, options: { expect: f.before } })));
-  const next = opts.mode === "llm" ? "review the body and the tests, then run them" : "write the body and its tests";
-  process.stderr.write(`keylang: ${files.map((f) => f.file).join(", ")} written; run \`keylang map\`, then ${next}\n`);
-  return 0;
+  return 2;
 }
 
 /**

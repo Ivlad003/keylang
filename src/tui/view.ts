@@ -16,7 +16,7 @@ import { navItems, type NavItem } from "./nav.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -447,6 +447,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "draft-layout") return `${label} · ${record.params.mode ?? "algo"}`;
   if (record.params.kind === "code-to-spec") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "spec-to-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.id}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
+  if (record.params.kind === "apply-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.candidate.targets.length} file(s)`;
   return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -465,6 +466,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "draft-rules") return `draft rules${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "code-to-spec") return `code-to-spec ${codeSource(request)} --mode ${request.mode ?? "algo"}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.output === "preview" ? " --print" : ""}`;
   if (request.kind === "spec-to-code") return `spec-to-code ${request.id}${request.into !== undefined ? ` --into ${request.into}` : ""}${request.mode === "llm" ? " --mode llm" : ""}${request.output === "preview" ? " --print" : ""}`;
+  if (request.kind === "apply-code") return `spec-to-code ${request.candidate.id}${request.mode === "llm" ? " --mode llm" : ""} --apply`;
   if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
@@ -506,6 +508,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "draft-rules" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "code-to-spec" && result.payload !== null) return `${draftOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "spec-to-code" && result.payload !== null) return `${specCodeOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
+  if (result?.kind === "apply-code" && result.payload !== null) return `${applyOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "draft-layout" && result.payload !== null) return `${Object.keys(result.payload.layers).length} layer(s), nothing written · code ${result.exitCode}`;
   return recordStatus(record);
 }
@@ -554,6 +557,15 @@ function specCodeOutcome(status: OperationRecord["status"], payload: SpecToCodeP
   if (payload.refused.length > 0) return "refused, nothing written";
   if (payload.error !== null) return "write failed, nothing written";
   return `${status}, nothing written`;
+}
+
+/** `3 file(s) written`, `refused, nothing written`, `1 of 3 file(s) written, failed|cancelled`. */
+function applyOutcome(status: OperationRecord["status"], payload: ApplyCodePayload): string {
+  const done = payload.files.filter((file) => file.state === "completed").length;
+  if (done === payload.files.length) return `${done} file(s) written`;
+  if (payload.refused.length > 0) return "refused, nothing written";
+  if (done === 0) return `${status}, nothing written`;
+  return `${done} of ${payload.files.length} file(s) written, ${status}`;
 }
 
 /** `2 document(s), 1 error(s), 0 warning(s)`: what the parser found, the same counts as the CLI's stderr. */
@@ -1064,10 +1076,24 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     rows.push({ text: `  with the candidate in place: ${candidate.verdicts.length} verdict(s), ${candidate.diagnostics.length} diagnostic(s) — the candidate's, a preview of check; not the workspace's verdict, and not the feature done`, style: muted });
     if (payload.proposals.length > 0) rows.push({ text: "  Enter opens the proposals list: each file merges on its own (m and Proposals too)", style: THEME.hint });
     else if (payload.output === "preview") rows.push({ text: "  Enter builds it again · the form's proposal output writes the proposals", style: THEME.hint });
+    if (record.status === "completed" && record.outdated === null && payload.proposals.length === 0)
+      rows.push({ text: `  a applies the entire candidate: writes these ${candidate.targets.length} file(s) directly, as --apply, after a step that names them — no proposal, no test is run`, style: THEME.hint });
     rows.push({ text: `── keylang spec-to-code ${candidate.id}${payload.mode === "llm" ? " --mode llm" : ""} --print · stdout ──`, style: muted });
     const lines = candidate.print.replace(/\r\n/g, "\n").split("\n");
     if (lines.at(-1) === "") lines.pop();
     for (const line of lines) rows.push({ text: line, style: THEME.panel });
+  } else if (result?.kind === "apply-code" && result.payload !== null) {
+    // Each file of the candidate with what happened to it: written, failed with its error, not attempted.
+    const { payload } = result;
+    const ok = result.exitCode === 0;
+    rows.push({ text: `Apply spec-to-code candidate · ${payload.id} → ${payload.files.length} file(s) · written directly, no proposal`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${applyOutcome(record.status, payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`, style: { ...THEME.panel, ...(ok ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    for (const file of payload.files) {
+      const state = file.state === "completed" ? "written" : file.state === "failed" ? `failed: ${file.error ?? ""}` : "not attempted";
+      rows.push({ text: `  ${file.role} ${file.file} · ${state}`, style: file.state === "failed" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    }
+    rows.push({ text: "  no test was run and the feature is not marked done; u undoes only the last MERGE, not this write", style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "draft-layout" && result.payload !== null) {
     // The drafted layers, then what Enter does with them, then the CLI's stdout.
     const { payload } = result;
@@ -1226,6 +1252,8 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
         ? " Enter open MERGE · Esc back "
         : codeProposed
         ? " Enter pick a proposal · Esc back "
+        : record?.result?.kind === "spec-to-code" && record.status === "completed" && record.result.payload !== null && record.outdated === null
+        ? " Enter rerun · a apply all · Esc back "
         : record?.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null
         ? " Enter move layers into keylang.json · Esc back "
         : gaps
@@ -1462,7 +1490,7 @@ function drawBarrier(grid: Grid, state: State, editor: Rect): void {
   const barrier = state.barrier!;
   const rows: { text: string; style: Style }[] = [];
   if (barrier.writes !== null) {
-    rows.push({ text: "Writes (generated files only; a manual file stops it):", style: THEME.popup });
+    rows.push({ text: barrier.writesNote ?? "Writes (generated files only; a manual file stops it):", style: THEME.popup });
     rows.push(...barrier.writes.map((file) => ({ text: `  ${file}`, style: THEME.popup })));
   }
   if (barrier.files.length > 0) {

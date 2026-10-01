@@ -8418,3 +8418,222 @@ test("tui: spec-to-code llm — Cancel, an empty or wrong answer and a timeout w
   assert.deepEqual([algo.status, algo.payload.mode, algo.payload.model], ["completed", "algo", null]);
   assert.equal(model.prompts.length, count, "the template asks no model");
 });
+
+// ---------- spec-to-code: applying the entire candidate (ticket 30) ----------
+
+const REFUND_FILES = ["src/application/refund.ts", "tests/refund-audit.test.ts", "tests/refund.test.ts"];
+
+type ApplyCodeResult = Extract<OperationResult, { kind: "apply-code" }> & { payload: NonNullable<Extract<OperationResult, { kind: "apply-code" }>["payload"]> };
+
+function applyRecord(app: App): ApplyCodeResult {
+  const result = app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "apply-code" && result.payload !== null, JSON.stringify(result?.messages));
+  return result as ApplyCodeResult;
+}
+
+test("tui: a spec-to-code candidate is applied only by a in F6 after a step naming every file — the CLI's --apply bytes, no proposal, new directories — for the template and the model alike; the old candidate is refused after it", async (t) => {
+  const specs = { "keylang/flows/refund.md": REFUND_PLAN };
+  const root = checkoutRepo(t, specs);
+  const twin = checkoutRepo(t, specs);
+  const s = session(root, { cols: 200, rows: 60 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const before = treeBytes(root);
+  specForm(s, { id: "application.refund.refund", output: "preview" });
+  await s.app.idle();
+  const preview = specRecord(s.app);
+  const candidate = preview.payload.candidate;
+  assert.deepEqual(treeBytes(root), before, "the end of a generation applies nothing");
+  // Every file and its diff are visible before the action.
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /a applies the entire candidate: writes these 3 file\(s\) directly, as --apply/);
+  assert.match(text, /Enter rerun · a apply all · Esc back/);
+  for (const file of REFUND_FILES) assert.ok(text.includes(`${file} (new file)`), file);
+  // The step names every file; Back writes nothing and starts nothing.
+  s.send("a");
+  assert.deepEqual([s.app.state.barrier?.action, s.app.state.barrier?.files, s.app.state.barrier?.writes], ["spec-to-code application.refund.refund --apply", [], REFUND_FILES]);
+  assert.match(s.text(), /Writes these files directly, as spec-to-code --apply \(no proposal, no test is run\):/);
+  await esc(s.send);
+  assert.deepEqual(treeBytes(root), before, "Back writes nothing");
+  assert.equal(s.app.state.records.length, 1);
+  // Continue: the real worker writes the three files, as the CLI's --apply does in the twin.
+  s.send("a");
+  s.send(KEY.enter);
+  await s.app.idle();
+  const applied = applyRecord(s.app);
+  assert.deepEqual(
+    [applied.status, applied.exitCode, applied.written, applied.proposals, applied.payload.files.map((file) => file.state)],
+    ["completed", 0, REFUND_FILES, [], ["completed", "completed", "completed"]],
+  );
+  const cli = cliSpec(twin, ["application.refund.refund", "--apply"]);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(cli.stdout, candidate.print);
+  assert.ok(cli.stderr.endsWith(`keylang: ${REFUND_FILES.join(", ")} written; run \`keylang map\`, then write the body and its tests\n`), cli.stderr);
+  for (const [i, file] of REFUND_FILES.entries()) {
+    assert.equal(readFileSync(join(root, file), "utf8"), readFileSync(join(twin, file), "utf8"), `${file}: the CLI's bytes`);
+    assert.equal(readFileSync(join(root, file), "utf8"), candidate.targets[i]!.after);
+  }
+  assert.deepEqual([...treeBytes(root).keys()].filter((path) => !before.has(path)).sort(), [...REFUND_FILES].sort(), "the files only: no proposal, no stats");
+  assert.match(s.app.state.message ?? "", /spec-to-code --apply: .* written · no test was run; run them, then check · u undoes only the last MERGE, not this write/);
+  // The analysis after the write sees the code.
+  assert.ok((s.app.state.analysis?.verdicts ?? []).some((v) => v.area === "application.refund.refund" && v.criterion === "ID" && v.verdict === "ok"));
+  // The candidate it came from is outdated: a second apply is refused before anything runs.
+  assert.equal(s.app.state.records[0]!.outdated, "its files were written since this run");
+  s.send("a");
+  assert.equal(s.app.state.message, "spec-to-code --apply: not started: the candidate is outdated (its files were written since this run); Enter builds it again");
+  assert.equal(s.app.state.records.length, 2);
+  s.send(KEY.down);
+  text = s.text();
+  assert.match(text, /Apply spec-to-code candidate · application\.refund\.refund → 3 file\(s\) · written directly, no proposal/);
+  assert.match(text, /3 file\(s\) written · code 0/);
+  assert.match(text, /test tests\/refund\.test\.ts · written/);
+  await esc(s.send);
+  // u is the undo of a MERGE, not of this write.
+  s.send("u");
+  assert.equal(s.app.state.message, "no merge to undo");
+  // The same candidate sent again: every file is newer than it; nothing is overwritten.
+  const written = treeBytes(root);
+  const again = await runOperation({ kind: "apply-code", root, candidate });
+  assert.deepEqual([again.status, again.exitCode, again.written], ["failed", 1, []]);
+  assert.deepEqual(again.payload?.refused, REFUND_FILES.map((file) => `${file}: created on disk while the change was prepared; nothing written`));
+  assert.deepEqual(treeBytes(root), written);
+
+  // The model's candidate goes through the same apply.
+  const llmRoot = checkoutRepo(t, specs);
+  const llmTwin = checkoutRepo(t, specs);
+  withConfig(llmRoot, { agent: "anthropic:claude-opus-5" });
+  withConfig(llmTwin, { agent: "anthropic:claude-opus-5" });
+  const model = await heldModel(t, refundReply);
+  const m = session(llmRoot, { cols: 200, rows: 60 });
+  t.after(() => m.app.close());
+  await m.app.idle();
+  specForm(m, { id: "application.refund.refund", mode: "llm", output: "preview" });
+  const llmPreview = await answerAll(model, m.app.idle().then(() => specRecord(m.app)));
+  assert.equal(llmPreview.payload.mode, "llm");
+  m.send(KEY.f6);
+  m.send("a");
+  assert.equal(m.app.state.barrier?.action, "spec-to-code application.refund.refund --mode llm --apply");
+  m.send(KEY.enter);
+  await m.app.idle();
+  const llmApplied = applyRecord(m.app);
+  assert.deepEqual([llmApplied.status, llmApplied.exitCode, llmApplied.written], ["completed", 0, REFUND_FILES]);
+  assert.equal(model.prompts.length, 3, "applying asks the model nothing");
+  const llmCli = await answerAll(model, cliSpecAsync(llmTwin, ["application.refund.refund", "--mode", "llm", "--apply"]));
+  assert.equal(llmCli.status, 0, llmCli.stderr);
+  assert.ok(llmCli.stderr.endsWith(`keylang: ${REFUND_FILES.join(", ")} written; run \`keylang map\`, then review the body and the tests, then run them\n`), llmCli.stderr);
+  for (const file of REFUND_FILES) assert.equal(readFileSync(join(llmRoot, file), "utf8"), readFileSync(join(llmTwin, file), "utf8"), `${file}: the CLI's bytes`);
+  assert.equal(readFileSync(join(llmRoot, REFUND_FILES[0]!), "utf8"), "export function refund(order: Order): Order {\n  return order;\n}\n");
+});
+
+test("tui: applying a candidate checks every file and input first — a target created after the preview, a spec changed at the commit, an open MERGE or a waiting proposal refuse it with nothing written; a failed second write names the first as written and the rest as not attempted, as the CLI does", async (t) => {
+  const root = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN });
+  const hook: { during: (() => void) | null } = { during: null };
+  const operations = (request: OperationRequest, context: OperationContext): Promise<OperationResult> =>
+    runOperation(request, {
+      ...context,
+      beforeCommit: async (plan) => {
+        hook.during?.();
+        return context.beforeCommit?.(plan);
+      },
+    });
+  const s = session(root, { cols: 200, rows: 60, operations });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const preview = async (): Promise<SpecCodeResult> => {
+    specForm(s, { id: "application.refund.refund", output: "preview" });
+    await s.app.idle();
+    return specRecord(s.app);
+  };
+  const apply = async (): Promise<ApplyCodeResult> => {
+    s.send(KEY.f6);
+    s.send("a");
+    s.send(KEY.enter);
+    await s.app.idle();
+    const result = applyRecord(s.app);
+    await esc(s.send);
+    return result;
+  };
+  const nothing = (): void => {
+    for (const file of REFUND_FILES) assert.ok(!existsSync(join(root, file)) || file === "tests/refund.test.ts", `${file} not written`);
+  };
+
+  // One target created after the preview: no file of the candidate is written, the new one is kept.
+  await preview();
+  mkdirSync(join(root, "tests"));
+  writeFileSync(join(root, "tests/refund.test.ts"), "// mine\n");
+  let result = await apply();
+  assert.deepEqual([result.status, result.exitCode, result.written, result.payload.refused], ["failed", 1, [], ["tests/refund.test.ts: created on disk while the change was prepared; nothing written"]]);
+  assert.deepEqual(result.payload.files.map((file) => file.state), ["not-attempted", "not-attempted", "not-attempted"]);
+  nothing();
+  assert.equal(readFileSync(join(root, "tests/refund.test.ts"), "utf8"), "// mine\n");
+  rmSync(join(root, "tests"), { recursive: true });
+
+  // A spec changed while the step waited (at the commit): refused, the new bytes kept.
+  const candidate = (await preview()).payload.candidate;
+  const edited = `${REFUND_PLAN}\n<!-- edited meanwhile -->\n`;
+  hook.during = () => writeFileSync(join(root, "keylang/flows/refund.md"), edited);
+  result = await apply();
+  hook.during = null;
+  assert.deepEqual([result.status, result.exitCode, result.payload.refused], ["failed", 1, ["keylang/flows/refund.md: changed on disk while the candidate was computed"]]);
+  nothing();
+  assert.equal(readFileSync(join(root, "keylang/flows/refund.md"), "utf8"), edited);
+  writeFileSync(join(root, "keylang/flows/refund.md"), REFUND_PLAN);
+
+  // The second write fails (a file where its directory goes): the first is written and named, the third not attempted; code 2, the session lives.
+  await preview();
+  writeFileSync(join(root, "tests"), "not a directory\n");
+  result = await apply();
+  assert.deepEqual([result.status, result.exitCode, result.written], ["failed", 2, [REFUND_FILES[0]]]);
+  assert.deepEqual(result.payload.files.map((file) => file.state), ["completed", "failed", "not-attempted"]);
+  assert.ok(result.payload.error !== null && result.payload.files[1]!.error === result.payload.error);
+  assert.deepEqual(result.messages.slice(1).map((message) => message.text), [`written before it stopped: ${REFUND_FILES[0]}`, `not written: ${REFUND_FILES[2]}`]);
+  assert.equal(readFileSync(join(root, REFUND_FILES[0]!), "utf8"), candidate.targets[0]!.after);
+  assert.equal(readFileSync(join(root, "tests"), "utf8"), "not a directory\n");
+  s.send(KEY.f6);
+  let text = s.text();
+  assert.match(text, /1 of 3 file\(s\) written, failed · code 2/);
+  assert.match(text, /test tests\/refund-audit\.test\.ts · failed: /);
+  assert.match(text, /test tests\/refund\.test\.ts · not attempted/);
+  await esc(s.send);
+  // The CLI says the same on stderr after the error, with code 2.
+  const twin = checkoutRepo(t, { "keylang/flows/refund.md": REFUND_PLAN });
+  writeFileSync(join(twin, "tests"), "not a directory\n");
+  const cli = cliSpec(twin, ["application.refund.refund", "--apply"]);
+  assert.equal(cli.status, 2);
+  assert.ok(cli.stderr.endsWith(`keylang: ${REFUND_FILES[0]}: written\nkeylang: ${REFUND_FILES[2]}: not written\n`), cli.stderr);
+  assert.equal(readFileSync(join(twin, REFUND_FILES[0]!), "utf8"), candidate.targets[0]!.after);
+  rmSync(join(root, "tests"));
+  rmSync(join(root, REFUND_FILES[0]!));
+  s.send(KEY.f5);
+  await s.app.idle();
+
+  // Proposals of the candidate: MERGE opens on the code; while it is open, a in F6 is refused and starts nothing.
+  const records = s.app.state.records.length;
+  specForm(s, { id: "application.refund.refund" });
+  await s.app.idle();
+  assert.equal(s.app.state.merge?.path, REFUND_FILES[0]);
+  const stores = treeBytes(join(root, ".keylang/proposals"));
+  s.send(KEY.f6);
+  s.send("a");
+  assert.match(s.app.state.message ?? "", /^spec-to-code --apply: not started: MERGE is open on src\/application\/refund\.ts: write it \(w\) or leave it \(Esc\) first; a proposal for tests\/refund-audit\.test\.ts is waiting: merge it in MERGE/);
+  await esc(s.send);
+  await esc(s.send);
+  assert.equal(s.app.state.mode, "view");
+  // Once MERGE is left, the waiting proposals still refuse it: MERGE is the way, nothing is cleared.
+  s.send(KEY.f6);
+  s.send("a");
+  assert.equal(s.app.state.message, `spec-to-code --apply: not started: ${REFUND_FILES.map((file) => `a proposal for ${file} is waiting: merge it in MERGE (Enter in F6, m or Proposals) instead; applying never removes it`).join("; ")}`);
+  await esc(s.send);
+  assert.equal(s.app.state.records.length, records + 1, "no apply ran");
+  nothing();
+  assert.deepEqual(treeBytes(join(root, ".keylang/proposals")), stores);
+  // The operation refuses them too; the CLI's policy writes the files and keeps every proposal.
+  const refused = await runOperation({ kind: "apply-code", root, candidate });
+  assert.deepEqual([refused.status, refused.exitCode], ["failed", 1]);
+  assert.deepEqual(refused.payload?.refused, REFUND_FILES.map((file) => `.keylang/proposals/${file}: a proposal for ${file} is waiting; merge it in MERGE (m) instead of applying the candidate — applying never removes it`));
+  nothing();
+  const kept = await runOperation({ kind: "apply-code", root, candidate, pending: "keep" });
+  assert.deepEqual([kept.status, kept.exitCode, kept.written], ["completed", 0, REFUND_FILES]);
+  assert.deepEqual(treeBytes(join(root, ".keylang/proposals")), stores, "no proposal is removed");
+});

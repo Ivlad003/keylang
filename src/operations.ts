@@ -363,6 +363,33 @@ export interface SpecToCodeRequest {
 }
 
 /**
+ * Applies a whole spec-to-code candidate (`keylang spec-to-code <id>
+ * --apply`): every file of it is written with its proposed text, directly —
+ * no proposal. The candidate is the one a spec-to-code run reported (preview
+ * or proposal, template or model): nothing is computed again. Before the
+ * first write every file must still hold the text the candidate was built
+ * from, and `keylang.json`, the sources and the specs must be the ones it
+ * read; a file a code proposal may not change stops it. Each file is
+ * written atomically in turn; there is no rollback, so a failure part way
+ * names what was written and what was not.
+ */
+export interface ApplyCodeRequest {
+  kind: "apply-code";
+  /** Repository root (absolute). */
+  root: string;
+  /** The candidate exactly as spec-to-code reported it. */
+  candidate: SpecToCodeCandidate;
+  /** Who built it (spec-to-code's mode); only how the result is named. */
+  mode?: "algo" | "llm";
+  /**
+   * A proposal waiting for one of the files: `refuse` (default, the TUI's —
+   * merge it instead) or `keep` (the CLI's `--apply`: the file is written,
+   * the proposal stays). A waiting proposal is never removed.
+   */
+  pending?: "refuse" | "keep";
+}
+
+/**
  * The layer layout drafted for `keylang.json` (`keylang draft map --mode
  * algo|llm|hybrid`): `algo` is the layout keylang would guess from the
  * directories (`guessLayout`), `llm` and `hybrid` ask the configured model,
@@ -415,10 +442,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -444,7 +471,7 @@ export interface OperationContext {
 
 /** What a commit is about to write, when the operation names it before it asks (a draft: its target, whose proposal it writes). */
 export interface CommitPlan {
-  /** The files whose proposals are written (specs, or spec-to-code's code and tests), relative to the root, POSIX. */
+  /** The files whose proposals are written (specs, or spec-to-code's code and tests), or the files apply-code writes; relative to the root, POSIX. */
   targets: string[];
 }
 
@@ -837,6 +864,34 @@ export interface SpecToCodeCandidate {
   diagnostics: Diagnostic[];
   /** What `spec-to-code <id> --print` writes on stdout. */
   print: string;
+  /** The inputs it was built from: applying it later checks they are still so. */
+  basis: CandidateBasis;
+}
+
+/** What a spec-to-code candidate was read from: `keylang.json`, the snapshot's sources, the hand-written specs. */
+export interface CandidateBasis extends SourceInputs {
+  /** Each hand-written spec of the analysis with the hash of its text then (null: unreadable). */
+  specs: { path: string; sha256: string | null }[];
+}
+
+/** One file of an applied candidate and what happened to it. */
+export interface AppliedFile {
+  role: "code" | "test";
+  /** Relative to the root, POSIX. */
+  file: string;
+  state: "completed" | "failed" | "not-attempted";
+  error?: string;
+}
+
+/** What `spec-to-code --apply` wrote of a candidate. */
+export interface ApplyCodePayload {
+  id: string;
+  /** Every file of the candidate in its order; all `not-attempted` when it was refused. */
+  files: AppliedFile[];
+  /** Why nothing was written: a file, a waiting proposal or an input changed, or the session refused. */
+  refused: string[];
+  /** The write that failed part way, with its error. */
+  error: string | null;
 }
 
 /** The model behind an `llm` spec-to-code candidate. */
@@ -1043,6 +1098,7 @@ export interface OperationPayloads {
   "draft-layout": DraftLayoutPayload;
   "code-to-spec": CodeToSpecPayload;
   "spec-to-code": SpecToCodePayload;
+  "apply-code": ApplyCodePayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
@@ -1088,6 +1144,7 @@ export function runOperation(request: DraftRulesRequest, context?: OperationCont
 export function runOperation(request: DraftLayoutRequest, context?: OperationContext): Promise<OperationEnvelope<"draft-layout">>;
 export function runOperation(request: CodeToSpecRequest, context?: OperationContext): Promise<OperationEnvelope<"code-to-spec">>;
 export function runOperation(request: SpecToCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"spec-to-code">>;
+export function runOperation(request: ApplyCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"apply-code">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -1129,6 +1186,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runCodeToSpec(request, context);
     case "spec-to-code":
       return runSpecToCode(request, context);
+    case "apply-code":
+      return runApplyCode(request, context);
   }
 }
 
@@ -1176,6 +1235,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "code-to-spec":
       return { kind, ...base };
     case "spec-to-code":
+      return { kind, ...base };
+    case "apply-code":
       return { kind, ...base };
   }
 }
@@ -2764,7 +2825,7 @@ function emptySpecToCode(status: OperationStatus, exitCode: 0 | 1 | 2 | null, er
 }
 
 /** The candidate as the operation reports it: each file with the proposal waiting for it now (read only when the store passes the write policy). */
-function specToCodeCandidate(root: string, built: CodeCandidate): SpecToCodeCandidate {
+function specToCodeCandidate(root: string, built: CodeCandidate, basis: CandidateBasis): SpecToCodeCandidate {
   const target = (role: "code" | "test", file: FileCandidate): CodeProposalTarget => {
     const store = `${PROPOSALS_DIR}/${file.file}`;
     const pending = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
@@ -2777,14 +2838,22 @@ function specToCodeCandidate(root: string, built: CodeCandidate): SpecToCodeCand
     verdicts: built.verdicts,
     diagnostics: built.diagnostics,
     print: specToCodeText(built),
+    basis,
   };
 }
 
 /** The hand-written specs the candidate was built from, as they are on disk now: a planned signature or a flow's `test` changed meanwhile makes it unfit. */
-function specTexts(root: string, docs: readonly Document[]): Map<string, string | null> {
-  const texts = new Map<string, string | null>();
-  for (const doc of docs) if (doc.generated === null) texts.set(doc.path, readTextOrNull(resolve(root, doc.path)));
-  return texts;
+function specHashes(root: string, docs: readonly Document[]): CandidateBasis["specs"] {
+  return docs.filter((doc) => doc.generated === null).map((doc) => ({ path: doc.path, sha256: hashOrNull(readTextOrNull(resolve(root, doc.path))) }));
+}
+
+function hashOrNull(text: string | null): string | null {
+  return text === null ? null : sha256(text);
+}
+
+/** `path: changed on disk while the candidate was computed` for each spec of the basis that is not the same now. */
+function specProblems(root: string, specs: CandidateBasis["specs"]): string[] {
+  return specs.filter((spec) => hashOrNull(readTextOrNull(resolve(root, spec.path))) !== spec.sha256).map((spec) => `${spec.path}: changed on disk while the candidate was computed`);
 }
 
 /**
@@ -2831,8 +2900,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
   const snapshot = analyzed.snapshot;
   if (!snapshot) return emptySpecToCode("failed", 2, "spec-to-code: no supported source files; run `keylang init`");
-  const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
-  const specs = specTexts(root, analyzed.docs);
+  const basis: CandidateBasis = { ...sourceInputs(analyzed.config, snapshot.manifest.files), specs: specHashes(root, analyzed.docs) };
   const into = request.into === undefined ? undefined : toPosix(request.into);
   const setup = await modelSetup(mode, analyzed.config.agent, "spec-to-code");
   if ("error" in setup) return emptySpecToCode("failed", 2, setup.error);
@@ -2867,7 +2935,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   const { LlmCancelled } = await import("./llm.ts");
   let candidate: SpecToCodeCandidate;
   try {
-    candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, into, counted, context.signal ? { signal: context.signal } : {}));
+    candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, into, counted, context.signal ? { signal: context.signal } : {}), basis);
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptySpecToCode("cancelled", null);
     return emptySpecToCode("failed", 2, messageOf(error));
@@ -2918,8 +2986,8 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
         const changed = problem !== null ? `${target.file}: ${problem}` : proposalWriteProblem(root, target.file, { target: target.before, proposal: target.pending });
         if (changed !== null) refused.push(changed);
       }
-      refused.push(...sourceInputProblems(analyzed.config, inputs, "the candidate"));
-      for (const [path, text] of specs) if (readTextOrNull(resolve(root, path)) !== text) refused.push(`${path}: changed on disk while the candidate was computed`);
+      refused.push(...sourceInputProblems(analyzed.config, basis, "the candidate"));
+      refused.push(...specProblems(root, basis.specs));
     } catch (error) {
       return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: messageOf(error) }] };
     }
@@ -2953,6 +3021,135 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
     payload,
     messages: [...notes, { level: "info", text: `proposed ${written.join(", ")} for ${candidate.id}; each merges on its own in MERGE` }],
     proposals: [...written],
+  };
+}
+
+function emptyApplyCode(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"apply-code"> {
+  return { kind: "apply-code", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * Why the candidate may not be applied now. `policy`: a file no code
+ * proposal may change, or one the write protocol refuses (a link out, a
+ * generated file, a directory) — the first such, as `--apply` always named
+ * it. `refused`: every file that no longer holds the text the candidate was
+ * built from, every proposal waiting for one (under `refuse`), and every
+ * input changed since — a source that is one of the files is named once, as
+ * that file.
+ */
+function applyProblems(request: ApplyCodeRequest): { policy: string | null; refused: string[] } {
+  const { root, candidate } = request;
+  for (const target of candidate.targets) {
+    const problem = codeProposalProblem(root, target.file);
+    if (problem !== null) return { policy: `spec-to-code: ${target.file}: ${problem}`, refused: [] };
+  }
+  for (const target of candidate.targets) {
+    const problem = writeProblem(root, target.file);
+    if (problem !== null) return { policy: `${target.file}: ${problem}`, refused: [] };
+  }
+  const refused: string[] = [];
+  for (const target of candidate.targets) {
+    const changed = writeProblem(root, target.file, { expect: target.before });
+    if (changed !== null) refused.push(`${target.file}: ${changed}`);
+  }
+  if ((request.pending ?? "refuse") === "refuse") {
+    for (const target of candidate.targets) {
+      const store = `${PROPOSALS_DIR}/${target.file}`;
+      if (existsSync(join(root, store))) refused.push(`${store}: a proposal for ${target.file} is waiting; merge it in MERGE (m) instead of applying the candidate — applying never removes it`);
+    }
+  }
+  const files = new Set(candidate.targets.map((target) => target.file));
+  const { basis } = candidate;
+  if (readTextOrNull(join(root, CONFIG_FILE)) !== basis.config) refused.push(`${CONFIG_FILE}: changed on disk while the candidate was computed`);
+  else refused.push(...sourceInputProblems(loadConfig(root), basis, "the candidate").filter((line) => !files.has(line.slice(0, line.indexOf(": ")))));
+  refused.push(...specProblems(root, basis.specs));
+  return { policy: null, refused };
+}
+
+/**
+ * `keylang spec-to-code <id> --apply` on a candidate already built (see
+ * `ApplyCodeRequest`). A file of the candidate no code proposal may change
+ * is 2; a file, a waiting proposal (under `refuse`) or an input changed
+ * since the candidate is 1 with each named, nothing written. After
+ * `beforeCommit` (which may refuse: 1) everything is checked again. Then
+ * each file is written atomically in turn, checked once more just before;
+ * a Cancel between two files stops there (`cancelled`), a failed write is 2
+ * — the files before it stay written, the ones after are not attempted.
+ * Nothing is tested and no proposal is touched.
+ */
+async function runApplyCode(request: ApplyCodeRequest, context: OperationContext): Promise<OperationEnvelope<"apply-code">> {
+  const { root, candidate } = request;
+  if (!isAbsolute(root)) return emptyApplyCode("failed", 2, "spec-to-code: root must be an absolute path");
+  if (candidate.targets.length === 0) return emptyApplyCode("failed", 2, "spec-to-code: the candidate has no file to apply");
+  if (context.signal?.aborted) return emptyApplyCode("cancelled", null);
+  const payload: ApplyCodePayload = { id: candidate.id, files: candidate.targets.map((target) => ({ role: target.role, file: target.file, state: "not-attempted" })), refused: [], error: null };
+  const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
+  const check = (): OperationEnvelope<"apply-code"> | null => {
+    let problems: ReturnType<typeof applyProblems>;
+    try {
+      problems = applyProblems(request);
+    } catch (error) {
+      return { ...emptyApplyCode("failed", 2, messageOf(error)), payload };
+    }
+    if (problems.policy !== null) return { ...emptyApplyCode("failed", 2, problems.policy), payload };
+    if (problems.refused.length === 0) return null;
+    payload.refused = problems.refused;
+    return { ...emptyApplyCode("failed", 1), payload, messages: [...problems.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+  };
+  context.onProgress?.({ text: "checking the candidate's files" });
+  const before = check();
+  if (before !== null) return before;
+  context.onProgress?.({ text: "waiting to write" });
+  let gate: CommitGate;
+  try {
+    gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
+  } catch (error) {
+    return { ...emptyApplyCode("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyApplyCode("cancelled", null), payload };
+  if (gate && gate.refused.length > 0) {
+    payload.refused = [...gate.refused];
+    return { ...emptyApplyCode("failed", 1), payload, messages: [...gate.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+  }
+  const again = check();
+  if (again !== null) return again;
+  // One file at a time, each atomic: what was written before a Cancel or an error is named, never undone behind the person's back.
+  const written: string[] = [];
+  const stopped = (status: "failed" | "cancelled", error?: string): OperationEnvelope<"apply-code"> => {
+    const rest = payload.files.filter((file) => file.state === "not-attempted").map((file) => file.file);
+    const messages: OperationMessage[] = [
+      ...(error === undefined ? [] : [{ level: "error" as const, text: error }]),
+      ...(written.length === 0 ? [] : [{ level: "info" as const, text: `written before it stopped: ${written.join(", ")}` }]),
+      ...(rest.length === 0 ? [] : [{ level: "info" as const, text: `not written: ${rest.join(", ")}` }]),
+    ];
+    return { ...emptyApplyCode(status, status === "failed" ? 2 : null), payload, messages, written: [...written] };
+  };
+  for (const [i, target] of candidate.targets.entries()) {
+    const step = payload.files[i]!;
+    if (i > 0) {
+      // A Cancel lands between two files.
+      await new Promise<void>((done) => setImmediate(done));
+      if (context.signal?.aborted) return stopped("cancelled");
+    }
+    context.onProgress?.({ text: `writing ${target.file}` });
+    try {
+      const problem = writeProblem(root, target.file, { expect: target.before });
+      if (problem !== null) throw new Error(`${target.file}: ${problem}`);
+      writeAtomic(landing(join(root, target.file))!, target.after);
+    } catch (error) {
+      step.state = "failed";
+      step.error = messageOf(error);
+      payload.error = step.error;
+      return stopped("failed", step.error);
+    }
+    step.state = "completed";
+    written.push(target.file);
+  }
+  return {
+    ...emptyApplyCode("completed", 0),
+    payload,
+    messages: [{ level: "info", text: `${written.join(", ")} written for ${candidate.id}; no test was run` }],
+    written: [...written],
   };
 }
 
