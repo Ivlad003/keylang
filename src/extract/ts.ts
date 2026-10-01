@@ -214,14 +214,17 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           }
           // `(() => …) as Handler` and `(function () {}) satisfies T` are the function itself.
           const fnValue = value ? unwrapValue(value) : null;
-          if (fnValue && FUNCTION_VALUES.has(fnValue.type)) {
-            facts.decls.push(decl("fn", name, d, signature(fnValue), exported, declCalls(fnValue), collectTypeRefs(fnValue), []));
+          // `const Cart = memo(() => …)` is the fn the React wrapper wraps; `let`/`var` stay values.
+          const wrapped = fnValue && node.children.some((c) => c.type === "const") ? reactWrapperFn(fnValue, reactBindings()) : null;
+          const fnNode = wrapped ?? (fnValue && FUNCTION_VALUES.has(fnValue.type) ? fnValue : null);
+          if (fnNode) {
+            facts.decls.push(decl("fn", name, d, signature(fnNode), exported, declCalls(fnNode), collectTypeRefs(fnNode), []));
           } else if (fnValue && fnValue.type === "class") {
             facts.decls.push(classDecl(name, fnValue, d, exported, declCalls, facts));
           }
           if (exported) {
             facts.exports.add(name);
-            const kind = fnValue && FUNCTION_VALUES.has(fnValue.type) ? "fn" : fnValue?.type === "class" ? "class" : "value";
+            const kind = fnNode ? "fn" : fnValue?.type === "class" ? "class" : "value";
             facts.exportRows.push({ name, kind, local: name });
           }
         }
@@ -289,6 +292,29 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
         facts.exportRows.push({ name, kind, local: name });
       }
     }
+  };
+
+  // `import` declarations hoist, so a wrapped `const` may sit above its
+  // import; `require("react")` binds only below itself and is not read here.
+  // Computed on the first wrapper-shaped `const`.
+  let react: { names: Set<string>; objects: Set<string> } | null = null;
+  const reactBindings = (): { names: Set<string>; objects: Set<string> } => {
+    if (react === null) {
+      const names = new Set<string>();
+      const objects = new Set<string>();
+      for (const stmt of root.namedChildren) {
+        if (stmt.type !== "import_statement") continue;
+        for (const fact of importStatement(stmt)) {
+          if (fact.source !== "react") continue;
+          for (const b of fact.bindings) {
+            if (b.kind === "named" && REACT_WRAPPERS.has(b.imported)) names.add(b.local);
+            else if (b.kind === "module" || b.kind === "default") objects.add(b.local);
+          }
+        }
+      }
+      react = { names, objects };
+    }
+    return react;
   };
 
   // Declarations exported later by name: `function a() {}; export { a }`.
@@ -653,6 +679,33 @@ function unwrapValue(node: Node): Node {
 }
 
 const FUNCTION_VALUES = new Set(["arrow_function", "function_expression", "function", "generator_function"]);
+
+/** Wrappers that return the component they wrap; their `const` is the fn of the wrapped render. */
+const REACT_WRAPPERS = new Set(["memo", "forwardRef", "lazy"]);
+
+/**
+ * The function a React wrapper call hides: `memo(() => …)` is the function it
+ * wraps when — and only when — the callee is bound by an import from `react`
+ * (the `names` / `objects` such an import binds; `React.memo` through a
+ * default or namespace import counts). By name alone a `forwardRef` from
+ * `@nestjs/common` or a local `memo` would unwrap too, so the import decides,
+ * not the text. The wrapped function is the first argument; any other shape
+ * keeps the declarator a value.
+ */
+function reactWrapperFn(value: Node, react: { names: Set<string>; objects: Set<string> }): Node | null {
+  if (value.type !== "call_expression") return null;
+  const callee = value.childForFieldName("function");
+  const wrapped =
+    (callee?.type === "identifier" && react.names.has(callee.text)) ||
+    (callee?.type === "member_expression" &&
+      callee.childForFieldName("object")?.type === "identifier" &&
+      react.objects.has(callee.childForFieldName("object")!.text) &&
+      REACT_WRAPPERS.has(callee.childForFieldName("property")?.text ?? ""));
+  if (!wrapped) return null;
+  const arg = value.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
+  const fn = arg ? unwrapValue(arg) : null;
+  return fn && FUNCTION_VALUES.has(fn.type) ? fn : null;
+}
 
 /** A synthesized member over the initializers it runs, from the first to the last. */
 function initializer(name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]): DeclFact {

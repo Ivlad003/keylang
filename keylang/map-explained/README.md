@@ -10,13 +10,13 @@ The tree of the map with a brief under each node: the documentation comment from
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
 | [cli](cli.md) |  | 39 | 0 | 0 | 49 |
 | [external](external.md) |  | | | | |
-| [extract](extract.md) |  | 110 | 0 | 0 | 64 |
+| [extract](extract.md) |  | 111 | 0 | 0 | 64 |
 | [features](features.md) |  | 220 | 0 | 0 | 136 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 119 | 0 | 0 | 131 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [tui](tui.md) |  | 437 | 0 | 0 | 209 |
-| **all** | | 1253 | 0 | 0 | 824 |
+| **all** | | 1254 | 0 | 0 | 824 |
 
 ## Index
 
