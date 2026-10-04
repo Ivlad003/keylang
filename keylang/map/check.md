@@ -19,9 +19,12 @@
     - type [SnapshotInput](../../src/assess.ts#L18)
     - type [Assessment](../../src/assess.ts#L26)
     - fn [assess](../../src/assess.ts#L34) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string>; testFileExists?: FlowInput["testFileExists"]; } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
-      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.rules.canonicalRuleSpec
-    - fn [sameFinding](../../src/assess.ts#L100) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-    - fn [nodeKinds](../../src/assess.ts#L109) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
+      - calls lang.spec-ir.compileSpec, check.resolve.check, check.rules.evaluateRules, check.flows.evaluateFlows, check.rules.dependencyKindOf, check.wiring.checkWiring, check.assess.nodeKinds, check.rules.canonicalRuleSpec, check.assess.afterRecovery, check.assess.recoveredLines
+    - fn [recoveredLines](../../src/assess.ts#L106) (docs: readonly Document[]) → Map<string, string> <!-- internal -->
+      - calls lang.ir.sectionNodes
+    - fn [afterRecovery](../../src/assess.ts#L126) (verdicts: Verdict[], recovered: ReadonlyMap<string, string>) → Verdict[] <!-- internal -->
+    - fn [sameFinding](../../src/assess.ts#L139) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
+    - fn [nodeKinds](../../src/assess.ts#L148) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
   - module [flows](../../src/flows.ts#L1)
     - node external.node
     - config base.config

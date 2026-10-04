@@ -7,7 +7,7 @@ The tree of the map with a brief under each node: the documentation comment from
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
 | [base](base.md) |  | 59 | 29 | 3 | 1 |
-| [check](check.md) |  | 92 | 6 | 2 | 74 |
+| [check](check.md) |  | 94 | 6 | 2 | 74 |
 | [cli](cli.md) |  | 47 | 0 | 0 | 58 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 121 | 0 | 0 | 65 |
@@ -17,7 +17,7 @@ The tree of the map with a brief under each node: the documentation comment from
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [outside](outside.md) |  | 0 | 0 | 0 | 34 |
 | [tui](tui.md) |  | 440 | 0 | 0 | 209 |
-| **all** | | 1358 | 35 | 5 | 862 |
+| **all** | | 1360 | 35 | 5 | 862 |
 
 ## Index
 

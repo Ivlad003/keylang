@@ -176,6 +176,38 @@ test("calls: a direct call of the parent is static ok, a reliable absence fails,
   assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows"]).status, 0);
 });
 
+test("K003: ok on a recovered line and its subtree is unverified, fail stays fail, siblings keep ok", (t) => {
+  const flow = [
+    "# flow checkout",
+    "",
+    "- trigger presentation.terminal.checkout",
+    "- step application.purchase.buy",
+    "   - step domain.order.create",
+    "    - step presentation.terminal.checkout",
+    "  - step infrastructure.store.save",
+    "",
+  ].join("\n");
+  const dir = repo(t, CHECKOUT, { "flows/checkout.md": flow, "rules.md": "# rules\n\n - deny domain presentation\n- deny domain application\n" });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  const lines = o.stdout.split("\n").filter((line) => /flows\/checkout\.md:[5-7]:/.test(line));
+  assert.deepEqual(lines, [
+    "keylang/flows/checkout.md:5:4: K003 indentation must be a multiple of 2 spaces, found 3",
+    "keylang/flows/checkout.md:5:4: ID unverified domain.order.create: structure recovered after K003 at 5:4; on that structure: exact",
+    "keylang/flows/checkout.md:5:4: static unverified domain.order.create: structure recovered after K003 at 5:4; on that structure: called from application.purchase.buy",
+    "keylang/flows/checkout.md:6:5: ID unverified presentation.terminal.checkout: structure recovered after K003 at 5:4; on that structure: exact",
+    "keylang/flows/checkout.md:6:5: static fail presentation.terminal.checkout: absence: no call path from domain.order.create; `presentation.terminal.checkout` and its callers are called only by name, and no call from domain.order.create's reachable code can reach them",
+    "keylang/flows/checkout.md:7:3: ID ok infrastructure.store.save: exact",
+    "keylang/flows/checkout.md:7:3: static ok infrastructure.store.save: called from application.purchase.buy",
+  ]);
+  // Rules too: the recovered rule line is unverified, an even one keeps its ok.
+  const { rows } = results(dir);
+  const deny = (area: string): JsonResult | undefined => rows.find((r) => r.criterion === `deny ${area}`);
+  assert.equal(deny("domain presentation")?.verdict, "unverified");
+  assert.equal(deny("domain presentation")?.evidence, "structure recovered after K003 at 3:2; on that structure: convergence: no edge from `domain` to `presentation` and no dependency hole in the area");
+  assert.equal(deny("domain application")?.verdict, "ok");
+});
+
 // A step that only its own name can reach: a call whose receiver keylang does
 // not know can still be it when the method name matches, never otherwise.
 const BY_NAME: Record<string, string> = {

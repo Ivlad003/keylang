@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { compareDiagnostics, type Diagnostic } from "./diag.ts";
 import type { StaticMode, StaticSource } from "./config.ts";
 import { evaluateFlows, type FlowInput } from "./flows.ts";
-import type { Document } from "./ir.ts";
+import { sectionNodes, type Document, type Node } from "./ir.ts";
 import { check, type Index } from "./resolve.ts";
 import type { RuleFormat } from "./config.ts";
 import { canonicalRuleSpec, dependencyKindOf, evaluateRules } from "./rules.ts";
@@ -94,7 +94,46 @@ export function assess(
     code: null,
     message: item.message,
   }));
-  return { index, diagnostics, verdicts: [...rules.verdicts, ...refinedVerdicts, ...flows.verdicts], spec };
+  const verdicts = afterRecovery([...rules.verdicts, ...refinedVerdicts, ...flows.verdicts], recoveredLines(docs));
+  return { index, diagnostics, verdicts, spec };
+}
+
+/**
+ * Item lines whose place in the tree the parser recovered after a K003 (an
+ * odd indent, a jump, a tab): the line itself and its subtree, keyed
+ * `file:line`, with the position of the nearest such K003.
+ */
+function recoveredLines(docs: readonly Document[]): Map<string, string> {
+  const recovered = new Map<string, string>();
+  for (const doc of docs) {
+    const k003 = new Map<number, string>();
+    for (const diag of doc.diagnostics) {
+      const line = diag.span.start.line;
+      if (diag.code === "K003" && !k003.has(line)) k003.set(line, `${line}:${diag.span.start.col}`);
+    }
+    if (k003.size === 0) continue;
+    const visit = (node: Node, inherited: string | undefined): void => {
+      const at = k003.get(node.span.start.line) ?? inherited;
+      if (at !== undefined) recovered.set(`${doc.path}:${node.span.start.line}`, at);
+      for (const child of node.children) visit(child, at);
+    };
+    for (const section of doc.sections) for (const node of sectionNodes(section)) visit(node, undefined);
+  }
+  return recovered;
+}
+
+/** An `ok` on a recovered line is about a tree the file does not have: `unverified`. `fail` stays. */
+function afterRecovery(verdicts: Verdict[], recovered: ReadonlyMap<string, string>): Verdict[] {
+  if (recovered.size === 0) return verdicts;
+  return verdicts.map((verdict) => {
+    const at = recovered.get(`${verdict.file}:${verdict.line}`);
+    if (verdict.verdict !== "ok" || at === undefined) return verdict;
+    // A flow verdict's message repeats the verdict and area (`ok <area>: <reason>`); a rule's is the reason alone.
+    const prefix = `ok ${verdict.area}: `;
+    const flow = verdict.message.startsWith(prefix);
+    const reason = `structure recovered after K003 at ${at}; on that structure: ${flow ? verdict.message.slice(prefix.length) : verdict.message}`;
+    return { ...verdict, verdict: "unverified", message: flow ? `unverified ${verdict.area}: ${reason}` : reason };
+  });
 }
 
 export function sameFinding(verdict: Verdict, diagnostics: readonly Diagnostic[]): boolean {
