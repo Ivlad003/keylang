@@ -133,6 +133,71 @@ test("a layers hole covers the connected order and not a disconnected one", (t) 
   assert.match(cd?.evidence ?? "", /src\/c\/y\.ts:1:1/);
 });
 
+test("an excluded upward source is a layers hole, in a nested layer or outside every layer", (t) => {
+  const layers = { domain: "src/domain/**", app: "src/app/**", infra: "src/infra/**" };
+  const upward = 'import { y } from "../app/y.ts";\nexport function x(): void {\n  y();\n}\n';
+  const dir = repo(t, {
+    "keylang.json": config(layers),
+    "src/domain/d.ts": "export function d(): void {}\n",
+    "src/app/y.ts": "export function y(): void {}\n",
+    "src/infra/x.ts": upward,
+    "keylang/rules.md": "# rules\n\n- layers domain < app\n  - infra\n",
+  });
+  const nested = check(dir);
+  assert.equal(nested.status, 1, nested.stdout);
+  assert.ok(nested.results.some((row) => row.code === "K101" && /src\/infra\/x\.ts/.test(`${row.file} ${row.evidence}`)), nested.stdout);
+
+  write(dir, "keylang.json", config(layers, { exclude: ["src/infra/x.ts"] }));
+  const nestedHole = check(dir);
+  assert.equal(nestedHole.status, 0, nestedHole.stdout);
+  const nestedRow = nestedHole.results.find((row) => row.criterion === "layers domain < app");
+  assert.equal(nestedRow?.verdict, "unverified", nestedHole.stdout);
+  assert.match(nestedRow?.evidence ?? "", /src\/infra\/x\.ts:1:1/);
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+
+  rmSync(join(dir, "src/infra/x.ts"));
+  write(dir, "src/misc/z.ts", upward);
+  write(dir, "keylang.json", config(layers));
+  const outside = check(dir);
+  assert.equal(outside.status, 1, outside.stdout);
+  assert.ok(outside.results.some((row) => row.code === "K101"), outside.stdout);
+
+  write(dir, "keylang.json", config(layers, { exclude: ["src/misc/z.ts"] }));
+  const outsideHole = check(dir);
+  assert.equal(outsideHole.status, 0, outsideHole.stdout);
+  const outsideRow = outsideHole.results.find((row) => row.criterion === "layers domain < app");
+  assert.equal(outsideRow?.verdict, "unverified", outsideHole.stdout);
+  assert.match(outsideRow?.evidence ?? "", /src\/misc\/z\.ts:1:1/);
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+
+  // A file outside every layer with known edges is no hole: its dependencies are checked.
+  write(dir, "src/misc/z.ts", "export function z(): void {}\n");
+  write(dir, "keylang.json", config(layers));
+  const known = check(dir);
+  assert.equal(known.results.find((row) => row.criterion === "layers domain < app")?.verdict, "ok", known.stdout);
+});
+
+test("no-cycles under a module counts an excluded cycle file outside every layer", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**" }),
+    "src/app/a.ts": 'import { b } from "../misc/b.ts";\nexport function a(): void {\n  b();\n}\n',
+    "src/misc/b.ts": 'import { a } from "../app/a.ts";\nexport function b(): void {\n  a();\n}\n',
+    "keylang/rules.md": "# rules\n\n- module app.a\n  - no-cycles\n",
+  });
+  const cycle = check(dir);
+  assert.equal(cycle.status, 1, cycle.stdout);
+  const fail = cycle.results.find((row) => row.code === "K105");
+  assert.match(fail?.evidence ?? "", /app\.a → unassigned\.src\.misc\.b → app\.a/);
+
+  write(dir, "keylang.json", config({ app: "src/app/**" }, { exclude: ["src/misc/b.ts"] }));
+  const hidden = check(dir);
+  assert.equal(hidden.status, 0, hidden.stdout);
+  const row = hidden.results.find((item) => item.criterion === "no-cycles");
+  assert.equal(row?.verdict, "unverified", hidden.stdout);
+  assert.match(row?.evidence ?? "", /src\/misc\/b\.ts:1:1/);
+  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
+});
+
 test("two denies of equal depth each fail; a deeper deny is the only K102", (t) => {
   const files = {
     "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),

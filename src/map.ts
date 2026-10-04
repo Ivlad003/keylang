@@ -77,8 +77,9 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
   const factCache = options.persist ? cache.serialize() : null;
-  // An explicitly excluded file inside a layer is a module with unknown contents.
-  const excluded = excludedSourceFiles(config).filter((p) => placeFile(config, p) !== null);
+  // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
+  // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
+  const excluded = excludedSourceFiles(config).filter((p) => !config.guessed || placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
   for (const p of excluded) {

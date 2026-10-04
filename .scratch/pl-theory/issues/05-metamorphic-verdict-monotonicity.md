@@ -50,12 +50,12 @@
 
 **Контракт:** у format.md §7 з'являється нормативне речення семантики: вердикти монотонні, K103 — остаточний вердикт нарівні з `ok`/`fail`. Код і вивід CLI не змінюються. Наявні розбіжності (06, 07, 08) стають зафіксованими багами.
 
-- [ ] `npm test` зелений, а `tests/metamorphic.test.ts` з типовою вибіркою додає не більше ~4 с (частка спільного бюджету ≤ ~20 с, spec «Тестові шви»). З `KEYLANG_METAMORPHIC=all` тест теж зелений, крім пар із переліку пропусків.
-- [ ] Три мінімальні фікстури (06, 07, 08) оформлено як підтести `todo`. Без `todo` вони зараз падають із переходами `fail → ok`, `fail → ok` і `unverified → fail`.
-- [ ] Повідомлення про падіння підтесту 06 містить фікстуру, оператор `exclude src/infra/b.ts`, ключ `keylang/rules.md:4`, перехід `fail → ok` і evidence обох запусків.
-- [ ] На `HOOKS` з `HOOK_FLOW` пара `--static behavior` → `shape` дає лише переходи `ok → unverified` (static для `domain.build.build` і `presentation.worker.Worker.generate`, як у tests/flows.test.ts:289).
-- [ ] Тест не запускає keylang на самому репозиторії, нічого не пише в робоче дерево, працює офлайн і прибирає тимчасові теки. Копія `repo/keylang/rules.md` містить усі рядки оригіналу.
-- [ ] format.md §7 «Вердикти» містить речення про монотонність, правило про K103 і перелік винятків (зараз порожній).
+- [x] `npm test` зелений, а `tests/metamorphic.test.ts` з типовою вибіркою додає не більше ~4 с (частка спільного бюджету ≤ ~20 с, spec «Тестові шви»). З `KEYLANG_METAMORPHIC=all` тест теж зелений, крім пар із переліку пропусків.
+- [x] Три мінімальні фікстури (06, 07, 08) оформлено як підтести `todo`. Без `todo` вони зараз падають із переходами `fail → ok`, `fail → ok` і `unverified → fail`.
+- [x] Повідомлення про падіння підтесту 06 містить фікстуру, оператор `exclude src/infra/b.ts`, ключ `keylang/rules.md:4`, перехід `fail → ok` і evidence обох запусків.
+- [x] На `HOOKS` з `HOOK_FLOW` пара `--static behavior` → `shape` дає лише переходи `ok → unverified` (static для `domain.build.build` і `presentation.worker.Worker.generate`, як у tests/flows.test.ts:289).
+- [x] Тест не запускає keylang на самому репозиторії, нічого не пише в робоче дерево, працює офлайн і прибирає тимчасові теки. Копія `repo/keylang/rules.md` містить усі рядки оригіналу.
+- [x] format.md §7 «Вердикти» містить речення про монотонність, правило про K103 і перелік винятків (зараз порожній).
 - [ ] `npm run typecheck` і `npm test` зелені. `src/` не змінено, тож `node bin/keylang.js map --check` = 0 без перегенерації, а `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `tests/metamorphic.test.ts`, `tests/flows.test.ts` (`HOOKS`), `docs/format.md`, `tests/fixtures/repo`, `tests/fixtures/py-shop`, `tests/fixtures/rust-shop`, `tests/fixtures/wiring-shop`
