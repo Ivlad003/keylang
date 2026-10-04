@@ -1374,10 +1374,39 @@ test("explain covers every diagnostic code", () => {
     // The npm package ships no docs/, so an explanation must not send the reader there.
     assert.doesNotMatch(explained.stdout, /format\.md|docs\//, `explain ${code} is self-contained`);
   }
-  assert.match(keylang(root, ["explain", "K001"]).stdout, /planned/);
+  assert.match(keylang(root, ["explain", "K001"]).stdout, /planned[\s\S]*generated file[\s\S]*`keylang baseline`/);
   assert.match(keylang(root, ["explain", "k102"]).stdout, /^K102: /);
   assert.equal(keylang(root, ["explain", "NOPE"]).status, 2);
   assert.equal(keylang(root, ["explain", "toString"]).status, 2);
+});
+
+test("K001 in a generated file names its generator instead of planned; a manual file keeps the planned hint", (t) => {
+  const dir = tempDir(t, "keylang-k001-generated-");
+  writeTree(dir, {
+    "package.json": '{"name":"r","type":"module"}\n',
+    "src/db/db.ts": "export function save(x: string) { return x; }\n",
+    "src/users/users.ts": 'import { save } from "../db/db.ts";\nexport function createUser() { return save("u"); }\n',
+    "src/main.ts": 'import { createUser } from "./users/users.ts";\ncreateUser();\n',
+  });
+  assert.equal(keylang(dir, ["init", "--agents=none"]).status, 0);
+  // Rename layer `db` to `storage`: the baseline and the old map still name `db`.
+  const config = join(dir, "keylang.json");
+  writeFileSync(config, readFileSync(config, "utf8").replace('"db"', '"storage"'));
+  // `check` skips maps under map/, so a map copied elsewhere shows that the command comes from the marker.
+  const usersMap = readFileSync(join(dir, "keylang/map/users.md"), "utf8");
+  writeFileSync(join(dir, "keylang/old-users.md"), usersMap.replace("# map", "# rules").replace(/\n- users[\s\S]*$/, "\n- deny users db.db\n"));
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny users ghost\n");
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stderr);
+  const k001 = o.stdout.split("\n").filter((line) => line.includes(" K001 "));
+  assert.ok(k001.includes("keylang/rules.baseline.md:5:8: K001 dangling reference `db` in a generated file; run `keylang baseline`"), o.stdout);
+  assert.ok(k001.includes("keylang/rules.baseline.md:6:13: K001 dangling reference `db` in a generated file; run `keylang baseline`"), o.stdout);
+  assert.ok(k001.some((line) => /^keylang\/old-users\.md:\d+:\d+: K001 dangling reference `db\.db` in a generated file; run `keylang map`$/.test(line)), o.stdout);
+  assert.ok(k001.includes("keylang/rules.md:3:14: K001 dangling reference `ghost`; declare `planned` if this is an intention"), o.stdout);
+  assert.equal(k001.filter((line) => /did you mean|planned/.test(line)).length, 1, o.stdout);
+  const rows = (JSON.parse(keylang(dir, ["check", "--format", "json"]).stdout) as { results: { file: string; code: string | null; evidence: string }[] }).results;
+  const evidence = rows.filter((row) => row.code === "K001" && row.file === "keylang/rules.baseline.md").map((row) => row.evidence);
+  assert.deepEqual(evidence, Array(2).fill("dangling reference `db` in a generated file; run `keylang baseline`"));
 });
 
 test("explain K005 shows the right form for every reason and the separate planned line", () => {

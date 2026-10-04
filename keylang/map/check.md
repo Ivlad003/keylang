@@ -124,9 +124,11 @@
     - fn [thenCandidates](../../src/resolve.ts#L209) (index: Index, word: string) → string[] <!-- internal -->
     - fn [warnBareThen](../../src/resolve.ts#L223) (index: Index, doc: Document, node: Node, diags: Diagnostic[]) → void <!-- internal -->
       - calls lang.parser.linkTextSpan, lang.parser.isSegment, check.resolve.thenCandidates, base.diag.diagnostic
-    - fn [checkRefs](../../src/resolve.ts#L243) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
-      - calls check.resolve.warnBareThen, check.resolve.Index.lookup, check.resolve.Index.suggest, base.diag.diagnostic, check.resolve.Index.snapshotOpaque, lang.parser.renderMeaning
-    - fn [levenshtein](../../src/resolve.ts#L276) (a: string, b: string) → number <!-- internal -->
+    - fn [danglingMessage](../../src/resolve.ts#L247) (index: Index, doc: Document, target: string) → string <!-- internal -->
+      - calls check.resolve.Index.suggest
+    - fn [checkRefs](../../src/resolve.ts#L257) (index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>) → void <!-- internal -->
+      - calls check.resolve.warnBareThen, check.resolve.Index.lookup, base.diag.diagnostic, check.resolve.danglingMessage, check.resolve.Index.snapshotOpaque, lang.parser.renderMeaning
+    - fn [levenshtein](../../src/resolve.ts#L286) (a: string, b: string) → number <!-- internal -->
   - module [rules](../../src/rules.ts#L1)
     - node external.node
     - config base.config

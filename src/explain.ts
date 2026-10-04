@@ -6,7 +6,7 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
   K001: {
     cause: "A reference names an id that is not declared in a fully indexed module.",
     example: "`step domain.order.create` when the module only exports `createOrder`.",
-    fix: "Fix the id, or declare `planned fn <id> <signature>` if it is an intention that is not implemented yet.",
+    fix: "Fix the id, or declare `planned fn <id> <signature>` if it is an intention that is not implemented yet. In a generated file (first line `keylang:generated`) do neither: run the command the hint names, such as `keylang baseline`, to write it again.",
   },
   K002: {
     cause: "The same id is declared twice.",

@@ -442,6 +442,24 @@ keylang/flows/buy.md:5:10: K008 `then OutOfStock` is read as text, not a referen
 keylang/map.md:5:13: K001 dangling reference `domain.aggregate` (did you mean `domain.orderAggregate`?); declare `planned` if this is an intention
 ```
 
+У файлі з [маркером генерації](#маркер-генерації) K001 не радить `did you mean` і `planned`: такий файл не редагують, а перегенеровують. Підказка називає команду з маркера (`keylang baseline`, `keylang map`), а без команди в маркері — `regenerate it`. Код, рівень і позиція ті самі. Так застарілий `rules.baseline.md` після перейменування шару в `keylang.json` веде до `keylang baseline`:
+
+```keylang path=keylang/map.md
+- layer app
+```
+
+```keylang path=keylang/rules.baseline.md
+<!-- keylang:generated — не редагувати, `keylang baseline` -->
+
+# rules
+
+- deny app ghost
+```
+
+```diagnostics
+keylang/rules.baseline.md:5:12: K001 dangling reference `ghost` in a generated file; run `keylang baseline`
+```
+
 **Р13. Без знімка модуль без членів непрозорий** (слайди: `infrastructure.config.log`). Зі знімком вирішує він: `members: complete` дає K001 на невідомого члена, а `members: opaque` (зовнішній модуль, помилка розбору, файл із `exclude`) — `unverified`, не K001, навіть коли карта перелічує члени, які вдалося прочитати з частково розібраного файла. K001 має підказку `did you mean` і `declare `planned``.
 
 Без `keylang.json` член непрозорого модуля не дає K001:
@@ -507,7 +525,7 @@ keylang/map/b.md:3:12: K002 duplicate ID `domain.order` (first declared at keyla
 
 | Код | Рівень | Значення |
 |---|---|---|
-| K001 | error | висяче посилання |
+| K001 | error | висяче посилання; у згенерованому файлі підказка — команда генератора з маркера |
 | K002 | error | дубльований ID (або ім'я потоку) |
 | K003 | error | структура: відступ, таб, порожній елемент |
 | K004 | error | ключове слово невідоме або недозволене в цій позиції |

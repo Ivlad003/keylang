@@ -171,13 +171,19 @@ test("mcp: check.static shape matches check, and editing the field is seen witho
   assert.ok(!behavior.some((row) => row.evidence.includes("check.static")), behavior.map(stamp).join("\n"));
 });
 
+const STALE_BASELINE = "<!-- keylang:generated — не редагувати, `keylang baseline` -->\n\n# rules\n\n- deny ghost domain\n";
+const STALE_K001 = "dangling reference `ghost` in a generated file; run `keylang baseline`";
+
 test("mcp: check returns the results of `check --format json`", async (t) => {
   const mcp = await connect(t);
+  // A stale generated baseline: its K001 names the generator, the same text as the CLI.
+  writeFileSync(join(mcp.dir, "keylang/rules.baseline.md"), STALE_BASELINE);
   const viaMcp = JSON.parse((await mcp.call("check")).text) as { results: unknown[]; snapshotId: string };
   const cli = spawnSync(process.execPath, [bin, "check", "--format", "json"], { cwd: mcp.dir, encoding: "utf8" });
   const viaCli = JSON.parse(cli.stdout) as { results: unknown[]; snapshotId: string };
   assert.equal(viaMcp.snapshotId, viaCli.snapshotId);
   assert.deepEqual(viaMcp.results, viaCli.results);
+  assert.ok((viaMcp.results as { evidence: string }[]).some((row) => row.evidence === STALE_K001), cli.stdout);
 });
 
 test("mcp: apply_diff only writes a pending proposal; a target outside the specs is refused", async (t) => {

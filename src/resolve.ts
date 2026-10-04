@@ -240,6 +240,20 @@ function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic
   diags.push(diagnostic("K008", doc.path, span, `\`then ${word}\` is read as text, not a reference (did you mean ${listed}?)`));
 }
 
+/**
+ * K001 text. A generated file is regenerated, not edited, so `did you mean` and
+ * `planned` would mislead there: the hint names the command from its marker.
+ */
+function danglingMessage(index: Index, doc: Document, target: string): string {
+  if (doc.generated !== null) {
+    const command = /`(keylang [^`]+)`/.exec(doc.generated)?.[1];
+    return `dangling reference \`${target}\` in a generated file; ${command ? `run \`${command}\`` : "regenerate it"}`;
+  }
+  const near = index.suggest(target);
+  const hint = near === undefined ? "" : ` (did you mean \`${near}\`?)`;
+  return `dangling reference \`${target}\`${hint}; declare \`planned\` if this is an intention`;
+}
+
 function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[], unverified: Unverified[], knownExternal: ReadonlySet<string>): void {
   warnBareThen(index, doc, node, diags);
   let ok = true;
@@ -252,11 +266,7 @@ function checkRefs(index: Index, doc: Document, node: Node, diags: Diagnostic[],
     if (hit.kind === "missing") {
       if (knownExternal.has(r.target)) continue;
       ok = false;
-      let msg = `dangling reference \`${r.target}\``;
-      const s = index.suggest(r.target);
-      if (s !== undefined) msg += ` (did you mean \`${s}\`?)`;
-      msg += "; declare `planned` if this is an intention";
-      diags.push(diagnostic("K001", doc.path, r.span, msg, r.target));
+      diags.push(diagnostic("K001", doc.path, r.span, danglingMessage(index, doc, r.target), r.target));
     } else if (hit.kind === "opaque" && index.snapshotOpaque(hit.decl.id)) {
       unverified.push({
         file: doc.path,

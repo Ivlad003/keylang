@@ -263,6 +263,22 @@ test("lsp: diagnostics of an open rules.md equal check --format json, pushed and
   }
 });
 
+const STALE_BASELINE = "<!-- keylang:generated — не редагувати, `keylang baseline` -->\n\n# rules\n\n- deny ghost domain\n";
+const STALE_K001 = "dangling reference `ghost` in a generated file; run `keylang baseline`";
+
+test("lsp: K001 in an open generated baseline names its generator, as check --format json does", async (t) => {
+  const dir = fixture(t, { "keylang/rules.baseline.md": STALE_BASELINE });
+  const rows = checkRows(dir, "keylang/rules.baseline.md").filter((row) => row.code === "K001");
+  assert.deepEqual(rows.map((row) => `${row.code} ${row.evidence}`), [`K001 ${STALE_K001}`]);
+  const s = await open(t, dir);
+  const baselineUri = uri(dir, "keylang/rules.baseline.md");
+  s.notify("textDocument/didOpen", { textDocument: { uri: baselineUri, languageId: "markdown", version: 1, text: STALE_BASELINE } });
+  const pushed = await s.until(() => s.messages.find((m) => m.method === "textDocument/publishDiagnostics" && m.params?.uri === baselineUri && (m.params.diagnostics?.length ?? 0) > 0));
+  const items = pushed.params!.diagnostics!.filter((item) => item.code === "K001");
+  assert.equal(items.length, 1, JSON.stringify(pushed.params));
+  assert.ok(sameAs(rows[0]!, items[0]!), JSON.stringify({ rows, items }));
+});
+
 test("lsp: open buffers are checked without writing, a new generation replaces the old", async (t) => {
   const dir = fixture(t);
   const s = await open(t, dir);
