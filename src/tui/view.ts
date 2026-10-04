@@ -386,6 +386,47 @@ export function flowSequence(overlay: FlowOverlay): string {
   return overlay.sequence.map((part) => `${part.layer} ${part.first === part.last ? circled(part.first) : `${circled(part.first)}–${circled(part.last)}`}`).join(" → ");
 }
 
+/** A clickable part of the zoom screen's header row (c4-zoom/10): what it does and where it is. */
+export interface ZoomButton {
+  action: "up" | "in" | "shallower" | "deeper" | "edges" | "flow";
+  /** Cells from the left of the header row. */
+  x: number;
+  width: number;
+}
+
+/**
+ * The header's buttons, right-aligned, and their text: `[−] [+] [depth N ▾▴]
+ * [c edges] [f flow ▾]`. Each does what its key does; the crumbs get what
+ * is left of the row, so on a narrow terminal the crumbs are cut, never a
+ * button. `▾` and `▴` are buttons of their own inside the depth one.
+ */
+export function zoomButtons(zoom: { depth: number; view: "nodes" | "edges"; flow: string | null }, width: number): { text: string; buttons: ZoomButton[] } {
+  const parts: { text: string; action?: ZoomButton["action"] }[] = [
+    { text: "[−]", action: "up" },
+    { text: " " },
+    { text: "[+]", action: "in" },
+    { text: " " },
+    { text: `[depth ${zoom.depth} ` },
+    { text: "▾", action: "shallower" },
+    { text: "▴", action: "deeper" },
+    { text: "]" },
+    { text: " " },
+    { text: zoom.view === "edges" ? "[c nodes]" : "[c edges]", action: "edges" },
+    { text: " " },
+    { text: zoom.flow === null ? "[f flow ▾]" : `[f ${zoom.flow} ×]`, action: "flow" },
+    { text: " " },
+  ];
+  const text = parts.map((part) => part.text).join("");
+  let x = Math.max(0, width - stringWidth(text));
+  const buttons: ZoomButton[] = [];
+  for (const part of parts) {
+    const cells = stringWidth(part.text);
+    if (part.action) buttons.push({ action: part.action, x, width: cells });
+    x += cells;
+  }
+  return { text, buttons };
+}
+
 /**
  * The zoom screen (c4-zoom/07): crumbs and depth, what the focus is with
  * where the words come from, then the level's rows — children, then the
@@ -398,9 +439,11 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   const level = zoomLevel(analysis, zoom.focus, zoom.depth);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
   const overlay = zoom.flow === null ? null : flowOverlay(analysis, zoom.flow, zoom.focus, (file, line) => evidenceOf(analysis, file).get(line)?.mark ?? null);
-  const right = `${overlay ? ` flow ${overlay.flow} ·` : ""}${zoom.view === "edges" ? " edges " : ` depth ${zoom.depth} `}`;
-  grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), rect.width - stringWidth(right) - 2), THEME.panelTitle, rect.width - stringWidth(right) - 2);
-  grid.write(rect.x + rect.width - stringWidth(right), rect.y, right, THEME.panelTitle);
+  // The buttons keep their place on any width; the crumbs get what is left (c4-zoom/10).
+  const header = zoomButtons(zoom, rect.width);
+  const room = header.buttons[0]!.x - 2;
+  grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), room), THEME.panelTitle, room);
+  grid.write(rect.x + rect.width - stringWidth(header.text), rect.y, header.text, { ...THEME.panelTitle, bold: true });
   const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
   const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wrapWords(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
   // A flow over the level takes the second row: its layers in the order written at the top and on a layer, else its steps here.

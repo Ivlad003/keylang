@@ -64,7 +64,7 @@ test("tui zoom flow: the check flow of keylang itself, layer by layer in the ord
   zoom(s);
   pickFlow(s, "check");
   let text = s.text();
-  assert.match(text, /flow check · depth 1/);
+  assert.match(text, /\[depth 1 ▾▴\] \[c edges\] \[f check ×\]/);
   assert.match(text, /flow check: cli ①–③ → operations ④ → map ⑤–⑥ → lang ⑦ → check ⑧ → lang ⑨ → check ⑩–⑫ → features ⑬/);
   assert.match(s.lines().find((line) => / layer +cli /.test(line)) ?? "", /layer +cli ①②③/);
   // Into the map layer: its modules carry their steps, in the order the flow writes them.

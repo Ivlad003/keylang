@@ -66,7 +66,7 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight } from "./view.ts";
+import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -1948,10 +1948,22 @@ export class App {
       return;
     }
     if (event.action !== "down" || event.button !== 0) return;
+    // A button of the header does what its key does.
+    if (event.y === editor.y) {
+      const button = zoomButtons(zoom, editor.width).buttons.find((item) => event.x - editor.x >= item.x && event.x - editor.x < item.x + item.width);
+      if (button) this.zoomButton(button.action);
+      return;
+    }
     const index = zoom.top + event.y - editor.y - ZOOM_HEAD;
     if (event.y < editor.y + ZOOM_HEAD || index >= this.zoomCount()) return;
     zoom.selected.set(zoomSelectKey(zoom), index);
     this.state.hover = null;
+  }
+
+  /** A header button of the zoom screen: the same as its key. */
+  private zoomButton(action: ZoomButton["action"]): void {
+    const key = { up: "-", in: "+", shallower: "<", deeper: ">", edges: "c", flow: "f" }[action];
+    this.zoomKey({ type: "key", name: key, ctrl: false, alt: false, shift: false, text: key });
   }
 
   /** `e` and `K`: the explain hover of the selected node, as `e` shows it in the view. */

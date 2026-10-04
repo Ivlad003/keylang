@@ -19,7 +19,7 @@ import { App } from "../src/tui/app.ts";
 import { runOperation } from "../src/operations.ts";
 import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
-import { checkoutRepo, CHECKOUT_FILES, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -902,9 +902,9 @@ test("web: the zoom screen over the real transport: z from the palette, + into a
   palette(screen, "zoom");
   await waitFor(() => / ZOOM $/.test(screen.lines()[0] ?? "") && /▸ layer  domain/.test(screen.text()), "the zoom screen at the repository");
   screen.input("+");
-  await waitFor(() => /system › domain +depth 1/.test(screen.text()) && /module order/.test(screen.text()), "the domain's level");
+  await waitFor(() => /system › domain +\[−\] \[\+\] \[depth 1 ▾▴\]/.test(screen.text()) && /module order/.test(screen.text()), "the domain's level");
   screen.input("-");
-  await waitFor(() => /system +depth 1/.test(screen.text()) && !/system › domain/.test(screen.text()), "back at the repository");
+  await waitFor(() => /system +\[−\] \[\+\] \[depth 1 ▾▴\]/.test(screen.text()) && !/system › domain/.test(screen.text()), "back at the repository");
   screen.input("q");
   await waitFor(() => !/ ZOOM $/.test(screen.lines()[0] ?? ""), "the view again");
 });
@@ -920,9 +920,9 @@ test("web: the edges view of the zoom screen over the real transport: c, then En
   palette(screen, "zoom");
   await waitFor(() => / ZOOM $/.test(screen.lines()[0] ?? ""), "the zoom screen");
   screen.input("c");
-  await waitFor(() => /system +edges/.test(screen.text()) && /inside +application → domain · call ×1, import ×1/.test(screen.text()), "the edges of the repository");
+  await waitFor(() => /system +\[−\].*\[c nodes\]/.test(screen.text()) && /inside +application → domain · call ×1, import ×1/.test(screen.text()), "the edges of the repository");
   screen.input(KEY.enter);
-  await waitFor(() => /system › domain +edges/.test(screen.text()) && /in +application\.purchase → order/.test(screen.text()), "the edges of the domain");
+  await waitFor(() => /system › domain +\[−\].*\[c nodes\]/.test(screen.text()) && /in +application\.purchase → order/.test(screen.text()), "the edges of the domain");
 });
 
 test("web: a flow laid over the zoom levels over the real transport: f picks it, + keeps it on the next level (c4-zoom/09)", async (t) => {
@@ -941,4 +941,19 @@ test("web: a flow laid over the zoom levels over the real transport: f picks it,
   await waitFor(() => /flow checkout: presentation ① → application ② → domain ③ → infrastructure ④/.test(screen.text()), "the layers the flow walks");
   screen.input("+");
   await waitFor(() => /system › domain/.test(screen.text()) && /module +order ③/.test(screen.text()), "the step on the domain's module");
+});
+
+test("web: a click on [+] in the zoom screen's header zooms in over the real transport (c4-zoom/10)", async (t) => {
+  const root = checkoutRepo(t);
+  const { url } = await startWeb(t, root);
+  const client = new Client(url, "session-zoom-mouse", 130, 30);
+  t.after(() => client.close());
+  await client.opened;
+  const screen = clientScreen(client);
+  await waitFor(() => analysed(screen), "the first analysis");
+  palette(screen, "zoom");
+  await waitFor(() => screen.text().includes("[+]"), "the zoom screen's buttons");
+  const at = locate(screen.lines(), "[+]");
+  screen.input(click(at.x, at.y));
+  await waitFor(() => /system › domain/.test(screen.text()), "the domain's level after the click");
 });

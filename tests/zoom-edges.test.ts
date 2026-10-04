@@ -59,7 +59,7 @@ test("tui zoom edges: c shows the edges of the level; Enter follows one to the o
   assert.equal(s.app.state.zoom?.focus, "application");
   s.send("c");
   let text = s.text();
-  assert.match(text, /system › application +edges/);
+  assert.match(text, /system › application +\[−\].*\[c nodes\]/);
   assert.match(text, /in +presentation\.terminal → purchase · call ×1, import ×1 +2/);
   assert.match(text, /out +purchase → domain\.order · call ×1, import ×1 +2/);
   s.send("j");
@@ -67,14 +67,14 @@ test("tui zoom edges: c shows the edges of the level; Enter follows one to the o
   assert.equal(s.app.state.zoom?.focus, "domain.order");
   assert.equal(s.app.state.zoom?.view, "edges");
   text = s.text();
-  assert.match(text, /system › domain › order +edges/);
+  assert.match(text, /system › domain › order +\[−\].*\[c nodes\]/);
   assert.match(text, /in +application\.purchase\.buy → create · call ×1/);
   s.send("-");
   assert.equal(s.app.state.zoom?.focus, "domain");
   assert.match(s.text(), /◌ unresolved inside: dynamic-call ×1/);
   s.send("c");
   assert.equal(s.app.state.zoom?.view, "nodes");
-  assert.match(s.text(), /depth 1/);
+  assert.match(s.text(), /\[depth 1 ▾▴\] \[c edges\]/);
 });
 
 test("tui zoom edges: x on an edge row explains its edges in F6; x then x on two nodes does the same; Esc comes back to the zoom", async (t) => {

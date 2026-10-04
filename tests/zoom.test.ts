@@ -123,14 +123,14 @@ test("tui zoom: z on a module opens its level; - goes up to its layer with the m
   s.send("z");
   assert.equal(s.app.state.mode, "zoom");
   let text = s.text();
-  assert.match(text, /system › application › purchase +depth 1/);
+  assert.match(text, /system › application › purchase +\[−\] \[\+\] \[depth 1 ▾▴\]/);
   assert.match(text, /fn +buy/);
   assert.match(text, /fn +domain\.order\.create ·1/);
   assert.match(s.lines()[0]!, / ZOOM $/);
 
   s.send("-");
   text = s.text();
-  assert.match(text, /system › application +depth 1/);
+  assert.match(text, /system › application +\[−\] \[\+\] \[depth 1 ▾▴\]/);
   assert.equal(s.app.state.zoom?.focus, "application");
   assert.equal(s.app.state.zoom?.selected.get("application"), 0, "the module it came from is selected");
   s.send("j");
@@ -168,11 +168,11 @@ test("tui zoom: Enter on a fn opens its code and Esc comes back to the same leve
   assert.equal(s.app.state.zoom?.focus, "domain");
   assert.match(s.text(), /… 2 more at depth 2: > shows them/);
   s.send(">");
-  assert.match(s.text(), /depth 2/);
+  assert.match(s.text(), /\[depth 2 ▾▴\]/);
   assert.match(s.text(), /infrastructure\.store ·2/);
   s.send("<");
   s.send("<");
-  assert.match(s.text(), /depth 0/);
+  assert.match(s.text(), /\[depth 0 ▾▴\]/);
   assert.doesNotMatch(s.text(), /application\.purchase ·1/);
   s.send("<");
   assert.match(s.app.state.message ?? "", /depth 0: only the children/);
