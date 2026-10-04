@@ -14,6 +14,7 @@ import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
+const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
 const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
 
 async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }>; list(): Promise<string[]> }> {
@@ -252,4 +253,29 @@ test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
   assert.equal(status.done, false);
   assert.ok(status.gaps.some((gap) => gap.kind === "planned"));
   assert.equal(treeBytes(mcp.dir), disk);
+});
+
+// Ticket harness-integration/02: the command `agents` writes to `.mcp.json`,
+// run as written, starts a server that answers `tools/list`. The published
+// `npx -y keylang@<VERSION>` needs the npm registry, so the test swaps that
+// prefix for this checkout's CLI under this Node and keeps the rest — the
+// `mcp` argument — from the config.
+test("mcp: the command .mcp.json pins starts a server that answers tools/list", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-mcp-cmd-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+  const init = spawnSync(process.execPath, [bin, "init", "--agents=claude"], { cwd: dir, encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
+  const server = (JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")) as { mcpServers: { keylang: { command: string; args: string[] } } }).mcpServers.keylang;
+  assert.deepEqual(server, { command: "npx", args: ["-y", `keylang@${VERSION}`, "mcp"] });
+  const pinned = ["-y", `keylang@${VERSION}`];
+  assert.deepEqual(server.args.slice(0, pinned.length), pinned);
+  const args = [bin, ...server.args.slice(pinned.length)];
+  const client = new Client({ name: "keylang-test", version: "0" });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args, cwd: dir, stderr: "pipe" }));
+  t.after(() => client.close());
+  const listed = await client.listTools();
+  for (const name of ["search", "node", "code", "flows", "check", "explain", "apply_diff", "context", "validate_spec", "scaffold", "feature_status"]) {
+    assert.ok(listed.tools.some((tool) => tool.name === name), name);
+  }
 });
