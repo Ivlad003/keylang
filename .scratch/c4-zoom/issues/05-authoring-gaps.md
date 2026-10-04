@@ -16,15 +16,18 @@
 
 **Model:** claude:claude-opus-5-5
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Verify:** `node --test tests/authoring-gaps.test.ts` · `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] тести тікета — у новому файлі `tests/authoring-gaps.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
-- [ ] e2e: baseline з `deny app domain`; фіча з тригером в `app` і кроком до `planned fn domain.x.y` → прогалина `deny` з `rules.baseline.md:N` і порадою про `allow`; з `allow app domain` у `rules.md` → прогалини немає
-- [ ] після реалізації обох кінців прогнозу немає, лишається звичайна оцінка правил
-- [ ] `planned module nolayer.thing` → підказка `layer`; `planned module external.stripe` → підказки немає
-- [ ] `planned fn` без сигнатури → підказка `signature` і `stage structure`; після реалізації `done` не блокується
-- [ ] tools.md і SKILL.md описують нові види
+- [x] тести тікета — у новому файлі `tests/authoring-gaps.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
+- [x] e2e: baseline з `deny app domain`; фіча з тригером в `app` і кроком до `planned fn domain.x.y` → прогалина `deny` з `rules.baseline.md:N` і порадою про `allow`; з `allow app domain` у `rules.md` → прогалини немає
+- [x] після реалізації обох кінців прогнозу немає, лишається звичайна оцінка правил
+- [x] `planned module nolayer.thing` → підказка `layer`; `planned module external.stripe` → підказки немає
+- [x] `planned fn` без сигнатури → підказка `signature` і `stage structure`; після реалізації `done` не блокується
+- [x] tools.md і SKILL.md описують нові види
 
 ## Comments
+
+- 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. `denyGaps` у `src/feature-status.ts` перевикористовує `denyingRule` і `dependencyKindOf` (`src/rules.ts`); `FeatureInput` отримав `index`, `format` і `layers`, їх передають CLI-операція й MCP. Підказки `layer` і `signature` — на рядку `planned`. Тести — `tests/authoring-gaps.test.ts`.
+- Порада залежить від власника правила: для заборони з baseline — `- allow <шар> <шар>` у `keylang/rules.md` через `apply_diff` (для пакета — `external.<pkg>`); для ручної заборони — план потребує іншого шляху. Інакше агент пропонував би `allow`, що програє ручному `deny` (deny-overrides у редакції 2).

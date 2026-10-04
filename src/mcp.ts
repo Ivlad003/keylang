@@ -300,7 +300,7 @@ export function mcpServer(root: string, version: string): McpServer {
         return failure(error instanceof Error ? error.message : String(error));
       }
       const report = featureStatus(
-        { dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts, nodes: analysis.snapshot?.nodes ?? {}, base },
+        { dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts, nodes: analysis.snapshot?.nodes ?? {}, base, index: analysis.index, format: analysis.config.format, layers: [...analysis.config.layers.keys()] },
         slug,
       );
       if (report === null) return failure(`no feature \`${slug}\``);

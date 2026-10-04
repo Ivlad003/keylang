@@ -4012,7 +4012,7 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
     return emptyFeature("failed", 2, messageOf(error));
   }
   const report = featureStatus(
-    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base },
+    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base, index: analyzed.index, format: config.format, layers: [...config.layers.keys()] },
     request.slug,
   );
   if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);

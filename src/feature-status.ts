@@ -6,9 +6,12 @@
 // from an idea to a spec an agent can implement (.scratch/c4-zoom, B1).
 
 import { sameFinding } from "./assess.ts";
+import type { RuleFormat } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
 import { plannedMismatch } from "./flows.ts";
+import type { Index } from "./resolve.ts";
+import { denyingRule, dependencyKindOf } from "./rules.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { compareText, type Span } from "./span.ts";
 import { compileSpec, walkFlow, type Flow, type FlowItem, type FlowStep, type QuestionItem, type SpecIR, type Trigger } from "./spec-ir.ts";
@@ -25,7 +28,7 @@ export type Stage = "idea" | "behavior" | "structure" | "ready" | "done";
 
 /** What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed. */
 export interface Gap {
-  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question";
+  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question" | "deny";
   id: string;
   file: string;
   line: number;
@@ -36,7 +39,7 @@ export interface Gap {
 
 /** What the spec still lacks that does not keep the feature from done: the next step of a stage. */
 export interface Hint {
-  kind: "trigger" | "steps";
+  kind: "trigger" | "steps" | "layer" | "signature";
   id: string;
   file: string;
   line: number;
@@ -85,14 +88,19 @@ export interface FeatureInput {
   nodes?: Readonly<Record<string, { kind: string; signature?: string | null }>>;
   /** The feature file at its base commit; omitted, the plan is not compared. */
   base?: FeatureBase;
+  /** The resolver index and the format edition: with both, a planned edge a rule would deny is predicted (c4-zoom/05). */
+  index?: Index;
+  format?: RuleFormat;
+  /** Layers of `keylang.json`: a planned id outside them and `external` is a `layer` hint. */
+  layers?: readonly string[];
 }
 
 const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
 /** Errors of the spec itself: a line keylang could not read is no claim it checks. */
 const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
-const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, planned: 3, static: 4, rule: 5, spec: 6 };
-const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1 };
+const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, deny: 3, planned: 4, static: 5, rule: 6, spec: 7 };
+const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1, layer: 2, signature: 3 };
 
 /** Ids declared or named in one spec, in first-seen order. */
 export function idsIn(doc: Document): string[] {
@@ -144,6 +152,8 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
       gaps.push({ kind: "question", id: flow.name, file: path, line: item.span.start.line, col: item.span.start.col, reason: `open question: ${item.question}`, stage: "structure" });
     });
   }
+
+  gaps.push(...denyGaps(input, path, flows));
 
   for (const item of planned) {
     const line = item.span.start.line;
@@ -202,6 +212,17 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     if (!steps) hints.push({ kind: "steps", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no steps yet: add \`- step\`, \`- calls\`, \`- when\` or \`- invariant\``, stage: "behavior" });
   }
 
+  for (const item of planned) {
+    const at = { file: path, line: item.span.start.line, col: item.span.start.col };
+    const layer = item.id.split(".")[0]!;
+    if (input.layers !== undefined && layer !== EXTERNAL_LAYER && !input.layers.includes(layer)) {
+      hints.push({ kind: "layer", id: item.id, ...at, reason: `\`${layer}\` is no layer of keylang.json, so code can never implement \`${item.id}\`: start the id with a layer (${input.layers.join(", ")}) or \`external\``, stage: "structure" });
+    }
+    if (item.decl === "fn" && item.signature === null) {
+      hints.push({ kind: "signature", id: item.id, ...at, reason: `planned fn \`${item.id}\` has no signature: write it after the id, so an agent knows the contract and K201 can check it`, stage: "structure" });
+    }
+  }
+
   gaps.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.id, b.id) || compareText(a.reason, b.reason));
   hints.sort((a, b) => a.line - b.line || a.col - b.col || HINT_ORDER[a.kind] - HINT_ORDER[b.kind] || compareText(a.id, b.id));
   const info = (criterion: "tests" | "trace"): FeatureInfo[] =>
@@ -221,6 +242,58 @@ function stageOf(hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[])
   if (at("idea") || at("behavior")) return "behavior";
   if (at("structure")) return "structure";
   return "ready";
+}
+
+/** The packages' layer: a planned id there names an integration, not a module of a layer. */
+const EXTERNAL_LAYER = "external";
+
+/**
+ * Edges a flow of the feature asks for that a rule would deny once they are
+ * code: a `step` or `calls` target under its parent `trigger` or `step` (a
+ * top-level one under the first trigger), while one end is still `planned`
+ * and not implemented. Once both ends are code, `check` judges the real edge.
+ * The baseline's deny is lifted by a manual `allow` over the same areas (ADR
+ * 0013); a person's own deny needs another design, or a person changes it.
+ */
+function denyGaps(input: FeatureInput, path: string, flows: readonly Flow[]): Gap[] {
+  if (input.index === undefined || input.format === undefined) return [];
+  const kindOf = dependencyKindOf(input.spec, input.index, input.nodes);
+  const pending = new Set(input.spec.planned.filter((item) => input.nodes?.[item.id] === undefined).map((item) => item.id));
+  const generated = new Set(input.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
+  const gaps: Gap[] = [];
+  const seen = new Set<string>();
+  const check = (from: string | null, to: string, span: Span): void => {
+    if (from === null || from === to || (!pending.has(from) && !pending.has(to))) return;
+    const rule = denyingRule(input.spec, from, to, kindOf, input.format);
+    const key = `${from}\0${to}\0${span.start.line}`;
+    if (rule === null || seen.has(key)) return;
+    seen.add(key);
+    const scope = (id: string): string => (id.startsWith(`${EXTERNAL_LAYER}.`) ? id.split(".").slice(0, 2).join(".") : id.split(".")[0]!);
+    const what = generated.has(rule.file)
+      ? `a person adds \`- allow ${scope(from)} ${scope(to)}\` to keylang/rules.md (an agent proposes it through apply_diff)`
+      : "the rule is a person's: the plan needs another path, or a person changes the rule";
+    gaps.push({
+      kind: "deny",
+      id: to,
+      file: path,
+      line: span.start.line,
+      col: span.start.col,
+      reason: `once implemented, \`${from}\` → \`${to}\` breaks \`${rule.text}\` (${rule.file}:${rule.line}): ${what}`,
+      stage: "structure",
+    });
+  };
+  for (const flow of flows) {
+    const visit = (item: Trigger | FlowItem, parent: string | null): void => {
+      if (item.kind === "step") check(parent, item.target.target, item.span);
+      if (item.kind === "calls") for (const ref of item.targets) check(parent, ref.target, ref.span);
+      if (item.kind === "test") return;
+      const next = item.kind === "trigger" || item.kind === "step" ? item.target.target : parent;
+      for (const child of item.children) visit(child, next);
+    };
+    const first = flow.triggers[0]?.target.target ?? null;
+    for (const item of flow.top) visit(item, item.kind === "trigger" ? null : first);
+  }
+  return gaps;
 }
 
 /** The static claims of a flow, in order: every `step`, and every target of a `calls` line. */
