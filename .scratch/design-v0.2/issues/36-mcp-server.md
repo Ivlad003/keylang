@@ -6,7 +6,11 @@
 
 **Blocked by:** 23
 
-**Status:** needs-triage
+**Status:** resolved
 
-- [ ] інтеграційний тест через stdio: `node application.purchase.buy` повертає сигнатуру, ребра, потоки, докази
-- [ ] `apply_diff` не пише файли; повертає diff і статус «pending»
+- [x] інтеграційний тест через stdio: `node application.purchase.buy` повертає сигнатуру, ребра, потоки, докази
+- [x] `apply_diff` не пише файли; повертає diff і статус «pending»
+
+## Comments
+
+- 2026-10-04 — тріаж (рішення 3А з HANDOFF-2026-10-02): усі критерії виконано тікетами m5-m7/17–18: stdio-інтеграційний тест `tests/mcp.test.ts` (signature, ребра, flows, докази; фікстура `app.checkout.checkout` замість `application.purchase.buy`); «mcp: apply_diff only writes a pending proposal…». Ліміт залежностей скасовано (ADR 0002).

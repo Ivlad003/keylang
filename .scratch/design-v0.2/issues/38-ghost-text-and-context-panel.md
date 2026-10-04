@@ -6,8 +6,12 @@
 
 **Blocked by:** 31, 35
 
-**Status:** needs-triage
+**Status:** resolved
 
-- [ ] ghost не з'являється без сигналу; ніколи не пропонує невідомий ID
-- [ ] панель контексту явно показує planned-вузли й неповноту даних
-- [ ] метрики записуються локально (`.keylang/stats.json`)
+- [x] ghost не з'являється без сигналу; ніколи не пропонує невідомий ID
+- [x] панель контексту явно показує planned-вузли й неповноту даних
+- [x] метрики записуються локально (`.keylang/stats.json`)
+
+## Comments
+
+- 2026-10-04 — тріаж (рішення 3А з HANDOFF-2026-10-02): усі критерії виконано тікетами m5-m7/22–24: «tui: ghost text appears only on a new flow item, never with an unknown id…» (`tests/tui.test.ts`), типово 400 мс (`src/config.ts`), панель контексту показує planned і неповні дані, метрики в `.keylang/stats.json`, Ctrl+Space. Вимір користі з людьми — поза чекбоксами, у дорожній карті format.md.
