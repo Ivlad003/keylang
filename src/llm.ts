@@ -2,7 +2,7 @@
 // `~/.config/keylang/agents.json` "use", else `keylang.json` `agent`):
 // `anthropic:<model>` through the official SDK, `openrouter:<model>` through
 // its chat completions endpoint with SSE, `cli:<name>[:<model>]` through an
-// installed agent CLI (`agent-cli.ts`, ADR 0011). Keys come from the environment or
+// installed agent CLI (`agent-cli.ts`, ADR 0012). Keys come from the environment or
 // `~/.config/keylang/<provider>.key` (mode 0600). Base URLs can be moved
 // (`ANTHROPIC_BASE_URL`, `OPENROUTER_BASE_URL`), which is how tests run
 // against a local server without the network. A request that takes longer

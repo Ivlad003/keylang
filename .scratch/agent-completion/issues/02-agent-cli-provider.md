@@ -20,7 +20,7 @@
 - [x] `tests/agent-cli.test.ts` через справжній CLI з фейковими бінарниками на PATH (`HOME` у tmp): точний argv, cwd/PWD, куди йде system-текст, промт на stdin, `KEYLANG_NESTED`, opencode `permission: deny`, custom пропускає `{model}`; збої (відсутній бінарник → офлайн-фолбек, `--mode llm` → 2, `hang` з `KEYLANG_LLM_TIMEOUT_MS` → 2 і мертві pid дитини й онука, порожня відповідь → 2, нічого не записано); `keylang.json` `cli:claude` запускає фейк; Grok-версія `agent` → текст «не Cursor CLI»; невалідні моделі та `agents.json` → 2 з назвою поля; `doctor` друкує обидва рядки
 - [x] `tests/tui.test.ts`: ghost через `KEYLANG_AGENT=cli:claude` з режимами `hang,ok,hang` — старий процес мертвий, варіанти показані, `Esc` вбиває, після `close()` живих фейків немає
 - [x] `docs/tools.md`: новий розділ «Модель: API або агент-CLI» (граматика, пріоритет, agents.json, таблиця пресетів із версіями, env, таймаут, безпека: custom не в пісочниці, вкладений агент читає репо й секрети, SIGTSTP лишає дітей); рядки `doctor` і `agent`
-- [x] `docs/adr/0011-agent-cli-provider.md` (0009 зайнято LTLf, 0010 — declared packages); ADR 0005 п. 1 уточнено посиланням; `CONTEXT.md` — термін «агент-CLI (провайдер моделі)»
+- [x] `docs/adr/0012-agent-cli-provider.md` (0009 — LTLf, 0010 — declared packages, 0011 — outside); ADR 0005 п. 1 уточнено посиланням; `CONTEXT.md` — термін «агент-CLI (провайдер моделі)»
 - [x] `npm run typecheck`, `npm test`, `map` (переглянути diff), `map --check`, `check` — зелені
 
 Ключові файли: `src/config.ts`, новий `src/agent-cli.ts`, `src/llm.ts`, `src/tui/assist.ts`, `src/cli.ts` (doctor, jobs), `tests/fixtures/fake-agent.mjs`
@@ -32,7 +32,7 @@
 - `llm.ts` загортає `cliClient`: `CliCancelled` → `LlmCancelled`, межа часу — той самий `deadline()` (без другого парсера `KEYLANG_LLM_TIMEOUT_MS`). `LlmClient.bin` — бінарник CLI для doctor.
 - Пріоритет і рішення Q1: `cli:` з `keylang.json` діє; тест «keylang.json cli:claude запускає фейк» — `explain --missing --llm --limit 3` з `agent: "cli:claude"`.
 - Відхилення / припущення:
-  - ADR — 0011, бо 0009 (flow properties) і 0010 (declared packages) вже зайняті на master.
+  - ADR — 0012: 0009 (flow properties), 0010 (declared packages) і 0011 (outside) зайняті на master.
   - `docs/format.md` не має розділу конфігурації (`agent` описано в `docs/tools.md`), тому format.md не змінено.
   - `tools: "read"` (читання репо інструментами) не реалізовано: він потрібен лише spec-to-code hybrid (тікет 08); усі пресети зараз — `none`.
   - `ghost.delay` у JSON приймає `null` як «типове»; тип `number | null`.

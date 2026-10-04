@@ -1,4 +1,4 @@
-// An agent CLI as the model (`cli:*`, ADR 0011), through the real keylang
+// An agent CLI as the model (`cli:*`, ADR 0012), through the real keylang
 // CLI with fake agent binaries on a PATH of their own and HOME in a temp
 // directory: the exact argv, where the system text and the prompt go, the
 // child's cwd and env, the failures, the selection order and doctor.
