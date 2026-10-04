@@ -220,8 +220,9 @@ function keylangAsync(cwd: string, args: string[], env: Record<string, string | 
   });
 }
 
-/** The node a prompt asks about: the first line of the summary is `<kind> <id> …`. */
+/** The node a prompt asks about: the first line of the summary is `<kind> <id> …`; the repository's prompt names it. */
 function askedId(prompt: string): string {
+  if (prompt.startsWith("Repository: ")) return "@system";
   return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
 }
 
@@ -334,19 +335,21 @@ test("explain --missing --llm: a brief for each node without a doc comment, bott
   mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
   const dry = keylang(dir, ["explain", "--missing", "--llm", "--dry-run"], env);
   assert.equal(dry.status, 0, dry.stderr);
-  assert.match(dry.stdout, /^would explain 6 node\(s\): 3 fn\/type, 1 class\/module, 2 layer\nestimated tokens: ~\d+ in, ~480 out\n$/);
+  // The fixture has no README and no manifest description: the repository itself is asked last (c4-zoom/01).
+  assert.match(dry.stdout, /^would explain 7 node\(s\): 3 fn\/type, 1 class\/module, 2 layer, 1 system\nestimated tokens: ~\d+ in, ~560 out\n$/);
   assert.equal(mock.prompts.length, 0);
   assert.ok(!existsSync(join(dir, "keylang/explain")));
   assert.equal(keylang(dir, ["explain", "--missing", "--limit", "2"]).stdout, "app.checkout.checkout (fn/type)\ndomain.order.Ledger.size (fn/type)\n");
 
   const run = await keylangAsync(dir, ["explain", "--missing", "--llm", "--jobs", "2"], env);
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(run.stdout, "explained 6 of 6 node(s)\n");
-  assert.match(run.stderr, /^\[6\/6\] /m);
+  assert.equal(run.stdout, "explained 7 of 7 node(s)\n");
+  assert.match(run.stderr, /^\[7\/7\] /m);
   const asked = mock.prompts.map((p) => askedId(p.prompt));
   assert.deepEqual(asked.slice(0, 3).sort(), ["app.checkout.checkout", "domain.order.Ledger.size", "domain.order.createOrder"]);
   assert.equal(asked[3], "domain.money");
-  assert.deepEqual(asked.slice(4).sort(), ["app", "domain"]);
+  assert.deepEqual(asked.slice(4, 6).sort(), ["app", "domain"]);
+  assert.equal(asked[6], "@system");
   const layer = mock.prompts.find((p) => askedId(p.prompt) === "domain")!.prompt;
   assert.match(layer, /^- module `domain\.money`: Brief of domain\.money\.$/m);
   assert.match(layer, /^- module `domain\.order`: Orders and their totals\. Nothing here does I\/O\.$/m);
@@ -355,7 +358,7 @@ test("explain --missing --llm: a brief for each node without a doc comment, bott
 
   const again = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
   assert.equal(again.stdout, "nothing to explain\n");
-  assert.equal(mock.prompts.length, 6);
+  assert.equal(mock.prompts.length, 7);
 });
 
 test("explain --missing --llm: a failed node is named with exit 1 and a rerun asks only for it; --stale --llm asks only for stale briefs; no key is exit 2", async (t) => {
@@ -365,8 +368,8 @@ test("explain --missing --llm: a failed node is named with exit 1 and a rerun as
   mock.reply = (prompt) => (askedId(prompt) === "domain.order.createOrder" ? new Error("model is overloaded") : `Brief of ${askedId(prompt)}.`);
   const run = await keylangAsync(dir, ["explain", "--missing", "--llm"], env);
   assert.equal(run.status, 1, run.stderr);
-  assert.match(run.stdout, /^explained 5 of 6 node\(s\)\nfailed: domain\.order\.createOrder: .*model is overloaded/);
-  assert.equal(readdirSync(join(dir, "keylang/explain/brief")).length, 5, "every other brief is kept");
+  assert.match(run.stdout, /^explained 6 of 7 node\(s\)\nfailed: domain\.order\.createOrder: .*model is overloaded/);
+  assert.equal(readdirSync(join(dir, "keylang/explain/brief")).length, 6, "every other brief is kept");
 
   mock.prompts.length = 0;
   mock.reply = (prompt) => `Brief of ${askedId(prompt)}.`;
