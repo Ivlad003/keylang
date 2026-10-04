@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=cadd2b7def67e09f8c74bef68fcbe87f4ade055c03706e4460b820a2c007cfce lang=en detail=brief -->
+Type guard that checks whether an arbitrary value is a string present as an own key of the `LANGUAGES` table, narrowing it to `Language`; used by `base.config.parseConfig` to validate language names read from configuration. The input does not show how `LANGUAGES` is defined.

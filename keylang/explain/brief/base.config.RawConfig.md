@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=95b95bc2c782965739af5015ecaaf3e45db558b563d2d54066ee9c68c5852279 lang=en detail=brief -->
+Shape of `keylang.json` as written, before defaults: every field is optional — rules edition, spec directory (`dir`), languages, module granularity, layers as a glob or globs, `exclude` and `outside` globs, `check`, `agent`, `ghost`, `voice` and `explain` settings.

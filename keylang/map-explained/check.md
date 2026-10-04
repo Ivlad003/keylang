@@ -23,12 +23,12 @@
     - type [SnapshotInput](../../src/assess.ts#L18)
       <a id="check.assess.SnapshotInput"></a><br>The slice of the analysis snapshot that checks read; `check` does not import `map`.
     - type [Assessment](../../src/assess.ts#L26)
-      <a id="check.assess.Assessment"></a>
+      <a id="check.assess.Assessment"></a><br>Bundles the result of running the checker over a repository: the `Index` it worked from, the `Diagnostic` list it produced, the per-rule `Verdict`s, and the `SpecIR` of assertions compiled once from the text IR so later consumers reuse it rather than re-parsing. The input shows… _(llm · claude · 2026-10-04)_
     - fn [assess](../../src/assess.ts#L34) ( docs: readonly Document[], snapshot: SnapshotInput | null, evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string> } = { tests: null, traces: null }, format: RuleFormat = 1, ) → Assessment
-      <a id="check.assess.assess"></a>
+      <a id="check.assess.assess"></a><br>Compiles the spec documents via [`lang.spec-ir.compileSpec`](lang.md#lang.spec-ir.compileSpec), resolves references with [`check.resolve.check`](check.md#check.resolve.check) using layer names and module opacity taken from the snapshot, then runs [`check.rules.evaluateRules`](check.md#check.rules.evaluateRules), [`check.flows.evaluateFlows`](check.md#check.flows.evaluateFlows) (only when a snapshot exists, feeding it… _(llm · claude · 2026-10-04)_
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.resolve.check](check.md#check.resolve.check), [check.rules.evaluateRules](check.md#check.rules.evaluateRules), [check.flows.evaluateFlows](check.md#check.flows.evaluateFlows), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.wiring.checkWiring](check.md#check.wiring.checkWiring), [check.assess.nodeKinds](check.md#check.assess.nodeKinds), [check.rules.canonicalRuleSpec](check.md#check.rules.canonicalRuleSpec)
     - fn [sameFinding](../../src/assess.ts#L92) (verdict: Verdict, diagnostics: readonly Diagnostic[]) → boolean
-      <a id="check.assess.sameFinding"></a>
+      <a id="check.assess.sameFinding"></a><br>Returns true when any diagnostic in the list points at the same file and starting line as the verdict and either carries the same (or a contained) message, or is a K001 diagnostic whose target matches the verdict's area while the verdict is a failed "ID" criterion — so callers… _(llm · claude · 2026-10-04)_
     - fn [nodeKinds](../../src/assess.ts#L101) (nodes: SnapshotInput["nodes"]) → Map<string, string> <!-- internal -->
       <a id="check.assess.nodeKinds"></a><br>Snapshot kinds, with a class told apart by its marker.
   - module [flows](../../src/flows.ts#L1)
@@ -48,13 +48,13 @@
     - type [SnapshotNodeView](../../src/flows.ts#L34) <!-- internal -->
       <a id="check.flows.SnapshotNodeView"></a>
     - type [FlowInput](../../src/flows.ts#L47)
-      <a id="check.flows.FlowInput"></a>
+      <a id="check.flows.FlowInput"></a><br>Shape of the data handed to flow checking: the snapshot's id, node views keyed by id, its edge list, optional unresolved constructs reported as coverage gaps, an optional static mode plus a record of who set it (hook edges are followed only under `behavior`), and test cases and… _(llm · claude · 2026-10-04)_
     - type [Planned](../../src/flows.ts#L66) <!-- internal -->
-      <a id="check.flows.Planned"></a>
+      <a id="check.flows.Planned"></a><br>A `planned` declaration from the specs as the flow check tracks it: the declared kind and optional signature, where it is declared, and whether the code already has a symbol with that ID (`implemented`), which then yields K201 on a kind or signature mismatch, else K202. _(llm · claude · 2026-10-04)_
     - type [Channel](../../src/flows.ts#L75) = "ID" | "static" | "tests" | "trace" <!-- internal -->
-      <a id="check.flows.Channel"></a>
+      <a id="check.flows.Channel"></a><br>The four evidence channels of a flow verdict — `ID`, `static`, `tests` and `trace` — written into each verdict as its `criterion` and `code`. _(llm · claude · 2026-10-04)_
     - type [FlowNode](../../src/flows.ts#L77) = Trigger | FlowItem <!-- internal -->
-      <a id="check.flows.FlowNode"></a>
+      <a id="check.flows.FlowNode"></a><br>A union type alias that lets a single value in [`check.flows`](check.md#check.flows) stand for either a `Trigger` or a `FlowItem`, so flow-walking code can handle both the starting event and the subsequent steps through one type. The input shows no further definition for the two constituent types… _(llm · claude · 2026-10-04)_
     - fn [evaluateFlows](../../src/flows.ts#L79) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
       <a id="check.flows.evaluateFlows"></a>
       - calls [check.flows.collectPlanned](check.md#check.flows.collectPlanned), [check.flows.callGraph](check.md#check.flows.callGraph), [check.flows.specHash](check.md#check.flows.specHash), [check.trace-evidence.traceFlow](check.md#check.trace-evidence.traceFlow), [check.flows.idVerdict](check.md#check.flows.idVerdict), [check.flows.reachability](check.md#check.flows.reachability), [check.flows.traceProvenance](check.md#check.flows.traceProvenance), [check.flows.claimArea](check.md#check.flows.claimArea), [check.flows.quantitative](check.md#check.flows.quantitative), [check.test-report.matchTest](check.md#check.test-report.matchTest)
@@ -70,7 +70,7 @@
     - type [Step](../../src/flows.ts#L226) <!-- internal -->
       <a id="check.flows.Step"></a>
     - type [CallGraph](../../src/flows.ts#L232) <!-- internal -->
-      <a id="check.flows.CallGraph"></a>
+      <a id="check.flows.CallGraph"></a><br>The data structure the flow check builds from a snapshot: per-source maps of resolved call edges (`Step[]`, with `new X()` pointing at the class constructor) and open (unresolved or ambiguous) `SnapshotEdge[]`, a reverse `callers` index, a `byName` lookup for calls with an… _(llm · claude · 2026-10-04)_
     - fn [callGraph](../../src/flows.ts#L256) (input: FlowInput) → CallGraph <!-- internal -->
       <a id="check.flows.callGraph"></a>
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.flows.callName](check.md#check.flows.callName), [check.flows.doubtfulBodies](check.md#check.flows.doubtfulBodies)

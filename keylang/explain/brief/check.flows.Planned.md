@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=0bdb44c1d38f363f173e42b46c1a543c973d4d07be1f67a348e727f70794dde3 lang=en detail=brief -->
+A `planned` declaration from the specs as the flow check tracks it: the declared kind and optional signature, where it is declared, and whether the code already has a symbol with that ID (`implemented`), which then yields K201 on a kind or signature mismatch, else K202.

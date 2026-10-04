@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=15ee7cda94a7d82e29b0c16f7eac8596798dc6977996324b03019b5aec2b44cd lang=en detail=brief -->
+A string-literal union derived from the keys of the `LANGUAGES` constant in the same file, so any value typed this way must be one of the language names registered there; the input does not show the contents of `LANGUAGES` or where this alias is consumed.

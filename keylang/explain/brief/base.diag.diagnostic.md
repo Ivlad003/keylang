@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=4a3da92d80d385b8a2b8c6e060ea9c9dc1058d71e1bd3c30aa8ec44b6223520f lang=en detail=brief -->
+Builds a `Diagnostic` from a code, file, span and message, taking the severity from `base.diag.severityOf`. The optional last argument is the `reason` for K005 (kept only when it is a known reason) and the dangling `target` ID for every other code.
