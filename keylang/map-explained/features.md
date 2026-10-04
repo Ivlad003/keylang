@@ -549,7 +549,7 @@
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
-    - fn [explainCode](../../src/explain.ts#L114) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [feature-status](../../src/feature-status.ts#L1)
     <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base commit. Tests and trace are reported and do not block.

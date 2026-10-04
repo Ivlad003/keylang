@@ -26,7 +26,7 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
   K005: {
     cause: "A known keyword has the wrong arguments.",
     example: "`# flow` without a name, a broken link, `deny` over a fn instead of its module, or one layer twice in `layers`.",
-    fix: "Match the form in format.md for that keyword.",
+    fix: "Write the keyword in one of its forms: each reason below pairs the mistake with the right form. A planned step is not `step planned <id>`: declare it as `- planned fn <id> <signature>` at the top of the flow and keep `- step <id>`.",
   },
   K006: {
     cause: "The first-level heading is not map, rules, flow, or wiring.",
@@ -101,14 +101,15 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
   },
 };
 
+// Self-contained: the npm package ships no docs/, so each reason shows the right form here.
 const K005_REASON_LINES = [
-  "reasons:",
-  "- arguments: `# flow` without a name, or `deny app` with no second id",
-  "- id: a token that is not an id, such as `module 1bad`",
-  "- link: a broken link, such as `calls [a.b](x`",
-  "- quote: an unclosed quote, such as `test f.ts \"x`",
-  "- layer: `layers a < a`, a dotted name, or two orders that disagree",
-  "- scope: `deny app app.checkout.buy` names a fn instead of its module",
+  "reasons (mistake → right form):",
+  "- arguments: `# flow` without a name, or `deny app` with no second id → `# flow checkout`, `deny domain infra`",
+  "- id: a token that is not an id, such as `module 1bad` (an id starts with a letter) → `module order`",
+  "- link: a broken link, such as `calls [a.b](x` → `calls [a.b](src/a.ts)`",
+  "- quote: an unclosed quote, such as `test f.ts \"x` → `test f.ts \"x\"`",
+  "- layer: `layers a < a`, a dotted name, or two orders that disagree → `layers domain < app`, one order of plain names",
+  "- scope: `deny app app.checkout.buy` names a fn instead of its module → `deny app app.checkout`",
 ];
 
 export function explainCode(code: string): string | null {

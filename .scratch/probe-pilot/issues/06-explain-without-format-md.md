@@ -1,6 +1,6 @@
 # 06: `explain K005` відсилає до `format.md`, якого немає в пакеті
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -16,10 +16,14 @@
 
 Після зміни `fix` K005 не згадує файлів поза пакетом і сам каже, що робити: «Write the keyword in one of its forms:» і по одному короткому зразку для кожного `reason`, що вже перелічені в `reasons:` (`arguments` — `# flow <name>`, `deny <layer> <layer>`; `id` — ID з літери; `link` — `[a.b](path)`; `quote` — закрита лапка; `layer` — `layers a < b`; `scope` — модуль, а не fn). Додатково — рядок про `planned` як окрему декларацію (див. 05). Якщо зразки довші за кілька рядків, допустима форма `keylang explain K005 <reason>`, але це нове CLI-API: тоді оновити `--help` і `docs/tools.md`.
 
-- [ ] `explain K005` не містить `format.md`; кожен `reason` має зразок правильної форми
-- [ ] тест через CLI: жоден `explain <код>` для кодів із `src/diag.ts` не друкує `format.md` чи `docs/`
-- [ ] `docs/tools.md` (опис `explain`) узгоджено з новим текстом
+- [x] `explain K005` не містить `format.md`; кожен `reason` має зразок правильної форми
+- [x] тест через CLI: жоден `explain <код>` для кодів із `src/diag.ts` не друкує `format.md` чи `docs/`
+- [x] `docs/tools.md` (опис `explain`) узгоджено з новим текстом
 
 Ключові файли: `src/explain.ts`, `docs/tools.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- Рішення: самодостатній текст у `src/explain.ts`, `docs/` у пакет не додано (рекомендація тікета). Нового CLI-API `explain K005 <reason>` немає: зразки вмістилися по одному рядку на `reason` у форматі «помилка → правильна форма»; заголовок блоку тепер `reasons (mistake → right form):`, рядки `- <reason>:` збережено (на них спирається spec-forms-тест).
+- `fix:` K005 починається з «Write the keyword in one of its forms:» і містить рядок про `planned` як окрему декларацію (`- planned fn <id> <signature>` угорі потоку, далі `- step <id>`) — узгоджено з текстом тікета 05.
+- Тест `explain covers every diagnostic code` тепер перевіряє, що жоден `explain <код>` не друкує `format.md` чи `docs/`; новий тест перевіряє зразок для кожного `reason`. `docs/tools.md` (опис `explain`) оновлено.

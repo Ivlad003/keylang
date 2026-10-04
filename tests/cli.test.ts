@@ -1371,11 +1371,32 @@ test("explain covers every diagnostic code", () => {
     assert.equal(explained.status, 0, explained.stderr);
     assert.match(explained.stdout, /example:/);
     assert.match(explained.stdout, /fix:/);
+    // The npm package ships no docs/, so an explanation must not send the reader there.
+    assert.doesNotMatch(explained.stdout, /format\.md|docs\//, `explain ${code} is self-contained`);
   }
   assert.match(keylang(root, ["explain", "K001"]).stdout, /planned/);
   assert.match(keylang(root, ["explain", "k102"]).stdout, /^K102: /);
   assert.equal(keylang(root, ["explain", "NOPE"]).status, 2);
   assert.equal(keylang(root, ["explain", "toString"]).status, 2);
+});
+
+test("explain K005 shows the right form for every reason and the separate planned line", () => {
+  const explained = keylang(root, ["explain", "K005"]);
+  assert.equal(explained.status, 0, explained.stderr);
+  assert.match(explained.stdout, /^fix: Write the keyword in one of its forms:/m);
+  const forms: Record<string, string> = {
+    arguments: "`# flow checkout`",
+    id: "`module order`",
+    link: "`calls [a.b](src/a.ts)`",
+    quote: '`test f.ts "x"`',
+    layer: "`layers domain < app`",
+    scope: "`deny app app.checkout`",
+  };
+  for (const [reason, form] of Object.entries(forms)) {
+    const line = explained.stdout.split("\n").find((row) => row.startsWith(`- ${reason}:`));
+    assert.ok(line?.includes(`→ ${form}`), `${reason}: ${line}`);
+  }
+  assert.match(explained.stdout, /`- planned fn <id> <signature>` at the top of the flow/);
 });
 
 // The one real flow of keylang: `keylang check` on a repository. The trace
