@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { exportTargetProblem } from "../src/operations.ts";
 import { isGeneratedText } from "../src/safe-write.ts";
 import { App } from "../src/tui/app.ts";
 import { KEY } from "./tui-fixture.ts";
@@ -206,7 +207,9 @@ test("export c4: the help names the command; every writer of the file protocol k
   const bash = keylang(dir, ["completions", "bash"]).stdout;
   assert.match(bash, /^ {6}export\) words="c4" ;;$/m);
   assert.match(bash, /--level/);
-  // Proposals, exports and `--apply` refuse a generated file: the diagrams' PlantUML and Mermaid comments are markers too.
+  // Every other writer refuses a generated file: the diagrams' PlantUML and Mermaid comments are markers too.
+  assert.equal(keylang(dir, ["export", "c4", "--out", "docs/c4.puml"]).status, 0);
+  assert.equal(exportTargetProblem(dir, "docs/c4.puml"), "a generated file: only its generator writes it", "the report export of F6 does not write over it");
   assert.equal(isGeneratedText(COMPONENTS), true);
   assert.equal(isGeneratedText("\n%% keylang:generated — keylang export c4\nC4Component\n"), true);
   assert.equal(isGeneratedText("' a note\n' keylang:generated\n"), false, "only the first non-empty line counts");
