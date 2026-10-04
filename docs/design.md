@@ -560,7 +560,7 @@ $ keylang               # TUI з M4; keylang web — те саме в брауз
 
 ### 7.6 Харнеси агентів: опис → код
 
-Ціль: після `init` на чужому репозиторії харнес (Claude Code, Codex, opencode, Cursor) додає фічу чи інтеграцію за описом у keylang, а keylang звіряє результат із наміром ([ADR 0005](adr/0005-harness-integration.md)). Код пише харнес своїми інструментами; keylang його не запускає. **Стан: не реалізовано**, тікети — `.scratch/harness-integration/`.
+Ціль: після `init` на чужому репозиторії харнес (Claude Code, Codex, opencode, Cursor) додає фічу чи інтеграцію за описом у keylang, а keylang звіряє результат із наміром ([ADR 0005](adr/0005-harness-integration.md)). Код пише харнес своїми інструментами; keylang його не запускає. **Стан: реалізовано 2026-09-28** (M8), крім наскрізної перевірки з Claude Code і Codex на чужих репозиторіях (тікет 11, для людини); тікети — `.scratch/harness-integration/`.
 
 **Адаптери.** `init` визначає харнеси за наявними `.claude/`, `.codex/`, `.cursor/`, `opencode.json`; `--agents=claude,codex,opencode,cursor|none` задає список явно, `keylang agents [--check]` повторює те саме для вже ініціалізованого репо.
 
