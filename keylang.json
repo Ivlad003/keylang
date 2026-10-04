@@ -11,7 +11,7 @@
     "check": ["src/rules.ts", "src/resolve.ts", "src/scc.ts", "src/verdict.ts", "src/flows.ts", "src/assess.ts", "src/test-report.ts", "src/trace-evidence.ts", "src/wiring.ts"],
     "lang": ["src/parser.ts", "src/parse-format.ts", "src/fmt.ts", "src/files.ts", "src/ir.ts", "src/spec-ir.ts"],
     "extract": ["src/extract/**"],
-    "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts"]
+    "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts", "src/external-ids.ts"]
   },
   "exclude": ["bench/**", "examples/**", "design/**", "slides/**", "scripts/**", "editors/**"],
   "explain": { "map": true },

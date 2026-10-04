@@ -73,6 +73,13 @@
     - fn [isError](../../src/diag.ts#L90) (d: Diagnostic) → boolean
     - fn [formatDiagnostic](../../src/diag.ts#L95) (d: Diagnostic) → string
     - fn [compareDiagnostics](../../src/diag.ts#L100) (a: Diagnostic, b: Diagnostic) → number
+  - module [external-ids](../../src/external-ids.ts#L1)
+    - config base.config
+    - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
+      - calls base.config.layerName
+    - fn [assignExternalIds](../../src/external-ids.ts#L20) (names: Iterable<string>) → { ids: Map<string, string>; warnings: string[] }
+      - calls base.external-ids.externalSegment
+    - fn [externalPackageId](../../src/external-ids.ts#L44) (id: string) → string | null
   - module [glob](../../src/glob.ts#L1)
     - fn [globToRegExp](../../src/glob.ts#L4) (glob: string) → RegExp
       - calls base.glob.source

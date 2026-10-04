@@ -526,6 +526,40 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
   assert.match(keylang(dirMode, ["explain", "lib.a.K"]).stdout, /^class lib\.a\.K/);
 });
 
+test("colliding package names get one ID space over declared and imported names together, not only the imported ones", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"dependencies":{"@scope/pkg":"1","scope-pkg":"1"}}',
+    "src/app/a.ts": 'import { a } from "@scope/pkg";\nexport function main(): void { a(); }\n',
+  });
+  const o = keylang(dir, ["map"]);
+  assert.equal(o.status, 0, o.stderr);
+  // `scope-pkg` is declared but not imported; it still keeps the segment, so `@scope/pkg` is `-2`.
+  assert.match(o.stderr, /packages `scope-pkg` and `@scope\/pkg` share the ID segment `scope-pkg`; `@scope\/pkg` is `external\.scope-pkg-2`/);
+  const snap = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
+  assert.deepEqual(snap.edges.filter((e) => e.kind === "import" && e.source === "app.a").map((e) => e.target), ["external.scope-pkg-2"]);
+  assert.equal(snap.nodes["external.scope-pkg"], undefined);
+});
+
+test("a manifest on an analysed file's path enters the snapshot id; a broken one makes `map` and `map --check` exit 2", (t) => {
+  const dir = repo(t, {
+    "src/app/package.json": '{"devDependencies":{"vitest":"1"}}\n',
+    "src/app/a.ts": "export function main(): void {}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const id = (): string => (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot).snapshotId;
+  const before = id();
+  writeFileSync(join(dir, "src/app/package.json"), '{"devDependencies":{"vitest":"2"}}\n');
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.notEqual(id(), before);
+
+  writeFileSync(join(dir, "src/app/package.json"), "{ not json\n");
+  for (const args of [["map"], ["map", "--check"]]) {
+    const run = keylang(dir, args);
+    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stderr}`);
+    assert.match(run.stderr, /src\/app\/package\.json: invalid JSON/);
+  }
+});
+
 test("robustness: a file nested thousands deep is opaque, not a crash; a fact cache damaged deep inside is extracted again", (t) => {
   const dir = repo(t, {
     "src/lib/deep.ts": `export const x = ${Array.from({ length: 5000 }, (_, i) => `a${i}`).join(" + ")};\n`,

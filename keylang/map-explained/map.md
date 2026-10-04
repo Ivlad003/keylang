@@ -10,8 +10,8 @@
     <a id="map.analyze"></a><br>One analysis for the CLI and the language server: config, a fresh snapshot, spec documents, and their assessment. Generated map files are replaced by the map rendered from the fresh snapshot, so IDs resolve against current code, not a stale committed map.
     - node [external.node](external.md#external.node)
     - assess [check.assess](check.md#check.assess)
-    - declared-packages [map.declared-packages](map.md#map.declared-packages)
     - config [base.config](base.md#base.config)
+    - declared-packages [map.declared-packages](map.md#map.declared-packages)
     - span [base.span](base.md#base.span)
     - files [lang.files](lang.md#lang.files)
     - ir [lang.ir](lang.md#lang.ir)
@@ -24,35 +24,64 @@
       <a id="map.analyze.AnalysisRequest"></a>
     - type [Analysis](../../src/analyze.ts#L41) extends Assessment
       <a id="map.analyze.Analysis"></a>
-    - fn [analyze](../../src/analyze.ts#L50) (request: AnalysisRequest) → Promise<Analysis>
+    - fn [analyze](../../src/analyze.ts#L55) (request: AnalysisRequest) → Promise<Analysis>
       <a id="map.analyze.analyze"></a>
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.map.generateMap](map.md#map.map.generateMap), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces), [map.declared-packages.declaredExternalIds](map.md#map.declared-packages.declaredExternalIds)
-    - fn [findRoot](../../src/analyze.ts#L105) (start: string) → string
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.map.generateMap](map.md#map.map.generateMap), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [lang.parser.parse](lang.md#lang.parser.parse), [map.analyze.within](map.md#map.analyze.within), [base.span.compareText](base.md#base.span.compareText), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [base.config.resolveStatic](base.md#base.config.resolveStatic), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [check.assess.assess](check.md#check.assess.assess), [check.test-report.loadReports](check.md#check.test-report.loadReports), [check.trace-evidence.loadTraces](check.md#check.trace-evidence.loadTraces)
+    - fn [findRoot](../../src/analyze.ts#L111) (start: string) → string
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
-    - fn [within](../../src/analyze.ts#L115) (abs: string, dir: string) → boolean
+    - fn [within](../../src/analyze.ts#L121) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a>
   - module [declared-packages](../../src/declared-packages.ts#L1)
-    <a id="map.declared-packages"></a><br>Packages a repository declares, as `external.<segment>` ids. A rule may name one before any file imports it.
+    <a id="map.declared-packages"></a><br>Packages a repository declares, with their original names and version ranges. A rule or a flow may name one (`external.<segment>`) before any file imports it.
     - node [external.node](external.md#external.node)
     - smol-toml [external.smol-toml](external.md#external.smol-toml)
     - config [base.config](base.md#base.config)
-    - fn [declaredExternalIds](../../src/declared-packages.ts#L16) (root: string) → ReadonlySet<string>
-      <a id="map.declared-packages.declaredExternalIds"></a><br>`external.<segment>` for every package declared in a JS or Rust manifest under `root`.
-      - calls [base.config.layerName](base.md#base.config.layerName), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.readText](map.md#map.declared-packages.readText), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates)
-    - fn [readText](../../src/declared-packages.ts#L41) (path: string, rel: string) → string <!-- internal -->
+    - external-ids [base.external-ids](base.md#base.external-ids)
+    - imports [map.imports](map.md#map.imports)
+    - span [base.span](base.md#base.span)
+    - type [DependencyField](../../src/declared-packages.ts#L25)
+      <a id="map.declared-packages.DependencyField"></a><br>A manifest field a package is declared in.
+    - type [Declaration](../../src/declared-packages.ts#L31)
+      <a id="map.declared-packages.Declaration"></a><br>Where one package is declared, and its version range as written (null when the manifest gives none).
+    - type [DeclaredPackage](../../src/declared-packages.ts#L39)
+      <a id="map.declared-packages.DeclaredPackage"></a><br>A package a repository declares, with its `external.<segment>` id.
+    - type [Add](../../src/declared-packages.ts#L51) <!-- internal -->
+      <a id="map.declared-packages.Add"></a>
+    - fn [readManifests](../../src/declared-packages.ts#L60) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
+      <a id="map.declared-packages.readManifests"></a><br>The packages declared by the manifests at the root and on the ancestors of `files` (root-relative), sorted by id; their ids cover only these names. `known` holds files a resolver already read (text, or null for absent), so a manifest is parsed from the same text that went into…
+      - calls [map.declared-packages.readInput](map.md#map.declared-packages.readInput), [map.declared-packages.typesTarget](map.md#map.declared-packages.typesTarget), [map.declared-packages.manifestDirs](map.md#map.declared-packages.manifestDirs), [base.config.isExcluded](base.md#base.config.isExcluded), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates), [map.declared-packages.workspaceNames](map.md#map.declared-packages.workspaceNames), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [base.span.compareText](base.md#base.span.compareText)
+    - fn [manifestDirs](../../src/declared-packages.ts#L105) (files: readonly string[]) → Set<string> <!-- internal -->
+      <a id="map.declared-packages.manifestDirs"></a><br>The root (`""`) and every directory between a file and the root.
+      - calls [base.config.toPosix](base.md#base.config.toPosix)
+    - fn [typesTarget](../../src/declared-packages.ts#L117) (name: string) → string <!-- internal -->
+      <a id="map.declared-packages.typesTarget"></a><br>`@types/x` → `x`, `@types/scope__pkg` → `@scope/pkg`; any other name is itself.
+    - fn [workspaceNames](../../src/declared-packages.ts#L129) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+      <a id="map.declared-packages.workspaceNames"></a><br>Names of the packages in the directories the root `workspaces` names (`packages/*`, `apps/web`), read as the import resolver reads them: the same input keys and texts, and a member manifest that does not parse names none.
+      - calls [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.workspaceDirs](map.md#map.declared-packages.workspaceDirs)
+    - fn [workspaceDirs](../../src/declared-packages.ts#L147) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
+      <a id="map.declared-packages.workspaceDirs"></a><br>Directories one `workspaces` entry names; a trailing `/*` expands one level, as in `src/imports.ts`.
+      - calls [base.config.toPosix](base.md#base.config.toPosix)
+    - fn [readInput](../../src/declared-packages.ts#L158) (abs: string, rel: string) → string | null <!-- internal -->
+      <a id="map.declared-packages.readInput"></a><br>A file's text, null when there is none; a `<base>/*` key lists the subdirectories of `<base>`.
+      - calls [map.declared-packages.isDirectory](map.md#map.declared-packages.isDirectory), [map.declared-packages.isFile](map.md#map.declared-packages.isFile), [map.declared-packages.readText](map.md#map.declared-packages.readText)
+    - fn [isFile](../../src/declared-packages.ts#L172) (abs: string) → boolean <!-- internal -->
+      <a id="map.declared-packages.isFile"></a>
+    - fn [isDirectory](../../src/declared-packages.ts#L180) (abs: string) → boolean <!-- internal -->
+      <a id="map.declared-packages.isDirectory"></a>
+    - fn [readText](../../src/declared-packages.ts#L189) (path: string, rel: string) → string <!-- internal -->
       <a id="map.declared-packages.readText"></a><br>The file is there but cannot be read. That is not the same error as invalid contents.
-    - fn [isRecord](../../src/declared-packages.ts#L50) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L198) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.declared-packages.isRecord"></a>
-    - fn [table](../../src/declared-packages.ts#L54) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L202) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
       <a id="map.declared-packages.table"></a>
       - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
-    - fn [addPackages](../../src/declared-packages.ts#L61) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
+    - fn [addPackages](../../src/declared-packages.ts#L209) (rel: string, text: string, add: Add) → void <!-- internal -->
       <a id="map.declared-packages.addPackages"></a><br>`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`.
-      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table)
-    - fn [addCrates](../../src/declared-packages.ts#L77) (rel: string, text: string, add: (pkg: string) => void) → void <!-- internal -->
+      - calls [map.imports.parseJsoncStrict](map.md#map.imports.parseJsoncStrict), [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table)
+    - fn [addCrates](../../src/declared-packages.ts#L225) (rel: string, text: string, add: Add) → void <!-- internal -->
       <a id="map.declared-packages.addCrates"></a><br>`[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`.
       - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table), [map.declared-packages.crateTables](map.md#map.declared-packages.crateTables)
-    - fn [crateTables](../../src/declared-packages.ts#L100) (rel: string, source: Record<string, unknown>, prefix: string) → Record<string, unknown>[] <!-- internal -->
+    - fn [crateTables](../../src/declared-packages.ts#L249) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
       <a id="map.declared-packages.crateTables"></a>
       - calls [map.declared-packages.table](map.md#map.declared-packages.table)
   - module [emit](../../src/emit.ts#L1)
@@ -288,82 +317,81 @@
     <a id="map.graph"></a><br>Facts → graph: files become modules in layers, declarations become fn/type nodes, imports become dependencies. A resolved call is a syntactic edge; a local or missing callee stays a gap instead of a confirmed edge.
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
+    - declared-packages [map.declared-packages](map.md#map.declared-packages)
     - exports [map.exports](map.md#map.exports)
     - facts [extract.facts](extract.md#extract.facts)
+    - external-ids [base.external-ids](base.md#base.external-ids)
     - glob [base.glob](base.md#base.glob)
     - frontends [map.frontends](map.md#map.frontends)
     - imports [map.imports](map.md#map.imports)
     - languages [base.languages](base.md#base.languages)
-    - type [Graph](../../src/graph.ts#L14)
+    - span [base.span](base.md#base.span)
+    - type [Graph](../../src/graph.ts#L19)
       <a id="map.graph.Graph"></a>
-    - type [Gap](../../src/graph.ts#L31)
+    - type [Gap](../../src/graph.ts#L38)
       <a id="map.graph.Gap"></a>
-    - type [OpenEdge](../../src/graph.ts#L44)
+    - type [OpenEdge](../../src/graph.ts#L51)
       <a id="map.graph.OpenEdge"></a>
-    - type [Layer](../../src/graph.ts#L58)
+    - type [Layer](../../src/graph.ts#L65)
       <a id="map.graph.Layer"></a>
-    - type [Module](../../src/graph.ts#L64)
+    - type [Module](../../src/graph.ts#L71)
       <a id="map.graph.Module"></a>
-    - type [Dep](../../src/graph.ts#L92)
+    - type [Dep](../../src/graph.ts#L99)
       <a id="map.graph.Dep"></a>
-    - type [Fn](../../src/graph.ts#L105)
+    - type [Fn](../../src/graph.ts#L112)
       <a id="map.graph.Fn"></a>
-    - type [Escape](../../src/graph.ts#L129)
+    - type [Escape](../../src/graph.ts#L136)
       <a id="map.graph.Escape"></a>
-    - type [Call](../../src/graph.ts#L136)
+    - type [Call](../../src/graph.ts#L143)
       <a id="map.graph.Call"></a>
-    - type [TypeNode](../../src/graph.ts#L157)
+    - type [TypeNode](../../src/graph.ts#L164)
       <a id="map.graph.TypeNode"></a>
-    - type [Stats](../../src/graph.ts#L171)
+    - type [Stats](../../src/graph.ts#L178)
       <a id="map.graph.Stats"></a>
-    - fn [globalsOf](../../src/graph.ts#L196) (file: string) → Frontend["globals"] <!-- internal -->
+    - fn [globalsOf](../../src/graph.ts#L201) (file: string) → Frontend["globals"] <!-- internal -->
       <a id="map.graph.globalsOf"></a>
       - calls [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
-    - type [FileEntry](../../src/graph.ts#L200) <!-- internal -->
+    - type [FileEntry](../../src/graph.ts#L205) <!-- internal -->
       <a id="map.graph.FileEntry"></a>
-    - fn [buildGraph](../../src/graph.ts#L205) (config: Config, files: FileFacts[]) → Graph
+    - fn [buildGraph](../../src/graph.ts#L210) (config: Config, files: FileFacts[]) → Graph
       <a id="map.graph.buildGraph"></a>
-      - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.graph.externalModuleIds](map.md#map.graph.externalModuleIds), [map.graph.notIndexed](map.md#map.graph.notIndexed), [map.graph.importTarget](map.md#map.graph.importTarget), [map.graph.externalSegment](map.md#map.graph.externalSegment), [base.config.layerName](base.md#base.config.layerName), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.addCall](map.md#map.graph.addCall), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
-    - type [ImportTarget](../../src/graph.ts#L831) <!-- internal -->
+      - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.graph.notIndexed](map.md#map.graph.notIndexed), [map.graph.importTarget](map.md#map.graph.importTarget), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.config.layerName](base.md#base.config.layerName), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.addCall](map.md#map.graph.addCall), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
+    - type [ImportTarget](../../src/graph.ts#L845) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
-    - fn [importTarget](../../src/graph.ts#L839) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L853) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
       <a id="map.graph.importTarget"></a><br>A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module.
-    - fn [exportInput](../../src/graph.ts#L851) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L865) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
       <a id="map.graph.exportInput"></a><br>One export row of a file, with what it stands for: a declaration of the module, a name or the namespace of the module an import binds, or nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes through its own import; any other name through a declaration…
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [externalSegment](../../src/graph.ts#L870) (pkg: string) → string <!-- internal -->
-      <a id="map.graph.externalSegment"></a><br>ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`.
-      - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [externalModuleIds](../../src/graph.ts#L880) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution, warnings: string[]) → Map<string, string> <!-- internal -->
-      <a id="map.graph.externalModuleIds"></a><br>Module IDs of the external packages the files import. Two packages whose names sanitize to one segment (`@scope/pkg` and `scope-pkg`) get two IDs: the one whose name is the segment keeps it, the others get `-2`, `-3`… in name order, with a warning; the IDs do not depend on file…
-      - calls [map.graph.externalSegment](map.md#map.graph.externalSegment)
-    - fn [notIndexed](../../src/graph.ts#L915) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L884) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+      <a id="map.graph.importedPackages"></a><br>Names of the external packages (and `node` for built-ins) the files import.
+    - fn [notIndexed](../../src/graph.ts#L901) (config: Config, file: string) → string | null <!-- internal -->
       <a id="map.graph.notIndexed"></a><br>Why a resolved source file has no module; null when it is left out on purpose: not source code (JSON, CSS), a test or declaration file, `exclude`, outside guessed layers.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [isIndexFile](../../src/graph.ts#L922) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L908) (file: string) → boolean <!-- internal -->
       <a id="map.graph.isIndexFile"></a>
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [addCall](../../src/graph.ts#L933) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L919) (fn: Fn, call: Call) → boolean <!-- internal -->
       <a id="map.graph.addCall"></a><br>Add a call unless an edge to the same target already says as much: a direct call proves what a hook edge does, a call outside a closure what one inside does. A stronger edge replaces the weaker ones.
-    - fn [holeReason](../../src/graph.ts#L941) (c: CallFact) → string <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L927) (c: CallFact) → string <!-- internal -->
       <a id="map.graph.holeReason"></a>
-    - fn [markEscapes](../../src/graph.ts#L953) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L939) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       <a id="map.graph.markEscapes"></a><br>Functions that code may reach without naming them in a call: read as a value (`later(save)` names the declaration `save` resolves to; `obj.save` any method `save`), called implicitly, or the constructor of a class read as a value (`extends A` runs `A`'s constructor).
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [base.languages.implicitMember](base.md#base.languages.implicitMember)
-    - fn [markOpaque](../../src/graph.ts#L968) (m: Module) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L954) (m: Module) → void <!-- internal -->
       <a id="map.graph.markOpaque"></a>
-    - type [Decls](../../src/graph.ts#L974) <!-- internal -->
+    - type [Decls](../../src/graph.ts#L960) <!-- internal -->
       <a id="map.graph.Decls"></a><br>Where each declaration went: several facts (overloads) may share one node.
-    - fn [memberKey](../../src/graph.ts#L985) (member: string, isStatic: boolean) → string
+    - fn [memberKey](../../src/graph.ts#L971) (member: string, isStatic: boolean) → string
       <a id="map.graph.memberKey"></a><br>Lookup key of a class member: `this.#m` in a static method is `static #m`.
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [memberSegments](../../src/graph.ts#L999) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L985) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1018) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1004) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a>
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments)
-    - fn [placeFile](../../src/graph.ts#L1095) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
+    - fn [placeFile](../../src/graph.ts#L1081) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
       <a id="map.graph.placeFile"></a><br>Layer and module path segments for a file, from the first matching layer glob. `stem` is the path the module stands for, before segments are sanitized: the file without its extension (`src/a/b` for `src/a/b.ts` and `src/a/b/index.ts`), or its directory in `dir` mode. Two files…
       - calls [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)
@@ -436,21 +464,24 @@
     - fn [parseJsonc](../../src/imports.ts#L381) (text: string) → unknown
       <a id="map.imports.parseJsonc"></a><br>The value of JSONC text; null when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [readText](../../src/imports.ts#L390) (path: string) → string | null <!-- internal -->
+    - fn [parseJsoncStrict](../../src/imports.ts#L390) (text: string) → unknown
+      <a id="map.imports.parseJsoncStrict"></a><br>The value of JSONC text; throws the `JSON.parse` error when it does not parse.
+      - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
+    - fn [readText](../../src/imports.ts#L395) (path: string) → string | null <!-- internal -->
       <a id="map.imports.readText"></a><br>A file's text, or null when it is missing.
-    - fn [stripJsonc](../../src/imports.ts#L395) (text: string) → string <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L400) (text: string) → string <!-- internal -->
       <a id="map.imports.stripJsonc"></a><br>Remove comments and trailing commas outside of strings.
-    - type [Tsconfig](../../src/imports.ts#L416) <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L421) <!-- internal -->
       <a id="map.imports.Tsconfig"></a>
-    - type [MergedOptions](../../src/imports.ts#L422) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L427) <!-- internal -->
       <a id="map.imports.MergedOptions"></a><br>Options of one config after its `extends` chain, before `paths` targets are placed.
-    - fn [loadTsconfig](../../src/imports.ts#L435) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L440) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
       <a id="map.imports.loadTsconfig"></a><br>`compilerOptions.baseUrl`/`paths` following relative `extends` chains. As in `tsc`, `paths` targets resolve against the `baseUrl` of the final options (a child config's `baseUrl` moves inherited `paths` too), or the directory of the config that declares them.
       - calls [map.imports.mergedOptions](map.md#map.imports.mergedOptions), [map.imports.placePaths](map.md#map.imports.placePaths), [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [mergedOptions](../../src/imports.ts#L454) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L459) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       <a id="map.imports.mergedOptions"></a>
       - calls [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [placePaths](../../src/imports.ts#L473) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L478) (options: MergedOptions) → PathRule[] <!-- internal -->
       <a id="map.imports.placePaths"></a>
       - calls [base.config.toPosix](base.md#base.config.toPosix)
   - module [map](../../src/map.ts#L1)
