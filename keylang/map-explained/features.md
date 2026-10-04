@@ -684,96 +684,102 @@
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
     - fn [claudeHasUserFile](../../src/harness.ts#L109) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/harness.ts#L123) () → string
-      <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline.
-    - fn [mcpCommand](../../src/harness.ts#L145) (version: string) → { command: string; args: string[] }
+    - fn [agentsBody](../../src/harness.ts#L123) (version: string) → string
+      <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`.
+      - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
+    - fn [mcpCommand](../../src/harness.ts#L146) (version: string) → { command: string; args: string[] }
       <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [hookCommand](../../src/harness.ts#L150) (version: string) → string
+    - fn [cliCommand](../../src/harness.ts#L151) (version: string) → string
+      <a id="features.harness.cliCommand"></a><br>The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`.
+    - fn [pinSkill](../../src/harness.ts#L156) (skill: string, version: string) → string
+      <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>`; the copy a harness gets pins the running version.
+    - fn [hookCommand](../../src/harness.ts#L161) (version: string) → string
       <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
-    - fn [planHarness](../../src/harness.ts#L159) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+      - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
+    - fn [planHarness](../../src/harness.ts#L170) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
       <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent. The first broken marker or invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
-      - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/harness.ts#L242) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+      - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.pinSkill](features.md#features.harness.pinSkill), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
+    - fn [mergeMarked](../../src/harness.ts#L254) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
-    - fn [marked](../../src/harness.ts#L267) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [marked](../../src/harness.ts#L279) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
       <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeClaude](../../src/harness.ts#L276) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L288) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/harness.ts#L283) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L295) (existing: string | null) → string | { error: string } <!-- internal -->
       <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeMcpJson](../../src/harness.ts#L293) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L305) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/harness.ts#L297) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L309) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeOpencode"></a><br>Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey) to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L309) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L321) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeCodexToml"></a><br>Parses an existing TOML config, then adds or removes the `keylang` entry under `mcp_servers` (built via [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand)), and re-serializes the result with a trailing newline. Returns `text: null` when nothing remains, or an error for malformed TOML or a non-table… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeSettings](../../src/harness.ts#L334) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeSettings"></a><br>Parses a settings JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then rewrites its `permissions` and `hooks` keys using [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue), deleting each key when the merge yields nothing. Serializes the result with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [mergeSettings](../../src/harness.ts#L346) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeSettings"></a><br>Parses a settings JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then rewrites its `permissions` and `hooks` keys using [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue), deleting each key when the merge yields nothing. Serializes the result with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeHooksFile"></a><br>Parses a settings file's JSON object via [`features.harness.parseObject`](features.md#features.harness.parseObject), rewrites or removes its `hooks` key through [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) for the given version, and reserializes it with [`features.harness.finishJson`](features.md#features.harness.finishJson). Any parse or merge failure is returned as an… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [mergeHooksFile](../../src/harness.ts#L361) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeHooksFile"></a><br>Parses a settings file's JSON object via [`features.harness.parseObject`](features.md#features.harness.parseObject), rewrites or removes its `hooks` key through [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) for the given version, and reserializes it with [`features.harness.finishJson`](features.md#features.harness.finishJson). Any parse or merge failure is returned as an… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L359) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L371) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeDeny"></a><br>Validates a settings `permissions` object (via [`features.harness.isRecord`](features.md#features.harness.isRecord)) and rewrites its `deny` list to add the fixed DENY_RULES when installing or strip them otherwise. Returns an error for malformed input, and `undefined` when nothing remains. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [mergeHooksValue](../../src/harness.ts#L373) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its `Stop` groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending a command group from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) when the version is missing. Drops groups that [`features.harness.emptyGroup`](features.md#features.harness.emptyGroup) flags, removes `Stop` when nothing remains… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [mergeHooksValue](../../src/harness.ts#L385) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its `Stop` groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending a command group from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) when the version is missing. Drops groups that [`features.harness.emptyGroup`](features.md#features.harness.emptyGroup) flags, removes `Stop` when nothing remains… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L392) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
-      <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hooks list, replacing any entry recognized by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with the command from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) or dropping it when version is null. Returns an error object for malformed input. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [rewriteGroup](../../src/harness.ts#L404) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+      <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hooks list, replacing any entry recognized by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with the command from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) or dropping it when version is null. Returns an error object for malformed input. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L408) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L420) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L412) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L424) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeJsonKey](../../src/harness.ts#L416) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L428) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L430) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L442) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
       <a id="features.harness.parseObject"></a><br>Turns a possibly missing config file body into a shallow-copied object: null or blank input yields `{}`, otherwise it `JSON.parse`s and checks the result with [`features.harness.isRecord`](features.md#features.harness.isRecord). Non-object values or parse failures come back as an error string instead of throwing, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L441) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [finishJson](../../src/harness.ts#L453) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L446) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L458) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L452) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L464) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L459) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L471) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L462) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L474) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L469) () → string
+    - fn [keylangVersion](../../src/harness.ts#L481) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L474) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L486) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L476) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L488) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diskProbe](../../src/harness.ts#L485) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L497) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L506) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L518) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L516)
+    - type [HarnessTarget](../../src/harness.ts#L528)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L528)
+    - type [AgentsPlan](../../src/harness.ts#L540)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L542) (root: string, choice: HarnessChoice) → AgentsPlan
+    - fn [planAgents](../../src/harness.ts#L554) (root: string, choice: HarnessChoice) → AgentsPlan
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L557) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [readInputs](../../src/harness.ts#L569) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L567) (plan: AgentsPlan) → string[]
+    - fn [agentsPlanProblems](../../src/harness.ts#L579) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, a target must pass the repository's write rules, and `auto` must still detect the same harnesses.
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L592)
+    - type [HarnessStep](../../src/harness.ts#L604)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L607) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L619) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)
@@ -997,19 +1003,21 @@
     - wire-gen [map.wire-gen](map.md#map.wire-gen)
     - fn [proposalProblem](../../src/proposals.ts#L24) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
       <a id="features.proposals.proposalProblem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A proposal replaces one hand-written spec: a Markdown file under the spec directory, not a generated map file, and not reached through a link that leads out. `specDir` is relative to the root, POSIX; `generated` says…
-      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [codeProposalProblem](../../src/proposals.ts#L48) (root: string, path: string) → string | null
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [lang.parser.parse](lang.md#lang.parser.parse), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
+    - fn [generatedSpecProblem](../../src/proposals.ts#L46) (marker: string | null, specDir: string) → string <!-- internal -->
+      <a id="features.proposals.generatedSpecProblem"></a><br>The refusal for a generated spec, naming the command its marker names (`keylang baseline` for the baseline; `keylang map` otherwise).
+    - fn [codeProposalProblem](../../src/proposals.ts#L58) (root: string, path: string) → string | null
       <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, inside the repository (links included), outside the directories sources are not read from, and not one keylang generates (`keylang wire`).
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ProposalBasis](../../src/proposals.ts#L64)
+    - type [ProposalBasis](../../src/proposals.ts#L74)
       <a id="features.proposals.ProposalBasis"></a><br>What a proposal was built from: the target on disk and the proposal already waiting for it (null: no file). A write that carries it lands only while both are still so.
-    - fn [proposalWriteProblem](../../src/proposals.ts#L74) (root: string, path: string, basis: ProposalBasis) → string | null
+    - fn [proposalWriteProblem](../../src/proposals.ts#L84) (root: string, path: string, basis: ProposalBasis) → string | null
       <a id="features.proposals.proposalWriteProblem"></a><br>Why the proposal of `path` built from `basis` may not be written now, or null: the target or the waiting proposal changed, appeared or went away since, or the store breaks the write policy. Each reason names its file.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
-    - fn [writeProposal](../../src/proposals.ts#L90) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+    - fn [writeProposal](../../src/proposals.ts#L100) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L99) (before: string, after: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L109) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a TS/JS e2e test that…

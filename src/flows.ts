@@ -722,7 +722,7 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
     planned.set(item.id, entry);
     if (!code) continue;
     entry.implemented = true;
-    const where = `${code.file ?? "?"}:${code.line ?? 1}`;
+    const where = codeLocation(item.id, code, input.edges);
     const mismatch = plannedMismatch(item, code);
     if (mismatch === "kind") {
       diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${where})`));
@@ -733,6 +733,20 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
     }
   }
   return planned;
+}
+
+/**
+ * Where the code of a planned id is: its file and line, or for a node without
+ * a file (a package) its first importer. Neither: `in the code`.
+ */
+function codeLocation(id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]): string {
+  if (code.file) return `${code.file}:${code.line ?? 1}`;
+  let first: SnapshotEdge | null = null;
+  for (const edge of edges) {
+    if (edge.target !== id || edge.file === null || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
+    if (first === null || compareText(edge.file, first.file!) < 0 || (edge.file === first.file && edge.line < first.line)) first = edge;
+  }
+  return first === null ? "in the code" : `imported by ${first.file}:${first.line}`;
 }
 
 /** How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches. */

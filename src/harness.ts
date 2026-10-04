@@ -119,8 +119,9 @@ function claudeHasUserFile(probe: HarnessProbe, dir: string): boolean {
   return false;
 }
 
-/** The instruction body between the markers, without a trailing newline. */
-export function agentsBody(): string {
+/** The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`. */
+export function agentsBody(version: string): string {
+  const cli = cliCommand(version);
   return [
     "keylang is the spec; you write the code.",
     "",
@@ -128,14 +129,14 @@ export function agentsBody(): string {
     "1. Write `keylang/features/<slug>.md` with `planned` declarations and flows.",
     "2. Call `validate_spec` on that text, then `scaffold` for each planned fn (template only).",
     "3. Implement the code with your own edits.",
-    "4. Call `feature_status` or `keylang feature <slug>` until done, then drop `planned` when K202 says it is implemented.",
+    "4. Call `feature_status` (or the CLI `feature` below) until done, then drop `planned` when K202 says it is implemented.",
     "Done: every `planned` is implemented (K202, not K201), every flow step is static ok, and no rule fails. Tests and trace do not block.",
     "",
     "MCP: `context`, `validate_spec`, `scaffold`, `feature_status`, `search`, `node`, `code`, `flows`, `check`, `explain`. Only `apply_diff` writes, and only a proposal.",
     "",
     "Change `keylang/rules.md` and `keylang/rules.baseline.md` only through a proposal (`apply_diff`).",
     "",
-    "CLI when MCP is off: `keylang feature <slug> --format json`, `keylang check`, `keylang spec-to-code <id> --print`, `keylang baseline`.",
+    `CLI when MCP is off, pinned like the MCP server: \`${cli} feature <slug> --format json\`, \`${cli} check\`, \`${cli} spec-to-code <id> --print\`, \`${cli} baseline\`.`,
     "",
     "`.codex/` applies only in a trusted project; each hook there is approved on its own. This file is the fallback.",
   ].join("\n");
@@ -146,9 +147,19 @@ export function mcpCommand(version: string): { command: string; args: string[] }
   return { command: "npx", args: ["-y", `keylang@${version}`, "mcp"] };
 }
 
+/** The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`. */
+export function cliCommand(version: string): string {
+  return `npx -y keylang@${version}`;
+}
+
+/** The skill resource names the CLI as `npx -y keylang@<version>`; the copy a harness gets pins the running version. */
+export function pinSkill(skill: string, version: string): string {
+  return skill.replaceAll("keylang@<version>", `keylang@${version}`);
+}
+
 /** What the Stop hook runs. */
 export function hookCommand(version: string): string {
-  return `npx -y keylang@${version} hook stop`;
+  return `${cliCommand(version)} hook stop`;
 }
 
 /**
@@ -157,7 +168,7 @@ export function hookCommand(version: string): string {
  * invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
  */
 export function planHarness(input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }): HarnessPlan {
-  const body = agentsBody();
+  const body = agentsBody(input.version);
   const block = `${MARK_BEGIN}\n${body}\n${MARK_END}\n`;
   if (Buffer.byteLength(block) > BLOCK_LIMIT) throw new Error(`AGENTS.md block is ${Buffer.byteLength(block)} bytes; the limit is ${BLOCK_LIMIT}`);
   const files: HarnessFile[] = [];
@@ -214,7 +225,8 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
   }
 
   if (owned) {
-    const skill = input.skill.endsWith("\n") ? input.skill : `${input.skill}\n`;
+    const pinned = pinSkill(input.skill, input.version);
+    const skill = pinned.endsWith("\n") ? pinned : `${pinned}\n`;
     files.push({ path: SKILL_AGENTS, text: skill }, { path: SKILL_CLAUDE, text: skill });
   } else if (!input.selection.instructions) {
     if (input.files.get(SKILL_AGENTS) != null) files.push({ path: SKILL_AGENTS, text: null });

@@ -193,8 +193,14 @@ test("mcp: apply_diff only writes a pending proposal; a target outside the specs
   assert.equal(outside.isError, true);
   assert.match(outside.text, /not a Markdown spec/);
   const map = await mcp.call("apply_diff", { path: "keylang/map/app.md", text: "x" });
-  assert.match(map.text, /a generated map file/);
+  assert.match(map.text, /a generated map file: change the code or the rules, then run `keylang map`/);
+  // The baseline is written by `keylang baseline`, not by `keylang map`; rule changes go to rules.md.
+  assert.equal(spawnSync(process.execPath, [bin, "baseline"], { cwd: mcp.dir, encoding: "utf8" }).status, 0);
+  const baseline = await mcp.call("apply_diff", { path: "keylang/rules.baseline.md", text: "x" });
+  assert.equal(baseline.isError, true);
+  assert.match(baseline.text, /keylang\/rules\.baseline\.md: a generated file: it is written by `keylang baseline` only; propose rule changes in `keylang\/rules\.md`/);
   assert.ok(!existsSync(join(mcp.dir, ".keylang/proposals/src")));
+  assert.ok(!existsSync(join(mcp.dir, ".keylang/proposals/keylang/rules.baseline.md")));
 });
 
 test("mcp: explain gives the offline summary without a model", async (t) => {

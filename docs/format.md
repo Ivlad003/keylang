@@ -756,7 +756,7 @@ Fingerprint твердження — SHA-256 від fingerprint-ів предм�
 
 `feature`, `baseline`, `agents`, `check --changed` і `hook stop` описано в [tools.md](tools.md#agents).
 
-Інтеграція, якої ще немає в коді, — `planned module external.<pkg>` і крок потоку до цього модуля. Нового виду вузла немає. Доки пакет ніхто не імпортує, ID і static лишаються `unverified` «planned». Коли модуль кроку-батька імпортує пакет, `planned` дає K202, а static — `ok` («imported by»). Імпорт з іншого модуля K202 може дати (вузол пакета вже є), але static цього кроку лишається не `ok`, і `feature` має прогалину `static`.
+Інтеграція, якої ще немає в коді, — `planned module external.<pkg>` і крок потоку до цього модуля. Нового виду вузла немає. Доки пакет ніхто не імпортує, ID і static лишаються `unverified` «planned». Коли модуль кроку-батька імпортує пакет, `planned` дає K202, а static — `ok` («imported by»). Власного файла пакет не має, тож місце в K202 — перший (за шляхом і рядком) імпорт: `is implemented (imported by src/mail/mail.service.ts:2)`. Імпорт з іншого модуля K202 може дати (вузол пакета вже є), але static цього кроку лишається не `ok`, і `feature` має прогалину `static`.
 
 ### Версії формату
 

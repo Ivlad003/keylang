@@ -29,14 +29,24 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   if (specDir === ".." || specDir.startsWith("../")) return "the spec directory is outside the repository";
   if (specDir !== "" && !path.startsWith(`${specDir}/`)) return `outside ${specDir}/: a proposal changes specs only`;
   if (path.startsWith(`${specDir === "" ? "" : `${specDir}/`}map/`)) return "a generated map file: change the code or the rules, then run `keylang map`";
-  if (generated(path)) return "a generated file: it is written by `keylang map` only";
   // Links first: nothing outside the spec directory is read, not even to see whether it is generated.
   const abs = resolve(root, path);
   const specRoot = resolve(root, specDir);
   const lands = landing(abs);
   if (lands === null || !within(lands, existsSync(specRoot) ? realpathSync(specRoot) : specRoot)) return `leads out of ${specDir || "."}/ through a link`;
-  if (existsSync(lands) && parse(path, readFileSync(lands, "utf8")).generated !== null) return "a generated file: it is written by `keylang map` only";
+  const marker = existsSync(lands) ? parse(path, readFileSync(lands, "utf8")).generated : null;
+  if (marker !== null || generated(path)) return generatedSpecProblem(marker, specDir);
   return null;
+}
+
+/**
+ * The refusal for a generated spec, naming the command its marker names
+ * (`keylang baseline` for the baseline; `keylang map` otherwise).
+ */
+function generatedSpecProblem(marker: string | null, specDir: string): string {
+  const command = marker?.match(/`(keylang [a-z-]+)`/)?.[1] ?? "keylang map";
+  if (command !== "keylang baseline") return `a generated file: it is written by \`${command}\` only`;
+  return `a generated file: it is written by \`keylang baseline\` only; propose rule changes in \`${specDir === "" ? "" : `${specDir}/`}rules.md\``;
 }
 
 /**

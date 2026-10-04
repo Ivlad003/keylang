@@ -85,13 +85,15 @@
       - calls base.span.compareText
     - fn [moduleMembers](../../src/flows.ts#L697) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
     - fn [collectPlanned](../../src/flows.ts#L713) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
-      - calls check.flows.plannedMismatch, base.diag.diagnostic
-    - fn [plannedMismatch](../../src/flows.ts#L739) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+      - calls check.flows.codeLocation, check.flows.plannedMismatch, base.diag.diagnostic
+    - fn [codeLocation](../../src/flows.ts#L742) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+      - calls base.span.compareText
+    - fn [plannedMismatch](../../src/flows.ts#L753) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       - calls check.flows.sameSignature
-    - fn [sameSignature](../../src/flows.ts#L750) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L764) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       - calls check.flows.normalizeSignature
-    - fn [normalizeSignature](../../src/flows.ts#L757) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L761) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L771) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L775) (text: string) → string <!-- internal -->
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag

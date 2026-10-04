@@ -1717,7 +1717,21 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   assert.equal(settings.hooks.PostToolUse.length, 1);
   assert.match(JSON.stringify(settings.hooks.Stop), new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")} hook stop`));
   assert.match(readFileSync(join(dir, ".codex/hooks.json"), "utf8"), /hook stop/);
-  assert.match(readFileSync(join(dir, "AGENTS.md"), "utf8"), /trusted project/);
+  const agentsMd = readFileSync(join(dir, "AGENTS.md"), "utf8");
+  assert.match(agentsMd, /trusted project/);
+  // The CLI fallback is the command MCP and the hook pin: no global `keylang`, no unpinned `npx keylang`.
+  const pinned = `npx -y keylang@${VERSION}`;
+  for (const text of [agentsMd, skillA]) {
+    for (const command of ["feature <slug> --format json", "check", "spec-to-code <id> --print", "baseline"]) assert.ok(text.includes(`\`${pinned} ${command}\``), `${pinned} ${command}`);
+    assert.doesNotMatch(text, /`keylang (feature|check|spec-to-code|baseline)\b/);
+    assert.doesNotMatch(text, /keylang@<version>/);
+  }
+
+  writeFileSync(join(dir, "AGENTS.md"), agentsMd.replaceAll(`keylang@${VERSION}`, "keylang@0.0.0"));
+  const staleBlock = keylang(dir, ["agents", "--check"]);
+  assert.equal(staleBlock.status, 1, staleBlock.stdout);
+  assert.match(staleBlock.stdout, /AGENTS\.md: stale/);
+  writeFileSync(join(dir, "AGENTS.md"), agentsMd);
 
   mcp.mcpServers.keylang.args = ["-y", "keylang@0.0.0", "mcp"];
   writeFileSync(join(dir, ".mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`);
@@ -2025,14 +2039,16 @@ test("planned module external.<pkg> is static ok only from the importing parent 
   assert.doesNotMatch(declared.stdout, /K202|K002/);
   writeFileSync(join(dir, "src/domain/order.ts"), 'import Stripe from "stripe";\nexport function price(): number {\n  return Stripe ? 2 : 0;\n}\n');
   const other = keylang(dir, ["check"]);
-  assert.match(other.stdout, /K202 planned module `external\.stripe`/);
+  // A package has no file of its own: the location is its first importer, never `?:1`.
+  assert.match(other.stdout, /K202 planned module `external\.stripe` is implemented \(imported by src\/domain\/order\.ts:1\); remove the declaration/);
+  assert.doesNotMatch(other.stdout, /\?:1/);
   assert.match(other.stdout, /static unverified external\.stripe: no import of `external\.stripe` from `app\.pay`/);
   const status = JSON.parse(keylang(dir, ["feature", "pay", "--format", "json"]).stdout) as { gaps: { kind: string; id: string; line: number }[] };
   assert.ok(status.gaps.some((gap) => gap.kind === "static" && gap.id === "external.stripe" && gap.line === 5));
   writeFileSync(join(dir, "src/domain/order.ts"), ORDER);
   writeFileSync(join(dir, "src/app/pay.ts"), 'import Stripe from "stripe";\nexport function charge(): number {\n  return Stripe ? 1 : 0;\n}\n');
   const own = keylang(dir, ["check"]);
-  assert.match(own.stdout, /K202 planned module `external\.stripe`/);
+  assert.match(own.stdout, /K202 planned module `external\.stripe` is implemented \(imported by src\/app\/pay\.ts:1\)/);
   assert.match(own.stdout, /static ok external\.stripe: imported by `app\.pay`/);
 });
 
