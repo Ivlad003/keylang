@@ -1731,6 +1731,30 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
   assert.equal(keylang(dir, ["agents", "--check", "--agents=none"]).status, 1);
 });
 
+test("agents: Codex MCP tools run in `codex exec` without a prompt (default_tools_approval_mode); the user's keys stay; --check wants the key", (t) => {
+  const dir = tempDir(t, "keylang-codex-approve-");
+  writeTree(dir, {
+    "src/app/pay.ts": PAY,
+    ".codex/config.toml": 'model = "o3"\n\n[mcp_servers.other]\ncommand = "echo"\n\n[mcp_servers.keylang]\ncommand = "old"\nstartup_timeout_sec = 30\n',
+  });
+  const init = keylang(dir, ["init", "--agents=codex"]);
+  assert.equal(init.status, 0, init.stderr);
+  const toml = readFileSync(join(dir, ".codex/config.toml"), "utf8");
+  const table = toml.slice(toml.indexOf("[mcp_servers.keylang]"));
+  assert.match(table, /^default_tools_approval_mode = "approve"$/m);
+  assert.match(table, /^startup_timeout_sec = 30$/m);
+  assert.match(table, /^command = "npx"$/m);
+  assert.match(toml, /^model = "o3"$/m);
+  assert.match(toml, /\[mcp_servers\.other\]\ncommand = "echo"/);
+  assert.equal(keylang(dir, ["agents", "--check", "--agents=codex"]).status, 0);
+  writeFileSync(join(dir, ".codex/config.toml"), toml.replace(/^default_tools_approval_mode = "approve"\n/m, ""));
+  const held = treeBytes(dir);
+  const stale = keylang(dir, ["agents", "--check", "--agents=codex"]);
+  assert.equal(stale.status, 1, stale.stdout + stale.stderr);
+  assert.match(stale.stdout, /\.codex\/config\.toml: stale/);
+  assert.deepEqual(treeBytes(dir), held);
+});
+
 test("agents: invalid JSON or TOML exits 2 and writes nothing", (t) => {
   const dir = tempDir(t, "keylang-bad-json-");
   writeTree(dir, { "src/app/pay.ts": PAY, ".mcp.json": "{ not json\n", ".codex/config.toml": "mcp_servers = [\n" });
@@ -2027,6 +2051,36 @@ test("init: the keylang skill under .claude is not a Claude harness, so a second
   assert.equal(existsSync(join(dir, ".mcp.json")), false);
   assert.equal(existsSync(join(dir, ".claude/settings.json")), false);
   assert.ok(existsSync(join(dir, ".cursor/mcp.json")));
+});
+
+test("check --changed never hands git a piped stdin: the Codex sandbox cannot close one (EPERM), so git runs on the null device", { skip: process.platform === "win32" }, (t) => {
+  const dir = tempDir(t, "keylang-sandbox-git-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n',
+    "src/domain/order.ts": ORDER,
+    "keylang/rules.md": "# rules\n\n- deny app domain\n",
+  });
+  // A `git` first on PATH that refuses a pipe or a socket as stdin, the way the sandbox breaks one.
+  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const fakeBin = join(dir, ".bin");
+  mkdirSync(fakeBin);
+  writeFileSync(join(fakeBin, "git"), `#!/bin/sh\nif [ -p /dev/stdin ] || [ -S /dev/stdin ]; then echo "stdin is a pipe" >&2; exit 97; fi\nexec "${realGit}" "$@"\n`);
+  chmodSync(join(fakeBin, "git"), 0o755);
+  const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` };
+  const run = (args: string[]) => spawnSync(process.execPath, [bin, ...args], { cwd: dir, env, encoding: "utf8" });
+  for (const commits of [false, true]) {
+    git(dir, ["init", "-q"]);
+    if (commits) {
+      git(dir, ["add", "."]);
+      git(dir, ["commit", "-qm", "base"]);
+      writeFileSync(join(dir, "src/app/pay.ts"), `${readFileSync(join(dir, "src/app/pay.ts"), "utf8")}// touched\n`);
+    }
+    const changed = run(["check", "--changed"]);
+    assert.doesNotMatch(changed.stderr, /stdin is a pipe|git/, changed.stderr);
+    assert.equal(changed.status, 1, changed.stderr);
+    assert.match(changed.stdout, /K102/);
+  }
 });
 
 test("check --changed and hook stop report K001 when the step's source file was deleted", (t) => {

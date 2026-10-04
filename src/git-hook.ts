@@ -44,7 +44,7 @@ export function gitHooksDir(cwd: string): string {
 }
 
 function git(cwd: string, args: string[]): string {
-  const run = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const run = spawnSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
   if (run.error) throw new Error(`hook install: cannot run git: ${run.error.message}`);
   if (run.status !== 0) throw new Error(`hook install: not inside a git work tree (git ${args.join(" ")}: ${run.stderr.trim() || `exit ${run.status}`})`);
   return run.stdout.trim();

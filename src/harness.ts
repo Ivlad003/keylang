@@ -299,6 +299,13 @@ function mergeOpencode(existing: string | null, version: string | null): { text:
   return mergeJsonKey(existing, ["mcp"], server);
 }
 
+/**
+ * `codex exec` runs with approval policy `never` and rejects every MCP call
+ * that needs approval. keylang's tools only read, and `apply_diff` writes only
+ * a proposal under `.keylang/proposals/`, so they are approved up front.
+ */
+const CODEX_TOOLS_APPROVAL = "approve";
+
 function mergeCodexToml(existing: string | null, version: string | null): { text: string | null } | { error: string } {
   let data: Record<string, unknown> = {};
   if (existing !== null && existing.trim() !== "") {
@@ -312,7 +319,11 @@ function mergeCodexToml(existing: string | null, version: string | null): { text
   if (current !== undefined && !isRecord(current)) return { error: "mcp_servers is not a table" };
   const servers = { ...(current ?? {}) };
   if (version === null) delete servers.keylang;
-  else servers.keylang = mcpCommand(version);
+  else {
+    const own = servers.keylang;
+    // A person's own keys of the entry (a timeout, a per-tool mode) stay; the command and the mode are keylang's.
+    servers.keylang = { ...(isRecord(own) ? own : {}), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
+  }
   if (Object.keys(servers).length === 0) delete data.mcp_servers;
   else data.mcp_servers = servers;
   if (Object.keys(data).length === 0) return { text: null };

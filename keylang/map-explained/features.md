@@ -610,30 +610,33 @@
     - parser [lang.parser](lang.md#lang.parser)
     - type [ChangedFiles](../../src/git-changes.ts#L18)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - fn [gitIn](../../src/git-changes.ts#L28) (root: string, label: string) → { run: (args: string[], input?: string) => SpawnSyncReturns<string>; git: (args: string[], input?: string) => string } <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L28) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
-    - fn [assertRef](../../src/git-changes.ts#L41) (ref: string, label: string) → void <!-- internal -->
+      - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
+    - fn [gitUnavailable](../../src/git-changes.ts#L44) (label: string, error: Error & { code?: string }) → string
+      <a id="features.git-changes.gitUnavailable"></a><br>Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works.
+    - fn [assertRef](../../src/git-changes.ts#L51) (ref: string, label: string) → void <!-- internal -->
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L47) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L57) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a><br>Builds the fixed argument list for a `git diff` against a base ref: relative paths, no renames, zero context lines, no color or external diff, and `a/`/`b/` prefixes. Shared by [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) so both parse… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [untracked](../../src/git-changes.ts#L49) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L59) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a><br>Lists files in the working tree that git does not track and that are not ignored, by running `ls-files` with NUL-separated output and splitting it into a path array. Both [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) fold these into their… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [gitChangedFiles](../../src/git-changes.ts#L55) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitChangedFiles](../../src/git-changes.ts#L65) (root: string, ref: string, label = "check --changed") → ChangedFiles
       <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [gitChangedLines](../../src/git-changes.ts#L69) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitChangedLines](../../src/git-changes.ts#L80) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L78) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L89) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitFileAt](../../src/git-changes.ts#L92) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L103) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [readFeatureBase](../../src/git-changes.ts#L111) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+    - fn [readFeatureBase](../../src/git-changes.ts#L122) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
       <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit (`since`, else `HEAD`). Without an explicit `since`, a failure to read git is an informational state, not an error; with it, the error is thrown.
       - calls [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L125) (config: Config, files: readonly string[]) → string[]
+    - fn [deletedModuleIds](../../src/git-changes.ts#L136) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)
@@ -653,7 +656,7 @@
       <a id="features.git-hook.gitHooksDir"></a><br>The hooks directory git uses for the repository around `cwd`, absolute: `git rev-parse --git-path hooks` honours `core.hooksPath` and linked worktrees. It is asked from the top level, where a relative `core.hooksPath` is resolved.
       - calls [features.git-hook.git](features.md#features.git-hook.git)
     - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
-      <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory via `spawnSync` and returns its trimmed stdout. Throws a descriptive "hook install" error if git can't be launched or exits non-zero, which [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir) relies on to locate the hooks folder. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory via `spawnSync` and returns its trimmed stdout. Throws a descriptive "hook install" error if git can't be launched or exits non-zero, which [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir) relies on to locate the hooks folder. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON and TOML replace only the `keylang` key.
     - node [external.node](external.md#external.node)
@@ -706,71 +709,71 @@
     - fn [mergeOpencode](../../src/harness.ts#L297) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeOpencode"></a><br>Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey) to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L302) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeCodexToml"></a><br>Parses an existing TOML config, then adds or removes the `keylang` entry under `mcp_servers` (built via [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand)), and re-serializes the result with a trailing newline. Returns `text: null` when nothing remains, or an error for malformed TOML or a non-table… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [mergeCodexToml](../../src/harness.ts#L309) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeCodexToml"></a><br>Parses an existing TOML config, then adds or removes the `keylang` entry under `mcp_servers` (built via [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand)), and re-serializes the result with a trailing newline. Returns `text: null` when nothing remains, or an error for malformed TOML or a non-table… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeSettings](../../src/harness.ts#L323) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L334) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeSettings"></a><br>Parses a settings JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then rewrites its `permissions` and `hooks` keys using [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue), deleting each key when the merge yields nothing. Serializes the result with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L338) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L349) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksFile"></a><br>Parses a settings file's JSON object via [`features.harness.parseObject`](features.md#features.harness.parseObject), rewrites or removes its `hooks` key through [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) for the given version, and reserializes it with [`features.harness.finishJson`](features.md#features.harness.finishJson). Any parse or merge failure is returned as an… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L348) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L359) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeDeny"></a><br>Validates a settings `permissions` object (via [`features.harness.isRecord`](features.md#features.harness.isRecord)) and rewrites its `deny` list to add the fixed DENY_RULES when installing or strip them otherwise. Returns an error for malformed input, and `undefined` when nothing remains. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [mergeHooksValue](../../src/harness.ts#L362) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeHooksValue](../../src/harness.ts#L373) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its `Stop` groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending a command group from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) when the version is missing. Drops groups that [`features.harness.emptyGroup`](features.md#features.harness.emptyGroup) flags, removes `Stop` when nothing remains… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L381) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L392) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hooks list, replacing any entry recognized by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with the command from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) or dropping it when version is null. Returns an error object for malformed input. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L397) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L408) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L401) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L412) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeJsonKey](../../src/harness.ts#L405) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L416) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L419) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L430) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
       <a id="features.harness.parseObject"></a><br>Turns a possibly missing config file body into a shallow-copied object: null or blank input yields `{}`, otherwise it `JSON.parse`s and checks the result with [`features.harness.isRecord`](features.md#features.harness.isRecord). Non-object values or parse failures come back as an error string instead of throwing, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L430) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [finishJson](../../src/harness.ts#L441) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L435) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L446) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L441) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L452) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L448) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L459) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L451) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L462) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L458) () → string
+    - fn [keylangVersion](../../src/harness.ts#L469) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L463) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L474) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L465) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L476) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diskProbe](../../src/harness.ts#L474) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L485) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L495) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L506) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L505)
+    - type [HarnessTarget](../../src/harness.ts#L516)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L517)
+    - type [AgentsPlan](../../src/harness.ts#L528)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L531) (root: string, choice: HarnessChoice) → AgentsPlan
+    - fn [planAgents](../../src/harness.ts#L542) (root: string, choice: HarnessChoice) → AgentsPlan
       <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error.
       - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L546) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [readInputs](../../src/harness.ts#L557) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L556) (plan: AgentsPlan) → string[]
+    - fn [agentsPlanProblems](../../src/harness.ts#L567) (plan: AgentsPlan) → string[]
       <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, a target must pass the repository's write rules, and `auto` must still detect the same harnesses.
       - calls [features.harness.readInputs](features.md#features.harness.readInputs), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L581)
+    - type [HarnessStep](../../src/harness.ts#L592)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L596) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L607) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)

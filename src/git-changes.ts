@@ -25,16 +25,26 @@ export interface ChangedFiles {
 }
 
 /** A git runner for `root`; `label` names the caller in its errors (`check --changed`). */
-function gitIn(root: string, label: string): { run: (args: string[], input?: string) => SpawnSyncReturns<string>; git: (args: string[], input?: string) => string } {
+function gitIn(root: string, label: string): { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } {
   // Paths as they are, not C-quoted octal escapes, whatever the user's `core.quotePath`.
-  const run = (args: string[], input?: string) => spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, input, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  const git = (args: string[], input?: string): string => {
-    const out = run(args, input);
-    if (out.error) throw new Error(`${label}: git is not available (${out.error.message})`);
+  // stdin is the null device, never a pipe: the Codex sandbox (seccomp) forbids
+  // the `shutdown` that closes a piped stdin, so spawnSync failed with EPERM and
+  // a git reading stdin waited forever.
+  const run = (args: string[]) => spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const git = (args: string[]): string => {
+    const out = run(args);
+    if (out.error) throw new Error(gitUnavailable(label, out.error));
     if (out.status !== 0) throw new Error(`${label}: git ${args[0]}: ${out.stderr.trim().split("\n")[0]}`);
     return out.stdout;
   };
   return { run, git };
+}
+
+/** Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works. */
+export function gitUnavailable(label: string, error: Error & { code?: string }): string {
+  const refused = error.code === "EPERM" || error.code === "EACCES";
+  const advice = refused ? "; a sandbox may forbid keylang to run git: run it outside the sandbox, or without the git option (a full `keylang check`)" : "";
+  return `${label}: git is not available (${error.message})${advice}`;
 }
 
 /** A ref git would read as an option (`--output=…`) is refused: it is never passed on. */
@@ -57,7 +67,8 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   const { run, git } = gitIn(root, label);
   // Before the first commit there is no HEAD and every file is new: compare with the empty tree.
   const unborn = ref === "HEAD" && run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0;
-  const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"], "").trim() : ref;
+  // `--stdin` reads the null device: the empty tree of this repository's hash.
+  const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"]).trim() : ref;
   const diff = git(diffArgs(base));
   const deleted = deletedDiffPaths(diff);
   const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
