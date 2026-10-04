@@ -32,7 +32,7 @@ import { codeProposalProblem, PROPOSALS_DIR, proposalProblem, proposalWriteProbl
 import { fileDiffText, plannedCodeTarget, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
 import type { Verdict } from "./verdict.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
-import { featureStatus, type FeatureBase, type FeatureReport, type Gap } from "./feature-status.ts";
+import { featureStatus, type FeatureBase, type FeatureReport, type Gap, type Hint } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmClient, LlmClientOptions, LlmSetup } from "./llm.ts";
@@ -4016,7 +4016,11 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
     request.slug,
   );
   if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
-  const messages: OperationMessage[] = [...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })), { level: report.done ? "info" : "warning", text: featureSummary(report) }];
+  const messages: OperationMessage[] = [
+    ...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })),
+    ...report.hints.map((hint) => ({ level: "info" as const, text: hintLine(hint) })),
+    { level: report.done ? "info" : "warning", text: featureSummary(report) },
+  ];
   return {
     ...emptyFeature("completed", report.done ? 0 : 1),
     payload: { slug: request.slug, file, snapshot: analyzed.snapshot?.snapshotId ?? null, report },
@@ -4029,9 +4033,14 @@ export function gapLine(gap: Gap): string {
   return `${gap.file}:${gap.line}:${gap.col}: ${gap.kind} ${gap.id}: ${gap.reason}`;
 }
 
-/** The CLI's closing line on stderr: `done` or `N gap(s)`. */
+/** One hint as the CLI prints it after the gaps: `hint: file:line:col: kind id: reason`. */
+export function hintLine(hint: Hint): string {
+  return `hint: ${hint.file}:${hint.line}:${hint.col}: ${hint.kind} ${hint.id}: ${hint.reason}`;
+}
+
+/** The CLI's closing line on stderr: `done`, or `N gap(s) · stage <stage>`. */
 export function featureSummary(report: FeatureReport): string {
-  return report.done ? "done" : `${report.gaps.length} gap(s)`;
+  return report.done ? "done" : `${report.gaps.length} gap(s) · stage ${report.stage}`;
 }
 
 function emptyDoctor(status: OperationStatus, exitCode: 0 | 1 | 2 | null): OperationEnvelope<"doctor"> {

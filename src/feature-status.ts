@@ -1,24 +1,48 @@
-// Whether a feature file is done: every `planned` in it is implemented
-// (K202, not K201), every flow step and `calls` in it is static ok, no rule
-// fail exists in any spec, and the plan was not weakened since the base
-// commit. Tests and trace are reported and do not block.
+// Whether a feature file is done: it declares something to check, keylang
+// reads it without errors, every `planned` in it is implemented (K202, not
+// K201), every flow step and `calls` in it is static ok, no rule fail exists
+// in any spec, and the plan was not weakened since the base commit. Tests and
+// trace are reported and do not block. The stage says how far the file got
+// from an idea to a spec an agent can implement (.scratch/c4-zoom, B1).
 
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isError } from "./diag.ts";
 import { plannedMismatch } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
-import { compareText } from "./span.ts";
+import { compareText, type Span } from "./span.ts";
 import { compileSpec, walkFlow, type Flow, type FlowItem, type FlowStep, type SpecIR, type Trigger } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
+/**
+ * How far a feature file got, the first that holds: `done` (no gaps), `idea`
+ * (no `# flow` yet), `behavior` (a flow without a trigger or steps),
+ * `structure` (the spec itself has gaps: errors, open questions, a predicted
+ * deny, a planned id outside the layers, a planned fn without a signature),
+ * `ready` (only the implementation is missing).
+ */
+export type Stage = "idea" | "behavior" | "structure" | "ready" | "done";
+
+/** What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed. */
 export interface Gap {
-  kind: "planned" | "static" | "rule" | "spec";
+  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic";
   id: string;
   file: string;
   line: number;
   col: number;
   reason: string;
+  stage: Exclude<Stage, "done">;
+}
+
+/** What the spec still lacks that does not keep the feature from done: the next step of a stage. */
+export interface Hint {
+  kind: "trigger" | "steps";
+  id: string;
+  file: string;
+  line: number;
+  col: number;
+  reason: string;
+  stage: Exclude<Stage, "done">;
 }
 
 export interface FeatureInfo {
@@ -45,7 +69,9 @@ export type FeatureBaseInfo = { ref: string; state: "compared" | "absent" } | { 
 
 export interface FeatureReport {
   done: boolean;
+  stage: Stage;
   gaps: Gap[];
+  hints: Hint[];
   info: { tests: FeatureInfo[]; trace: FeatureInfo[]; base: FeatureBaseInfo | null };
 }
 
@@ -62,8 +88,11 @@ export interface FeatureInput {
 }
 
 const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
+/** Errors of the spec itself: a line keylang could not read is no claim it checks. */
+const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
-const KIND_ORDER: Record<Gap["kind"], number> = { planned: 0, static: 1, rule: 2, spec: 3 };
+const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, planned: 2, static: 3, rule: 4, spec: 5 };
+const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1 };
 
 /** Ids declared or named in one spec, in first-seen order. */
 export function idsIn(doc: Document): string[] {
@@ -88,34 +117,50 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   const doc = input.docs.find((item) => item.path === path);
   if (doc === undefined) return null;
   const gaps: Gap[] = [];
+  const hasFlow = doc.sections.some((section) => section.kind === "flow");
+  const flows = input.spec.flows.filter((flow) => flow.file === path);
+  const planned = input.spec.planned.filter((item) => item.file === path);
 
-  for (const item of input.spec.planned) {
-    if (item.file !== path) continue;
+  if (planned.length === 0 && !flows.some((flow) => flow.triggers.length > 0 || claimsOf(flow).length > 0)) {
+    gaps.push({
+      kind: "empty",
+      id: slug,
+      file: path,
+      line: 1,
+      col: 1,
+      reason: "the feature declares nothing to check yet: add a `# flow` with a `trigger`, its steps, and `planned` for what is new",
+      stage: hasFlow ? "behavior" : "idea",
+    });
+  }
+  const specErrors = input.diagnostics.filter((diag) => diag.file === path && isError(diag) && SPEC_CODES.has(diag.code));
+  for (const diag of specErrors) {
+    gaps.push({ kind: "diagnostic", id: diag.code, file: path, line: diag.span.start.line, col: diag.span.start.col, reason: diag.message, stage: "structure" });
+  }
+
+  for (const item of planned) {
     const line = item.span.start.line;
     const col = item.span.start.col;
     const mismatch = finding(input.diagnostics, path, line, "K201");
     const implemented = finding(input.diagnostics, path, line, "K202");
-    if (mismatch) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: mismatch.message });
-    else if (!implemented) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: `planned \`${item.id}\` is not implemented` });
+    if (mismatch) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: mismatch.message, stage: "ready" });
+    else if (!implemented) gaps.push({ kind: "planned", id: item.id, file: path, line, col, reason: `planned \`${item.id}\` is not implemented`, stage: "ready" });
   }
-  for (const flow of input.spec.flows) {
-    if (flow.file !== path) continue;
-    walkFlow(flow, (item) => {
-      // A `calls` line is a static claim like a step: each target needs its own static ok.
-      const claims = item.kind === "step" ? [{ id: item.target.target, span: item.span }] : item.kind === "calls" ? item.targets.map((ref) => ({ id: ref.target, span: ref.span })) : [];
-      for (const { id, span } of claims) {
-        const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === span.start.line && entry.area === id);
-        if (verdict?.verdict === "ok") continue;
-        gaps.push({
-          kind: "static",
-          id,
-          file: path,
-          line: span.start.line,
-          col: span.start.col,
-          reason: verdict?.message ?? `no static ok for \`${id}\``,
-        });
-      }
-    });
+  for (const flow of flows) {
+    for (const { id, span } of claimsOf(flow)) {
+      // A dangling id is the spec's gap (K001 above); its missing static ok would only repeat it.
+      if (specErrors.some((diag) => diag.code === "K001" && diag.span.start.line === span.start.line)) continue;
+      const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === span.start.line && entry.area === id);
+      if (verdict?.verdict === "ok") continue;
+      gaps.push({
+        kind: "static",
+        id,
+        file: path,
+        line: span.start.line,
+        col: span.start.col,
+        reason: verdict?.message ?? `no static ok for \`${id}\``,
+        stage: "ready",
+      });
+    }
   }
 
   const ruleDiags = input.diagnostics.filter((diag) => isError(diag) && RULE_CODES.has(diag.code));
@@ -128,23 +173,57 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
       line: diag.span.start.line,
       col: diag.span.start.col,
       reason: diag.message,
+      stage: "ready",
     });
   }
   for (const verdict of input.verdicts) {
     if (verdict.verdict !== "fail" || FLOW.has(verdict.criterion) || sameFinding(verdict, ruleDiags)) continue;
-    gaps.push({ kind: "rule", id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, reason: verdict.message });
+    gaps.push({ kind: "rule", id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, reason: verdict.message, stage: "ready" });
   }
 
   if (input.base?.state === "compared") gaps.push(...planGaps(input, path, input.base.ref, input.base.doc));
 
+  const hints: Hint[] = [];
+  for (const flow of flows) {
+    const at = { file: path, line: flow.span.start.line, col: flow.span.start.col };
+    if (flow.triggers.length === 0) hints.push({ kind: "trigger", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no trigger: name its entry point with \`- trigger <id>\``, stage: "behavior" });
+    let steps = false;
+    walkFlow(flow, (item) => {
+      if (item.kind === "step" || item.kind === "calls" || item.kind === "when" || item.kind === "invariant") steps = true;
+    });
+    if (!steps) hints.push({ kind: "steps", id: flow.name, ...at, reason: `flow \`${flow.name}\` has no steps yet: add \`- step\`, \`- calls\`, \`- when\` or \`- invariant\``, stage: "behavior" });
+  }
+
   gaps.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.id, b.id) || compareText(a.reason, b.reason));
+  hints.sort((a, b) => a.line - b.line || a.col - b.col || HINT_ORDER[a.kind] - HINT_ORDER[b.kind] || compareText(a.id, b.id));
   const info = (criterion: "tests" | "trace"): FeatureInfo[] =>
     input.verdicts
       .filter((verdict) => verdict.file === path && verdict.criterion === criterion)
       .map((verdict) => ({ id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, verdict: verdict.verdict, reason: verdict.message }));
   const base: FeatureBaseInfo | null =
     input.base === undefined ? null : input.base.state === "unavailable" ? { ref: input.base.ref, state: "unavailable", reason: input.base.reason } : { ref: input.base.ref, state: input.base.state };
-  return { done: gaps.length === 0, gaps, info: { tests: info("tests"), trace: info("trace"), base } };
+  return { done: gaps.length === 0, stage: stageOf(hasFlow, gaps, hints), gaps, hints, info: { tests: info("tests"), trace: info("trace"), base } };
+}
+
+/** The first stage that holds, from `done` down: see `Stage`. */
+function stageOf(hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]): Stage {
+  if (gaps.length === 0) return "done";
+  if (!hasFlow) return "idea";
+  const at = (stage: Stage): boolean => gaps.some((gap) => gap.stage === stage) || hints.some((hint) => hint.stage === stage);
+  if (at("idea") || at("behavior")) return "behavior";
+  if (at("structure")) return "structure";
+  return "ready";
+}
+
+/** The static claims of a flow, in order: every `step`, and every target of a `calls` line. */
+function claimsOf(flow: Flow): { id: string; span: Span }[] {
+  const claims: { id: string; span: Span }[] = [];
+  walkFlow(flow, (item) => {
+    // A `calls` line is a static claim like a step: each target needs its own static ok.
+    if (item.kind === "step") claims.push({ id: item.target.target, span: item.span });
+    else if (item.kind === "calls") for (const ref of item.targets) claims.push({ id: ref.target, span: ref.span });
+  });
+  return claims;
 }
 
 /**
@@ -163,7 +242,7 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
     const mismatch = code === undefined ? "missing" : plannedMismatch(item, code);
     if (mismatch === null) continue;
     const why = mismatch === "missing" ? "the code does not have it" : `the code has a different ${mismatch}`;
-    gaps.push({ kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `planned ${item.decl} \`${item.id}\` (line ${item.span.start.line} at ${ref}) was removed, but ${why}; restore it or implement it` });
+    gaps.push({ kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `planned ${item.decl} \`${item.id}\` (line ${item.span.start.line} at ${ref}) was removed, but ${why}; restore it or implement it`, stage: "ready" });
   }
   const now = new Map<string, number>();
   for (const flow of input.spec.flows) if (flow.file === path) for (const { key } of planItems(flow)) now.set(key, (now.get(key) ?? 0) + 1);
@@ -175,7 +254,7 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
         continue;
       }
       const id = item.target.target;
-      gaps.push({ kind: "spec", id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was changed or removed; done is judged against the plan at ${ref}` });
+      gaps.push({ kind: "spec", id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was changed or removed; done is judged against the plan at ${ref}`, stage: "ready" });
     }
   }
   return gaps;

@@ -26,16 +26,20 @@
 
 **Model:** claude:claude-opus-5-5
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Verify:** `node --test tests/feature-stage.test.ts` · `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] тести тікета — у новому файлі `tests/feature-stage.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
-- [ ] e2e: файл лише з прозою → код 1, прогалина `empty`, `stage idea`
-- [ ] e2e: невідоме ключове слово під тригером (`- foo bar`) → код 1, прогалина `diagnostic` з K004 і позицією
-- [ ] e2e: потік із `planned module` без `trigger`, як у шаблоні `keylang new module` → `stage behavior`, підказки `trigger` і `steps`; після реалізації модуля → `done`, код 0 (чинний сценарій не ламається)
-- [ ] e2e: лише прогалини реалізації → `stage ready`; без прогалин → `done`
-- [ ] `--format json` стабільний: `stage`, `gaps[].stage`, `hints[]`; MCP `feature_status` повертає той самий об'єкт
-- [ ] `--help`, tools.md (`feature`, MCP), SKILL.md, `CONTEXT.md` (Feature) і design §7.6 описують стадії й новий критерій
+- [x] тести тікета — у новому файлі `tests/feature-stage.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
+- [x] e2e: файл лише з прозою → код 1, прогалина `empty`, `stage idea`
+- [x] e2e: невідоме ключове слово під тригером (`- foo bar`) → код 1, прогалина `diagnostic` з K004 і позицією
+- [x] e2e: потік із `planned module` без `trigger`, як у шаблоні `keylang new module` → `stage behavior`, підказки `trigger` і `steps`; після реалізації модуля → `done`, код 0 (чинний сценарій не ламається)
+- [x] e2e: лише прогалини реалізації → `stage ready`; без прогалин → `done`
+- [x] `--format json` стабільний: `stage`, `gaps[].stage`, `hints[]`; MCP `feature_status` повертає той самий об'єкт
+- [x] `--help`, tools.md (`feature`, MCP), SKILL.md, `CONTEXT.md` (Feature) і design §7.6 описують стадії й новий критерій
 
 ## Comments
+
+- 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. `stage`, `hints` і `stage` кожної прогалини в `src/feature-status.ts`; прогалини `empty` і `diagnostic` (K001–K005 у файлі фічі); підказки `trigger` і `steps` на рядку заголовка потоку (колонка імені потоку, як у K002). Вивід CLI: підказки з префіксом `hint: ` у stdout після прогалин, підсумок `<n> gap(s) · stage <stage>` у stderr. Тести — `tests/feature-stage.test.ts`.
+- Рядок `step` з невідомим ID дає лише `diagnostic` K001: друга прогалина `static` на тому самому рядку лише повторювала б її.
+- Зміна контракту: тест web «init → new feature → edit → read → map → feature» очікував `done · code 0` для фічі з одного речення — саме цей збій тікет виправляє; тепер `1 gap(s) · code 1`.

@@ -264,15 +264,16 @@
     - fn [checkSummary](../../src/operations.ts#L3971) (counts: CheckPayload["counts"]) → string
     - fn [emptyFeature](../../src/operations.ts#L3978) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
     - fn [runFeature](../../src/operations.ts#L3988) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
-      - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.git-changes.readFeatureBase, features.feature-status.featureStatus, operations.operations.gapLine, operations.operations.featureSummary
-    - fn [gapLine](../../src/operations.ts#L4028) (gap: Gap) → string
-    - fn [featureSummary](../../src/operations.ts#L4033) (report: FeatureReport) → string
-    - fn [emptyDoctor](../../src/operations.ts#L4037) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
-    - fn [runDoctor](../../src/operations.ts#L4041) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
+      - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.git-changes.readFeatureBase, features.feature-status.featureStatus, operations.operations.gapLine, operations.operations.hintLine, operations.operations.featureSummary
+    - fn [gapLine](../../src/operations.ts#L4032) (gap: Gap) → string
+    - fn [hintLine](../../src/operations.ts#L4037) (hint: Hint) → string
+    - fn [featureSummary](../../src/operations.ts#L4042) (report: FeatureReport) → string
+    - fn [emptyDoctor](../../src/operations.ts#L4046) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
+    - fn [runDoctor](../../src/operations.ts#L4050) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
       - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, features.agent-cli.probeAgentClis, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L4096) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
+    - fn [agentState](../../src/operations.ts#L4105) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
       - calls features.agent-cli.resolveAgent, operations.operations.messageOf, features.agent-cli.cliVersion
-    - fn [engineState](../../src/operations.ts#L4119) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+    - fn [engineState](../../src/operations.ts#L4128) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [doctorLines](../../src/operations.ts#L4136) (payload: DoctorPayload) → string[] <!-- internal -->
-    - fn [messageOf](../../src/operations.ts#L4165) (error: unknown) → string <!-- internal -->
+    - fn [doctorLines](../../src/operations.ts#L4145) (payload: DoctorPayload) → string[] <!-- internal -->
+    - fn [messageOf](../../src/operations.ts#L4174) (error: unknown) → string <!-- internal -->

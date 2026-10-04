@@ -615,7 +615,8 @@ async function firstProject(screen: Screen): Promise<string[]> {
   await waitFor(() => /map write: \d+ written · code 0/.test(screen.text()), "the map write");
   palette(screen, "feature readiness");
   screen.input(KEY.enter);
-  await waitFor(() => screen.text().includes("feature refunds: done · code 0"), "the feature");
+  // A feature of one sentence is an idea: nothing to check yet, so not done (c4-zoom/03).
+  await waitFor(() => screen.text().includes("feature refunds: 1 gap(s) · code 1"), "the feature");
   screen.input(KEY.f6);
   await waitFor(() => recordLines(screen).length >= 3, "the F6 list");
   return recordLines(screen);
@@ -646,7 +647,7 @@ test("web: init → new feature → edit → read → map → feature over the r
   assert.equal(inBrowser.length, 3, inBrowser.join("\n"));
   assert.match(inBrowser[0]!, /Init: set up keylang .* completed · code/);
   assert.match(inBrowser[1]!, /Map: write +completed · code 0/);
-  assert.match(inBrowser[2]!, /Feature readiness · refunds +completed · code 0/);
+  assert.match(inBrowser[2]!, /Feature readiness · refunds +completed · code 1/);
   assert.deepEqual(artifacts(webRoot), artifacts(terminalRoot), "the same files, byte for byte");
   assert.equal(existsSync(mark), false, "no editor ran on the server");
   // Actions add no HTTP endpoint: only the page, its assets and the socket.

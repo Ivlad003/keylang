@@ -24,7 +24,7 @@ import { lineDiff } from "./proposals.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { runStaleCheck, staleLine, staleSummary } from "./stale.ts";
 
@@ -49,12 +49,15 @@ Commands:
                             (--check: fail when it does not match; says to run
                             \`keylang baseline\`; writes nothing)
   feature <slug> [--since <ref>] [--format json]
-                            Whether <dir>/features/<slug>.md is done: every planned
-                            id is implemented (K202, not K201), every flow step is
-                            static ok, no rule fail remains, and the plan was not
-                            weakened since <ref> (default HEAD; without git only
-                            info.base says so). 0 done, 1 gaps, 2 missing file,
-                            unreadable --since ref, or bad invocation
+                            Whether <dir>/features/<slug>.md is done: it declares
+                            something to check and has no spec errors (K001-K005),
+                            every planned id is implemented (K202, not K201), every
+                            flow step is static ok, no rule fail remains, and the
+                            plan was not weakened since <ref> (default HEAD; without
+                            git only info.base says so). The last line names its
+                            stage: idea, behavior, structure, ready; hint: lines say
+                            what the spec still lacks. 0 done, 1 gaps, 2 missing
+                            file, unreadable --since ref, or bad invocation
   hook stop                 Read a harness Stop event (JSON) from stdin, run
                             check --changed, and print a JSON decision. Writes nothing
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
@@ -785,7 +788,7 @@ async function cmdFeature(slug: string | undefined, format: string, since: strin
   }
   const { report } = result.payload;
   if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  else for (const gap of report.gaps) process.stdout.write(`${gapLine(gap)}\n`);
+  else for (const line of [...report.gaps.map(gapLine), ...report.hints.map(hintLine)]) process.stdout.write(`${line}\n`);
   process.stderr.write(`${featureSummary(report)}\n`);
   return result.exitCode ?? 2;
 }

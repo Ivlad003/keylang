@@ -285,7 +285,7 @@ export function mcpServer(root: string, version: string): McpServer {
     "feature_status",
     {
       description:
-        "Whether keylang/features/<slug>.md is done: every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. Gaps are planned, static, rule, or spec. Tests, trace, and the base (info.base) are informational and do not block.",
+        "Whether keylang/features/<slug>.md is done, and how far it got: `stage` is idea (no flow yet), behavior (a flow without a trigger or steps), structure (the spec itself has gaps), ready (only the implementation is missing) or done. Done means the file declares something to check (else an `empty` gap), keylang reads it without errors (K001-K005 in it are `diagnostic` gaps), every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. Every gap has the stage where it is fixed. `hints` (a flow without a trigger or steps) say what the spec still lacks and do not block. Tests, trace, and the base (info.base) are informational and do not block.",
       inputSchema: { slug: z.string().min(1), since: z.string().min(1).optional() },
     },
     async ({ slug, since }) => {

@@ -365,21 +365,26 @@
     - span base.span
     - spec-ir lang.spec-ir
     - verdict check.verdict
-    - type [Gap](../../src/feature-status.ts#L15)
-    - type [FeatureInfo](../../src/feature-status.ts#L24)
-    - type [FeatureBase](../../src/feature-status.ts#L38)
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L44)
-    - type [FeatureReport](../../src/feature-status.ts#L46)
-    - type [FeatureInput](../../src/feature-status.ts#L52)
-    - fn [idsIn](../../src/feature-status.ts#L69) (doc: Document) → string[]
+    - type [Stage](../../src/feature-status.ts#L24) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - type [Gap](../../src/feature-status.ts#L27)
+    - type [Hint](../../src/feature-status.ts#L38)
+    - type [FeatureInfo](../../src/feature-status.ts#L48)
+    - type [FeatureBase](../../src/feature-status.ts#L62)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L68)
+    - type [FeatureReport](../../src/feature-status.ts#L70)
+    - type [FeatureInput](../../src/feature-status.ts#L78)
+    - fn [idsIn](../../src/feature-status.ts#L98) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [featureStatus](../../src/feature-status.ts#L86) (input: FeatureInput, slug: string) → FeatureReport | null
-      - calls features.feature-status.finding, lang.spec-ir.walkFlow, base.diag.isError, check.assess.sameFinding, features.feature-status.planGaps, base.span.compareText
-    - fn [planGaps](../../src/feature-status.ts#L156) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [featureStatus](../../src/feature-status.ts#L115) (input: FeatureInput, slug: string) → FeatureReport | null
+      - calls base.diag.isError, features.feature-status.finding, features.feature-status.claimsOf, check.assess.sameFinding, features.feature-status.planGaps, lang.spec-ir.walkFlow, base.span.compareText, features.feature-status.stageOf
+    - fn [stageOf](../../src/feature-status.ts#L209) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L219) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+      - calls lang.spec-ir.walkFlow
+    - fn [planGaps](../../src/feature-status.ts#L235) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L184) = Trigger | FlowStep <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L187) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L200) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L263) = Trigger | FlowStep <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L266) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L279) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

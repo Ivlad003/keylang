@@ -563,7 +563,7 @@
     - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [feature-status](../../src/feature-status.ts#L1)
-    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base commit. Tests and trace are reported and do not block.
+    <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base…
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
     - flows [check.flows](check.md#check.flows)
@@ -571,32 +571,41 @@
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Gap](../../src/feature-status.ts#L15)
-      <a id="features.feature-status.Gap"></a><br>Describes a single unfinished-feature finding: a category (planned, static, rule, or spec), an identifier, the source file position, and a human-readable reason. Used as the record type for gaps reported by feature-status checks. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FeatureInfo](../../src/feature-status.ts#L24)
+    - type [Stage](../../src/feature-status.ts#L24) = "idea" | "behavior" | "structure" | "ready" | "done"
+      <a id="features.feature-status.Stage"></a><br>How far a feature file got, the first that holds: `done` (no gaps), `idea` (no `# flow` yet), `behavior` (a flow without a trigger or steps), `structure` (the spec itself has gaps: errors, open questions, a predicted deny, a planned id outside the layers, a planned fn without a…
+    - type [Gap](../../src/feature-status.ts#L27)
+      <a id="features.feature-status.Gap"></a><br>What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed.
+    - type [Hint](../../src/feature-status.ts#L38)
+      <a id="features.feature-status.Hint"></a><br>What the spec still lacks that does not keep the feature from done: the next step of a stage.
+    - type [FeatureInfo](../../src/feature-status.ts#L48)
       <a id="features.feature-status.FeatureInfo"></a><br>A record describing a single feature's status entry: an identifier, the source location (file, line, column) where it is declared, and a verdict string paired with a free-text reason explaining it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FeatureBase](../../src/feature-status.ts#L38)
+    - type [FeatureBase](../../src/feature-status.ts#L62)
       <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit (`HEAD` or `--since`). `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet); `unavailable`: the history could not be read, so the plan is not compared.
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L44)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L68)
       <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it.
-    - type [FeatureReport](../../src/feature-status.ts#L46)
-      <a id="features.feature-status.FeatureReport"></a><br>Shape of the result produced when checking a feature's status: a completion flag, a list of `Gap` entries describing what is missing, and the collected `FeatureInfo` records for tests and trace plus an optional `FeatureBaseInfo`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FeatureInput](../../src/feature-status.ts#L52)
+    - type [FeatureReport](../../src/feature-status.ts#L70)
+      <a id="features.feature-status.FeatureReport"></a><br>Shape of the result produced when checking a feature's status: a completion flag, a list of `Gap` entries describing what is missing, and the collected `FeatureInfo` records for tests and trace plus an optional `FeatureBaseInfo`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [FeatureInput](../../src/feature-status.ts#L78)
       <a id="features.feature-status.FeatureInput"></a><br>Bundles everything needed to assess one feature: its directory, parsed documents, spec IR, diagnostics, and verdicts. Optional `nodes` and `base` fields enable checking removed `planned` items against the snapshot and diffing the plan against its base commit. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [idsIn](../../src/feature-status.ts#L69) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L98) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L86) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L115) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [features.feature-status.finding](features.md#features.feature-status.finding), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText)
-    - fn [planGaps](../../src/feature-status.ts#L156) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+      - calls [base.diag.isError](base.md#base.diag.isError), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
+    - fn [stageOf](../../src/feature-status.ts#L209) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+      <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
+    - fn [claimsOf](../../src/feature-status.ts#L219) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+      <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [planGaps](../../src/feature-status.ts#L235) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger` or `step` that is no longer there under the same flow and parents. Added items and order among siblings are not compared.
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L184) = Trigger | FlowStep <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L263) = Trigger | FlowStep <!-- internal -->
       <a id="features.feature-status.PlanItem"></a><br>Union type naming a single element of a feature's execution plan, which is either a `Trigger` or a `FlowStep`. It lets plan-building and status code handle both kinds of entries in one list without separate collections. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planItems](../../src/feature-status.ts#L187) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L266) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
       <a id="features.feature-status.planItems"></a><br>Every `trigger` and `step` of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L200) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L279) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
