@@ -163,8 +163,9 @@ function withExclude(dir: string, file: string): void {
 
 function excludePair(t: TestContext, fixture: string, dir: string): void {
   const lines = layersLines(rulesText(dir));
-  const base = aggregate(results(dir), lines);
-  const edges = results(dir)
+  const baseRows = results(dir);
+  const base = aggregate(baseRows, lines);
+  const edges = baseRows
     .filter((row) => row.code === "K101" || row.code === "K102")
     .map((row) => row.file)
     .filter((file) => !file.endsWith(".md"))
@@ -232,21 +233,114 @@ test("exclude and --static shape never switch ok and fail", (t) => {
   const before = aggregate(results(hooks, ["--static", "behavior"]), []);
   const after = aggregate(results(hooks, ["--static", "shape"]), []);
   monotonic("hooks", "--static shape", before, after);
+  const changed = [...before]
+    .filter(([key, left]) => left.verdict !== (after.get(key)?.verdict ?? "unverified"))
+    .map(([key, left]) => `${key.split(":")[2]} ${left.verdict} → ${after.get(key)?.verdict ?? "unverified"}`)
+    .sort();
+  assert.deepEqual(changed, ["domain.build.build ok → unverified", "presentation.worker.Worker.generate ok → unverified"]);
 });
 
-test("excluding the far side of a cycle is unverified, not ok", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "keylang-meta-cycle-"));
+test("06: excluding the far side of a cycle is unverified, not ok", (t) => {
+  const { base, excluded } = excludeCase(
+    t,
+    "cycle",
+    {
+      "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", infra: "src/infra/**" } })}\n`,
+      "src/app/a.ts": 'import { b } from "../infra/b.ts";\nexport function a(): void { b(); }\n',
+      "src/infra/b.ts": 'import { a } from "../app/a.ts";\nexport function b(): void { a(); }\n',
+      "keylang/rules.md": "# rules\n\n- module app.a\n  - no-cycles\n",
+    },
+    "src/infra/b.ts",
+  );
+  assert.equal(base.find((item) => item.criterion === "no-cycles")?.verdict, "fail", JSON.stringify(base));
+  assert.equal(excluded.find((item) => item.criterion === "no-cycles")?.verdict, "unverified", JSON.stringify(excluded));
+});
+
+// A minimal pair: the fixture as written, then the same files with `file` excluded.
+function excludeCase(t: TestContext, name: string, files: Record<string, string>, file: string): { base: Row[]; excluded: Row[]; status: number | null } {
+  const dir = mkdtempSync(join(tmpdir(), `keylang-meta-${name}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  write(dir, "keylang.json", `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", infra: "src/infra/**" } })}\n`);
-  write(dir, "src/app/a.ts", 'import { b } from "../infra/b.ts";\nexport function a(): void { b(); }\n');
-  write(dir, "src/infra/b.ts", 'import { a } from "../app/a.ts";\nexport function b(): void { a(); }\n');
-  write(dir, "keylang/rules.md", "# rules\n\n- module app.a\n  - no-cycles\n");
-  const base = aggregate(results(dir), []);
-  const copy = mkdtempSync(join(tmpdir(), "keylang-meta-cycle-ex-"));
-  t.after(() => rmSync(copy, { recursive: true, force: true }));
-  cpSync(dir, copy, { recursive: true });
-  withExclude(copy, "src/infra/b.ts");
-  monotonic("cycle", "exclude src/infra/b.ts", base, aggregate(results(copy), []));
-  const row = results(copy).find((item) => item.criterion === "no-cycles");
-  assert.equal(row?.verdict, "unverified");
+  for (const [path, text] of Object.entries(files)) write(dir, path, text);
+  const lines = layersLines(rulesText(dir));
+  const base = results(dir);
+  withExclude(dir, file);
+  const run = keylang(dir, ["check", "--format", "json"]);
+  assert.notEqual(run.status, 2, run.stderr);
+  const excluded = (JSON.parse(run.stdout) as { results: Row[] }).results;
+  monotonic(name, `exclude ${file}`, aggregate(base, lines), aggregate(excluded, lines));
+  return { base, excluded, status: run.status };
+}
+
+const NESTED_LAYERS = "# rules\n\n- layers domain < app\n  - infra\n";
+const NESTED_CONFIG = `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", app: "src/app/**", infra: "src/infra/**" } })}\n`;
+
+test("07: excluding an upward file in a nested layer is unverified, not ok", (t) => {
+  const { base, excluded } = excludeCase(
+    t,
+    "layers-nested",
+    {
+      "keylang.json": NESTED_CONFIG,
+      "src/domain/d.ts": "export function d(): void {}\n",
+      "src/app/y.ts": "export function y(): void {}\n",
+      "src/infra/x.ts": 'import { y } from "../app/y.ts";\nexport function x(): void {\n  y();\n}\n',
+      "keylang/rules.md": NESTED_LAYERS,
+    },
+    "src/infra/x.ts",
+  );
+  assert.ok(base.some((row) => row.code === "K101"), JSON.stringify(base));
+  const row = excluded.find((item) => item.criterion.startsWith("layers"));
+  assert.equal(row?.verdict, "unverified", JSON.stringify(excluded));
+  assert.match(row?.evidence ?? "", /src\/infra\/x\.ts:1:1/);
+});
+
+test("07: excluding an upward file outside every layer is unverified, not ok", (t) => {
+  const { base, excluded } = excludeCase(
+    t,
+    "layers-outside",
+    {
+      "keylang.json": NESTED_CONFIG,
+      "src/domain/d.ts": "export function d(): void {}\n",
+      "src/app/y.ts": "export function y(): void {}\n",
+      "src/misc/z.ts": 'import { y } from "../app/y.ts";\nexport function z(): void {\n  y();\n}\n',
+      "keylang/rules.md": NESTED_LAYERS,
+    },
+    "src/misc/z.ts",
+  );
+  assert.ok(base.some((row) => row.criterion.startsWith("layers")), JSON.stringify(base));
+  const row = excluded.find((item) => item.criterion.startsWith("layers"));
+  assert.equal(row?.verdict, "unverified", JSON.stringify(excluded));
+  assert.match(row?.evidence ?? "", /src\/misc\/z\.ts:1:1/);
+});
+
+test("07: excluding the far side of a cycle outside every layer is unverified, not ok", (t) => {
+  const { base, excluded } = excludeCase(
+    t,
+    "cycle-outside",
+    {
+      "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**" } })}\n`,
+      "src/app/a.ts": 'import { b } from "../misc/b.ts";\nexport function a(): void {\n  b();\n}\n',
+      "src/misc/b.ts": 'import { a } from "../app/a.ts";\nexport function b(): void {\n  a();\n}\n',
+      "keylang/rules.md": "# rules\n\n- module app.a\n  - no-cycles\n",
+    },
+    "src/misc/b.ts",
+  );
+  assert.equal(base.find((item) => item.criterion === "no-cycles")?.verdict, "fail", JSON.stringify(base));
+  assert.equal(excluded.find((item) => item.criterion === "no-cycles")?.verdict, "unverified", JSON.stringify(excluded));
+});
+
+test("08: excluding the only importer of an allowed package adds no K001", (t) => {
+  const { excluded, status } = excludeCase(
+    t,
+    "external",
+    {
+      "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**", infra: "src/infra/**" } })}\n`,
+      "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
+      "src/app/a.ts": "export function a(): void {}\n",
+      "src/infra/db.ts": 'import pg from "pg";\nexport function db(): void {\n  pg;\n}\n',
+      "keylang/rules.md": "# rules\n\n- deny infra external\n- allow infra external.pg\n",
+    },
+    "src/infra/db.ts",
+  );
+  assert.equal(status, 0, JSON.stringify(excluded));
+  assert.equal(excluded.find((item) => item.criterion === "deny infra external")?.verdict, "unverified", JSON.stringify(excluded));
 });
