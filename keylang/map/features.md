@@ -349,7 +349,7 @@
       - calls features.lsp-features.plannedDecl
   - module [explain](../../src/explain.ts#L1)
     - diag base.diag
-    - fn [explainCode](../../src/explain.ts#L109) (code: string) → string | null
+    - fn [explainCode](../../src/explain.ts#L114) (code: string) → string | null
   - module [feature-status](../../src/feature-status.ts#L1)
     - assess check.assess
     - diag base.diag

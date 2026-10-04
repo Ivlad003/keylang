@@ -34,7 +34,14 @@ export interface Assessment {
 export function assess(
   docs: readonly Document[],
   snapshot: SnapshotInput | null,
-  evidence: { tests: TestCase[] | null; traces: TraceRun[] | null; static?: StaticMode; staticSetBy?: StaticSource; knownExternal?: ReadonlySet<string> } = { tests: null, traces: null },
+  evidence: {
+    tests: TestCase[] | null;
+    traces: TraceRun[] | null;
+    static?: StaticMode;
+    staticSetBy?: StaticSource;
+    knownExternal?: ReadonlySet<string>;
+    testFileExists?: FlowInput["testFileExists"];
+  } = { tests: null, traces: null },
   format: RuleFormat = 1,
 ): Assessment {
   const { spec, diagnostics: specDiags } = compileSpec(docs);
@@ -63,6 +70,7 @@ export function assess(
           traces: evidence.traces,
           ...(evidence.static ? { static: evidence.static } : {}),
           ...(evidence.staticSetBy ? { staticSetBy: evidence.staticSetBy } : {}),
+          ...(evidence.testFileExists ? { testFileExists: evidence.testFileExists } : {}),
         });
   const planned = new Set(spec.planned.map((item) => item.id));
   const kindOf = dependencyKindOf(spec, index, snapshot?.nodes);

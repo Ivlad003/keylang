@@ -37,6 +37,8 @@ export type Code =
   | "K201"
   /** A `planned` declaration is implemented and can be removed (warning). */
   | "K202"
+  /** A flow `test` names a file that does not exist in the repository (warning). */
+  | "K203"
   // wiring (M6)
   /** A cycle among `wire` factories. */
   | "K301"
@@ -49,7 +51,7 @@ export type Severity = "error" | "warning";
 export type K005Reason = "arguments" | "id" | "link" | "quote" | "layer" | "scope";
 
 export function severityOf(code: Code): Severity {
-  return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" ? "warning" : "error";
+  return code === "K006" || code === "K008" || code === "K103" || code === "K106" || code === "K202" || code === "K203" ? "warning" : "error";
 }
 
 export interface Diagnostic {

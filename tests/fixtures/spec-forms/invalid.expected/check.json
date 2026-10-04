@@ -44,6 +44,19 @@
       "reason": "arguments"
     },
     {
+      "criterion": "K203",
+      "area": "keylang/flows/bad.md",
+      "verdict": "warning",
+      "evidence": "`f.ts` does not exist",
+      "snapshotId": "SNAPSHOT",
+      "file": "keylang/flows/bad.md",
+      "line": 5,
+      "col": 8,
+      "code": "K203",
+      "specHash": "ae18745f0edda98528009c4ef1e8fdff0ac088d7be9d3d10e7178e77424e2af0",
+      "provenance": "syntactic"
+    },
+    {
       "criterion": "K005",
       "area": "keylang/flows/bad.md",
       "verdict": "fail",

@@ -3,8 +3,8 @@
 // map rendered from the fresh snapshot, so IDs resolve against current code,
 // not a stale committed map. Nothing is written.
 
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
@@ -100,7 +100,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       traces: traceFiles === null ? null : loadTraces(root, traceFiles),
       static: staticMode.mode,
       ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
-      ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)) }),
+      ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)), testFileExists: (path: string) => repositoryFile(root, path) }),
     },
     config.format,
   );
@@ -115,6 +115,17 @@ export function findRoot(start: string): string {
     const parent = join(dir, "..");
     if (parent === dir) return start;
     dir = parent;
+  }
+}
+
+/** `path` (relative to the root, as a flow's `test` writes it) is a file inside the repository. */
+function repositoryFile(root: string, path: string): boolean {
+  const abs = resolve(root, path);
+  if (!within(abs, root)) return false;
+  try {
+    return statSync(abs).isFile();
+  } catch {
+    return false;
   }
 }
 

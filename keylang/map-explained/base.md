@@ -119,23 +119,23 @@
     <a id="base.diag"></a><br>Diagnostics with stable codes.
     - span [base.span](base.md#base.span)
     - type [Code](../../src/diag.ts#L5)
-      <a id="base.diag.Code"></a><br>A string-literal union enumerating every diagnostic code the tool can emit, grouped by range: K001–K008 for parsing and ID-resolution problems, K101–K107 for layer/dependency rule violations, K201–K202 for `planned` declarations versus implemented symbols, and K301–K302 for… _(llm · claude · 2026-10-04)_
-    - type [Severity](../../src/diag.ts#L46) = "error" | "warning"
+      <a id="base.diag.Code"></a><br>A string-literal union enumerating every diagnostic code the tool can emit, grouped by range: K001–K008 for parsing and ID-resolution problems, K101–K107 for layer/dependency rule violations, K201–K202 for `planned` declarations versus implemented symbols, and K301–K302 for… _(llm · claude · 2026-10-04 · stale)_
+    - type [Severity](../../src/diag.ts#L48) = "error" | "warning"
       <a id="base.diag.Severity"></a><br>A string-literal union naming the two levels a diagnostic can carry, `"error"` or `"warning"`, with no runtime value of its own; the input shows no callers or related types, so where it is consumed is not visible here. _(llm · claude · 2026-10-04)_
-    - type [K005Reason](../../src/diag.ts#L49) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - type [K005Reason](../../src/diag.ts#L51) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
       <a id="base.diag.K005Reason"></a><br>Why a K005 is malformed. Other codes do not carry this.
-    - fn [severityOf](../../src/diag.ts#L51) (code: Code) → Severity
-      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity with a hardcoded allowlist: codes `K006`, `K008`, `K103`, `K106`, and `K202` yield `"warning"`, and every other code yields `"error"`. Its only caller shown is [`base.diag.diagnostic`](base.md#base.diag.diagnostic), which uses it to fill in the severity when constructing… _(llm · claude · 2026-10-04)_
-    - type [Diagnostic](../../src/diag.ts#L55)
+    - fn [severityOf](../../src/diag.ts#L53) (code: Code) → Severity
+      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity with a hardcoded allowlist: codes `K006`, `K008`, `K103`, `K106`, and `K202` yield `"warning"`, and every other code yields `"error"`. Its only caller shown is [`base.diag.diagnostic`](base.md#base.diag.diagnostic), which uses it to fill in the severity when constructing… _(llm · claude · 2026-10-04 · stale)_
+    - type [Diagnostic](../../src/diag.ts#L57)
       <a id="base.diag.Diagnostic"></a><br>The shape of a single reported finding: a required code, severity, message, file and span, plus optional fields that only certain codes populate — `target` (K001, the dangling reference's ID), `criterion`/`area`/`specHash` (K103 warnings, which carry their own rule and hash… _(llm · claude · 2026-10-04)_
-    - fn [diagnostic](../../src/diag.ts#L81) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
-      <a id="base.diag.diagnostic"></a><br>Builds a `Diagnostic` from a code, file, span and message, taking the severity from [`base.diag.severityOf`](base.md#base.diag.severityOf). The optional last argument is the `reason` for K005 (kept only when it is a known reason) and the dangling `target` ID for every other code. _(llm · claude · 2026-10-04)_
+    - fn [diagnostic](../../src/diag.ts#L83) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+      <a id="base.diag.diagnostic"></a><br>Builds a `Diagnostic` from a code, file, span and message, taking the severity from [`base.diag.severityOf`](base.md#base.diag.severityOf). The optional last argument is the `reason` for K005 (kept only when it is a known reason) and the dangling `target` ID for every other code. _(llm · claude · 2026-10-04 · stale)_
       - calls [base.diag.severityOf](base.md#base.diag.severityOf)
-    - fn [isError](../../src/diag.ts#L92) (d: Diagnostic) → boolean
+    - fn [isError](../../src/diag.ts#L94) (d: Diagnostic) → boolean
       <a id="base.diag.isError"></a><br>A tiny predicate that returns true only when a diagnostic's `severity` field equals the string `"error"`, so the result and status layers ([`features.check-results.checkResults`](features.md#features.check-results.checkResults), [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus), [`operations.operations.runParse`](operations.md#operations.operations.runParse)… _(llm · claude · 2026-10-04)_
-    - fn [formatDiagnostic](../../src/diag.ts#L97) (d: Diagnostic) → string
+    - fn [formatDiagnostic](../../src/diag.ts#L99) (d: Diagnostic) → string
       <a id="base.diag.formatDiagnostic"></a><br>`file:line:col: CODE message`
-    - fn [compareDiagnostics](../../src/diag.ts#L102) (a: Diagnostic, b: Diagnostic) → number
+    - fn [compareDiagnostics](../../src/diag.ts#L104) (a: Diagnostic, b: Diagnostic) → number
       <a id="base.diag.compareDiagnostics"></a><br>Stable order: file, position, code.
   - module [external-ids](../../src/external-ids.ts#L1)
     <a id="base.external-ids"></a><br>IDs of external packages: `external.<segment>`, one ID space for every package name a repository imports or declares. The map, the rules and the language server all name a package by this ID, so they share this module.

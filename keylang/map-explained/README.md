@@ -6,18 +6,18 @@ The tree of the map with a brief under each node: the documentation comment from
 
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
-| [base](base.md) |  | 59 | 32 | 0 | 1 |
-| [check](check.md) |  | 91 | 7 | 1 | 74 |
+| [base](base.md) |  | 59 | 29 | 3 | 1 |
+| [check](check.md) |  | 91 | 6 | 2 | 74 |
 | [cli](cli.md) |  | 47 | 0 | 0 | 58 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 121 | 0 | 0 | 65 |
 | [features](features.md) |  | 279 | 0 | 0 | 165 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
-| [map](map.md) |  | 127 | 0 | 0 | 134 |
+| [map](map.md) |  | 128 | 0 | 0 | 134 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [outside](outside.md) |  | 0 | 0 | 0 | 34 |
 | [tui](tui.md) |  | 440 | 0 | 0 | 209 |
-| **all** | | 1355 | 39 | 1 | 862 |
+| **all** | | 1356 | 35 | 5 | 862 |
 
 ## Index
 

@@ -582,8 +582,31 @@ test("trace: a count or a negation needs its own predicate", (t) => {
   assert.match(row(results(dir).rows, "tests", "invariant no more than 3 retries")!.evidence, /needs a separate predicate or test \(quantitative or negative property\)/);
 });
 
+test("tests: a test file missing from the repository is a K203 warning, with or without check.tests", (t) => {
+  const flow = `${INVARIANT_FLOW}- step infrastructure.store.save\n  - test tests/store.test.ts "saves"\n`;
+  for (const check of [{}, { tests: ".keylang/reports/*.json" }]) {
+    const dir = repo(t, CHECKOUT, { "flows/checkout.md": flow }, check);
+    mkdirSync(join(dir, "tests"));
+    writeFileSync(join(dir, "tests/store.test.ts"), "");
+    const o = keylang(dir, ["check", "--strict"]);
+    assert.match(o.stdout, /^keylang\/flows\/checkout\.md:8:10: K203 `tests\/purchase\.test\.ts` does not exist$/m);
+    assert.doesNotMatch(o.stdout, /K203 `tests\/store\.test\.ts`/);
+    const { rows } = results(dir);
+    const warning = rows.find((r) => r.code === "K203");
+    assert.equal(warning?.verdict, "warning");
+    if (Object.keys(check).length === 0) {
+      // A warning blocks nothing, not even with --strict; everything else stays as it was.
+      assert.equal(o.status, 0, o.stdout);
+      assert.deepEqual(rows.filter((r) => r.criterion === "tests"), []);
+    } else assert.match(row(rows, "tests", "invariant total is the sum of the lines")!.evidence, /no report/);
+  }
+});
+
 test("tests: without check.tests there is no tests evidence, and --strict does not count it", (t) => {
   const dir = repo(t, CHECKOUT, { "flows/checkout.md": `${INVARIANT_FLOW}- invariant no more than 3 retries\n- invariant stock is reserved\n` });
+  // The test file exists: a missing one would be a K203 warning.
+  mkdirSync(join(dir, "tests"));
+  writeFileSync(join(dir, "tests/purchase.test.ts"), "");
   const { status, rows } = results(dir, ["--strict"]);
   assert.equal(status, 0, JSON.stringify(rows.filter((r) => r.verdict !== "ok")));
   assert.deepEqual(rows.filter((r) => r.criterion === "tests"), []);

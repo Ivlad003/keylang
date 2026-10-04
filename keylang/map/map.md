@@ -19,9 +19,11 @@
     - type [AnalysisRequest](../../src/analyze.ts#L20)
     - type [Analysis](../../src/analyze.ts#L41) extends Assessment
     - fn [analyze](../../src/analyze.ts#L55) (request: AnalysisRequest) → Promise<Analysis>
-      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces
+      - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, map.declared-packages.readManifests, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.analyze.repositoryFile
     - fn [findRoot](../../src/analyze.ts#L111) (start: string) → string
-    - fn [within](../../src/analyze.ts#L121) (abs: string, dir: string) → boolean
+    - fn [repositoryFile](../../src/analyze.ts#L122) (root: string, path: string) → boolean <!-- internal -->
+      - calls map.analyze.within
+    - fn [within](../../src/analyze.ts#L132) (abs: string, dir: string) → boolean
   - module [declared-packages](../../src/declared-packages.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

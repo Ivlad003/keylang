@@ -72,15 +72,15 @@
   - module [diag](../../src/diag.ts#L1)
     - span base.span
     - type [Code](../../src/diag.ts#L5)
-    - type [Severity](../../src/diag.ts#L46) = "error" | "warning"
-    - type [K005Reason](../../src/diag.ts#L49) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
-    - fn [severityOf](../../src/diag.ts#L51) (code: Code) → Severity
-    - type [Diagnostic](../../src/diag.ts#L55)
-    - fn [diagnostic](../../src/diag.ts#L81) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - type [Severity](../../src/diag.ts#L48) = "error" | "warning"
+    - type [K005Reason](../../src/diag.ts#L51) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - fn [severityOf](../../src/diag.ts#L53) (code: Code) → Severity
+    - type [Diagnostic](../../src/diag.ts#L57)
+    - fn [diagnostic](../../src/diag.ts#L83) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       - calls base.diag.severityOf
-    - fn [isError](../../src/diag.ts#L92) (d: Diagnostic) → boolean
-    - fn [formatDiagnostic](../../src/diag.ts#L97) (d: Diagnostic) → string
-    - fn [compareDiagnostics](../../src/diag.ts#L102) (a: Diagnostic, b: Diagnostic) → number
+    - fn [isError](../../src/diag.ts#L94) (d: Diagnostic) → boolean
+    - fn [formatDiagnostic](../../src/diag.ts#L99) (d: Diagnostic) → string
+    - fn [compareDiagnostics](../../src/diag.ts#L104) (a: Diagnostic, b: Diagnostic) → number
   - module [external-ids](../../src/external-ids.ts#L1)
     - config base.config
     - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string

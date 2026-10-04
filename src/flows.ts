@@ -61,6 +61,11 @@ export interface FlowInput {
   tests: TestCase[] | null;
   /** Trace runs from `check.trace`; null when it is not configured. */
   traces: TraceRun[] | null;
+  /**
+   * Whether a `test` path names a file of the repository. Omitted when the
+   * specs are checked without the repository (no file is K203 then).
+   */
+  testFileExists?: (path: string) => boolean;
 }
 
 interface Planned {
@@ -177,6 +182,10 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         return;
       }
       if (node.kind === "test") {
+        // A dangling test file is checked with or without `check.tests`: no report can ever prove it.
+        if (input.testFileExists && !input.testFileExists(node.path)) {
+          diagnostics.push(diagnostic("K203", file, node.source.text?.span ?? node.span, `\`${node.path}\` does not exist`));
+        }
         if (tests === null) return;
         const name = node.name ?? "";
         const matched = matchTest(tests, node.path, name, input.snapshotId);

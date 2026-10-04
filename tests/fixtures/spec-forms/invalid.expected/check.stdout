@@ -1,6 +1,7 @@
 keylang/flows/bad.md:1:12: K005 unexpected words in heading
 keylang/flows/bad.md:3:1: K005 `kind` must be `business` or `technical`
 keylang/flows/bad.md:4:1: K005 `planned` needs `<fn|module|type|event> <id> [signature]`
+keylang/flows/bad.md:5:8: K203 `f.ts` does not exist
 keylang/flows/bad.md:5:13: K005 unterminated quote
 keylang/flows/bad.md:5:13: K005 expected `test <file> "<name>"`
 keylang/flows/bad.md:6:13: K005 unterminated quote

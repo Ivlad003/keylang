@@ -1,6 +1,6 @@
 # 01: `test` і `invariant` без `check.tests` мовчать, навіть коли файла тесту немає
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** design
 
@@ -22,12 +22,13 @@
 
 **Рекомендація:** варіант 1 (+ 3 через тікет 08). Відсутній файл — це висяче посилання, як K001, і його можна перевірити синтаксично. Варіант 2 збільшує шум `unverified`, на який уже скаржились у §10.7.
 
-- [ ] рішення записане тут і в format.md («Flows: докази кроку»; для нового коду — §7 і `explain`)
-- [ ] фікстура: `test` на неіснуючий файл без `check.tests` — поведінка за рішенням; на наявний файл — без змін
-- [ ] `tests/fixtures/diagnostics.expected` і `spec-forms/*.expected` змінено лише так, як вимагає рішення
+- [x] рішення записане тут і в format.md («Flows: докази кроку»; для нового коду — §7 і `explain`)
+- [x] фікстура: `test` на неіснуючий файл без `check.tests` — поведінка за рішенням; на наявний файл — без змін
+- [x] `tests/fixtures/diagnostics.expected` і `spec-forms/*.expected` змінено лише так, як вимагає рішення
 
 Ключові файли: `src/flows.ts`, `src/check-results.ts`, `src/diag.ts`, `src/explain.ts`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
 
 - 2026-10-04 — рішення людини: варіант 1 — `test` з файлом, якого немає в репозиторії, завжди дає warning (новий K-код), незалежно від `check.tests`; решта поведінки без змін. Плюс hover на `test` пояснює, що докази є лише з `check.tests` (через тікет 08).
+- 2026-10-04 — зроблено: новий код **K203** (warning) `` `<path>` does not exist `` на шляху `test`, коли файла немає в репозиторії (шлях від кореня з `keylang.json`, лише файл усередині кореня). Перевіряється з `check.tests` і без нього; вердикти, підсумок і `--strict` не змінюються. Специфікації, перевірені без коду (`withoutCode`, каталог без snapshot), K203 не дають — інакше приклади й слайди шуміли б. Рядок у format.md §7, абзац у «Flows: докази кроку», `explain K203`. Тест: `tests/flows.test.ts` «a test file missing from the repository is a K203 warning…»; тест «without check.tests» тепер створює файл тесту. `diagnostics.expected` і `spec-forms/*.expected` не змінювались (там немає `test` з кодом).

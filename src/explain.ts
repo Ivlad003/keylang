@@ -83,6 +83,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`planned fn app.refund (order: Order) → Refund` after `export function refund(order: Order): Refund` was added.",
     fix: "Remove the `planned` line; the step is already checked as implemented code.",
   },
+  K203: {
+    cause: "A `test` line in a flow names a file that does not exist in the repository, so no test report can ever prove it. Checked with or without `check.tests` in keylang.json.",
+    example: "`test tests/nope.test.ts \"creates order\"` while the repository has no `tests/nope.test.ts`.",
+    fix: "Fix the path (relative to the directory of keylang.json), create the test, or remove the line.",
+  },
   K301: {
     cause: "`wire` factories depend on each other in a cycle, so one of them would get a dependency that is not built yet (ADR 0003).",
     example: "`wire app.a` with `- b app.b` and `wire app.b` with `- a app.a`.",
