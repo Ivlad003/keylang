@@ -321,6 +321,17 @@
       - calls base.config.toPosix
     - fn [deletedModuleIds](../../src/git-changes.ts#L85) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
+  - module [git-hook](../../src/git-hook.ts#L1)
+    - node external.node
+    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
+    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
+      - calls features.git-hook.preCommitCommand
+    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
+    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
+      - calls features.git-hook.preCommitText
+    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+      - calls features.git-hook.git
+    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
   - module [harness](../../src/harness.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

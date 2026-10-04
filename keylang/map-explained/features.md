@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -495,6 +495,24 @@
     - fn [deletedModuleIds](../../src/git-changes.ts#L85) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
+  - module [git-hook](../../src/git-hook.ts#L1)
+    <a id="features.git-hook"></a><br>`keylang hook install`: the git pre-commit hook that runs `check --changed`. The hook file is keylang's as a whole, found by its marker; a hook without the marker belongs to someone else and is never rewritten.
+    - node [external.node](external.md#external.node)
+    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
+      <a id="features.git-hook.preCommitCommand"></a><br>What the hook runs: the published CLI of this version, as the harness hooks do.
+    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
+      <a id="features.git-hook.preCommitText"></a><br>The whole hook file.
+      - calls [features.git-hook.preCommitCommand](features.md#features.git-hook.preCommitCommand)
+    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
+      <a id="features.git-hook.PreCommitState"></a><br>`missing`: no file; `foreign`: a hook without keylang's marker; `stale`: keylang's, but other text or not executable.
+    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
+      <a id="features.git-hook.preCommitState"></a>
+      - calls [features.git-hook.preCommitText](features.md#features.git-hook.preCommitText)
+    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+      <a id="features.git-hook.gitHooksDir"></a><br>The hooks directory git uses for the repository around `cwd`, absolute: `git rev-parse --git-path hooks` honours `core.hooksPath` and linked worktrees. It is asked from the top level, where a relative `core.hooksPath` is resolved.
+      - calls [features.git-hook.git](features.md#features.git-hook.git)
+    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+      <a id="features.git-hook.git"></a>
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON and TOML replace only the `keylang` key.
     - node [external.node](external.md#external.node)

@@ -2014,3 +2014,150 @@ test("K008 warns when one undotted then word matches a declared id", (t) => {
   assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows/save.md"]).status, 0);
 });
 
+// DX commands (design §7.5): pre-commit hook, shell completions, spec skeletons.
+
+test("check --changed keeps a flow of an unchanged spec whose step is in a changed file, and drops the others", (t) => {
+  const dir = tempDir(t, "keylang-changed-flow-");
+  const calls = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n';
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": calls,
+    "src/domain/order.ts": ORDER,
+    "src/domain/stock.ts": "export function left(): number {\n  return 0;\n}\nexport function count(): number {\n  return 1;\n}\n",
+    "keylang/flows/pay.md": "# flow pay\n\n- trigger app.pay.charge\n  - step domain.order.price\n",
+    "keylang/flows/stock.md": "# flow stock\n\n- trigger domain.stock.left\n  - step domain.stock.count\n",
+  });
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  writeFileSync(join(dir, "src/app/pay.ts"), PAY);
+  const full = keylang(dir, ["check"]);
+  assert.match(full.stdout, /keylang\/flows\/stock\.md:4/);
+  const changed = keylang(dir, ["check", "--changed"]);
+  assert.equal(changed.status, 1, changed.stdout);
+  assert.match(changed.stdout, /keylang\/flows\/pay\.md:4:\d+: static fail/);
+  assert.doesNotMatch(changed.stdout, /flows\/stock\.md/);
+});
+
+test("hook install writes an executable pre-commit hook once, --check writes nothing, a foreign hook stays", (t) => {
+  const dir = tempDir(t, "keylang-precommit-");
+  writeTree(dir, { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/pay.ts": PAY });
+  git(dir, ["init"]);
+  const hook = join(dir, ".git/hooks/pre-commit");
+
+  const missing = keylang(dir, ["hook", "install", "--check"]);
+  assert.equal(missing.status, 1, missing.stderr);
+  assert.match(missing.stderr, /keylang hook install/);
+  assert.equal(existsSync(hook), false);
+
+  const first = keylang(dir, ["hook", "install"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /\.git\/hooks\/pre-commit/);
+  const text = readFileSync(hook, "utf8");
+  assert.match(text, /^#!\/bin\/sh\n/);
+  assert.match(text, new RegExp(`npx -y keylang@${VERSION.replace(/\./g, "\\.")} check --changed`));
+  assert.notEqual(statSync(hook).mode & 0o111, 0);
+  assert.equal(keylang(dir, ["hook", "install", "--check"]).status, 0);
+
+  const again = keylang(dir, ["hook", "install"]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(readFileSync(hook, "utf8"), text);
+
+  // A keylang hook of another version is rewritten in place; --check calls it stale.
+  writeFileSync(hook, text.replace(`keylang@${VERSION}`, "keylang@0.0.1"));
+  assert.equal(keylang(dir, ["hook", "install", "--check"]).status, 1);
+  assert.equal(keylang(dir, ["hook", "install"]).status, 0);
+  assert.equal(readFileSync(hook, "utf8"), text);
+
+  // Not executable: --check fails and install restores the mode.
+  chmodSync(hook, 0o644);
+  assert.equal(keylang(dir, ["hook", "install", "--check"]).status, 1);
+  assert.equal(keylang(dir, ["hook", "install"]).status, 0);
+  assert.notEqual(statSync(hook).mode & 0o111, 0);
+
+  const foreign = "#!/bin/sh\nnpm run lint\n";
+  writeFileSync(hook, foreign);
+  const refused = keylang(dir, ["hook", "install"]);
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /pre-commit/);
+  assert.match(refused.stderr, /check --changed/);
+  assert.equal(readFileSync(hook, "utf8"), foreign);
+  assert.equal(keylang(dir, ["hook", "install", "--check"]).status, 1);
+  assert.equal(readFileSync(hook, "utf8"), foreign);
+});
+
+test("hook install follows core.hooksPath and needs a git repository", (t) => {
+  const dir = tempDir(t, "keylang-hookspath-");
+  git(dir, ["init"]);
+  git(dir, ["config", "core.hooksPath", ".githooks"]);
+  const o = keylang(dir, ["hook", "install"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.ok(existsSync(join(dir, ".githooks/pre-commit")));
+  assert.equal(existsSync(join(dir, ".git/hooks/pre-commit")), false);
+
+  const bare = tempDir(t, "keylang-hook-nogit-");
+  const none = keylang(bare, ["hook", "install"]);
+  assert.equal(none.status, 2);
+  assert.match(none.stderr, /git/);
+  assert.equal(keylang(bare, ["hook", "nope"]).status, 2);
+});
+
+test("completions print a script for bash, zsh and fish with every command and flag", () => {
+  const help = keylang(root, ["--help"]).stdout;
+  for (const shell of ["bash", "zsh", "fish"]) {
+    const o = keylang(root, ["completions", shell]);
+    assert.equal(o.status, 0, o.stderr);
+    assert.equal(o.stderr, "");
+    for (const word of ["check", "map", "hook", "install", "completions", "new", "module", "draft", "code-to-spec", "--changed", "--layer", "--format"]) {
+      // fish names a long flag `-l changed`.
+      const shown = shell === "fish" && word.startsWith("--") ? `-l ${word.slice(2)}` : word;
+      assert.match(o.stdout, new RegExp(`(^|[\\s'"(])${shown.replace(/-/g, "\\-")}([\\s'");]|$)`, "m"), `${shell}: ${word}`);
+      assert.ok(help.includes(word), `--help lists ${word}`);
+    }
+  }
+  const bash = spawnSync("bash", ["-n"], { input: keylang(root, ["completions", "bash"]).stdout, encoding: "utf8" });
+  if (!bash.error) assert.equal(bash.status, 0, bash.stderr);
+
+  const unknown = keylang(root, ["completions", "tcsh"]);
+  assert.equal(unknown.status, 2);
+  assert.match(unknown.stderr, /bash, zsh, fish/);
+  assert.equal(keylang(root, ["completions"]).status, 2);
+});
+
+test("new flow and new module write a skeleton that check accepts and never overwrite", (t) => {
+  const dir = tempDir(t, "keylang-new-");
+  writeTree(dir, { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+
+  const flow = keylang(dir, ["new", "flow", "refund"]);
+  assert.equal(flow.status, 0, flow.stderr);
+  assert.match(flow.stdout, /keylang\/flows\/refund\.md/);
+  const flowText = readFileSync(join(dir, "keylang/flows/refund.md"), "utf8");
+  assert.match(flowText, /^# flow refund\n/);
+
+  const module = keylang(dir, ["new", "module", "payments", "--layer", "app"]);
+  assert.equal(module.status, 0, module.stderr);
+  assert.match(module.stdout, /keylang\/features\/payments\.md/);
+  const moduleText = readFileSync(join(dir, "keylang/features/payments.md"), "utf8");
+  assert.match(moduleText, /^- planned module app\.payments$/m);
+
+  const checked = keylang(dir, ["check"]);
+  assert.equal(checked.status, 0, checked.stdout);
+  assert.doesNotMatch(checked.stdout, /K\d{3}/);
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows/refund.md", "keylang/features/payments.md"]).status, 0);
+
+  const before = treeBytes(dir);
+  const twice = keylang(dir, ["new", "flow", "refund"]);
+  assert.equal(twice.status, 2);
+  assert.match(twice.stderr, /exists/);
+  assert.equal(keylang(dir, ["new", "module", "payments", "--layer", "app"]).status, 2);
+  const badLayer = keylang(dir, ["new", "module", "billing", "--layer", "infra"]);
+  assert.equal(badLayer.status, 2);
+  assert.match(badLayer.stderr, /infra/);
+  assert.match(badLayer.stderr, /app, domain/);
+  assert.equal(keylang(dir, ["new", "module", "billing"]).status, 2);
+  assert.equal(keylang(dir, ["new", "flow", "bad name"]).status, 2);
+  assert.equal(keylang(dir, ["new", "flow"]).status, 2);
+  assert.equal(keylang(dir, ["new", "thing", "x"]).status, 2);
+  assert.deepEqual(treeBytes(dir), before);
+});
+
