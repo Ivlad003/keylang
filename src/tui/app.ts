@@ -1980,7 +1980,6 @@ export class App {
   private zoomMouse(event: MouseEvent, editor: { x: number; y: number; width: number; height: number }): void {
     const zoom = this.state.zoom;
     if (!zoom) return;
-    const rows = this.zoomRows();
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       zoom.top = Math.max(0, Math.min(Math.max(0, this.zoomCount() - 1), zoom.top + (event.action === "wheel-up" ? -3 : 3)));
       this.state.hover = null;
