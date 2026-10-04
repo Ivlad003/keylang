@@ -6,19 +6,29 @@
 // the answer: `commit` goes ahead (or carries the session's refusal),
 // `cancel` ends it with nothing written;
 // `cancel` during the commit stops it between two file steps.
+//
+// `base` reads a feature file at `HEAD` for the session's status line
+// (c4-zoom/11): git runs here, so the session's thread starts no process.
 
 import { parentPort } from "node:worker_threads";
+import type { FeatureBase } from "../feature-status.ts";
+import { readFeatureBase } from "../git-changes.ts";
 import { runOperation, type BatchStep, type CommitGate, type CommitPlan, type OperationRequest, type OperationResult } from "../operations.ts";
 
-/** A message to the worker: run a request, let its commit go ahead, or cancel it. */
-export type OperationCall = { type: "run"; operationId: number; request: OperationRequest } | { type: "commit"; operationId: number; refused?: string[] } | { type: "cancel"; operationId: number };
+/** A message to the worker: run a request, let its commit go ahead, cancel it, or read a feature file at `HEAD`. */
+export type OperationCall =
+  | { type: "run"; operationId: number; request: OperationRequest }
+  | { type: "commit"; operationId: number; refused?: string[] }
+  | { type: "cancel"; operationId: number }
+  | { type: "base"; baseId: number; root: string; path: string };
 
-/** A reply of the worker: any number of progress notes, at most one commit request, then one result or one error. */
+/** A reply of the worker: any number of progress notes, at most one commit request, then one result or one error; or the base asked for. */
 export type OperationReply =
   | { operationId: number; type: "progress"; text: string; step?: BatchStep }
   | { operationId: number; type: "commit"; plan?: CommitPlan }
   | { operationId: number; type: "result"; result: OperationResult }
-  | { operationId: number; type: "error"; error: string };
+  | { operationId: number; type: "error"; error: string }
+  | { type: "base"; baseId: number; base: FeatureBase };
 
 const post = (reply: OperationReply): void => parentPort?.postMessage(reply);
 
@@ -26,6 +36,11 @@ const post = (reply: OperationReply): void => parentPort?.postMessage(reply);
 const running = new Map<number, { controller: AbortController; proceed: ((gate: CommitGate) => void) | null }>();
 
 parentPort?.on("message", (call: OperationCall) => {
+  if (call.type === "base") {
+    // Without an explicit ref a git failure is a state of the base, never an error.
+    post({ type: "base", baseId: call.baseId, base: readFeatureBase(call.root, call.path, undefined, "feature") });
+    return;
+  }
   const { operationId } = call;
   if (call.type !== "run") {
     const entry = running.get(operationId);

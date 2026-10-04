@@ -370,27 +370,27 @@
     - spec-ir lang.spec-ir
     - verdict check.verdict
     - type [Stage](../../src/feature-status.ts#L27) = "idea" | "behavior" | "structure" | "ready" | "done"
-    - type [Gap](../../src/feature-status.ts#L30)
-    - type [Hint](../../src/feature-status.ts#L41)
-    - type [FeatureInfo](../../src/feature-status.ts#L51)
-    - type [FeatureBase](../../src/feature-status.ts#L65)
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L71)
-    - type [FeatureReport](../../src/feature-status.ts#L73)
-    - type [FeatureInput](../../src/feature-status.ts#L81)
-    - fn [idsIn](../../src/feature-status.ts#L106) (doc: Document) → string[]
+    - type [Gap](../../src/feature-status.ts#L33)
+    - type [Hint](../../src/feature-status.ts#L44)
+    - type [FeatureInfo](../../src/feature-status.ts#L54)
+    - type [FeatureBase](../../src/feature-status.ts#L68)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L74)
+    - type [FeatureReport](../../src/feature-status.ts#L76)
+    - type [FeatureInput](../../src/feature-status.ts#L84)
+    - fn [idsIn](../../src/feature-status.ts#L109) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [featureStatus](../../src/feature-status.ts#L123) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L126) (input: FeatureInput, slug: string) → FeatureReport | null
       - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, check.assess.sameFinding, features.feature-status.planGaps, base.span.compareText, features.feature-status.stageOf
-    - fn [stageOf](../../src/feature-status.ts#L238) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [denyGaps](../../src/feature-status.ts#L258) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L241) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L261) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       - calls check.rules.dependencyKindOf, check.rules.denyingRule
-    - fn [claimsOf](../../src/feature-status.ts#L300) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L303) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [planGaps](../../src/feature-status.ts#L317) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L320) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L349) = Trigger | FlowStep | QuestionItem <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L352) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L366) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L352) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L355) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L369) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

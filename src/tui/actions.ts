@@ -6,6 +6,7 @@
 // implements it — an unimplemented generator is not listed as a fake success.
 
 import { selectedAgent } from "../agent-cli.ts";
+import { featureSlugOf } from "../operations.ts";
 import { isDirty } from "./buffer.ts";
 import type { OperationRecord, State } from "./state.ts";
 
@@ -35,6 +36,8 @@ export interface ActionContext {
   dirty: boolean;
   /** The `agent` of the saved `keylang.json`, or null when none is set (credentials are checked by the operation). */
   agent: string | null;
+  /** The slug of the current file when it is a feature file `<dir>/features/<slug>.md`, else null. */
+  featureSlug: string | null;
 }
 
 export interface Action {
@@ -115,6 +118,14 @@ export const ACTIONS: readonly Action[] = [
     aliases: ["feature", "readiness", "done", "gaps"],
     // It reads the saved files; unsaved buffers are offered for saving first.
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
+  },
+  {
+    id: "feature-questions",
+    label: "Ask the model for questions",
+    group: "Generate",
+    aliases: ["questions", "open questions", "ask the model", "clarify"],
+    // One request with the saved feature file and the context around its ids: `- ? …` lines as a proposal for MERGE (c4-zoom/11).
+    when: (ctx) => mergeOnly(ctx) ?? running(ctx) ?? (ctx.featureSlug === null ? "open a feature file first (<dir>/features/<slug>.md); m on its readiness report in F6 asks too" : null) ?? (ctx.agent === null ? NO_AGENT_REASON : null),
   },
   {
     id: "full-check",
@@ -398,6 +409,7 @@ export function availabilityOf(state: State): ActionContext {
     noApply: "reason" in applied ? applied.reason : null,
     dirty: buffer !== undefined && !buffer.readOnly && isDirty(buffer),
     agent: state.analysis ? selectedAgent(state.analysis.config.agent) : null,
+    featureSlug: state.current === null ? null : featureSlugOf(state.current, state.analysis?.config.dir ?? "keylang"),
   };
 }
 

@@ -39,6 +39,7 @@ export const MARK_STYLE: Record<Mark, Style> = {
   unverified: { fg: 179, bold: true },
   planned: { fg: 141, bold: true },
   warning: { fg: 214, bold: true },
+  question: { fg: 75, bold: true },
 };
 
 const LAYER_COLORS = [39, 78, 214, 141, 203, 44, 179, 111, 168, 150];

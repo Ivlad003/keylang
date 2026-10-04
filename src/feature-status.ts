@@ -26,6 +26,9 @@ import type { Verdict } from "./verdict.ts";
  */
 export type Stage = "idea" | "behavior" | "structure" | "ready" | "done";
 
+/** The stages in order, from an idea to done: the ladder of the readiness screen (c4-zoom/11). */
+export const STAGES: readonly Stage[] = ["idea", "behavior", "structure", "ready", "done"];
+
 /** What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed. */
 export interface Gap {
   kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question" | "deny";

@@ -27,7 +27,6 @@ import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
 import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
 import { contextPack, contextText, type ContextPack } from "../agent-context.ts";
 import type { CheckResult } from "../check-results.ts";
-import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
@@ -46,14 +45,14 @@ import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
 import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
 import { WIRE_MARKER } from "../wire-gen.ts";
-import { actionLabel, applyRecord, catalog, exportRecord, matchActions, MERGE_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, applyRecord, catalog, exportRecord, matchActions, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
@@ -66,7 +65,7 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
+import { batchState, contextTop, edgeItems, editorRows, featureItems, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -143,6 +142,8 @@ export class App {
   private llmSetup: ((agent: string | null) => LlmSetup) | null = null;
   /** The id of the next operation record. */
   private nextRecord = 1;
+  /** The newest feature-line refresh: a base that arrives for an older one is dropped. */
+  private featureLineRequest = 0;
   /** The proposals list as scanned when it was opened or last refreshed; Enter scans again. */
   private proposalEntries: ProposalEntry[] = [];
   /** What the open save step starts after Save and continue; null when none is open. */
@@ -216,6 +217,7 @@ export class App {
       results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, left: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
       zoom: null,
+      featureLine: null,
     };
     // The helpers reach the session through closures: its private methods stay private.
     this.merges = new MergeSession({
@@ -550,6 +552,41 @@ export class App {
     if (this.state.current === null && this.state.files[0]) this.open(this.state.files[0], { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
     this.clampCursor();
+    this.refreshFeatureLine();
+  }
+
+  /**
+   * The status line's `feature <stage> · questions <n>` of the current file
+   * when it is a feature file (c4-zoom/11): its report on the session's
+   * analysis against the plan at HEAD, as `keylang feature` computes it. It
+   * follows a save and its analysis, never typing: while the buffer has
+   * unsaved edits the last line stays.
+   */
+  private refreshFeatureLine(): void {
+    const path = this.state.current;
+    const analysis = this.state.analysis;
+    const slug = path === null || analysis === null ? null : featureSlugOf(path, analysis.config.dir);
+    const request = ++this.featureLineRequest;
+    if (path === null || analysis === null || slug === null) {
+      this.state.featureLine = null;
+      return;
+    }
+    const buffer = this.state.buffers.get(path);
+    if (buffer !== undefined && (buffer.newFile || isDirty(buffer))) {
+      if (this.state.featureLine?.path !== path) this.state.featureLine = null;
+      return;
+    }
+    // The plan at HEAD is read in the operation worker: the session's thread starts no git process.
+    // A newer refresh (another analysis, another file) supersedes this one; an unknown base keeps the line.
+    this.track(
+      this.worker()
+        .featureBase(this.state.root, path)
+        .then((base) => {
+          if (request !== this.featureLineRequest || this.closed || base === null) return;
+          const report = featureReportOf(analysis, slug, base);
+          this.state.featureLine = report === null ? null : { path, stage: report.stage, questions: report.gaps.filter((gap) => gap.kind === "question").length };
+        }),
+    );
   }
 
   /** Why a generated buffer takes no edits, naming its generator. */
@@ -612,6 +649,7 @@ export class App {
     this.clampCursor();
     this.state.top = Math.max(0, this.state.cursor.line - 3);
     this.keepVisible();
+    if (this.state.featureLine?.path !== path) this.refreshFeatureLine();
   }
 
   private lines(): readonly string[] {
@@ -2295,6 +2333,14 @@ export class App {
       const writes = this.dirtyInputs().some(isInput) ? { writes: [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
+    if (request.kind === "feature-questions") {
+      // The questions read the saved feature file, the specs around it, keylang.json and the code: those dirty
+      // buffers are saved first; the step names the proposal the answer becomes.
+      const dir = `${this.specDir()}/`;
+      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+      const writes = this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${dir}features/${request.slug}.md`] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
+    }
     if (request.kind === "trace-plan") {
       // The plan reads the saved specs under the spec directory (the flow), keylang.json and the code:
       // those dirty buffers are saved first, so the plan's IDs and hashes are the files on disk.
@@ -2470,7 +2516,7 @@ export class App {
     };
     const label = operationLabel(request);
     const buffer = this.state.current === null ? undefined : this.state.buffers.get(this.state.current);
-    const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null };
+    const origin: DraftOrigin = { path: this.state.current, mode: this.state.mode, version: buffer?.version ?? null, results: this.state.results.open, record: this.state.results.index };
     this.state.records.push(record);
     if (request.kind === "draft-layout") this.layoutBases.set(record.id, this.layoutBasis());
     this.state.activeOperation = record.id;
@@ -2501,6 +2547,7 @@ export class App {
       if (request.kind === "spec-to-code") this.afterSpecCode(record, origin);
       if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
+      if (request.kind === "feature-questions") this.afterFeatureQuestions(record, origin);
       this.quitAfterSettle(record);
       this.draw();
     };
@@ -2544,6 +2591,14 @@ export class App {
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
     if (request.kind === "explain-llm" || request.kind === "explain-batch") {
       // A saved explanation edited in a buffer while the model answered keeps its text: the answer is not written over it.
+      const edited = (plan?.targets ?? []).filter((target) => {
+        const buffer = this.state.buffers.get(target);
+        return buffer !== undefined && isDirty(buffer);
+      });
+      return edited.length > 0 ? { refused: edited.map((target) => `${target}: edited in this session while the model answered; save or undo the edits, then ask again`) } : undefined;
+    }
+    if (request.kind === "feature-questions") {
+      // The feature file edited while the model answered keeps its text: the proposal would be judged against the disk under unsaved edits.
       const edited = (plan?.targets ?? []).filter((target) => {
         const buffer = this.state.buffers.get(target);
         return buffer !== undefined && isDirty(buffer);
@@ -2629,6 +2684,54 @@ export class App {
     }
     this.state.prompt = null;
     this.requestOperation("feature", { kind: "feature", root: this.state.root, slug });
+  }
+
+  /**
+   * «Ask the model for questions» (c4-zoom/11): one request with the saved
+   * feature file and the context around its ids; the answer's `- ? …` lines
+   * are a proposal that MERGE accepts. Without an agent it says how to set
+   * one and changes nothing.
+   */
+  private askFeatureQuestions(slug: string): void {
+    if (this.agentName() === null) {
+      this.state.message = `ask the model for questions: ${NO_AGENT_REASON}`;
+      return;
+    }
+    this.requestOperation("feature-questions", { kind: "feature-questions", root: this.state.root, slug });
+  }
+
+  /**
+   * Finished questions: the proposal opens in MERGE while the person is still
+   * where they asked — the same file, mode and text, the same report in F6
+   * (or the editor) and nothing else open; otherwise it waits as any
+   * proposal. The answer's lines left out are counted either way.
+   */
+  private afterFeatureQuestions(record: OperationRecord, origin: DraftOrigin): void {
+    const result = record.result;
+    if (result?.kind !== "feature-questions" || result.status !== "completed" || result.payload === null) return;
+    const { file, questions, dropped, proposal, agent } = result.payload;
+    const left = dropped > 0 ? ` · ${dropped} line(s) of the answer left out: no \`- ? …\` question, or past the fifth` : "";
+    if (proposal === null) {
+      this.state.message = `questions: ${agent} asked no question, nothing proposed${left}`;
+      return;
+    }
+    if (this.stillWhereAsked(origin)) {
+      if (origin.results) this.closeResults();
+      this.merges.open(file);
+      if (this.state.merge?.path === file) {
+        this.state.message = `questions: ${questions.length} proposed for ${file}${left} · MERGE: decide the hunks, w writes ${file}`;
+        return;
+      }
+    }
+    this.state.message = `questions: ${proposal} waits: m, Proposals or Enter in F6 opens MERGE${left}`;
+  }
+
+  /** The file, mode and text an operation started from are current, F6 shows the report it started from (or stays closed), and nothing else is open. */
+  private stillWhereAsked(origin: DraftOrigin): boolean {
+    const results = this.state.results;
+    const panel = origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
+    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
+    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help;
   }
 
   // ---------- baseline ----------
@@ -4758,6 +4861,11 @@ export class App {
       this.closeResults();
       return this.merges.open(record.result.payload.candidate.target);
     }
+    // The model's questions: Enter opens MERGE of the feature file (checked again, as a draft's).
+    if (record.result?.kind === "feature-questions" && record.result.payload?.proposal != null) {
+      this.closeResults();
+      return this.merges.open(record.result.payload.file);
+    }
     // Spec-to-code proposes several files: Enter opens the proposals list on the first still waiting, so each merges on its own.
     if (record.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0) {
       this.closeResults();
@@ -4837,6 +4945,12 @@ export class App {
         // Over a planned gap of a feature report: the spec-to-code form for the same ID.
         if (results.scrollReport) return this.specCodeForGap();
         return;
+      case "m": {
+        // On a feature report: the model's open questions for that feature, as a proposal (c4-zoom/11).
+        const record = records[results.index];
+        if (record?.result?.kind === "feature" && record.params.kind === "feature") return this.askFeatureQuestions(record.params.slug);
+        return;
+      }
       case "q":
         return this.quit();
       case "?":
@@ -5011,7 +5125,8 @@ export class App {
    */
   private recordGaps(): readonly { file: string; line: number; col: number; text: string }[] {
     const result = this.state.records[this.state.results.index]?.result;
-    if (result?.kind === "feature") return (result.payload?.report.gaps ?? []).map((gap: Gap) => ({ file: gap.file, line: gap.line, col: gap.col, text: `${gap.kind} ${gap.id}: ${gap.reason}` }));
+    // The gaps and hints up the stage ladder, as the readiness screen lists them (c4-zoom/11).
+    if (result?.kind === "feature") return result.payload === null ? [] : featureItems(result.payload.report).map(({ item, hint }) => ({ file: item.file, line: item.line, col: item.col, text: `${hint ? "hint " : ""}${item.kind} ${item.id}: ${item.reason}` }));
     if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
     if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
     // A place an explanation names: the node, a related ID the snapshot or a planned declares, a flow, a rule line.
@@ -5044,9 +5159,9 @@ export class App {
   /** The ID of the selected gap of a feature report when it is a planned fn no code implements yet, else null. */
   private plannedGap(): string | null {
     const result = this.state.records[this.state.results.index]?.result;
-    if (result?.kind !== "feature") return null;
-    const gap = result.payload?.report.gaps[this.state.results.gap];
-    return gap?.kind === "planned" && this.plannedFns().includes(gap.id) ? gap.id : null;
+    if (result?.kind !== "feature" || result.payload === null) return null;
+    const entry = featureItems(result.payload.report)[this.state.results.gap];
+    return entry !== undefined && !entry.hint && entry.item.kind === "planned" && this.plannedFns().includes(entry.item.id) ? entry.item.id : null;
   }
 
   /** `g` on a planned gap: the spec-to-code form with its ID; the report stays in the history. */
@@ -5377,6 +5492,11 @@ export class App {
         return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
         return this.openFeaturePrompt();
+      case "feature-questions": {
+        const slug = this.state.current === null ? null : featureSlugOf(this.state.current, this.specDir());
+        if (slug !== null) this.askFeatureQuestions(slug);
+        return;
+      }
       case "full-check":
         return this.openCheckPrompt();
       case "explain-edge":
@@ -5705,4 +5825,7 @@ interface DraftOrigin {
   path: string | null;
   mode: Mode;
   version: number | null;
+  /** The F6 panel was open, on the record at `record`: an operation started from a report. */
+  results: boolean;
+  record: number;
 }

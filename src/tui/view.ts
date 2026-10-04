@@ -2,6 +2,7 @@
 // Layout: title, [files] | editor with gutter | [navigation], a detail line
 // and the status bar. Popups (hover, completion, palette, help) draw on top.
 
+import { selectedAgent } from "../agent-cli.ts";
 import { contextPack } from "../agent-context.ts";
 import { CONFIG_FILE } from "../config.ts";
 import { explainCode } from "../explain.ts";
@@ -18,9 +19,9 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type FlowOverlay, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { Grid, type Style } from "./screen.ts";
-import type { FeatureInfo } from "../feature-status.ts";
+import { STAGES, type FeatureInfo, type FeatureReport, type Gap, type Hint } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type FeatureQuestionsPayload, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -654,7 +655,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "code-to-spec") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "spec-to-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.id}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "apply-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.candidate.targets.length} file(s)`;
-  return record.params.kind === "feature" ? `${label} · ${record.params.slug}` : label;
+  return record.params.kind === "feature" || record.params.kind === "feature-questions" ? `${label} · ${record.params.slug}` : label;
 }
 
 /** How messages name an operation: `doctor`, `feature pay`. */
@@ -679,6 +680,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "apply-code") return `spec-to-code ${request.candidate.id}${request.mode === "llm" ? " --mode llm" : ""} --apply`;
   if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
+  if (request.kind === "feature-questions") return `feature ${request.slug} questions`;
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -702,6 +704,7 @@ export function recordSummary(record: OperationRecord): string {
     const { report } = result.payload;
     return `${report.done ? "done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode}`;
   }
+  if (result?.kind === "feature-questions" && result.payload !== null) return `${questionsOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -820,6 +823,12 @@ function tracePlanOutcome(payload: TracePlanPayload): string {
 }
 
 /** `3 step(s), preview, nothing written`, `3 step(s) proposed for <target>`, `refused, nothing written`, `write failed`. */
+/** `3 question(s) proposed`, with the answer's lines left out when there were any. */
+function questionsOutcome(payload: FeatureQuestionsPayload): string {
+  const asked = payload.proposal !== null ? `${payload.questions.length} question(s) proposed` : payload.questions.length === 0 ? "no question asked" : `${payload.questions.length} question(s), nothing written`;
+  return payload.dropped > 0 ? `${asked}, ${payload.dropped} line(s) left out` : asked;
+}
+
 function draftOutcome(status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload): string {
   if (payload.candidate === null) return `no fn outside the flows changed since ${"since" in payload ? payload.since : ""}, nothing written`;
   if (payload.output === "preview") return `${payload.summary}, preview, nothing written`;
@@ -987,6 +996,26 @@ function timeStr(ms: number): string {
   return new Date(ms).toTimeString().slice(0, 8);
 }
 
+/** One gap or hint of a feature report, as the readiness screen lists it. */
+export interface FeatureItem {
+  item: Gap | Hint;
+  /** A hint: the next step of a stage, never blocking done. */
+  hint: boolean;
+}
+
+/** The gaps and hints of a feature report up the ladder, a stage's gaps before its hints: the rows Tab and the arrows select. */
+export function featureItems(report: FeatureReport): FeatureItem[] {
+  return STAGES.flatMap((stage) => [
+    ...report.gaps.filter((gap) => gap.stage === stage).map((item) => ({ item, hint: false })),
+    ...report.hints.filter((hint) => hint.stage === stage).map((item) => ({ item, hint: true })),
+  ]);
+}
+
+/** `idea › behavior › [structure] › ready › done`: the ladder with the current stage in brackets. */
+export function stageLadder(stage: FeatureReport["stage"]): string {
+  return STAGES.map((step) => (step === stage ? `[${step}]` : step)).join(" › ");
+}
+
 /**
  * The report rows of the record selected in the F6 panel: its parameters,
  * timings and the operation's messages. Presentation only — the payload in
@@ -1004,7 +1033,8 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
   if (record.outdated !== null) rows.push({ text: `outdated: ${record.outdated} · Enter reruns`, style: { ...THEME.panel, fg: 179 } });
   const result = record.result;
   if (result?.kind === "feature" && result.payload !== null) {
-    // Design §2.7: the outcome, the saved state it was computed on, the gaps, and the non-blocking tests and trace.
+    // Design §2.7: the outcome, the saved state it was computed on, the stage on its ladder, the gaps and
+    // hints by the stage that fixes them (c4-zoom/11), and the non-blocking tests and trace.
     const { file, snapshot, report } = result.payload;
     const selected = state.results.scrollReport ? state.results.gap : -1;
     rows.push({ text: `Feature · ${result.payload.slug} · saved state · ${file}`, style: { ...THEME.panel, bold: true } });
@@ -1012,9 +1042,20 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       text: `${report.done ? "Done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode} · snapshot ${snapshot === null ? "none" : snapshot.slice(0, 8)}`,
       style: { ...THEME.panel, ...(report.done ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! },
     });
-    report.gaps.forEach((gap, index) => {
-      rows.push({ text: `${gap.kind.padEnd(8)} ${gap.id}  ${gap.file}:${gap.line}:${gap.col}  ${gap.reason}`, style: index === selected ? THEME.selected : THEME.panel, gap: index });
-    });
+    rows.push({ text: `stage  ${stageLadder(report.stage)}`, style: { ...THEME.panel, bold: true } });
+    const items = featureItems(report);
+    for (const stage of STAGES) {
+      const here = items.flatMap((entry, index) => (entry.item.stage === stage ? [{ ...entry, index }] : []));
+      if (here.length === 0) continue;
+      const gaps = here.filter((entry) => !entry.hint).length;
+      const hints = here.length - gaps;
+      // The rows stay flush with the header, as before the stages: a narrow panel cuts the reason, not the place.
+      rows.push({ text: `${stage} · ${[...(gaps > 0 ? [`${gaps} gap(s)`] : []), ...(hints > 0 ? [`${hints} hint(s), not blocking`] : [])].join(" · ")}`, style: { ...THEME.panel, fg: 75, bold: true } });
+      for (const { item, hint, index } of here) {
+        const text = `${hint ? `hint ${item.kind}` : item.kind.padEnd(8)} ${item.id}  ${item.file}:${item.line}:${item.col}  ${item.reason}`;
+        rows.push({ text, style: index === selected ? THEME.selected : hint ? { ...THEME.panel, fg: 247 } : THEME.panel, gap: index });
+      }
+    }
     rows.push({ text: `Info (not blocking): tests ${infoSummary(report.info.tests)} · trace ${infoSummary(report.info.trace)}`, style: { ...THEME.panel, fg: 243 } });
     for (const item of [...report.info.tests, ...report.info.trace]) rows.push({ text: `  ${item.verdict} ${item.id}  ${item.file}:${item.line}  ${item.reason}`, style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "map-check" && result.payload !== null) {
@@ -1352,6 +1393,14 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     const lines = payload.text.split("\n");
     if (lines.at(-1) === "") lines.pop();
     for (const line of lines) rows.push({ text: line, style: THEME.panel });
+  } else if (result?.kind === "feature-questions" && result.payload !== null) {
+    // The model's questions as proposed: the feature file itself is written only through MERGE (c4-zoom/11).
+    const { payload } = result;
+    rows.push({ text: `Questions · ${payload.agent} · ${payload.file} · proposal; the feature file itself is not written`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${questionsOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    for (const question of payload.questions) rows.push({ text: `  ${question}`, style: { ...THEME.panel, ...MARK_STYLE.question, bg: THEME.panel.bg! } });
+    if (payload.proposal !== null) rows.push({ text: `  Enter opens MERGE of ${payload.file} (m and Proposals too)`, style: THEME.hint });
   } else if (result?.kind === "draft-flow" && result.payload !== null) {
     // The candidate: what it keeps of the target, the flow section, and for a preview the whole proposed text.
     const { payload } = result;
@@ -1625,7 +1674,9 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const records = state.records;
   const analysis = results.entry === "analysis";
   const record = records[results.index];
-  const gaps = record?.result?.kind === "feature" && (record.result.payload?.report.gaps.length ?? 0) > 0;
+  const gaps = record?.result?.kind === "feature" && record.result.payload !== null && featureItems(record.result.payload.report).length > 0;
+  // The readiness screen offers the model's questions only while an agent is set; without one `m` says how to set it (c4-zoom/11).
+  const ask = record?.result?.kind === "feature" && record.result.payload !== null && state.analysis !== null && selectedAgent(state.analysis.config.agent) !== null ? " · m questions" : "";
   const checked =
     (record?.result?.kind === "check" && (record.result.payload?.results.length ?? 0) > 0) ||
     (record?.result?.kind === "explain-edge" && record.result.payload !== null && edgeItems(record.result.payload).length > 0) ||
@@ -1638,7 +1689,7 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   const item = record?.kind === "explain-edge" ? "evidence" : record?.kind === "parse" ? "diagnostic" : record?.kind === "trace-plan" ? "symbol" : record?.kind === "explain" || record?.kind === "explain-llm" ? "place" : record?.kind === "explain-plan" || record?.kind === "explain-batch" ? "node" : "finding";
   const exportable = !analysis && record !== undefined && !("reason" in exportRecord(state));
   // Esc only folds the panel; x is the separate Cancel of the running operation (design §4).
-  const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec") && record.result.payload?.proposal != null;
+  const proposed = (record?.result?.kind === "draft-flow" || record?.result?.kind === "draft-rules" || record?.result?.kind === "code-to-spec" || record?.result?.kind === "feature-questions") && record.result.payload?.proposal != null;
   const codeProposed = record?.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0;
   const hint = analysis
     ? " Enter open · Tab findings · Esc back "
@@ -1654,8 +1705,10 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
         ? " Enter move layers into keylang.json · Esc back "
         : gaps
         ? results.scrollReport
-          ? " Enter open gap · Tab entries · Esc back "
-          : " Enter rerun · Tab gaps · Esc back "
+          ? ` Enter open gap · Tab entries${ask} · Esc back `
+          : ` Enter rerun · Tab gaps${ask} · Esc back `
+        : ask !== ""
+        ? ` Enter rerun${ask} · Esc back `
         : checked
           ? results.scrollReport
             ? ` Enter open ${item} · Tab entries${exportable ? " · e export" : ""} · Esc back `
@@ -2161,6 +2214,9 @@ export function render(state: State): Grid {
     put(`  ◌ ${count.unverified}`, { ...THEME.status, ...MARK_STYLE.unverified, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
     put(`  ✓ ${count.ok}`, { ...THEME.status, ...MARK_STYLE.ok, bg: THEME.status.bg!, ...(stale ? { dim: true } : {}) });
   }
+  // The open feature file's stage and open questions, as of its last save and analysis (c4-zoom/11).
+  const feature = state.featureLine;
+  if (feature !== null && feature.path === state.current) put(`  feature ${feature.stage} · questions ${feature.questions}`, { ...THEME.status, fg: 75 });
   const invalid = state.config.kind === "invalid-config" ? state.config.reason : null;
   const phase = state.updating
     ? "  updating… results shown are stale"

@@ -7,7 +7,8 @@ import type { Analysis } from "../analyze.ts";
 import type { Diagnostic } from "../diag.ts";
 import { sectionNodes, walk, type Document } from "../ir.ts";
 
-export type Mark = "ok" | "fail" | "unverified" | "planned" | "warning";
+/** `question`: an open question of a flow (`- ? …`, c4-zoom/11), a mark of its own and no verdict. */
+export type Mark = "ok" | "fail" | "unverified" | "planned" | "warning" | "question";
 
 /** Evidence channels in display order; a flow step reports each one separately. */
 export const CHANNELS = ["ID", "static", "tests", "trace"] as const;
@@ -19,9 +20,11 @@ export interface LineEvidence {
   diagnostics: Diagnostic[];
   /** The line declares `planned`: an intention, not a fact of the snapshot. */
   planned: boolean;
+  /** The line is an open question (`- ? …`): no claim, a person answers it. */
+  question?: true;
 }
 
-const RANK: Record<Mark, number> = { fail: 4, unverified: 3, warning: 2, planned: 1, ok: 0 };
+const RANK: Record<Mark, number> = { fail: 4, unverified: 3, warning: 2, question: 1, planned: 1, ok: 0 };
 
 export function worse(a: Mark | null, b: Mark | null): Mark | null {
   if (a === null) return b;
@@ -29,12 +32,12 @@ export function worse(a: Mark | null, b: Mark | null): Mark | null {
   return RANK[a] >= RANK[b] ? a : b;
 }
 
-function plannedLines(doc: Document): Set<number> {
+function linesOf(doc: Document, kind: "planned" | "question"): Set<number> {
   const lines = new Set<number>();
   for (const section of doc.sections) {
     for (const top of sectionNodes(section)) {
       walk(top, (node) => {
-        if (node.kind === "planned") lines.add(node.span.start.line);
+        if (node.kind === kind) lines.add(node.span.start.line);
       });
     }
   }
@@ -82,7 +85,10 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
     areas.set(criterion, verdict.area);
     entry(verdict.file, verdict.line).criteria.push(criterion);
   }
-  for (const doc of analysis.docs) for (const line of plannedLines(doc)) entry(doc.path, line).planned = true;
+  for (const doc of analysis.docs) {
+    for (const line of linesOf(doc, "planned")) entry(doc.path, line).planned = true;
+    for (const line of linesOf(doc, "question")) entry(doc.path, line).question = true;
+  }
   const order = (criterion: string): number => {
     const at = (CHANNELS as readonly string[]).indexOf(criterion);
     return at === -1 ? CHANNELS.length : at;
@@ -98,6 +104,7 @@ function allEvidence(analysis: Analysis): Map<string, Map<number, LineEvidence>>
         else mark = worse(mark, criterion.verdict);
       }
       if (item.planned) mark = worse(mark, "planned");
+      if (item.question) mark = worse(mark, "question");
       item.mark = mark ?? "ok";
     }
   }
@@ -112,7 +119,7 @@ export function evidenceOf(analysis: Analysis, path: string): Map<number, LineEv
   return allEvidence(analysis).get(path) ?? EMPTY;
 }
 
-export const MARK_GLYPH: Record<Mark, string> = { ok: "✓", fail: "✗", unverified: "◌", planned: "◇", warning: "!" };
+export const MARK_GLYPH: Record<Mark, string> = { ok: "✓", fail: "✗", unverified: "◌", planned: "◇", warning: "!", question: "?" };
 
 /** Totals for the status bar: failing, unverified and passing lines across all documents. */
 export function totals(analysis: Analysis): { fail: number; unverified: number; ok: number } {

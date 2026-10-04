@@ -957,3 +957,25 @@ test("web: a click on [+] in the zoom screen's header zooms in over the real tra
   screen.input(click(at.x, at.y));
   await waitFor(() => /system › domain/.test(screen.text()), "the domain's level after the click");
 });
+
+test("web: the feature readiness screen over the real transport: the ladder and the gaps by stage (c4-zoom/11)", async (t) => {
+  const feature = "# flow refund\n\n- ? who starts a refund?\n- planned fn application.purchase.refund\n- trigger presentation.terminal.checkout\n  - step application.purchase.refund\n";
+  const root = checkoutRepo(t, { "keylang/features/refund.md": feature });
+  const { url } = await startWeb(t, root);
+  const client = new Client(url, "session-readiness", 130, 32);
+  t.after(() => client.close());
+  await client.opened;
+  const screen = clientScreen(client);
+  await waitFor(() => analysed(screen), "the first analysis");
+  palette(screen, "open keylang/features/refund.md");
+  await waitFor(() => /feature structure · questions 1/.test(screen.lines().at(-1) ?? ""), "the feature's status line");
+  palette(screen, "feature readiness");
+  await waitFor(() => screen.text().includes("feature slug: refund"), "the feature form");
+  screen.input(KEY.enter);
+  await waitFor(() => screen.text().includes("feature refund: 3 gap(s) · code 1"), "the feature");
+  screen.input(KEY.f6);
+  await waitFor(() => /stage {2}idea › behavior › \[structure\] › ready › done/.test(screen.text()) && /structure · 1 gap\(s\) · 1 hint\(s\), not blocking/.test(screen.text()) && /ready · 2 gap\(s\)/.test(screen.text()), "the ladder and the stages");
+  screen.input(KEY.tab);
+  screen.input(KEY.enter);
+  await waitFor(() => /keylang\/features\/refund\.md/.test(screen.lines()[0] ?? "") && !/RESULTS · F6/.test(screen.text()), "the question's line");
+});

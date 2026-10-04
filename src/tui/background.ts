@@ -11,6 +11,7 @@
 
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
+import type { FeatureBase } from "../feature-status.ts";
 import { generateMap, type MapResult } from "../map.ts";
 import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
@@ -108,6 +109,9 @@ export class OperationWorker {
   private next = 0;
   private closed = false;
   private readonly pending = new Map<number, Pending>();
+  /** Feature files read at `HEAD` for the status line: null when the worker stopped first. */
+  private readonly bases = new Map<number, (base: FeatureBase | null) => void>();
+  private nextBase = 0;
   private readonly entry: URL;
   private readonly workerData: unknown;
 
@@ -153,6 +157,27 @@ export class OperationWorker {
   };
 
   /**
+   * `path` (relative to `root`) at `HEAD`, read in the worker: the session's
+   * thread starts no git process. A worker that cannot start is a base that
+   * could not be read; one stopped before it answered gives null (unknown).
+   */
+  featureBase(root: string, path: string): Promise<FeatureBase | null> {
+    if (this.closed) return Promise.resolve(null);
+    let worker: Worker;
+    try {
+      worker = this.start();
+    } catch (error) {
+      return Promise.resolve({ ref: "HEAD", state: "unavailable", reason: `the operation worker did not start: ${messageOf(error)}` });
+    }
+    const baseId = ++this.nextBase;
+    return new Promise((resolve) => {
+      this.bases.set(baseId, resolve);
+      worker.ref();
+      this.post({ type: "base", baseId, root, path });
+    });
+  }
+
+  /**
    * Ends the worker and refuses new work. A request before its commit settles
    * as cancelled at once. One in its commit is asked to stop between file
    * steps and keeps the worker until its result (`cancelled` with the steps
@@ -161,6 +186,8 @@ export class OperationWorker {
    */
   close(): void {
     this.closed = true;
+    // A closed session shows no status line: a base read in flight is dropped.
+    for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
     const committing = [...this.pending].filter(([, pending]) => pending.committing);
     if (committing.length === 0) return this.stop((kind) => resultWithout(kind, "cancelled", null));
     for (const [operationId, pending] of [...this.pending]) {
@@ -224,6 +251,7 @@ export class OperationWorker {
     const worker = new Worker(this.entry, this.workerData === undefined ? {} : { workerData: this.workerData });
     worker.unref();
     worker.on("message", (reply: OperationReply) => {
+      if (reply.type === "base") return this.settleBase(reply.baseId, this.worker === worker ? reply.base : null);
       const pending = this.pending.get(reply.operationId);
       // A reply for a settled request (cancelled, or its worker replaced) changes nothing.
       if (!pending || this.worker !== worker) return;
@@ -242,12 +270,21 @@ export class OperationWorker {
     return worker;
   }
 
-  /** Terminates the worker and settles what is still pending with `outcome`. */
+  /** Terminates the worker and settles what is still pending with `outcome`; a base read in flight is unknown. */
   private stop(outcome: (kind: OperationRequest["kind"]) => OperationResult): void {
     const worker = this.worker;
     this.worker = null;
     if (worker) void worker.terminate();
     for (const [operationId, pending] of [...this.pending]) this.settle(operationId, outcome(pending.kind));
+    for (const baseId of [...this.bases.keys()]) this.settleBase(baseId, null);
+  }
+
+  private settleBase(baseId: number, base: FeatureBase | null): void {
+    const resolve = this.bases.get(baseId);
+    if (!resolve) return;
+    this.bases.delete(baseId);
+    if (this.pending.size === 0 && this.bases.size === 0) this.worker?.unref();
+    resolve(base);
   }
 
   private settle(operationId: number, result: OperationResult): void {
@@ -255,7 +292,7 @@ export class OperationWorker {
     if (!pending) return;
     this.pending.delete(operationId);
     pending.release();
-    if (this.pending.size === 0) this.worker?.unref();
+    if (this.pending.size === 0 && this.bases.size === 0) this.worker?.unref();
     // Closed while a commit finished: the worker ends with its last result.
     if (this.closed && this.pending.size === 0 && this.worker) {
       const worker = this.worker;

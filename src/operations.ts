@@ -8,6 +8,7 @@
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { contextForIds, contextText } from "./agent-context.ts";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { filterChanged } from "./changed.ts";
@@ -32,7 +33,7 @@ import { codeProposalProblem, PROPOSALS_DIR, proposalProblem, proposalWriteProbl
 import { fileDiffText, plannedCodeTarget, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
 import type { Verdict } from "./verdict.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
-import { featureStatus, type FeatureBase, type FeatureReport, type Gap, type Hint } from "./feature-status.ts";
+import { featureStatus, idsIn, type FeatureBase, type FeatureReport, type Gap, type Hint } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmClient, LlmClientOptions, LlmSetup } from "./llm.ts";
@@ -54,6 +55,15 @@ export interface DoctorRequest {
   kind: "doctor";
   /** Repository root (absolute): where keylang.json and the specs live. */
   root: string;
+}
+
+/** «Ask the model for questions» on the feature readiness screen (c4-zoom/11): a proposal of `- ? …` lines for the feature file. */
+export interface FeatureQuestionsRequest {
+  kind: "feature-questions";
+  /** Repository root (absolute). */
+  root: string;
+  /** The feature: `<dir>/features/<slug>.md`. */
+  slug: string;
 }
 
 /** Whether a feature file is done, on the saved state of the repository (tools.md `feature`). */
@@ -530,10 +540,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -638,6 +648,20 @@ export interface DoctorPayload {
     /** The optional native microphone (decibri). */
     microphone: ModuleStatus;
   };
+}
+
+/** The questions a model proposed for a feature file (c4-zoom/11). */
+export interface FeatureQuestionsPayload {
+  /** `<dir>/features/<slug>.md`, relative to the root. */
+  file: string;
+  /** The model that answered. */
+  agent: string;
+  /** The `- ? …` lines proposed, in the order the model wrote them; at most five. */
+  questions: string[];
+  /** Lines of the answer that were no `- ? …` question, or past the fifth: left out. */
+  dropped: number;
+  /** The proposal written, or null (nothing to propose, or nothing written). */
+  proposal: string | null;
 }
 
 /** The feature status the CLI prints (`report`), with the file and the snapshot it was computed on. */
@@ -1275,6 +1299,7 @@ export interface InitPayload {
 export interface OperationPayloads {
   doctor: DoctorPayload;
   feature: FeaturePayload;
+  "feature-questions": FeatureQuestionsPayload;
   "map-check": MapCheckPayload;
   map: MapPayload;
   baseline: BaselinePayload;
@@ -1347,6 +1372,7 @@ export function runOperation(request: DraftLayoutRequest, context?: OperationCon
 export function runOperation(request: CodeToSpecRequest, context?: OperationContext): Promise<OperationEnvelope<"code-to-spec">>;
 export function runOperation(request: SpecToCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"spec-to-code">>;
 export function runOperation(request: ApplyCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"apply-code">>;
+export function runOperation(request: FeatureQuestionsRequest, context?: OperationContext): Promise<OperationEnvelope<"feature-questions">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -1354,6 +1380,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runDoctor(request, context);
     case "feature":
       return runFeature(request, context);
+    case "feature-questions":
+      return runFeatureQuestions(request, context);
     case "map-check":
       return runMapCheck(request, context);
     case "map":
@@ -1411,6 +1439,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "doctor":
       return { kind, ...base };
     case "feature":
+      return { kind, ...base };
+    case "feature-questions":
       return { kind, ...base };
     case "map-check":
       return { kind, ...base };
@@ -3975,6 +4005,14 @@ export function checkSummary(counts: CheckPayload["counts"]): string {
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */
 export const FEATURE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+/** The slug of `path` when it is a feature file `<dir>/features/<slug>.md`, else null. */
+export function featureSlugOf(path: string, dir: string): string | null {
+  const prefix = `${dir}/features/`;
+  if (!path.startsWith(prefix) || !path.endsWith(".md")) return null;
+  const slug = path.slice(prefix.length, -3);
+  return FEATURE_SLUG.test(slug) ? slug : null;
+}
+
 function emptyFeature(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"feature"> {
   return { kind: "feature", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
@@ -4011,10 +4049,7 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
   } catch (error) {
     return emptyFeature("failed", 2, messageOf(error));
   }
-  const report = featureStatus(
-    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base, index: analyzed.index, format: config.format, layers: [...config.layers.keys()] },
-    request.slug,
-  );
+  const report = featureReportOf(analyzed, request.slug, base);
   if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
   const messages: OperationMessage[] = [
     ...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })),
@@ -4025,6 +4060,130 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
     ...emptyFeature("completed", report.done ? 0 : 1),
     payload: { slug: request.slug, file, snapshot: analyzed.snapshot?.snapshotId ?? null, report },
     messages,
+  };
+}
+
+/** The report of feature `slug` on one analysis and its base: the CLI's `feature`, and the TUI's status line on the session's analysis. */
+export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureBase): FeatureReport | null {
+  const config = analyzed.config;
+  return featureStatus(
+    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base, index: analyzed.index, format: config.format, layers: [...config.layers.keys()] },
+    slug,
+  );
+}
+
+/** Most questions one request proposes: a person answers them in one sitting. */
+const MAX_QUESTIONS = 5;
+
+function emptyFeatureQuestions(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"feature-questions"> {
+  return { kind: "feature-questions", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/** The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out. */
+export function questionLines(answer: string): { questions: string[]; dropped: number } {
+  const lines = answer.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !/^```/.test(line));
+  const questions = lines.filter((line) => /^[-*] \?\s+\S/.test(line)).map((line) => `- ? ${line.replace(/^[-*] \?\s+/, "").replace(/\s+/g, " ")}`);
+  const kept = questions.slice(0, MAX_QUESTIONS);
+  return { questions: kept, dropped: lines.length - kept.length };
+}
+
+/**
+ * `text` with `questions` at the top level of its first flow: after the
+ * questions its item list starts with, else before its first item (after
+ * the heading and prose); a file with no flow yet gets a `# flow <slug>`
+ * with them. The rest of the file is kept as written.
+ */
+export function withQuestions(text: string, questions: readonly string[], slug: string): string {
+  const lines = text.split("\n");
+  const heading = lines.findIndex((line) => /^#\s+flow\s+\S/.test(line));
+  if (heading === -1) return `${text.replace(/\n*$/, "\n")}\n# flow ${slug}\n\n${questions.join("\n")}\n`;
+  let at = heading + 1;
+  while (at < lines.length && !/^#\s/.test(lines[at]!) && !/^[-*+] /.test(lines[at]!)) at++;
+  if (at < lines.length && /^[-*+] /.test(lines[at]!)) {
+    while (at < lines.length && /^[-*+] \?\s/.test(lines[at]!)) at++;
+    return [...lines.slice(0, at), ...questions, ...lines.slice(at)].join("\n");
+  }
+  // No item in the flow: after its last non-blank line, before the next heading.
+  let end = at;
+  while (end > heading + 1 && lines[end - 1]!.trim() === "") end--;
+  return [...lines.slice(0, end), "", ...questions, ...(at < lines.length ? [""] : []), ...lines.slice(at)].join("\n").replace(/\n*$/, "\n");
+}
+
+/**
+ * «Ask the model for questions» on the feature readiness screen (c4-zoom/11):
+ * one request with the feature file and what keylang knows around its ids;
+ * the answer's `- ? …` lines, at most five, become a proposal for the file
+ * that a person accepts hunk by hunk in MERGE. Nothing is written to the
+ * feature itself. No model configured, a missing file or a target a proposal
+ * may not change is 2; a proposal already waiting is 1; Cancel is cancelled.
+ */
+async function runFeatureQuestions(request: FeatureQuestionsRequest, context: OperationContext): Promise<OperationEnvelope<"feature-questions">> {
+  const { root, slug } = request;
+  if (!isAbsolute(root)) return emptyFeatureQuestions("failed", 2, "feature questions: root must be an absolute path");
+  if (!FEATURE_SLUG.test(slug)) return emptyFeatureQuestions("failed", 2, `feature questions: invalid slug \`${slug}\``);
+  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyFeatureQuestions("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  const config = analyzed.config;
+  const file = `${config.dir}/features/${slug}.md`;
+  const doc = analyzed.docs.find((item) => item.path === file);
+  if (!doc) return emptyFeatureQuestions("failed", 2, `feature questions: ${file}: not found`);
+  const setup = await modelSetup("llm", config, "feature questions");
+  if ("error" in setup) return emptyFeatureQuestions("failed", 2, setup.error.replace(" --mode llm", ""));
+  const client = setup.client!;
+  const specDir = toPosix(relative(root, resolve(root, config.dir)));
+  const generated = (path: string): boolean => analyzed.docs.some((item) => item.path === path && item.generated !== null);
+  const problem = proposalProblem(root, specDir, file, generated);
+  const store = `${PROPOSALS_DIR}/${file}`;
+  const before = problem === null ? existingText(join(root, file)) : null;
+  const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
+  const refusal = proposalRefusal(root, { target: file, problem, pending }, "refuse", "feature questions");
+  if (refusal !== null) return { ...emptyFeatureQuestions("failed", refusal.exitCode, refusal.error) };
+  const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
+  const text = before ?? "";
+  const around = analyzed.snapshot ? contextText(contextForIds(analyzed, idsIn(doc))) : "(no code snapshot)";
+  context.onProgress?.({ text: `asking ${client.agent}` });
+  const { LlmCancelled } = await import("./llm.ts");
+  let answer: string;
+  try {
+    answer = await client.complete(
+      {
+        system: [
+          "You review the specification of one feature before a coding agent implements it; keylang checks the plan against the code, and a person answers the open questions.",
+          `Answer in the language with code \`${config.explain.lang}\`.`,
+          `Ask at most ${MAX_QUESTIONS} questions a person must answer before an agent can implement the feature without guessing: who or what starts it, its boundaries, its failure cases, the data it needs, what must not change.`,
+          "Write each question on a line of its own as `- ? <question>` and nothing else: no heading, no numbering, no answer.",
+          "Do not ask what the specification or the context below already says.",
+        ].join("\n"),
+        prompt: `Feature file ${file}:\n\`\`\`\n${text}\n\`\`\`\n\nWhat keylang knows around its ids:\n${around}`,
+        maxTokens: 1024,
+      },
+      context.signal ? { signal: context.signal } : {},
+    );
+  } catch (error) {
+    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+    return emptyFeatureQuestions("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  const { questions, dropped } = questionLines(answer);
+  const payload: FeatureQuestionsPayload = { file, agent: client.agent, questions, dropped, proposal: null };
+  const droppedNote = dropped > 0 ? [{ level: "info" as const, text: `${dropped} line(s) of the answer were no \`- ? …\` question or past the fifth: left out` }] : [];
+  if (questions.length === 0) return { ...emptyFeatureQuestions("completed", 0), payload, messages: [...droppedNote, { level: "info", text: `${client.agent} asked no question: nothing proposed` }] };
+  const committed = await commitProposal({ root, specDir, generated, target: file, text: withQuestions(text, questions, slug), expected: { target: before, proposal: pending }, config, inputs }, context);
+  if ("cancelled" in committed) return { ...emptyFeatureQuestions("cancelled", null), payload };
+  if ("refused" in committed) return { ...emptyFeatureQuestions("failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written" }] };
+  if ("failed" in committed) return { ...emptyFeatureQuestions("failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
+  payload.proposal = committed.proposal;
+  return {
+    ...emptyFeatureQuestions("completed", 0),
+    payload,
+    messages: [...droppedNote, { level: "info", text: `${committed.proposal}: ${questions.length} open question(s) proposed for ${file}; MERGE accepts them hunk by hunk` }],
+    proposals: [committed.proposal],
   };
 }
 

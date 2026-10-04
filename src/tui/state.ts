@@ -4,6 +4,7 @@
 import type { Analysis } from "../analyze.ts";
 import type { StaticMode } from "../config.ts";
 import type { ExplanationDetail, StoredExplanation } from "../explanations.ts";
+import type { Stage } from "../feature-status.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { ExportFormat, OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
@@ -455,4 +456,18 @@ export interface State {
   briefs: ReadonlyMap<string, StoredExplanation>;
   /** The zoom screen while it is open (mode `zoom`), or the last one: `z` reopens where it was. */
   zoom: ZoomState | null;
+  /**
+   * The status line's `feature <stage> · questions <n>` of a feature file
+   * (c4-zoom/11): computed from its saved text after an analysis, never
+   * while it has unsaved edits; shown while `path` is the current file.
+   */
+  featureLine: FeatureLine | null;
+}
+
+/** Where a feature file stands, for the status line. */
+export interface FeatureLine {
+  path: string;
+  stage: Stage;
+  /** Open questions (`- ? …`) in the file. */
+  questions: number;
 }
