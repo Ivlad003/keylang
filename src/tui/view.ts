@@ -6,6 +6,7 @@ import { contextPack } from "../agent-context.ts";
 import { CONFIG_FILE } from "../config.ts";
 import { explainCode } from "../explain.ts";
 import { formatSummary } from "../explain-node.ts";
+import { briefCounts } from "../explain-inventory.ts";
 import type { SavedAnswer } from "../explain-offline.ts";
 import { explanationOf } from "../explanations.ts";
 import { ACTIONS, actionKey, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
@@ -1087,7 +1088,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       rows.push({ text: `${explainPlanOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...MARK_STYLE.ok, bg: THEME.panel.bg! } });
       for (const message of result.messages) if (message.level === "warning") rows.push({ text: `  ${message.text}`, style: { ...THEME.panel, fg: 179 } });
       const { counts } = payload;
-      rows.push({ text: `  ${counts["fn/type"]} fn/type, ${counts["class/module"]} class/module, ${counts.layer} layer · ${payload.waves.length} wave(s) bottom-up · jobs ${payload.jobs} · limit ${payload.limit ?? "none"}${payload.candidates > payload.plan.length ? ` (${payload.candidates - payload.plan.length} more left out)` : ""}`, style: THEME.panel });
+      rows.push({ text: `  ${briefCounts(counts)} · ${payload.waves.length} wave(s) bottom-up · jobs ${payload.jobs} · limit ${payload.limit ?? "none"}${payload.candidates > payload.plan.length ? ` (${payload.candidates - payload.plan.length} more left out)` : ""}`, style: THEME.panel });
       if (payload.estimate !== null) rows.push({ text: `  approximate tokens: ~${payload.estimate.input} in, ~${payload.estimate.output} out — about 4 characters a token and 80 a brief; not the API's count or cost`, style: THEME.panel });
       rows.push({ text: `  left out: ${payload.skipped.documented} node(s) with a doc comment, ${payload.skipped.fresh} with a fresh brief${payload.gone.length > 0 ? ` · gone, never asked for: ${payload.gone.join(", ")}` : ""}`, style: { ...THEME.panel, fg: 243 } });
       rows.push({ text: "  a preview, not a permission: the batch (the form's last row, or keylang explain --missing --llm) plans again on its own analysis", style: { ...THEME.panel, fg: 243 } });

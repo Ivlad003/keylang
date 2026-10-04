@@ -11,7 +11,7 @@ import type { Analysis } from "./analyze.ts";
 import { briefOf } from "./brief.ts";
 import type { Config } from "./config.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
-import { explainDir, explanationOf, explanationPath, OLD_EXPLAIN_DIR, readStoredExplanation, snapshotBaseline, storedIds, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
+import { explainDir, explanationOf, explanationPath, loadBriefs, OLD_EXPLAIN_DIR, ownLayers, readStoredExplanation, snapshotBaseline, storedIds, SYSTEM_ID, systemBaseline, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import type { LlmRequest } from "./llm.ts";
 import { plannedDecl } from "./lsp-features.ts";
@@ -46,6 +46,7 @@ export function moveHint(config: Config, count: number): string {
  * "" for a planned node, which has no code yet; null when the id is gone.
  */
 export function currentBaseline(analysis: Analysis, id: string): string | null {
+  if (id === SYSTEM_ID) return analysis.snapshot ? systemBaseline(analysis.snapshot, loadBriefs(analysis.config)) : null;
   if (analysis.snapshot?.nodes[id]) return snapshotBaseline(analysis.snapshot, id);
   return plannedDecl(analysis.docs, id) ? "" : null;
 }
@@ -148,7 +149,7 @@ function sourceLines(text: string, from: number, to: number): string {
 export type BriefBatch = "missing" | "stale";
 
 /** Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs. */
-export type BriefLevel = "fn/type" | "class/module" | "layer";
+export type BriefLevel = "fn/type" | "class/module" | "layer" | "system";
 
 export interface PlannedBrief {
   id: string;
@@ -159,9 +160,10 @@ export interface PlannedBrief {
 
 /**
  * The nodes a batch explains, in the order it asks: fn and types, then
- * classes and modules from the deepest up, then layers. A node with a doc
- * comment is never asked about: the code already says what it does. External
- * packages have no code here, so they are left out.
+ * classes and modules from the deepest up, then layers, then the repository
+ * itself (`SYSTEM_ID`). A node with a doc comment is never asked about: the
+ * code already says what it does; nor is the repository when its README or a
+ * manifest says it. External packages have no code here, so they are left out.
  */
 export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>): PlannedBrief[] {
   const snapshot = analysis.snapshot;
@@ -177,17 +179,59 @@ export function planBriefs(analysis: Analysis, batch: BriefBatch, briefs: Readon
     else if (node.kind === "module") out.push({ id, level: "class/module", wave: 1000 - depth });
     else out.push({ id, level: "layer", wave: 1000 });
   }
+  if (!snapshot.system?.brief) {
+    const brief = briefs.get(SYSTEM_ID);
+    const stale = brief !== undefined && systemBaseline(snapshot, briefs) !== brief.closure;
+    if (batch === "stale" ? stale : brief === undefined || stale) out.push({ id: SYSTEM_ID, level: "system", wave: 2000 });
+  }
   return out.sort((a, b) => a.wave - b.wave || compareText(a.id, b.id));
+}
+
+/** Most flows the repository's prompt names; the rest are counted. */
+const MAX_FLOWS = 40;
+
+/**
+ * The request for the repository's brief: its name, its layers with what the
+ * explained map says about them, its flows and the packages it uses. The
+ * README and manifests had nothing to say, or no model is asked at all.
+ */
+export function systemRequest(analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }): LlmRequest {
+  const snapshot = analysis.snapshot;
+  const layers = snapshot === null ? [] : ownLayers(snapshot).map((id) => {
+    const e = explanationOf(snapshot, options.briefs, id);
+    return `- layer \`${id}\`${e ? `: ${e.text}` : ""}`;
+  });
+  const flows = analysis.spec.flows.slice(0, MAX_FLOWS).map((flow) => `- flow ${flow.name}${flow.triggers[0] ? ` (trigger \`${flow.triggers[0].target.target}\`)` : ""}`);
+  if (analysis.spec.flows.length > MAX_FLOWS) flows.push(`… (${analysis.spec.flows.length - MAX_FLOWS} more not shown)`);
+  const packages = snapshot === null ? [] : Object.keys(snapshot.nodes).filter((id) => id.startsWith(`${EXTERNAL}.`) && !id.slice(EXTERNAL.length + 1).includes("."));
+  const parts = [
+    `Repository: ${snapshot?.system.name ?? "(no name in a manifest)"}`,
+    `Layers, with what the explained map says about them:\n${layers.length > 0 ? layers.join("\n") : "(none)"}`,
+    ...(flows.length > 0 ? [`Flows the specs describe:\n${flows.join("\n")}`] : []),
+    ...(packages.length > 0 ? [`Packages it uses: ${packages.slice(0, MAX_MEMBERS).map((id) => `\`${id}\``).join(", ")}${packages.length > MAX_MEMBERS ? ", …" : ""}`] : []),
+  ];
+  const system = [
+    "You describe a whole repository to a developer who opens it for the first time, using the architecture description keylang keeps for it.",
+    `Answer in the language with code \`${options.lang}\`. Write at most two short sentences in one paragraph, no line breaks, about ${BRIEF_TARGET} characters in all: what the repository is and who it is for.`,
+    "Refer to code only by the IDs given in the input, written in backticks. Never invent an ID.",
+    "Say only what the input shows; no remarks about the input or what it leaves out.",
+  ].join("\n");
+  return { system, prompt: parts.join("\n\n"), maxTokens: 1024 };
 }
 
 /** A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out. */
 export function estimateTokens(analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>): { input: number; output: number } {
   let chars = 0;
   for (const { id } of plan) {
-    const result = summarizeNode(analysis, id);
-    if ("unknown" in result) continue;
-    const request = explanationRequest(analysis, result.summary, { lang: analysis.config.explain.lang, detail: "brief", briefs });
-    chars += request.system.length + request.prompt.length;
+    const request = briefRequest(analysis, id, analysis.config.explain.lang, briefs);
+    if (request !== null) chars += request.system.length + request.prompt.length;
   }
   return { input: Math.ceil(chars / 4), output: plan.length * 80 };
+}
+
+/** The request for the brief of `id`: the repository's or a node's; null when the id is gone from the snapshot. */
+export function briefRequest(analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>): LlmRequest | null {
+  if (id === SYSTEM_ID) return systemRequest(analysis, { lang, briefs });
+  const result = summarizeNode(analysis, id);
+  return "unknown" in result ? null : explanationRequest(analysis, result.summary, { lang, detail: "brief", briefs });
 }

@@ -73,6 +73,22 @@ export function matchesGlob(path: string, glob: string): boolean {
   return globToRegExp(glob).test(path);
 }
 
+/**
+ * The one directory a set of globs owns: `D` when every glob is `D/**` or
+ * `D/**` followed by a file pattern, else null. A set that lists files, or
+ * spreads over two directories, owns none, so a README beside its files does
+ * not speak for it.
+ */
+export function globDirectory(globs: readonly string[]): string | null {
+  let dir: string | null = null;
+  for (const glob of globs) {
+    const m = /^((?:[^*?{}[\]/]+\/)*[^*?{}[\]/]+)\/\*\*(?:\/[^/]*)?$/.exec(glob);
+    if (!m || (dir !== null && dir !== m[1])) return null;
+    dir = m[1]!;
+  }
+  return dir;
+}
+
 /** Directory prefix of a glob, up to the first wildcard: `src/domain/**` → `src/domain`. */
 export function globPrefix(glob: string): string {
   const parts = glob.split("/");

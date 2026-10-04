@@ -976,6 +976,7 @@
     - config base.config
     - explain features.explain
     - explain-node features.explain-node
+    - explain-inventory features.explain-inventory
     - explain-offline features.explain-offline
     - explanations map.explanations
     - actions tui.actions
@@ -995,149 +996,149 @@
     - theme tui.theme
     - buffer tui.buffer
     - width tui.width
-    - type [Rect](../../src/tui/view.ts#L29)
-    - type [Layout](../../src/tui/view.ts#L36)
-    - fn [layout](../../src/tui/view.ts#L59) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
-    - type [EditorRow](../../src/tui/view.ts#L89)
-    - fn [lineCount](../../src/tui/view.ts#L91) (buffer: Buffer) → number
+    - type [Rect](../../src/tui/view.ts#L30)
+    - type [Layout](../../src/tui/view.ts#L37)
+    - fn [layout](../../src/tui/view.ts#L60) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
+    - type [EditorRow](../../src/tui/view.ts#L90)
+    - fn [lineCount](../../src/tui/view.ts#L92) (buffer: Buffer) → number
       - calls tui.buffer.bufferLines
-    - fn [gutterWidth](../../src/tui/view.ts#L95) (buffer: Buffer) → number
+    - fn [gutterWidth](../../src/tui/view.ts#L96) (buffer: Buffer) → number
       - calls tui.view.lineCount
-    - fn [editorRows](../../src/tui/view.ts#L100) (state: State, buffer: Buffer, height: number) → EditorRow[]
+    - fn [editorRows](../../src/tui/view.ts#L101) (state: State, buffer: Buffer, height: number) → EditorRow[]
       - calls tui.view.lineCount, tui.evidence.evidenceOf
-    - fn [drawRuns](../../src/tui/view.ts#L116) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
+    - fn [drawRuns](../../src/tui/view.ts#L117) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
       - calls tui.screen.Grid.write
-    - fn [fromLayout](../../src/tui/view.ts#L127) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
-    - fn [fromText](../../src/tui/view.ts#L132) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromLayout](../../src/tui/view.ts#L128) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromText](../../src/tui/view.ts#L133) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
       - calls tui.width.clusters
-    - fn [cellsBetween](../../src/tui/view.ts#L141) (line: LineLayout, from: number, to: number) → number <!-- internal -->
-    - fn [markCell](../../src/tui/view.ts#L146) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
-    - fn [detailText](../../src/tui/view.ts#L155) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
-    - fn [lineMessage](../../src/tui/view.ts#L179) (item: LineEvidence | undefined) → { text: string; style: Style } | null
+    - fn [cellsBetween](../../src/tui/view.ts#L142) (line: LineLayout, from: number, to: number) → number <!-- internal -->
+    - fn [markCell](../../src/tui/view.ts#L147) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
+    - fn [detailText](../../src/tui/view.ts#L156) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
+    - fn [lineMessage](../../src/tui/view.ts#L180) (item: LineEvidence | undefined) → { text: string; style: Style } | null
       - calls features.explain.explainCode
-    - fn [drawBox](../../src/tui/view.ts#L192) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
+    - fn [drawBox](../../src/tui/view.ts#L193) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write
-    - fn [runsOf](../../src/tui/view.ts#L206) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
+    - fn [runsOf](../../src/tui/view.ts#L207) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
       - calls tui.theme.highlight
-    - fn [drawEditor](../../src/tui/view.ts#L216) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawEditor](../../src/tui/view.ts#L217) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.evidence.evidenceOf, tui.view.runsOf, tui.view.gutterWidth, tui.view.editorRows, tui.screen.Grid.fill, tui.view.detailText, tui.view.markCell, tui.view.drawRuns, tui.view.fromLayout, tui.buffer.lineLayout, tui.width.graphemes, tui.view.cellsBetween, tui.screen.Grid.write
-    - fn [readRows](../../src/tui/view.ts#L260) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; cursorRow: number; top: number } <!-- internal -->
+    - fn [readRows](../../src/tui/view.ts#L261) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; cursorRow: number; top: number } <!-- internal -->
       - calls tui.markdown.renderMarkdown
-    - fn [readCursorRow](../../src/tui/view.ts#L269) (state: State, buffer: Buffer, rect: Rect) → number
+    - fn [readCursorRow](../../src/tui/view.ts#L270) (state: State, buffer: Buffer, rect: Rect) → number
       - calls tui.view.readRows
-    - fn [drawRead](../../src/tui/view.ts#L274) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawRead](../../src/tui/view.ts#L275) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.evidence.evidenceOf, tui.view.readRows, tui.screen.Grid.fill, tui.view.markCell, tui.screen.Grid.write
-    - fn [drawCode](../../src/tui/view.ts#L294) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawCode](../../src/tui/view.ts#L295) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write, tui.code-highlight.highlightCode, tui.view.drawRuns, tui.view.fromText
-    - fn [drawMerge](../../src/tui/view.ts#L317) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawMerge](../../src/tui/view.ts#L318) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.merge.mergeRows, tui.screen.Grid.fill, tui.screen.Grid.write
-    - fn [drawPanelList](../../src/tui/view.ts#L342) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
+    - fn [drawPanelList](../../src/tui/view.ts#L343) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write, tui.width.padWidth
-    - fn [navEntries](../../src/tui/view.ts#L356) (state: State) → NavItem[]
+    - fn [navEntries](../../src/tui/view.ts#L357) (state: State) → NavItem[]
       - calls tui.nav.navItems
-    - fn [navNote](../../src/tui/view.ts#L368) (state: State, width: number) → string[]
+    - fn [navNote](../../src/tui/view.ts#L369) (state: State, width: number) → string[]
       - calls tui.view.navEntries, map.explanations.explanationOf, tui.view.wrapWords
-    - fn [wrapWords](../../src/tui/view.ts#L380) (text: string, width: number) → string[] <!-- internal -->
+    - fn [wrapWords](../../src/tui/view.ts#L381) (text: string, width: number) → string[] <!-- internal -->
       - calls tui.width.stringWidth, tui.width.graphemes
-    - fn [navListHeight](../../src/tui/view.ts#L396) (state: State, rect: Rect) → number
+    - fn [navListHeight](../../src/tui/view.ts#L397) (state: State, rect: Rect) → number
       - calls tui.view.navNote
-    - fn [drawNav](../../src/tui/view.ts#L401) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawNav](../../src/tui/view.ts#L402) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.view.navNote, tui.view.navListHeight, tui.screen.Grid.fill, tui.screen.Grid.write, tui.view.navEntries, tui.view.drawPanelList
-    - fn [drawContext](../../src/tui/view.ts#L424) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawContext](../../src/tui/view.ts#L425) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls features.agent-context.contextPack, tui.view.drawPanelList, tui.view.contextTop
-    - fn [contextTop](../../src/tui/view.ts#L435) (index: number, rect: Rect) → number
-    - fn [drawFiles](../../src/tui/view.ts#L439) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [contextTop](../../src/tui/view.ts#L436) (index: number, rect: Rect) → number
+    - fn [drawFiles](../../src/tui/view.ts#L440) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.buffer.isDirty, tui.view.drawPanelList, tui.view.filesTop
-    - fn [filesTop](../../src/tui/view.ts#L450) (state: Pick<State, "filesIndex">, rect: Rect) → number
-    - fn [recordLabel](../../src/tui/view.ts#L457) (record: OperationRecord) → string <!-- internal -->
+    - fn [filesTop](../../src/tui/view.ts#L451) (state: Pick<State, "filesIndex">, rect: Rect) → number
+    - fn [recordLabel](../../src/tui/view.ts#L458) (record: OperationRecord) → string <!-- internal -->
       - calls tui.view.choiceText, tui.view.checkParams, tui.view.exportFormat, tui.view.operationLabel
-    - fn [operationLabel](../../src/tui/view.ts#L483) (request: OperationRequest) → string
+    - fn [operationLabel](../../src/tui/view.ts#L484) (request: OperationRequest) → string
       - calls tui.view.exportFormat, tui.view.explainPlanLabel, tui.view.explainBatchLabel, tui.view.codeSource
-    - fn [codeSource](../../src/tui/view.ts#L508) (source: { file?: string | null | undefined; line?: number | null | undefined; since?: string | null | undefined }) → string <!-- internal -->
-    - fn [recordStatus](../../src/tui/view.ts#L514) (record: OperationRecord) → string
-    - fn [recordSummary](../../src/tui/view.ts#L521) (record: OperationRecord) → string
+    - fn [codeSource](../../src/tui/view.ts#L509) (source: { file?: string | null | undefined; line?: number | null | undefined; since?: string | null | undefined }) → string <!-- internal -->
+    - fn [recordStatus](../../src/tui/view.ts#L515) (record: OperationRecord) → string
+    - fn [recordSummary](../../src/tui/view.ts#L522) (record: OperationRecord) → string
       - calls tui.view.mapCheckOutcome, tui.view.mapOutcome, tui.view.baselineOutcome, tui.view.agentsOutcome, tui.view.initOutcome, tui.view.fmtOutcome, tui.view.checkOutcome, tui.view.edgeOutcome, tui.view.wireOutcome, tui.view.exportOutcome, tui.view.parseOutcome, tui.view.tracePlanOutcome, tui.view.explainOutcome, tui.view.explainPlanOutcome, tui.view.explainLlmOutcome, tui.view.explainBatchOutcome, tui.view.draftOutcome, tui.view.specCodeOutcome, tui.view.applyOutcome, tui.view.recordStatus
-    - fn [checkParams](../../src/tui/view.ts#L553) (request: CheckRequest) → string <!-- internal -->
-    - fn [checkOutcome](../../src/tui/view.ts#L563) (payload: CheckPayload) → string <!-- internal -->
-    - fn [exportFormat](../../src/tui/view.ts#L568) (request: ExportRequest) → string <!-- internal -->
+    - fn [checkParams](../../src/tui/view.ts#L554) (request: CheckRequest) → string <!-- internal -->
+    - fn [checkOutcome](../../src/tui/view.ts#L564) (payload: CheckPayload) → string <!-- internal -->
+    - fn [exportFormat](../../src/tui/view.ts#L569) (request: ExportRequest) → string <!-- internal -->
       - calls operations.operations.exportFormatOf
-    - fn [explainOutcome](../../src/tui/view.ts#L573) (payload: ExplainPayload) → string <!-- internal -->
-    - fn [explainLlmOutcome](../../src/tui/view.ts#L579) (payload: ExplainLlmPayload) → string <!-- internal -->
-    - fn [explainPlanLabel](../../src/tui/view.ts#L589) (request: ExplainPlanRequest) → string <!-- internal -->
-    - fn [explainPlanOutcome](../../src/tui/view.ts#L595) (payload: ExplainPlanPayload) → string <!-- internal -->
-    - fn [explainBatchLabel](../../src/tui/view.ts#L606) (request: ExplainBatchRequest) → string <!-- internal -->
-    - fn [explainBatchOutcome](../../src/tui/view.ts#L611) (payload: ExplainBatchPayload) → string <!-- internal -->
-    - fn [batchState](../../src/tui/view.ts#L621) (payload: ExplainBatchPayload, id: string) → string
-    - fn [savedRows](../../src/tui/view.ts#L629) (rows: { text: string; style: Style }[], label: string, saved: SavedAnswer) → void <!-- internal -->
-    - fn [tracePlanOutcome](../../src/tui/view.ts#L636) (payload: TracePlanPayload) → string <!-- internal -->
-    - fn [draftOutcome](../../src/tui/view.ts#L641) (status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload) → string <!-- internal -->
-    - fn [specCodeOutcome](../../src/tui/view.ts#L651) (status: OperationRecord["status"], payload: SpecToCodePayload) → string <!-- internal -->
-    - fn [applyOutcome](../../src/tui/view.ts#L662) (status: OperationRecord["status"], payload: ApplyCodePayload) → string <!-- internal -->
-    - fn [parseOutcome](../../src/tui/view.ts#L671) (payload: ParsePayload) → string <!-- internal -->
-    - fn [exportOutcome](../../src/tui/view.ts#L677) (status: OperationRecord["status"], payload: ExportPayload) → string <!-- internal -->
-    - fn [edgeOutcome](../../src/tui/view.ts#L685) (payload: ExplainEdgePayload) → string <!-- internal -->
-    - fn [edgeItems](../../src/tui/view.ts#L695) (payload: ExplainEdgePayload) → { file: string | null; line: number; col: number; text: string }[]
+    - fn [explainOutcome](../../src/tui/view.ts#L574) (payload: ExplainPayload) → string <!-- internal -->
+    - fn [explainLlmOutcome](../../src/tui/view.ts#L580) (payload: ExplainLlmPayload) → string <!-- internal -->
+    - fn [explainPlanLabel](../../src/tui/view.ts#L590) (request: ExplainPlanRequest) → string <!-- internal -->
+    - fn [explainPlanOutcome](../../src/tui/view.ts#L596) (payload: ExplainPlanPayload) → string <!-- internal -->
+    - fn [explainBatchLabel](../../src/tui/view.ts#L607) (request: ExplainBatchRequest) → string <!-- internal -->
+    - fn [explainBatchOutcome](../../src/tui/view.ts#L612) (payload: ExplainBatchPayload) → string <!-- internal -->
+    - fn [batchState](../../src/tui/view.ts#L622) (payload: ExplainBatchPayload, id: string) → string
+    - fn [savedRows](../../src/tui/view.ts#L630) (rows: { text: string; style: Style }[], label: string, saved: SavedAnswer) → void <!-- internal -->
+    - fn [tracePlanOutcome](../../src/tui/view.ts#L637) (payload: TracePlanPayload) → string <!-- internal -->
+    - fn [draftOutcome](../../src/tui/view.ts#L642) (status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload) → string <!-- internal -->
+    - fn [specCodeOutcome](../../src/tui/view.ts#L652) (status: OperationRecord["status"], payload: SpecToCodePayload) → string <!-- internal -->
+    - fn [applyOutcome](../../src/tui/view.ts#L663) (status: OperationRecord["status"], payload: ApplyCodePayload) → string <!-- internal -->
+    - fn [parseOutcome](../../src/tui/view.ts#L672) (payload: ParsePayload) → string <!-- internal -->
+    - fn [exportOutcome](../../src/tui/view.ts#L678) (status: OperationRecord["status"], payload: ExportPayload) → string <!-- internal -->
+    - fn [edgeOutcome](../../src/tui/view.ts#L686) (payload: ExplainEdgePayload) → string <!-- internal -->
+    - fn [edgeItems](../../src/tui/view.ts#L696) (payload: ExplainEdgePayload) → { file: string | null; line: number; col: number; text: string }[]
       - calls features.explain-edge.edgeLine, features.explain-edge.holeLine
-    - fn [wireOutcome](../../src/tui/view.ts#L703) (status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null) → string <!-- internal -->
-    - fn [fmtOutcome](../../src/tui/view.ts#L715) (status: OperationRecord["status"], payload: FmtPayload) → string <!-- internal -->
-    - fn [choiceText](../../src/tui/view.ts#L730) (choice: AgentsRequest["harnesses"]) → string <!-- internal -->
-    - fn [agentsOutcome](../../src/tui/view.ts#L735) (status: OperationRecord["status"], payload: AgentsPayload) → string <!-- internal -->
-    - fn [initOutcome](../../src/tui/view.ts#L750) (status: OperationRecord["status"], payload: InitPayload) → string <!-- internal -->
+    - fn [wireOutcome](../../src/tui/view.ts#L704) (status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null) → string <!-- internal -->
+    - fn [fmtOutcome](../../src/tui/view.ts#L716) (status: OperationRecord["status"], payload: FmtPayload) → string <!-- internal -->
+    - fn [choiceText](../../src/tui/view.ts#L731) (choice: AgentsRequest["harnesses"]) → string <!-- internal -->
+    - fn [agentsOutcome](../../src/tui/view.ts#L736) (status: OperationRecord["status"], payload: AgentsPayload) → string <!-- internal -->
+    - fn [initOutcome](../../src/tui/view.ts#L751) (status: OperationRecord["status"], payload: InitPayload) → string <!-- internal -->
       - calls tui.view.agentsOutcome, tui.view.baselineOutcome, tui.view.initStages
-    - fn [initStages](../../src/tui/view.ts#L767) (payload: InitPayload) → { name: string; result: OperationResult | null }[] <!-- internal -->
-    - fn [mapOutcome](../../src/tui/view.ts#L776) (status: OperationRecord["status"], payload: MapPayload) → string <!-- internal -->
-    - fn [baselineOutcome](../../src/tui/view.ts#L789) (status: OperationRecord["status"], payload: BaselinePayload) → string <!-- internal -->
-    - fn [mapCheckOutcome](../../src/tui/view.ts#L799) (payload: MapCheckPayload) → string <!-- internal -->
-    - fn [timeStr](../../src/tui/view.ts#L804) (ms: number) → string <!-- internal -->
-    - fn [resultsReportRows](../../src/tui/view.ts#L813) (state: State) → { text: string; style: Style; gap?: number }[]
-      - calls tui.view.timeStr, tui.view.recordStatus, tui.view.infoSummary, tui.view.mapCheckOutcome, tui.view.mapOutcome, tui.view.baselineOutcome, tui.view.agentsOutcome, tui.view.initOutcome, tui.view.initStages, tui.view.checkOutcome, tui.findings.findingRow, tui.view.edgeItems, tui.view.exportOutcome, tui.view.wireOutcome, tui.view.parseOutcome, base.diag.formatDiagnostic, base.diag.isError, tui.view.explainOutcome, features.explain-node.formatSummary, tui.view.savedRows, tui.view.explainPlanOutcome, tui.view.explainBatchLabel, tui.view.explainBatchOutcome, tui.view.batchState, tui.view.explainLlmOutcome, tui.view.tracePlanOutcome, tui.view.draftOutcome, tui.view.codeSource, tui.view.specCodeOutcome, tui.view.applyOutcome, tui.view.recordSummary, tui.view.fmtOutcome
-    - fn [infoSummary](../../src/tui/view.ts#L1357) (items: readonly FeatureInfo[]) → string <!-- internal -->
-    - fn [resultsSplit](../../src/tui/view.ts#L1365) (state: State, height: number) → { list: number; report: number }
-    - fn [findingStateRow](../../src/tui/view.ts#L1375) (state: State) → string | null
+    - fn [initStages](../../src/tui/view.ts#L768) (payload: InitPayload) → { name: string; result: OperationResult | null }[] <!-- internal -->
+    - fn [mapOutcome](../../src/tui/view.ts#L777) (status: OperationRecord["status"], payload: MapPayload) → string <!-- internal -->
+    - fn [baselineOutcome](../../src/tui/view.ts#L790) (status: OperationRecord["status"], payload: BaselinePayload) → string <!-- internal -->
+    - fn [mapCheckOutcome](../../src/tui/view.ts#L800) (payload: MapCheckPayload) → string <!-- internal -->
+    - fn [timeStr](../../src/tui/view.ts#L805) (ms: number) → string <!-- internal -->
+    - fn [resultsReportRows](../../src/tui/view.ts#L814) (state: State) → { text: string; style: Style; gap?: number }[]
+      - calls tui.view.timeStr, tui.view.recordStatus, tui.view.infoSummary, tui.view.mapCheckOutcome, tui.view.mapOutcome, tui.view.baselineOutcome, tui.view.agentsOutcome, tui.view.initOutcome, tui.view.initStages, tui.view.checkOutcome, tui.findings.findingRow, tui.view.edgeItems, tui.view.exportOutcome, tui.view.wireOutcome, tui.view.parseOutcome, base.diag.formatDiagnostic, base.diag.isError, tui.view.explainOutcome, features.explain-node.formatSummary, tui.view.savedRows, tui.view.explainPlanOutcome, features.explain-inventory.briefCounts, tui.view.explainBatchLabel, tui.view.explainBatchOutcome, tui.view.batchState, tui.view.explainLlmOutcome, tui.view.tracePlanOutcome, tui.view.draftOutcome, tui.view.codeSource, tui.view.specCodeOutcome, tui.view.applyOutcome, tui.view.recordSummary, tui.view.fmtOutcome
+    - fn [infoSummary](../../src/tui/view.ts#L1358) (items: readonly FeatureInfo[]) → string <!-- internal -->
+    - fn [resultsSplit](../../src/tui/view.ts#L1366) (state: State, height: number) → { list: number; report: number }
+    - fn [findingStateRow](../../src/tui/view.ts#L1376) (state: State) → string | null
       - calls tui.buffer.isDirty, tui.view.configNote
-    - fn [findingDetailRows](../../src/tui/view.ts#L1398) (state: State, width: number) → string[]
+    - fn [findingDetailRows](../../src/tui/view.ts#L1399) (state: State, width: number) → string[]
       - calls tui.findings.visibleFindings, tui.findings.findingsOf, tui.actions.noSnapshotReason, tui.view.padRows, tui.view.clipRows, tui.view.wrapCells, tui.findings.findingDetailText
-    - fn [clipRows](../../src/tui/view.ts#L1409) (rows: string[], count: number, width: number) → string[] <!-- internal -->
+    - fn [clipRows](../../src/tui/view.ts#L1410) (rows: string[], count: number, width: number) → string[] <!-- internal -->
       - calls tui.width.fitWidth
-    - fn [padRows](../../src/tui/view.ts#L1413) (rows: string[]) → string[] <!-- internal -->
-    - fn [wrapCells](../../src/tui/view.ts#L1418) (text: string, width: number) → string[] <!-- internal -->
+    - fn [padRows](../../src/tui/view.ts#L1414) (rows: string[]) → string[] <!-- internal -->
+    - fn [wrapCells](../../src/tui/view.ts#L1419) (text: string, width: number) → string[] <!-- internal -->
       - calls tui.width.stringWidth, tui.width.fitWidth, tui.width.graphemes
-    - fn [findingsListRows](../../src/tui/view.ts#L1434) (state: State, rect: Rect) → number
+    - fn [findingsListRows](../../src/tui/view.ts#L1435) (state: State, rect: Rect) → number
       - calls tui.view.resultsSplit, tui.view.findingDetailRows, tui.view.findingStateRow
-    - fn [drawResults](../../src/tui/view.ts#L1441) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawResults](../../src/tui/view.ts#L1442) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.view.edgeItems, tui.actions.exportRecord, tui.view.reportOverflow, tui.view.resultsReportRows, tui.screen.Grid.fill, tui.screen.Grid.write, tui.width.stringWidth, tui.view.resultsSplit, tui.findings.findingCounts, tui.findings.findingsOf, tui.view.recordLabel, tui.view.recordStatus, tui.view.drawFindings, tui.width.sliceCells
-    - fn [reportOverflow](../../src/tui/view.ts#L1532) (rows: readonly { text: string }[], width: number) → number
+    - fn [reportOverflow](../../src/tui/view.ts#L1533) (rows: readonly { text: string }[], width: number) → number
       - calls tui.width.stringWidth
-    - fn [drawFindings](../../src/tui/view.ts#L1539) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
+    - fn [drawFindings](../../src/tui/view.ts#L1540) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
       - calls tui.findings.findingsOf, tui.findings.visibleFindings, tui.findings.findingCounts, tui.screen.Grid.fill, tui.screen.Grid.write, tui.view.findingStateRow, tui.view.findingDetailRows, tui.findings.findingRow
-    - fn [drawHover](../../src/tui/view.ts#L1583) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawHover](../../src/tui/view.ts#L1584) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawCompletion](../../src/tui/view.ts#L1597) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawCompletion](../../src/tui/view.ts#L1598) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.view.gutterWidth, tui.view.cellsBetween, tui.buffer.lineLayout, tui.view.drawBox, tui.screen.Grid.write, tui.width.padWidth
-    - fn [keyRows](../../src/tui/view.ts#L1679) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
+    - fn [keyRows](../../src/tui/view.ts#L1680) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
       - calls tui.width.stringWidth, tui.width.padWidth
-    - fn [helpRows](../../src/tui/view.ts#L1703) (state: State, width: number) → string[]
+    - fn [helpRows](../../src/tui/view.ts#L1704) (state: State, width: number) → string[]
       - calls tui.evidence.evidenceOf, features.explain.explainCode, tui.view.keyRows, tui.actions.catalog, tui.actions.actionKey, tui.view.wrapCells
-    - fn [helpBox](../../src/tui/view.ts#L1736) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
+    - fn [helpBox](../../src/tui/view.ts#L1737) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
       - calls tui.view.layout, tui.view.helpRows
-    - fn [helpScrollMax](../../src/tui/view.ts#L1747) (state: State) → number
+    - fn [helpScrollMax](../../src/tui/view.ts#L1748) (state: State) → number
       - calls tui.view.helpBox
-    - fn [drawHelp](../../src/tui/view.ts#L1752) (grid: Grid, state: State) → void <!-- internal -->
+    - fn [drawHelp](../../src/tui/view.ts#L1753) (grid: Grid, state: State) → void <!-- internal -->
       - calls tui.view.helpBox, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawPrompt](../../src/tui/view.ts#L1760) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
+    - fn [drawPrompt](../../src/tui/view.ts#L1761) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.view.newSpecLabel, tui.screen.Grid.write, tui.width.stringWidth, tui.view.wrapCells, tui.view.drawBox, tui.width.padWidth
-    - fn [newSpecLabel](../../src/tui/view.ts#L1796) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
-    - fn [footerHint](../../src/tui/view.ts#L1814) (mode: State["mode"], width: number) → string
+    - fn [newSpecLabel](../../src/tui/view.ts#L1797) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
+    - fn [footerHint](../../src/tui/view.ts#L1815) (mode: State["mode"], width: number) → string
       - calls tui.width.stringWidth
-    - fn [configNote](../../src/tui/view.ts#L1829) (state: State) → string | null
+    - fn [configNote](../../src/tui/view.ts#L1830) (state: State) → string | null
       - calls tui.buffer.isDirty
-    - fn [drawBarrier](../../src/tui/view.ts#L1838) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawBarrier](../../src/tui/view.ts#L1839) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawQuit](../../src/tui/view.ts#L1866) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawQuit](../../src/tui/view.ts#L1867) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       - calls tui.width.stringWidth, tui.view.drawBox, tui.screen.Grid.write
-    - fn [drawStart](../../src/tui/view.ts#L1891) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawStart](../../src/tui/view.ts#L1892) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       - calls tui.screen.Grid.fill, tui.screen.Grid.write
-    - fn [render](../../src/tui/view.ts#L1911) (state: State) → Grid
+    - fn [render](../../src/tui/view.ts#L1912) (state: State) → Grid
       - calls tui.screen.Grid, tui.view.layout, tui.screen.Grid.fill, tui.buffer.isDirty, tui.screen.Grid.write, tui.view.drawFiles, tui.view.drawContext, tui.view.drawNav, tui.view.drawStart, tui.view.drawCode, tui.view.drawMerge, tui.view.drawRead, tui.view.drawEditor, tui.evidence.evidenceOf, tui.view.lineMessage, tui.view.footerHint, tui.width.stringWidth, tui.evidence.totals, tui.view.configNote, tui.view.drawResults, tui.view.drawHover, tui.view.drawCompletion, tui.view.drawHelp, tui.view.drawPrompt, tui.view.drawBarrier, tui.view.drawQuit
   - module [web](../../src/tui/web.ts#L1)
     - node external.node

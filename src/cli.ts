@@ -84,7 +84,9 @@ Commands:
   explain --missing --llm   Write a brief for every node of the explained map with no
                             doc comment and no fresh brief, bottom-up (fn and types,
                             then classes and modules, then layers: a parent's prompt
-                            carries its members' briefs); each is saved as it arrives,
+                            carries its members' briefs), then one for the repository
+                            itself (@system) when neither its README nor a root
+                            manifest says what it is; each is saved as it arrives,
                             so a rerun goes on where it stopped. --stale --llm: only
                             the stale briefs. Without --llm: list the nodes.
                             --dry-run: counts and a token estimate, no request;

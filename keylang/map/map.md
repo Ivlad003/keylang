@@ -88,47 +88,55 @@
       - calls map.explanations.modelName
     - type [Counts](../../src/emit.ts#L149) <!-- internal -->
     - fn [renderReadme](../../src/emit.ts#L156) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
-      - calls map.emit.layerIds, map.emit.descriptionText, map.emit.ref, map.emit.index
-    - fn [index](../../src/emit.ts#L203) (r: Render) → string[] <!-- internal -->
+      - calls map.emit.layerIds, map.emit.descriptionText, map.emit.ref, map.emit.systemSection, map.emit.index
+    - fn [systemSection](../../src/emit.ts#L209) (r: Render) → string[] <!-- internal -->
+      - calls map.emit.descriptionText, map.emit.ref
+    - fn [index](../../src/emit.ts#L218) (r: Render) → string[] <!-- internal -->
       - calls map.emit.nameOf, base.span.compareText, map.emit.anchorOf
-    - fn [childrenByParent](../../src/emit.ts#L222) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
-    - fn [sortIds](../../src/emit.ts#L235) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+    - fn [childrenByParent](../../src/emit.ts#L237) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L250) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
       - calls map.emit.nameOf
-    - fn [nameOf](../../src/emit.ts#L245) (id: string) → string <!-- internal -->
-    - fn [linkedName](../../src/emit.ts#L249) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+    - fn [nameOf](../../src/emit.ts#L260) (id: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L264) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
       - calls map.emit.codeHref
-    - fn [renderModule](../../src/emit.ts#L254) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [renderModule](../../src/emit.ts#L269) (r: Render, id: string, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf, map.emit.describe, map.emit.depsOf, map.emit.ref, map.emit.sortIds, map.emit.renderDecl
-    - fn [edgesFrom](../../src/emit.ts#L277) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
-    - fn [depsOf](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [edgesFrom](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
+    - fn [depsOf](../../src/emit.ts#L307) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
       - calls map.emit.edgesFrom
-    - fn [renderDecl](../../src/emit.ts#L300) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L315) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       - calls map.emit.linkedName, map.emit.nameOf, map.emit.describe, map.emit.edgesFrom, map.emit.ref
   - module [explanations](../../src/explanations.ts#L1)
     - node external.node
     - brief base.brief
     - config base.config
+    - graph map.graph
     - snapshot map.snapshot
-    - type [ExplanationDetail](../../src/explanations.ts#L14) = "short" | "full" | "brief"
-    - type [StoredExplanation](../../src/explanations.ts#L17)
-    - fn [isStoredExplanation](../../src/explanations.ts#L31) (text: string) → boolean
-    - fn [parseStoredExplanation](../../src/explanations.ts#L36) (text: string) → StoredExplanation | null
-    - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
-    - fn [explainDir](../../src/explanations.ts#L47) (config: Pick<Config, "dir">) → string
-    - fn [explanationPath](../../src/explanations.ts#L55) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
+    - type [ExplanationDetail](../../src/explanations.ts#L15) = "short" | "full" | "brief"
+    - type [StoredExplanation](../../src/explanations.ts#L18)
+    - fn [isStoredExplanation](../../src/explanations.ts#L32) (text: string) → boolean
+    - fn [parseStoredExplanation](../../src/explanations.ts#L37) (text: string) → StoredExplanation | null
+    - fn [formatStoredExplanation](../../src/explanations.ts#L43) (e: StoredExplanation) → string
+    - fn [explainDir](../../src/explanations.ts#L48) (config: Pick<Config, "dir">) → string
+    - fn [explanationPath](../../src/explanations.ts#L56) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       - calls map.explanations.explainDir
-    - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null
+    - fn [readStoredExplanation](../../src/explanations.ts#L60) (root: string, rel: string) → StoredExplanation | null
       - calls map.explanations.parseStoredExplanation
-    - fn [storedIds](../../src/explanations.ts#L65) (root: string, dir: string) → string[]
-    - fn [loadBriefs](../../src/explanations.ts#L75) (config: Config) → Map<string, StoredExplanation>
+    - fn [storedIds](../../src/explanations.ts#L66) (root: string, dir: string) → string[]
+    - fn [loadBriefs](../../src/explanations.ts#L76) (config: Config) → Map<string, StoredExplanation>
       - calls map.explanations.explainDir, map.explanations.storedIds, map.explanations.readStoredExplanation
-    - fn [snapshotBaseline](../../src/explanations.ts#L95) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [snapshotBaseline](../../src/explanations.ts#L96) (snapshot: AnalysisSnapshot, id: string) → string | null
       - calls map.explanations.lowerBound
-    - fn [lowerBound](../../src/explanations.ts#L117) (sorted: readonly string[], key: string) → number <!-- internal -->
-    - type [NodeExplanation](../../src/explanations.ts#L129)
-    - fn [explanationOf](../../src/explanations.ts#L145) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
-      - calls base.brief.briefOf, map.explanations.snapshotBaseline
-    - fn [modelName](../../src/explanations.ts#L156) (agent: string) → string
+    - fn [lowerBound](../../src/explanations.ts#L118) (sorted: readonly string[], key: string) → number <!-- internal -->
+    - fn [ownLayers](../../src/explanations.ts#L138) (snapshot: AnalysisSnapshot) → string[]
+    - fn [systemBaseline](../../src/explanations.ts#L149) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>) → string
+      - calls map.explanations.ownLayers, map.explanations.explanationOf
+    - type [NodeExplanation](../../src/explanations.ts#L155)
+    - fn [explanationOf](../../src/explanations.ts#L173) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
+      - calls map.explanations.briefExplanation, map.explanations.systemBaseline, map.explanations.snapshotBaseline
+    - fn [briefExplanation](../../src/explanations.ts#L185) (brief: StoredExplanation | undefined, baseline: () => string | null) → NodeExplanation | null <!-- internal -->
+      - calls base.brief.briefOf
+    - fn [modelName](../../src/explanations.ts#L192) (agent: string) → string
   - module [exports](../../src/exports.ts#L1)
     - type [ExportKind](../../src/exports.ts#L10) = "fn" | "class" | "type" | "value"
     - type [ExportForm](../../src/exports.ts#L11) = "alias" | "default" | "reexport" | "namespace"
@@ -310,7 +318,10 @@
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
+    - smol-toml external.smol-toml
+    - brief base.brief
     - config base.config
+    - glob base.glob
     - languages base.languages
     - span base.span
     - facts extract.facts
@@ -321,43 +332,50 @@
     - fact-cache map.fact-cache
     - safe-write base.safe-write
     - snapshot map.snapshot
-    - type [MapResult](../../src/map.ts#L18)
-    - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
-      - calls base.config.sourceTree, base.config.toPosix, base.languages.languageOf, base.config.isAnalysed, map.map.readSource, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, base.config.excludedSourceFiles, map.map.opaqueFacts, base.config.outsideSourceFiles, map.graph.buildGraph, map.snapshot.buildSnapshot, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
-    - fn [opaqueFacts](../../src/map.ts#L121) (path: string) → FileFacts <!-- internal -->
-    - fn [readSource](../../src/map.ts#L126) (abs: string) → string | null <!-- internal -->
-    - fn [extractGuarded](../../src/map.ts#L140) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - type [MapResult](../../src/map.ts#L21)
+    - fn [generateMap](../../src/map.ts#L41) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+      - calls base.config.sourceTree, base.config.toPosix, base.languages.languageOf, base.config.isAnalysed, map.map.readSource, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, base.config.excludedSourceFiles, map.map.opaqueFacts, base.config.outsideSourceFiles, map.graph.buildGraph, map.snapshot.buildSnapshot, map.map.readRepositoryDocs, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
+    - fn [readRepositoryDocs](../../src/map.ts#L127) (config: Config) → RepositoryDocs <!-- internal -->
+      - calls base.glob.globDirectory, map.map.readReadme, base.brief.readmeBrief, map.map.readSystemDoc
+    - fn [readSystemDoc](../../src/map.ts#L138) (root: string) → SystemDoc <!-- internal -->
+      - calls map.map.manifestAbout, map.map.readSource, map.map.readReadme, base.brief.readmeBrief, base.brief.briefOf
+    - fn [readReadme](../../src/map.ts#L152) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+      - calls map.map.readSource
+    - fn [manifestAbout](../../src/map.ts#L174) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L200) (path: string) → FileFacts <!-- internal -->
+    - fn [readSource](../../src/map.ts#L205) (abs: string) → string | null <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L219) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       - calls map.map.opaqueFacts
-    - type [MapDiff](../../src/map.ts#L151)
-    - fn [targets](../../src/map.ts#L162) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
-    - fn [extraGenerated](../../src/map.ts#L170) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L230)
+    - fn [targets](../../src/map.ts#L241) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L249) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       - calls map.emit.isGeneratedMap
-    - fn [mapConflicts](../../src/map.ts#L178) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L257) (config: Config, r: MapResult) → string[]
       - calls map.map.targets, map.emit.isGeneratedMap
-    - type [MapArtifact](../../src/map.ts#L190) = "map" | "explained" | "index" | "facts"
-    - type [MapStep](../../src/map.ts#L193)
-    - type [PlannedStep](../../src/map.ts#L199) extends MapStep <!-- internal -->
-    - type [MapPlan](../../src/map.ts#L215)
-    - type [SourceInputs](../../src/map.ts#L227)
-    - type [MapInputs](../../src/map.ts#L235) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L241) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - type [MapArtifact](../../src/map.ts#L269) = "map" | "explained" | "index" | "facts"
+    - type [MapStep](../../src/map.ts#L272)
+    - type [PlannedStep](../../src/map.ts#L278) extends MapStep <!-- internal -->
+    - type [MapPlan](../../src/map.ts#L294)
+    - type [SourceInputs](../../src/map.ts#L306)
+    - type [MapInputs](../../src/map.ts#L314) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L320) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       - calls map.map.readOrNull
-    - fn [sourceInputProblems](../../src/map.ts#L250) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L329) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L269) extends MapStep
-    - type [MapCommit](../../src/map.ts#L274)
-    - fn [planMap](../../src/map.ts#L285) (config: Config, r: MapResult) → MapPlan
+    - type [CommittedStep](../../src/map.ts#L348) extends MapStep
+    - type [MapCommit](../../src/map.ts#L353)
+    - fn [planMap](../../src/map.ts#L364) (config: Config, r: MapResult) → MapPlan
       - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L319) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L398) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L338) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L417) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L367) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L446) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L372) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L381) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L451) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L460) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L403) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L482) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
@@ -405,31 +423,36 @@
     - config base.config
     - exports map.exports
     - brief base.brief
+    - glob base.glob
     - graph map.graph
     - languages base.languages
     - scc check.scc
     - web-tree-sitter external.web-tree-sitter
     - vscode-tree-sitter-wasm external.vscode-tree-sitter-wasm
-    - type [Resolution](../../src/snapshot.ts#L18) = "resolved" | "ambiguous" | "unresolved"
-    - type [Provenance](../../src/snapshot.ts#L19) = "syntactic"
-    - type [EdgeKind](../../src/snapshot.ts#L20) = "import" | "call" | "type" | "reexport"
-    - type [SnapshotEdge](../../src/snapshot.ts#L22)
-    - type [SnapshotExport](../../src/snapshot.ts#L57)
-    - type [CoverageItem](../../src/snapshot.ts#L86)
-    - type [SnapshotNode](../../src/snapshot.ts#L99)
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L137)
-    - fn [sha256](../../src/snapshot.ts#L162) (text: string) → string
-    - fn [buildSnapshot](../../src/snapshot.ts#L166) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], ) → AnalysisSnapshot
-      - calls map.snapshot.grammarVersions, map.snapshot.sha256, map.snapshot.docBrief, map.snapshot.closures
-    - fn [closures](../../src/snapshot.ts#L376) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
+    - type [Resolution](../../src/snapshot.ts#L19) = "resolved" | "ambiguous" | "unresolved"
+    - type [Provenance](../../src/snapshot.ts#L20) = "syntactic"
+    - type [EdgeKind](../../src/snapshot.ts#L21) = "import" | "call" | "type" | "reexport"
+    - type [SnapshotEdge](../../src/snapshot.ts#L23)
+    - type [SnapshotExport](../../src/snapshot.ts#L58)
+    - type [CoverageItem](../../src/snapshot.ts#L87)
+    - type [SnapshotNode](../../src/snapshot.ts#L100)
+    - type [SystemDoc](../../src/snapshot.ts#L146)
+    - type [RepositoryDocs](../../src/snapshot.ts#L156)
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L162)
+    - fn [sha256](../../src/snapshot.ts#L193) (text: string) → string
+    - fn [buildSnapshot](../../src/snapshot.ts#L197) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, ) → AnalysisSnapshot
+      - calls map.snapshot.grammarVersions, map.snapshot.sha256, map.snapshot.docBrief, map.snapshot.indexDoc, base.glob.globDirectory, map.snapshot.closures
+    - fn [closures](../../src/snapshot.ts#L409) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
       - calls base.languages.constructorName, check.scc.components, map.snapshot.sha256
-    - fn [docBrief](../../src/snapshot.ts#L419) (doc: string | null | undefined) → string | null <!-- internal -->
+    - fn [docBrief](../../src/snapshot.ts#L452) (doc: string | null | undefined) → string | null <!-- internal -->
       - calls base.brief.briefOf
-    - fn [exportRow](../../src/snapshot.ts#L424) (entry: ExportEntry) → SnapshotExport <!-- internal -->
-    - fn [compareCoverage](../../src/snapshot.ts#L437) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [indexDoc](../../src/snapshot.ts#L461) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
+      - calls base.languages.languageOf, map.snapshot.docBrief
+    - fn [exportRow](../../src/snapshot.ts#L473) (entry: ExportEntry) → SnapshotExport <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L486) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       - calls map.snapshot.cmp
-    - fn [cmp](../../src/snapshot.ts#L441) (a: string, b: string) → number <!-- internal -->
-    - fn [grammarVersions](../../src/snapshot.ts#L445) () → Record<string, string>
+    - fn [cmp](../../src/snapshot.ts#L490) (a: string, b: string) → number <!-- internal -->
+    - fn [grammarVersions](../../src/snapshot.ts#L494) () → Record<string, string>
   - module [trace-plan](../../src/trace-plan.ts#L1)
     - node external.node
     - config base.config

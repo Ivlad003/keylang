@@ -133,30 +133,33 @@
     - type [Counts](../../src/emit.ts#L149) <!-- internal -->
       <a id="map.emit.Counts"></a><br>Explanation counts of the nodes of one layer (the layer included).
     - fn [renderReadme](../../src/emit.ts#L156) (snapshot: AnalysisSnapshot, children: Map<string, string[]>, explain: ExplainNode) → string <!-- internal -->
-      <a id="map.emit.renderReadme"></a><br>Builds the map's README text: a per-layer table counting nodes whose explanation comes from code docs, a model, a stale model brief, or nothing, with each layer's own brief via [`map.emit.descriptionText`](map.md#map.emit.descriptionText), followed by the name index from [`map.emit.index`](map.md#map.emit.index). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref), [map.emit.index](map.md#map.emit.index)
-    - fn [index](../../src/emit.ts#L203) (r: Render) → string[] <!-- internal -->
+      <a id="map.emit.renderReadme"></a><br>Builds the map's README text: a per-layer table counting nodes whose explanation comes from code docs, a model, a stale model brief, or nothing, with each layer's own brief via [`map.emit.descriptionText`](map.md#map.emit.descriptionText), followed by the name index from [`map.emit.index`](map.md#map.emit.index). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [map.emit.layerIds](map.md#map.emit.layerIds), [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref), [map.emit.systemSection](map.md#map.emit.systemSection), [map.emit.index](map.md#map.emit.index)
+    - fn [systemSection](../../src/emit.ts#L209) (r: Render) → string[] <!-- internal -->
+      <a id="map.emit.systemSection"></a><br>The start of the start page: what the repository is (the system level of C4), under its manifest name. The words come from the README or a manifest, named after them, else from a model's brief with its origin; without either, a dash and how to ask for a brief.
+      - calls [map.emit.descriptionText](map.md#map.emit.descriptionText), [map.emit.ref](map.md#map.emit.ref)
+    - fn [index](../../src/emit.ts#L218) (r: Render) → string[] <!-- internal -->
       <a id="map.emit.index"></a><br>One paragraph per first letter: every module and class of the repository (packages left out), by name.
       - calls [map.emit.nameOf](map.md#map.emit.nameOf), [base.span.compareText](base.md#base.span.compareText), [map.emit.anchorOf](map.md#map.emit.anchorOf)
-    - fn [childrenByParent](../../src/emit.ts#L222) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
+    - fn [childrenByParent](../../src/emit.ts#L237) (snapshot: AnalysisSnapshot) → Map<string, string[]> <!-- internal -->
       <a id="map.emit.childrenByParent"></a><br>Groups node IDs from `snapshot.nodes` under their parent by splitting each dotted ID at its last dot, skipping IDs without a dot. Used by [`map.emit.renderMap`](map.md#map.emit.renderMap) and [`map.emit.renderExplainedMap`](map.md#map.emit.renderExplainedMap) to build the tree. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [sortIds](../../src/emit.ts#L235) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
+    - fn [sortIds](../../src/emit.ts#L250) (snapshot: AnalysisSnapshot, ids: readonly string[]) → string[] <!-- internal -->
       <a id="map.emit.sortIds"></a><br>Returns a copy of the ID list ordered by each node's source file (falling back to the name from [`map.emit.nameOf`](map.md#map.emit.nameOf) when the node is missing in the snapshot), then by line number. Used by [`map.emit.contents`](map.md#map.emit.contents), [`map.emit.renderLayers`](map.md#map.emit.renderLayers), and [`map.emit.renderModule`](map.md#map.emit.renderModule) to give stable… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.nameOf](map.md#map.emit.nameOf)
-    - fn [nameOf](../../src/emit.ts#L245) (id: string) → string <!-- internal -->
+    - fn [nameOf](../../src/emit.ts#L260) (id: string) → string <!-- internal -->
       <a id="map.emit.nameOf"></a><br>Returns the substring after the last dot in a dotted node ID, giving the bare local name (or the whole string if there is no dot). Used by [`map.emit.renderDecl`](map.md#map.emit.renderDecl), [`map.emit.renderModule`](map.md#map.emit.renderModule), [`map.emit.sortIds`](map.md#map.emit.sortIds), and [`map.emit.index`](map.md#map.emit.index) when rendering and ordering output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [linkedName](../../src/emit.ts#L249) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
+    - fn [linkedName](../../src/emit.ts#L264) (mapDir: string, node: SnapshotNode, name: string) → string <!-- internal -->
       <a id="map.emit.linkedName"></a><br>Wraps a display name in a Markdown link pointing at the node's source location, built via [`map.emit.codeHref`](map.md#map.emit.codeHref). Returns the bare name when the node lacks a file or line. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.codeHref](map.md#map.emit.codeHref)
-    - fn [renderModule](../../src/emit.ts#L254) (r: Render, id: string, depth: number) → string <!-- internal -->
+    - fn [renderModule](../../src/emit.ts#L269) (r: Render, id: string, depth: number) → string <!-- internal -->
       <a id="map.emit.renderModule"></a><br>Produces the indented markdown block for one module in the map: a linked heading via [`map.emit.linkedName`](map.md#map.emit.linkedName) plus description from [`map.emit.describe`](map.md#map.emit.describe), one line per dependency edge from [`map.emit.depsOf`](map.md#map.emit.depsOf), then its sorted children, recursing for sub-modules and delegating other… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.depsOf](map.md#map.emit.depsOf), [map.emit.ref](map.md#map.emit.ref), [map.emit.sortIds](map.md#map.emit.sortIds), [map.emit.renderDecl](map.md#map.emit.renderDecl)
-    - fn [edgesFrom](../../src/emit.ts#L277) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
+    - fn [edgesFrom](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → readonly SnapshotEdge[] <!-- internal -->
       <a id="map.emit.edgesFrom"></a><br>Returns all edges whose source is the given id, building and memoizing a per-snapshot source→edges map on first use. Serves [`map.emit.depsOf`](map.md#map.emit.depsOf) and [`map.emit.renderDecl`](map.md#map.emit.renderDecl) as their edge lookup. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [depsOf](../../src/emit.ts#L292) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
+    - fn [depsOf](../../src/emit.ts#L307) (snapshot: AnalysisSnapshot, id: string) → SnapshotEdge[] <!-- internal -->
       <a id="map.emit.depsOf"></a><br>One line per dependency alias: an import and a re-export of one module are one dependency with two edges.
       - calls [map.emit.edgesFrom](map.md#map.emit.edgesFrom)
-    - fn [renderDecl](../../src/emit.ts#L300) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
+    - fn [renderDecl](../../src/emit.ts#L315) (r: Render, id: string, node: SnapshotNode, depth: number) → string <!-- internal -->
       <a id="map.emit.renderDecl"></a><br>Builds one indented markdown bullet for a declaration: a `fn`/`type` keyword, a linked name via [`map.emit.linkedName`](map.md#map.emit.linkedName), its signature, an internal marker, and the description from [`map.emit.describe`](map.md#map.emit.describe). Then appends a "calls" line listing deduplicated resolved, non-self… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.emit.linkedName](map.md#map.emit.linkedName), [map.emit.nameOf](map.md#map.emit.nameOf), [map.emit.describe](map.md#map.emit.describe), [map.emit.edgesFrom](map.md#map.emit.edgesFrom), [map.emit.ref](map.md#map.emit.ref)
   - module [explanations](../../src/explanations.ts#L1)
@@ -164,41 +167,50 @@
     - node [external.node](external.md#external.node)
     - brief [base.brief](base.md#base.brief)
     - config [base.config](base.md#base.config)
+    - graph [map.graph](map.md#map.graph)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [ExplanationDetail](../../src/explanations.ts#L14) = "short" | "full" | "brief"
+    - type [ExplanationDetail](../../src/explanations.ts#L15) = "short" | "full" | "brief"
       <a id="map.explanations.ExplanationDetail"></a><br>`short` and `full` answer `explain <id> --llm`; `brief` is the one or two sentences of the explained map.
-    - type [StoredExplanation](../../src/explanations.ts#L17)
+    - type [StoredExplanation](../../src/explanations.ts#L18)
       <a id="map.explanations.StoredExplanation"></a><br>An explanation a model wrote, with the header it is saved under.
-    - fn [isStoredExplanation](../../src/explanations.ts#L31) (text: string) → boolean
+    - fn [isStoredExplanation](../../src/explanations.ts#L32) (text: string) → boolean
       <a id="map.explanations.isStoredExplanation"></a><br>A file `explain --llm` wrote: the model's text under keylang's header, not keylang Markdown to parse or format.
-    - fn [parseStoredExplanation](../../src/explanations.ts#L36) (text: string) → StoredExplanation | null
+    - fn [parseStoredExplanation](../../src/explanations.ts#L37) (text: string) → StoredExplanation | null
       <a id="map.explanations.parseStoredExplanation"></a><br>The saved form; null for a file keylang did not write, which is not an explanation it can date.
-    - fn [formatStoredExplanation](../../src/explanations.ts#L42) (e: StoredExplanation) → string
+    - fn [formatStoredExplanation](../../src/explanations.ts#L43) (e: StoredExplanation) → string
       <a id="map.explanations.formatStoredExplanation"></a><br>Serializes a stored explanation into the on-disk text form: an HTML comment header carrying agent, date, closure, lang and detail fields, followed by the explanation body and a trailing newline. Used by [`operations.operations.runExplainBatch`](operations.md#operations.operations.runExplainBatch) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [explainDir](../../src/explanations.ts#L47) (config: Pick<Config, "dir">) → string
+    - fn [explainDir](../../src/explanations.ts#L48) (config: Pick<Config, "dir">) → string
       <a id="map.explanations.explainDir"></a><br>Where explanations are saved, relative to the root: `<dir>/explain`, committed next to the map.
-    - fn [explanationPath](../../src/explanations.ts#L55) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
+    - fn [explanationPath](../../src/explanations.ts#L56) (config: Pick<Config, "dir">, id: string, detail: ExplanationDetail) → string
       <a id="map.explanations.explanationPath"></a><br>File of an explanation relative to the root: `<dir>/explain/<id>.md`, a brief in `<dir>/explain/brief/<id>.md`.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [readStoredExplanation](../../src/explanations.ts#L59) (root: string, rel: string) → StoredExplanation | null
+    - fn [readStoredExplanation](../../src/explanations.ts#L60) (root: string, rel: string) → StoredExplanation | null
       <a id="map.explanations.readStoredExplanation"></a><br>Joins the root and relative path, and if that file exists reads it as UTF-8 and hands the text to [`map.explanations.parseStoredExplanation`](map.md#map.explanations.parseStoredExplanation); otherwise returns null without touching disk further. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.explanations.parseStoredExplanation](map.md#map.explanations.parseStoredExplanation)
-    - fn [storedIds](../../src/explanations.ts#L65) (root: string, dir: string) → string[]
+    - fn [storedIds](../../src/explanations.ts#L66) (root: string, dir: string) → string[]
       <a id="map.explanations.storedIds"></a><br>IDs with a saved file in `dir` (relative to the root), sorted.
-    - fn [loadBriefs](../../src/explanations.ts#L75) (config: Config) → Map<string, StoredExplanation>
+    - fn [loadBriefs](../../src/explanations.ts#L76) (config: Config) → Map<string, StoredExplanation>
       <a id="map.explanations.loadBriefs"></a><br>Briefs saved under `<dir>/explain/brief/`, by ID. A file without keylang's header is not one.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir), [map.explanations.storedIds](map.md#map.explanations.storedIds), [map.explanations.readStoredExplanation](map.md#map.explanations.readStoredExplanation)
-    - fn [snapshotBaseline](../../src/explanations.ts#L95) (snapshot: AnalysisSnapshot, id: string) → string | null
+    - fn [snapshotBaseline](../../src/explanations.ts#L96) (snapshot: AnalysisSnapshot, id: string) → string | null
       <a id="map.explanations.snapshotBaseline"></a><br>The baseline an explanation of `id` is compared with: the closure fingerprint of a fn or type; for a module, class or layer, which has no closure of its own, a hash of its dependencies and of the closures of every node under it, so a change inside makes its explanation stale.…
       - calls [map.explanations.lowerBound](map.md#map.explanations.lowerBound)
-    - fn [lowerBound](../../src/explanations.ts#L117) (sorted: readonly string[], key: string) → number <!-- internal -->
+    - fn [lowerBound](../../src/explanations.ts#L118) (sorted: readonly string[], key: string) → number <!-- internal -->
       <a id="map.explanations.lowerBound"></a><br>Binary-searches a lexicographically sorted string array for the first index whose element is not less than the given key, returning the array length if none qualifies. [`map.explanations.snapshotBaseline`](map.md#map.explanations.snapshotBaseline) uses it to locate an id's insertion point in a snapshot's ordered keys. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [NodeExplanation](../../src/explanations.ts#L129)
+    - fn [ownLayers](../../src/explanations.ts#L138) (snapshot: AnalysisSnapshot) → string[]
+      <a id="map.explanations.ownLayers"></a><br>Layers of the snapshot that are the repository's own, sorted: packages outside it are left out.
+    - fn [systemBaseline](../../src/explanations.ts#L149) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>) → string
+      <a id="map.explanations.systemBaseline"></a><br>The baseline of the repository's brief: its layers and what the explained map says about each. A new layer or a rewritten layer brief makes the repository's brief stale; a change of code below a layer does not.
+      - calls [map.explanations.ownLayers](map.md#map.explanations.ownLayers), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
+    - type [NodeExplanation](../../src/explanations.ts#L155)
       <a id="map.explanations.NodeExplanation"></a><br>What a node is, in plain words, and where the words come from.
-    - fn [explanationOf](../../src/explanations.ts#L145) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
+    - fn [explanationOf](../../src/explanations.ts#L173) (snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string) → NodeExplanation | null
       <a id="map.explanations.explanationOf"></a><br>The explanation of a node: its documentation comment, else its saved brief (fresh or stale), else null. Never a `short` or `full` explanation: those answer a question about one node, not a line of the map.
-      - calls [base.brief.briefOf](base.md#base.brief.briefOf), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline)
-    - fn [modelName](../../src/explanations.ts#L156) (agent: string) → string
+      - calls [map.explanations.briefExplanation](map.md#map.explanations.briefExplanation), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline)
+    - fn [briefExplanation](../../src/explanations.ts#L185) (brief: StoredExplanation | undefined, baseline: () => string | null) → NodeExplanation | null <!-- internal -->
+      <a id="map.explanations.briefExplanation"></a>
+      - calls [base.brief.briefOf](base.md#base.brief.briefOf)
+    - fn [modelName](../../src/explanations.ts#L192) (agent: string) → string
       <a id="map.explanations.modelName"></a><br>The model of an agent, as the map shows it: `claude-sonnet-5` for `anthropic:claude-sonnet-5`.
   - module [exports](../../src/exports.ts#L1)
     <a id="map.exports"></a><br>Export tables: the symbol each public name of a module stands for, following aliases, re-export chains, namespaces and `export *`. Plain data in and out: the graph builds the rows from facts, call resolution and the snapshot's `exports` read the result, so both see the same…
@@ -490,7 +502,10 @@
   - module [map](../../src/map.ts#L1)
     <a id="map.map"></a><br>`keylang map`: source files → facts → graph → map/*.md + .keylang/index.json.
     - node [external.node](external.md#external.node)
+    - smol-toml [external.smol-toml](external.md#external.smol-toml)
+    - brief [base.brief](base.md#base.brief)
     - config [base.config](base.md#base.config)
+    - glob [base.glob](base.md#base.glob)
     - languages [base.languages](base.md#base.languages)
     - span [base.span](base.md#base.span)
     - facts [extract.facts](extract.md#extract.facts)
@@ -501,68 +516,79 @@
     - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
-    - type [MapResult](../../src/map.ts#L18)
+    - type [MapResult](../../src/map.ts#L21)
       <a id="map.map.MapResult"></a><br>Bundles everything one map run produces: the `Graph`, generated map files and optional explanations keyed by file name, the `AnalysisSnapshot`, skip and fact-cache reuse counts, and the serialized fact cache text for the next run. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+    - fn [generateMap](../../src/map.ts#L41) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process (`keylang map` only; the commit step writes it, generation writes nothing); `overlay` gives unsaved text of source files by absolute path (the language server).
-      - calls [base.config.sourceTree](base.md#base.config.sourceTree), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [base.config.excludedSourceFiles](base.md#base.config.excludedSourceFiles), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [base.config.outsideSourceFiles](base.md#base.config.outsideSourceFiles), [map.graph.buildGraph](map.md#map.graph.buildGraph), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
-    - fn [opaqueFacts](../../src/map.ts#L121) (path: string) → FileFacts <!-- internal -->
+      - calls [base.config.sourceTree](base.md#base.config.sourceTree), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [base.config.excludedSourceFiles](base.md#base.config.excludedSourceFiles), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [base.config.outsideSourceFiles](base.md#base.config.outsideSourceFiles), [map.graph.buildGraph](map.md#map.graph.buildGraph), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.map.readRepositoryDocs](map.md#map.map.readRepositoryDocs), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
+    - fn [readRepositoryDocs](../../src/map.ts#L127) (config: Config) → RepositoryDocs <!-- internal -->
+      <a id="map.map.readRepositoryDocs"></a><br>What the repository writes about itself (ADR 0014, the system and container levels of C4): the root README or a root manifest, and the README in each layer's own directory. Read on every analysis, so an edit shows in the next map without touching `snapshotId`.
+      - calls [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [map.map.readSystemDoc](map.md#map.map.readSystemDoc)
+    - fn [readSystemDoc](../../src/map.ts#L138) (root: string) → SystemDoc <!-- internal -->
+      <a id="map.map.readSystemDoc"></a>
+      - calls [map.map.manifestAbout](map.md#map.map.manifestAbout), [map.map.readSource](map.md#map.map.readSource), [map.map.readReadme](map.md#map.map.readReadme), [base.brief.readmeBrief](base.md#base.brief.readmeBrief), [base.brief.briefOf](base.md#base.brief.briefOf)
+    - fn [readReadme](../../src/map.ts#L152) (root: string, dir: string) → { path: string; text: string } | null <!-- internal -->
+      <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
+      - calls [map.map.readSource](map.md#map.map.readSource)
+    - fn [manifestAbout](../../src/map.ts#L174) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
+      <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the manifest's packages.
+    - fn [opaqueFacts](../../src/map.ts#L200) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readSource](../../src/map.ts#L126) (abs: string) → string | null <!-- internal -->
+    - fn [readSource](../../src/map.ts#L205) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
-    - fn [extractGuarded](../../src/map.ts#L140) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L219) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
-    - type [MapDiff](../../src/map.ts#L151)
+    - type [MapDiff](../../src/map.ts#L230)
       <a id="map.map.MapDiff"></a><br>Describes the result of comparing generated output against the target directory: paths of existing files the generator does not own, and paths of generated files that are missing, changed, or extra. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [targets](../../src/map.ts#L162) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [targets](../../src/map.ts#L241) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
-    - fn [extraGenerated](../../src/map.ts#L170) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L249) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there.
       - calls [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [mapConflicts](../../src/map.ts#L178) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L257) (config: Config, r: MapResult) → string[]
       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - type [MapArtifact](../../src/map.ts#L190) = "map" | "explained" | "index" | "facts"
+    - type [MapArtifact](../../src/map.ts#L269) = "map" | "explained" | "index" | "facts"
       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
-    - type [MapStep](../../src/map.ts#L193)
+    - type [MapStep](../../src/map.ts#L272)
       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
-    - type [PlannedStep](../../src/map.ts#L199) extends MapStep <!-- internal -->
+    - type [PlannedStep](../../src/map.ts#L278) extends MapStep <!-- internal -->
       <a id="map.map.PlannedStep"></a><br>Extends `MapStep` with the bytes a write step should produce and a precondition snapshot: the file's expected current content, null for absent, or undefined when no check applies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MapPlan](../../src/map.ts#L215)
+    - type [MapPlan](../../src/map.ts#L294)
       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
-    - type [SourceInputs](../../src/map.ts#L227)
+    - type [SourceInputs](../../src/map.ts#L306)
       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
-    - type [MapInputs](../../src/map.ts#L235) extends SourceInputs <!-- internal -->
+    - type [MapInputs](../../src/map.ts#L314) extends SourceInputs <!-- internal -->
       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
-    - fn [sourceInputs](../../src/map.ts#L241) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - fn [sourceInputs](../../src/map.ts#L320) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull)
-    - fn [sourceInputProblems](../../src/map.ts#L250) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L329) (config: Config, inputs: SourceInputs, subject: string) → string[]
       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [CommittedStep](../../src/map.ts#L269) extends MapStep
+    - type [CommittedStep](../../src/map.ts#L348) extends MapStep
       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
-    - type [MapCommit](../../src/map.ts#L274)
+    - type [MapCommit](../../src/map.ts#L353)
       <a id="map.map.MapCommit"></a><br>Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planMap](../../src/map.ts#L285) (config: Config, r: MapResult) → MapPlan
+    - fn [planMap](../../src/map.ts#L364) (config: Config, r: MapResult) → MapPlan
       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [mapPlanProblems](../../src/map.ts#L319) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L398) (plan: MapPlan) → string[]
       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
-    - fn [commitMap](../../src/map.ts#L338) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L417) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
-    - fn [briefsKey](../../src/map.ts#L367) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L446) (config: Config) → string <!-- internal -->
       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-    - fn [readOrNull](../../src/map.ts#L372) (abs: string) → string | null <!-- internal -->
+    - fn [readOrNull](../../src/map.ts#L451) (abs: string) → string | null <!-- internal -->
       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
-    - fn [diffMap](../../src/map.ts#L381) (config: Config, r: MapResult) → MapDiff
+    - fn [diffMap](../../src/map.ts#L460) (config: Config, r: MapResult) → MapDiff
       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
-    - fn [extractorCode](../../src/map.ts#L403) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L482) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [python-imports](../../src/python-imports.ts#L1)
@@ -637,46 +663,54 @@
     - config [base.config](base.md#base.config)
     - exports [map.exports](map.md#map.exports)
     - brief [base.brief](base.md#base.brief)
+    - glob [base.glob](base.md#base.glob)
     - graph [map.graph](map.md#map.graph)
     - languages [base.languages](base.md#base.languages)
     - scc [check.scc](check.md#check.scc)
     - web-tree-sitter [external.web-tree-sitter](external.md#external.web-tree-sitter)
     - vscode-tree-sitter-wasm [external.vscode-tree-sitter-wasm](external.md#external.vscode-tree-sitter-wasm)
-    - type [Resolution](../../src/snapshot.ts#L18) = "resolved" | "ambiguous" | "unresolved"
+    - type [Resolution](../../src/snapshot.ts#L19) = "resolved" | "ambiguous" | "unresolved"
       <a id="map.snapshot.Resolution"></a><br>A string union naming the three outcomes of resolving a reference in the map snapshot: a single target found, several candidates competing, or no target at all. Used as a tag on snapshot entries to record how each lookup fared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Provenance](../../src/snapshot.ts#L19) = "syntactic"
+    - type [Provenance](../../src/snapshot.ts#L20) = "syntactic"
       <a id="map.snapshot.Provenance"></a><br>A string literal union with a single member, `"syntactic"`, used by snapshot records to tag how a map entry was derived. It admits no other value, so every provenance is currently marked as syntactic. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [EdgeKind](../../src/snapshot.ts#L20) = "import" | "call" | "type" | "reexport"
+    - type [EdgeKind](../../src/snapshot.ts#L21) = "import" | "call" | "type" | "reexport"
       <a id="map.snapshot.EdgeKind"></a><br>Defines the closed set of string tags a snapshot edge can carry: one of four values marking whether the edge records an import, a call, a type reference, or a re-export between two nodes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [SnapshotEdge](../../src/snapshot.ts#L22)
+    - type [SnapshotEdge](../../src/snapshot.ts#L23)
       <a id="map.snapshot.SnapshotEdge"></a><br>Shape of one reference record in a map snapshot: an `EdgeKind` from `source` to a resolved `target` or `candidates`, with file position, source text, `Resolution` and `Provenance`. Optional fields mark import aliases and hook-mediated calls (`via`, `hook`, `site`, `closure`). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [SnapshotExport](../../src/snapshot.ts#L57)
+    - type [SnapshotExport](../../src/snapshot.ts#L58)
       <a id="map.snapshot.SnapshotExport"></a><br>Describes one public name a module exports in the snapshot: the node it resolves to through aliases and re-export chains (or null), its kind, and how it is exported (alias, default, re-export from another module, or namespace). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CoverageItem](../../src/snapshot.ts#L86)
+    - type [CoverageItem](../../src/snapshot.ts#L87)
       <a id="map.snapshot.CoverageItem"></a><br>Describes one entry in a coverage report: a source range in a file plus a `kind` (a `Gap` kind, or a skipped/outside file), a human-readable `reason`, and an optional `source` that produced it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [SnapshotNode](../../src/snapshot.ts#L99)
+    - type [SnapshotNode](../../src/snapshot.ts#L100)
       <a id="map.snapshot.SnapshotNode"></a><br>Shape of one entry in the serialized map: kind, layer, source span, signature and flags, plus dependency, call, fingerprint and closure fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L137)
-      <a id="map.snapshot.AnalysisSnapshot"></a><br>Defines the serialized shape of a full analysis run: a schema tag, snapshot id and timestamp, a manifest recording extractor, grammar versions, resolved config and hashed input files, plus the graph's nodes, edges, exports, coverage items and stats. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [sha256](../../src/snapshot.ts#L162) (text: string) → string
+    - type [SystemDoc](../../src/snapshot.ts#L146)
+      <a id="map.snapshot.SystemDoc"></a><br>What the repository says about itself: the system level of C4. A node of the explained map and the zoom screen, never an ID of the language (ADR 0014).
+    - type [RepositoryDocs](../../src/snapshot.ts#L156)
+      <a id="map.snapshot.RepositoryDocs"></a><br>Text the repository writes about itself and its layers, read at the edge (`map.ts`).
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L162)
+      <a id="map.snapshot.AnalysisSnapshot"></a><br>Defines the serialized shape of a full analysis run: a schema tag, snapshot id and timestamp, a manifest recording extractor, grammar versions, resolved config and hashed input files, plus the graph's nodes, edges, exports, coverage items and stats. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [sha256](../../src/snapshot.ts#L193) (text: string) → string
       <a id="map.snapshot.sha256"></a><br>Hashes the given text with SHA-256 and returns the hex digest. Used across the codebase as the single content-fingerprinting primitive, e.g. by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) and [`operations.operations.hashOrNull`](operations.md#operations.operations.hashOrNull). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [buildSnapshot](../../src/snapshot.ts#L166) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], ) → AnalysisSnapshot
-      <a id="map.snapshot.buildSnapshot"></a><br>Flattens the module graph into sorted node, edge and coverage records, computing a snapshot ID via [`map.snapshot.sha256`](map.md#map.snapshot.sha256) over config, file hashes and resolver inputs. Back-fills dependents and callers, folds gaps and skipped files into coverage, then runs [`map.snapshot.closures`](map.md#map.snapshot.closures). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.snapshot.docBrief](map.md#map.snapshot.docBrief), [map.snapshot.closures](map.md#map.snapshot.closures)
-    - fn [closures](../../src/snapshot.ts#L376) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
+    - fn [buildSnapshot](../../src/snapshot.ts#L197) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, ) → AnalysisSnapshot
+      <a id="map.snapshot.buildSnapshot"></a><br>Flattens the module graph into sorted node, edge and coverage records, computing a snapshot ID via [`map.snapshot.sha256`](map.md#map.snapshot.sha256) over config, file hashes and resolver inputs. Back-fills dependents and callers, folds gaps and skipped files into coverage, then runs [`map.snapshot.closures`](map.md#map.snapshot.closures). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.snapshot.docBrief](map.md#map.snapshot.docBrief), [map.snapshot.indexDoc](map.md#map.snapshot.indexDoc), [base.glob.globDirectory](base.md#base.glob.globDirectory), [map.snapshot.closures](map.md#map.snapshot.closures)
+    - fn [closures](../../src/snapshot.ts#L409) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
       <a id="map.snapshot.closures"></a><br>`closure` of every fn and type, bottom-up over strongly connected components of the call graph: a component hashes its members' own fingerprints with the closures it calls outside itself, so a cycle terminates and every member of it changes together.
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.scc.components](check.md#check.scc.components), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - fn [docBrief](../../src/snapshot.ts#L419) (doc: string | null | undefined) → string | null <!-- internal -->
+    - fn [docBrief](../../src/snapshot.ts#L452) (doc: string | null | undefined) → string | null <!-- internal -->
       <a id="map.snapshot.docBrief"></a><br>Returns null for an empty, null, or undefined doc string; otherwise hands the text to [`base.brief.briefOf`](base.md#base.brief.briefOf) and returns its result. Used by [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) to produce short summaries for the snapshot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [exportRow](../../src/snapshot.ts#L424) (entry: ExportEntry) → SnapshotExport <!-- internal -->
+    - fn [indexDoc](../../src/snapshot.ts#L461) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
+      <a id="map.snapshot.indexDoc"></a><br>The doc comment of the index module right in a layer's own directory (`src/tui/index.ts`, `mod.rs`, `__init__.py`: the index names of its language), as a brief.
+      - calls [base.languages.languageOf](base.md#base.languages.languageOf), [map.snapshot.docBrief](map.md#map.snapshot.docBrief)
+    - fn [exportRow](../../src/snapshot.ts#L473) (entry: ExportEntry) → SnapshotExport <!-- internal -->
       <a id="map.snapshot.exportRow"></a><br>A row of the graph's export table, with its fields in a fixed order.
-    - fn [compareCoverage](../../src/snapshot.ts#L437) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L486) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       <a id="map.snapshot.compareCoverage"></a><br>Orders two coverage entries for stable sorting: first by file path via [`map.snapshot.cmp`](map.md#map.snapshot.cmp), then numerically by line, then by kind, and finally by reason, returning the first nonzero comparison. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.snapshot.cmp](map.md#map.snapshot.cmp)
-    - fn [cmp](../../src/snapshot.ts#L441) (a: string, b: string) → number <!-- internal -->
+    - fn [cmp](../../src/snapshot.ts#L490) (a: string, b: string) → number <!-- internal -->
       <a id="map.snapshot.cmp"></a><br>Compares two strings by plain lexical ordering and returns -1, 1, or 0, giving [`map.snapshot.compareCoverage`](map.md#map.snapshot.compareCoverage) a stable tiebreaker when it sorts coverage items. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [grammarVersions](../../src/snapshot.ts#L445) () → Record<string, string>
+    - fn [grammarVersions](../../src/snapshot.ts#L494) () → Record<string, string>
       <a id="map.snapshot.grammarVersions"></a><br>Reads the installed versions of the two tree-sitter packages from their package.json files via a CommonJS require, substituting "unknown" when a package or its version is missing. [`map.snapshot.buildSnapshot`](map.md#map.snapshot.buildSnapshot) and [`map.map.generateMap`](map.md#map.map.generateMap) use the result so the snapshot identity… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [trace-plan](../../src/trace-plan.ts#L1)
     <a id="map.trace-plan"></a><br>The functions of one flow that a trace adapter instruments: the flow's `trigger` and `step` IDs that are functions of a fresh snapshot, with the file, position and file hash the snapshot saw. Adapters of languages without Node hooks (Python, Rust) read this plan instead of the…

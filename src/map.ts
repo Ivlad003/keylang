@@ -3,7 +3,10 @@
 import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseToml } from "smol-toml";
+import { briefOf, readmeBrief } from "./brief.ts";
 import { CONFIG_FILE, excludedSourceFiles, isAnalysed, outsideSourceFiles, sourceTree, toPosix, type Config } from "./config.ts";
+import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
@@ -13,7 +16,7 @@ import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot } from "./snapshot.ts";
+import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
   graph: Graph;
@@ -103,13 +106,89 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
-  ]);
+  ], readRepositoryDocs(config));
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);
     explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
   }
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
+}
+
+/** Root manifests a repository names and describes itself in, in the order they are asked. */
+const ROOT_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as const;
+
+/**
+ * What the repository writes about itself (ADR 0014, the system and container
+ * levels of C4): the root README or a root manifest, and the README in each
+ * layer's own directory. Read on every analysis, so an edit shows in the
+ * next map without touching `snapshotId`.
+ */
+function readRepositoryDocs(config: Config): RepositoryDocs {
+  const layers = new Map<string, string>();
+  for (const [layer, globs] of config.layers) {
+    const dir = globDirectory(globs);
+    const readme = dir === null ? null : readReadme(config.root, dir);
+    const brief = readme === null ? null : readmeBrief(readme.text);
+    if (brief !== null) layers.set(layer, brief);
+  }
+  return { system: readSystemDoc(config.root), layers };
+}
+
+function readSystemDoc(root: string): SystemDoc {
+  const about = ROOT_MANIFESTS.map((file) => ({ file, ...manifestAbout(file, readSource(join(root, file))) }));
+  const name = about.find((m) => m.name !== null)?.name ?? null;
+  const readme = readReadme(root, "");
+  const fromReadme = readme === null ? null : readmeBrief(readme.text);
+  if (readme !== null && fromReadme !== null) return { name, brief: fromReadme, source: readme.path };
+  for (const m of about) {
+    const brief = m.description === null ? null : briefOf(m.description);
+    if (brief !== null) return { name, brief, source: m.file };
+  }
+  return { name, brief: null, source: null };
+}
+
+/** `README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one. */
+function readReadme(root: string, dir: string): { path: string; text: string } | null {
+  let names: string[];
+  try {
+    names = readdirSync(join(root, dir), { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.toLowerCase() === "readme.md")
+      .map((e) => e.name)
+      .sort(compareText);
+  } catch {
+    return null;
+  }
+  const name = names[0];
+  if (name === undefined) return null;
+  const text = readSource(join(root, dir, name));
+  return text === null ? null : { path: dir === "" ? name : `${dir}/${name}`, text };
+}
+
+/**
+ * `name` and `description` of a root manifest: `package.json` at the top,
+ * `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of
+ * `pyproject.toml`. A manifest that does not parse gives neither: the
+ * analysis reports it where it reads the manifest's packages.
+ */
+function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | null): { name: string | null; description: string | null } {
+  if (text === null) return { name: null, description: null };
+  let data: unknown;
+  try {
+    data = file === "package.json" ? JSON.parse(text) : parseToml(text);
+  } catch {
+    return { name: null, description: null };
+  }
+  const field = (value: unknown, key: string): unknown => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[key] : undefined);
+  const sections = file === "Cargo.toml" ? [field(data, "package"), field(field(data, "workspace"), "package")] : file === "pyproject.toml" ? [field(data, "project")] : [data];
+  const pick = (key: string): string | null => {
+    for (const section of sections) {
+      const value = field(section, key);
+      if (typeof value === "string" && value.trim() !== "") return value.trim();
+    }
+    return null;
+  };
+  return { name: pick("name"), description: pick("description") };
 }
 
 /** The explained map's directory under the spec directory. */

@@ -7,7 +7,12 @@
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
       - calls base.brief.capText, base.brief.firstSentences
     - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
-    - fn [capText](../../src/brief.ts#L37) (text: string, max: number) → string
+    - fn [readmeBrief](../../src/brief.ts#L45) (markdown: string) → string | null
+      - calls base.brief.proseParagraphs, base.brief.plainInline, base.brief.words, base.brief.briefOf
+    - fn [proseParagraphs](../../src/brief.ts#L54) (markdown: string) → string[] <!-- internal -->
+    - fn [plainInline](../../src/brief.ts#L106) (text: string) → string <!-- internal -->
+    - fn [words](../../src/brief.ts#L118) (text: string) → number <!-- internal -->
+    - fn [capText](../../src/brief.ts#L123) (text: string, max: number) → string
   - module [config](../../src/config.ts#L1)
     - node external.node
     - glob base.glob
@@ -102,7 +107,8 @@
     - fn [escape](../../src/glob.ts#L68) (s: string) → string <!-- internal -->
     - fn [matchesGlob](../../src/glob.ts#L72) (path: string, glob: string) → boolean
       - calls base.glob.globToRegExp
-    - fn [globPrefix](../../src/glob.ts#L77) (glob: string) → string
+    - fn [globDirectory](../../src/glob.ts#L82) (globs: readonly string[]) → string | null
+    - fn [globPrefix](../../src/glob.ts#L93) (glob: string) → string
   - module [languages](../../src/languages.ts#L1)
     - type [LanguageInfo](../../src/languages.ts#L5)
     - type [Language](../../src/languages.ts#L29) = keyof typeof LANGUAGES

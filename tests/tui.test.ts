@@ -9390,7 +9390,8 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
     ["application.purchase.buy", "stale"],
     ["presentation.terminal.checkout", "missing"],
   ]);
-  assert.deepEqual(missing.payload.waves.map((wave) => wave.level), ["fn/type", "class/module", "layer"]);
+  // The checkout fixture has no README and no manifest description: the repository itself is asked last (c4-zoom/01).
+  assert.deepEqual(missing.payload.waves.map((wave) => wave.level), ["fn/type", "class/module", "layer", "system"]);
   assert.deepEqual([missing.payload.jobs, missing.payload.limit, missing.payload.skipped, missing.payload.gone], [4, null, { documented: 1, fresh: 1 }, ["domain.order.ghost"]]);
   assert.ok(missing.payload.estimate !== null && missing.payload.estimate.input > 0 && missing.payload.estimate.output === ids.length * 80);
   s.send(KEY.f6);
@@ -9478,6 +9479,7 @@ test("tui: explanations to do — the stale saved list and the missing/stale bri
 
 /** The node a brief request is about: the first line of its summary. */
 function askedId(prompt: string): string {
+  if (prompt.startsWith("Repository: ")) return "@system";
   return /^Node:\n(?:planned )?\S+ (\S+)/.exec(prompt)?.[1] ?? "?";
 }
 
@@ -9565,11 +9567,12 @@ test("tui: the brief batch plans again and asks jobs at a time within a wave, bo
   }
   await s.app.idle();
   assert.ok(Math.max(...inFlight) === 2, inFlight.join(" "));
-  assert.ok([...progress].some((text) => /^\d+\/12 · \S+$/.test(text)), [...progress].join(" | "));
+  assert.ok([...progress].some((text) => /^\d+\/13 · \S+$/.test(text)), [...progress].join(" | "));
   assert.equal(s.app.state.results.open, false, "progress and the result never open F6");
-  // Bottom-up: the functions, then the modules, then the layers.
+  // Bottom-up: the functions, then the modules, then the layers, then the repository itself.
   const asked = model.prompts.map(askedId);
-  assert.deepEqual([asked.slice(0, 4).sort(), asked.slice(4, 8).sort(), asked.slice(8).sort()], [BATCH_FNS, BATCH_MODULES, BATCH_LAYERS]);
+  assert.deepEqual([asked.slice(0, 4).sort(), asked.slice(4, 8).sort(), asked.slice(8, 12).sort(), asked.slice(12)], [BATCH_FNS, BATCH_MODULES, BATCH_LAYERS, ["@system"]]);
+  assert.match(model.prompts.at(-1)!, /^- layer `domain`: Brief of domain\.$/m, "the repository's prompt carries the new layer briefs");
   const promptOf = (id: string): string => model.prompts.find((prompt) => askedId(prompt) === id)!;
   assert.match(promptOf("application.purchase"), /^- fn `application\.purchase\.buy`: Brief of application\.purchase\.buy\.$/m);
   assert.match(promptOf("application"), /^- module `application\.purchase`: Brief of application\.purchase\.$/m);
@@ -9577,22 +9580,23 @@ test("tui: the brief batch plans again and asks jobs at a time within a wave, bo
   const batch = explainBatchRecord(s.app);
   const reason = `${blocked}: a directory`;
   assert.deepEqual([batch.status, batch.exitCode, batch.payload.stopped, batch.payload.failed, batch.payload.notStarted], ["completed", 1, null, [{ id: "presentation.terminal.checkout", reason }], []]);
-  assert.equal(batch.payload.done.length, 11);
+  assert.equal(batch.payload.done.length, 12);
   assert.deepEqual(batch.written, batch.payload.done.map((entry) => entry.file));
-  assert.equal(batch.payload.text, `explained 11 of 12 node(s)\nfailed: presentation.terminal.checkout: ${reason}\n`);
+  assert.equal(batch.payload.text, `explained 12 of 13 node(s)\nfailed: presentation.terminal.checkout: ${reason}\n`);
   const today = new Date().toISOString().slice(0, 10);
   const closure = currentBaseline(s.app.state.analysis!, "application.purchase.buy")!;
   assert.equal(readFileSync(join(root, "keylang/explain/brief/application.purchase.buy.md"), "utf8"), `<!-- keylang:explain agent=anthropic:claude-opus-5 date=${today} closure=${closure} lang=en detail=brief -->\nBrief of application.purchase.buy.\n`);
   assert.equal(s.app.state.briefs.get("domain")?.text, "Brief of domain.", "the session reads the new briefs");
   assert.deepEqual(outsideExplain(root), before, "only briefs are written: no map, spec, code or cache");
-  assert.match(s.app.state.message ?? "", /explain --missing --llm --jobs 2: partial: 11 of 12 brief\(s\) written, 1 failed · code 1 · F6 shows the report/);
+  assert.match(s.app.state.message ?? "", /explain --missing --llm --jobs 2: partial: 12 of 13 brief\(s\) written, 1 failed · code 1 · F6 shows the report/);
   s.send(KEY.f6);
   const text = s.text();
   assert.match(text, /Explain briefs with the model · keylang explain --missing --llm --jobs 2 · lang en · agent anthropic:claude-opus-5/);
-  assert.match(text, /12 planned · 11 written · 1 failed · 0 not started · jobs 2 · limit none/);
+  assert.match(text, /13 planned · 12 written · 1 failed · 0 not started · jobs 2 · limit none/);
   assert.match(text, /application\.purchase\.buy \(fn\/type\) · written keylang\/explain\/brief\/application\.purchase\.buy\.md/);
   assert.match(text, /presentation\.terminal\.checkout \(fn\/type\) · failed: keylang\/explain\/brief\/presentation\.terminal\.checkout\.md: a directory/);
   assert.match(text, /── layer ──/);
+  assert.match(text, /── system ──/);
   // Enter on a node opens its code.
   s.send(KEY.tab);
   s.send(KEY.enter);
@@ -9660,12 +9664,12 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   assert.deepEqual([record.status, cancelled.status, cancelled.exitCode, cancelled.payload.stopped], ["cancelled", "cancelled", null, "cancelled"]);
   assert.deepEqual(cancelled.payload.done, [{ id: "application.purchase.buy", file: "keylang/explain/brief/application.purchase.buy.md" }]);
   assert.deepEqual(cancelled.written, ["keylang/explain/brief/application.purchase.buy.md"]);
-  assert.deepEqual(cancelled.payload.notStarted, [...BATCH_FNS.slice(1), ...BATCH_MODULES, ...BATCH_LAYERS]);
+  assert.deepEqual(cancelled.payload.notStarted, [...BATCH_FNS.slice(1), ...BATCH_MODULES, ...BATCH_LAYERS, "@system"]);
   assert.deepEqual(readdirSync(join(root, "keylang/explain/brief")), ["application.purchase.buy.md"], "no pending brief is written");
   model.release();
   await sleep(50);
   assert.equal(model.prompts.length, 2, "no request starts after Cancel");
-  assert.match(s.app.state.message ?? "", /cancelled: 1 of 12 brief\(s\) written, 11 not started/);
+  assert.match(s.app.state.message ?? "", /cancelled: 1 of 13 brief\(s\) written, 12 not started/);
   s.send(KEY.f6);
   assert.match(s.text(), /cancelled: no request was started after it, the ones in flight were closed; the briefs written before stay/);
   await esc(s.send);
@@ -9684,9 +9688,9 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   }
   await s.app.idle();
   const rest = explainBatchRecord(s.app);
-  assert.deepEqual([rest.status, rest.exitCode, rest.payload.done.length], ["completed", 0, 11]);
+  assert.deepEqual([rest.status, rest.exitCode, rest.payload.done.length], ["completed", 0, 12]);
   assert.ok(!model.prompts.slice(2).map(askedId).includes("application.purchase.buy"));
-  assert.equal(model.prompts.length, 13);
+  assert.equal(model.prompts.length, 14);
 
   // A source changed while the model answers: nothing is written, no further request, the new bytes stay.
   rmSync(join(root, "keylang/explain"), { recursive: true });
@@ -9699,7 +9703,7 @@ test("tui: Cancel after the first brief keeps it and writes no other — cancell
   const stopped = await answerAll(model, outdated);
   assert.deepEqual([stopped.status, stopped.exitCode, stopped.written, stopped.payload?.stopped, stopped.payload?.done], ["failed", 1, [], "outdated", []]);
   assert.deepEqual(stopped.payload?.refused, ["src/domain/order.ts: changed on disk while the batch was computed"]);
-  assert.equal(stopped.payload?.notStarted.length, 12);
+  assert.equal(stopped.payload?.notStarted.length, 13);
   assert.equal(model.prompts.length, asks + 1, "no request after the change");
   assert.equal(readFileSync(order, "utf8"), changed);
   assert.ok(!existsSync(join(root, "keylang/explain")), "no brief written");
@@ -9848,7 +9852,7 @@ test("tui: quitting during a brief batch with a brief written and a dirty spec n
   assert.equal(quit, 0, "Cancel and exit is no leave to drop the unsaved text");
   assert.equal(s.app.state.quit, null);
   const message = s.app.state.message ?? "";
-  assert.match(message, /cancelled: 1 of 12 brief\(s\) written, 11 not started/);
+  assert.match(message, /cancelled: 1 of 13 brief\(s\) written, 12 not started/);
   assert.match(message, /written: keylang\/explain\/brief\/application\.purchase\.buy\.md/);
   assert.match(message, /unsaved changes in keylang\/flows\/checkout\.md: Ctrl\+S saves, q or Ctrl\+C again quits/);
   assert.deepEqual(readdirSync(join(root, "keylang/explain/brief")), ["application.purchase.buy.md"], "the written brief stays, no other lands");

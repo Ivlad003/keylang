@@ -7,7 +7,7 @@
 import type { Analysis } from "./analyze.ts";
 import { isCliAgent } from "./config.ts";
 import { currentBaseline, estimateTokens, explainedIds, isStale, planBriefs, readExplanation, type BriefBatch, type BriefLevel, type PlannedBrief } from "./explain-llm.ts";
-import { explanationPath, loadBriefs, snapshotBaseline } from "./explanations.ts";
+import { explanationPath, loadBriefs, snapshotBaseline, SYSTEM_ID } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import { plannedDecl } from "./lsp-features.ts";
 
@@ -109,10 +109,16 @@ export function staleInventory(analysis: Analysis): StaleInventory {
       saved++;
       const file = explanationPath(analysis.config, id, e.detail);
       if (currentBaseline(analysis, id) === null) entries.push({ id, kind, state: "gone", date: e.date, file, again: null, place: null });
-      else if (isStale(analysis, id, e)) entries.push({ id, kind, state: "stale", date: e.date, file, again: `keylang explain ${id} --llm${kind === "brief" ? " --brief" : ""}`, place: nodePlace(analysis, id) });
+      else if (isStale(analysis, id, e)) entries.push({ id, kind, state: "stale", date: e.date, file, again: againCommand(id, kind), place: nodePlace(analysis, id) });
     }
   }
   return { entries, saved };
+}
+
+/** The command that asks again: the repository's brief has no id to name, so its batch asks for it. */
+function againCommand(id: string, kind: "answer" | "brief"): string {
+  if (id === SYSTEM_ID) return "keylang explain --stale --llm";
+  return `keylang explain ${id} --llm${kind === "brief" ? " --brief" : ""}`;
 }
 
 /** `explain --stale` on stdout, byte for byte. */
@@ -132,7 +138,7 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
   const all = planBriefs(analysis, options.batch, briefs);
   const planned = options.limit === null ? all : all.slice(0, options.limit);
   const plan = planned.map((entry): PlannedBriefEntry => ({ ...entry, reason: briefs.has(entry.id) ? "stale" : "missing", place: nodePlace(analysis, entry.id) }));
-  const counts: Record<BriefLevel, number> = { "fn/type": 0, "class/module": 0, layer: 0 };
+  const counts: Record<BriefLevel, number> = { "fn/type": 0, "class/module": 0, layer: 0, system: 0 };
   const waves: { level: BriefLevel; ids: string[] }[] = [];
   let wave: number | null = null;
   for (const entry of plan) {
@@ -167,5 +173,10 @@ export function briefPlan(analysis: Analysis, options: { batch: BriefBatch; limi
 export function briefPlanText(plan: BriefPlan): string {
   if (plan.estimate === null) return plan.plan.map((entry) => `${entry.id} (${entry.level})\n`).join("");
   const { counts, estimate } = plan;
-  return `would explain ${plan.plan.length} node(s): ${counts["fn/type"]} fn/type, ${counts["class/module"]} class/module, ${counts.layer} layer\nestimated tokens: ~${estimate.input} in, ~${estimate.output} out\n`;
+  return `would explain ${plan.plan.length} node(s): ${briefCounts(counts)}\nestimated tokens: ~${estimate.input} in, ~${estimate.output} out\n`;
+}
+
+/** Counts of a plan by level; the repository's own brief is named only when it is planned. */
+export function briefCounts(counts: Record<BriefLevel, number>): string {
+  return `${counts["fn/type"]} fn/type, ${counts["class/module"]} class/module, ${counts.layer} layer${counts.system > 0 ? `, ${counts.system} system` : ""}`;
 }

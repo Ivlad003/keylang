@@ -13,7 +13,16 @@
       - calls [base.brief.capText](base.md#base.brief.capText), [base.brief.firstSentences](base.md#base.brief.firstSentences)
     - fn [firstSentences](../../src/brief.ts#L27) (text: string, count: number) → string <!-- internal -->
       <a id="base.brief.firstSentences"></a><br>Scans the input with the `SENTENCE_END` regex and returns the prefix of the text ending at the `count`-th sentence terminator, or the whole text unchanged if fewer terminators are found; it is used only by [`base.brief.briefOf`](base.md#base.brief.briefOf) to trim a description down to its opening… _(llm · claude · 2026-10-04)_
-    - fn [capText](../../src/brief.ts#L37) (text: string, max: number) → string
+    - fn [readmeBrief](../../src/brief.ts#L45) (markdown: string) → string | null
+      <a id="base.brief.readmeBrief"></a><br>The brief of a README: its first paragraph of prose that reads as a sentence, through `briefOf`. Headings, fenced and indented code, HTML, lists, quotes and tables are passed over; images and badges are dropped, links keep their text, emphasis its words.
+      - calls [base.brief.proseParagraphs](base.md#base.brief.proseParagraphs), [base.brief.plainInline](base.md#base.brief.plainInline), [base.brief.words](base.md#base.brief.words), [base.brief.briefOf](base.md#base.brief.briefOf)
+    - fn [proseParagraphs](../../src/brief.ts#L54) (markdown: string) → string[] <!-- internal -->
+      <a id="base.brief.proseParagraphs"></a><br>Paragraphs of plain text, in order: blocks of non-blank lines that are not another kind of Markdown block.
+    - fn [plainInline](../../src/brief.ts#L106) (text: string) → string <!-- internal -->
+      <a id="base.brief.plainInline"></a><br>The words of an inline Markdown text: images and badges dropped, links as their text, no tags or emphasis marks.
+    - fn [words](../../src/brief.ts#L118) (text: string) → number <!-- internal -->
+      <a id="base.brief.words"></a>
+    - fn [capText](../../src/brief.ts#L123) (text: string, max: number) → string
       <a id="base.brief.capText"></a><br>At most `max` code points: cut at the last space before the limit, then `…`.
   - module [config](../../src/config.ts#L1)
     <a id="base.config"></a><br>`keylang.json`: what to index, how files map to layers, where specs live. Without a config file the layout is guessed from the directory tree (`keylang init` writes that guess down so it can be edited).
@@ -171,7 +180,9 @@
     - fn [matchesGlob](../../src/glob.ts#L72) (path: string, glob: string) → boolean
       <a id="base.glob.matchesGlob"></a><br>Converts the glob pattern into a regular expression via [`base.glob.globToRegExp`](base.md#base.glob.globToRegExp) and tests the given path against it, returning whether it matches; it is the single matching primitive used by [`base.config.evidenceFiles`](base.md#base.config.evidenceFiles), [`base.config.guessLayout`](base.md#base.config.guessLayout), [`base.config.isExcluded`](base.md#base.config.isExcluded)… _(llm · claude · 2026-10-04)_
       - calls [base.glob.globToRegExp](base.md#base.glob.globToRegExp)
-    - fn [globPrefix](../../src/glob.ts#L77) (glob: string) → string
+    - fn [globDirectory](../../src/glob.ts#L82) (globs: readonly string[]) → string | null
+      <a id="base.glob.globDirectory"></a><br>The one directory a set of globs owns: `D` when every glob is `D/**` or `D/**` followed by a file pattern, else null. A set that lists files, or spreads over two directories, owns none, so a README beside its files does not speak for it.
+    - fn [globPrefix](../../src/glob.ts#L93) (glob: string) → string
       <a id="base.glob.globPrefix"></a><br>Directory prefix of a glob, up to the first wildcard: `src/domain/**` → `src/domain`.
   - module [languages](../../src/languages.ts#L1)
     <a id="base.languages"></a><br>Languages keylang indexes: names, file extensions and the default module granularity. Plain data, so config and the language core know which files are source without loading any frontend or grammar.

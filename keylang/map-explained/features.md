@@ -420,14 +420,19 @@
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
     - fn [staleInventory](../../src/explain-inventory.ts#L102) (analysis: Analysis) → StaleInventory
       <a id="features.explain-inventory.staleInventory"></a><br>The saved answers and briefs that are stale or gone, in the CLI's order.
-      - calls [features.explain-llm.explainedIds](features.md#features.explain-llm.explainedIds), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace)
-    - fn [staleInventoryText](../../src/explain-inventory.ts#L119) (inventory: StaleInventory) → string
+      - calls [features.explain-llm.explainedIds](features.md#features.explain-llm.explainedIds), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-inventory.againCommand](features.md#features.explain-inventory.againCommand), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace)
+    - fn [againCommand](../../src/explain-inventory.ts#L119) (id: string, kind: "answer" | "brief") → string <!-- internal -->
+      <a id="features.explain-inventory.againCommand"></a><br>The command that asks again: the repository's brief has no id to name, so its batch asks for it.
+    - fn [staleInventoryText](../../src/explain-inventory.ts#L125) (inventory: StaleInventory) → string
       <a id="features.explain-inventory.staleInventoryText"></a><br>`explain --stale` on stdout, byte for byte.
-    - fn [briefPlan](../../src/explain-inventory.ts#L129) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
+    - fn [briefPlan](../../src/explain-inventory.ts#L135) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
       <a id="features.explain-inventory.briefPlan"></a><br>The plan of a brief batch on `analysis` (which must have a snapshot), cut to `limit` before the estimate.
       - calls [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.planBriefs](features.md#features.explain-llm.planBriefs), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.estimateTokens](features.md#features.explain-llm.estimateTokens)
-    - fn [briefPlanText](../../src/explain-inventory.ts#L167) (plan: BriefPlan) → string
+    - fn [briefPlanText](../../src/explain-inventory.ts#L173) (plan: BriefPlan) → string
       <a id="features.explain-inventory.briefPlanText"></a><br>The CLI's stdout of a plan: the dry-run counts and estimate, or the nodes one per line.
+      - calls [features.explain-inventory.briefCounts](features.md#features.explain-inventory.briefCounts)
+    - fn [briefCounts](../../src/explain-inventory.ts#L180) (counts: Record<BriefLevel, number>) → string
+      <a id="features.explain-inventory.briefCounts"></a><br>Counts of a plan by level; the repository's own brief is named only when it is planned.
   - module [explain-llm](../../src/explain-llm.ts#L1)
     <a id="features.explain-llm"></a><br>The plain-language explanation of a node (design §5.4, ADR 0004): what goes to the model, how the answer is kept, and when it is stale. An explanation lives in `<dir>/explain/<id>.md` (a brief for the explained map in `<dir>/explain/brief/<id>.md`) beside its baseline — the…
     - node [external.node](external.md#external.node)
@@ -456,36 +461,42 @@
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
     - fn [currentBaseline](../../src/explain-llm.ts#L48) (analysis: Analysis, id: string) → string | null
       <a id="features.explain-llm.currentBaseline"></a><br>The baseline an explanation of `id` is compared with now (`snapshotBaseline`): "" for a planned node, which has no code yet; null when the id is gone.
-      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [isStale](../../src/explain-llm.ts#L53) (analysis: Analysis, id: string, e: Explanation) → boolean
-      <a id="features.explain-llm.isStale"></a><br>Reports whether a saved explanation no longer matches the node's current closure hash by comparing [`features.explain-llm.currentBaseline`](features.md#features.explain-llm.currentBaseline) against `e.closure`. Used to decide when cached answers must be regenerated. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - calls [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
+    - fn [isStale](../../src/explain-llm.ts#L54) (analysis: Analysis, id: string, e: Explanation) → boolean
+      <a id="features.explain-llm.isStale"></a><br>Reports whether a saved explanation no longer matches the node's current closure hash by comparing [`features.explain-llm.currentBaseline`](features.md#features.explain-llm.currentBaseline) against `e.closure`. Used to decide when cached answers must be regenerated. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline)
-    - fn [briefText](../../src/explain-llm.ts#L58) (answer: string) → string
+    - fn [briefText](../../src/explain-llm.ts#L59) (answer: string) → string
       <a id="features.explain-llm.briefText"></a><br>A model's brief as saved: one or two sentences in one paragraph, cut by the rule doc comments follow.
       - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [unknownIds](../../src/explain-llm.ts#L66) (analysis: Analysis, text: string) → string[]
+    - fn [unknownIds](../../src/explain-llm.ts#L67) (analysis: Analysis, text: string) → string[]
       <a id="features.explain-llm.unknownIds"></a><br>`` `a.b.c` `` in the answer that are neither snapshot IDs nor declared `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [explanationRequest](../../src/explain-llm.ts#L81) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [explanationRequest](../../src/explain-llm.ts#L82) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.explanationRequest"></a><br>The request: the node's summary, its code, the signatures around it, and the words of the specs that mention it (layer, flows, rules). Not the repository.
       - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members)
-    - fn [members](../../src/explain-llm.ts#L125) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [members](../../src/explain-llm.ts#L126) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       <a id="features.explain-llm.members"></a><br>The members right under a module, class or layer with their explanations (doc comments, briefs): a layer is explained through its modules, a module through its functions and types.
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [sourceLines](../../src/explain-llm.ts#L141) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [sourceLines](../../src/explain-llm.ts#L142) (text: string, from: number, to: number) → string <!-- internal -->
       <a id="features.explain-llm.sourceLines"></a><br>Extracts the 1-based inclusive line range `from`–`to` from `text` and returns it joined with newlines. If the slice exceeds 200 lines, only the first 200 are kept, followed by a note stating how many lines were omitted; used by [`features.explain-llm.explanationRequest`](features.md#features.explain-llm.explanationRequest) to embed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BriefBatch](../../src/explain-llm.ts#L148) = "missing" | "stale"
+    - type [BriefBatch](../../src/explain-llm.ts#L149) = "missing" | "stale"
       <a id="features.explain-llm.BriefBatch"></a><br>Which briefs a batch writes: nodes with no explanation or a stale brief (`missing`), or only stale briefs (`stale`).
-    - type [BriefLevel](../../src/explain-llm.ts#L151) = "fn/type" | "class/module" | "layer"
+    - type [BriefLevel](../../src/explain-llm.ts#L152) = "fn/type" | "class/module" | "layer" | "system"
       <a id="features.explain-llm.BriefLevel"></a><br>Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs.
-    - type [PlannedBrief](../../src/explain-llm.ts#L153)
+    - type [PlannedBrief](../../src/explain-llm.ts#L154)
       <a id="features.explain-llm.PlannedBrief"></a><br>Records a single brief-generation task: a node id, its `BriefLevel`, and a wave index that orders generation so each node only depends on briefs produced in earlier waves (functions and types first, then modules deepest-first, then layers). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planBriefs](../../src/explain-llm.ts#L166) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
-      <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers. A node with a doc comment is never asked about: the code already says what it does.
-      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [base.span.compareText](base.md#base.span.compareText)
-    - fn [estimateTokens](../../src/explain-llm.ts#L184) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [planBriefs](../../src/explain-llm.ts#L168) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+      <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers, then the repository itself (`SYSTEM_ID`). A node with a doc comment is never asked about: the code already says what it does; nor is the repository when…
+      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [base.span.compareText](base.md#base.span.compareText)
+    - fn [systemRequest](../../src/explain-llm.ts#L198) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      <a id="features.explain-llm.systemRequest"></a><br>The request for the repository's brief: its name, its layers with what the explained map says about them, its flows and the packages it uses. The README and manifests had nothing to say, or no model is asked at all.
+      - calls [map.explanations.ownLayers](map.md#map.explanations.ownLayers), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
+    - fn [estimateTokens](../../src/explain-llm.ts#L223) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       <a id="features.explain-llm.estimateTokens"></a><br>A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out.
-      - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
+      - calls [features.explain-llm.briefRequest](features.md#features.explain-llm.briefRequest)
+    - fn [briefRequest](../../src/explain-llm.ts#L233) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+      <a id="features.explain-llm.briefRequest"></a><br>The request for the brief of `id`: the repository's or a node's; null when the id is gone from the snapshot.
+      - calls [features.explain-llm.systemRequest](features.md#features.explain-llm.systemRequest), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
   - module [explain-node](../../src/explain-node.ts#L1)
     <a id="features.explain-node"></a><br>`keylang explain <id>` without a model: what the snapshot and the specs say about one node. Deterministic and offline; the LLM explanation (§5.4) builds on it and falls back to it.
     - analyze [map.analyze](map.md#map.analyze)
@@ -531,7 +542,7 @@
       <a id="features.explain-offline.nodeExplanation"></a><br>The offline explanation of `id` on `analysis`, or why there is none.
       - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-offline.savedAnswer](features.md#features.explain-offline.savedAnswer), [features.explain-offline.summaryLinks](features.md#features.explain-offline.summaryLinks)
     - fn [savedAnswer](../../src/explain-offline.ts#L99) (analysis: Analysis, id: string, e: Explanation) → SavedAnswer
-      <a id="features.explain-offline.savedAnswer"></a><br>Packages a stored explanation into a result record, copying its text and metadata and adding a freshness flag from [`features.explain-llm.isStale`](features.md#features.explain-llm.isStale), unrecognized IDs from [`features.explain-llm.unknownIds`](features.md#features.explain-llm.unknownIds), and the file path from [`map.explanations.explanationPath`](map.md#map.explanations.explanationPath). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.explain-offline.savedAnswer"></a><br>Packages a stored explanation into a result record, copying its text and metadata and adding a freshness flag from [`features.explain-llm.isStale`](features.md#features.explain-llm.isStale), unrecognized IDs from [`features.explain-llm.unknownIds`](features.md#features.explain-llm.unknownIds), and the file path from [`map.explanations.explanationPath`](map.md#map.explanations.explanationPath). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-llm.unknownIds](features.md#features.explain-llm.unknownIds), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
     - type [AnswerMiss](../../src/explain-offline.ts#L104) = "missing" | "stale" | "lang" | "detail"
       <a id="features.explain-offline.AnswerMiss"></a><br>Why a saved explanation does not answer `explain <id> --llm`: none, stale, another language or another detail.
@@ -991,7 +1002,7 @@
       <a id="features.node-search.searchNodes"></a><br>Nodes of the snapshot and `planned` intentions of the specs matching the query, case-insensitive: first those whose ID or name matches (for `fuzzy`, the exact name, then a name prefix, a name part, an ID part, then a subsequence of the name and of the ID; shorter IDs first…
       - calls [features.node-search.candidates](features.md#features.node-search.candidates), [features.node-search.idRank](features.md#features.node-search.idRank), [base.span.compareText](base.md#base.span.compareText)
     - fn [candidates](../../src/node-search.ts#L55) (analysis: Analysis, briefs: ReadonlyMap<string, StoredExplanation>) → NodeHit[] <!-- internal -->
-      <a id="features.node-search.candidates"></a><br>Builds the full list of searchable node hits from the analysis snapshot, attaching each node's explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf). Then walks the docs with [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and [`lang.ir.walk`](lang.md#lang.ir.walk) to add `planned` declarations missing from the code, located at… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.node-search.candidates"></a><br>Builds the full list of searchable node hits from the analysis snapshot, attaching each node's explanation via [`map.explanations.explanationOf`](map.md#map.explanations.explanationOf). Then walks the docs with [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and [`lang.ir.walk`](lang.md#lang.ir.walk) to add `planned` declarations missing from the code, located at… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
     - fn [idRank](../../src/node-search.ts#L77) (query: string, id: string, fuzzy: boolean) → number | null <!-- internal -->
       <a id="features.node-search.idRank"></a><br>How well the ID or its last segment matches, lower is better; null when it does not.

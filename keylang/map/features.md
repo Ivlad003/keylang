@@ -264,11 +264,14 @@
     - fn [nodePlace](../../src/explain-inventory.ts#L93) (analysis: Analysis, id: string) → NodePlace | null <!-- internal -->
       - calls features.lsp-features.plannedDecl
     - fn [staleInventory](../../src/explain-inventory.ts#L102) (analysis: Analysis) → StaleInventory
-      - calls features.explain-llm.explainedIds, features.explain-llm.readExplanation, map.explanations.explanationPath, features.explain-llm.currentBaseline, features.explain-llm.isStale, features.explain-inventory.nodePlace
-    - fn [staleInventoryText](../../src/explain-inventory.ts#L119) (inventory: StaleInventory) → string
-    - fn [briefPlan](../../src/explain-inventory.ts#L129) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
+      - calls features.explain-llm.explainedIds, features.explain-llm.readExplanation, map.explanations.explanationPath, features.explain-llm.currentBaseline, features.explain-llm.isStale, features.explain-inventory.againCommand, features.explain-inventory.nodePlace
+    - fn [againCommand](../../src/explain-inventory.ts#L119) (id: string, kind: "answer" | "brief") → string <!-- internal -->
+    - fn [staleInventoryText](../../src/explain-inventory.ts#L125) (inventory: StaleInventory) → string
+    - fn [briefPlan](../../src/explain-inventory.ts#L135) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
       - calls map.explanations.loadBriefs, features.explain-llm.planBriefs, features.explain-inventory.nodePlace, map.explanations.snapshotBaseline, features.explain-llm.currentBaseline, features.explain-llm.estimateTokens
-    - fn [briefPlanText](../../src/explain-inventory.ts#L167) (plan: BriefPlan) → string
+    - fn [briefPlanText](../../src/explain-inventory.ts#L173) (plan: BriefPlan) → string
+      - calls features.explain-inventory.briefCounts
+    - fn [briefCounts](../../src/explain-inventory.ts#L180) (counts: Record<BriefLevel, number>) → string
   - module [explain-llm](../../src/explain-llm.ts#L1)
     - node external.node
     - agent-context features.agent-context
@@ -290,25 +293,29 @@
     - fn [moveHint](../../src/explain-llm.ts#L40) (config: Config, count: number) → string
       - calls map.explanations.explainDir
     - fn [currentBaseline](../../src/explain-llm.ts#L48) (analysis: Analysis, id: string) → string | null
-      - calls map.explanations.snapshotBaseline, features.lsp-features.plannedDecl
-    - fn [isStale](../../src/explain-llm.ts#L53) (analysis: Analysis, id: string, e: Explanation) → boolean
+      - calls map.explanations.systemBaseline, map.explanations.loadBriefs, map.explanations.snapshotBaseline, features.lsp-features.plannedDecl
+    - fn [isStale](../../src/explain-llm.ts#L54) (analysis: Analysis, id: string, e: Explanation) → boolean
       - calls features.explain-llm.currentBaseline
-    - fn [briefText](../../src/explain-llm.ts#L58) (answer: string) → string
+    - fn [briefText](../../src/explain-llm.ts#L59) (answer: string) → string
       - calls base.brief.briefOf
-    - fn [unknownIds](../../src/explain-llm.ts#L66) (analysis: Analysis, text: string) → string[]
+    - fn [unknownIds](../../src/explain-llm.ts#L67) (analysis: Analysis, text: string) → string[]
       - calls features.lsp-features.plannedDecl
-    - fn [explanationRequest](../../src/explain-llm.ts#L81) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [explanationRequest](../../src/explain-llm.ts#L82) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary, features.explain-llm.members
-    - fn [members](../../src/explain-llm.ts#L125) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [members](../../src/explain-llm.ts#L126) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       - calls map.explanations.explanationOf
-    - fn [sourceLines](../../src/explain-llm.ts#L141) (text: string, from: number, to: number) → string <!-- internal -->
-    - type [BriefBatch](../../src/explain-llm.ts#L148) = "missing" | "stale"
-    - type [BriefLevel](../../src/explain-llm.ts#L151) = "fn/type" | "class/module" | "layer"
-    - type [PlannedBrief](../../src/explain-llm.ts#L153)
-    - fn [planBriefs](../../src/explain-llm.ts#L166) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
-      - calls map.explanations.snapshotBaseline, base.span.compareText
-    - fn [estimateTokens](../../src/explain-llm.ts#L184) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
-      - calls features.explain-node.summarizeNode, features.explain-llm.explanationRequest
+    - fn [sourceLines](../../src/explain-llm.ts#L142) (text: string, from: number, to: number) → string <!-- internal -->
+    - type [BriefBatch](../../src/explain-llm.ts#L149) = "missing" | "stale"
+    - type [BriefLevel](../../src/explain-llm.ts#L152) = "fn/type" | "class/module" | "layer" | "system"
+    - type [PlannedBrief](../../src/explain-llm.ts#L154)
+    - fn [planBriefs](../../src/explain-llm.ts#L168) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+      - calls map.explanations.snapshotBaseline, map.explanations.systemBaseline, base.span.compareText
+    - fn [systemRequest](../../src/explain-llm.ts#L198) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      - calls map.explanations.ownLayers, map.explanations.explanationOf
+    - fn [estimateTokens](../../src/explain-llm.ts#L223) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+      - calls features.explain-llm.briefRequest
+    - fn [briefRequest](../../src/explain-llm.ts#L233) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+      - calls features.explain-llm.systemRequest, features.explain-node.summarizeNode, features.explain-llm.explanationRequest
   - module [explain-node](../../src/explain-node.ts#L1)
     - analyze map.analyze
     - ir lang.ir

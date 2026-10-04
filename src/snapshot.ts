@@ -7,8 +7,9 @@ import { createRequire } from "node:module";
 import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
+import { globDirectory } from "./glob.ts";
 import type { Gap, Graph, Module } from "./graph.ts";
-import { constructorName } from "./languages.ts";
+import { constructorName, LANGUAGES, languageOf } from "./languages.ts";
 import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 7;
@@ -116,7 +117,11 @@ export interface SnapshotNode {
   members?: "complete" | "opaque";
   /** Generator comment, such as an external package name or `internal` on a class. */
   comment?: string;
-  /** Brief of the documentation comment in the code (`src/brief.ts`); null without one, and for a layer. */
+  /**
+   * Brief of the documentation comment in the code (`src/brief.ts`); null
+   * without one. A layer's is the README of its own directory, else the doc
+   * comment of the index module there (`index.ts`, `mod.rs`, `__init__.py`).
+   */
   doc: string | null;
   deps?: string[];
   dependents?: string[];
@@ -134,10 +139,36 @@ export interface SnapshotNode {
   closure?: { fingerprint: string; complete: boolean };
 }
 
+/**
+ * What the repository says about itself: the system level of C4. A node of the
+ * explained map and the zoom screen, never an ID of the language (ADR 0014).
+ */
+export interface SystemDoc {
+  /** `name` of the first root manifest that has one: `package.json`, `Cargo.toml`, `pyproject.toml`. */
+  name: string | null;
+  /** Brief of the root README's first prose paragraph, else of a root manifest's `description`. */
+  brief: string | null;
+  /** The file the brief came from, relative to the root; null without a brief. */
+  source: string | null;
+}
+
+/** Text the repository writes about itself and its layers, read at the edge (`map.ts`). */
+export interface RepositoryDocs {
+  system: SystemDoc;
+  /** Brief of the README in a layer's own directory, by layer. */
+  layers: ReadonlyMap<string, string>;
+}
+
 export interface AnalysisSnapshot {
   schema: typeof SNAPSHOT_SCHEMA;
   snapshotId: string;
   generated: string;
+  /**
+   * The repository's own description. Read again by every analysis and left
+   * out of `snapshotId`: a README is no code, so editing it keeps test reports
+   * and traces of the snapshot current.
+   */
+  system: SystemDoc;
   manifest: {
     extractor: string;
     grammars: Record<string, string>;
@@ -169,6 +200,7 @@ export function buildSnapshot(
   files: readonly { path: string; sha256: string }[],
   /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
   skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[],
+  docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() },
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -250,7 +282,7 @@ export function buildSnapshot(
     for (const c of m.children) visit(c);
   };
   for (const l of graph.layers) {
-    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: null };
+    nodes[l.name] = { kind: "layer", layer: l.name, file: null, line: null, col: null, doc: docs.layers.get(l.name) ?? indexDoc(l.modules, globDirectory(config.layers.get(l.name) ?? [])) };
     for (const m of l.modules) visit(m);
   }
   for (const [id, n] of Object.entries(nodes)) {
@@ -358,6 +390,7 @@ export function buildSnapshot(
     schema: SNAPSHOT_SCHEMA,
     snapshotId,
     generated: new Date().toISOString(),
+    system: docs.system,
     manifest: { extractor: EXTRACTOR_VERSION, grammars, config: manifestConfig, files: manifestFiles },
     nodes: ordered,
     edges,
@@ -418,6 +451,22 @@ function closures(nodes: Record<string, SnapshotNode>, coverage: readonly Covera
 
 function docBrief(doc: string | null | undefined): string | null {
   return doc ? briefOf(doc) : null;
+}
+
+/**
+ * The doc comment of the index module right in a layer's own directory
+ * (`src/tui/index.ts`, `mod.rs`, `__init__.py`: the index names of its
+ * language), as a brief.
+ */
+function indexDoc(modules: readonly Module[], dir: string | null): string | null {
+  if (dir === null) return null;
+  for (const m of modules) {
+    if (m.path === null || !m.doc || !m.path.startsWith(`${dir}/`) || m.path.slice(dir.length + 1).includes("/")) continue;
+    const language = languageOf(m.path);
+    const base = m.path.slice(dir.length + 1).replace(/\.[^.]+$/, "");
+    if (language !== undefined && LANGUAGES[language].index.includes(base)) return docBrief(m.doc);
+  }
+  return null;
 }
 
 /** A row of the graph's export table, with its fields in a fixed order. */

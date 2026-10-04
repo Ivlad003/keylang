@@ -16,12 +16,12 @@ import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
-import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
+import { briefRequest, briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
 import { cliVersion, probeAgentClis, resolveAgent, selectedAgent, type AgentCliProbe, type AgentSource } from "./agent-cli.ts";
 import { briefPlan, briefPlanText, defaultBriefJobs, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
-import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
+import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, SYSTEM_ID, systemBaseline, type ExplanationDetail } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
@@ -2680,12 +2680,12 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   const one = async (id: string): Promise<void> => {
     if (cancelled()) stop("cancelled");
     if (payload.stopped !== null) return void notStarted.add(id);
-    const summary = summarizeNode(analyzed, id);
-    if ("unknown" in summary) return finish(id, "the id is gone from the snapshot");
+    const request = briefRequest(analyzed, id, lang, briefs);
+    if (request === null) return finish(id, "the id is gone from the snapshot");
     let answer: string;
     let reported: string | null = null;
     try {
-      answer = await client.complete(explanationRequest(analyzed, summary.summary, { lang, detail: "brief", briefs }), { signal, onModel: (model) => (reported = model) });
+      answer = await client.complete(request, { signal, onModel: (model) => (reported = model) });
     } catch (error) {
       if (cancelled()) stop("cancelled");
       if (error instanceof LlmCancelled || signal.aborted) return void notStarted.add(id);
@@ -2717,7 +2717,9 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
       return void notStarted.add(id);
     }
     if (target !== null) return finish(id, `${file}: ${target}`);
-    const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail: "brief", text };
+    // The repository's baseline reads the layer briefs this batch just wrote.
+    const closure = id === SYSTEM_ID ? systemBaseline(analyzed.snapshot!, briefs) : (currentBaseline(analyzed, id) ?? "");
+    const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure, lang, detail: "brief", text };
     try {
       writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
     } catch (error) {

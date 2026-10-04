@@ -18,16 +18,22 @@ Brief шару моделлю й застарілість шару від усь
 
 **Model:** claude:claude-opus-5-5
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Verify:** `node --test tests/repository-brief.test.ts` · `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] тести тікета — у новому файлі `tests/repository-brief.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
-- [ ] e2e: фікстура з README (заголовок, бейдж, абзац) і `package.json` → README карти з поясненнями починається абзацом з README і рядком походження `README.md`; без README — `description` і `package.json`; без обох — `—` і підказка
-- [ ] зміна лише README робить `map --check` застарілим (код 1)
-- [ ] шар із `README.md` у теці → колонка Explanation і рядок шару показують документ з походженням «код»; `explain --missing --llm` з мок-провайдером цей шар не запитує
-- [ ] doc-коментар `index.ts` теки шару теж дає документ; шар без документа запитується, як зараз
-- [ ] шар `system` у `keylang.json` і збережений `@system.md` не конфліктують; після зміни brief-у шару `explain --stale` показує `@system` як `stale`, не `gone`
-- [ ] format.md §11 (поле `system`, `doc` шару), tools.md (`explain --missing`) і design §5.4 оновлено; карту keylang перегенеровано
+- [x] тести тікета — у новому файлі `tests/repository-brief.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
+- [x] e2e: фікстура з README (заголовок, бейдж, абзац) і `package.json` → README карти з поясненнями починається абзацом з README і рядком походження `README.md`; без README — `description` і `package.json`; без обох — `—` і підказка
+- [x] зміна лише README робить `map --check` застарілим (код 1)
+- [x] шар із `README.md` у теці → колонка Explanation і рядок шару показують документ з походженням «код»; `explain --missing --llm` з мок-провайдером цей шар не запитує
+- [x] doc-коментар `index.ts` теки шару теж дає документ; шар без документа запитується, як зараз
+- [x] шар `system` у `keylang.json` і збережений `@system.md` не конфліктують; після зміни brief-у шару `explain --stale` показує `@system` як `stale`, не `gone`
+- [x] format.md §11 (поле `system`, `doc` шару), tools.md (`explain --missing`) і design §5.4 оновлено; карту keylang перегенеровано
 
 ## Comments
+
+- 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. `readmeBrief` (`src/brief.ts`), `globDirectory` (`src/glob.ts`), читання README й маніфестів у `src/map.ts`, поле `system` і `doc` шару в `src/snapshot.ts`, `SYSTEM_ID`/`systemBaseline` у `src/explanations.ts`, хвиля `system` і `systemRequest` у `src/explain-llm.ts`, тести — `tests/repository-brief.test.ts`.
+- Відхилення від тексту тікета, свідомі: README й маніфести **не входять** у `snapshotId`, хоч тікет казав «у manifest знімка». `snapshotId` прив'язує звіти тестів і trace; правка README зробила б їх застарілими, хоча код не змінився. Свіжість однаково гарантована: кожен аналіз перечитує README, а `map --check` бачить правку через карту з поясненнями (тест «an edited README makes the explained map stale and keeps the snapshot id»). Записано у format.md §11.
+- Індекс-модуль шару — за індекс-іменами мови з `LANGUAGES` (`index`, `mod`, `__init__`), тож `lib.rs` не враховується, як і в модуля-теки.
+- README без речення (перемикач мов, бейджі) пропускається: абзац має мати щонайменше чотири слова й кінець речення. Без імені в маніфесті заголовок розділу — `## Repository`.
+- Наявні тести TUI пакетних brief-ів (`tests/tui.test.ts`) оновлено: у фікстури без README план тепер має хвилю `system` (13 brief-ів замість 12) — це новий контракт тікета.

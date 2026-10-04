@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { briefOf } from "./brief.ts";
 import type { Config } from "./config.ts";
+import { EXTERNAL } from "./graph.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
 
 /** `short` and `full` answer `explain <id> --llm`; `brief` is the one or two sentences of the explained map. */
@@ -125,11 +126,38 @@ function lowerBound(sorted: readonly string[], key: string): number {
   return lo;
 }
 
+/**
+ * The repository itself in the explained map and on the zoom screen: the
+ * system level of C4. A view node, never an ID of the language (ADR 0014); `@`
+ * starts no ID segment, so its saved brief (`brief/@system.md`) cannot share
+ * a file with a layer named `system`.
+ */
+export const SYSTEM_ID = "@system";
+
+/** Layers of the snapshot that are the repository's own, sorted: packages outside it are left out. */
+export function ownLayers(snapshot: AnalysisSnapshot): string[] {
+  return Object.keys(snapshot.nodes)
+    .filter((id) => snapshot.nodes[id]?.kind === "layer" && id !== EXTERNAL)
+    .sort();
+}
+
+/**
+ * The baseline of the repository's brief: its layers and what the explained
+ * map says about each. A new layer or a rewritten layer brief makes the
+ * repository's brief stale; a change of code below a layer does not.
+ */
+export function systemBaseline(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>): string {
+  const lines = ownLayers(snapshot).map((id) => `${id} ${explanationOf(snapshot, briefs, id)?.text ?? ""}`);
+  return createHash("sha256").update(lines.join("\n")).digest("hex");
+}
+
 /** What a node is, in plain words, and where the words come from. */
 export interface NodeExplanation {
   text: string;
-  /** `doc`: the documentation comment in the code; `llm`: a brief a model wrote. */
+  /** `doc`: the documentation comment in the code (for the repository, its README or manifest); `llm`: a brief a model wrote. */
   origin: "doc" | "llm";
+  /** The file a `doc` came from when it is no comment of the node's code: the repository's `README.md` or manifest. */
+  source?: string;
   /** A brief whose baseline changed since the model wrote it. A doc comment is never stale: it is the code. */
   stale: boolean;
   /** The model and the date of a brief. */
@@ -143,13 +171,21 @@ export interface NodeExplanation {
  * answer a question about one node, not a line of the map.
  */
 export function explanationOf(snapshot: AnalysisSnapshot, briefs: ReadonlyMap<string, StoredExplanation>, id: string): NodeExplanation | null {
+  if (id === SYSTEM_ID) {
+    const system = snapshot.system;
+    if (system?.brief) return { text: system.brief, origin: "doc", stale: false, ...(system.source ? { source: system.source } : {}) };
+    return briefExplanation(briefs.get(id), () => systemBaseline(snapshot, briefs));
+  }
   const node = snapshot.nodes[id];
   if (!node) return null;
   if (node.doc) return { text: node.doc, origin: "doc", stale: false };
-  const brief = briefs.get(id);
+  return briefExplanation(briefs.get(id), () => snapshotBaseline(snapshot, id));
+}
+
+function briefExplanation(brief: StoredExplanation | undefined, baseline: () => string | null): NodeExplanation | null {
   const text = brief ? briefOf(brief.text) : null;
   if (!brief || text === null) return null;
-  return { text, origin: "llm", stale: snapshotBaseline(snapshot, id) !== brief.closure, agent: brief.agent, date: brief.date };
+  return { text, origin: "llm", stale: baseline() !== brief.closure, agent: brief.agent, date: brief.date };
 }
 
 /** The model of an agent, as the map shows it: `claude-sonnet-5` for `anthropic:claude-sonnet-5`. */

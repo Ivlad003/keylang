@@ -339,7 +339,7 @@
         <a id="tui.app.App.common"></a><br>Handles the cursor-navigation keys shared by edit and view modes: arrows and page keys via [`tui.app.App.move`](tui.md#tui.app.App.move), horizontal/home/end by editing the column then [`tui.app.App.clampCursor`](tui.md#tui.app.App.clampCursor) and [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible). In edit mode, shifted up/down starts a line selection; any… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.view.layout](tui.md#tui.view.layout), [tui.app.App.move](tui.md#tui.app.App.move), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor)
       - fn [cycleFocus](../../src/tui/app.ts#L1271) () → void <!-- internal -->
-        <a id="tui.app.App.cycleFocus"></a><br>Advances `state.focus` to the next pane in a ring built from "editor" plus whichever of "context" (if open), "nav", or "files" are currently shown, wrapping at the end. When focus lands on "nav" it calls [`tui.app.App.fixNavIndex`](tui.md#tui.app.App.fixNavIndex) to keep the nav selection valid. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="tui.app.App.cycleFocus"></a><br>Advances `state.focus` to the next pane in a ring built from "editor" plus whichever of "context" (if open), "nav", or "files" are currently shown, wrapping at the end. When focus lands on "nav" it calls [`tui.app.App.fixNavIndex`](tui.md#tui.app.App.fixNavIndex) to keep the nav selection valid. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.app.App.fixNavIndex](tui.md#tui.app.App.fixNavIndex)
       - fn [hoverAtCursor](../../src/tui/app.ts#L1279) () → void <!-- internal -->
         <a id="tui.app.App.hoverAtCursor"></a><br>`K`: the hover of the id nearest the cursor, as the mouse would show it.
@@ -366,7 +366,7 @@
         <a id="tui.app.App.acceptCompletion"></a><br>Takes the highlighted item from the open completion list, records the acceptance via [`tui.assist.countSuggestion`](tui.md#tui.assist.countSuggestion), and closes the list. If the cursor is still at or past the word's start, it replaces that word's graphemes with the item label through [`tui.app.App.edit`](tui.md#tui.app.App.edit) and moves… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.assist.countSuggestion](tui.md#tui.assist.countSuggestion), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.width.graphemes](tui.md#tui.width.graphemes)
       - fn [fixNavIndex](../../src/tui/app.ts#L1558) (direction: 1 | -1) → void <!-- internal -->
-        <a id="tui.app.App.fixNavIndex"></a><br>Clamps the navigation cursor into the range of entries from [`tui.view.navEntries`](tui.md#tui.view.navEntries), stepping past heading rows in the given direction. Then scrolls `navTop` using [`tui.view.layout`](tui.md#tui.view.layout) and [`tui.view.navListHeight`](tui.md#tui.view.navListHeight) so the selected row stays visible. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="tui.app.App.fixNavIndex"></a><br>Clamps the navigation cursor into the range of entries from [`tui.view.navEntries`](tui.md#tui.view.navEntries), stepping past heading rows in the given direction. Then scrolls `navTop` using [`tui.view.layout`](tui.md#tui.view.layout) and [`tui.view.navListHeight`](tui.md#tui.view.navListHeight) so the selected row stays visible. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.view.layout](tui.md#tui.view.layout), [tui.view.navListHeight](tui.md#tui.view.navListHeight)
       - fn [toggleFiles](../../src/tui/app.ts#L1572) (focusable: boolean) → void <!-- internal -->
         <a id="tui.app.App.toggleFiles"></a><br>Flips the files panel on or off, marking it as the last-used panel when shown and moving focus to it when `focusable`, or back to the editor if focus was there when hidden. It then calls [`tui.app.App.narrowNote`](tui.md#tui.app.App.narrowNote) and [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible) to re-fit the layout. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
@@ -824,7 +824,7 @@
         <a id="tui.app.App.returnToFindings"></a><br>Back from a finding's target: the list with its selection, over the place the finding was opened from.
         - calls [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor)
       - fn [scrollReport](../../src/tui/app.ts#L4598) (delta: number) → void <!-- internal -->
-        <a id="tui.app.App.scrollReport"></a><br>Moves the results report by `delta`: on an analysis entry it defers to [`tui.app.App.moveFinding`](tui.md#tui.app.App.moveFinding), on a feature report it steps the selected gap (via [`tui.app.App.recordGaps`](tui.md#tui.app.App.recordGaps)) and scrolls to keep it visible, then calls [`tui.app.App.showGapReason`](tui.md#tui.app.App.showGapReason). Otherwise it scrolls the text… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+        <a id="tui.app.App.scrollReport"></a><br>Moves the results report by `delta`: on an analysis entry it defers to [`tui.app.App.moveFinding`](tui.md#tui.app.App.moveFinding), on a feature report it steps the selected gap (via [`tui.app.App.recordGaps`](tui.md#tui.app.App.recordGaps)) and scrolls to keep it visible, then calls [`tui.app.App.showGapReason`](tui.md#tui.app.App.showGapReason). Otherwise it scrolls the text… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [tui.app.App.moveFinding](tui.md#tui.app.App.moveFinding), [tui.view.resultsReportRows](tui.md#tui.view.resultsReportRows), [tui.app.App.recordGaps](tui.md#tui.app.App.recordGaps), [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.view.layout](tui.md#tui.view.layout), [tui.app.App.showGapReason](tui.md#tui.app.App.showGapReason)
       - fn [recordGaps](../../src/tui/app.ts#L4628) () → readonly { file: string; line: number; col: number; text: string }[] <!-- internal -->
         <a id="tui.app.App.recordGaps"></a><br>The items of the selected record the arrows select after Tab: the gaps of a feature record, every result of a check record, the evidence of an explain-edge record (an edge with no file has an empty one), the diagnostics of a parse record; none for the others. `text` is the…
@@ -1498,6 +1498,7 @@
     - config [base.config](base.md#base.config)
     - explain [features.explain](features.md#features.explain)
     - explain-node [features.explain-node](features.md#features.explain-node)
+    - explain-inventory [features.explain-inventory](features.md#features.explain-inventory)
     - explain-offline [features.explain-offline](features.md#features.explain-offline)
     - explanations [map.explanations](map.md#map.explanations)
     - actions [tui.actions](tui.md#tui.actions)
@@ -1517,241 +1518,241 @@
     - theme [tui.theme](tui.md#tui.theme)
     - buffer [tui.buffer](tui.md#tui.buffer)
     - width [tui.width](tui.md#tui.width)
-    - type [Rect](../../src/tui/view.ts#L29)
+    - type [Rect](../../src/tui/view.ts#L30)
       <a id="tui.view.Rect"></a><br>Describes a rectangular screen region by its top-left origin and size, all as plain numbers, giving terminal UI code a shared shape for layout boundaries. It carries no behavior, only the four fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Layout](../../src/tui/view.ts#L36)
+    - type [Layout](../../src/tui/view.ts#L37)
       <a id="tui.view.Layout"></a><br>Holds the screen rectangles computed for each TUI region: files and nav may be absent, while editor, detail and status are always present. The `panel` rect is where help, forms and modal steps draw, covering the editor area on wide terminals or the whole body on narrow ones. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [layout](../../src/tui/view.ts#L59) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
+    - fn [layout](../../src/tui/view.ts#L60) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
       <a id="tui.view.layout"></a><br>Computes screen rectangles for the files pane, editor, side nav/context panel, detail line and status bar from the terminal size and panel flags. On narrow terminals it keeps only one side panel (the focused or last-opened) and lets an open context panel replace the nav at a… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [EditorRow](../../src/tui/view.ts#L89)
+    - type [EditorRow](../../src/tui/view.ts#L90)
       <a id="tui.view.EditorRow"></a><br>One editor row: a text line, or the expanded evidence row under the cursor line.
-    - fn [lineCount](../../src/tui/view.ts#L91) (buffer: Buffer) → number
+    - fn [lineCount](../../src/tui/view.ts#L92) (buffer: Buffer) → number
       <a id="tui.view.lineCount"></a><br>Returns how many lines a buffer contains by taking the length of the array produced by [`tui.buffer.bufferLines`](tui.md#tui.buffer.bufferLines). It feeds [`tui.view.editorRows`](tui.md#tui.view.editorRows) and [`tui.view.gutterWidth`](tui.md#tui.view.gutterWidth), which size the editor's visible rows and line-number column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines)
-    - fn [gutterWidth](../../src/tui/view.ts#L95) (buffer: Buffer) → number
+    - fn [gutterWidth](../../src/tui/view.ts#L96) (buffer: Buffer) → number
       <a id="tui.view.gutterWidth"></a><br>Computes the column width reserved for the editor's line-number gutter: a 2-column lead, the digit count of [`tui.view.lineCount`](tui.md#tui.view.lineCount) padded to at least 3, plus a trailing separator. Used by [`tui.view.drawEditor`](tui.md#tui.view.drawEditor), [`tui.view.drawCompletion`](tui.md#tui.view.drawCompletion), and the [`tui.app.App`](tui.md#tui.app.App) cursor/hit-test… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.view.lineCount](tui.md#tui.view.lineCount)
-    - fn [editorRows](../../src/tui/view.ts#L100) (state: State, buffer: Buffer, height: number) → EditorRow[]
+    - fn [editorRows](../../src/tui/view.ts#L101) (state: State, buffer: Buffer, height: number) → EditorRow[]
       <a id="tui.view.editorRows"></a><br>Rows shown from `top`: the cursor line gets an evidence row below it when it has evidence.
       - calls [tui.view.lineCount](tui.md#tui.view.lineCount), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf)
-    - fn [drawRuns](../../src/tui/view.ts#L116) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
+    - fn [drawRuns](../../src/tui/view.ts#L117) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
       <a id="tui.view.drawRuns"></a><br>Draws clusters with their code-point positions until `width` cells are used; a cluster (a letter with its marks, a ZWJ emoji) takes the style of its first code point. Only what fits is visited, however long the line.
       - calls [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [fromLayout](../../src/tui/view.ts#L127) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromLayout](../../src/tui/view.ts#L128) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
       <a id="tui.view.fromLayout"></a><br>The clusters of a laid-out line from cluster `from` on.
-    - fn [fromText](../../src/tui/view.ts#L132) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromText](../../src/tui/view.ts#L133) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
       <a id="tui.view.fromText"></a><br>The clusters of `text` from the start, segmented only as far as they are read.
       - calls [tui.width.clusters](tui.md#tui.width.clusters)
-    - fn [cellsBetween](../../src/tui/view.ts#L141) (line: LineLayout, from: number, to: number) → number <!-- internal -->
+    - fn [cellsBetween](../../src/tui/view.ts#L142) (line: LineLayout, from: number, to: number) → number <!-- internal -->
       <a id="tui.view.cellsBetween"></a><br>Cells between clusters `from` and `to` of a laid-out line (0 when `to` is before `from`).
-    - fn [markCell](../../src/tui/view.ts#L146) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
+    - fn [markCell](../../src/tui/view.ts#L147) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
       <a id="tui.view.markCell"></a><br>Maps a line's evidence mark to its gutter glyph and style via `MARK_GLYPH` and `MARK_STYLE`, returning a blank cell when there is no evidence. When stale, it dims the style and drops bold. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [detailText](../../src/tui/view.ts#L155) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
+    - fn [detailText](../../src/tui/view.ts#L156) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
       <a id="tui.view.detailText"></a><br>`ID ✓ static ✓ tests — trace ◌ …`: the channels of a line, never merged into one mark.
-    - fn [lineMessage](../../src/tui/view.ts#L179) (item: LineEvidence | undefined) → { text: string; style: Style } | null
+    - fn [lineMessage](../../src/tui/view.ts#L180) (item: LineEvidence | undefined) → { text: string; style: Style } | null
       <a id="tui.view.lineMessage"></a><br>The message for the cursor line: the first failing or unverified finding, with a fix hint.
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [drawBox](../../src/tui/view.ts#L192) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
+    - fn [drawBox](../../src/tui/view.ts#L193) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
       <a id="tui.view.drawBox"></a><br>Fills a rectangle with a background style via [`tui.screen.Grid.fill`](tui.md#tui.screen.Grid.fill), then writes a single-line box border and an optional padded title at the top edge via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write). Shared frame routine for the popup overlays in [`tui.view`](tui.md#tui.view). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [runsOf](../../src/tui/view.ts#L206) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
+    - fn [runsOf](../../src/tui/view.ts#L207) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
       <a id="tui.view.runsOf"></a><br>Returns per-line highlight runs for a buffer, caching them in a module-level map keyed by the buffer's document (or the buffer itself) and the joined layer names. On a cache miss, or whenever the buffer has no document, it recomputes via [`tui.theme.highlight`](tui.md#tui.theme.highlight) and stores the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.theme.highlight](tui.md#tui.theme.highlight)
-    - fn [drawEditor](../../src/tui/view.ts#L216) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawEditor](../../src/tui/view.ts#L217) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       <a id="tui.view.drawEditor"></a><br>Paints the visible rows of a buffer into `grid`: a gutter with per-line evidence marks and numbers, highlighted text runs via [`tui.view.drawRuns`](tui.md#tui.view.drawRuns), expandable detail rows, selection and cursor-line backgrounds. Also overlays a dimmed ghost completion suffix in edit mode and sets… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.runsOf](tui.md#tui.view.runsOf), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.editorRows](tui.md#tui.view.editorRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.detailText](tui.md#tui.view.detailText), [tui.view.markCell](tui.md#tui.view.markCell), [tui.view.drawRuns](tui.md#tui.view.drawRuns), [tui.view.fromLayout](tui.md#tui.view.fromLayout), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [readRows](../../src/tui/view.ts#L260) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; cursorRow: number; top: number } <!-- internal -->
+    - fn [readRows](../../src/tui/view.ts#L261) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; cursorRow: number; top: number } <!-- internal -->
       <a id="tui.view.readRows"></a><br>Reading mode: the rendered rows, the row of the cursor line, and the first row shown.
       - calls [tui.markdown.renderMarkdown](tui.md#tui.markdown.renderMarkdown)
-    - fn [readCursorRow](../../src/tui/view.ts#L269) (state: State, buffer: Buffer, rect: Rect) → number
+    - fn [readCursorRow](../../src/tui/view.ts#L270) (state: State, buffer: Buffer, rect: Rect) → number
       <a id="tui.view.readCursorRow"></a><br>The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there.
       - calls [tui.view.readRows](tui.md#tui.view.readRows)
-    - fn [drawRead](../../src/tui/view.ts#L274) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawRead](../../src/tui/view.ts#L275) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       <a id="tui.view.drawRead"></a><br>Paints the visible slice of a buffer's wrapped lines from [`tui.view.readRows`](tui.md#tui.view.readRows) onto the grid, highlighting the cursor's line and prefixing each source line's first row with an evidence glyph from [`tui.view.markCell`](tui.md#tui.view.markCell). Evidence comes from [`tui.evidence.evidenceOf`](tui.md#tui.evidence.evidenceOf) and is drawn… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.readRows](tui.md#tui.view.readRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.markCell](tui.md#tui.view.markCell), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawCode](../../src/tui/view.ts#L294) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawCode](../../src/tui/view.ts#L295) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawCode"></a><br>Paints the read-only source panel: a title bar with the clickable `file:line` link and an Esc hint, then each visible line from `code.top` with a line number, a marker and highlight on the target line, and token colors from [`tui.code-highlight.highlightCode`](tui.md#tui.code-highlight.highlightCode) drawn via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.code-highlight.highlightCode](tui.md#tui.code-highlight.highlightCode), [tui.view.drawRuns](tui.md#tui.view.drawRuns), [tui.view.fromText](tui.md#tui.view.fromText)
-    - fn [drawMerge](../../src/tui/view.ts#L317) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawMerge](../../src/tui/view.ts#L318) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawMerge"></a><br>Paints the merge panel: a title row with path, origin, hunk position and accept/reject/pending counts, then the visible rows from [`tui.merge.mergeRows`](tui.md#tui.merge.mergeRows) starting at the scroll offset. Each row shows a current-hunk marker, decision glyph, +/- sign and text, with rejected… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.merge.mergeRows](tui.md#tui.merge.mergeRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawPanelList](../../src/tui/view.ts#L342) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
+    - fn [drawPanelList](../../src/tui/view.ts#L343) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
       <a id="tui.view.drawPanelList"></a><br>Fills a rectangle with the panel theme, writes a title row, then renders the visible slice of entries from `top`, highlighting the selected row (dimmer when unfocused) and drawing each entry's optional mark glyph in the last two columns via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [navEntries](../../src/tui/view.ts#L356) (state: State) → NavItem[]
+    - fn [navEntries](../../src/tui/view.ts#L357) (state: State) → NavItem[]
       <a id="tui.view.navEntries"></a><br>Builds the current navigation list by passing the state's analysis and set of expanded node keys to [`tui.nav.navItems`](tui.md#tui.nav.navItems), so drawing, mouse, and key handlers all see the same ordered entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.nav.navItems](tui.md#tui.nav.navItems)
-    - fn [navNote](../../src/tui/view.ts#L368) (state: State, width: number) → string[]
+    - fn [navNote](../../src/tui/view.ts#L369) (state: State, width: number) → string[]
       <a id="tui.view.navNote"></a><br>The explanation of the node selected in the nav panel, wrapped to `width` cells with its origin (`code`, or `llm · model · date`, `stale`); none for a node without one or an item that is no node.
       - calls [tui.view.navEntries](tui.md#tui.view.navEntries), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [tui.view.wrapWords](tui.md#tui.view.wrapWords)
-    - fn [wrapWords](../../src/tui/view.ts#L380) (text: string, width: number) → string[] <!-- internal -->
+    - fn [wrapWords](../../src/tui/view.ts#L381) (text: string, width: number) → string[] <!-- internal -->
       <a id="tui.view.wrapWords"></a><br>Words of `text` in rows of at most `width` cells; a longer word is cut.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.graphemes](tui.md#tui.width.graphemes)
-    - fn [navListHeight](../../src/tui/view.ts#L396) (state: State, rect: Rect) → number
+    - fn [navListHeight](../../src/tui/view.ts#L397) (state: State, rect: Rect) → number
       <a id="tui.view.navListHeight"></a><br>Rows of the nav panel's list: what the explanation of the selected node leaves.
       - calls [tui.view.navNote](tui.md#tui.view.navNote)
-    - fn [drawNav](../../src/tui/view.ts#L401) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
-      <a id="tui.view.drawNav"></a><br>Renders the navigation panel: if [`tui.view.navNote`](tui.md#tui.view.navNote) yields text, it paints a separator and note rows below the list and shrinks the list area to [`tui.view.navListHeight`](tui.md#tui.view.navListHeight). It then maps [`tui.view.navEntries`](tui.md#tui.view.navEntries) to indented rows with expand arrows, heading styling and marks (dimmed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [drawNav](../../src/tui/view.ts#L402) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+      <a id="tui.view.drawNav"></a><br>Renders the navigation panel: if [`tui.view.navNote`](tui.md#tui.view.navNote) yields text, it paints a separator and note rows below the list and shrinks the list area to [`tui.view.navListHeight`](tui.md#tui.view.navListHeight). It then maps [`tui.view.navEntries`](tui.md#tui.view.navEntries) to indented rows with expand arrows, heading styling and marks (dimmed… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [tui.view.navNote](tui.md#tui.view.navNote), [tui.view.navListHeight](tui.md#tui.view.navListHeight), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList)
-    - fn [drawContext](../../src/tui/view.ts#L424) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawContext](../../src/tui/view.ts#L425) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawContext"></a><br>What goes to the model: kind, label and tokens per item; `◇` planned, `?` incomplete data.
       - calls [features.agent-context.contextPack](features.md#features.agent-context.contextPack), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList), [tui.view.contextTop](tui.md#tui.view.contextTop)
-    - fn [contextTop](../../src/tui/view.ts#L435) (index: number, rect: Rect) → number
+    - fn [contextTop](../../src/tui/view.ts#L436) (index: number, rect: Rect) → number
       <a id="tui.view.contextTop"></a><br>First item shown in the context panel: the list scrolls to keep the selected item in view. A click maps rows the same way.
-    - fn [drawFiles](../../src/tui/view.ts#L439) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawFiles](../../src/tui/view.ts#L440) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawFiles"></a><br>Renders the FILES panel by turning each open file into a list entry, appending " +" when [`tui.buffer.isDirty`](tui.md#tui.buffer.isDirty) reports unsaved changes and " ≈" when the file has a pending proposal, and bolding the current file. It then hands the entries to [`tui.view.drawPanelList`](tui.md#tui.view.drawPanelList) with the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList), [tui.view.filesTop](tui.md#tui.view.filesTop)
-    - fn [filesTop](../../src/tui/view.ts#L450) (state: Pick<State, "filesIndex">, rect: Rect) → number
+    - fn [filesTop](../../src/tui/view.ts#L451) (state: Pick<State, "filesIndex">, rect: Rect) → number
       <a id="tui.view.filesTop"></a><br>First file shown in the panel: the list scrolls to keep the selected file in view. A click maps rows the same way.
-    - fn [recordLabel](../../src/tui/view.ts#L457) (record: OperationRecord) → string <!-- internal -->
+    - fn [recordLabel](../../src/tui/view.ts#L458) (record: OperationRecord) → string <!-- internal -->
       <a id="tui.view.recordLabel"></a><br>The registry label of a record's action, with its parameter (the feature slug), or its id.
       - calls [tui.view.choiceText](tui.md#tui.view.choiceText), [tui.view.checkParams](tui.md#tui.view.checkParams), [tui.view.exportFormat](tui.md#tui.view.exportFormat), [tui.view.operationLabel](tui.md#tui.view.operationLabel)
-    - fn [operationLabel](../../src/tui/view.ts#L483) (request: OperationRequest) → string
+    - fn [operationLabel](../../src/tui/view.ts#L484) (request: OperationRequest) → string
       <a id="tui.view.operationLabel"></a><br>How messages name an operation: `doctor`, `feature pay`.
       - calls [tui.view.exportFormat](tui.md#tui.view.exportFormat), [tui.view.explainPlanLabel](tui.md#tui.view.explainPlanLabel), [tui.view.explainBatchLabel](tui.md#tui.view.explainBatchLabel), [tui.view.codeSource](tui.md#tui.view.codeSource)
-    - fn [codeSource](../../src/tui/view.ts#L508) (source: { file?: string | null | undefined; line?: number | null | undefined; since?: string | null | undefined }) → string <!-- internal -->
+    - fn [codeSource](../../src/tui/view.ts#L509) (source: { file?: string | null | undefined; line?: number | null | undefined; since?: string | null | undefined }) → string <!-- internal -->
       <a id="tui.view.codeSource"></a><br>The source of a code-to-spec as the CLI names it: `src/a.ts:8` or `--since HEAD`.
-    - fn [recordStatus](../../src/tui/view.ts#L514) (record: OperationRecord) → string
+    - fn [recordStatus](../../src/tui/view.ts#L515) (record: OperationRecord) → string
       <a id="tui.view.recordStatus"></a><br>The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed.
-    - fn [recordSummary](../../src/tui/view.ts#L521) (record: OperationRecord) → string
+    - fn [recordSummary](../../src/tui/view.ts#L522) (record: OperationRecord) → string
       <a id="tui.view.recordSummary"></a><br>The status with the domain outcome when there is one: `done · code 0`, `2 gap(s) · code 1`.
       - calls [tui.view.mapCheckOutcome](tui.md#tui.view.mapCheckOutcome), [tui.view.mapOutcome](tui.md#tui.view.mapOutcome), [tui.view.baselineOutcome](tui.md#tui.view.baselineOutcome), [tui.view.agentsOutcome](tui.md#tui.view.agentsOutcome), [tui.view.initOutcome](tui.md#tui.view.initOutcome), [tui.view.fmtOutcome](tui.md#tui.view.fmtOutcome), [tui.view.checkOutcome](tui.md#tui.view.checkOutcome), [tui.view.edgeOutcome](tui.md#tui.view.edgeOutcome), [tui.view.wireOutcome](tui.md#tui.view.wireOutcome), [tui.view.exportOutcome](tui.md#tui.view.exportOutcome), [tui.view.parseOutcome](tui.md#tui.view.parseOutcome), [tui.view.tracePlanOutcome](tui.md#tui.view.tracePlanOutcome), [tui.view.explainOutcome](tui.md#tui.view.explainOutcome), [tui.view.explainPlanOutcome](tui.md#tui.view.explainPlanOutcome), [tui.view.explainLlmOutcome](tui.md#tui.view.explainLlmOutcome), [tui.view.explainBatchOutcome](tui.md#tui.view.explainBatchOutcome), [tui.view.draftOutcome](tui.md#tui.view.draftOutcome), [tui.view.specCodeOutcome](tui.md#tui.view.specCodeOutcome), [tui.view.applyOutcome](tui.md#tui.view.applyOutcome), [tui.view.recordStatus](tui.md#tui.view.recordStatus)
-    - fn [checkParams](../../src/tui/view.ts#L553) (request: CheckRequest) → string <!-- internal -->
+    - fn [checkParams](../../src/tui/view.ts#L554) (request: CheckRequest) → string <!-- internal -->
       <a id="tui.view.checkParams"></a><br>The requested check options as the F6 list names them: `keylang · strict · static shape`.
-    - fn [checkOutcome](../../src/tui/view.ts#L563) (payload: CheckPayload) → string <!-- internal -->
+    - fn [checkOutcome](../../src/tui/view.ts#L564) (payload: CheckPayload) → string <!-- internal -->
       <a id="tui.view.checkOutcome"></a><br>`0 fail, 2 unverified, 5 ok`: the CLI's summary line.
-    - fn [exportFormat](../../src/tui/view.ts#L568) (request: ExportRequest) → string <!-- internal -->
+    - fn [exportFormat](../../src/tui/view.ts#L569) (request: ExportRequest) → string <!-- internal -->
       <a id="tui.view.exportFormat"></a><br>The format an export request writes: an explained edge has only the human lines.
       - calls [operations.operations.exportFormatOf](operations.md#operations.operations.exportFormatOf)
-    - fn [explainOutcome](../../src/tui/view.ts#L573) (payload: ExplainPayload) → string <!-- internal -->
+    - fn [explainOutcome](../../src/tui/view.ts#L574) (payload: ExplainPayload) → string <!-- internal -->
       <a id="tui.view.explainOutcome"></a><br>`K001: offline help`, `fn a.b: saved answer fresh`, `module a: no saved answer`.
-    - fn [explainLlmOutcome](../../src/tui/view.ts#L579) (payload: ExplainLlmPayload) → string <!-- internal -->
+    - fn [explainLlmOutcome](../../src/tui/view.ts#L580) (payload: ExplainLlmPayload) → string <!-- internal -->
       <a id="tui.view.explainLlmOutcome"></a><br>`fn a.b: the fresh saved answer, no request`, `…: new short answer saved`, `…: no model, nothing asked`, `…: refused, nothing written`.
-    - fn [explainPlanLabel](../../src/tui/view.ts#L589) (request: ExplainPlanRequest) → string <!-- internal -->
+    - fn [explainPlanLabel](../../src/tui/view.ts#L590) (request: ExplainPlanRequest) → string <!-- internal -->
       <a id="tui.view.explainPlanLabel"></a><br>The CLI command of an inventory: `explain --stale`, `explain --missing --dry-run --limit 3 --jobs 2`.
-    - fn [explainPlanOutcome](../../src/tui/view.ts#L595) (payload: ExplainPlanPayload) → string <!-- internal -->
+    - fn [explainPlanOutcome](../../src/tui/view.ts#L596) (payload: ExplainPlanPayload) → string <!-- internal -->
       <a id="tui.view.explainPlanOutcome"></a><br>`2 stale, 1 gone of 5 saved explanation(s)`, `nothing to explain: zero work, no request`, `6 brief(s) planned, ~1200 in, ~480 out tokens (approximate)`.
-    - fn [explainBatchLabel](../../src/tui/view.ts#L606) (request: ExplainBatchRequest) → string <!-- internal -->
+    - fn [explainBatchLabel](../../src/tui/view.ts#L607) (request: ExplainBatchRequest) → string <!-- internal -->
       <a id="tui.view.explainBatchLabel"></a><br>The CLI command of a batch: `explain --missing --llm --limit 3 --jobs 2`.
-    - fn [explainBatchOutcome](../../src/tui/view.ts#L611) (payload: ExplainBatchPayload) → string <!-- internal -->
+    - fn [explainBatchOutcome](../../src/tui/view.ts#L612) (payload: ExplainBatchPayload) → string <!-- internal -->
       <a id="tui.view.explainBatchOutcome"></a><br>`6 of 6 brief(s) written`, `5 of 6 brief(s) written, 1 failed`, `cancelled: 1 of 6 written, 5 not started`, `outdated: …`.
-    - fn [batchState](../../src/tui/view.ts#L621) (payload: ExplainBatchPayload, id: string) → string
+    - fn [batchState](../../src/tui/view.ts#L622) (payload: ExplainBatchPayload, id: string) → string
       <a id="tui.view.batchState"></a><br>What became of one planned node of a batch: `written <file>`, `failed: <reason>`, `not started`.
-    - fn [savedRows](../../src/tui/view.ts#L629) (rows: { text: string; style: Style }[], label: string, saved: SavedAnswer) → void <!-- internal -->
+    - fn [savedRows](../../src/tui/view.ts#L630) (rows: { text: string; style: Style }[], label: string, saved: SavedAnswer) → void <!-- internal -->
       <a id="tui.view.savedRows"></a><br>A saved answer or brief: its provenance on one row, then its text and the IDs it made up.
-    - fn [tracePlanOutcome](../../src/tui/view.ts#L636) (payload: TracePlanPayload) → string <!-- internal -->
+    - fn [tracePlanOutcome](../../src/tui/view.ts#L637) (payload: TracePlanPayload) → string <!-- internal -->
       <a id="tui.view.tracePlanOutcome"></a><br>`4 function(s) to instrument, 1 step id(s) left out`: the plan and what no adapter instruments.
-    - fn [draftOutcome](../../src/tui/view.ts#L641) (status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload) → string <!-- internal -->
+    - fn [draftOutcome](../../src/tui/view.ts#L642) (status: OperationRecord["status"], payload: DraftFlowPayload | DraftRulesPayload | CodeToSpecPayload) → string <!-- internal -->
       <a id="tui.view.draftOutcome"></a><br>`3 step(s), preview, nothing written`, `3 step(s) proposed for <target>`, `refused, nothing written`, `write failed`.
-    - fn [specCodeOutcome](../../src/tui/view.ts#L651) (status: OperationRecord["status"], payload: SpecToCodePayload) → string <!-- internal -->
+    - fn [specCodeOutcome](../../src/tui/view.ts#L652) (status: OperationRecord["status"], payload: SpecToCodePayload) → string <!-- internal -->
       <a id="tui.view.specCodeOutcome"></a><br>What spec-to-code did with its candidate: previewed, proposed (all, or the ones before it stopped), refused.
-    - fn [applyOutcome](../../src/tui/view.ts#L662) (status: OperationRecord["status"], payload: ApplyCodePayload) → string <!-- internal -->
+    - fn [applyOutcome](../../src/tui/view.ts#L663) (status: OperationRecord["status"], payload: ApplyCodePayload) → string <!-- internal -->
       <a id="tui.view.applyOutcome"></a><br>`3 file(s) written`, `refused, nothing written`, `1 of 3 file(s) written, failed|cancelled`.
-    - fn [parseOutcome](../../src/tui/view.ts#L671) (payload: ParsePayload) → string <!-- internal -->
+    - fn [parseOutcome](../../src/tui/view.ts#L672) (payload: ParsePayload) → string <!-- internal -->
       <a id="tui.view.parseOutcome"></a><br>`2 document(s), 1 error(s), 0 warning(s)`: what the parser found, the same counts as the CLI's stderr.
-    - fn [exportOutcome](../../src/tui/view.ts#L677) (status: OperationRecord["status"], payload: ExportPayload) → string <!-- internal -->
+    - fn [exportOutcome](../../src/tui/view.ts#L678) (status: OperationRecord["status"], payload: ExportPayload) → string <!-- internal -->
       <a id="tui.view.exportOutcome"></a><br>`written`, `replaced`, `refused, nothing written`, `write failed`, `cancelled, nothing written`.
-    - fn [edgeOutcome](../../src/tui/view.ts#L685) (payload: ExplainEdgePayload) → string <!-- internal -->
+    - fn [edgeOutcome](../../src/tui/view.ts#L686) (payload: ExplainEdgePayload) → string <!-- internal -->
       <a id="tui.view.edgeOutcome"></a><br>`2 edge(s)`, `no edge, coverage complete`, `no confirmed edge, 1 unresolved`: what the snapshot says between the two ids.
-    - fn [edgeItems](../../src/tui/view.ts#L695) (payload: ExplainEdgePayload) → { file: string | null; line: number; col: number; text: string }[]
+    - fn [edgeItems](../../src/tui/view.ts#L696) (payload: ExplainEdgePayload) → { file: string | null; line: number; col: number; text: string }[]
       <a id="tui.view.edgeItems"></a><br>The evidence of an explain-edge report the arrows select after Tab: every edge (`→` from → to, `←` to → from), or every unresolved construct when there is none. `file` is null for an edge with no position in the code.
       - calls [features.explain-edge.edgeLine](features.md#features.explain-edge.edgeLine), [features.explain-edge.holeLine](features.md#features.explain-edge.holeLine)
-    - fn [wireOutcome](../../src/tui/view.ts#L703) (status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null) → string <!-- internal -->
+    - fn [wireOutcome](../../src/tui/view.ts#L704) (status: OperationRecord["status"], payload: WirePayload, exitCode: 0 | 1 | 2 | null) → string <!-- internal -->
       <a id="tui.view.wireOutcome"></a><br>`written`, `up to date`, `stale`, `2 error(s) in wiring`, `manual file`, `inputs changed, nothing written`: what wire found and really did.
-    - fn [fmtOutcome](../../src/tui/view.ts#L715) (status: OperationRecord["status"], payload: FmtPayload) → string <!-- internal -->
+    - fn [fmtOutcome](../../src/tui/view.ts#L716) (status: OperationRecord["status"], payload: FmtPayload) → string <!-- internal -->
       <a id="tui.view.fmtOutcome"></a><br>`3 file(s) canonical`, `2 not formatted`, `1 formatted, 1 invalid`, `1 of 2 formatted, cancelled`: what fmt found and really did.
-    - fn [choiceText](../../src/tui/view.ts#L730) (choice: AgentsRequest["harnesses"]) → string <!-- internal -->
+    - fn [choiceText](../../src/tui/view.ts#L731) (choice: AgentsRequest["harnesses"]) → string <!-- internal -->
       <a id="tui.view.choiceText"></a><br>`auto`, `none`, `claude, codex`: the selection as requested.
-    - fn [agentsOutcome](../../src/tui/view.ts#L735) (status: OperationRecord["status"], payload: AgentsPayload) → string <!-- internal -->
+    - fn [agentsOutcome](../../src/tui/view.ts#L736) (status: OperationRecord["status"], payload: AgentsPayload) → string <!-- internal -->
       <a id="tui.view.agentsOutcome"></a><br>`up to date`, `2 stale`, `3 written, 1 removed`, `broken file, nothing written`, `2 of 4 step(s) done, failed`.
-    - fn [initOutcome](../../src/tui/view.ts#L750) (status: OperationRecord["status"], payload: InitPayload) → string <!-- internal -->
+    - fn [initOutcome](../../src/tui/view.ts#L751) (status: OperationRecord["status"], payload: InitPayload) → string <!-- internal -->
       <a id="tui.view.initOutcome"></a><br>`set up`, `partial: map failed`, `keylang.json not written`, `cancelled after map`, or a check's two stages: never a success for a partial run.
       - calls [tui.view.agentsOutcome](tui.md#tui.view.agentsOutcome), [tui.view.baselineOutcome](tui.md#tui.view.baselineOutcome), [tui.view.initStages](tui.md#tui.view.initStages)
-    - fn [initStages](../../src/tui/view.ts#L767) (payload: InitPayload) → { name: string; result: OperationResult | null }[] <!-- internal -->
+    - fn [initStages](../../src/tui/view.ts#L768) (payload: InitPayload) → { name: string; result: OperationResult | null }[] <!-- internal -->
       <a id="tui.view.initStages"></a><br>The stages of an init write, in the order they ran.
-    - fn [mapOutcome](../../src/tui/view.ts#L776) (status: OperationRecord["status"], payload: MapPayload) → string <!-- internal -->
+    - fn [mapOutcome](../../src/tui/view.ts#L777) (status: OperationRecord["status"], payload: MapPayload) → string <!-- internal -->
       <a id="tui.view.mapOutcome"></a><br>`3 written, 1 removed`, `1 conflict(s), nothing written`, `2 of 5 done, failed` — what a map write really did.
-    - fn [baselineOutcome](../../src/tui/view.ts#L789) (status: OperationRecord["status"], payload: BaselinePayload) → string <!-- internal -->
+    - fn [baselineOutcome](../../src/tui/view.ts#L790) (status: OperationRecord["status"], payload: BaselinePayload) → string <!-- internal -->
       <a id="tui.view.baselineOutcome"></a><br>`up to date`, `stale`, `written`, `manual file, nothing written`, `inputs changed, nothing written`.
-    - fn [mapCheckOutcome](../../src/tui/view.ts#L799) (payload: MapCheckPayload) → string <!-- internal -->
+    - fn [mapCheckOutcome](../../src/tui/view.ts#L800) (payload: MapCheckPayload) → string <!-- internal -->
       <a id="tui.view.mapCheckOutcome"></a><br>`up to date`, `3 stale`, `1 conflict(s)` (conflicts first: they block `keylang map`).
-    - fn [timeStr](../../src/tui/view.ts#L804) (ms: number) → string <!-- internal -->
+    - fn [timeStr](../../src/tui/view.ts#L805) (ms: number) → string <!-- internal -->
       <a id="tui.view.timeStr"></a><br>Converts an epoch-millisecond timestamp into a local-time `HH:MM:SS` string by formatting it with `Date.toTimeString` and keeping the first eight characters. Used by [`tui.view.resultsReportRows`](tui.md#tui.view.resultsReportRows) to label report rows. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [resultsReportRows](../../src/tui/view.ts#L813) (state: State) → { text: string; style: Style; gap?: number }[]
+    - fn [resultsReportRows](../../src/tui/view.ts#L814) (state: State) → { text: string; style: Style; gap?: number }[]
       <a id="tui.view.resultsReportRows"></a><br>The report rows of the record selected in the F6 panel: its parameters, timings and the operation's messages. Presentation only — the payload in `record.result` carries the domain data.
-      - calls [tui.view.timeStr](tui.md#tui.view.timeStr), [tui.view.recordStatus](tui.md#tui.view.recordStatus), [tui.view.infoSummary](tui.md#tui.view.infoSummary), [tui.view.mapCheckOutcome](tui.md#tui.view.mapCheckOutcome), [tui.view.mapOutcome](tui.md#tui.view.mapOutcome), [tui.view.baselineOutcome](tui.md#tui.view.baselineOutcome), [tui.view.agentsOutcome](tui.md#tui.view.agentsOutcome), [tui.view.initOutcome](tui.md#tui.view.initOutcome), [tui.view.initStages](tui.md#tui.view.initStages), [tui.view.checkOutcome](tui.md#tui.view.checkOutcome), [tui.findings.findingRow](tui.md#tui.findings.findingRow), [tui.view.edgeItems](tui.md#tui.view.edgeItems), [tui.view.exportOutcome](tui.md#tui.view.exportOutcome), [tui.view.wireOutcome](tui.md#tui.view.wireOutcome), [tui.view.parseOutcome](tui.md#tui.view.parseOutcome), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [base.diag.isError](base.md#base.diag.isError), [tui.view.explainOutcome](tui.md#tui.view.explainOutcome), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [tui.view.savedRows](tui.md#tui.view.savedRows), [tui.view.explainPlanOutcome](tui.md#tui.view.explainPlanOutcome), [tui.view.explainBatchLabel](tui.md#tui.view.explainBatchLabel), [tui.view.explainBatchOutcome](tui.md#tui.view.explainBatchOutcome), [tui.view.batchState](tui.md#tui.view.batchState), [tui.view.explainLlmOutcome](tui.md#tui.view.explainLlmOutcome), [tui.view.tracePlanOutcome](tui.md#tui.view.tracePlanOutcome), [tui.view.draftOutcome](tui.md#tui.view.draftOutcome), [tui.view.codeSource](tui.md#tui.view.codeSource), [tui.view.specCodeOutcome](tui.md#tui.view.specCodeOutcome), [tui.view.applyOutcome](tui.md#tui.view.applyOutcome), [tui.view.recordSummary](tui.md#tui.view.recordSummary), [tui.view.fmtOutcome](tui.md#tui.view.fmtOutcome)
-    - fn [infoSummary](../../src/tui/view.ts#L1357) (items: readonly FeatureInfo[]) → string <!-- internal -->
+      - calls [tui.view.timeStr](tui.md#tui.view.timeStr), [tui.view.recordStatus](tui.md#tui.view.recordStatus), [tui.view.infoSummary](tui.md#tui.view.infoSummary), [tui.view.mapCheckOutcome](tui.md#tui.view.mapCheckOutcome), [tui.view.mapOutcome](tui.md#tui.view.mapOutcome), [tui.view.baselineOutcome](tui.md#tui.view.baselineOutcome), [tui.view.agentsOutcome](tui.md#tui.view.agentsOutcome), [tui.view.initOutcome](tui.md#tui.view.initOutcome), [tui.view.initStages](tui.md#tui.view.initStages), [tui.view.checkOutcome](tui.md#tui.view.checkOutcome), [tui.findings.findingRow](tui.md#tui.findings.findingRow), [tui.view.edgeItems](tui.md#tui.view.edgeItems), [tui.view.exportOutcome](tui.md#tui.view.exportOutcome), [tui.view.wireOutcome](tui.md#tui.view.wireOutcome), [tui.view.parseOutcome](tui.md#tui.view.parseOutcome), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic), [base.diag.isError](base.md#base.diag.isError), [tui.view.explainOutcome](tui.md#tui.view.explainOutcome), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [tui.view.savedRows](tui.md#tui.view.savedRows), [tui.view.explainPlanOutcome](tui.md#tui.view.explainPlanOutcome), [features.explain-inventory.briefCounts](features.md#features.explain-inventory.briefCounts), [tui.view.explainBatchLabel](tui.md#tui.view.explainBatchLabel), [tui.view.explainBatchOutcome](tui.md#tui.view.explainBatchOutcome), [tui.view.batchState](tui.md#tui.view.batchState), [tui.view.explainLlmOutcome](tui.md#tui.view.explainLlmOutcome), [tui.view.tracePlanOutcome](tui.md#tui.view.tracePlanOutcome), [tui.view.draftOutcome](tui.md#tui.view.draftOutcome), [tui.view.codeSource](tui.md#tui.view.codeSource), [tui.view.specCodeOutcome](tui.md#tui.view.specCodeOutcome), [tui.view.applyOutcome](tui.md#tui.view.applyOutcome), [tui.view.recordSummary](tui.md#tui.view.recordSummary), [tui.view.fmtOutcome](tui.md#tui.view.fmtOutcome)
+    - fn [infoSummary](../../src/tui/view.ts#L1358) (items: readonly FeatureInfo[]) → string <!-- internal -->
       <a id="tui.view.infoSummary"></a><br>`ok 2 · unverified 1`, or `—` when the feature has none.
-    - fn [resultsSplit](../../src/tui/view.ts#L1365) (state: State, height: number) → { list: number; report: number }
+    - fn [resultsSplit](../../src/tui/view.ts#L1366) (state: State, height: number) → { list: number; report: number }
       <a id="tui.view.resultsSplit"></a><br>How the F6 panel splits: the entries list on top, the content of the selected entry below.
-    - fn [findingStateRow](../../src/tui/view.ts#L1375) (state: State) → string | null
+    - fn [findingStateRow](../../src/tui/view.ts#L1376) (state: State) → string | null
       <a id="tui.view.findingStateRow"></a><br>Why the shown analysis is not a plain current check: a failed run, an update in flight, changes since the analysis, or unsaved buffers taken as overlay.
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.view.configNote](tui.md#tui.view.configNote)
-    - fn [findingDetailRows](../../src/tui/view.ts#L1398) (state: State, width: number) → string[]
+    - fn [findingDetailRows](../../src/tui/view.ts#L1399) (state: State, width: number) → string[]
       <a id="tui.view.findingDetailRows"></a><br>The details of the selected finding, wrapped to `width`: its full message (the list row cuts it) and then criterion, provenance, snapshot and reason; without a selection, why the list is empty. Always the same number of rows, so the list does not jump while the selection moves.
       - calls [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.actions.noSnapshotReason](tui.md#tui.actions.noSnapshotReason), [tui.view.padRows](tui.md#tui.view.padRows), [tui.view.clipRows](tui.md#tui.view.clipRows), [tui.view.wrapCells](tui.md#tui.view.wrapCells), [tui.findings.findingDetailText](tui.md#tui.findings.findingDetailText)
-    - fn [clipRows](../../src/tui/view.ts#L1409) (rows: string[], count: number, width: number) → string[] <!-- internal -->
+    - fn [clipRows](../../src/tui/view.ts#L1410) (rows: string[], count: number, width: number) → string[] <!-- internal -->
       <a id="tui.view.clipRows"></a><br>The first `count` rows; a cut ends with `…`.
       - calls [tui.width.fitWidth](tui.md#tui.width.fitWidth)
-    - fn [padRows](../../src/tui/view.ts#L1413) (rows: string[]) → string[] <!-- internal -->
+    - fn [padRows](../../src/tui/view.ts#L1414) (rows: string[]) → string[] <!-- internal -->
       <a id="tui.view.padRows"></a><br>Appends empty strings to the given rows until the array is at least `DETAIL_MESSAGE_ROWS + DETAIL_META_ROWS` long, never truncating. Used by [`tui.view.findingDetailRows`](tui.md#tui.view.findingDetailRows) so the finding detail panel keeps a fixed height. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [wrapCells](../../src/tui/view.ts#L1418) (text: string, width: number) → string[] <!-- internal -->
+    - fn [wrapCells](../../src/tui/view.ts#L1419) (text: string, width: number) → string[] <!-- internal -->
       <a id="tui.view.wrapCells"></a><br>`text` cut into rows of at most `width` cells, at spaces where it can.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.fitWidth](tui.md#tui.width.fitWidth), [tui.width.graphemes](tui.md#tui.width.graphemes)
-    - fn [findingsListRows](../../src/tui/view.ts#L1434) (state: State, rect: Rect) → number
+    - fn [findingsListRows](../../src/tui/view.ts#L1435) (state: State, rect: Rect) → number
       <a id="tui.view.findingsListRows"></a><br>Rows the findings list takes inside the panel `rect`: the counts, the state and the details of the selected finding come first.
       - calls [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.view.findingDetailRows](tui.md#tui.view.findingDetailRows), [tui.view.findingStateRow](tui.md#tui.view.findingStateRow)
-    - fn [drawResults](../../src/tui/view.ts#L1441) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawResults](../../src/tui/view.ts#L1442) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawResults"></a><br>The F6 panel over the editor area: the entries on top, the content of the selected entry below.
       - calls [tui.view.edgeItems](tui.md#tui.view.edgeItems), [tui.actions.exportRecord](tui.md#tui.actions.exportRecord), [tui.view.reportOverflow](tui.md#tui.view.reportOverflow), [tui.view.resultsReportRows](tui.md#tui.view.resultsReportRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.findings.findingCounts](tui.md#tui.findings.findingCounts), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.view.recordLabel](tui.md#tui.view.recordLabel), [tui.view.recordStatus](tui.md#tui.view.recordStatus), [tui.view.drawFindings](tui.md#tui.view.drawFindings), [tui.width.sliceCells](tui.md#tui.width.sliceCells)
-    - fn [reportOverflow](../../src/tui/view.ts#L1532) (rows: readonly { text: string }[], width: number) → number
+    - fn [reportOverflow](../../src/tui/view.ts#L1533) (rows: readonly { text: string }[], width: number) → number
       <a id="tui.view.reportOverflow"></a><br>Cells the widest report row exceeds `width` by: how far ←→ can scroll it.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [drawFindings](../../src/tui/view.ts#L1539) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
+    - fn [drawFindings](../../src/tui/view.ts#L1540) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
       <a id="tui.view.drawFindings"></a><br>The full findings report of the current analysis: counts, filters, the selected finding's details, and the list.
       - calls [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingCounts](tui.md#tui.findings.findingCounts), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.findingStateRow](tui.md#tui.view.findingStateRow), [tui.view.findingDetailRows](tui.md#tui.view.findingDetailRows), [tui.findings.findingRow](tui.md#tui.findings.findingRow)
-    - fn [drawHover](../../src/tui/view.ts#L1583) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawHover](../../src/tui/view.ts#L1584) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawHover"></a><br>Sizes and positions a hover popup inside the editor rectangle (preferring below the anchor, clamped to fit), draws its frame via [`tui.view.drawBox`](tui.md#tui.view.drawBox), then writes each line with [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write) using per-kind colors, rendering "rule" lines as a horizontal separator. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawCompletion](../../src/tui/view.ts#L1597) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawCompletion](../../src/tui/view.ts#L1598) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
       <a id="tui.view.drawCompletion"></a><br>Renders the autocomplete popup: picks a window of up to eight items around the selected index, sizes and anchors a box near the cursor column via [`tui.view.cellsBetween`](tui.md#tui.view.cellsBetween) and [`tui.view.gutterWidth`](tui.md#tui.view.gutterWidth), flipping above the row if it would overflow. Each row is written with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [keyRows](../../src/tui/view.ts#L1679) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
+    - fn [keyRows](../../src/tui/view.ts#L1680) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
       <a id="tui.view.keyRows"></a><br>The key rows of a mode: two pairs a row where both fit in `width`, else one; a long pair takes its own row.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [helpRows](../../src/tui/view.ts#L1703) (state: State, width: number) → string[]
+    - fn [helpRows](../../src/tui/view.ts#L1704) (state: State, width: number) → string[]
       <a id="tui.view.helpRows"></a><br>The rows of the help popup, wrapped to `width`: the keys of the mode, the offline help of the line's diagnostic, then the whole catalogue by group — the same registry the palette searches, with each key as the mode has it and the reason of each unavailable action.
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [features.explain.explainCode](features.md#features.explain.explainCode), [tui.view.keyRows](tui.md#tui.view.keyRows), [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.actions.actionKey](tui.md#tui.actions.actionKey), [tui.view.wrapCells](tui.md#tui.view.wrapCells)
-    - fn [helpBox](../../src/tui/view.ts#L1736) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
+    - fn [helpBox](../../src/tui/view.ts#L1737) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
       <a id="tui.view.helpBox"></a><br>Where the help popup draws, its rows and how many of them show at once.
       - calls [tui.view.layout](tui.md#tui.view.layout), [tui.view.helpRows](tui.md#tui.view.helpRows)
-    - fn [helpScrollMax](../../src/tui/view.ts#L1747) (state: State) → number
+    - fn [helpScrollMax](../../src/tui/view.ts#L1748) (state: State) → number
       <a id="tui.view.helpScrollMax"></a><br>The last first row the help can scroll to.
       - calls [tui.view.helpBox](tui.md#tui.view.helpBox)
-    - fn [drawHelp](../../src/tui/view.ts#L1752) (grid: Grid, state: State) → void <!-- internal -->
+    - fn [drawHelp](../../src/tui/view.ts#L1753) (grid: Grid, state: State) → void <!-- internal -->
       <a id="tui.view.drawHelp"></a><br>Renders the key-help popup: gets the rect and text rows from [`tui.view.helpBox`](tui.md#tui.view.helpBox), frames it with [`tui.view.drawBox`](tui.md#tui.view.drawBox), and writes the visible slice via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write), clamping scroll to `state.helpTop`. When rows overflow, it adds a footer line showing the range and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.view.helpBox](tui.md#tui.view.helpBox), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawPrompt](../../src/tui/view.ts#L1760) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
+    - fn [drawPrompt](../../src/tui/view.ts#L1761) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawPrompt"></a><br>Paints the active prompt's status line with a per-kind label, the typed text or form summary, and a note, placing the cursor via [`tui.width.stringWidth`](tui.md#tui.width.stringWidth). For list prompts it then draws a scrolled popup through [`tui.view.drawBox`](tui.md#tui.view.drawBox), with detail rows above choices and the selected… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.newSpecLabel](tui.md#tui.view.newSpecLabel), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.wrapCells](tui.md#tui.view.wrapCells), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [newSpecLabel](../../src/tui/view.ts#L1796) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
+    - fn [newSpecLabel](../../src/tui/view.ts#L1797) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
       <a id="tui.view.newSpecLabel"></a><br>The label of the field the new-spec form is on.
-    - fn [footerHint](../../src/tui/view.ts#L1814) (mode: State["mode"], width: number) → string
+    - fn [footerHint](../../src/tui/view.ts#L1815) (mode: State["mode"], width: number) → string
       <a id="tui.view.footerHint"></a><br>The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [configNote](../../src/tui/view.ts#L1829) (state: State) → string | null
+    - fn [configNote](../../src/tui/view.ts#L1830) (state: State) → string | null
       <a id="tui.view.configNote"></a><br>Where the analysis takes its settings from, when that is not a plain saved `keylang.json`: a guess (no config), or the saved file while the buffer of `keylang.json` has unsaved edits that do not take effect.
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-    - fn [drawBarrier](../../src/tui/view.ts#L1838) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawBarrier](../../src/tui/view.ts#L1839) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawBarrier"></a><br>The save step before an operation that reads the disk (design §2.5), over the editor area.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawQuit](../../src/tui/view.ts#L1866) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawQuit](../../src/tui/view.ts#L1867) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawQuit"></a><br>The quit step while an operation runs (design §5), over the editor area.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawStart](../../src/tui/view.ts#L1891) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawStart](../../src/tui/view.ts#L1892) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawStart"></a><br>The start screen of a repository without `keylang.json` (design §2.1): what was found and what can be done.
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [render](../../src/tui/view.ts#L1911) (state: State) → Grid
+    - fn [render](../../src/tui/view.ts#L1912) (state: State) → Grid
       <a id="tui.view.render"></a><br>Builds the full terminal frame: title bar with file and mode, side panels via [`tui.view.drawFiles`](tui.md#tui.view.drawFiles)/[`tui.view.drawNav`](tui.md#tui.view.drawNav), the body chosen by mode ([`tui.view.drawEditor`](tui.md#tui.view.drawEditor), [`tui.view.drawCode`](tui.md#tui.view.drawCode), etc.), a detail line from [`tui.evidence.evidenceOf`](tui.md#tui.evidence.evidenceOf), and a status bar with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [tui.screen.Grid](tui.md#tui.screen.Grid), [tui.view.layout](tui.md#tui.view.layout), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.drawFiles](tui.md#tui.view.drawFiles), [tui.view.drawContext](tui.md#tui.view.drawContext), [tui.view.drawNav](tui.md#tui.view.drawNav), [tui.view.drawStart](tui.md#tui.view.drawStart), [tui.view.drawCode](tui.md#tui.view.drawCode), [tui.view.drawMerge](tui.md#tui.view.drawMerge), [tui.view.drawRead](tui.md#tui.view.drawRead), [tui.view.drawEditor](tui.md#tui.view.drawEditor), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.lineMessage](tui.md#tui.view.lineMessage), [tui.view.footerHint](tui.md#tui.view.footerHint), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.evidence.totals](tui.md#tui.evidence.totals), [tui.view.configNote](tui.md#tui.view.configNote), [tui.view.drawResults](tui.md#tui.view.drawResults), [tui.view.drawHover](tui.md#tui.view.drawHover), [tui.view.drawCompletion](tui.md#tui.view.drawCompletion), [tui.view.drawHelp](tui.md#tui.view.drawHelp), [tui.view.drawPrompt](tui.md#tui.view.drawPrompt), [tui.view.drawBarrier](tui.md#tui.view.drawBarrier), [tui.view.drawQuit](tui.md#tui.view.drawQuit)
   - module [web](../../src/tui/web.ts#L1)

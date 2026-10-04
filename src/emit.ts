@@ -2,7 +2,7 @@
 // tree with an explanation under every node (ADR 0004).
 
 import { posix } from "node:path";
-import { modelName, type NodeExplanation } from "./explanations.ts";
+import { modelName, SYSTEM_ID, type NodeExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import { compareText } from "./span.ts";
 import type { AnalysisSnapshot, SnapshotEdge, SnapshotNode } from "./snapshot.ts";
@@ -182,6 +182,7 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
   return [
     GENERATED_MARK,
     "",
+    ...systemSection(r),
     "## Explained map",
     "",
     "The tree of the map with a brief under each node: the documentation comment from the code, or a brief a model wrote, marked _(llm · model · date)_ and _stale_ once the code under it changed. `keylang map` writes it from the code and `explain/brief/`; it never asks a model.",
@@ -197,6 +198,20 @@ function renderReadme(snapshot: AnalysisSnapshot, children: Map<string, string[]
     "",
     ...index(r),
   ].join("\n");
+}
+
+/**
+ * The start of the start page: what the repository is (the system level of
+ * C4), under its manifest name. The words come from the README or a manifest,
+ * named after them, else from a model's brief with its origin; without
+ * either, a dash and how to ask for a brief.
+ */
+function systemSection(r: Render): string[] {
+  const name = (r.snapshot.system?.name ?? "Repository").replaceAll("<", "&lt;");
+  const e = r.explain?.(SYSTEM_ID) ?? null;
+  if (e === null) return [`## ${name}`, "", "— Neither a README paragraph nor a manifest description says what this repository is; `keylang explain --missing --llm` asks a model for a brief.", ""];
+  const text = descriptionText(e, (id) => (r.snapshot.nodes[id] ? ref(r, id) : null)).slice("<br>".length);
+  return [`## ${name}`, "", `${text}${e.origin === "doc" && e.source ? ` _(${e.source})_` : ""}`, ""];
 }
 
 /** One paragraph per first letter: every module and class of the repository (packages left out), by name. */
