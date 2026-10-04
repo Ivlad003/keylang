@@ -31,6 +31,9 @@
       <a id="map.analyze.findRoot"></a><br>Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none.
     - fn [within](../../src/analyze.ts#L115) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a>
+    - fn [spelledUnder](../../src/analyze.ts#L126) (abs: string, root: string) → string
+      <a id="map.analyze.spelledUnder"></a><br>`abs` spelled under `root` when it reaches the repository only through a link above it (`/var` → `/private/var` on macOS): the spec directory and the snapshot are found by the path's place, not its spelling. Links inside the repository keep their spelling; a path outside it is…
+      - calls [map.analyze.within](map.md#map.analyze.within)
   - module [declared-packages](../../src/declared-packages.ts#L1)
     <a id="map.declared-packages"></a><br>Packages a repository declares, as `external.<segment>` ids. A rule may name one before any file imports it.
     - node [external.node](external.md#external.node)

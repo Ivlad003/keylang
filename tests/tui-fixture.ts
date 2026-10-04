@@ -1,7 +1,7 @@
 // Shared by the TUI and web tests: the checkout repository of design §3.4
 // with a configured but absent trace, and the bytes a terminal sends.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { stringWidth } from "../src/tui/width.ts";
@@ -35,7 +35,9 @@ export const CHECKOUT_FLOW = [
 
 /** A temp repository with the checkout code, its flow, and a configured (absent) trace. */
 export function checkoutRepo(t: { after: (f: () => void) => void }, specs: Record<string, string> = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), "keylang-tui-"));
+  // The real path, as `keylang` and `keylang web` take it from `findRoot(process.cwd())`;
+  // a linked tmpdir (`/var` → `/private/var` on macOS) would spell paths unlike the CLI twin.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "keylang-tui-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layers = { domain: ["src/domain/**"], application: ["src/application/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] };
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ languages: ["typescript"], layers, check: { trace: ".keylang/trace/*.jsonl" } }, null, 2)}\n`);

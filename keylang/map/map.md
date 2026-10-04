@@ -22,6 +22,8 @@
       - calls base.config.loadConfig, base.config.toPosix, map.map.generateMap, lang.files.collectMdFiles, lang.parser.parse, map.analyze.within, base.span.compareText, base.config.evidenceFiles, base.config.resolveStatic, check.assess.assess, check.test-report.loadReports, check.trace-evidence.loadTraces, map.declared-packages.declaredExternalIds
     - fn [findRoot](../../src/analyze.ts#L105) (start: string) → string
     - fn [within](../../src/analyze.ts#L115) (abs: string, dir: string) → boolean
+    - fn [spelledUnder](../../src/analyze.ts#L126) (abs: string, root: string) → string
+      - calls map.analyze.within
   - module [declared-packages](../../src/declared-packages.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

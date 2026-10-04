@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -1122,16 +1122,24 @@ test("check finds the snapshot for any spelling of the spec path", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   appendFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function again(o: Order): void { save(o); }\n');
+  // The repository through a link (as `/var` → `/private/var` on macOS): the process cwd is the real path, the argument is not.
+  const linked = mkdtempSync(join(tmpdir(), "keylang-link-"));
+  t.after(() => rmSync(linked, { recursive: true, force: true }));
+  symlinkSync(realpathSync(dir), join(linked, "repo"), "dir");
   for (const [cwd, args] of [
     [dir, ["check", "keylang"]],
     [dir, ["check", "./keylang"]],
     [dir, ["check", join(dir, "keylang")]],
+    [dir, ["check", join(linked, "repo/keylang")]],
+    [dir, ["check", join(linked, "repo/keylang/rules.md")]],
     [join(dir, "keylang"), ["check", "."]],
     [join(dir, "src"), ["check"]],
   ] as const) {
     const checked = keylang(cwd, [...args]);
     assert.equal(checked.status, 1, `${cwd} ${args.join(" ")}\n${checked.stdout}`);
     assert.match(checked.stdout, /K102/);
+    // Findings are shown at the repository's own spelling, not through the link.
+    assert.doesNotMatch(checked.stdout, /keylang-link-/);
   }
 });
 

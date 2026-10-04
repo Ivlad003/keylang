@@ -3,8 +3,8 @@
 // map rendered from the fresh snapshot, so IDs resolve against current code,
 // not a stale committed map. Nothing is written.
 
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
 import { declaredExternalIds } from "./declared-packages.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
@@ -115,4 +115,30 @@ export function findRoot(start: string): string {
 export function within(abs: string, dir: string): boolean {
   const rel = relative(dir, abs);
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+/**
+ * `abs` spelled under `root` when it reaches the repository only through a
+ * link above it (`/var` → `/private/var` on macOS): the spec directory and the
+ * snapshot are found by the path's place, not its spelling. Links inside the
+ * repository keep their spelling; a path outside it is returned as it is.
+ */
+export function spelledUnder(abs: string, root: string): string {
+  if (within(abs, root)) return abs;
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(root);
+  } catch {
+    return abs;
+  }
+  const rest: string[] = [];
+  for (let dir = abs; ; dir = dirname(dir)) {
+    try {
+      if (realpathSync(dir) === realRoot) return join(root, ...rest.reverse());
+    } catch {
+      // A missing ancestor: keep climbing.
+    }
+    if (dirname(dir) === dir) return abs;
+    rest.push(basename(dir));
+  }
 }

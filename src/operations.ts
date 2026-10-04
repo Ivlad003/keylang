@@ -7,7 +7,7 @@
 
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
+import { analyze, spelledUnder, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
 import { filterChanged } from "./changed.ts";
 import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
@@ -2240,7 +2240,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
   }
   const specDir = join(request.root, config.dir);
   if (request.paths.length === 0 && !existsSync(specDir)) return emptyCheck("failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
-  const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
+  const specs = request.paths.length > 0 ? request.paths.map((path) => spelledUnder(resolve(base, path), request.root)) : [specDir];
   for (const spec of specs) if (!existsSync(spec)) return emptyCheck("failed", 2, `${relative(base, spec) || spec}: not found`);
   if (request.since !== undefined && request.changed !== true) return emptyCheck("failed", 2, "check: --since requires --changed");
   // The git slice is read before the analysis: without git or with an unknown ref the check fails, it never falls back to a full one.
