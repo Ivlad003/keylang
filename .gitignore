@@ -5,12 +5,13 @@ dist/
 # джерельне відео (22 МБ) не в репозиторії
 clip_*.mp4
 # локальне для агентів і інструментів, не частина проєкту:
-# лог opencode (містить пароль сервера), скіли Claude Code, трекер тікетів
-# (docs/agents/issue-tracker.md: тікети живуть локально) і вказівки до нього
+# лог opencode (містить пароль сервера), скіли Claude Code, вказівки до
+# трекера тікетів. Спеки й тікети живуть у .scratch/ і вони в репозиторії.
 .ocs.log
 .claude/
-.scratch/
 docs/agents/
+# стан runner shiftwork у .scratch: блокировки claim, як і .pi/shiftwork-*.json
+.scratch/.claims/
 .cache/
 .local/
 # shiftwork: стан запуску, lock, cooldowns і логи змін (конфіг .pi/shiftwork.json — у репозиторії)

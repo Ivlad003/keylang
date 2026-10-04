@@ -1,0 +1,64 @@
+diff --git a/dev/fd/63 b/docs/format.md
+index 0000000..78e2f57 100644
+--- a/docs/format.md
++++ b/docs/format.md
+@@ -420,7 +420,7 @@ keylang/flows/buy.md:5:10: K008 `then OutOfStock` is read as text, not a referen
+ - Посилання всередині файлів завжди абсолютні, крім `exports` (відносно модуля).
+ - Резолвінг глобальний: `keylang check <dir>` збирає всі `*.md` під директорією (рекурсивно, крім прихованих директорій, `node_modules` і `target`), будує один індекс і перевіряє всі посилання. Символічне посилання на файл чи теку читається як його ціль (цикл посилань обходиться раз), а файл, до якого ведуть два шляхи, — один документ під шляхом без посилання.
+ - Шари оголошує `keylang.json`, а карта друкує шар, лише коли в ньому є модуль. Тому шар конфігурації без модулів (наприклад, `wiring` до першого `keylang wire`) і синтетичні `external` та `unassigned` — відомі ID: правило може їх назвати без K001 і до того, як у них щось з'явиться.
+-- Пакет, записаний у `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) у корені або в будь-якому `package.json` між файлом коду й коренем, чи в `Cargo.toml` крейта (`dependencies`, `dev-dependencies`, `build-dependencies` і ті самі таблиці під `target`), відомий як `external.<сегмент>` навіть без імпорту і коли єдиний імпортер виключено: посилання на нього не дає K001, а знімок нового вузла не додає. Пакет, який є лише в `node_modules`, відомим не є. Маніфести Python не читаються. `planned module external.<pkg>` дає K202 лише коли імпорт уже створив вузол.
++- Пакет, записаний у `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) у корені або в `package.json` чи `Cargo.toml` на шляху від проаналізованого файла до кореня, відомий як `external.<сегмент>` навіть без імпорту і коли єдиний імпортер виключено: посилання на нього не дає K001, а знімок нового вузла не додає. Маніфест належить шляху від файла до кореня, лише якщо його самого не виключено (`exclude`), і жодна тека не обходиться: `package.json` у `bench/**`, `editors/**` чи іншій виключеній теці цього репозиторію не оголошує пакетів. `@types/x` рахується як `x`. Діапазон `workspace:`, `file:`, `link:` чи `portal:` і ім'я пакета з кореневого `workspaces` — внутрішній код, не external. Пакет, який є лише в `node_modules`, відомим не є. Маніфести Python не читаються: назва дистрибутива не дорівнює імені імпорту (`Pillow` імпортується як `PIL`), тож Python-пакет відомий лише коли його імпортують. У `Cargo.toml` читаються `dependencies`, `dev-dependencies`, `build-dependencies` і ті самі таблиці під `target`, а файл без `[package]` (кореневий воркспейс) не є маніфестом крейта. `planned module external.<pkg>` дає K202 лише коли імпорт уже створив вузол.
+ 
+ Правило пошуку ID:
+ 
+@@ -632,7 +632,7 @@ unverified(R) :- not fail(R), area(R, U), hole(U).
+ keylang/rules.md:3:1: K106 `allow app.x.y domain` and `deny app domain.storefront` (keylang/rules.md:4) are incomparable; deny wins (deny-overrides); add `allow app.x.y domain.storefront` or `deny app.x.y domain.storefront`
+ ```
+ 
+-`external.<pkg>`, оголошений у `package.json` або `Cargo.toml`, не дає K001 і не додає вузол у знімок, доки якийсь файл його не імпортує. `exports` ця модель не описує.
++`external.<pkg>`, оголошений у `package.json` або `Cargo.toml`, не дає K001 і не додає вузол у знімок, доки якийсь файл його не імпортує. `exports` ця модель не описує. Сегмент ID — з імені пакета: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. Коли два імені дають один сегмент (`@scope/pkg` і `scope-pkg`), суфікси `-2`, `-3`… рахуються над оголошеними й імпортованими іменами разом, а не лише над імпортованими: ім'я, що дорівнює сегменту, лишається без суфікса, інші отримують його в порядку імен, і про кожне — попередження. Тож ID пакета не залежить від того, який із зіткнених пакетів код випадково імпортує.
+ 
+ ### Flows: докази кроку
+ 
+diff --git a/dev/fd/63 b/tests/rules-area.test.ts
+index 0000000..dfdbd64 100644
+--- a/tests/rules-area.test.ts
++++ b/tests/rules-area.test.ts
+@@ -535,6 +535,37 @@ test("a declared package with no import anywhere is not K001 and adds no snapsho
+   assert.doesNotMatch(mapText, /external\.pg/);
+ });
+ 
++test("a manifest outside the analysed tree is not read: `exclude` keeps a bench manifest out, so its package is K001", (t) => {
++  const dir = repo(t, {
++    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }, { exclude: ["bench/**"] }),
++    "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
++    "bench/x/package.json": `${JSON.stringify({ dependencies: { junk: "1.0.0" } })}\n`,
++    "src/app/a.ts": "export function a(): void {}\n",
++    "src/infra/db.ts": "export function db(): void {}\n",
++    "keylang/rules.md": "# rules\n\n- allow infra external.pg\n- allow infra external.junk\n",
++  });
++  const run = check(dir);
++  assert.equal(run.status, 1, run.stdout);
++  assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes("external.junk")), run.stdout);
++  assert.ok(!run.results.some((row) => row.code === "K001" && row.evidence.includes("external.pg")), run.stdout);
++});
++
++test("a workspace package is internal, not a known external: a `workspace:` range and a root `workspaces` name are K001", (t) => {
++  const dir = repo(t, {
++    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
++    "package.json": `${JSON.stringify({ dependencies: { wslib: "workspace:*", named: "1.0.0" }, workspaces: ["packages/*"] })}\n`,
++    "packages/named/package.json": `${JSON.stringify({ name: "named", version: "1.0.0" })}\n`,
++    "src/app/a.ts": "export function a(): void {}\n",
++    "src/infra/db.ts": "export function db(): void {}\n",
++    "keylang/rules.md": "# rules\n\n- allow infra external.wslib\n- allow infra external.named\n",
++  });
++  const run = check(dir);
++  assert.equal(run.status, 1, run.stdout);
++  for (const name of ["external.wslib", "external.named"]) {
++    assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes(name)), `${name}: ${run.stdout}`);
++  }
++});
++
+ test("a type or a planned event on deny is K005 scope and applies nowhere", (t) => {
+   const dir = repo(t, {
+     "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),

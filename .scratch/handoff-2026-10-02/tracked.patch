@@ -1,0 +1,1033 @@
+diff --git a/.pi/shiftwork.json b/.pi/shiftwork.json
+index d83a411..bcdc553 100644
+--- a/.pi/shiftwork.json
++++ b/.pi/shiftwork.json
+@@ -4,6 +4,7 @@
+   "maxAttempts": 3,
+   "maxHandoffs": 3,
+   "softLimitPct": 80,
++  "verifyTimeoutMin": 20,
+   "worktree": {
+     "enabled": true,
+     "setup": [
+@@ -45,16 +46,17 @@
+       "budget": {
+         "maxTurns": 40,
+         "maxContextPct": 60,
+-        "stallTurns": 5
++        "stallTurns": 50
+       }
+     },
+     "standard": {
+       "chain": [
+-        "opencode:opencode-go/kimi-k3",
+         "opencode:opencode-go/glm-5.3",
++        "opencode-go/deepseek-v4-pro",
+         "grok:grok-4.7",
++        "opencode:opencode-go/kimi-k3",
++        "claude:claude-opus-5-5",
+         "opencode-go/glm-5.3",
+-        "opencode-go/deepseek-v4-pro",
+         "opencode-go/kimi-k3",
+         "opencode-go/qwen3.8-max",
+         "xai/grok-4.6",
+@@ -85,7 +87,7 @@
+     "default": {
+       "maxTurns": 60,
+       "maxWallMin": 45,
+-      "stallTurns": 8
++      "stallTurns": 50
+     },
+     "tiers": {},
+     "models": {},
+@@ -139,5 +141,12 @@
+       "openrouter/typesafe/jev-1.13",
+       "opencode/jev-1.13-free"
+     ]
++  },
++  "review": {
++    "enabled": true,
++    "tier": "premium",
++    "budget": {
++      "maxWallMin": 45
++    }
+   }
+ }
+diff --git a/AGENTS.md b/AGENTS.md
+index 93175cd..3044192 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -80,7 +80,7 @@
+ 
+ ### Shiftwork
+ 
+-Тікети виконує `npx shiftwork run`; моделі, рівні й worktree-setup — у `.pi/shiftwork.json`. Кожен тікет іде у свіжому контексті в окремому worktree, і закривають його лише команди `**Verify:**`. Пишучи тікет, дотримуйся полів shiftwork із `docs/agents/issue-tracker.md`: `Verify`, `Type` і `Blocked by`, де кожне число — блокер тієї ж фічі.
++Тікети виконує `npx shiftwork run`; моделі, рівні й worktree-setup — у `.pi/shiftwork.json`. Кожен тікет іде у свіжому контексті в окремому worktree, і закривають його лише команди `**Verify:**`. Перед злиттям зміну оцінює review-зміна (`review` у конфігу): `accept` зливає гілку, `reopen` повертає тікет із зауваженнями в `### Review`, `follow-up` зливає й створює новий тікет. Пишучи тікет, дотримуйся полів shiftwork із `docs/agents/issue-tracker.md`: `Verify`, `Type` і `Blocked by`, де кожне число — блокер тієї ж фічі.
+ 
+ Коли працюєш як воркер зміни (промпт `.pi/shiftwork-worker.md`):
+ 
+diff --git a/docs/design.md b/docs/design.md
+index 90a0134..c61a169 100644
+--- a/docs/design.md
++++ b/docs/design.md
+@@ -569,7 +569,7 @@ $ keylang               # TUI з M4; keylang web — те саме в брауз
+ | Claude Code | блок в `AGENTS.md`; `@AGENTS.md` у `CLAUDE.md` (Claude Code читає `AGENTS.md` лише без `CLAUDE.md`) | `.mcp.json` | хук `Stop` у `.claude/settings.json` |
+ | Codex | блок в `AGENTS.md` (ліміт 32 KiB на всі файли) | `.codex/config.toml` (лише trusted-проєкт) | `.codex/hooks.json`, схвалюється в `/hooks` |
+ | Cursor | `AGENTS.md` | `.cursor/mcp.json` | хуки з `.claude/settings.json` (Third-Party Imports) |
+-| opencode | `AGENTS.md` | `opencode.json` | лише інструкція (v1) |
++| opencode | `AGENTS.md` | `opencode.json` (`mcp.keylang` у формі V1; перевірено — opencode V2.0.20 приймає її, `mcp list` дає `keylang connected`) | лише інструкція (v1) |
+ 
+ Блоки keylang стоять між маркерами, ідемпотентні й перевіряються `--check`; чужий текст не змінюється. Команда MCP — `npx -y keylang@<version> mcp`, де `<version>` — поле `version` з `package.json` keylang, що виконав `init` або `agents`. Skill `keylang-feature` (стандарт agentskills.io) лежить у `.agents/skills/` і копією в `.claude/skills/`: він описує цикл фічі нижче. Де харнес має deny у дозволах, редагування `keylang/rules*.md` заборонене.
+ 
+diff --git a/docs/format.md b/docs/format.md
+index 572aaac..78e2f57 100644
+--- a/docs/format.md
++++ b/docs/format.md
+@@ -420,7 +420,7 @@ keylang/flows/buy.md:5:10: K008 `then OutOfStock` is read as text, not a referen
+ - Посилання всередині файлів завжди абсолютні, крім `exports` (відносно модуля).
+ - Резолвінг глобальний: `keylang check <dir>` збирає всі `*.md` під директорією (рекурсивно, крім прихованих директорій, `node_modules` і `target`), будує один індекс і перевіряє всі посилання. Символічне посилання на файл чи теку читається як його ціль (цикл посилань обходиться раз), а файл, до якого ведуть два шляхи, — один документ під шляхом без посилання.
+ - Шари оголошує `keylang.json`, а карта друкує шар, лише коли в ньому є модуль. Тому шар конфігурації без модулів (наприклад, `wiring` до першого `keylang wire`) і синтетичні `external` та `unassigned` — відомі ID: правило може їх назвати без K001 і до того, як у них щось з'явиться.
+-- Пакет, записаний у `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) у корені або в будь-якому `package.json` між файлом коду й коренем, чи в `Cargo.toml` крейта (`dependencies`, `dev-dependencies`, `build-dependencies` і ті самі таблиці під `target`), відомий як `external.<сегмент>` навіть без імпорту і коли єдиний імпортер виключено: посилання на нього не дає K001, а знімок нового вузла не додає. Пакет, який є лише в `node_modules`, відомим не є. Маніфести Python не читаються. `planned module external.<pkg>` дає K202 лише коли імпорт уже створив вузол.
++- Пакет, записаний у `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) у корені або в `package.json` чи `Cargo.toml` на шляху від проаналізованого файла до кореня, відомий як `external.<сегмент>` навіть без імпорту і коли єдиний імпортер виключено: посилання на нього не дає K001, а знімок нового вузла не додає. Маніфест належить шляху від файла до кореня, лише якщо його самого не виключено (`exclude`), і жодна тека не обходиться: `package.json` у `bench/**`, `editors/**` чи іншій виключеній теці цього репозиторію не оголошує пакетів. `@types/x` рахується як `x`. Діапазон `workspace:`, `file:`, `link:` чи `portal:` і ім'я пакета з кореневого `workspaces` — внутрішній код, не external. Пакет, який є лише в `node_modules`, відомим не є. Маніфести Python не читаються: назва дистрибутива не дорівнює імені імпорту (`Pillow` імпортується як `PIL`), тож Python-пакет відомий лише коли його імпортують. У `Cargo.toml` читаються `dependencies`, `dev-dependencies`, `build-dependencies` і ті самі таблиці під `target`, а файл без `[package]` (кореневий воркспейс) не є маніфестом крейта. `planned module external.<pkg>` дає K202 лише коли імпорт уже створив вузол.
+ 
+ Правило пошуку ID:
+ 
+@@ -632,7 +632,7 @@ unverified(R) :- not fail(R), area(R, U), hole(U).
+ keylang/rules.md:3:1: K106 `allow app.x.y domain` and `deny app domain.storefront` (keylang/rules.md:4) are incomparable; deny wins (deny-overrides); add `allow app.x.y domain.storefront` or `deny app.x.y domain.storefront`
+ ```
+ 
+-`external.<pkg>`, оголошений у `package.json` або `Cargo.toml`, не дає K001 і не додає вузол у знімок, доки якийсь файл його не імпортує. `exports` ця модель не описує.
++`external.<pkg>`, оголошений у `package.json` або `Cargo.toml`, не дає K001 і не додає вузол у знімок, доки якийсь файл його не імпортує. `exports` ця модель не описує. Сегмент ID — з імені пакета: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. Коли два імені дають один сегмент (`@scope/pkg` і `scope-pkg`), суфікси `-2`, `-3`… рахуються над оголошеними й імпортованими іменами разом, а не лише над імпортованими: ім'я, що дорівнює сегменту, лишається без суфікса, інші отримують його в порядку імен, і про кожне — попередження. Тож ID пакета не залежить від того, який із зіткнених пакетів код випадково імпортує.
+ 
+ ### Flows: докази кроку
+ 
+@@ -785,7 +785,7 @@ MCP і LSP описано в [tools.md](tools.md#mcp).
+ | `coverage` | нерозв'язаний імпорт, динамічний виклик (зокрема «call through an expression» — виклик виразу, який keylang не називає: `f()()`, `(a || b)()`, `new (load())()`, ланцюжок довший за 80 символів), нерозв'язаний виклик, `unsupported construct` (namespace, `eval`, `new Function`, виклик `obj[expr]`, обчислюваний член класу `[key]() {}`, колізія ID модулів), обчислюваний specifier (`import(expr)`, `require(expr)`, `import.meta.resolve(expr)`, ``new URL(`./${n}.ts`, import.meta.url)`` чи `"./" + n`, `register(expr, import.meta.url)`; `new URL` з відомим немодульним закінченням, як `.png`, — не модуль; відносний `new URL("./worker", import.meta.url)` без розширення — ребро, коли за ним є файл коду, і нічого інакше), синтаксична помилка (зокрема синтаксис, вкладений глибше за 1000 рівнів: файл тоді `opaque`, а не падіння аналізу), файл поза шаром і пропущений файл — кожен із діапазоном, `text` і `reason` |
+ | `stats` | лічильники проходу; вони не замінюють записи `coverage` |
+ 
+-Порожній проіндексований модуль має `members: "complete"` і жодного дочірнього символу. `opaque` не підтверджує існування довільного імені. Файл у шарі, виключений через `exclude` у `keylang.json`, стає модулем `members: "opaque"` з коментарем `<!-- excluded -->` у карті і записом `skipped-file` у `coverage`; посилання на його члена — `unverified`, не K001. Тека джерел без дозволу на читання не зупиняє аналіз: `map` і `check` друкують попередження, а в `coverage` з'являється `skipped-file` з файлом-текою і `source` — ID області, яку мали б її файли. Правила над цією областю, вище чи нижче неї (`layers`, `deny`, `no-cycles`, `entry`), тоді `unverified`, не `ok`. Нечитабельний корінь репозиторію — помилка вводу-виводу з кодом 2. Нерозв'язаний імпорт і виклик локального значення є і в `coverage`, і ребром з `resolution: "unresolved"`. Імпорти резолвляться через `tsconfig.json` (або `jsconfig.json`), ланцюжок відносних `extends` і — для solution-конфігу з `references`, як у шаблоні Vite, — `paths` конфігів, на які він посилається; а також `package.json#imports` найближчого `package.json` над файлом (як Node визначає область пакета). Голий специфікатор, як у `tsc`, іде спершу через `paths` — лише найспецифічніший шаблон (точний ключ, інакше найдовший префікс до `*`, незалежно від порядку в JSON), — потім `baseUrl`, і лише тоді він вбудований модуль Node чи пакет: аліас на ім'я вбудованого модуля (`constants`, `events`, `util`) — файл проєкту. Успадковані `paths` резолвляться від `baseUrl` підсумкових опцій (дочірній `baseUrl` переносить і їх), інакше від теки конфігу, що їх оголосив. `./x.js` знаходить `x.ts`, `x.tsx` чи `x.jsx`, а `./x.jsx` — `x.tsx`. Файли аналізу, зокрема незбережені чи запропоновані й ще не записані на диск, для резолвера існують, тож той самий знімок резолвиться однаково до й після запису кандидата. Кожен файл конфігурації читається один раз, і `snapshotId` рахується з того самого тексту, який розібрано; джерела так само: хеш у `manifest`, ключ кешу й факти — з одного читання, а файл, видалений між переліком і читанням, у знімок не входить. Імпорт, що резолвиться у файл коду, якого немає серед модулів (мова, якої немає в `languages`, файл у теці збірки, файл, що з'явився після переліку джерел), — прогалина `unresolved import` з причиною, а не мовчазна відсутність ребра; тести, файли оголошень, `exclude`, файли поза вгаданими шарами й не-код (JSON, CSS) залишаються поза графом мовчки. Голий специфікатор — зовнішній пакет лише тоді, коли його оголошено в `dependencies` / `devDependencies` / `peerDependencies` / `optionalDependencies` або встановлено в `node_modules` на рівні кореня чи вище, або — як шукає Node — оголошено в `package.json` чи встановлено в `node_modules` теки між файлом і коренем (`web/package.json` монорепозиторію діє лише на файли під `web/`); інакше це нерозв'язаний імпорт (аліас, якого keylang не знає), а не пакет. Пакет робочого простору внутрішній: запис `node_modules/<pkg>`, що після розкриття посилань веде в репозиторій (не в чийсь `node_modules`), або — без встановлення — тека з `workspaces` кореневого `package.json` із таким `name`. Файл дає його `package.json`: `exports` (рядок, підшляхи `./util`, шаблони `./*`, умови), інакше `module`, `main`, `index`; файл оголошень (`.d.ts`) — не джерело. Без такого файла імпорт нерозв'язаний, а файл, який keylang не індексує (`dist/index.js`), — прогалина `unresolved import`, не мовчазна відсутність ребра. `snapshotId` враховує вміст цих файлів конфігурації (зокрема `package.json` пакетів робочого простору, вкладені `package.json` на шляху голого імпорту й перелік тек `workspaces`) і для кожного голого пакета — чи є він у `node_modules` і куди веде, бо від них залежать ребра: після `npm install` знімок інший. Імпорт — також TypeScript `import y = require("./y")` (прив'язка всього модуля) і `import.meta.resolve("./w.ts")`; `require` параметра чи іншого локального значення — не імпорт, а виклик через локальне значення (`require`, створений `createRequire(…)`, — імпорт). Імпорт і `export { … } from` одного модуля — одна залежність із двома ребрами (`import` і `reexport`). ID зовнішнього модуля — ім'я пакета без `@`, з `/` → `-`; якщо два пакети дають один сегмент (`@scope/pkg` і `scope-pkg`), сегмент лишається пакету з точно таким ім'ям, а інші отримують `-2`, `-3`… за абеткою, з попередженням. Два файли з одним ID модуля й одним шляхом без розширення (`x.ts` і `x/index.ts`, файли однієї теки в `module: "dir"`) — один модуль; два різні шляхи, що санітизуються в один ID (`foo.bar.ts` і `foo_bar.ts`), — колізія (дужки в сегменті кодуються оборотно, §4, тож `(shop)` і `[shop]` не зливаються): попередження, прогалина `unsupported` «module ID collision» і модуль `members: "opaque"`, доки один файл не перейменують. У модулі-теці (`module: "dir"`) fn, типи, імпорти й виклики мають файл, де їх написано, а не перший файл модуля; файл модуля — його `index.*` (`mod.rs`, `__init__.py`), якщо він є, інакше перший за абеткою; тека з назвою `index` — окремий модуль, а синтетичний вузол теки має шлях своєї теки. Виклик резолвиться з урахуванням областей видимості між місцем виклику й модулем: параметри (зокрема деструктуровані), `const`/`let`/`var` у будь-якому охопному блоці, деструктуризація, вкладені функції й класи, змінні `for…of` і `catch`. Якщо таке ім'я затіняє імпорт чи оголошення модуля, це `unresolved-call` з причиною `shadowed by parameter|local`; інакше — `dynamic-call` «call through a local value». Жодне з них не стає підтвердженим ребром. Імпортоване ім'я резолвиться за таблицею публічних імен модуля-джерела (та сама таблиця — `exports` знімка): `import go from` — його `export default` (зокрема `export default function step`, `export default x`, `export = x`, `module.exports = x`), і `go.m()` — статичний член цього експорту (`export default class A { static m() }` → `A.m`), а не іменований експорт `m`; лише модуль без `export default` (CommonJS) дає за default-імпортом `module.exports` з його іменами. `import * as ns` і `require()` — простір імен: `ns.m()` — іменований експорт `m`. `export { a as b }` — оголошення `a`, `export { x } from` / `export { x as y } from` і ім'я, імпортоване та експортоване знову, — ланцюжком до оголошення, `export * from` — іменами без `default`, `export * as ns from` — простором імен (`ns.f()`, тип `ns.T`, як і `NS.T` при `import * as NS`); ім'я без рядка експорту (CommonJS, неекспортований помічник) — оголошення з цим ім'ям. Кожен виклик у коді — ребро або прогалина: `new ns.X()` — виклик класу `X` модуля `ns`, `new X().m()` — член `m` класу `X`, `super()` — конструктор базового класу (через бази без власного конструктора), `super.m()` — член бази; виклик виразу, який keylang не називає (`f()()`, `(a || b)()`), — `dynamic-call` «call through an expression». Виклик тієї самої цілі кілька разів дає одне ребро, найсильніше: прямий виклик поглинає виклик у closure та ребро хука `default`. `interface Foo` і `class Foo` (злиття оголошень TypeScript) — один вузол-клас, хоч би що стояло першим; згадки типів інтерфейсу належать класу. Функцією модуля є й значення `(() => …) as T`, `(function () {}) satisfies T`, а в CommonJS — `exports.x = function () {}`, `module.exports.x = () => …`, функції й методи в `module.exports = { … }` та `module.exports = function () {}` (fn `default`). `const Cart = memo(() => …)`, `forwardRef((props, ref) => …)`, `lazy(() => import(…))` і `React.memo(…)` — fn обгорнутої функції з її викликами, лише коли обгортку імпортовано значенням із `react` (впізнається за імпортом, не за текстом). `react/jsx-runtime` цих імен не експортує, тож імпорт звідти обгортку не відкриває. Не розгортаються аргумент-ідентифікатор (`memo(CartImpl)`), вкладене `memo(forwardRef(…))` і `require("react")`. Значенням лишаються також `import type` і `import { type memo }`, `forwardRef` з `@nestjs/common`, локальна `memo`, `styled(…)` і `let`/`var`. Виклики поза тілами оголошень (верхній рівень модуля, методи об'єктних літералів, функція-значення, обгорнута викликом) жодній fn не належать і є `escapes` того, що вони викликають (§7). Члени класу: метод і поле з функцією (`handler = () => later()`, `readonly generate = (…) => {…}`) — fn з власними викликами; getter і setter — fn з `escapes`. Ініціалізатори полів екземпляра (`private decoder = new InputDecoder()`) виконуються під час конструювання: їхні виклики належать `constructor`, а якщо його немає в коді — синтезованому `Class.constructor` без сигнатури з діапазоном від першого до останнього такого поля (лише коли ініціалізатори щось викликають). Ініціалізатори статичних полів і блоки `static {}` виконуються один раз під час обчислення класу: їхні виклики належать синтезованому `Class.static`, а не конструктору (якщо в класі вже є член `static`, це `unsupported`). Член з обчислюваним ключем (`[key]() {}`, `[key] = …`) — `unsupported construct` «computed class member»: його виклики — код поза оголошеннями. Сегмент ID члена — його ім'я без `#`; якщо ім'я вже має інший член класу, статичний член отримує суфікс `-static`, приватний `#name` — `-private`, статичний приватний — `-static-private` (жодне JS-ім'я не містить `-`, тож суфікс не збігається з іншим членом). Пріоритет — член екземпляра, статичний, `#`-приватний, статичний `#`-приватний: `static m()` поруч з `m()` — `X.m-static`, `#go()` поруч з `go()` — `Y.go-private`; без збігу ID лишається `X.work` для `#work`. Тож поява одноіменного члена з вищим пріоритетом перейменовує ID нижчого. `this.#work()` — виклик приватного члена, `this.m()` у статичному методі й `X.m()` — статичного, `w.m()` через екземпляр — члена екземпляра. `this` означає клас, лише коли найближча охопна не-стрілкова функція — член класу (або це ініціалізатор поля чи `static {}`); `this.m()` у методі об'єктного літерала чи вкладеній `function` — `dynamic-call` «call through `this` of a function value». `new X()` у static-доказі — виклик `X.constructor`. Виклик методу через поле чи локальне значення відомого класу розв'язується: поле з анотацією `: X` чи ініціалізатором `new X()`, параметр-властивість `constructor(private readonly x: X)`, присвоєння `this.x = new X()` або `this.x = p` з `p: X` у конструкторі; `const w = new X()`, `const w: X`, параметр `w: X` — якщо ближча прив'язка того самого імені (змінна `for…of`, `catch`, вкладена функція) його не затіняє і саме `X` між оголошенням і модулем не перепризначено (`const X = Ctor`). `this.x.m()` і `w.m()` тоді — ребро до `X.m`, якщо `X` — клас цього файла чи імпортований і має член `m`; для глобального класу (`Map`, `Set`…) чи класу з пакета — зовнішній виклик; інакше (інтерфейс, generic-анотація, невідомий тип) лишається діркою. Ребро `type` — це згадка типу в сигнатурі чи heritage; правила `allow` / `deny` / `layers` бачать його разом із `import`, `call` і `reexport`.
++Порожній проіндексований модуль має `members: "complete"` і жодного дочірнього символу. `opaque` не підтверджує існування довільного імені. Файл, виключений через `exclude` у `keylang.json`, стає модулем `members: "opaque"` з коментарем `<!-- excluded -->` у карті і записом `skipped-file` у `coverage` — файл у шарі в його шарі, а файл поза будь-яким шаром явного конфігу — у `unassigned` (з вгаданою розкладкою файл поза нею лишається поза графом); посилання на його члена — `unverified`, не K001. Тека джерел без дозволу на читання не зупиняє аналіз: `map` і `check` друкують попередження, а в `coverage` з'являється `skipped-file` з файлом-текою і `source` — ID області, яку мали б її файли. Правила над цією областю, вище чи нижче неї (`layers`, `deny`, `no-cycles`, `entry`), тоді `unverified`, не `ok`. Нечитабельний корінь репозиторію — помилка вводу-виводу з кодом 2. Нерозв'язаний імпорт і виклик локального значення є і в `coverage`, і ребром з `resolution: "unresolved"`. Імпорти резолвляться через `tsconfig.json` (або `jsconfig.json`), ланцюжок відносних `extends` і — для solution-конфігу з `references`, як у шаблоні Vite, — `paths` конфігів, на які він посилається; а також `package.json#imports` найближчого `package.json` над файлом (як Node визначає область пакета). Голий специфікатор, як у `tsc`, іде спершу через `paths` — лише найспецифічніший шаблон (точний ключ, інакше найдовший префікс до `*`, незалежно від порядку в JSON), — потім `baseUrl`, і лише тоді він вбудований модуль Node чи пакет: аліас на ім'я вбудованого модуля (`constants`, `events`, `util`) — файл проєкту. Успадковані `paths` резолвляться від `baseUrl` підсумкових опцій (дочірній `baseUrl` переносить і їх), інакше від теки конфігу, що їх оголосив. `./x.js` знаходить `x.ts`, `x.tsx` чи `x.jsx`, а `./x.jsx` — `x.tsx`. Файли аналізу, зокрема незбережені чи запропоновані й ще не записані на диск, для резолвера існують, тож той самий знімок резолвиться однаково до й після запису кандидата. Кожен файл конфігурації читається один раз, і `snapshotId` рахується з того самого тексту, який розібрано; джерела так само: хеш у `manifest`, ключ кешу й факти — з одного читання, а файл, видалений між переліком і читанням, у знімок не входить. Імпорт, що резолвиться у файл коду, якого немає серед модулів (мова, якої немає в `languages`, файл у теці збірки, файл, що з'явився після переліку джерел), — прогалина `unresolved import` з причиною, а не мовчазна відсутність ребра; тести, файли оголошень, `exclude`, файли поза вгаданими шарами й не-код (JSON, CSS) залишаються поза графом мовчки. Голий специфікатор — зовнішній пакет лише тоді, коли його оголошено в `dependencies` / `devDependencies` / `peerDependencies` / `optionalDependencies` або встановлено в `node_modules` на рівні кореня чи вище, або — як шукає Node — оголошено в `package.json` чи встановлено в `node_modules` теки між файлом і коренем (`web/package.json` монорепозиторію діє лише на файли під `web/`); інакше це нерозв'язаний імпорт (аліас, якого keylang не знає), а не пакет. Пакет робочого простору внутрішній: запис `node_modules/<pkg>`, що після розкриття посилань веде в репозиторій (не в чийсь `node_modules`), або — без встановлення — тека з `workspaces` кореневого `package.json` із таким `name`. Файл дає його `package.json`: `exports` (рядок, підшляхи `./util`, шаблони `./*`, умови), інакше `module`, `main`, `index`; файл оголошень (`.d.ts`) — не джерело. Без такого файла імпорт нерозв'язаний, а файл, який keylang не індексує (`dist/index.js`), — прогалина `unresolved import`, не мовчазна відсутність ребра. `snapshotId` враховує вміст цих файлів конфігурації (зокрема `package.json` пакетів робочого простору, вкладені `package.json` на шляху голого імпорту й перелік тек `workspaces`) і для кожного голого пакета — чи є він у `node_modules` і куди веде, бо від них залежать ребра: після `npm install` знімок інший. Імпорт — також TypeScript `import y = require("./y")` (прив'язка всього модуля) і `import.meta.resolve("./w.ts")`; `require` параметра чи іншого локального значення — не імпорт, а виклик через локальне значення (`require`, створений `createRequire(…)`, — імпорт). Імпорт і `export { … } from` одного модуля — одна залежність із двома ребрами (`import` і `reexport`). ID зовнішнього модуля — ім'я пакета без `@`, з `/` → `-`; якщо два пакети дають один сегмент (`@scope/pkg` і `scope-pkg`), сегмент лишається пакету з точно таким ім'ям, а інші отримують `-2`, `-3`… за абеткою, з попередженням. Два файли з одним ID модуля й одним шляхом без розширення (`x.ts` і `x/index.ts`, файли однієї теки в `module: "dir"`) — один модуль; два різні шляхи, що санітизуються в один ID (`foo.bar.ts` і `foo_bar.ts`), — колізія (дужки в сегменті кодуються оборотно, §4, тож `(shop)` і `[shop]` не зливаються): попередження, прогалина `unsupported` «module ID collision» і модуль `members: "opaque"`, доки один файл не перейменують. У модулі-теці (`module: "dir"`) fn, типи, імпорти й виклики мають файл, де їх написано, а не перший файл модуля; файл модуля — його `index.*` (`mod.rs`, `__init__.py`), якщо він є, інакше перший за абеткою; тека з назвою `index` — окремий модуль, а синтетичний вузол теки має шлях своєї теки. Виклик резолвиться з урахуванням областей видимості між місцем виклику й модулем: параметри (зокрема деструктуровані), `const`/`let`/`var` у будь-якому охопному блоці, деструктуризація, вкладені функції й класи, змінні `for…of` і `catch`. Якщо таке ім'я затіняє імпорт чи оголошення модуля, це `unresolved-call` з причиною `shadowed by parameter|local`; інакше — `dynamic-call` «call through a local value». Жодне з них не стає підтвердженим ребром. Імпортоване ім'я резолвиться за таблицею публічних імен модуля-джерела (та сама таблиця — `exports` знімка): `import go from` — його `export default` (зокрема `export default function step`, `export default x`, `export = x`, `module.exports = x`), і `go.m()` — статичний член цього експорту (`export default class A { static m() }` → `A.m`), а не іменований експорт `m`; лише модуль без `export default` (CommonJS) дає за default-імпортом `module.exports` з його іменами. `import * as ns` і `require()` — простір імен: `ns.m()` — іменований експорт `m`. `export { a as b }` — оголошення `a`, `export { x } from` / `export { x as y } from` і ім'я, імпортоване та експортоване знову, — ланцюжком до оголошення, `export * from` — іменами без `default`, `export * as ns from` — простором імен (`ns.f()`, тип `ns.T`, як і `NS.T` при `import * as NS`); ім'я без рядка експорту (CommonJS, неекспортований помічник) — оголошення з цим ім'ям. Кожен виклик у коді — ребро або прогалина: `new ns.X()` — виклик класу `X` модуля `ns`, `new X().m()` — член `m` класу `X`, `super()` — конструктор базового класу (через бази без власного конструктора), `super.m()` — член бази; виклик виразу, який keylang не називає (`f()()`, `(a || b)()`), — `dynamic-call` «call through an expression». Виклик тієї самої цілі кілька разів дає одне ребро, найсильніше: прямий виклик поглинає виклик у closure та ребро хука `default`. `interface Foo` і `class Foo` (злиття оголошень TypeScript) — один вузол-клас, хоч би що стояло першим; згадки типів інтерфейсу належать класу. Функцією модуля є й значення `(() => …) as T`, `(function () {}) satisfies T`, а в CommonJS — `exports.x = function () {}`, `module.exports.x = () => …`, функції й методи в `module.exports = { … }` та `module.exports = function () {}` (fn `default`). `const Cart = memo(() => …)`, `forwardRef((props, ref) => …)`, `lazy(() => import(…))` і `React.memo(…)` — fn обгорнутої функції з її викликами, лише коли обгортку імпортовано значенням із `react` (впізнається за імпортом, не за текстом). `react/jsx-runtime` цих імен не експортує, тож імпорт звідти обгортку не відкриває. Не розгортаються аргумент-ідентифікатор (`memo(CartImpl)`), вкладене `memo(forwardRef(…))` і `require("react")`. Значенням лишаються також `import type` і `import { type memo }`, `forwardRef` з `@nestjs/common`, локальна `memo`, `styled(…)` і `let`/`var`. Виклики поза тілами оголошень (верхній рівень модуля, методи об'єктних літералів, функція-значення, обгорнута викликом) жодній fn не належать і є `escapes` того, що вони викликають (§7). Члени класу: метод і поле з функцією (`handler = () => later()`, `readonly generate = (…) => {…}`) — fn з власними викликами; getter і setter — fn з `escapes`. Ініціалізатори полів екземпляра (`private decoder = new InputDecoder()`) виконуються під час конструювання: їхні виклики належать `constructor`, а якщо його немає в коді — синтезованому `Class.constructor` без сигнатури з діапазоном від першого до останнього такого поля (лише коли ініціалізатори щось викликають). Ініціалізатори статичних полів і блоки `static {}` виконуються один раз під час обчислення класу: їхні виклики належать синтезованому `Class.static`, а не конструктору (якщо в класі вже є член `static`, це `unsupported`). Член з обчислюваним ключем (`[key]() {}`, `[key] = …`) — `unsupported construct` «computed class member»: його виклики — код поза оголошеннями. Сегмент ID члена — його ім'я без `#`; якщо ім'я вже має інший член класу, статичний член отримує суфікс `-static`, приватний `#name` — `-private`, статичний приватний — `-static-private` (жодне JS-ім'я не містить `-`, тож суфікс не збігається з іншим членом). Пріоритет — член екземпляра, статичний, `#`-приватний, статичний `#`-приватний: `static m()` поруч з `m()` — `X.m-static`, `#go()` поруч з `go()` — `Y.go-private`; без збігу ID лишається `X.work` для `#work`. Тож поява одноіменного члена з вищим пріоритетом перейменовує ID нижчого. `this.#work()` — виклик приватного члена, `this.m()` у статичному методі й `X.m()` — статичного, `w.m()` через екземпляр — члена екземпляра. `this` означає клас, лише коли найближча охопна не-стрілкова функція — член класу (або це ініціалізатор поля чи `static {}`); `this.m()` у методі об'єктного літерала чи вкладеній `function` — `dynamic-call` «call through `this` of a function value». `new X()` у static-доказі — виклик `X.constructor`. Виклик методу через поле чи локальне значення відомого класу розв'язується: поле з анотацією `: X` чи ініціалізатором `new X()`, параметр-властивість `constructor(private readonly x: X)`, присвоєння `this.x = new X()` або `this.x = p` з `p: X` у конструкторі; `const w = new X()`, `const w: X`, параметр `w: X` — якщо ближча прив'язка того самого імені (змінна `for…of`, `catch`, вкладена функція) його не затіняє і саме `X` між оголошенням і модулем не перепризначено (`const X = Ctor`). `this.x.m()` і `w.m()` тоді — ребро до `X.m`, якщо `X` — клас цього файла чи імпортований і має член `m`; для глобального класу (`Map`, `Set`…) чи класу з пакета — зовнішній виклик; інакше (інтерфейс, generic-анотація, невідомий тип) лишається діркою. Ребро `type` — це згадка типу в сигнатурі чи heritage; правила `allow` / `deny` / `layers` бачать його разом із `import`, `call` і `reexport`.
+ 
+ ### Мови
+ 
+diff --git a/docs/tools.md b/docs/tools.md
+index 5381cb0..6bb20f8 100644
+--- a/docs/tools.md
++++ b/docs/tools.md
+@@ -14,7 +14,7 @@
+ | `baseline` | пише `rules.baseline.md` з поточного графа шарів | пише baseline; `--check` не пише | 0, 1, 2 | [агенти](#agents) |
+ | `feature` | чи готова фіча: planned, static кроків, немає fail правил | нічого не пише | 0, 1, 2 | [агенти](#agents) |
+ | `hook stop` | читає подію Stop і друкує JSON-рішення `check --changed` | нічого не пише | 0, 2 | [агенти](#agents) |
+-| `map` | генерує карту, знімок і, з `explain.map`, карту з поясненнями | пише `map/` і `.keylang/index.json`; `--check` не пише | 0, 1, 2 | [карта з поясненнями](#explained-map) |
++| `map` | генерує карту, знімок і, з `explain.map`, карту з поясненнями | пише `map/` і `.keylang/index.json`; `--check` не пише; нечитабельний або невалідний маніфест-предок (`package.json`, `Cargo.toml`) — код 2 | 0, 1, 2 | [карта з поясненнями](#explained-map) |
+ | `explain` | код діагностики, офлайн-зведення ID або пояснення моделі | `--llm` пише `<dir>/explain/`; без нього нічого не пише | 0, 1, 2 | нижче |
+ | `draft flow` | пропонує потік у `.keylang/proposals/` | пише пропозицію; `--print` не пише | 0, 2 | [TUI](#tui) |
+ | `code-to-spec` | пропонує потоки з коду або зі змін від git-ref | пише пропозицію; `--print` і порожній diff не пишуть | 0, 2 | [TUI](#tui) |
+diff --git a/keylang.json b/keylang.json
+index 3d264af..63e8b60 100644
+--- a/keylang.json
++++ b/keylang.json
+@@ -11,7 +11,7 @@
+     "check": ["src/rules.ts", "src/resolve.ts", "src/scc.ts", "src/verdict.ts", "src/flows.ts", "src/assess.ts", "src/test-report.ts", "src/trace-evidence.ts", "src/wiring.ts"],
+     "lang": ["src/parser.ts", "src/parse-format.ts", "src/fmt.ts", "src/files.ts", "src/ir.ts", "src/spec-ir.ts"],
+     "extract": ["src/extract/**"],
+-    "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts"]
++    "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts", "src/external-ids.ts"]
+   },
+   "exclude": ["bench/**", "examples/**", "design/**", "slides/**", "scripts/**", "editors/**"],
+   "explain": { "map": true },
+diff --git a/keylang/map-explained/README.md b/keylang/map-explained/README.md
+index 4ec8781..0618fec 100644
+--- a/keylang/map-explained/README.md
++++ b/keylang/map-explained/README.md
+@@ -16,21 +16,24 @@ The tree of the map with a brief under each node: the documentation comment from
+ | [map](map.md) |  | 119 | 0 | 0 | 131 |
+ | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
+ | [tui](tui.md) |  | 437 | 0 | 0 | 209 |
+-| **all** | | 1264 | 0 | 0 | 824 |
++| [unassigned](unassigned.md) |  | 0 | 0 | 0 | 34 |
++| **all** | | 1264 | 0 | 0 | 858 |
+ 
+ ## Index
+ 
+ Modules and classes by name; the parent ID follows each one.
+ 
++**_** · [_60_archive](unassigned.md#unassigned.design.scripts._60_archive) (unassigned.design.scripts) · [_61_tui](unassigned.md#unassigned.design.scripts._61_tui) (unassigned.design.scripts) · [_62_flow](unassigned.md#unassigned.design.scripts._62_flow) (unassigned.design.scripts) · [_63_merge](unassigned.md#unassigned.design.scripts._63_merge) (unassigned.design.scripts) · [_64_explain](unassigned.md#unassigned.design.scripts._64_explain) (unassigned.design.scripts) · [_65_windows](unassigned.md#unassigned.design.scripts._65_windows) (unassigned.design.scripts) · [_66_export](unassigned.md#unassigned.design.scripts._66_export) (unassigned.design.scripts) · [_70_cleanup](unassigned.md#unassigned.design.scripts._70_cleanup) (unassigned.design.scripts) · [_71_editor](unassigned.md#unassigned.design.scripts._71_editor) (unassigned.design.scripts) · [_72_fix](unassigned.md#unassigned.design.scripts._72_fix) (unassigned.design.scripts) · [_73_fix](unassigned.md#unassigned.design.scripts._73_fix) (unassigned.design.scripts) · [_74_agent](unassigned.md#unassigned.design.scripts._74_agent) (unassigned.design.scripts) · [_75_read_s2c](unassigned.md#unassigned.design.scripts._75_read_s2c) (unassigned.design.scripts) · [_76_fix_export](unassigned.md#unassigned.design.scripts._76_fix_export) (unassigned.design.scripts) · [_77_tbl](unassigned.md#unassigned.design.scripts._77_tbl) (unassigned.design.scripts)
++
+ **A** · [actions](tui.md#tui.actions) (tui) · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
+ 
+-**B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
++**B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bench](unassigned.md#unassigned.bench) (unassigned) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
+ 
+-**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
++**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [clone](unassigned.md#unassigned.bench.clone) (unassigned.bench) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base) · [copy-wasm](unassigned.md#unassigned.scripts.copy-wasm) (unassigned.scripts) · [copy-web](unassigned.md#unassigned.scripts.copy-web) (unassigned.scripts)
+ 
+-**D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
++**D** · [declared-packages](map.md#map.declared-packages) (map) · [demo](unassigned.md#unassigned.examples.wiring-lifecycle.demo) (unassigned.examples.wiring-lifecycle) · [design](unassigned.md#unassigned.design) (unassigned) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
+ 
+-**E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-inventory](features.md#features.explain-inventory) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explain-offline](features.md#features.explain-offline) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
++**E** · [editors](unassigned.md#unassigned.editors) (unassigned) · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [examples](unassigned.md#unassigned.examples) (unassigned) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-inventory](features.md#features.explain-inventory) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explain-offline](features.md#features.explain-offline) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map) · [extension](unassigned.md#unassigned.editors.vscode.extension) (unassigned.editors.vscode)
+ 
+ **F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
+ 
+@@ -38,11 +41,11 @@ Modules and classes by name; the parent ID follows each one.
+ 
+ **H** · [harness](features.md#features.harness) (features)
+ 
+-**I** · [ImportResolver](map.md#map.imports.ImportResolver) (map.imports) · [imports](map.md#map.imports) (map) · [Index](check.md#check.resolve.Index) (check.resolve) · [index](cli.md#cli.index) (cli) · [input](tui.md#tui.input) (tui) · [InputDecoder](tui.md#tui.input.InputDecoder) (tui.input) · [ir](lang.md#lang.ir) (lang)
++**I** · [ImportResolver](map.md#map.imports.ImportResolver) (map.imports) · [imports](map.md#map.imports) (map) · [Index](check.md#check.resolve.Index) (check.resolve) · [index](cli.md#cli.index) (cli) · [inject](unassigned.md#unassigned.bench.inject) (unassigned.bench) · [input](tui.md#tui.input) (tui) · [InputDecoder](tui.md#tui.input.InputDecoder) (tui.input) · [ir](lang.md#lang.ir) (lang)
+ 
+ **K** · [keylang](cli.md#cli.keylang) (cli) · [keys](features.md#features.keys) (features)
+ 
+-**L** · [languages](base.md#base.languages) (base) · [Line](lang.md#lang.parser.Line) (lang.parser) · [llm](features.md#features.llm) (features) · [LlmCancelled](features.md#features.llm.LlmCancelled) (features.llm) · [lsp](cli.md#cli.lsp) (cli) · [lsp-features](features.md#features.lsp-features) (features) · [LspError](cli.md#cli.lsp.LspError) (cli.lsp)
++**L** · [languages](base.md#base.languages) (base) · [lib](unassigned.md#unassigned.design.scripts.lib) (unassigned.design.scripts) · [Line](lang.md#lang.parser.Line) (lang.parser) · [llm](features.md#features.llm) (features) · [LlmCancelled](features.md#features.llm.LlmCancelled) (features.llm) · [lsp](cli.md#cli.lsp) (cli) · [lsp-features](features.md#features.lsp-features) (features) · [LspError](cli.md#cli.lsp.LspError) (cli.lsp)
+ 
+ **M** · [map](map.md#map.map) (map) · [markdown](tui.md#tui.markdown) (tui) · [Matcher](check.md#check.trace-evidence.Matcher) (check.trace-evidence) · [mcp](cli.md#cli.mcp) (cli) · [merge](tui.md#tui.merge) (tui) · [merge-session](tui.md#tui.merge-session) (tui) · [MergeSession](tui.md#tui.merge-session.MergeSession) (tui.merge-session)
+ 
+@@ -50,14 +53,14 @@ Modules and classes by name; the parent ID follows each one.
+ 
+ **O** · [operation-worker](tui.md#tui.operation-worker) (tui) · [operations](operations.md#operations.operations) (operations) · [OperationWorker](tui.md#tui.background.OperationWorker) (tui.background) · [OverBudget](check.md#check.trace-evidence.OverBudget) (check.trace-evidence)
+ 
+-**P** · [parse-format](lang.md#lang.parse-format) (lang) · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
++**P** · [pack-entry](unassigned.md#unassigned.scripts.pack-entry) (unassigned.scripts) · [parse-format](lang.md#lang.parse-format) (lang) · [parser](lang.md#lang.parser) (lang) · [Parser](lang.md#lang.parser.Parser) (lang.parser) · [plan](unassigned.md#unassigned.examples.wiring-lifecycle.plan) (unassigned.examples.wiring-lifecycle) · [proposals](features.md#features.proposals) (features) · [python](extract.md#extract.python) (extract) · [python-imports](map.md#map.python-imports) (map) · [PythonResolver](map.md#map.python-imports.PythonResolver) (map.python-imports)
+ 
+-**R** · [resolve](check.md#check.resolve) (check) · [rules](check.md#check.rules) (check) · [run-id](cli.md#cli.run-id) (cli) · [rust](extract.md#extract.rust) (extract) · [rust-imports](map.md#map.rust-imports) (map) · [RustResolver](map.md#map.rust-imports.RustResolver) (map.rust-imports)
++**R** · [resolve](check.md#check.resolve) (check) · [rules](check.md#check.rules) (check) · [run](unassigned.md#unassigned.bench.run) (unassigned.bench) · [run-id](cli.md#cli.run-id) (cli) · [rust](extract.md#extract.rust) (extract) · [rust-imports](map.md#map.rust-imports) (map) · [RustResolver](map.md#map.rust-imports.RustResolver) (map.rust-imports)
+ 
+-**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-ir](lang.md#lang.spec-ir) (lang) · [spec-to-code](features.md#features.spec-to-code) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
++**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [scripts](unassigned.md#unassigned.design.scripts) (unassigned.design) · [scripts](unassigned.md#unassigned.scripts) (unassigned) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-ir](lang.md#lang.spec-ir) (lang) · [spec-to-code](features.md#features.spec-to-code) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
+ 
+ **T** · [terminal](tui.md#tui.terminal) (tui) · [test-report](check.md#check.test-report) (check) · [text-to-spec](tui.md#tui.text-to-spec) (tui) · [theme](tui.md#tui.theme) (tui) · [trace](cli.md#cli.trace) (cli) · [trace-evidence](check.md#check.trace-evidence) (check) · [trace-hooks](cli.md#cli.trace-hooks) (cli) · [trace-plan](map.md#map.trace-plan) (map) · [treesitter](extract.md#extract.treesitter) (extract) · [ts](extract.md#extract.ts) (extract)
+ 
+-**V** · [verdict](check.md#check.verdict) (check) · [view](tui.md#tui.view) (tui) · [voice](features.md#features.voice) (features) · [voice-local](features.md#features.voice-local) (features)
++**V** · [verdict](check.md#check.verdict) (check) · [view](tui.md#tui.view) (tui) · [voice](features.md#features.voice) (features) · [voice-local](features.md#features.voice-local) (features) · [vscode](unassigned.md#unassigned.editors.vscode) (unassigned.editors)
+ 
+-**W** · [web](tui.md#tui.web) (tui) · [width](tui.md#tui.width) (tui) · [wire-gen](map.md#map.wire-gen) (map) · [wiring](check.md#check.wiring) (check)
++**W** · [web](tui.md#tui.web) (tui) · [width](tui.md#tui.width) (tui) · [wire-gen](map.md#map.wire-gen) (map) · [wiring](check.md#check.wiring) (check) · [wiring-lifecycle](unassigned.md#unassigned.examples.wiring-lifecycle) (unassigned.examples)
+diff --git a/keylang/map-explained/map.md b/keylang/map-explained/map.md
+index 7d86b83..80fb85e 100644
+--- a/keylang/map-explained/map.md
++++ b/keylang/map-explained/map.md
+@@ -472,63 +472,63 @@
+     - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+       <a id="map.map.generateMap"></a><br>`persist` prepares the fact cache for the next process (`keylang map` only; the commit step writes it, generation writes nothing); `overlay` gives unsaved text of source files by absolute path (the language server).
+       - calls [base.config.sourceTree](base.md#base.config.sourceTree), [base.config.toPosix](base.md#base.config.toPosix), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [map.map.readSource](map.md#map.map.readSource), [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.graph.placeFile](map.md#map.graph.placeFile), [map.fact-cache.FactCache.open](map.md#map.fact-cache.FactCache.open), [map.map.extractorCode](map.md#map.map.extractorCode), [map.snapshot.grammarVersions](map.md#map.snapshot.grammarVersions), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.map.extractGuarded](map.md#map.map.extractGuarded), [base.config.excludedSourceFiles](base.md#base.config.excludedSourceFiles), [map.map.opaqueFacts](map.md#map.map.opaqueFacts), [map.graph.buildGraph](map.md#map.graph.buildGraph), [map.snapshot.buildSnapshot](map.md#map.snapshot.buildSnapshot), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.emit.renderExplainedMap](map.md#map.emit.renderExplainedMap), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [map.emit.renderMap](map.md#map.emit.renderMap)
+-    - fn [opaqueFacts](../../src/map.ts#L114) (path: string) → FileFacts <!-- internal -->
++    - fn [opaqueFacts](../../src/map.ts#L116) (path: string) → FileFacts <!-- internal -->
+       <a id="map.map.opaqueFacts"></a>
+-    - fn [readSource](../../src/map.ts#L119) (abs: string) → string | null <!-- internal -->
++    - fn [readSource](../../src/map.ts#L121) (abs: string) → string | null <!-- internal -->
+       <a id="map.map.readSource"></a><br>A file's text; null when it no longer exists.
+-    - fn [extractGuarded](../../src/map.ts#L133) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
++    - fn [extractGuarded](../../src/map.ts#L135) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+       <a id="map.map.extractGuarded"></a><br>Facts of one file; a file whose syntax nests deeper than the extractor's stack (thousands of `+` terms or parentheses) is opaque with a parse error, so one pathological file does not stop the whole analysis.
+       - calls [map.map.opaqueFacts](map.md#map.map.opaqueFacts)
+-    - type [MapDiff](../../src/map.ts#L144)
++    - type [MapDiff](../../src/map.ts#L146)
+       <a id="map.map.MapDiff"></a>
+-    - fn [targets](../../src/map.ts#L155) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
++    - fn [targets](../../src/map.ts#L157) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+       <a id="map.map.targets"></a><br>Directories the generator owns and what they should hold: the map, and the explained map (empty when `explain.map` is off, so its generated files go).
+-    - fn [extraGenerated](../../src/map.ts#L163) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
++    - fn [extraGenerated](../../src/map.ts#L165) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+       <a id="map.map.extraGenerated"></a><br>Generated files in `dir` that should not be there.
+       - calls [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
+-    - fn [mapConflicts](../../src/map.ts#L171) (config: Config, r: MapResult) → string[]
++    - fn [mapConflicts](../../src/map.ts#L173) (config: Config, r: MapResult) → string[]
+       <a id="map.map.mapConflicts"></a><br>Target files of both maps that exist and are not generated. Sorted.
+       - calls [map.map.targets](map.md#map.map.targets), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
+-    - type [MapArtifact](../../src/map.ts#L183) = "map" | "explained" | "index" | "facts"
++    - type [MapArtifact](../../src/map.ts#L185) = "map" | "explained" | "index" | "facts"
+       <a id="map.map.MapArtifact"></a><br>What a step of the map's commit touches.
+-    - type [MapStep](../../src/map.ts#L186)
++    - type [MapStep](../../src/map.ts#L188)
+       <a id="map.map.MapStep"></a><br>One file step of `keylang map`: a path relative to the root, POSIX.
+-    - type [PlannedStep](../../src/map.ts#L192) extends MapStep <!-- internal -->
++    - type [PlannedStep](../../src/map.ts#L194) extends MapStep <!-- internal -->
+       <a id="map.map.PlannedStep"></a>
+-    - type [MapPlan](../../src/map.ts#L208)
++    - type [MapPlan](../../src/map.ts#L210)
+       <a id="map.map.MapPlan"></a><br>What `keylang map` will do, computed before anything is written: the expected bytes of every target, the removals, and what the render was made from. Internal to one operation — not a stored format.
+-    - type [SourceInputs](../../src/map.ts#L220)
++    - type [SourceInputs](../../src/map.ts#L222)
+       <a id="map.map.SourceInputs"></a><br>What a snapshot was computed from: `keylang.json` and the source files. A change in either makes a plan built on it unfit.
+-    - type [MapInputs](../../src/map.ts#L228) extends SourceInputs <!-- internal -->
++    - type [MapInputs](../../src/map.ts#L230) extends SourceInputs <!-- internal -->
+       <a id="map.map.MapInputs"></a><br>The inputs of the render: a change in any makes the plan unfit.
+-    - fn [sourceInputs](../../src/map.ts#L234) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
++    - fn [sourceInputs](../../src/map.ts#L236) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+       <a id="map.map.sourceInputs"></a><br>The inputs of a snapshot as they are on disk now: the saved `keylang.json` and the snapshot's manifest.
+       - calls [map.map.readOrNull](map.md#map.map.readOrNull)
+-    - fn [sourceInputProblems](../../src/map.ts#L243) (config: Config, inputs: SourceInputs, subject: string) → string[]
++    - fn [sourceInputProblems](../../src/map.ts#L245) (config: Config, inputs: SourceInputs, subject: string) → string[]
+       <a id="map.map.sourceInputProblems"></a><br>How `keylang.json` and the source files differ from the ones `subject` was computed from (`path: reason` lines, empty when none does): a changed config, a source added, changed or removed since.
+       - calls [map.map.readOrNull](map.md#map.map.readOrNull), [base.config.sourceTree](base.md#base.config.sourceTree), [map.snapshot.sha256](map.md#map.snapshot.sha256)
+-    - type [CommittedStep](../../src/map.ts#L262) extends MapStep
++    - type [CommittedStep](../../src/map.ts#L264) extends MapStep
+       <a id="map.map.CommittedStep"></a><br>A step after the commit: done, failed with the reason, or never tried.
+-    - type [MapCommit](../../src/map.ts#L267)
++    - type [MapCommit](../../src/map.ts#L269)
+       <a id="map.map.MapCommit"></a>
+-    - fn [planMap](../../src/map.ts#L278) (config: Config, r: MapResult) → MapPlan
++    - fn [planMap](../../src/map.ts#L280) (config: Config, r: MapResult) → MapPlan
+       <a id="map.map.planMap"></a><br>Plans both maps, the index and the fact cache: a write for every missing or changed generated file, a removal for every generated file of a layer that is gone (or of a map turned off). Reads the disk, writes nothing.
+       - calls [base.config.toPosix](base.md#base.config.toPosix), [map.map.targets](map.md#map.map.targets), [map.map.readOrNull](map.md#map.map.readOrNull), [map.map.extraGenerated](map.md#map.map.extraGenerated), [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.sourceInputs](map.md#map.map.sourceInputs), [map.map.briefsKey](map.md#map.map.briefsKey)
+-    - fn [mapPlanProblems](../../src/map.ts#L312) (plan: MapPlan) → string[]
++    - fn [mapPlanProblems](../../src/map.ts#L314) (plan: MapPlan) → string[]
+       <a id="map.map.mapPlanProblems"></a><br>Why the plan may not be committed now, as `path: reason` lines; empty when it may. Every target must pass the repository's write rules (a plain path that stays inside the repository through links) and still hold the bytes the plan saw — a manual file created meanwhile included…
+       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems), [map.map.briefsKey](map.md#map.map.briefsKey)
+-    - fn [commitMap](../../src/map.ts#L331) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
++    - fn [commitMap](../../src/map.ts#L333) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+       <a id="map.map.commitMap"></a><br>Runs the plan's steps in order, each an atomic write (the generator's exact bytes, the permissions of the file it replaces, links followed inside the repository) or a removal. The signal is checked between steps: the step under way finishes. `onStep` is told before each step…
+       - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [base.safe-write.landing](base.md#base.safe-write.landing)
+-    - fn [briefsKey](../../src/map.ts#L360) (config: Config) → string <!-- internal -->
++    - fn [briefsKey](../../src/map.ts#L362) (config: Config) → string <!-- internal -->
+       <a id="map.map.briefsKey"></a><br>A hash of the briefs the explained map reads.
+       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
+-    - fn [readOrNull](../../src/map.ts#L365) (abs: string) → string | null <!-- internal -->
++    - fn [readOrNull](../../src/map.ts#L367) (abs: string) → string | null <!-- internal -->
+       <a id="map.map.readOrNull"></a><br>A file's text, or null when there is none.
+-    - fn [diffMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapDiff
++    - fn [diffMap](../../src/map.ts#L376) (config: Config, r: MapResult) → MapDiff
+       <a id="map.map.diffMap"></a><br>Compare both generated maps with the files on disk (`map --check`).
+       - calls [map.map.mapConflicts](map.md#map.map.mapConflicts), [map.map.targets](map.md#map.map.targets), [map.map.extraGenerated](map.md#map.map.extraGenerated)
+-    - fn [extractorCode](../../src/map.ts#L396) () → string <!-- internal -->
++    - fn [extractorCode](../../src/map.ts#L398) () → string <!-- internal -->
+       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
+       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
+   - module [python-imports](../../src/python-imports.ts#L1)
+diff --git a/keylang/map/map.md b/keylang/map/map.md
+index 6899562..5a5de72 100644
+--- a/keylang/map/map.md
++++ b/keylang/map/map.md
+@@ -302,40 +302,40 @@
+     - type [MapResult](../../src/map.ts#L18)
+     - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
+       - calls base.config.sourceTree, base.config.toPosix, base.languages.languageOf, base.config.isExcluded, map.map.readSource, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
+-    - fn [opaqueFacts](../../src/map.ts#L114) (path: string) → FileFacts <!-- internal -->
+-    - fn [readSource](../../src/map.ts#L119) (abs: string) → string | null <!-- internal -->
+-    - fn [extractGuarded](../../src/map.ts#L133) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
++    - fn [opaqueFacts](../../src/map.ts#L116) (path: string) → FileFacts <!-- internal -->
++    - fn [readSource](../../src/map.ts#L121) (abs: string) → string | null <!-- internal -->
++    - fn [extractGuarded](../../src/map.ts#L135) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+       - calls map.map.opaqueFacts
+-    - type [MapDiff](../../src/map.ts#L144)
+-    - fn [targets](../../src/map.ts#L155) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+-    - fn [extraGenerated](../../src/map.ts#L163) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
++    - type [MapDiff](../../src/map.ts#L146)
++    - fn [targets](../../src/map.ts#L157) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
++    - fn [extraGenerated](../../src/map.ts#L165) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+       - calls map.emit.isGeneratedMap
+-    - fn [mapConflicts](../../src/map.ts#L171) (config: Config, r: MapResult) → string[]
++    - fn [mapConflicts](../../src/map.ts#L173) (config: Config, r: MapResult) → string[]
+       - calls map.map.targets, map.emit.isGeneratedMap
+-    - type [MapArtifact](../../src/map.ts#L183) = "map" | "explained" | "index" | "facts"
+-    - type [MapStep](../../src/map.ts#L186)
+-    - type [PlannedStep](../../src/map.ts#L192) extends MapStep <!-- internal -->
+-    - type [MapPlan](../../src/map.ts#L208)
+-    - type [SourceInputs](../../src/map.ts#L220)
+-    - type [MapInputs](../../src/map.ts#L228) extends SourceInputs <!-- internal -->
+-    - fn [sourceInputs](../../src/map.ts#L234) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
++    - type [MapArtifact](../../src/map.ts#L185) = "map" | "explained" | "index" | "facts"
++    - type [MapStep](../../src/map.ts#L188)
++    - type [PlannedStep](../../src/map.ts#L194) extends MapStep <!-- internal -->
++    - type [MapPlan](../../src/map.ts#L210)
++    - type [SourceInputs](../../src/map.ts#L222)
++    - type [MapInputs](../../src/map.ts#L230) extends SourceInputs <!-- internal -->
++    - fn [sourceInputs](../../src/map.ts#L236) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+       - calls map.map.readOrNull
+-    - fn [sourceInputProblems](../../src/map.ts#L243) (config: Config, inputs: SourceInputs, subject: string) → string[]
++    - fn [sourceInputProblems](../../src/map.ts#L245) (config: Config, inputs: SourceInputs, subject: string) → string[]
+       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
+-    - type [CommittedStep](../../src/map.ts#L262) extends MapStep
+-    - type [MapCommit](../../src/map.ts#L267)
+-    - fn [planMap](../../src/map.ts#L278) (config: Config, r: MapResult) → MapPlan
++    - type [CommittedStep](../../src/map.ts#L264) extends MapStep
++    - type [MapCommit](../../src/map.ts#L269)
++    - fn [planMap](../../src/map.ts#L280) (config: Config, r: MapResult) → MapPlan
+       - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
+-    - fn [mapPlanProblems](../../src/map.ts#L312) (plan: MapPlan) → string[]
++    - fn [mapPlanProblems](../../src/map.ts#L314) (plan: MapPlan) → string[]
+       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
+-    - fn [commitMap](../../src/map.ts#L331) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
++    - fn [commitMap](../../src/map.ts#L333) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+       - calls base.safe-write.writeAtomic, base.safe-write.landing
+-    - fn [briefsKey](../../src/map.ts#L360) (config: Config) → string <!-- internal -->
++    - fn [briefsKey](../../src/map.ts#L362) (config: Config) → string <!-- internal -->
+       - calls map.snapshot.sha256, map.explanations.loadBriefs
+-    - fn [readOrNull](../../src/map.ts#L365) (abs: string) → string | null <!-- internal -->
+-    - fn [diffMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapDiff
++    - fn [readOrNull](../../src/map.ts#L367) (abs: string) → string | null <!-- internal -->
++    - fn [diffMap](../../src/map.ts#L376) (config: Config, r: MapResult) → MapDiff
+       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
+-    - fn [extractorCode](../../src/map.ts#L396) () → string <!-- internal -->
++    - fn [extractorCode](../../src/map.ts#L398) () → string <!-- internal -->
+       - calls map.snapshot.sha256
+   - module [python-imports](../../src/python-imports.ts#L1)
+     - node external.node
+diff --git a/src/analyze.ts b/src/analyze.ts
+index 6473df5..8226430 100644
+--- a/src/analyze.ts
++++ b/src/analyze.ts
+@@ -6,7 +6,7 @@
+ import { existsSync, readFileSync } from "node:fs";
+ import { isAbsolute, join, relative, sep } from "node:path";
+ import { assess, type Assessment } from "./assess.ts";
+-import { declaredExternalIds } from "./declared-packages.ts";
++import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
+ import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
+ import { compareText } from "./span.ts";
+ import { collectMdFiles } from "./files.ts";
+@@ -45,6 +45,8 @@ export interface Analysis extends Assessment {
+   docs: Document[];
+   /** Paths the request named that hold no specs (the explained map, saved explanations), as displayed. */
+   notSpecs: string[];
++  /** Packages the repository declares (root manifests with `withoutCode`), sorted by id. */
++  packages: readonly DeclaredPackage[];
+ }
+ 
+ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
+@@ -86,6 +88,8 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
+   const testFiles = evidence ? evidenceFiles(config, "tests") : null;
+   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
+   const staticMode = resolveStatic(request.static, config.check.static);
++  // Without code only the root manifests count: no file has ancestors to walk.
++  const packages = map?.graph.packages ?? readManifests(config, [], new Map()).packages;
+   const assessment = assess(
+     docs,
+     snapshot,
+@@ -94,11 +98,11 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
+       traces: traceFiles === null ? null : loadTraces(root, traceFiles),
+       static: staticMode.mode,
+       ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
+-      ...(request.withoutCode ? {} : { knownExternal: declaredExternalIds(root) }),
++      ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)) }),
+     },
+     config.format,
+   );
+-  return { ...assessment, config, map, snapshot, docs, notSpecs };
++  return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
+ }
+ 
+ /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */
+diff --git a/src/declared-packages.ts b/src/declared-packages.ts
+index 54b2084..a8145fb 100644
+--- a/src/declared-packages.ts
++++ b/src/declared-packages.ts
+@@ -1,40 +1,149 @@
+ // Packages a repository declares, as `external.<segment>` ids. A rule may name
+ // one before any file imports it. Python manifests are not read: a package
+ // known only from an import disappears with that file.
+-// A missing manifest is skipped. One that cannot be read, or whose JSON or
++// A manifest counts at the root or in a directory between an analysed file and
++// the root, honouring `exclude`; nothing is walked. Workspace ranges and names
++// of the root `workspaces` are internal, not external. `@types/x` counts as
++// `x`. A missing manifest is skipped. One that cannot be read, or whose JSON or
+ // TOML is invalid, is an error that names the file and the field.
+ 
+-import { readdirSync, readFileSync } from "node:fs";
+-import { join } from "node:path";
++import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
++import { join, posix } from "node:path";
+ import { parse as parseToml } from "smol-toml";
+-import { layerName } from "./config.ts";
++import { isExcluded, toPosix, type Config } from "./config.ts";
++import { assignExternalIds } from "./external-ids.ts";
++import { compareText } from "./span.ts";
++import { parseJsonc, parseJsoncStrict } from "./imports.ts";
+ 
+ const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
+ const CRATE_FIELDS = ["dependencies", "dev-dependencies", "build-dependencies"] as const;
++/** Field order within one manifest: npm first, then Cargo. */
++const FIELD_ORDER: readonly DependencyField[] = [...PACKAGE_FIELDS, ...CRATE_FIELDS];
+ 
+-/** `external.<segment>` for every package declared in a JS or Rust manifest under `root`. */
+-export function declaredExternalIds(root: string): ReadonlySet<string> {
+-  const ids = new Set<string>();
+-  const add = (pkg: string): void => {
+-    if (pkg === "") return;
+-    ids.add(`external.${layerName(pkg.replace(/^@/, "").replace("/", "-"))}`);
++/** A manifest field a package is declared in. */
++export type DependencyField = (typeof PACKAGE_FIELDS)[number] | (typeof CRATE_FIELDS)[number];
++
++/** Where one package is declared, and the version range as written (null when the manifest gives none). */
++export interface Declaration {
++  /** POSIX, root-relative. */
++  manifest: string;
++  field: DependencyField;
++  range: string | null;
++}
++
++/** A package a repository declares, with its shared `external.<segment>` id. */
++export interface DeclaredPackage {
++  id: string;
++  name: string;
++  ecosystem: "npm" | "cargo";
++  /** Sorted by manifest path, then field order. */
++  declarations: Declaration[];
++}
++
++/** Ranges that name a path in this repository rather than a version to install. */
++const WORKSPACE_PROTOCOL = /^(workspace|file|link|portal):/;
++
++/**
++ * The packages declared by the manifests at the root and on the ancestors of
++ * `files`, as `external.<segment>` ids. `known` holds config files a resolver
++ * already read (their text or null for absent); it is not read again.
++ */
++export function readManifests(config: Config, files: readonly string[], known: ReadonlyMap<string, string | null>): { packages: DeclaredPackage[]; inputs: Map<string, string> } {
++  const dirs = new Set<string>([""]); // the root, always
++  for (const file of files) {
++    // `src/a/b.ts` → `src/a`, `src`, `` (the root); no directory is walked.
++    for (let dir = posix.dirname(toPosix(file)); ; dir = posix.dirname(dir)) {
++      dirs.add(dir === "." ? "" : dir);
++      if (dir === "." || dir === "" || dir.startsWith("..")) break;
++    }
++  }
++  const read = (rel: string): string | null => {
++    const held = known.get(rel);
++    if (held !== undefined) return held;
++    const abs = join(config.root, rel);
++    if (!existsSync(abs) || !statSync(abs).isFile()) return null;
++    return readText(abs, rel);
+   };
+-  let paths: string[] = [];
+-  try {
+-    paths = readdirSync(root, { recursive: true, encoding: "utf8" });
+-  } catch {
+-    return ids;
++  const names = new Map<string, Declaration[]>();
++  const inputs = new Map<string, string>();
++  const add = (name: string, rel: string, field: DependencyField, range: string | null): void => {
++    if (name === "" || WORKSPACE_PROTOCOL.test(range ?? "")) return;
++    const mapped = /^@types\//.test(name) ? name.slice("@types/".length) : name;
++    if (mapped === "") return;
++    names.set(mapped, [...(names.get(mapped) ?? []), { manifest: rel, field, range }]);
++  };
++  // Root `workspaces` names are this repository's packages, not externals.
++  const workspaces = new Set<string>();
++  const rootText = read("package.json");
++  if (rootText !== null) {
++    inputs.set("package.json", rootText);
++    for (const name of workspaceNames(config.root, rootText)) workspaces.add(name);
+   }
+-  for (const rel of paths) {
+-    const posix = rel.split("\\").join("/");
+-    const parts = posix.split("/");
+-    // A manifest inside a dependency tree declares that package's own dependencies, not this repo's.
+-    if (parts.includes("node_modules") || parts.includes(".git") || parts.includes("target")) continue;
+-    const abs = join(root, rel);
+-    if (posix === "package.json" || posix.endsWith("/package.json")) addPackages(posix, readText(abs, posix), add);
+-    else if (posix === "Cargo.toml" || posix.endsWith("/Cargo.toml")) addCrates(posix, readText(abs, posix), add);
++  for (const dir of [...dirs].sort(compareText)) {
++    const pkg = dir === "" ? "package.json" : `${dir}/package.json`;
++    const cargo = dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`;
++    if (isExcluded(pkg, config.exclude) && isExcluded(cargo, config.exclude)) continue;
++    if (!isExcluded(pkg, config.exclude)) {
++      const text = read(pkg);
++      if (text !== null) {
++        inputs.set(pkg, text);
++        addPackages(pkg, text, add);
++      }
++    }
++    if (!isExcluded(cargo, config.exclude)) {
++      const text = read(cargo);
++      if (text !== null) {
++        inputs.set(cargo, text);
++        addCrates(cargo, text, add);
++      }
++    }
++  }
++  const ids = assignExternalIds(names.keys()).ids;
++  const packages = [...names.entries()]
++    .filter(([name]) => !workspaces.has(name))
++    .map(([name, declarations]) => ({
++      id: ids.get(name)!,
++      name,
++      ecosystem: declarations.some((d) => d.manifest.endsWith("Cargo.toml")) && !declarations.some((d) => d.manifest.endsWith("package.json")) ? ("cargo" as const) : ("npm" as const),
++      declarations: [...declarations].sort((a, b) => compareText(a.manifest, b.manifest) || FIELD_ORDER.indexOf(a.field) - FIELD_ORDER.indexOf(b.field)),
++    }))
++    .sort((a, b) => compareText(a.id, b.id));
++  return { packages, inputs };
++}
++
++/** Names of the packages the root `workspaces` globs name (via their `package.json`). */
++function workspaceNames(root: string, rootText: string): string[] {
++  const value = parseJsonc(rootText);
++  if (!isRecord(value)) return [];
++  const workspaces = Array.isArray(value.workspaces) ? value.workspaces : isRecord(value.workspaces) && Array.isArray(value.workspaces.packages) ? value.workspaces.packages : [];
++  const names: string[] = [];
++  for (const dir of workspaceDirs(root, workspaces)) {
++    const manifest = join(root, dir, "package.json");
++    if (!existsSync(manifest)) continue;
++    const pkg = parseJsonc(readFileSync(manifest, "utf8"));
++    if (isRecord(pkg) && typeof pkg.name === "string") names.push(pkg.name);
++  }
++  return names;
++}
++
++/** Directories a `workspaces` entry names, expanding a trailing `/*` one level, as the resolver does. */
++function workspaceDirs(root: string, workspaces: readonly unknown[]): string[] {
++  const dirs: string[] = [];
++  for (const pattern of workspaces) {
++    if (typeof pattern !== "string") continue;
++    const clean = posix.normalize(toPosix(pattern)).replace(/\/$/, "");
++    if (clean.startsWith("../") || clean.startsWith("/")) continue;
++    if (!clean.endsWith("/*")) {
++      if (!clean.includes("*")) dirs.push(clean);
++      continue;
++    }
++    const base = clean.slice(0, -2);
++    if (base.includes("*")) continue;
++    const abs = join(root, base);
++    if (!existsSync(abs) || !statSync(abs).isDirectory()) continue;
++    for (const entry of readdirSync(abs, { withFileTypes: true })) if (entry.isDirectory()) dirs.push(`${base}/${entry.name}`);
+   }
+-  return ids;
++  return dirs;
+ }
+ 
+ /** The file is there but cannot be read. That is not the same error as invalid contents. */
+@@ -58,10 +167,10 @@ function table(rel: string, field: string, value: unknown, kind: "object" | "tab
+ }
+ 
+ /** `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`. */
+-function addPackages(rel: string, text: string, add: (pkg: string) => void): void {
++function addPackages(rel: string, text: string, add: (name: string, rel: string, field: DependencyField, range: string | null) => void): void {
+   let value: unknown;
+   try {
+-    value = JSON.parse(text);
++    value = parseJsoncStrict(text);
+   } catch (error) {
+     throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+   }
+@@ -69,12 +178,12 @@ function addPackages(rel: string, text: string, add: (pkg: string) => void): voi
+   for (const key of PACKAGE_FIELDS) {
+     const names = table(rel, key, key in value ? value[key] : undefined, "object");
+     if (names === undefined) continue;
+-    for (const name of Object.keys(names)) add(name);
++    for (const [name, range] of Object.entries(names)) add(name, rel, key, typeof range === "string" ? range : null);
+   }
+ }
+ 
+ /** `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`. */
+-function addCrates(rel: string, text: string, add: (pkg: string) => void): void {
++function addCrates(rel: string, text: string, add: (name: string, rel: string, field: DependencyField, range: string | null) => void): void {
+   let value: unknown;
+   try {
+     value = parseToml(text);
+@@ -89,19 +198,20 @@ function addCrates(rel: string, text: string, add: (pkg: string) => void): void
+     const crate = table(rel, `target.${name}`, item, "table");
+     return crate === undefined ? [] : crateTables(rel, crate, `target.${name}.`);
+   });
+-  for (const names of [...crateTables(rel, value, ""), ...nested]) {
++  for (const [field, names] of [...crateTables(rel, value, ""), ...nested]) {
+     for (const [key, dep] of Object.entries(names)) {
+-      const renamed = isRecord(dep) && typeof dep.package === "string" ? dep.package : key;
+-      add(renamed);
++      const renamed = isRecord(dep) && typeof dep.package === "string" ? dep.package : null;
++      const range = typeof dep === "string" ? dep : isRecord(dep) && typeof dep.version === "string" ? dep.version : null;
++      add(renamed ?? key, rel, field, range);
+     }
+   }
+ }
+ 
+-function crateTables(rel: string, source: Record<string, unknown>, prefix: string): Record<string, unknown>[] {
+-  const out: Record<string, unknown>[] = [];
++function crateTables(rel: string, source: Record<string, unknown>, prefix: string): [DependencyField, Record<string, unknown>][] {
++  const out: [DependencyField, Record<string, unknown>][] = [];
+   for (const key of CRATE_FIELDS) {
+     const names = table(rel, `${prefix}${key}`, key in source ? source[key] : undefined, "table");
+-    if (names !== undefined) out.push(names);
++    if (names !== undefined) out.push([key, names]);
+   }
+   return out;
+ }
+diff --git a/src/graph.ts b/src/graph.ts
+index 34d4fef..51dff2a 100644
+--- a/src/graph.ts
++++ b/src/graph.ts
+@@ -4,12 +4,17 @@
+ 
+ import { posix } from "node:path";
+ import { isExcluded, layerName, type Config } from "./config.ts";
++import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
+ import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
+ import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
++import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
+ import { globPrefix, matchesGlob } from "./glob.ts";
+ import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
+ import type { Resolution } from "./imports.ts";
+ import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
++import { compareText } from "./span.ts";
++
++export { EXTERNAL };
+ 
+ export interface Graph {
+   layers: Layer[];
+@@ -26,6 +31,8 @@ export interface Graph {
+   resolverInputs: Map<string, string | null>;
+   /** Public names of every indexed module, resolved to symbols; sorted by module and name. */
+   exports: ExportEntry[];
++  /** Packages the repository declares at the root or on an ancestor of an analysed file, sorted by id. */
++  packages: DeclaredPackage[];
+ }
+ 
+ export interface Gap {
+@@ -184,13 +191,11 @@ export interface Stats {
+   unassignedFiles: number;
+ }
+ 
+-export const EXTERNAL = "external";
++export const UNASSIGNED = "unassigned";
+ 
+ /** Words that, under a module, start a declaration rather than a dependency alias. */
+ const CONTEXT_ALIAS = new Set(["module", "fn", "type", "event", "calls"]);
+ 
+-export const UNASSIGNED = "unassigned";
+-
+ const NO_GLOBALS = { values: new Set<string>(), types: new Set<string>() };
+ 
+ function globalsOf(file: string): Frontend["globals"] {
+@@ -322,7 +327,15 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
+ 
+   // 3. Imports → dependencies.
+   const externalLayer = getLayer(EXTERNAL);
+-  const externalIds = externalModuleIds(files, resolve, warnings);
++  // Declared packages and imported packages share one ID space: a package's id
++  // does not depend on which colliding package the code happens to import.
++  const knownInputs = new Map<string, string | null>([...resolvers.values()].flatMap((resolver) => [...resolver.inputs]));
++  const manifests = readManifests(config, files.map((f) => f.path), knownInputs);
++  const { ids: externalIds, warnings: idWarnings } = assignExternalIds([...importedPackageNames(files, resolve), ...manifests.packages.map((p) => p.name)]);
++  warnings.push(...idWarnings);
++  const packages: DeclaredPackage[] = manifests.packages
++    .map((p) => ({ ...p, id: externalIds.get(p.name)! }))
++    .sort((a, b) => compareText(a.id, b.id));
+   const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
+   for (const { facts, module } of byFile.values()) {
+     const locals = new Map<string, ImportTarget[]>();
+@@ -820,8 +833,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
+     warnings,
+     gaps,
+     openEdges,
+-    resolverInputs: new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs])),
++    // Manifest texts enter the inputs here, so the snapshot id (and the MCP cache key) covers them.
++    resolverInputs: new Map<string, string | null>([...resolvers.values()].flatMap((resolver) => [...resolver.inputs]).concat([...manifests.inputs])),
+     exports: exportTables.entries(),
++    packages,
+   };
+ }
+ 
+@@ -866,18 +881,8 @@ function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported:
+   return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
+ }
+ 
+-/** ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. */
+-function externalSegment(pkg: string): string {
+-  return layerName(pkg.replace(/^@/, "").replace("/", "-"));
+-}
+-
+-/**
+- * Module IDs of the external packages the files import. Two packages whose
+- * names sanitize to one segment (`@scope/pkg` and `scope-pkg`) get two IDs:
+- * the one whose name is the segment keeps it, the others get `-2`, `-3`… in
+- * name order, with a warning; the IDs do not depend on file order.
+- */
+-function externalModuleIds(files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution, warnings: string[]): Map<string, string> {
++/** External packages (and the `node` built-in) the files import, for the shared ID assignment. */
++function importedPackageNames(files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution): Set<string> {
+   const packages = new Set<string>();
+   for (const f of files) {
+     for (const imp of f.imports) {
+@@ -886,25 +891,7 @@ function externalModuleIds(files: readonly FileFacts[], resolve: (file: string,
+       else if (r.kind === "builtin") packages.add("node");
+     }
+   }
+-  const bySegment = new Map<string, string[]>();
+-  for (const pkg of [...packages].sort()) {
+-    const segment = externalSegment(pkg);
+-    bySegment.set(segment, [...(bySegment.get(segment) ?? []), pkg]);
+-  }
+-  const ids = new Map<string, string>();
+-  for (const [segment, names] of bySegment) {
+-    const keeper = names.find((n) => n === segment) ?? names[0]!;
+-    ids.set(keeper, `${EXTERNAL}.${segment}`);
+-    let n = 2;
+-    for (const name of names) {
+-      if (name === keeper) continue;
+-      while (bySegment.has(`${segment}-${n}`)) n++;
+-      const id = `${EXTERNAL}.${segment}-${n++}`;
+-      ids.set(name, id);
+-      warnings.push(`packages \`${keeper}\` and \`${name}\` share the ID segment \`${segment}\`; \`${name}\` is \`${id}\``);
+-    }
+-  }
+-  return ids;
++  return packages;
+ }
+ 
+ /**
+diff --git a/src/imports.ts b/src/imports.ts
+index 23da66d..27287b1 100644
+--- a/src/imports.ts
++++ b/src/imports.ts
+@@ -386,6 +386,11 @@ export function parseJsonc(text: string): unknown {
+   }
+ }
+ 
++/** JSONC text as a value; throws the `JSON.parse` message when it does not parse. */
++export function parseJsoncStrict(text: string): unknown {
++  return JSON.parse(stripJsonc(text));
++}
++
+ /** A file's text, or null when it is missing. */
+ function readText(path: string): string | null {
+   return existsSync(path) ? readFileSync(path, "utf8") : null;
+diff --git a/src/map.ts b/src/map.ts
+index 8b29651..3bc4d99 100644
+--- a/src/map.ts
++++ b/src/map.ts
+@@ -77,8 +77,10 @@ export async function generateMap(config: Config, options: { persist?: boolean;
+     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
+   }
+   const factCache = options.persist ? cache.serialize() : null;
+-  // An explicitly excluded file inside a layer is a module with unknown contents.
+-  const excluded = excludedSourceFiles(config).filter((p) => placeFile(config, p) !== null);
++  // An explicitly excluded file is a module with unknown contents: inside a
++  // layer, or `unassigned` outside every layer of an explicit config. With a
++  // guessed layout it is left out entirely, like every other file outside it.
++  const excluded = excludedSourceFiles(config).filter((p) => !config.guessed || placeFile(config, p) !== null);
+   for (const p of excluded) facts.push(opaqueFacts(p));
+   const graph = buildGraph(config, facts);
+   for (const p of excluded) {
+diff --git a/src/snapshot.ts b/src/snapshot.ts
+index 3576a34..1394a9f 100644
+--- a/src/snapshot.ts
++++ b/src/snapshot.ts
+@@ -13,7 +13,7 @@ import { components } from "./scc.ts";
+ 
+ export const SNAPSHOT_SCHEMA = 7;
+ /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
+-export const EXTRACTOR_VERSION = "m1.8";
++export const EXTRACTOR_VERSION = "m1.9";
+ 
+ export type Resolution = "resolved" | "ambiguous" | "unresolved";
+ export type Provenance = "syntactic";
+diff --git a/tests/analyzer.test.ts b/tests/analyzer.test.ts
+index 1e33aa3..56da8b7 100644
+--- a/tests/analyzer.test.ts
++++ b/tests/analyzer.test.ts
+@@ -526,6 +526,20 @@ test("modules: two paths of one ID are an opaque module with a hole; scoped pack
+   assert.match(keylang(dirMode, ["explain", "lib.a.K"]).stdout, /^class lib\.a\.K/);
+ });
+ 
++test("colliding package names get one ID space over declared and imported names together, not only the imported ones", (t) => {
++  const dir = repo(t, {
++    "package.json": '{"dependencies":{"@scope/pkg":"1","scope-pkg":"1"}}',
++    "src/app/a.ts": 'import { a } from "@scope/pkg";\nexport function main(): void { a(); }\n',
++  });
++  const o = keylang(dir, ["map"]);
++  assert.equal(o.status, 0, o.stderr);
++  // `scope-pkg` is declared but not imported; it still keeps the segment, so `@scope/pkg` is `-2`.
++  assert.match(o.stderr, /packages `scope-pkg` and `@scope\/pkg` share the ID segment `scope-pkg`; `@scope\/pkg` is `external\.scope-pkg-2`/);
++  const snap = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as Snapshot;
++  assert.deepEqual(snap.edges.filter((e) => e.kind === "import" && e.source === "app.a").map((e) => e.target), ["external.scope-pkg-2"]);
++  assert.equal(snap.nodes["external.scope-pkg"], undefined);
++});
++
+ test("robustness: a file nested thousands deep is opaque, not a crash; a fact cache damaged deep inside is extracted again", (t) => {
+   const dir = repo(t, {
+     "src/lib/deep.ts": `export const x = ${Array.from({ length: 5000 }, (_, i) => `a${i}`).join(" + ")};\n`,
+diff --git a/tests/mcp.test.ts b/tests/mcp.test.ts
+index 9ca9ad7..192a808 100644
+--- a/tests/mcp.test.ts
++++ b/tests/mcp.test.ts
+@@ -14,6 +14,7 @@ import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
+ 
+ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+ const bin = join(root, "bin/keylang.js");
++const VERSION = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version as string;
+ const FLOW = "# flow checkout\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n  - step infra.db.save\n";
+ 
+ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string; call(name: string, args?: Record<string, unknown>): Promise<{ text: string; isError: boolean }>; list(): Promise<string[]> }> {
+@@ -253,3 +254,26 @@ test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
+   assert.ok(status.gaps.some((gap) => gap.kind === "planned"));
+   assert.equal(treeBytes(mcp.dir), disk);
+ });
++
++// Ticket harness-integration/02: the command `agents` writes to `.mcp.json`,
++// run as written, starts a server that answers `tools/list`. The published
++// `npx -y keylang@<VERSION>` needs the npm registry, so the test swaps that
++// prefix for this checkout's CLI under this Node and keeps the rest — the
++// `mcp` argument — from the config.
++test("mcp: the command .mcp.json pins starts a server that answers tools/list", async (t) => {
++  const dir = mkdtempSync(join(tmpdir(), "keylang-mcp-cmd-"));
++  t.after(() => rmSync(dir, { recursive: true, force: true }));
++  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
++  const init = spawnSync(process.execPath, [bin, "init", "--agents=claude"], { cwd: dir, encoding: "utf8" });
++  assert.equal(init.status, 0, init.stderr);
++  const server = (JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")) as { mcpServers: { keylang: { command: string; args: string[] } } }).mcpServers.keylang;
++  assert.deepEqual(server, { command: "npx", args: ["-y", `keylang@${VERSION}`, "mcp"] });
++  const args = [bin, ...server.args.filter((arg) => arg !== "-y" && arg !== `keylang@${VERSION}`)];
++  const client = new Client({ name: "keylang-test", version: "0" });
++  await client.connect(new StdioClientTransport({ command: process.execPath, args, cwd: dir, stderr: "pipe" }));
++  t.after(() => client.close());
++  const listed = await client.listTools();
++  for (const name of ["search", "node", "code", "flows", "check", "explain", "apply_diff", "context", "validate_spec", "scaffold", "feature_status"]) {
++    assert.ok(listed.tools.some((tool) => tool.name === name), name);
++  }
++});
+diff --git a/tests/metamorphic.test.ts b/tests/metamorphic.test.ts
+index 9bae70d..1791784 100644
+--- a/tests/metamorphic.test.ts
++++ b/tests/metamorphic.test.ts
+@@ -249,4 +249,34 @@ test("excluding the far side of a cycle is unverified, not ok", (t) => {
+   monotonic("cycle", "exclude src/infra/b.ts", base, aggregate(results(copy), []));
+   const row = results(copy).find((item) => item.criterion === "no-cycles");
+   assert.equal(row?.verdict, "unverified");
++
++  // The far side may itself be outside every layer: same verdict, not a false ok.
++  write(dir, "keylang.json", `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**" } })}\n`);
++  write(dir, "src/app/a.ts", 'import { b } from "../misc/b.ts";\nexport function a(): void { b(); }\n');
++  rmSync(join(dir, "src/infra/b.ts"));
++  write(dir, "src/misc/b.ts", 'import { a } from "../app/a.ts";\nexport function b(): void { a(); }\n');
++  const bare = aggregate(results(dir), []);
++  const far = mkdtempSync(join(tmpdir(), "keylang-meta-cycle-far-"));
++  t.after(() => rmSync(far, { recursive: true, force: true }));
++  cpSync(dir, far, { recursive: true });
++  withExclude(far, "src/misc/b.ts");
++  monotonic("cycle", "exclude src/misc/b.ts", bare, aggregate(results(far), []));
++  assert.equal(results(far).find((item) => item.criterion === "no-cycles")?.verdict, "unverified");
++});
++
++test("excluding an upward file outside every layer is unverified, not ok", (t) => {
++  const dir = mkdtempSync(join(tmpdir(), "keylang-meta-unassigned-"));
++  t.after(() => rmSync(dir, { recursive: true, force: true }));
++  write(dir, "keylang.json", `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", app: "src/app/**" } })}\n`);
++  write(dir, "src/domain/x.ts", "export function x(): void {}\n");
++  write(dir, "src/app/y.ts", "export function y(): void {}\n");
++  write(dir, "src/misc/z.ts", 'import { y } from "../app/y.ts";\nexport function z(): void { y(); }\n');
++  write(dir, "keylang/rules.md", "# rules\n\n- layers domain < app\n");
++  const base = aggregate(results(dir), []);
++  const copy = mkdtempSync(join(tmpdir(), "keylang-meta-unassigned-ex-"));
++  t.after(() => rmSync(copy, { recursive: true, force: true }));
++  cpSync(dir, copy, { recursive: true });
++  withExclude(copy, "src/misc/z.ts");
++  monotonic("unassigned", "exclude src/misc/z.ts", base, aggregate(results(copy), []));
++  assert.equal(results(copy).find((item) => item.criterion === "layers domain < app")?.verdict, "unverified");
+ });
+diff --git a/tests/rules-area.test.ts b/tests/rules-area.test.ts
+index 35656be..dfdbd64 100644
+--- a/tests/rules-area.test.ts
++++ b/tests/rules-area.test.ts
+@@ -133,6 +133,73 @@ test("a layers hole covers the connected order and not a disconnected one", (t)
+   assert.match(cd?.evidence ?? "", /src\/c\/y\.ts:1:1/);
+ });
+ 
++test("an excluded upward source is a layers hole, in a nested layer or outside every layer", (t) => {
++  const layers = { domain: "src/domain/**", app: "src/app/**", infra: "src/infra/**" };
++  const dir = repo(t, {
++    "keylang.json": config(layers),
++    "src/domain/x.ts": "export function x(): void {}\n",
++    "src/app/y.ts": "export function y(): void {}\n",
++    "src/infra/i.ts": 'import { y } from "../app/y.ts";\nexport function i(): void { y(); }\n',
++    "src/misc/z.ts": "export function z(): void {}\n",
++    "keylang/rules.md": "# rules\n\n- layers domain < app\n  - infra\n",
++  });
++  // Without `exclude` the upward edge is K101 and the line has no verdict of its own.
++  const bare = check(dir);
++  assert.equal(bare.status, 1, bare.stdout);
++  assert.ok(bare.results.some((row) => row.code === "K101" && row.file === "src/infra/i.ts"), bare.stdout);
++  assert.ok(!bare.results.some((row) => row.criterion === "layers domain < app"), bare.stdout);
++
++  write(dir, "keylang.json", config(layers, { exclude: ["src/infra/i.ts"] }));
++  const nested = check(dir);
++  assert.equal(nested.status, 0, nested.stdout);
++  const nestedLine = nested.results.find((row) => row.criterion === "layers domain < app");
++  assert.equal(nestedLine?.verdict, "unverified", nested.stdout);
++  assert.match(nestedLine?.evidence ?? "", /src\/infra\/i\.ts:1:1/);
++  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
++
++  write(dir, "src/infra/i.ts", "export function i(): void {}\n");
++  write(dir, "src/misc/z.ts", 'import { y } from "../app/y.ts";\nexport function z(): void { y(); }\n');
++  write(dir, "keylang.json", config(layers, { exclude: ["src/misc/z.ts"] }));
++  const outside = check(dir);
++  assert.equal(outside.status, 0, outside.stdout);
++  const outsideLine = outside.results.find((row) => row.criterion === "layers domain < app");
++  assert.equal(outsideLine?.verdict, "unverified", outside.stdout);
++  assert.match(outsideLine?.evidence ?? "", /src\/misc\/z\.ts:1:1/);
++  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
++
++  write(dir, "keylang.json", config(layers));
++  const up = check(dir);
++  assert.equal(up.status, 1, up.stdout);
++  assert.ok(up.results.some((row) => row.code === "K101" && row.file === "src/misc/z.ts"), up.stdout);
++
++  // A file outside every layer with no hole of its own is no noise: the line stays ok.
++  write(dir, "src/misc/z.ts", "export function z(): void {}\n");
++  const quiet = check(dir);
++  assert.equal(quiet.status, 0, quiet.stdout);
++  const quietLine = quiet.results.find((row) => row.criterion === "layers domain < app");
++  assert.equal(quietLine?.verdict, "ok", quiet.stdout);
++});
++
++test("no-cycles under a module counts an excluded cycle file outside every layer", (t) => {
++  const dir = repo(t, {
++    "keylang.json": config({ app: "src/app/**" }, { exclude: ["src/misc/b.ts"] }),
++    "src/app/a.ts": 'import { b } from "../misc/b.ts";\nexport function a(): void { b(); }\n',
++    "src/misc/b.ts": 'import { a } from "../app/a.ts";\nexport function b(): void { a(); }\n',
++    "keylang/rules.md": "# rules\n\n- module app.a\n  - no-cycles\n",
++  });
++  const hidden = check(dir);
++  assert.equal(hidden.status, 0, hidden.stdout);
++  const row = hidden.results.find((item) => item.criterion === "no-cycles");
++  assert.equal(row?.verdict, "unverified", hidden.stdout);
++  assert.match(row?.evidence ?? "", /src\/misc\/b\.ts:1:1/);
++  assert.equal(keylang(dir, ["check", "--strict"]).status, 1);
++
++  write(dir, "keylang.json", config({ app: "src/app/**" }));
++  const cycle = check(dir);
++  assert.equal(cycle.status, 1, cycle.stdout);
++  assert.match(cycle.results.find((item) => item.code === "K105")?.evidence ?? "", /app\.a → unassigned\.src\.misc\.b → app\.a/);
++});
++
+ test("two denies of equal depth each fail; a deeper deny is the only K102", (t) => {
+   const files = {
+     "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
+@@ -468,6 +535,37 @@ test("a declared package with no import anywhere is not K001 and adds no snapsho
+   assert.doesNotMatch(mapText, /external\.pg/);
+ });
+ 
++test("a manifest outside the analysed tree is not read: `exclude` keeps a bench manifest out, so its package is K001", (t) => {
++  const dir = repo(t, {
++    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }, { exclude: ["bench/**"] }),
++    "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
++    "bench/x/package.json": `${JSON.stringify({ dependencies: { junk: "1.0.0" } })}\n`,
++    "src/app/a.ts": "export function a(): void {}\n",
++    "src/infra/db.ts": "export function db(): void {}\n",
++    "keylang/rules.md": "# rules\n\n- allow infra external.pg\n- allow infra external.junk\n",
++  });
++  const run = check(dir);
++  assert.equal(run.status, 1, run.stdout);
++  assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes("external.junk")), run.stdout);
++  assert.ok(!run.results.some((row) => row.code === "K001" && row.evidence.includes("external.pg")), run.stdout);
++});
++
++test("a workspace package is internal, not a known external: a `workspace:` range and a root `workspaces` name are K001", (t) => {
++  const dir = repo(t, {
++    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
++    "package.json": `${JSON.stringify({ dependencies: { wslib: "workspace:*", named: "1.0.0" }, workspaces: ["packages/*"] })}\n`,
++    "packages/named/package.json": `${JSON.stringify({ name: "named", version: "1.0.0" })}\n`,
++    "src/app/a.ts": "export function a(): void {}\n",
++    "src/infra/db.ts": "export function db(): void {}\n",
++    "keylang/rules.md": "# rules\n\n- allow infra external.wslib\n- allow infra external.named\n",
++  });
++  const run = check(dir);
++  assert.equal(run.status, 1, run.stdout);
++  for (const name of ["external.wslib", "external.named"]) {
++    assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes(name)), `${name}: ${run.stdout}`);
++  }
++});
++
+ test("a type or a planned event on deny is K005 scope and applies nowhere", (t) => {
+   const dir = repo(t, {
+     "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),
