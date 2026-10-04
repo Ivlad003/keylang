@@ -1548,15 +1548,25 @@ test("tui: the context panel (F4) shows what goes to the model; @id adds, x drop
   assert.match(lineOf(s.lines(), "node     application.purchase.refund"), /◇/);
 });
 
-/** A Messages API stand-in in this process: the TUI runs here too. `delay` holds each answer back. */
-async function mockModel(t: { after: (f: () => void) => void }, reply: string, delay = 0): Promise<{ prompts: string[] }> {
-  const prompts: string[] = [];
+/**
+ * A Messages API stand-in in this process: the TUI runs here too. `delay`
+ * holds each answer back; `aborted` counts the requests whose connection the
+ * client dropped before the answer.
+ */
+async function mockModel(t: { after: (f: () => void) => void }, reply: string, delay = 0): Promise<{ prompts: string[]; aborted: number }> {
+  const model = { prompts: [] as string[], aborted: 0 };
   const server = createServer((req, res) => {
     let data = "";
+    let timer: NodeJS.Timeout | null = null;
+    res.on("close", () => {
+      if (res.writableEnded) return;
+      if (timer) clearTimeout(timer);
+      model.aborted++;
+    });
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
-      setTimeout(() => {
+      model.prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      timer = setTimeout(() => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
       }, delay);
@@ -1573,7 +1583,7 @@ async function mockModel(t: { after: (f: () => void) => void }, reply: string, d
     if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = saved.key;
   });
-  return { prompts };
+  return model;
 }
 
 test("tui: Ctrl+Space in a flow asks the agent with the context pack and opens the draft as MERGE; nothing is written before w", async (t) => {
@@ -1986,6 +1996,84 @@ test("tui: two ghost requests for the same text show and count one line", async 
   assert.ok(s.app.state.ghost);
   const stats = JSON.parse(readFileSync(join(root, ".keylang/stats.json"), "utf8")) as { suggestions: Record<string, { proposed: number }> };
   assert.equal(stats.suggestions.ghost?.proposed, 1, "the superseded answer is not shown or counted");
+});
+
+/** A session in edit mode with the cursor on a new item of the checkout flow, its ghost request on the way to a model that answers in 2 s. */
+async function ghostInFlight(t: { after: (f: () => void) => void }, specs: Record<string, string> = {}): Promise<{ s: ReturnType<typeof session>; model: { prompts: string[]; aborted: number } }> {
+  const root = checkoutRepo(t, specs);
+  withConfig(root, { agent: "anthropic:claude-opus-5", ghost: { delay: 0 } });
+  const model = await mockModel(t, "- step domain.order.create", 2000);
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  for (let i = 0; i < 7; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  await waitUntil(() => model.prompts.length === 1, "the ghost request");
+  return { s, model };
+}
+
+test("tui: Esc aborts a ghost request in flight, silently and without a ghost line", async (t) => {
+  const { s, model } = await ghostInFlight(t);
+  s.send("\x1b");
+  // The connection closes on the model's side a moment after the abort: wait for it, never assume it.
+  await waitUntil(() => model.aborted === 1, "the aborted request");
+  await s.app.idle();
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.message, null, "a cancel is no error and no timeout");
+  assert.equal(s.app.state.ghost, null);
+  assert.equal(model.prompts.length, 1);
+  assert.equal(model.aborted, 1);
+});
+
+test("tui: typing on, Ctrl+Space, another buffer and close() each abort the ghost request in flight", async (t) => {
+  await t.test("typing", async (t) => {
+    const { s, model } = await ghostInFlight(t);
+    s.send("s");
+    await waitUntil(() => model.aborted === 1, "the aborted request");
+    await s.app.idle();
+    assert.equal(s.app.state.message, null);
+    assert.equal(s.app.state.ghost, null);
+  });
+  await t.test("Ctrl+Space", async (t) => {
+    const { s, model } = await ghostInFlight(t);
+    s.send(KEY.ctrlSpace);
+    await waitUntil(() => model.aborted === 1, "the aborted request");
+    await s.app.idle();
+    assert.equal(s.app.state.ghost, null);
+  });
+  await t.test("another buffer", async (t) => {
+    const { s, model } = await ghostInFlight(t, { "keylang/flows/refund.md": REFUND });
+    s.send("\x1b[12~");
+    const other = locate(s.lines(), "keylang/flows/refund");
+    s.send(click(other.x + 1, other.y));
+    assert.equal(s.app.state.current, "keylang/flows/refund.md");
+    await waitUntil(() => model.aborted === 1, "the aborted request");
+    await s.app.idle();
+    assert.equal(s.app.state.message, null);
+    assert.equal(s.app.state.ghost, null);
+  });
+  await t.test("close()", async (t) => {
+    const { s, model } = await ghostInFlight(t);
+    s.app.close();
+    await waitUntil(() => model.aborted === 1, "the aborted request");
+  });
+});
+
+test("tui: close() aborts the agent's flow draft in flight", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { agent: "anthropic:claude-opus-5" });
+  const model = await mockModel(t, "```markdown\n# flow checkout\n\n- trigger presentation.terminal.checkout\n  - step application.purchase.buy\n```", 2000);
+  const s = session(root, { cols: 150 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.ctrlSpace);
+  await waitUntil(() => model.prompts.length === 1, "the draft request");
+  s.app.close();
+  await waitUntil(() => model.aborted === 1, "the aborted draft request");
+  assert.equal(existsSync(join(root, ".keylang/proposals", FLOW_PATH)), false, "nothing is written");
 });
 
 /** A live source: one chunk, then silence until `stop`. */

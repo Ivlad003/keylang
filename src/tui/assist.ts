@@ -2,10 +2,12 @@
 // finishes later than it was asked for, so each remembers where it was asked
 // — the buffer, its text version and the mode — and lands only while that is
 // still where the person is (review 2026-09-28): a ghost line is not taken
-// into another file, and speech does not go into a buffer opened since. The
-// agent's draft of a flow (`Ctrl+Space` in the view) is the session's
-// draft-flow operation; while any explicit operation runs, ghost requests
-// are suspended.
+// into another file, and speech does not go into a buffer opened since. A
+// ghost request whose place is gone is not only dropped but aborted: a newer
+// request, a key that leaves the place, an operation start and `close()`
+// cancel it in flight. The agent's draft of a flow (`Ctrl+Space` in the view)
+// is the session's draft-flow operation, cancelled by its Cancel and by
+// `close()`; while any explicit operation runs, ghost requests are suspended.
 
 import type { Analysis } from "../analyze.ts";
 import type { ContextPack } from "../agent-context.ts";
@@ -39,6 +41,13 @@ interface Spot {
   mode: Mode;
 }
 
+/** The ghost request on its way: where it was asked, and how to abort it. */
+interface GhostFlight {
+  spot: Spot;
+  line: number;
+  controller: AbortController;
+}
+
 /** A recording from its first `Ctrl+R`: the microphone may still be opening when the second one comes. */
 interface Recording {
   phase: "starting" | "recording" | "recognizing";
@@ -65,6 +74,7 @@ export class Assist {
   private ghostTimer: NodeJS.Timeout | null = null;
   /** Bumped by every ghost request: only the latest one may show its line. */
   private ghostRequest = 0;
+  private ghostFlight: GhostFlight | null = null;
   private recording: Recording | null = null;
 
   constructor(host: AssistHost, microphone: Microphone) {
@@ -86,7 +96,7 @@ export class Assist {
   }
 
   close(): void {
-    this.stopGhostTimer();
+    this.cancelGhost();
     this.recording?.mic?.stop();
   }
 
@@ -109,18 +119,32 @@ export class Assist {
     this.host.settled();
   }
 
+  /** No ghost request waits for its pause or runs: the one in flight is aborted. */
+  cancelGhost(): void {
+    this.stopGhostTimer();
+    this.ghostFlight?.controller.abort();
+    this.ghostFlight = null;
+  }
+
+  /** After any input: a ghost request in flight for a place the session has left (buffer, text, mode, line) is aborted. */
+  cancelStaleGhost(): void {
+    const flight = this.ghostFlight;
+    if (flight && (!this.at(flight.spot) || this.state.cursor.line !== flight.line)) this.cancelGhost();
+  }
+
   /**
    * An explicit operation starts: a ghost request waiting for its pause is
-   * not made, and one already asked is not shown when it answers.
+   * not made, and one already asked is aborted and never shown.
    */
   suspendGhost(): void {
-    this.stopGhostTimer();
+    this.cancelGhost();
     this.ghostRequest++;
   }
 
   /** After a pause with the cursor on a new flow item, ask the agent for one next line; never while an operation runs. */
   ghostSoon(): void {
-    this.stopGhostTimer();
+    // A newer request supersedes the one in flight: at most one runs.
+    this.cancelGhost();
     const buffer = this.host.buffer();
     const analysis = this.state.analysis;
     if (!buffer || !analysis?.snapshot || !analysis.config.agent || this.state.completion || this.state.activeOperation !== null) return;
@@ -132,18 +156,31 @@ export class Assist {
       this.ghostTimer = null;
       if (request !== this.ghostRequest || this.state.activeOperation !== null) return this.host.settled();
       const text = buffer.text;
+      const flight: GhostFlight = { spot, line, controller: new AbortController() };
+      this.ghostFlight = flight;
       const work = (async () => {
-        const { llmClient } = await import("../llm.ts");
-        const setup = llmClient(analysis.config.agent);
-        if ("missing" in setup) return;
-        const variants = await ghostSuggestions(analysis, setup.client, buffer.path, text, line, this.host.contextPack());
+        const { llmClient, isCancelled } = await import("../llm.ts");
+        const setup = llmClient(analysis.config.agent, { root: this.state.root });
+        if ("missing" in setup || flight.controller.signal.aborted) return;
+        let variants: string[];
+        try {
+          variants = await ghostSuggestions(analysis, setup.client, buffer.path, text, line, this.host.contextPack(), flight.controller.signal);
+        } catch (error) {
+          // A cancelled request has no message: the person moved on, nothing failed.
+          if (isCancelled(error)) return;
+          throw error;
+        }
         // The person typed on, moved, or a newer request was made meanwhile: a suggestion for older text is not shown.
         if (request !== this.ghostRequest || this.state.activeOperation !== null || !this.at(spot) || this.state.cursor.line !== line || variants.length === 0) return;
         this.state.ghost = { path: spot.path, version: spot.version, line, variants, index: 0, shown: Date.now() };
         countSuggestion(this.state.root, "ghost", "proposed", null);
-      })().catch((error: unknown) => {
-        this.state.message = `agent: ${errorText(error)}`;
-      });
+      })()
+        .catch((error: unknown) => {
+          this.state.message = `agent: ${errorText(error)}`;
+        })
+        .finally(() => {
+          if (this.ghostFlight === flight) this.ghostFlight = null;
+        });
       this.host.track(work);
     }, analysis.config.ghost.delay);
   }

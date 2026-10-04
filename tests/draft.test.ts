@@ -674,7 +674,7 @@ test("llm: a caller's Cancel is `cancelled`, a deadline is a timeout; both provi
     kind === "anthropic" ? { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout } : { OPENROUTER_BASE_URL: url, OPENROUTER_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: timeout };
   const agentOf = (kind: "anthropic" | "openrouter"): string => (kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model");
   const clientOf = (kind: "anthropic" | "openrouter", url: string, timeout: string) => {
-    const setup = llmClient(agentOf(kind), envOf(kind, url, timeout), home);
+    const setup = llmClient(agentOf(kind), { root: home, env: envOf(kind, url, timeout), home });
     assert.ok("client" in setup);
     return setup.client;
   };
@@ -702,6 +702,36 @@ test("llm: a caller's Cancel is `cancelled`, a deadline is a timeout; both provi
     assert.match((late as Error).message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)`));
     await stalled.closed;
   }
+});
+
+test("llm: a call's own timeoutMs bounds it under KEYLANG_LLM_TIMEOUT_MS and is not reported as that variable; isCancelled tells a Cancel apart", async (t) => {
+  const { llmClient, isCancelled } = await import("../src/llm.ts");
+  const home = mkdtempSync(join(tmpdir(), "keylang-llm-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const request = { system: "s", prompt: "p", maxTokens: 16 };
+  for (const kind of ["anthropic", "openrouter"] as const) {
+    const stalled = await stalledProvider(t, kind);
+    const env = kind === "anthropic" ? { ANTHROPIC_BASE_URL: stalled.url, ANTHROPIC_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: "60000" } : { OPENROUTER_BASE_URL: stalled.url, OPENROUTER_API_KEY: "k", KEYLANG_LLM_TIMEOUT_MS: "60000" };
+    const setup = llmClient(kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model", { root: home, env, home });
+    assert.ok("client" in setup);
+    const started = Date.now();
+    const late = await setup.client.complete(request, { timeoutMs: 300 }).then(() => null, (e: unknown) => e);
+    assert.ok(Date.now() - started < 30000, `${kind}: the call's own bound, not the variable's minute`);
+    assert.ok(late instanceof Error && !isCancelled(late), `${kind}: ${String(late)}`);
+    assert.equal((late as Error).message, `${kind}: no answer within 300 ms`);
+    await stalled.closed;
+    // The variable still wins when it is the tighter bound, and is named then.
+    const tight = await stalledProvider(t, kind);
+    const tightSetup = llmClient(kind === "anthropic" ? "anthropic:claude-opus-5" : "openrouter:some/model", { root: home, env: { ...env, ...(kind === "anthropic" ? { ANTHROPIC_BASE_URL: tight.url } : { OPENROUTER_BASE_URL: tight.url }), KEYLANG_LLM_TIMEOUT_MS: "300" }, home });
+    assert.ok("client" in tightSetup);
+    const capped = await tightSetup.client.complete(request, { timeoutMs: 60000 }).then(() => null, (e: unknown) => e);
+    assert.match((capped as Error).message, new RegExp(`^${kind}: no answer within 300 ms \\(KEYLANG_LLM_TIMEOUT_MS\\)$`));
+    await tight.closed;
+    const cancelled = await setup.client.complete(request, { signal: AbortSignal.abort() }).then(() => null, (e: unknown) => e);
+    assert.ok(isCancelled(cancelled), `${kind}: ${String(cancelled)}`);
+  }
+  assert.equal(isCancelled(new Error("anthropic: cancelled")), false);
+  assert.equal(isCancelled(null), false);
 });
 
 test("draft-flow operation: llm and hybrid through the shared operation; a Cancel during the model's answer writes nothing, not even the stats", async (t) => {

@@ -5,9 +5,12 @@
 // (`ANTHROPIC_BASE_URL`, `OPENROUTER_BASE_URL`), which is how tests run
 // against a local server without the network. A request that takes longer
 // than `KEYLANG_LLM_TIMEOUT_MS` (default 10 minutes, the SDK's own default) is
-// aborted, and an answer without text is an error, never an empty
+// aborted; a call may set a tighter bound of its own (`timeoutMs`, ghost:
+// 60 s), and the timeout message names the variable only when the variable
+// was the bound. An answer without text is an error, never an empty
 // explanation. A caller's signal cancels a request too: that is
-// `LlmCancelled`, never a timeout, and the text streamed so far is dropped.
+// `LlmCancelled` (`isCancelled`), never a timeout, and the text streamed so
+// far is dropped.
 // Nothing here decides a verdict.
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -23,9 +26,20 @@ export interface LlmRequest {
   maxTokens: number;
 }
 
-/** Per call: `signal` cancels the request (and its stream); without options a call ends by its answer or the timeout. */
+/** Per call: `signal` cancels the request (and its stream); `timeoutMs` bounds it tighter than `KEYLANG_LLM_TIMEOUT_MS`. Without options a call ends by its answer or the timeout. */
 export interface LlmCallOptions {
   signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/**
+ * Where a client runs: `root` is the repository (the working directory of an
+ * agent CLI to come); `env` and `home` default to the process's own.
+ */
+export interface LlmClientOptions {
+  root: string;
+  env?: Env;
+  home?: string;
 }
 
 export interface LlmClient {
@@ -43,6 +57,11 @@ export class LlmCancelled extends Error {
   }
 }
 
+/** The error of a request its caller cancelled. */
+export function isCancelled(error: unknown): error is LlmCancelled {
+  return error instanceof LlmCancelled;
+}
+
 export type LlmSetup = { client: LlmClient } | { missing: string };
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -52,7 +71,9 @@ const FALLBACK_MODELS = /^claude-(opus-5|fable-5|mythos-5)/;
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
-export function llmClient(agent: string | null, env: Env = process.env, home: string = homedir()): LlmSetup {
+export function llmClient(agent: string | null, options: LlmClientOptions): LlmSetup {
+  const env = options.env ?? process.env;
+  const home = options.home ?? homedir();
   if (agent === null) return { missing: "no model configured: set `agent` in keylang.json, e.g. \"anthropic:claude-opus-5\" or \"openrouter:<model>\"" };
   const timeout = timeoutMs(env);
   if (typeof timeout === "string") return { missing: timeout };
@@ -67,13 +88,13 @@ export function llmClient(agent: string | null, env: Env = process.env, home: st
     const profile = fromEnv("ANTHROPIC_AUTH_TOKEN") !== undefined || existsSync(join(home, ".config/anthropic"));
     if (key === undefined && !profile) return { missing: "no Anthropic credentials: set ANTHROPIC_API_KEY, write ~/.config/keylang/anthropic.key (mode 0600), or run `ant auth login`" };
     const client = new Anthropic({ timeout, ...(key !== undefined ? { apiKey: key } : {}), ...(env.ANTHROPIC_BASE_URL ? { baseURL: env.ANTHROPIC_BASE_URL } : {}) });
-    return { client: { agent, model, complete: (request, options) => anthropicComplete(client, model, request, timeout, options?.signal) } };
+    return { client: { agent, model, complete: (request, call) => anthropicComplete(client, model, request, deadline(timeout, call?.timeoutMs), call?.signal) } };
   }
   if (provider === "openrouter") {
     const key = fromEnv("OPENROUTER_API_KEY") ?? readKey(home, "openrouter");
     if (key === undefined) return { missing: "no OpenRouter key: set OPENROUTER_API_KEY or write ~/.config/keylang/openrouter.key (mode 0600)" };
     const base = env.OPENROUTER_BASE_URL ?? "https://openrouter.ai";
-    return { client: { agent, model, complete: (request, options) => openrouterComplete(base, key, model, request, timeout, options?.signal) } };
+    return { client: { agent, model, complete: (request, call) => openrouterComplete(base, key, model, request, deadline(timeout, call?.timeoutMs), call?.signal) } };
   }
   return { missing: `unknown provider \`${provider}\` in agent \`${agent}\`` };
 }
@@ -83,6 +104,20 @@ function timeoutMs(env: Env): number | string {
   const raw = env.KEYLANG_LLM_TIMEOUT_MS;
   if (raw === undefined || raw === "") return DEFAULT_TIMEOUT_MS;
   return /^[1-9]\d*$/.test(raw) ? Number(raw) : `KEYLANG_LLM_TIMEOUT_MS must be a positive number of milliseconds, got \`${raw}\``;
+}
+
+/** A call's bound: the variable's, or the call's own when that is tighter; `fromVariable` decides whether the timeout message cites the variable. */
+interface Deadline {
+  ms: number;
+  fromVariable: boolean;
+}
+
+function deadline(variable: number, own: number | undefined): Deadline {
+  return own !== undefined && own < variable ? { ms: own, fromVariable: false } : { ms: variable, fromVariable: true };
+}
+
+function timeoutMessage(provider: string, bound: Deadline): string {
+  return `${provider}: no answer within ${bound.ms} ms${bound.fromVariable ? " (KEYLANG_LLM_TIMEOUT_MS)" : ""}`;
 }
 
 /**
@@ -114,10 +149,10 @@ function callSignal(timeout: number, outer: AbortSignal | undefined): { signal: 
   };
 }
 
-async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal): Promise<string> {
+async function anthropicComplete(client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal): Promise<string> {
   const fallbacks = FALLBACK_MODELS.test(model);
   // The client's `timeout` bounds one attempt and the SDK retries; the signal bounds the whole call.
-  const call = callSignal(timeout, outer);
+  const call = callSignal(bound.ms, outer);
   const signal = call.signal;
   let response: Awaited<ReturnType<typeof client.beta.messages.create>>;
   try {
@@ -130,11 +165,11 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
         // A declined request is re-run server-side on a model chosen for the refusal category.
         ...(fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       },
-      { signal },
+      { signal, timeout: bound.ms },
     );
   } catch (error) {
     if (call.cancelled()) throw new LlmCancelled("anthropic");
-    if (call.timedOut()) throw new Error(`anthropic: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
+    if (call.timedOut()) throw new Error(timeoutMessage("anthropic", bound));
     throw error;
   } finally {
     call.dispose();
@@ -148,9 +183,9 @@ async function anthropicComplete(client: Anthropic, model: string, request: LlmR
   return text;
 }
 
-async function openrouterComplete(base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal): Promise<string> {
+async function openrouterComplete(base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal): Promise<string> {
   // One deadline for the request and the whole stream: a stalled stream never hangs the CLI or the TUI.
-  const call = callSignal(timeout, outer);
+  const call = callSignal(bound.ms, outer);
   const signal = call.signal;
   try {
     const response = await fetch(`${base.replace(/\/$/, "")}/api/v1/chat/completions`, {
@@ -200,7 +235,7 @@ async function openrouterComplete(base: string, key: string, model: string, requ
     return text.trim();
   } catch (error) {
     if (call.cancelled()) throw new LlmCancelled("openrouter");
-    if (call.timedOut()) throw new Error(`openrouter: no answer within ${timeout} ms (KEYLANG_LLM_TIMEOUT_MS)`);
+    if (call.timedOut()) throw new Error(timeoutMessage("openrouter", bound));
     throw error;
   } finally {
     call.dispose();
