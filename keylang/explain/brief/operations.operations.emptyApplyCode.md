@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=387e52ee814fca4720040787f68d3c1f3273abdf2b2b4bb583c553f7b6f424ac lang=en detail=brief -->
+Builds a bare `apply-code` result envelope with the given status and exit code, a null payload, empty written/removed/proposal lists, and a single error message when `error` is supplied. Used by `operations.operations.runApplyCode` to short-circuit on failures or no-op runs.

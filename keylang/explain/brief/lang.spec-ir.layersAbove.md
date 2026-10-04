@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a6422f16d028194a4548cfe27c00e98993d4262b2197605a4f206b1bddf89566 lang=en detail=brief -->
+Computes the transitive closure of a direct adjacency map: for each key, a depth-first walk collects every name reachable through chained edges, with a visited set guarding against cycles. The result feeds `lang.spec-ir.settleLayers` for ordering layer candidates.

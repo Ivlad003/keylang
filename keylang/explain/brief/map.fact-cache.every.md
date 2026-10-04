@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=bbefc40dd88f50b1dd7843ac77e45f233f83a69655a22cfcc77c8e1894be0980 lang=en detail=brief -->
+Returns true only when the input is an array and `check` holds for each element; a non-array yields false without calling `check`. Used by `map.fact-cache.isCall`, `map.fact-cache.isDecl`, `map.fact-cache.isImport` and `map.fact-cache.isStoredFacts` to validate cached shapes.

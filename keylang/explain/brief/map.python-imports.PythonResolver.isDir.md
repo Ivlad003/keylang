@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5f2b8fc5c18d7c9f6ae06822b5cb962de3fedbad7609d788fe3c41f8d1899f93 lang=en detail=brief -->
+Reports whether a repo-relative path is a package directory, answering true immediately if it is in the known source set and otherwise checking the filesystem under the root. Used by `map.python-imports.PythonResolver.resolve` to walk candidate module paths.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c050d2db958d450d7bc9b82f483e2fe26c2b18ed9bbce1b1e6c9bf23203544fc lang=en detail=brief -->
+Describes how a terminal cell or text run should be rendered: optional foreground/background colors, boolean attributes like bold, dim, italic, underline, and inverse, plus an optional OSC 8 hyperlink target. All fields are optional, so an empty object means plain unstyled text.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=c9deecca61e78172cc39a5e15f80a47922a68fce76247e38b2d275db43ac1ef7 lang=en detail=brief -->
-Shape of the data handed to flow checking: the snapshot's id, node views keyed by id, its edge list, optional unresolved constructs reported as coverage gaps, an optional static mode plus a record of who set it (hook edges are followed only under `behavior`), and test cases and…
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b9a0b7d20f2ef50f63dec7e07dbe79c745331846a0b4812aec6b1325f0178331 lang=en detail=brief -->
+Shape of the data handed to the flow checker: a snapshot's nodes and edges plus uncovered constructs, the resolved static mode and who set it, test cases, trace runs, and an optional probe for whether a test path exists in the repository.

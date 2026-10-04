@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c119ef7f84b5715e540079d34be79244e58b4494cb21e4b72b65b9fc5d91e472 lang=en detail=brief -->
+Extracts the bare package name from an import specifier, keeping the first path segment, or the first two when the specifier starts with `@` (a scoped package). Used by `map.imports.ImportResolver.resolvePackage` to locate the package being imported.

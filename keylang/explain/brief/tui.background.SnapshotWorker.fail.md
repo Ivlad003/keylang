@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=05a282f7520d037259d53c0731476f618e7736cedf7df6651b946d7d043aab36 lang=en detail=brief -->
+Marks the snapshot worker as permanently failed and drops its reference, then rejects every pending request in the waiting map with the given error and empties it. Invoked from `tui.background.SnapshotWorker.start` when the worker cannot be used.

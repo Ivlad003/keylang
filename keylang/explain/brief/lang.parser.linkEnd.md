@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b9a0d8922e0c2a186e9a66d957a83989b8970a63aa4c15b58a4752e8e9c9c350 lang=en detail=brief -->
+Scans forward from a `[` for a markdown-style `[text](target)` link, returning the index just past the closing `)` when the text is non-empty and the target has no whitespace, else null. Used by `lang.parser.lex` to decide whether a bracket starts a link token.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6ec70c2b47f7323424586d7788f288e30f67421767421f3a42d3460810d6163b lang=en detail=brief -->
+Picks the more severe of two optional marks by comparing their `RANK` values, returning whichever one is present when the other is null and favoring the first on ties. Used by `tui.evidence.allEvidence` and `tui.nav.markOver` to fold per-line evidence into a single worst mark.

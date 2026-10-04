@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=84ad8b17cac7ee1042951910a0a60383c370647284e2085589985febec4bab9a lang=en detail=brief -->
+Decides whether a module falls inside a scope: an empty scope matches everything, otherwise any scope entry must equal the layer name, equal the module ID, or be a dotted prefix of it. Used by `features.changed.filterChanged` to limit which modules are considered.

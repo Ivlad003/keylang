@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=dc38f9932de8a67730af617302c2fc23dd1bbff282b89eb1ad23897240067e32 lang=en detail=brief -->
+Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by `features.harness.parseObject`, `features.harness.mergeDeny` and the other merge helpers to validate parsed config shapes.

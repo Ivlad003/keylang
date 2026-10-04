@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=421343984faf8861804b833c71146fbddcc37c297a56a8aac109065ef248e865 lang=en detail=brief -->
+Looks up a per-buffer cache entry and returns it unchanged when the buffer text is identical by reference; otherwise splits the text into lines, pairs them with an empty layout map, and stores the fresh entry. Serves `tui.buffer.bufferLines` and `tui.buffer.lineLayout`.

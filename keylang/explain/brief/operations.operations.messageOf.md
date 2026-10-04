@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=feaba634130376589f26459786095ffa38182460fe54e41c9fdb1366919e8d05 lang=en detail=brief -->
+Extracts a human-readable string from a caught value: the `message` of an `Error` instance, otherwise the value coerced with `String`. Every `run*` operation and helpers like `operations.operations.commitProposal` use it to turn thrown values into envelope error text.

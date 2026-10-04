@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=980f52c04ccc1aae09b3005032dc0f743a64e967a81deab62403eee2d6545c83 lang=en detail=brief -->
+Builds an ANSI SGR escape sequence from a style record, always starting with a reset code and appending bold, dim, italic, underline, inverse, and 256-color foreground/background codes when set. Used by `tui.screen.renderDiff` to emit terminal styling for changed cells.

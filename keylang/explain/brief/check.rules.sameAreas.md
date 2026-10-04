@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7e9f2a5ee75e6a27dbb4ced2acdcb2ed3fd818be673bf9ec646efed0d0391760 lang=en detail=brief -->
+Compares two rule hits by their rule's source area and their target, returning true when both match. Used by `check.rules.overManualRules` and `check.rules.evaluateOnSnapshot` to group or deduplicate hits covering the same area pair.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=42cdf397825513da71f290440c33cbce589462307a6aef30b158bb1d9257f914 lang=en detail=brief -->
+Describes a single reference to an ID in a description: the written text, the absolute ID it resolves to, the source `Span` of the ID, and an optional `Link` when it was written as a Markdown link whose href is kept but never checked.

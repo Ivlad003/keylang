@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5be4e77dfe8a73b2c2a9336c65729d2509adaa0edb5fef5da71e8e1adafa1ea5 lang=en detail=brief -->
+Lenient JSON parser that returns `undefined` for empty input or invalid JSON instead of throwing, so callers can skip bad lines. Used by `features.agent-cli.parseOpencodeEvents` and `features.agent-cli.parseResultLine` to decode CLI output lines.

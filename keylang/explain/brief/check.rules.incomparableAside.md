@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c66f019303771864ff9314abf0dba780b55b5b6d2f253ab1062107482a3122c7 lang=en detail=brief -->
+Builds the explanatory suffix listing allow rules that `check.rules.crossRules` deems incomparable with the winning deny, deduplicated per rule and sorted, saying why each lost (deny-overrides mode, depth-sum tie, or lower depth sum).

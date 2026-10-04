@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7350d1abe64b210608c34d04f6c9e67d6bcfbbdd9eee6dd75318a0e4dd436d9b lang=en detail=brief -->
+Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to `features.harness.mergeJsonKey` to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error.

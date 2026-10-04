@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=513065fc0fb95ba4a8312f269dd4d5d5002a6c4eb29371acdfdb4214de612f67 lang=en detail=brief -->
+Appends a diagnostic for the current file to the document's diagnostics list via `base.diag.diagnostic`, attaching the structured reason only when the code is "K005" and one is supplied. Every parse-error site in `lang.parser.Parser` funnels through this method.

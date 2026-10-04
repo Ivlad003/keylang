@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ed50ae8f496524c25b50a4959843f977772d7cbaf6fff1635236818399e851f8 lang=en detail=brief -->
+Returns true when the value is absent (`undefined`) or exactly `true`, treating a missing optional flag as set. Used by `map.fact-cache.isCall`, `map.fact-cache.isDecl` and `map.fact-cache.isImport` to validate optional boolean fields on cached facts.

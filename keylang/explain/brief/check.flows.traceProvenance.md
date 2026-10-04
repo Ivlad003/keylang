@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=806f05bd9bef95bce5f6dec8e95ce8c7849e098e275c163d5439d041cf9a4938 lang=en detail=brief -->
+Builds the evidence record attached to a trace-backed verdict: a fixed `provenance: "trace"` marker plus `runId` and `testId` copied over only when present on the input. Used by `check.flows.evaluateFlows` to stamp verdicts derived from runtime traces.

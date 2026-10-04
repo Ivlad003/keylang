@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c9c5b7f67d2cbfdea44bee619c5b560a8b8f30788e6377ace951ecb3a46c49cf lang=en detail=brief -->
+Carries the name-resolution context for one Python function body while call sites are collected: the `self`/`cls` receiver name, the enclosing `Owner`, which names are parameters or locals, and which of those have a syntactically declared class.

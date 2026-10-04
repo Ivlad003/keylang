@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6004994eeaf4ddc24d1bdfa3501271092c47028c99dac0c883f9b14e534a81b3 lang=en detail=brief -->
+Reports whether an absolute path lies inside a directory by taking the relative path and rejecting results that climb out via `..` or resolve to a different root. Used as the boundary check by callers like `map.analyze.repositoryFile` and `tui.disk.leavesBoundary`.

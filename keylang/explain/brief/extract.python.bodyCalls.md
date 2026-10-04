@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=146110a060bb64dc1ec2729aa4bd8b7e3dd453a76a2411cc77886bae629d5fc8 lang=en detail=brief -->
+Walks a Python function body's syntax tree and emits one call record per `call` node, resolving the callee via `extract.python.callOf` and positioning via `extract.treesitter.located`. Calls nested inside lambdas or inner `def`s are flagged as closure calls.

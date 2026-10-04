@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=586ee4c198dc6fa8a4e5c066ae8722b40537c7fcf62dc500a5222166602315d2 lang=en detail=brief -->
+Configuration for starting the browser-served TUI: the repository root, listening port and optional host, plus an optional analyzer, a shared operation runner for all sessions, and how long a detached session is kept alive awaiting reconnect.

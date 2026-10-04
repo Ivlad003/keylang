@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f39a201d92d1b1c3a2f128cdf7f2be756bd04c59aecc84790cf2a3d7422e4a11 lang=en detail=brief -->
+Builds a call record by pairing a callee name with the start and end line/column positions of a syntax node, obtained via `extract.treesitter.located`. Shared by `extract.ts.calleeFact`, `extract.ts.calleeOfCall`, `extract.ts.componentOfTag`, and `extract.ts.opaqueCall`.

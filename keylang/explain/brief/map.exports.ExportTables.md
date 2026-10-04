@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9cc222fc003e17abfb38d07e50c816a3529c7f731813d5ebbfd202ae6e1eee01 lang=en detail=brief -->
+Read-only query surface over per-module export tables: finds the `ExportEntry` for a public name, resolves which symbol an importer of a name actually receives (falling back to the local declaration when no entry exists), and lists all entries sorted by module and name.

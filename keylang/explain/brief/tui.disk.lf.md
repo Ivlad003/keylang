@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c04f2bd505465b02ae719002035e2c282cea1f8fc7a7de7d01c3eb68435ed0bf lang=en detail=brief -->
+Converts every CRLF sequence in the given string to a bare LF and returns the result. `tui.disk.splitEol` uses it to normalize line endings, and `tui.merge-session.MergeSession.entry` and `tui.merge-session.MergeSession.open` apply it to file contents.

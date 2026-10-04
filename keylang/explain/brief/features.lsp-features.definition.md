@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f21f96ec2a34011bc60005920a37640d318ec7c759fba0e7a41256e636d32518 lang=en detail=brief -->
+Resolves what sits under a cursor via `features.lsp-features.at`: a link becomes a file URL pointing at its line, otherwise the symbol is looked up with `features.lsp-features.describe` and its source position converted through `features.lsp-features.lspPoint`.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=80d178838761cbb178cbc288c6f50c0da0e15771966211d960155952aea82172 lang=en detail=brief -->
+Returns only the check results whose verdict is enabled in the given filter map, preserving order. Used by `tui.app.App.selectedFinding`, `tui.app.App.clampFinding`, and `tui.view.drawFindings` to drive the list the user actually sees.

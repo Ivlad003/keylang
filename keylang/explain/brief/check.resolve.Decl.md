@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=548862f0ceb6e5c43dfd66e919bf1f7dff4a114dca9056b1c8a39fbd87da7211 lang=en detail=brief -->
+Record describing a resolved declaration: its ID, node kind, source file, and the span of the declared name used as a definition target. The `hasMembers` flag marks whether a module exposes children; when false, any dotted member access resolves to the module itself.

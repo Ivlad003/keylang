@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6864dd76c299d34f655470f1a60c6f497c92212d1866bb3ec32d1fd24e65e283 lang=en detail=brief -->
+Builds a `map` result envelope with a null payload and empty written/removed/proposals lists, carrying the given status and exit code. If an error string is supplied, it becomes the single error-level message; used by `operations.operations.runMap` for early-exit outcomes.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d9fa92391225bb5ce659eebb9891b98ef81e4cd291fa6e42d08f7a08588b9ae1 lang=en detail=brief -->
+Parses the config text via `features.harness.parseObject`, then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with `features.harness.finishJson`.

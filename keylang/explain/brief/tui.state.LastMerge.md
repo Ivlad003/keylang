@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=776b55bb9569582cbcd2676ce72f90cca5818d2b2f2084a85a422c482f83487f lang=en detail=brief -->
+Snapshot of the buffer, on-disk, and proposal-file text from before and after a merge so an `u` undo can revert it only when each target still matches its post-merge contents; a `code` flag marks source files checked on disk alone.

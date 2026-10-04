@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=77a15457925560bbb0b08faec821d48510a5d0349f6f03dc7c8c23d027bf789c lang=en detail=brief -->
+Fills a rectangle with a background style via `tui.screen.Grid.fill`, then writes a single-line box border and an optional padded title at the top edge via `tui.screen.Grid.write`. Shared frame routine for the popup overlays in `tui.view`.

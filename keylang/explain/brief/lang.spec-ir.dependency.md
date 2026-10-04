@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=832174e31873df70a06d7155812abd0e6d2aa479142d74afe353703a28b9fa71 lang=en detail=brief -->
+Builds a dependency rule from a parsed spec line, taking the first ref as the source and the remaining refs (checked via `lang.spec-ir.nonEmpty`) as targets, returning null if either side is missing. Location and reconstructed rule text are attached through `lang.spec-ir.at`.

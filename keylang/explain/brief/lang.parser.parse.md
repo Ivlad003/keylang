@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1bf2a416ae9e0bcd3c45a7f7e1ea3e69b8efc7d7ec63cc2ea1c0ed210d5501a4 lang=en detail=brief -->
+Splits the source into lines via `lang.parser.splitInclusive`, strips a leading BOM and trailing line breaks, and feeds each as a `lang.parser.Line` with byte offsets to `lang.parser.Parser.line`. Returns the `Document` built by `lang.parser.Parser.finish`.

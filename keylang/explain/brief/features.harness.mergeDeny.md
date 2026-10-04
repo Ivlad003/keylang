@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e4a5b4ecc6c59c539a5f20a8c15db8a60aba329504b7cd93b62122cc6dc602b2 lang=en detail=brief -->
+Validates a settings `permissions` object (via `features.harness.isRecord`) and rewrites its `deny` list to add the fixed DENY_RULES when installing or strip them otherwise. Returns an error for malformed input, and `undefined` when nothing remains.

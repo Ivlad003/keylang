@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=093195d02d5d195e8a7a2cc4fec36b10fe65bb00e1294185250e78cb0b2bd7bf lang=en detail=brief -->
+Filters the command table in `words.commands` down to the entries whose subcommand list is non-empty, returning them as name/subcommands pairs. Shared by `cli.completions.bashScript`, `cli.completions.fishScript` and `cli.completions.zshScript` to emit nested completion rules.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3a9a7588e502f7db51ee8019dbcfda92101932ae4080ce525131d47098c71bd0 lang=en detail=brief -->
+Type guard that narrows an unknown value to a plain string-keyed record, rejecting null and arrays. Used by parsers such as `features.agent-cli.parseResultLine` and `features.agent-cli.parseAgentSettings` to validate decoded JSON before reading fields.

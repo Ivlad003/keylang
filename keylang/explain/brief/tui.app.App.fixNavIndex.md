@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=80872d6cbee5a4759dd9971e7007a33e2140147630a4d972ceb339562cddd68c lang=en detail=brief -->
+Clamps the navigation cursor into the range of entries from `tui.view.navEntries`, stepping past heading rows in the given direction. Then scrolls `navTop` using `tui.view.layout` and `tui.view.navListHeight` so the selected row stays visible.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4c0ce732075572c0040a8cf8a2888a96e8e54edcdfe1eff933acf4d1340b11cf lang=en detail=brief -->
+Checks whether every character of the query appears in order (not necessarily adjacently) within the text, advancing a cursor on each match and returning true only if the cursor consumes the whole query. Used by `tui.actions.matchActions` for fuzzy filtering of action entries.

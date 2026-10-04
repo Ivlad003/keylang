@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8670312def9e8829e454eae93876f7af10b1a62ec7a53630635739f88fc4fee1 lang=en detail=brief -->
+Holds the measured leading whitespace of a source line: the raw prefix string, its indent width where a tab counts as two spaces, its CommonMark column count where a tab advances to the next multiple of 4, and a flag noting whether any tab was present.

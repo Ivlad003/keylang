@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=60e34d5e6f89052ad8d1671c8fa0109bcd83bb0682de7d6961f6cdc6ae3ea324 lang=en detail=brief -->
+Returns a reason string explaining why the editor is unavailable: the merge reason when the context is in merge mode, else the start reason when it is starting, otherwise null. Used by `tui.actions.bufferOrMerge` and `tui.actions.snapshot` to gate their actions.

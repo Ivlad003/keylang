@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0fb1ace41d8020fc1ea3833c2d8ca2486d7eefc3da72b98a5690e6a5e486de3a lang=en detail=brief -->
+Builds a map from absolute file paths to the in-memory text of every editable buffer that `tui.buffer.isDirty` reports as modified, skipping the `keylang.json` config file. `tui.app.App.reanalyze` passes this so analysis sees unsaved edits instead of the on-disk contents.

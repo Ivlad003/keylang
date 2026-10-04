@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=376f66ba27596e0d50783634e99df42516f066473fde07987be5dc1d7f5bafe5 lang=en detail=brief -->
+Takes the leftover tokens of a line and, when exactly one remains, converts it via `lang.parser.Parser.makeRef` into a reference appended to the node. With zero or several tokens it reports a K005 error through `lang.parser.Parser.err` instead.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=842029da40c10660d9d0640813ffbfed8f7e5c5ea561ec8c89a65973094e84fb lang=en detail=brief -->
+Collects the set of start line numbers for every node of kind "planned" across all sections of a document, traversing each section's top-level nodes via `lang.ir.sectionNodes` and `lang.ir.walk`. The result feeds `tui.evidence.allEvidence` to flag planned lines.

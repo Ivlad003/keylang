@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5d61424c4e6442a301544cd308ef62ee338cdb86a7df7107d26bdbb98e736c04 lang=en detail=brief -->
+Replaces XML character references in a string: the five named entities via a lookup table, and decimal or hex numeric references via code point, leaving unknown or out-of-range ones untouched. Used by `check.test-report.parseXml` to decode text content.

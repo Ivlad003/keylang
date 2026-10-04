@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=55cd10f588ee05e71f4ca770b555cef2defa80fad1cec7c2a8cccdc6c412677a lang=en detail=brief -->
+Decodes the xterm modifier parameter of an escape sequence into shift, alt and ctrl flags by subtracting one from the numeric value and testing its low three bits, defaulting to no modifiers. Used by `tui.input.InputDecoder.escape` when parsing key events.

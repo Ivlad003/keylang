@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a28959c504b3a0eee1a09942b6f17bf0903f7e66473a67bdac3fc3444aa6846c lang=en detail=brief -->
+Pops nested list nodes off the parser stack until it is at most `depth` deep, attaching each popped node to its parent's children or, when no parent remains, to the current section from `lang.parser.Parser.section` as a top-level item.

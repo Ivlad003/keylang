@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5ca325839be31ecc152e8ef7e4ceede15ca40d083b1bbe7abd4bd1f833dadb45 lang=en detail=brief -->
+Reads the invoked macro's identifier from a Rust tree-sitter macro node, taking the `macro` field's text and falling back to the first named child or `"?"`. Used by `extract.rust.bodyCalls` and `extract.rust.extractTree` to label macro invocations.

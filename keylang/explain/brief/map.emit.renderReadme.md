@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2a58670bc4eb7ca4303d7b4e47bc863aa353ed946177bfaadbb5129b517e4043 lang=en detail=brief -->
+Builds the map's README text: a per-layer table counting nodes whose explanation comes from code docs, a model, a stale model brief, or nothing, with each layer's own brief via `map.emit.descriptionText`, followed by the name index from `map.emit.index`.

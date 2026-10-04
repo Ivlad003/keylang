@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=16b999ec2ce1bc2fa7a723c2a5040e6d0233fcff5453490e8ba772c72f3f4e78 lang=en detail=brief -->
+Type guard returning true only for non-null, non-array objects, narrowing the input to a string-keyed record. Shared base check used by the fact-cache validators like `map.fact-cache.isStoredFacts` and `map.fact-cache.storedFiles` before inspecting fields.

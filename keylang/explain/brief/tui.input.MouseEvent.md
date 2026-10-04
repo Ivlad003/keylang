@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=68115e91e004058ee51edbc1d281bd28f64ff34aed511f5d457642593e07994b lang=en detail=brief -->
+Describes a terminal mouse event: the action kind (press, release, move, drag, wheel), which button, the 0-based cell coordinates, and ctrl/alt/shift modifier flags. The literal `type: "mouse"` tag lets it be distinguished from other input events in a union.

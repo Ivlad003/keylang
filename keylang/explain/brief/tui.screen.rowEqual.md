@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f926607002a9ec5dcb87fafadbd95dc4bf9605fffdf4753904a5b44968359480 lang=en detail=brief -->
+Compares two rows of cells, returning false if lengths differ or any position has a different character or a style that `tui.screen.sameStyle` rejects. Used by `tui.screen.renderDiff` to skip unchanged rows when emitting terminal output.

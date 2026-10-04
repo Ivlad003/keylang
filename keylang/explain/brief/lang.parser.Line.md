@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ac08fd8db6158cd8f3022857d2f1c2f0a65516933ac73c18a536c37b53bfc764 lang=en detail=brief -->
+Holds one source line's number, absolute byte offset, and text, and maps byte offsets within it to absolute positions with code-point columns via `lang.parser.Line.pos`. `lang.parser.Line.span` pairs two such positions into a range for tokens, nodes, and errors.

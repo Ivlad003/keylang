@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=d29ab05589d6fc0d9fb95a7a970e26272db7cc12fa28e609c2eeebcfc76c7f68 lang=en detail=brief -->
-Maps a diagnostic code to its severity with a hardcoded allowlist: codes `K006`, `K008`, `K103`, `K106`, and `K202` yield `"warning"`, and every other code yields `"error"`. Its only caller shown is `base.diag.diagnostic`, which uses it to fill in the severity when constructing…
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ab57cd363e3633160f31efaa7384682132f21c2e460040b1eb6d6b322a489d1d lang=en detail=brief -->
+Maps a diagnostic code to its severity: a fixed set of six codes (K006, K008, K103, K106, K202, K203) yields "warning", every other code yields "error". Used by `base.diag.diagnostic` when constructing a diagnostic record.

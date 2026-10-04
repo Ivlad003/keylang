@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=18592bd9222a1eb5373632b8bff6a25c273cb86692d6bb258133912db7a5cdd3 lang=en detail=brief -->
+Cycles the layout draft's mode forward or backward through `DRAFT_MODES` with wraparound, but only when the active prompt is a draft-layout prompt whose selected field is "mode". Then redraws the prompt via `tui.app.App.refreshLayoutDraftPrompt`.

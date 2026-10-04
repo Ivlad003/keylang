@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e7013153a13a879e1c112ddfd333993ef1188619163f26aeb327ec87f1d0166f lang=en detail=brief -->
+Checks that a value is a record (via `map.fact-cache.isRecord`) with string `name`, `fallback`, and `path`, an `owner` of "self" or "constructor", and a `param` that is null or a non-negative integer per `map.fact-cache.isInteger`.

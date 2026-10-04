@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=48a412437e9b613254a2c6425e79819aa3f2c0aa309ee4079683310df516fc0a lang=en detail=brief -->
+Builds a `no-cycles` rule object scoped to an optional `under` reference, attaching source location via `lang.spec-ir.at` with a label that falls back to `*` when no target is given. Used by `lang.spec-ir.compileRules` to turn parsed rule sections into IR.

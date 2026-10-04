@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fd1601ba193294206d1c7f6b340ab81dc47afd254b89cb6767bf2fbd377eb8c5 lang=en detail=brief -->
+Builds a result envelope for a spec-to-code run that produced nothing: null payload, empty written/removed/proposals lists, and a single error-level message when `error` is given. Used by `operations.operations.runSpecToCode` for early-exit and failure paths.

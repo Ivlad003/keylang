@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d26820e1522bb20485eca09e7638f7aad3d30b3035d84485a72ab97807cfd4d6 lang=en detail=brief -->
+Builds the error text used when an LLM call exceeds its deadline, naming the provider and the millisecond limit from `bound`. Appends a note that the limit came from the `KEYLANG_LLM_TIMEOUT_MS` environment variable when `bound.fromVariable` is set.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6a91316035990d73aef241e78dc1ccaaf40a2cd4e83c0d9b8db5432c04b4bbd6 lang=en detail=brief -->
+Builds a cached file reader that records each read's text, then uses it via `map.imports.loadTsconfig` to pick up baseUrl/paths from tsconfig or jsconfig. Also parses package.json to collect declared dependency names and workspace globs.

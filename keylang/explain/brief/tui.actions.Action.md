@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9b0534aab5fcaa80849056d47a53418e0d35eafb04618831ccc15a70d751117b lang=en detail=brief -->
+Shape of a user-invokable TUI command: identity, menu label and group, searchable aliases, an optional hotkey, plus two context-driven hooks — `when` returning a reason the command is currently blocked (or null) and `note` returning a non-blocking setup hint.

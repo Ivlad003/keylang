@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0502b2774a35122b75b7a00af2e04fbcf06f84c5de21142fd28c01d6894971c6 lang=en detail=brief -->
+Decodes an SGR mouse-report button code into a `MouseEvent`, reading shift/alt/ctrl bits and classifying it as wheel, move, drag, or press/release with 0-based coordinates. Used by `tui.input.InputDecoder.escape` when parsing terminal escape sequences.

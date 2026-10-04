@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=014343c09132dfd65f37f17c7e931fabd8db03a5538fb53f061fcb7eccf33f0d lang=en detail=brief -->
+Validates one hooks.Stop group and rebuilds its hooks list, replacing any entry recognized by `features.harness.isOurHook` with the command from `features.harness.hookCommand` or dropping it when version is null. Returns an error object for malformed input.

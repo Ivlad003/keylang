@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0eaed1620daed67c90839b4b053d6e83f1bad4d385399abec9981fb08e5318e8 lang=en detail=brief -->
+Builds an `ImportFact` by reading the node's position and text via `extract.treesitter.located` and attaching the given source path, bindings, and reexport flag; used by `extract.rust.extractTree` and `extract.rust.useImport` to record each Rust `use` item.

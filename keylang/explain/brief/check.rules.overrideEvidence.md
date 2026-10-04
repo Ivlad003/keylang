@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=36dd3ce9d3987cf3aec97647316546e0956ffba36ea351b7b65af282457e9766 lang=en detail=brief -->
+Builds the explanatory sentence a rule report shows when a deny rule is overridden, sorting override notes into incomparable, more-specific, and manual-over-baseline groups and listing them with their winning scores or quoted rule texts; used by `check.rules.evaluateOnSnapshot`.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6930ef9dd40b719caeb501aec40678caa10c2941949dd8ed692d3aacddf8b6e0 lang=en detail=brief -->
+Clamps the editor cursor so its line stays within the lines returned by `tui.buffer.bufferLines` and its column within the cluster count from `tui.buffer.lineLayout`. When `tui.app.App.buffer` yields no buffer, the cursor is reset to the origin.

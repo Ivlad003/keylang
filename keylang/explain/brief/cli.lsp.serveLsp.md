@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9a772649b62733a5fe318e826abdbc8d0e4957ca56f9e759e95ecc46ff1d9bb2 lang=en detail=brief -->
+Reads Content-Length-framed JSON-RPC messages from a stream and feeds each to a `cli.lsp.Server`, writing its replies back in the same framing. Malformed JSON is answered via `cli.lsp.Server.reject`; a missing length header ends the session with exit code 2.

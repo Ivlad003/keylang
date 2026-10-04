@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8c26aee4ee391be7f51219bd05ec2f5b76345e046bb802ce6380bd612582ea79 lang=en detail=brief -->
+Returns the current buffer's text as lines by fetching it via `tui.app.App.buffer` and splitting with `tui.buffer.bufferLines`, yielding an empty array when no buffer is open. Used by search, mouse, and key handlers to resolve cursor positions.

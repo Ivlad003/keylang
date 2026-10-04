@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1a8aae44e7db903bf2a88d855aacd98e334cc8c30ef30d84ea76e980c48e496d lang=en detail=brief -->
+Writes the messages of a baseline operation envelope to stdout or stderr, routing them to stderr with a `keylang:` prefix when the payload is missing, errored, or lists refused entries, then returns the envelope's exit code (defaulting to 2).

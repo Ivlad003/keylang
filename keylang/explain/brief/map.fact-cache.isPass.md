@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4d16bed131a404ec1b2e62ec5e483d0c28d5090710d4e785783e534a6db44376 lang=en detail=brief -->
+Checks that an unknown value is a plain object with an integer `arg`, string `path` and `callee`, plus optional `bound` and `receiver` fields validated via `map.fact-cache.optional`, using `map.fact-cache.isRecord` for the shape test.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=46d32cdd6f09caa061ec75ca4552d5a4d35d6b85e0f1e47780a97baae3c287f9 lang=en detail=brief -->
+Builds a `KeyEvent` object with `type: "key"`, the given name, and `ctrl`/`alt`/`shift` flags normalized to strict booleans (true only when explicitly set). Includes a `text` field only if one was supplied; used by `InputDecoder` methods to emit decoded key events.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f647ed112b2d17fbb01ee922c54cfc696b48ae271fe8e167ffffb2587ea6f17f lang=en detail=brief -->
+Shape of one entry in an agent context pack: a `key` used for removal, a `ContextKind`, display label, the text itself and its token count. Optional flags mark it as a plan rather than code, or as covering less than what actually runs.

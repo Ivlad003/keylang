@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b4a9d1935244ea9d43e5ef85c2342dfd0eab31c8bc27f6ef5381969c56a74380 lang=en detail=brief -->
+Describes one public name a module exposes: the owning module, the exported name, the indexed declaration it resolves to (or null), and its kind, with optional form, local alias, source module, and a reason when a wildcard re-export's names are unknown.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=93f3233dc845b7683128a79616c0c0ab607fbca0a3d6af7a8013e27206e7d18a lang=en detail=brief -->
+Compiles the documents into a spec via `lang.spec-ir.compileSpec`, then runs `check.rules.evaluateRules` against the index and optional snapshot. Returns the compilation diagnostics followed by the rule-evaluation diagnostics as one flat list.

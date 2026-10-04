@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4e90634205a59d24ea39e426a7b3d30e5de8f62bc8903f7acb77a6c74d6eb575 lang=en detail=brief -->
+Describes the data handed to an editor adapter for one flow: the snapshot it came from and an ID-sorted list of symbols with file, line, column, and the SHA-256 of the file as indexed. The hash lets an adapter skip files that changed since the snapshot.

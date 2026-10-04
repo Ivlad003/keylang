@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0a87c232462f61546acdf1166b1c1f2eac1e7245f8fb3ce311e73afe64e09ac0 lang=en detail=brief -->
+Builds a human-readable explanation for why a call site could not be resolved to a concrete target, distinguishing hook-based calls, calls through `this`, and calls through local values. `map.graph.buildGraph` uses the string to annotate unresolved edges.

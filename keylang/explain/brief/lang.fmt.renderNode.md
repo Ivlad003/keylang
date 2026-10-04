@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e6ce5ce70d8b47ef64dd31912a4a4eac5f5d1e9d3d3910c04c309d4e6c8e2806 lang=en detail=brief -->
+Appends one node to the output as an indented bullet line of its tokens via `lang.parser.renderTokens`, with any trailing comment and description lines beneath it. Then recurses into each child one level deeper and returns the accumulated string.

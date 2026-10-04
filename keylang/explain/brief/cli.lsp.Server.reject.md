@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=63527d17e4498cfb9fd3ee83c5ebd1b4a176693f1fa0836b70873acee1daf5b4 lang=en detail=brief -->
+Builds a JSON-RPC 2.0 error response with the given id, error code and message, and sends it to the client. `cli.lsp.serveLsp` uses it, with a null id, to answer a message it cannot parse or that is not a JSON object; a failed request is answered elsewhere.

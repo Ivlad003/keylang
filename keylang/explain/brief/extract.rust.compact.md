@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=34c5cf46f070f7fd23e9ddea331939fb6a269c824e5be0d110db317eeb570833 lang=en detail=brief -->
+Collapses all whitespace runs in the text to single spaces and strips spaces around `.` and `:`, normalizing Rust path and method-call snippets. Used by `extract.rust.pathCall` and `extract.rust.throughValue` to canonicalize callee text.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5213b196e270e302067ab9ea0a48c676d240f76f4448175fa7c7559a3f548d1b lang=en detail=brief -->
+Walks a Rust function body and collects every call expression into `CallFact` entries via `extract.rust.callOf`, flagging ones nested in closures, async blocks, or inner fns. Unknown local macros are reported through `extract.rust.unsupported` since their calls stay hidden.

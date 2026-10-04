@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=cde21cdbbbf931a461eabd2710d307531183999160203207b63d3a275d0180a0 lang=en detail=brief -->
+Collects the identifiers a statement introduces: for `let`/`const`/`var` it expands each declarator's name through `extract.ts.patternNames` (so destructuring yields every bound name), for functions and classes it returns the single name field, and anything else yields nothing.

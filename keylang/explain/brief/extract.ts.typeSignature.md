@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=461686836a53068f09df53f783d5f620f3533d30a4b2c846a92c30a65242d7a1 lang=en detail=brief -->
+Builds the display suffix for a type-like declaration: for a type alias it whitespace-collapses the aliased type via `extract.ts.collapse` and returns `= T` only when 60 chars or shorter. For anything else it defers to `extract.ts.heritage` to render extends/implements clauses.

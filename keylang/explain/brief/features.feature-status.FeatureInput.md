@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f4a5e07aad3ca4371e89933cbda67b118ba8e27ee3dac4e1d59525ff85d2fc0d lang=en detail=brief -->
+Bundles everything needed to assess one feature: its directory, parsed documents, spec IR, diagnostics, and verdicts. Optional `nodes` and `base` fields enable checking removed `planned` items against the snapshot and diffing the plan against its base commit.

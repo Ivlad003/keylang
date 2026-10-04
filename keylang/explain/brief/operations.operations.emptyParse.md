@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=278ebcb92c042446c140e74f2bc1fc99617e5bac349d7f99178a8d718ea67869 lang=en detail=brief -->
+Builds a parse result envelope with a null payload, empty written/removed/proposals lists, and the given status and exit code, adding a single error-level message when an error string is supplied. Used by `operations.operations.runParse` for early-exit and failure paths.

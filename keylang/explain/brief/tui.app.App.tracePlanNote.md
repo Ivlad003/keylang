@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=883d5ede3b088d23112010274c996470400f3508c206637de3a146cbf8118385 lang=en detail=brief -->
+Sets the hint text on the active prompt based on the flow name read via `tui.app.App.tracePlanFlow`: asks for a name when empty, otherwise shows the name, flags it if absent from the loaded spec's flows, and notes that tracing is read-only.

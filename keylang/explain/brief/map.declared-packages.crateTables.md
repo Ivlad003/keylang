@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=49f450d788ea03a1381b0ea526921884aaeee82a2d4a25c0632c0e2af583390b lang=en detail=brief -->
+Walks the fixed list of Cargo dependency section keys, running each present entry in a manifest object through `map.declared-packages.table` with a prefixed field path for validation. Returns the pairs of section key and name map that validated, skipping absent or invalid ones.

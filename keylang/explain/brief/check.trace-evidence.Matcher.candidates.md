@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0ca97e1531b1dce0864e910db2a1e8c302b4ee501305e30b6b7767c5cf8c121e lang=en detail=brief -->
+Collects the spans under `parent` via `check.trace-evidence.Matcher.descendants`, keeping only those whose symbol matches `id` and that are not yet marked used. Feeds candidate spans to `check.trace-evidence.Matcher.branch` and `check.trace-evidence.Matcher.solve`.

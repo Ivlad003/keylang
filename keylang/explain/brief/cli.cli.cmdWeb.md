@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=025e351ee180be3167b662bd60b4bb91633ce5493bfbdb7e99c437191bb1d8e9 lang=en detail=brief -->
+Validates the port text, starts the browser UI via `tui.web.serveWeb` on the repository found by `map.analyze.findRoot`, and prints the URL. Waits for SIGINT/SIGTERM, requiring a second Ctrl+C when unsaved buffers exist, then closes the server.

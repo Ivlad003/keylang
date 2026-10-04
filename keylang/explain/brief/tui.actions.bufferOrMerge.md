@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9b4dd073441274782a933fba2700f9448405b104f814177e0f2b6b3bb24f06f6 lang=en detail=brief -->
+Returns whatever blocking reason `tui.actions.editor` reports, otherwise falls back to "no file open" when no current file is set, or null when the action may proceed. Shared precondition check used by `tui.actions.viewOnly` and `tui.actions.writable`.

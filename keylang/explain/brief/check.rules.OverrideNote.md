@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f17b55ed042777f76e2d0d13ab9fb91754b2b57a824406bc525f1791c1b7caee lang=en detail=brief -->
+Record describing why one deny rule was overridden: the overriding rule's text and source location, whether the two rules' areas could not be compared, whether the deny was a baseline rule, and the specificity scores of winner and loser.

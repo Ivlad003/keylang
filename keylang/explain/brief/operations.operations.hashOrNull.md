@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=578715f7a826e0f78ca2304b299b12e5cd4c83de055d1e9f1bc6ccb9b2e49792 lang=en detail=brief -->
+Returns the SHA-256 digest of the given text via `map.snapshot.sha256`, or passes `null` through untouched when no text is present. Used by `operations.operations.specHashes` and `operations.operations.specProblems` to hash optional spec contents.

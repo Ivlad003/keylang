@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4beca1d71f8e12464e51a01be98c8088502b9cf1c4def2c154bba351ad2a9eaa lang=en detail=brief -->
+Reads the line at the cursor from `ws`, takes the last dotted identifier before the cursor, and resolves it via `features.lsp-features.describe`. Returns one signature labelled with the id and signature, with file:line as documentation, or null if nothing resolves.

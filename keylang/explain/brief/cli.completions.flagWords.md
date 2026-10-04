@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=59eecca3cfd5edb5ab9e2e242de0a625790f79311f4a823933d38277334ef3f4 lang=en detail=brief -->
+Expands the flag definitions in the input into literal shell tokens, emitting `--long` for every flag plus `-x` when a short form is present. Feeds the word lists that `cli.completions.bashScript` and `cli.completions.zshScript` embed in their generated completion scripts.

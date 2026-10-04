@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6d8662a2521d27cd6f1b81b323e636b9407d1eed13a9595575ce6b20ff137ee6 lang=en detail=brief -->
+Resolves a workspace-relative path against the root directory and converts the absolute result into a `file://` URL string. Used by `features.lsp-features.definition`, `features.lsp-features.references`, and `features.lsp-features.symbolLocation` to build LSP location URIs.

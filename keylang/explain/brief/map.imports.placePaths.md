@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3fdc5513447d86b6f4519bae95a54a2fdfc9e03a09afc964c6da4e8128388a20 lang=en detail=brief -->
+Turns the tsconfig `paths` block into rules whose target entries are resolved to normalized POSIX paths under `baseUrl` (or the paths file's directory), dropping non-string targets. Uses `base.config.toPosix` and feeds `map.imports.loadTsconfig`.

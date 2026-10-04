@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6a912048c884bc9b5225d2dfa24c00f0e0b89dd64c8bbbcc528c2e0f9a4bacb6 lang=en detail=brief -->
+Percent-encodes `%`, carriage returns, and newlines in a string so it is safe as a GitHub Actions workflow command payload. Used by `features.check-format.githubProperty` and `features.check-format.githubText` to escape annotation messages.

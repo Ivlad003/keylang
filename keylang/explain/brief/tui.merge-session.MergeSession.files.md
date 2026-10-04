@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e6daf5a29d1d773ed2559b0553099dca20013b97950b58ce63f59ead5c9e882f lang=en detail=brief -->
+Lists every regular file under the session root's proposals directory, recursively, as sorted POSIX-style paths relative to that directory via `base.config.toPosix`. Returns an empty list when the directory is missing or unreadable.

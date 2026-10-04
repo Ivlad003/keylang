@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c4fe7268adf00422e9960197496b30e0e9ab921ac6f37f56d710e5a437ecbee4 lang=en detail=brief -->
+Collects every reference ID found anywhere in a document section by expanding its nodes via `lang.ir.sectionNodes` and flattening each node's subtree references into one list. Used by `features.stale.specStatements` to tie spec statements to the code they mention.

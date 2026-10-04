@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5ff6caa43f670de10f5ff775ba35ff26bccd1d12124637845319a0c90239a51e lang=en detail=brief -->
+Renders a single `Verdict` as one compiler-style diagnostic line: file, line, and column joined by colons, then the code (falling back to the verdict kind) and the message. Used by `features.spec-to-code.specToCodeText` to print results as text.

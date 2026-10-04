@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=636cec46868a3f8ee3a52d55547dfa7ae4b5a55edaa053597cd5cf96dfa93c2b lang=en detail=brief -->
+Squeezes every run of whitespace in a string down to a single space and strips leading and trailing blanks. Normalizes source text extracted for signatures and heritage by callers like `extract.ts.signature` and `extract.ts.heritage`.

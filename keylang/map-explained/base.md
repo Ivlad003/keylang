@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a>
+  <a id="base"></a><br>Dependency-free foundation shared by every other layer: source spans, diagnostics with stable codes, config and glob matching, language data, external package IDs, brief extraction and the atomic in-repository write protocol. It is denied access to [`external.web-tree-sitter`](external.md#external.web-tree-sitter)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -119,17 +119,17 @@
     <a id="base.diag"></a><br>Diagnostics with stable codes.
     - span [base.span](base.md#base.span)
     - type [Code](../../src/diag.ts#L5)
-      <a id="base.diag.Code"></a><br>A string-literal union enumerating every diagnostic code the tool can emit, grouped by range: K001–K008 for parsing and ID-resolution problems, K101–K107 for layer/dependency rule violations, K201–K202 for `planned` declarations versus implemented symbols, and K301–K302 for… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.diag.Code"></a><br>A string union of every diagnostic code keylang can emit, grouped by stage: parsing/resolution (K001–K008), rules (K101–K107), flows (K201–K203), and wiring (K301–K302). Each member carries a doc comment stating what it signals and whether it is a warning. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Severity](../../src/diag.ts#L48) = "error" | "warning"
       <a id="base.diag.Severity"></a><br>A string-literal union naming the two levels a diagnostic can carry, `"error"` or `"warning"`, with no runtime value of its own; the input shows no callers or related types, so where it is consumed is not visible here. _(llm · claude · 2026-10-04)_
     - type [K005Reason](../../src/diag.ts#L51) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
       <a id="base.diag.K005Reason"></a><br>Why a K005 is malformed. Other codes do not carry this.
     - fn [severityOf](../../src/diag.ts#L53) (code: Code) → Severity
-      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity with a hardcoded allowlist: codes `K006`, `K008`, `K103`, `K106`, and `K202` yield `"warning"`, and every other code yields `"error"`. Its only caller shown is [`base.diag.diagnostic`](base.md#base.diag.diagnostic), which uses it to fill in the severity when constructing… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.diag.severityOf"></a><br>Maps a diagnostic code to its severity: a fixed set of six codes (K006, K008, K103, K106, K202, K203) yields "warning", every other code yields "error". Used by [`base.diag.diagnostic`](base.md#base.diag.diagnostic) when constructing a diagnostic record. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Diagnostic](../../src/diag.ts#L57)
       <a id="base.diag.Diagnostic"></a><br>The shape of a single reported finding: a required code, severity, message, file and span, plus optional fields that only certain codes populate — `target` (K001, the dangling reference's ID), `criterion`/`area`/`specHash` (K103 warnings, which carry their own rule and hash… _(llm · claude · 2026-10-04)_
     - fn [diagnostic](../../src/diag.ts#L83) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
-      <a id="base.diag.diagnostic"></a><br>Builds a `Diagnostic` from a code, file, span and message, taking the severity from [`base.diag.severityOf`](base.md#base.diag.severityOf). The optional last argument is the `reason` for K005 (kept only when it is a known reason) and the dangling `target` ID for every other code. _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.diag.diagnostic"></a><br>Builds a `Diagnostic` record, deriving its severity from the code via [`base.diag.severityOf`](base.md#base.diag.severityOf). The optional fifth argument becomes `reason` for K005 (only if it matches a known reason) and `target` for any other code. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.diag.severityOf](base.md#base.diag.severityOf)
     - fn [isError](../../src/diag.ts#L94) (d: Diagnostic) → boolean
       <a id="base.diag.isError"></a><br>A tiny predicate that returns true only when a diagnostic's `severity` field equals the string `"error"`, so the result and status layers ([`features.check-results.checkResults`](features.md#features.check-results.checkResults), [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus), [`operations.operations.runParse`](operations.md#operations.operations.runParse)… _(llm · claude · 2026-10-04)_

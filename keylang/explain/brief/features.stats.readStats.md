@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=56124a877f8ae7f3054fb1918474d31028fb7c07f97c2f201fcc50acbb25a37b lang=en detail=brief -->
+Loads the stats JSON file from the given root, returning a default empty record when the file is missing, unparsable, or fails the schema-1 shape check. Used by `features.stats.updateStats` as the baseline before applying a change.

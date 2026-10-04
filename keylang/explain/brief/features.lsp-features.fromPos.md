@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=20c31fe52bd63878c6e8f2771ff8d0fd3db2667e2668c599aae6815a151ded78 lang=en detail=brief -->
+Converts a keylang position (1-based line, column in code points) into a 0-based LSP position by delegating to `features.lsp-features.lspPoint`, which turns the column into UTF-16 units using the line's text when the document text is known.

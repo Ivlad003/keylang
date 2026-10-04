@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fa19752258f953a6bd8f51e1dc7a948755af0abe03ea137a1116c12ba6d80ab4 lang=en detail=brief -->
+Configuration bundle for starting a TUI session: repository root, terminal size, an optional analyzer, quit callback, and microphone PCM source, plus injectable operation runner and worker so tests can gate or replace how feature and map-check jobs execute.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=187111aeaf721f3a0126b0138a1112ab0317e5494aeea00b508e46592a6af3cb lang=en detail=brief -->
+Returns true when both spans' start marks share a clock per `check.trace-evidence.sameClock` and the first span's start sequence number is strictly lower. Used by `check.trace-evidence.Matcher.solve` and `check.trace-evidence.Matcher.outsideRoot` to order spans.

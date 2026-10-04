@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e5aa8b3186b8d5300f19a2034e1cb8117065357f77ed042b59367764f9f15706 lang=en detail=brief -->
+Canonicalizes a signature string by replacing every `->` with `→`, stripping all whitespace, and dropping a trailing semicolon. Used by `check.flows.plannedMismatch` so planned and actual signatures can be compared without formatting noise.

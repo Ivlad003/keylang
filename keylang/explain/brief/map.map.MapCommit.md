@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f1f7400b35008520ebdf2998b4a370510bbd500f0ce0087c892a27b22ab8c865 lang=en detail=brief -->
+Result record of a map commit, holding the list of steps that were actually written plus a flag saying whether the run finished, failed, or was cancelled by a signal between steps. Cancelled runs keep whatever steps already landed.

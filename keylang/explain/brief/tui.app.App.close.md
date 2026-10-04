@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6ca0dad29ddc87ba6a2b1972098e25890c178bae02dfe31636a264ed4b6f1b13 lang=en detail=brief -->
+Marks the app closed, clears pending escape and settle timers, shuts the assistant via `tui.assist.Assist.close`, and drops the render surface. It then cancels any running operation and its worker before calling `tui.app.App.wake` so waiters unblock.

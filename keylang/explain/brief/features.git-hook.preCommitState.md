@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2132255cca4e8e90dfc6b5e1611ffebbe30c57424a6b1a281e2f57734bc5bf1b lang=en detail=brief -->
+Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of `features.git-hook.preCommitText` for the given version and is executable, otherwise "stale".

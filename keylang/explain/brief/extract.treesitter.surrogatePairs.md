@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=afc1cdb0fab338ad60dc3823361cc825b6f4e68730ac0a4aeea72ff2f929ee79 lang=en detail=brief -->
+Scans the source text for UTF-16 surrogate pairs and returns the index just after each pair's high surrogate, giving `extract.treesitter.withTree` the positions where JavaScript string offsets and tree-sitter byte/code-point offsets diverge.

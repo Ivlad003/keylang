@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3496d64b2c01dc8de54ae03e1a50c86d4ea1dbd19ef9fd0a7435b9b344c500b1 lang=en detail=brief -->
+Dispatches on the shell name to `cli.completions.bashScript`, `cli.completions.zshScript`, or `cli.completions.fishScript`, returning the generated completion script text. Used by `cli.cli.cmdCompletions` to emit the script for the user's shell.

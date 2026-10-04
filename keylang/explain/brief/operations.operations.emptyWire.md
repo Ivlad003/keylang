@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=956a01d8e5b1d707c5c60fb876da757ab95ed82edce97e9b4abfa5a283402d87 lang=en detail=brief -->
+Builds a bare result envelope for a wire operation with the given status and exit code, a null payload and empty file/proposal lists. If an error string is passed, it becomes the single error-level message; this is what `operations.operations.runWire` returns on early failure.

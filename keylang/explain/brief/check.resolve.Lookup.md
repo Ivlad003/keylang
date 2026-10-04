@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8f7b705a4ef3be511cd0ec4482ab492d749a57bd6a8a11464aa3782d68664cef lang=en detail=brief -->
+Discriminated union describing the outcome of resolving a reference: an exact match to a declaration, a hit on an opaque module whose inner path is not tracked, or no declaration found. Each resolved variant carries the matched `Decl`.

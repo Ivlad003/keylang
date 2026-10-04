@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2964130a9fa54e288b21158a7b2d5dc1afe84c19d8eaead7f94e46676d8b9d51 lang=en detail=brief -->
+Flattens the module graph into sorted node, edge and coverage records, computing a snapshot ID via `map.snapshot.sha256` over config, file hashes and resolver inputs. Back-fills dependents and callers, folds gaps and skipped files into coverage, then runs `map.snapshot.closures`.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4d5bab7aacb774463d31925053a7e5bcbced36be9cb0b1a554ca0d8c431da8d2 lang=en detail=brief -->
+Splits a markdown-style `[text](target)` token into display text and target, decoding the path via `lang.parser.decodeLinkPath` and extracting an optional `#L<n>` fragment as a line number. Returns these fields together with the token's span.

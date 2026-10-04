@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ed8ad92f7691da270a811977bc4578bf803d4d631836325e41526673006a2f3c lang=en detail=brief -->
+Holds one parsed dependency rule: a source area `a`, the list of target areas `b` it may or may not touch, plus the file, `Span`, and original text it came from. The `generated` flag marks baseline rules that a hand-written rule over the same areas overrides.

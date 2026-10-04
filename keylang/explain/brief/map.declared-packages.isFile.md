@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=34a41a83332133137c8f3b61bf129d3f24aaf2eecdbada59e007ffb23f3da6e0 lang=en detail=brief -->
+Checks whether an absolute path points to an existing regular file via a synchronous stat, returning false instead of throwing on any error. Used by `map.declared-packages.readInput` to decide whether a candidate input file should be read.

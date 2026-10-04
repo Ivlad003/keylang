@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5cbe03fbd076558bf507bd2730fe879fa3537d13af8e3bd6b4cae39de87554d6 lang=en detail=brief -->
+Shape of one dependency edge as stored in a snapshot: its kind, source, resolved target or unresolved candidates, resolution status, and source location. Optional fields carry diagnostics (reason, text), injection provenance (via, hook, site), and a closure marker.

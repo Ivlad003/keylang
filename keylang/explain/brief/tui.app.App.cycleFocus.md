@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=26a1941bb770f57235e52138ae3f1ac7bf9981ce777abd3b0c958b589b362eb7 lang=en detail=brief -->
+Advances `state.focus` to the next pane in a ring built from "editor" plus whichever of "context" (if open), "nav", or "files" are currently shown, wrapping at the end. When focus lands on "nav" it calls `tui.app.App.fixNavIndex` to keep the nav selection valid.

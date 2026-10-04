@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=92a53d046c74ff74adbac1cb3f072283e960c9e9e9b3dc8a8cf759e7f219e8f4 lang=en detail=brief -->
+Returns the substring after the last dot in a dotted node ID, giving the bare local name (or the whole string if there is no dot). Used by `map.emit.renderDecl`, `map.emit.renderModule`, `map.emit.sortIds`, and `map.emit.index` when rendering and ordering output.

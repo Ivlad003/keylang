@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=888493bd6edfc82f417c73fc2af7874aace50a596b153873bf40699fa0cf42fb lang=en detail=brief -->
+Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so `features.harness.mergeMarked` can splice a consistently delimited block into existing text.

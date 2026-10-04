@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2b873d3967a4317d68935a770e2e226a50e4346826fbc147cf4b0f2e2a99f484 lang=en detail=brief -->
+Splits pipe-delimited markdown lines into cells, measures column widths via `tui.width.stringWidth`, and caps each column to a per-width budget. Emits styled rows with box-drawing separators, a bold header, and ellipsis-truncated cells for `tui.markdown.renderMarkdown`.

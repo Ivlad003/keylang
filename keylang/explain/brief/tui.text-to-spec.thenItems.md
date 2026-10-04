@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fe5da260d571bbfb1d2420207f42927feb3cc86ac9bc682a186b724f99291438 lang=en detail=brief -->
+Converts one clause of a "then" block into spec lines: an `EMITS` match yields an emits line, an identifier found via `tui.text-to-spec.idIn` yields a step line, otherwise a plain then line only when nested under a when, else nothing.

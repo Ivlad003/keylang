@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d43aef99a732444c7b94bb58c05d8c43ab8806db6bd214f306a6c6dc554279b7 lang=en detail=brief -->
+Builds a placeholder result for the draft-rules operation with no payload, no file changes and no proposals, wrapping the optional error string as a single error-level message. `operations.operations.runDraftRules` uses it to return early on failure or when nothing was produced.

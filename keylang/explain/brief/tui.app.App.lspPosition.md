@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=13df7c46692c1ffa5d873ba36e8e6357507623f02fe7d6634bf981a8772e1a74 lang=en detail=brief -->
+Converts a cursor's grapheme-cluster column into an LSP character offset by looking up the line's layout via `tui.buffer.lineLayout`, clamping the column to the cluster count; when `tui.app.App.buffer` is null it reports character 0 on the same line.

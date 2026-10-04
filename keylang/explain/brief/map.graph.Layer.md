@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=394ca7ff3e668db65c9c3fd39b915087a166d8515be34fa28f89027ead3459a1 lang=en detail=brief -->
+Describes one architectural layer of the repository as a named group holding its top-level modules in the order the map lists them. It is a plain data shape with no behaviour, consumed by code that builds or renders the codebase map.

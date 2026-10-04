@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=db8255c77f4e01db2b5480bbaf53d1ec4ea73de81c83dc39a85ca9614ffa2e6a lang=en detail=brief -->
+Opens a new tracing span under the current async-local parent, emitting a "start" event through `cli.trace.write` with ids, sequence number and timestamp. If the parent has already ended, it is attached as a link instead, and the span id is tracked as open.

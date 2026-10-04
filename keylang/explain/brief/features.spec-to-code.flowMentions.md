@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8ac62984eb76bc9f7d5c32fab4bf9f2d130eb431dcb0ecc761d112dba281a7e9 lang=en detail=brief -->
+Returns true if a planned item with the given id sits inside the flow's file at a line the flow owns per `features.spec-to-code.flowOwns`, or if any trigger, step, ref-then, reads, emits, or invariant visited by `lang.spec-ir.walkFlow` targets that id.

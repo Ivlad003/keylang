@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f5a88842c198a9de03c2deb3a9107ddeac22e674f31dfa41cb8af7cc046f7cf4 lang=en detail=brief -->
+Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by `operations.operations.countProposed` and `tui.merge-session.MergeSession.write` to accumulate draft totals.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=46d6d78d0ef31a8a0bc578414417141d849cdbb40421b1e2fd35423bd0df6481 lang=en detail=brief -->
+Describes a single timestamped marker tying a logical clock identifier to a monotonically increasing sequence number and a wall-clock time. It is the record shape that trace evidence collection in `check.trace-evidence` emits and orders events by.

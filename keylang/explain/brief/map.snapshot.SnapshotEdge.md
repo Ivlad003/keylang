@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1d1ee5f9c2e01225d9efe6bcc3b059caf963bea951cd628287514354dcb6debe lang=en detail=brief -->
+Shape of one reference record in a map snapshot: an `EdgeKind` from `source` to a resolved `target` or `candidates`, with file position, source text, `Resolution` and `Provenance`. Optional fields mark import aliases and hook-mediated calls (`via`, `hook`, `site`, `closure`).

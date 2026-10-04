@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=892aae30d93d32343138fa10de7bc6fe92a332888670d60a949931d0f3265846 lang=en detail=brief -->
+Flips the context panel's open flag in app state, records "nav" as the last panel when opening, and shrinks the note via `tui.app.App.narrowNote`. Moves focus to the context panel on open (if requested) or back to the editor on close, then calls `tui.app.App.keepVisible`.

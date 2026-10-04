@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f1c7f26276beba1ffca1beef1a968ce1c7f397d156a8546f86ebcdf61e7e2313 lang=en detail=brief -->
+Builds a short human-readable label for a flow item by prefixing its kind to its condition, prose, or reference target, choosing the field based on the item's shape. Used by `check.flows.evaluateFlows` to name the area a diagnostic or verdict refers to.

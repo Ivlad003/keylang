@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ce5513f4e607d18a12f79706a1d4ab6c8b2d381b1128aaa3088fc30f24e0ff94 lang=en detail=brief -->
+Records a named export on the per-file facts, skipping duplicates already present in the exports set and appending a row with the given kind and no local binding. Used by `extract.python.extractTree` while walking a Python module's tree.

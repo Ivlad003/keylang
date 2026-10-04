@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3529ddff415cf5e2de8b7e69e68eaeb37978921121115ea575ccfb438bfdd850 lang=en detail=brief -->
+Returns true when a tree-sitter parameter node is a bare identifier, a required/optional parameter whose pattern is an identifier, or a default-value parameter whose left side is an identifier, rejecting destructured forms. Used by `extract.ts.localHook`.

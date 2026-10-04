@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ff2786c20e04663c1474858674717f8a12f2019f10f78ef284e6330e357a8394 lang=en detail=brief -->
+Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. `map.map.extractGuarded` and `map.map.generateMap` use it as the placeholder when a file cannot or should not be analyzed.

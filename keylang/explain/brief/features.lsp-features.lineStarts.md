@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d042f382ba6aa859e3125d592ac973d33e7998f1992185976537f31ec165b93f lang=en detail=brief -->
+Scans the text once and returns the character offsets at which each line begins, treating only `\n` (code 10) as a line break and always including offset 0. `features.lsp-features.toOffset` uses this table to convert an LSP line/character position into a flat string index.

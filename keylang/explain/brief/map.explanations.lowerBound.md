@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=30beda7d9b16f0af842643e07f5403bb63bb35b02aa6078621a3971da5a84b08 lang=en detail=brief -->
+Binary-searches a lexicographically sorted string array for the first index whose element is not less than the given key, returning the array length if none qualifies. `map.explanations.snapshotBaseline` uses it to locate an id's insertion point in a snapshot's ordered keys.

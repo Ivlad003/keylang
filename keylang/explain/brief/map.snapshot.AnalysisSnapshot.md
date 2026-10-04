@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=461868524f4e136fdbadd626da0ca1ea504b442cd15688843dd4c8532f85a3ff lang=en detail=brief -->
+Defines the serialized shape of a full analysis run: a schema tag, snapshot id and timestamp, a manifest recording extractor, grammar versions, resolved config and hashed input files, plus the graph's nodes, edges, exports, coverage items and stats.

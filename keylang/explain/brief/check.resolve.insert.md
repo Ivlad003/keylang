@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=da50056c6f692df8cbdb1346c16574adaf821e022aa4fbdc3a7a1465a7981069 lang=en detail=brief -->
+Adds a declaration to the map keyed by its id, silently allowing two `layer` declarations with the same id. For any other collision it emits a K002 diagnostic via `base.diag.diagnostic` pointing at the first declaration's location.

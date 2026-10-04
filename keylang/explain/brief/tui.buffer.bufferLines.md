@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=802130c6da26b670401337373c4b7139eda72b8031f098ad83e3de075a08cb0a lang=en detail=brief -->
+Returns the buffer's text split into lines, taking them from the per-buffer memoized result of `tui.buffer.cached` so repeated callers don't re-split. Used by `tui.app.App` cursor and navigation methods and by `tui.view.lineCount`.

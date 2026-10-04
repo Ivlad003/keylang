@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d7f6308276a252e44bc5dc8b8dae4121f847a359b337c2c973d9ca5c2805d6a3 lang=en detail=brief -->
+Counts the Unicode code points in a string by iterating it, so surrogate pairs count once rather than twice as with `.length`. Used by `lang.parser.Line.pos` and `lang.parser.linkTextSpan` to compute character-based column positions.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3d252e3f40df41fa4582a5b083809322104db29a07f177aaa4fe19dbe6ed20b2 lang=en detail=brief -->
+Records a Rust export in the per-file facts by adding its name to the exports set and appending a row with the given kind and a null local alias. Used by `extract.rust.extractTree` and `extract.rust.useImport` when they encounter exported items.

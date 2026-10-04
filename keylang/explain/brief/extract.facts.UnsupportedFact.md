@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9915fef252acb69e68715d826a00abe1b7221a0efc45f29519d7d9232c0e95c0 lang=en detail=brief -->
+Records a source construct the extractor could not analyze: its line/column span, raw text, and a reason string. The optional `symbol` names the dotted-path declaration whose call behavior the construct may alter, without adding a dependency.

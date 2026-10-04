@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ea657a4b6a895bc1d4963697d637b5f72151bd67318ec9ca5c0334fe7db19cc6 lang=en detail=brief -->
+Records a single brief-generation task: a node id, its `BriefLevel`, and a wave index that orders generation so each node only depends on briefs produced in earlier waves (functions and types first, then modules deepest-first, then layers).

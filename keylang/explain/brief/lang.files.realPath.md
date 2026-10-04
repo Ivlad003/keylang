@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a7dc4d0e1cb445f2460a1e3075aace8e5aec8f430194de2f38451d03b8d593aa lang=en detail=brief -->
+Resolves a filesystem path to its canonical form with symlinks followed, falling back to a plain absolute resolution when the path does not exist. Used by `lang.files.walkDir` and `lang.files.collectMdFiles` to dedupe directories and files.

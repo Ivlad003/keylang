@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d6ba1f78fc5ececd6ca2feed2879553ac4acb6f0680315fee2f5aed5d8ff68ea lang=en detail=brief -->
+Rewrites the open agents prompt's option labels and note from `tui.app.App.agentsChoice`: on an invalid choice it shows the error and accepted values, otherwise it summarizes how many files `tui.app.App.agentsPreview` would change (naming up to three).

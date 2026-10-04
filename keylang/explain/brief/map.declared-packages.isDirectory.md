@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0fe5453fa8767fb38c442af299548da18f565365fe4c540b75d5fa363ce0fc8d lang=en detail=brief -->
+Synchronously stats the given absolute path and reports whether it is a directory, returning false instead of throwing when the path is missing or inaccessible. `map.declared-packages.readInput` uses it for a `<base>/*` key: when `<base>` is not a directory, the listing of its subdirectories is empty.

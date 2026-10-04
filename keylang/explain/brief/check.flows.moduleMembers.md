@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ce6587f41618be083a20246b6ce244a14ea4c407735436209f327fbbeb4dc765 lang=en detail=brief -->
+Walks up the dotted ancestors of an ID until it finds an enclosing module node whose membership is declared "complete" or "opaque", returning that value. Yields null if no such module appears before the ID runs out of segments; used by `check.flows.idVerdict`.

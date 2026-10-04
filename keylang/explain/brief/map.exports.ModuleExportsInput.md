@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0d320f775921b04bf28117db1f454b09ec2fc58b82fc3475e0b71b33d9b5f2bb lang=en detail=brief -->
+Describes one module's export surface for resolution: its own export rows in file order (first name wins), each `export * from` source as a module id or a null with a reason, and a flag that unknown members may supply any re-exported name.

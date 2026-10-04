@@ -5,12 +5,12 @@
 # map
 
 - extract
-  <a id="extract"></a>
+  <a id="extract"></a><br>Parses source files with tree-sitter and produces language-independent facts (declarations, imports, exports, calls, bodies, doc comments) via [`extract.facts`](extract.md#extract.facts), with per-language frontends [`extract.ts`](extract.md#extract.ts), [`extract.python`](extract.md#extract.python), and [`extract.rust`](extract.md#extract.rust). It knows nothing of layers or IDs, and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [bodies](../../src/extract/bodies.ts#L1)
     <a id="extract.bodies"></a><br>Function bodies by declaration position, for trace instrumentation. Positions match the declaration ranges of `FileFacts` (1-based line/col of the declaring node); offsets index the JS string (UTF-16 code units).
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
     - type [FunctionBody](../../src/extract/bodies.ts#L7)
-      <a id="extract.bodies.FunctionBody"></a>
+      <a id="extract.bodies.FunctionBody"></a><br>Describes the span of a function body as source offsets: `start` and `end` bracket the block interior or the bare expression, with `expression` marking arrow-expression bodies plus `generator` and `async` flags. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [functionBodies](../../src/extract/bodies.ts#L21) (path: string, src: string) → Promise<Map<string, FunctionBody>>
       <a id="extract.bodies.functionBodies"></a><br>`line:col` of each declaring node → the body of its function.
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.treesitter.grammarFor](extract.md#extract.treesitter.grammarFor), [extract.bodies.bodiesOf](extract.md#extract.bodies.bodiesOf)
@@ -18,7 +18,7 @@
       <a id="extract.bodies.parsesCleanly"></a><br>The source parses without a syntax error: an instrumented copy is checked before it replaces the original.
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.treesitter.grammarFor](extract.md#extract.treesitter.grammarFor)
     - fn [bodiesOf](../../src/extract/bodies.ts#L30) (root: Node) → Map<string, FunctionBody> <!-- internal -->
-      <a id="extract.bodies.bodiesOf"></a>
+      <a id="extract.bodies.bodiesOf"></a><br>Walks a tree-sitter syntax tree and records, for each function node (including arrow functions assigned in declarators or class fields), the body's index span plus expression/generator/async flags. Keys are `row:col` of the declaring node, computed via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol)
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
     <a id="extract.doc-comments"></a><br>Documentation comments without their syntax. Frontends decide which comment documents what; this module only turns comment source into text, lines kept, so the brief rule (`src/brief.ts`) can find the first paragraph.
@@ -35,33 +35,33 @@
   - module [facts](../../src/extract/facts.ts#L1)
     <a id="extract.facts"></a><br>Language-independent facts extracted from one source file. Everything the map and the index need; nothing about layers or IDs yet.
     - type [FileFacts](../../src/extract/facts.ts#L4)
-      <a id="extract.facts.FileFacts"></a>
+      <a id="extract.facts.FileFacts"></a><br>Record of everything the extractor learns from one source file: its imports, declarations, exported names and re-exports, calls that run at module load, value-level references, and constructs it cannot turn into edges. A `completeness` flag marks whether the declaration list is… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [ImportFact](../../src/extract/facts.ts#L42)
-      <a id="extract.facts.ImportFact"></a>
+      <a id="extract.facts.ImportFact"></a><br>Record of one import or require found in a file: the module specifier as written, its 1-based source span and text, the names it binds, whether it is an `export … from` re-export, and an `optional` flag for `new URL(...)`-style specifiers that only produce an edge when they… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [ImportBinding](../../src/extract/facts.ts#L63)
       <a id="extract.facts.ImportBinding"></a><br>A tagged union recording how one local name is bound by an import or `require`: as the whole module namespace, as the module's `default` export, or as a specific named export under a possibly renamed local identifier. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [DeclKind](../../src/extract/facts.ts#L71) = "fn" | "class" | "type"
-      <a id="extract.facts.DeclKind"></a>
+      <a id="extract.facts.DeclKind"></a><br>Restricts a declaration's kind to one of three string literals: a function, a class, or a type alias. Code in the extract layer uses it to tag each extracted declaration with its category. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [DeclFact](../../src/extract/facts.ts#L73)
-      <a id="extract.facts.DeclFact"></a>
+      <a id="extract.facts.DeclFact"></a><br>Record of one extracted declaration: its kind, name, span, signature, export flag, body calls (`CallFact`), referenced types (`TypeRefFact`), and nested members. Optional flags mark accessors, implicit, static, or `#private` members, plus base class, doc comment, and body… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [CallFact](../../src/extract/facts.ts#L105)
-      <a id="extract.facts.CallFact"></a>
+      <a id="extract.facts.CallFact"></a><br>Record of one call site: the callee's dotted name (or raw text when `opaque`), how its head is bound, the receiver's class, a `HookFact` default, `PassFact` function arguments, and position. Each call becomes an edge or a `dynamic-call` hole. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [HookFact](../../src/extract/facts.ts#L143)
       <a id="extract.facts.HookFact"></a><br>A callable chosen at run time with a default written next to it. `param` and `path` say where a caller injects the value: `analyze({ generate })` is parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
     - type [PassFact](../../src/extract/facts.ts#L156)
       <a id="extract.facts.PassFact"></a><br>A function value in the arguments of a call: argument index, property path ("" for the argument itself).
     - type [ValueRefFact](../../src/extract/facts.ts#L164)
-      <a id="extract.facts.ValueRefFact"></a>
+      <a id="extract.facts.ValueRefFact"></a><br>Describes a single occurrence of a value being referenced in source, recording its name (plain or module-qualified), whether it was read as a property off an object, and its line and column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [TypeRefFact](../../src/extract/facts.ts#L174)
       <a id="extract.facts.TypeRefFact"></a><br>A type name in type position. `text` is the source fragment.
     - type [ExportRow](../../src/extract/facts.ts#L188)
       <a id="extract.facts.ExportRow"></a><br>One public name of a file, compared with the `exports` rule and followed by the graph to the symbol it stands for.
     - type [UnsupportedFact](../../src/extract/facts.ts#L218)
-      <a id="extract.facts.UnsupportedFact"></a>
+      <a id="extract.facts.UnsupportedFact"></a><br>Records a source construct the extractor could not analyze: its line/column span, raw text, and a reason string. The optional `symbol` names the dotted-path declaration whose call behavior the construct may alter, without adding a dependency. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [grammars](../../src/extract/grammars.ts#L1)
     <a id="extract.grammars"></a><br>The tree-sitter grammars keylang parses with. One list for the runtime (`treesitter.ts` loads them) and for packaging (`scripts/copy-wasm.mjs` copies each into dist/wasm), so a new language cannot be left out of the published package.
     - type [Grammar](../../src/extract/grammars.ts#L8) = (typeof GRAMMARS)[number]
-      <a id="extract.grammars.Grammar"></a>
+      <a id="extract.grammars.Grammar"></a><br>Derives a union type of the element types in the `GRAMMARS` array, so each supported grammar entry's shape can be referenced as a single type throughout the extract layer. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [wasmFile](../../src/extract/grammars.ts#L11) (g: Grammar) → string
       <a id="extract.grammars.wasmFile"></a><br>The grammar's file name in @vscode/tree-sitter-wasm and in dist/wasm.
   - module [python](../../src/extract/python.ts#L1)
@@ -70,19 +70,19 @@
     - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
     - fn [extractPython](../../src/extract/python.ts#L24) (path: string, src: string) → Promise<FileFacts>
-      <a id="extract.python.extractPython"></a>
+      <a id="extract.python.extractPython"></a><br>Parses Python source into a tree-sitter tree via [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree) and hands the root node to [`extract.python.extractTree`](extract.md#extract.python.extractTree), returning the resulting file facts for the given path. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.python.extractTree](extract.md#extract.python.extractTree)
     - fn [extractTree](../../src/extract/python.ts#L28) (path: string, root: Node) → FileFacts <!-- internal -->
-      <a id="extract.python.extractTree"></a>
+      <a id="extract.python.extractTree"></a><br>Walks a parsed Python module's top-level nodes to assemble its `FileFacts`: imports via [`extract.python.importsIn`](extract.md#extract.python.importsIn), function and class declarations, decorators, dynamic calls and value references. It decides public exports from `__all__` or underscore naming (re-exporting… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.python.collectTopLevel](extract.md#extract.python.collectTopLevel), [extract.python.dunderAll](extract.md#extract.python.dunderAll), [extract.python.importsIn](extract.md#extract.python.importsIn), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.classDecl](extract.md#extract.python.classDecl), [extract.python.exportRow](extract.md#extract.python.exportRow), [extract.python.moduleCalls](extract.md#extract.python.moduleCalls), [extract.python.valueRefs](extract.md#extract.python.valueRefs), [extract.python.collectDynamic](extract.md#extract.python.collectDynamic), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
     - fn [collectTopLevel](../../src/extract/python.ts#L81) (node: Node, out: Node[]) → void <!-- internal -->
       <a id="extract.python.collectTopLevel"></a><br>Top-level statements, including those under `if`/`try` at module level (`if TYPE_CHECKING:`, `try: import x`).
     - fn [dunderAll](../../src/extract/python.ts#L94) (topLevel: Node[]) → Set<string> | null <!-- internal -->
       <a id="extract.python.dunderAll"></a><br>The names of `__all__`: a literal list or tuple, extended by `+=`, `+`, `.extend([...])` and `.append("x")`; null without an `__all__`.
     - fn [exportRow](../../src/extract/python.ts#L122) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
-      <a id="extract.python.exportRow"></a>
+      <a id="extract.python.exportRow"></a><br>Records a named export on the per-file facts, skipping duplicates already present in the exports set and appending a row with the given kind and no local binding. Used by [`extract.python.extractTree`](extract.md#extract.python.extractTree) while walking a Python module's tree. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [decorators](../../src/extract/python.ts#L128) (node: Node) → { name: string; node: Node }[] <!-- internal -->
-      <a id="extract.python.decorators"></a>
+      <a id="extract.python.decorators"></a><br>Collects the decorator children of a Python `decorated_definition` tree-sitter node, pairing each with the decorator's name (the callee text when applied as a call, else the bare expression text). Returns an empty list for any other node type, and is used by… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [isAccessor](../../src/extract/python.ts#L136) (name: string) → boolean <!-- internal -->
       <a id="extract.python.isAccessor"></a><br>`@property`, `@x.setter`: the method runs on attribute access.
     - fn [noteDecorators](../../src/extract/python.ts#L146) (node: Node, symbol: string, member: boolean, facts: FileFacts) → void <!-- internal -->
@@ -94,7 +94,7 @@
     - type [Owner](../../src/extract/python.ts#L192) <!-- internal -->
       <a id="extract.python.Owner"></a><br>The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver.
     - fn [fnDecl](../../src/extract/python.ts#L198) (node: Node, name: string, owner: Owner | null) → DeclFact <!-- internal -->
-      <a id="extract.python.fnDecl"></a>
+      <a id="extract.python.fnDecl"></a><br>Builds a `DeclFact` for a Python function from its tree-sitter node: whitespace-collapsed signature, position via [`extract.treesitter.located`](extract.md#extract.treesitter.located), body calls through [`extract.python.bodyCalls`](extract.md#extract.python.bodyCalls) with the first parameter treated as receiver when `owner` has one, docstring, and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.bodyCalls](extract.md#extract.python.bodyCalls), [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.typedValues](extract.md#extract.python.typedValues), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
     - fn [docstring](../../src/extract/python.ts#L218) (body: Node | null) → string | undefined <!-- internal -->
       <a id="extract.python.docstring"></a><br>The docstring of a module, class or function body: its first statement when that is a lone string literal. An f-string, a bytes literal or concatenated strings are code, not documentation, and give none.
@@ -104,7 +104,7 @@
     - fn [boundNames](../../src/extract/python.ts#L237) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
       <a id="extract.python.boundNames"></a><br>Parameter and assigned names in a function: a call through one of them is a call through a value.
     - type [CallScope](../../src/extract/python.ts#L262) <!-- internal -->
-      <a id="extract.python.CallScope"></a>
+      <a id="extract.python.CallScope"></a><br>Carries the name-resolution context for one Python function body while call sites are collected: the `self`/`cls` receiver name, the enclosing `Owner`, which names are parameters or locals, and which of those have a syntactically declared class. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [typedValues](../../src/extract/python.ts#L279) (fn: Node) → Map<string, string> <!-- internal -->
       <a id="extract.python.typedValues"></a><br>Names in a function whose class the syntax names, bound nowhere else in it: a parameter annotated with a class (`repo: Repo`, `repo: Repo = Depends(…)`, `Optional[Repo]`, `Repo | None`, `Annotated[Repo, …]`) or a local whose only assignment is `x = Repo(…)` or `x: Repo = …`.…
       - calls [extract.python.annotatedClass](extract.md#extract.python.annotatedClass), [extract.python.constructedClass](extract.md#extract.python.constructedClass)
@@ -112,11 +112,11 @@
       <a id="extract.python.annotatedClass"></a><br>The one class an annotation names: `X`, `"X"`, `Optional[X]`, `X | None`, `Annotated[X, …]`; null for anything else.
       - calls [extract.python.classInAnnotation](extract.md#extract.python.classInAnnotation)
     - fn [classInAnnotation](../../src/extract/python.ts#L326) (text: string) → string | null <!-- internal -->
-      <a id="extract.python.classInAnnotation"></a>
+      <a id="extract.python.classInAnnotation"></a><br>Reduces a Python type-annotation string to the single class name it wraps, recursively peeling string quotes, `Optional[...]`, `Annotated[...]`, and `X | None` unions while treating `None` as absent. Returns null for generics with brackets or unions with more than one non-None… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [constructedClass](../../src/extract/python.ts#L340) (value: Node | null) → string | null <!-- internal -->
       <a id="extract.python.constructedClass"></a><br>`X(…)` → `X`.
     - fn [bodyCalls](../../src/extract/python.ts#L345) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
-      <a id="extract.python.bodyCalls"></a>
+      <a id="extract.python.bodyCalls"></a><br>Walks a Python function body's syntax tree and emits one call record per `call` node, resolving the callee via [`extract.python.callOf`](extract.md#extract.python.callOf) and positioning via [`extract.treesitter.located`](extract.md#extract.treesitter.located). Calls nested inside lambdas or inner `def`s are flagged as closure calls. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.callOf](extract.md#extract.python.callOf)
     - fn [callOf](../../src/extract/python.ts#L366) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
       <a id="extract.python.callOf"></a><br>`f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a static method); `x.m()` through a value → `x.m`, bound, with the receiver's class when `typedValues` names it. Any other callee (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang cannot…
@@ -142,13 +142,13 @@
       <a id="extract.python.importsIn"></a><br>Every import of the file, in source order, wherever it is written. `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a` plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`. `reexported(local)`: the name (null for `*`) is part of this…
       - calls [extract.python.importsOf](extract.md#extract.python.importsOf)
     - fn [importsOf](../../src/extract/python.ts#L529) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
-      <a id="extract.python.importsOf"></a>
+      <a id="extract.python.importsOf"></a><br>Turns one Python `import`/`from … import` statement into import facts: each imported or aliased name (and wildcard) becomes a binding record via [`extract.python.importAt`](extract.md#extract.python.importAt), with dotted paths also yielding a named entry. Re-export is marked only when the statement is top-level… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.python.isDeclarationLevel](extract.md#extract.python.isDeclarationLevel), [extract.python.importAt](extract.md#extract.python.importAt)
     - fn [importAt](../../src/extract/python.ts#L573) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
-      <a id="extract.python.importAt"></a>
+      <a id="extract.python.importAt"></a><br>Builds an `ImportFact` record for a Python import statement by combining the given module source, bindings and re-export flag with the position and text obtained from [`extract.treesitter.located`](extract.md#extract.treesitter.located). It is the single constructor used by [`extract.python.importsOf`](extract.md#extract.python.importsOf) to emit each… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [unsupported](../../src/extract/python.ts#L578) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
-      <a id="extract.python.unsupported"></a>
+      <a id="extract.python.unsupported"></a><br>Builds a record marking a Python construct the extractor can't analyze, taking its position from [`extract.treesitter.located`](extract.md#extract.treesitter.located) and keeping only the first line of its source text plus the given reason. Used by [`extract.python.collectDynamic`](extract.md#extract.python.collectDynamic) and [`extract.python.noteDecorators`](extract.md#extract.python.noteDecorators) to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
   - module [rust](../../src/extract/rust.ts#L1)
     <a id="extract.rust"></a><br>Rust facts: items, `impl` members, `use` trees, calls. A `use` leaf is one import whose specifier is the full path (`crate::domain::order::place`); the resolver decides how much of it is a module.
@@ -156,13 +156,13 @@
     - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
     - fn [extractRust](../../src/extract/rust.ts#L35) (path: string, src: string) → Promise<FileFacts>
-      <a id="extract.rust.extractRust"></a>
+      <a id="extract.rust.extractRust"></a><br>Parses Rust source with the tree-sitter grammar via [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree) and hands the root node to [`extract.rust.extractTree`](extract.md#extract.rust.extractTree) to build the file's facts. Returns a promise resolving to those facts. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.rust.extractTree](extract.md#extract.rust.extractTree)
     - fn [extractTree](../../src/extract/rust.ts#L39) (path: string, root: Node) → FileFacts <!-- internal -->
-      <a id="extract.rust.extractTree"></a>
+      <a id="extract.rust.extractTree"></a><br>Walks a parsed Rust file's top-level items, skipping test-only code, to collect imports, fn/type declarations, exports, impl members attached to their struct, and calls from code outside any fn via [`extract.rust.bodyCalls`](extract.md#extract.rust.bodyCalls). Records inline modules, unnamed impls and module-level… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.rust.isTestAttribute](extract.md#extract.rust.isTestAttribute), [extract.rust.isComment](extract.md#extract.rust.isComment), [extract.rust.testOnly](extract.md#extract.rust.testOnly), [extract.rust.useLeaves](extract.md#extract.rust.useLeaves), [extract.rust.useImport](extract.md#extract.rust.useImport), [extract.rust.exported](extract.md#extract.rust.exported), [extract.rust.importAt](extract.md#extract.rust.importAt), [extract.rust.nestedUses](extract.md#extract.rust.nestedUses), [extract.rust.bodyCalls](extract.md#extract.rust.bodyCalls), [extract.rust.fnDecl](extract.md#extract.rust.fnDecl), [extract.rust.exportRow](extract.md#extract.rust.exportRow), [extract.rust.noteAttributes](extract.md#extract.rust.noteAttributes), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.rust.itemDoc](extract.md#extract.rust.itemDoc), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint), [extract.rust.members](extract.md#extract.rust.members), [extract.rust.baseType](extract.md#extract.rust.baseType), [extract.rust.unsupported](extract.md#extract.rust.unsupported), [extract.rust.macroName](extract.md#extract.rust.macroName), [extract.rust.valueRefs](extract.md#extract.rust.valueRefs), [extract.rust.moduleDoc](extract.md#extract.rust.moduleDoc), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
     - fn [isComment](../../src/extract/rust.ts#L148) (node: Node) → boolean <!-- internal -->
-      <a id="extract.rust.isComment"></a>
+      <a id="extract.rust.isComment"></a><br>Returns true when a tree-sitter node's type is `line_comment` or `block_comment`, so callers like [`extract.rust.members`](extract.md#extract.rust.members) and [`extract.rust.itemDoc`](extract.md#extract.rust.itemDoc) can skip or collect comment nodes while walking Rust syntax trees. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [outerDoc](../../src/extract/rust.ts#L153) (node: Node) → boolean <!-- internal -->
       <a id="extract.rust.outerDoc"></a><br>`///` (not `////`) or `/** … *\/` (not `/**\/`): outer documentation of the item after it.
     - fn [innerDoc](../../src/extract/rust.ts#L158) (node: Node) → boolean <!-- internal -->
@@ -177,7 +177,7 @@
       <a id="extract.rust.moduleDoc"></a><br>The module's documentation: the `//!` and `/*! … *\/` comments of the file (`mod.rs` for a directory).
       - calls [extract.rust.docText](extract.md#extract.rust.docText)
     - fn [exported](../../src/extract/rust.ts#L187) (node: Node) → boolean <!-- internal -->
-      <a id="extract.rust.exported"></a>
+      <a id="extract.rust.exported"></a><br>Returns true when a Rust syntax node has a direct `visibility_modifier` child (e.g. `pub`), marking it as exported. Used by [`extract.rust.extractTree`](extract.md#extract.rust.extractTree) to decide which items count as public. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [members](../../src/extract/rust.ts#L192) (node: Node) → Node[] <!-- internal -->
       <a id="extract.rust.members"></a><br>Items of an `impl` or a `trait` body, without test-only ones.
       - calls [extract.rust.isComment](extract.md#extract.rust.isComment), [extract.rust.testOnly](extract.md#extract.rust.testOnly)
@@ -194,28 +194,28 @@
       <a id="extract.rust.requiresTest"></a><br>A `cfg` predicate that holds only in test builds: `test`, `all(…, test, …)`, `any` of such.
       - calls [extract.rust.splitTopLevel](extract.md#extract.rust.splitTopLevel)
     - fn [splitTopLevel](../../src/extract/rust.ts#L238) (text: string) → string[] <!-- internal -->
-      <a id="extract.rust.splitTopLevel"></a>
+      <a id="extract.rust.splitTopLevel"></a><br>Splits a comma-separated argument string into pieces, ignoring commas nested inside parentheses or inside double-quoted strings (with backslash escapes), and drops empty pieces. Used by [`extract.rust.requiresTest`](extract.md#extract.rust.requiresTest) to break apart cfg predicate arguments. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [nestedUses](../../src/extract/rust.ts#L258) (node: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.rust.nestedUses"></a><br>`use` declarations inside items (fn bodies, `impl` members), except inline modules, whose paths start elsewhere, and test code.
       - calls [extract.rust.testOnly](extract.md#extract.rust.testOnly), [extract.rust.useLeaves](extract.md#extract.rust.useLeaves), [extract.rust.useImport](extract.md#extract.rust.useImport)
     - fn [exportRow](../../src/extract/rust.ts#L268) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
-      <a id="extract.rust.exportRow"></a>
+      <a id="extract.rust.exportRow"></a><br>Records a Rust export in the per-file facts by adding its name to the exports set and appending a row with the given kind and a null local alias. Used by [`extract.rust.extractTree`](extract.md#extract.rust.extractTree) and [`extract.rust.useImport`](extract.md#extract.rust.useImport) when they encounter exported items. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [baseType](../../src/extract/rust.ts#L274) (node: Node | null) → string | null <!-- internal -->
       <a id="extract.rust.baseType"></a><br>`Gen<T>` → `Gen`, `crate::a::S` → `S`; null for references, tuples and the like.
     - fn [takesSelf](../../src/extract/rust.ts#L283) (params: Node | null) → boolean <!-- internal -->
       <a id="extract.rust.takesSelf"></a><br>`&self`, `mut self`, `self: Box<Self>`: the fn is a method.
     - fn [fnDecl](../../src/extract/rust.ts#L287) (node: Node, name: string, exported: boolean, owner: string | null, names: ReadonlySet<string>, facts: FileFacts) → DeclFact <!-- internal -->
-      <a id="extract.rust.fnDecl"></a>
+      <a id="extract.rust.fnDecl"></a><br>Builds a `fn` fact for a Rust function: a whitespace-normalized signature from parameters and return type, position via [`extract.treesitter.located`](extract.md#extract.treesitter.located), calls collected from the body with [`extract.rust.bodyCalls`](extract.md#extract.rust.bodyCalls), and a doc comment. Associated functions without `self` (per… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.rust.takesSelf](extract.md#extract.rust.takesSelf), [extract.rust.bodyCalls](extract.md#extract.rust.bodyCalls), [extract.rust.boundNames](extract.md#extract.rust.boundNames), [extract.rust.itemDoc](extract.md#extract.rust.itemDoc), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
     - fn [boundNames](../../src/extract/rust.ts#L303) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
       <a id="extract.rust.boundNames"></a><br>Parameter and `let` names in a function: a call through one of them is a call through a value.
     - type [CallScope](../../src/extract/rust.ts#L323) <!-- internal -->
       <a id="extract.rust.CallScope"></a><br>Where a call is written: the `impl` type, whether the fn takes `self`, its bound names, and the file's item and import names.
     - fn [bodyCalls](../../src/extract/rust.ts#L332) (body: Node, scope: CallScope, facts: FileFacts) → CallFact[] <!-- internal -->
-      <a id="extract.rust.bodyCalls"></a>
+      <a id="extract.rust.bodyCalls"></a><br>Walks a Rust function body and collects every call expression into `CallFact` entries via [`extract.rust.callOf`](extract.md#extract.rust.callOf), flagging ones nested in closures, async blocks, or inner fns. Unknown local macros are reported through [`extract.rust.unsupported`](extract.md#extract.rust.unsupported) since their calls stay hidden. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.rust.callOf](extract.md#extract.rust.callOf), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.rust.macroName](extract.md#extract.rust.macroName), [extract.rust.unsupported](extract.md#extract.rust.unsupported)
     - type [Callee](../../src/extract/rust.ts#L355) = Pick<CallFact, "callee" | "bound"> <!-- internal -->
-      <a id="extract.rust.Callee"></a>
+      <a id="extract.rust.Callee"></a><br>A narrowed view of a call record that keeps only the target name and the bound-receiver flag, so the Rust extractor can resolve and return who is being called without carrying the full fact around. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [callOf](../../src/extract/rust.ts#L367) (fn: Node | null, scope: CallScope, facts: FileFacts) → Callee | null <!-- internal -->
       <a id="extract.rust.callOf"></a><br>`f()` → `f`; `a::b::f()` → `a.b.f`; `Self::new()` → `<Type>.new`; `self.m()` → `this.m`; `x.m()` → `x.m` (through a value). A path that starts at `crate`, `super`, `self` or a lower-case name keylang does not know imports what it names: the call is an edge to that module's item.
       - calls [extract.rust.throughValue](extract.md#extract.rust.throughValue), [extract.rust.pathCall](extract.md#extract.rust.pathCall)
@@ -226,7 +226,7 @@
       <a id="extract.rust.throughValue"></a><br>A call keylang cannot name, as written: a `dynamic-call` hole, never an edge.
       - calls [extract.rust.compact](extract.md#extract.rust.compact)
     - fn [compact](../../src/extract/rust.ts#L437) (text: string) → string <!-- internal -->
-      <a id="extract.rust.compact"></a>
+      <a id="extract.rust.compact"></a><br>Collapses all whitespace runs in the text to single spaces and strips spaces around `.` and `:`, normalizing Rust path and method-call snippets. Used by [`extract.rust.pathCall`](extract.md#extract.rust.pathCall) and [`extract.rust.throughValue`](extract.md#extract.rust.throughValue) to canonicalize callee text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [pathSegments](../../src/extract/rust.ts#L442) (node: Node) → string[] | null <!-- internal -->
       <a id="extract.rust.pathSegments"></a><br>`a::b::c` → `["a", "b", "c"]`; null when a segment is not a plain name (`<T as X>::f`).
     - fn [valueRefs](../../src/extract/rust.ts#L458) (items: Node[], names: ReadonlySet<string>, facts: FileFacts) → ValueRefFact[] <!-- internal -->
@@ -238,20 +238,20 @@
       <a id="extract.rust.bindsOrCalls"></a><br>The identifier names what is declared, bound or called here, or is part of a path or pattern.
       - calls [extract.rust.calledPath](extract.md#extract.rust.calledPath)
     - type [UseLeaf](../../src/extract/rust.ts#L512) <!-- internal -->
-      <a id="extract.rust.UseLeaf"></a>
+      <a id="extract.rust.UseLeaf"></a><br>Shape of one resolved item from a Rust `use` declaration: the path segments as a string array, an optional `as` alias, and a flag marking a trailing `*` wildcard import. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [useLeaves](../../src/extract/rust.ts#L519) (node: Node | null, prefix: string[]) → UseLeaf[] <!-- internal -->
       <a id="extract.rust.useLeaves"></a><br>Flatten a `use` tree: `a::{b, c::d as e, f::*}` → `a::b`, `a::c::d` as `e`, `a::f::*`.
       - calls [extract.rust.pathSegments](extract.md#extract.rust.pathSegments)
     - fn [useImport](../../src/extract/rust.ts#L552) (node: Node, leaf: UseLeaf, exported: boolean, facts: FileFacts) → ImportFact <!-- internal -->
-      <a id="extract.rust.useImport"></a>
+      <a id="extract.rust.useImport"></a><br>Turns one leaf of a Rust `use` tree into an import record via [`extract.rust.importAt`](extract.md#extract.rust.importAt), joining the path with `::` and binding the alias or last segment unless it is a glob or `_`. When the use is `pub`, it also records a re-export through [`extract.rust.exportRow`](extract.md#extract.rust.exportRow) or in the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.rust.importAt](extract.md#extract.rust.importAt), [extract.rust.exportRow](extract.md#extract.rust.exportRow)
     - fn [importAt](../../src/extract/rust.ts#L564) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
-      <a id="extract.rust.importAt"></a>
+      <a id="extract.rust.importAt"></a><br>Builds an `ImportFact` by reading the node's position and text via [`extract.treesitter.located`](extract.md#extract.treesitter.located) and attaching the given source path, bindings, and reexport flag; used by [`extract.rust.extractTree`](extract.md#extract.rust.extractTree) and [`extract.rust.useImport`](extract.md#extract.rust.useImport) to record each Rust `use` item. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [macroName](../../src/extract/rust.ts#L569) (node: Node) → string <!-- internal -->
-      <a id="extract.rust.macroName"></a>
+      <a id="extract.rust.macroName"></a><br>Reads the invoked macro's identifier from a Rust tree-sitter macro node, taking the `macro` field's text and falling back to the first named child or `"?"`. Used by [`extract.rust.bodyCalls`](extract.md#extract.rust.bodyCalls) and [`extract.rust.extractTree`](extract.md#extract.rust.extractTree) to label macro invocations. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [unsupported](../../src/extract/rust.ts#L573) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
-      <a id="extract.rust.unsupported"></a>
+      <a id="extract.rust.unsupported"></a><br>Builds a record describing a Rust syntax node the extractor could not handle, taking its position and first source line from [`extract.treesitter.located`](extract.md#extract.treesitter.located) and attaching the given reason. Used by [`extract.rust.bodyCalls`](extract.md#extract.rust.bodyCalls), [`extract.rust.extractTree`](extract.md#extract.rust.extractTree), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
   - module [treesitter](../../src/extract/treesitter.ts#L1)
     <a id="extract.treesitter"></a><br>web-tree-sitter runtime with the grammar WASM files from @vscode/tree-sitter-wasm. Languages are loaded lazily and cached for the process.
@@ -259,9 +259,9 @@
     - web-tree-sitter [external.web-tree-sitter](external.md#external.web-tree-sitter)
     - grammars [extract.grammars](extract.md#extract.grammars)
     - fn [wasmDir](../../src/extract/treesitter.ts#L28) () → string <!-- internal -->
-      <a id="extract.treesitter.wasmDir"></a>
+      <a id="extract.treesitter.wasmDir"></a><br>Resolves the directory holding tree-sitter grammar `.wasm` files, preferring the `../wasm` folder bundled beside the compiled module and otherwise falling back to the `@vscode/tree-sitter-wasm` package's `wasm` directory. Used by [`extract.treesitter.loadLanguage`](extract.md#extract.treesitter.loadLanguage) to locate… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [loadLanguage](../../src/extract/treesitter.ts#L35) (g: Grammar) → Promise<Language>
-      <a id="extract.treesitter.loadLanguage"></a>
+      <a id="extract.treesitter.loadLanguage"></a><br>Lazily initialises the tree-sitter runtime once, then loads and memoises the WASM grammar for a given language, resolving its path via [`extract.treesitter.wasmDir`](extract.md#extract.treesitter.wasmDir) and [`extract.grammars.wasmFile`](extract.md#extract.grammars.wasmFile). Repeated requests for the same grammar share one cached promise, used by… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.wasmDir](extract.md#extract.treesitter.wasmDir), [extract.grammars.wasmFile](extract.md#extract.grammars.wasmFile)
     - fn [withTree](../../src/extract/treesitter.ts#L49) (g: Grammar, src: string, use: (tree: Tree, language: Language) => T) → Promise<T>
       <a id="extract.treesitter.withTree"></a><br>Parse `src` and run `use` on the tree, which is freed afterwards: a tree lives in the WASM heap, so nothing `use` returns may hold a node.
@@ -269,7 +269,7 @@
     - fn [query](../../src/extract/treesitter.ts#L69) (language: Language, g: Grammar, name: string, source: string) → Query
       <a id="extract.treesitter.query"></a><br>Compile a query once per (grammar, source).
     - fn [grammarFor](../../src/extract/treesitter.ts#L79) (path: string) → Grammar
-      <a id="extract.treesitter.grammarFor"></a>
+      <a id="extract.treesitter.grammarFor"></a><br>Picks the tree-sitter grammar name from a file path's extension: `.rs` → rust, `.py` → python, `.tsx` → tsx, `.ts`/`.cts`/`.mts` → typescript, anything else → javascript. Used by [`extract.bodies.functionBodies`](extract.md#extract.bodies.functionBodies), [`extract.bodies.parsesCleanly`](extract.md#extract.bodies.parsesCleanly) and [`extract.ts.extractTs`](extract.md#extract.ts.extractTs) to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [located](../../src/extract/treesitter.ts#L88) (node: Node) → { line: number; col: number; endLine: number; endCol: number; text: string }
       <a id="extract.treesitter.located"></a><br>1-based range and text of a node; columns count code points, and `endCol` is the column after it.
       - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol), [extract.treesitter.codePointColumn](extract.md#extract.treesitter.codePointColumn)
@@ -280,7 +280,7 @@
       <a id="extract.treesitter.codePointColumn"></a><br>web-tree-sitter parses a JS string as UTF-16, so its columns and indices count code units. A surrogate pair between the line start and the point is one code point, and so one column.
       - calls [extract.treesitter.firstAtOrAfter](extract.md#extract.treesitter.firstAtOrAfter)
     - fn [surrogatePairs](../../src/extract/treesitter.ts#L114) (src: string) → number[] <!-- internal -->
-      <a id="extract.treesitter.surrogatePairs"></a>
+      <a id="extract.treesitter.surrogatePairs"></a><br>Scans the source text for UTF-16 surrogate pairs and returns the index just after each pair's high surrogate, giving [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree) the positions where JavaScript string offsets and tree-sitter byte/code-point offsets diverge. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [firstAtOrAfter](../../src/extract/treesitter.ts#L121) (sorted: readonly number[], value: number) → number <!-- internal -->
       <a id="extract.treesitter.firstAtOrAfter"></a><br>Position of the first element `>= value` in an ascending array.
     - fn [errorLine](../../src/extract/treesitter.ts#L133) (node: Node) → number
@@ -294,14 +294,14 @@
     - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
     - fn [extractTs](../../src/extract/ts.ts#L34) (path: string, src: string) → Promise<FileFacts>
-      <a id="extract.ts.extractTs"></a>
+      <a id="extract.ts.extractTs"></a><br>Picks a grammar for the file via [`extract.treesitter.grammarFor`](extract.md#extract.treesitter.grammarFor), parses the source with [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree), and hands the root node to [`extract.ts.extractTree`](extract.md#extract.ts.extractTree) to produce the file's facts. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.grammarFor](extract.md#extract.treesitter.grammarFor), [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.ts.extractTree](extract.md#extract.ts.extractTree)
     - fn [parentOf](../../src/extract/ts.ts#L55) (node: Node) → Node | null <!-- internal -->
       <a id="extract.ts.parentOf"></a><br>Resolves a syntax node's parent, consulting a module-level `parents` map by node id first and falling back to the node's own `parent` link. Shared by every scope- and ancestry-walking helper in [`extract.ts`](extract.md#extract.ts), such as [`extract.ts.declarationOf`](extract.md#extract.ts.declarationOf) and [`extract.ts.insideClosure`](extract.md#extract.ts.insideClosure). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [parentIndex](../../src/extract/ts.ts#L59) (root: Node) → Map<number, Node> <!-- internal -->
       <a id="extract.ts.parentIndex"></a><br>Walks a tree-sitter syntax tree iteratively from `root` and builds a map from each named child's numeric id to its parent node, skipping null children. [`extract.ts.extractTree`](extract.md#extract.ts.extractTree) uses it to look up parents during fact extraction. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [extractTree](../../src/extract/ts.ts#L72) (path: string, root: Node, language: Language, g: Grammar) → FileFacts <!-- internal -->
-      <a id="extract.ts.extractTree"></a>
+      <a id="extract.ts.extractTree"></a><br>Builds the module-level parent map via [`extract.ts.parentIndex`](extract.md#extract.ts.parentIndex) and header node set via [`extract.ts.moduleHeader`](extract.md#extract.ts.moduleHeader), then runs [`extract.ts.extractIndexed`](extract.md#extract.ts.extractIndexed) and attaches the module doc comment. The shared module state is reset afterward regardless of errors. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.parentIndex](extract.md#extract.ts.parentIndex), [extract.ts.moduleHeader](extract.md#extract.ts.moduleHeader), [extract.ts.extractIndexed](extract.md#extract.ts.extractIndexed)
     - fn [docOf](../../src/extract/ts.ts#L100) (node: Node) → string | undefined <!-- internal -->
       <a id="extract.ts.docOf"></a><br>The declaration's JSDoc: the nearest `/** … *\/` right above it or above the statements that wrap it (`export`, `const x =`), with decorators and line comments between them allowed. A line comment is a note, not documentation; other code in between, the file's header and a…
@@ -310,7 +310,7 @@
       <a id="extract.ts.moduleHeader"></a><br>The module's documentation: the first block of comments in the file (after `#!`; license notices, `/// <reference>` directives and blocks without text skipped), unless it sits right above the first statement that is not an import or a directive (`"use strict"`): then it…
       - calls [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty), [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.lineCommentsBody](extract.md#extract.doc-comments.lineCommentsBody), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody)
     - fn [extractIndexed](../../src/extract/ts.ts#L150) (path: string, root: Node, language: Language, g: Grammar) → FileFacts <!-- internal -->
-      <a id="extract.ts.extractIndexed"></a>
+      <a id="extract.ts.extractIndexed"></a><br>Walks a parsed JS/TS tree and builds a `FileFacts` record: imports and require bindings via [`extract.ts.importStatement`](extract.md#extract.ts.importStatement)/[`extract.ts.importAt`](extract.md#extract.ts.importAt), declarations with their calls, JSX components and type refs via [`extract.ts.decl`](extract.md#extract.ts.decl)/[`extract.ts.classDecl`](extract.md#extract.ts.classDecl), plus exports and re-exports.… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.lineDeeperThan](extract.md#extract.ts.lineDeeperThan), [extract.treesitter.query](extract.md#extract.treesitter.query), [extract.ts.calleeOfCall](extract.md#extract.ts.calleeOfCall), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.passesOf](extract.md#extract.ts.passesOf), [extract.ts.insideClosure](extract.md#extract.ts.insideClosure), [extract.ts.componentOfFactory](extract.md#extract.ts.componentOfFactory), [extract.ts.componentOfTag](extract.md#extract.ts.componentOfTag), [extract.ts.requireSource](extract.md#extract.ts.requireSource), [extract.ts.reactWrapperFn](extract.md#extract.ts.reactWrapperFn), [extract.ts.moduleSource](extract.md#extract.ts.moduleSource), [extract.ts.typeSignature](extract.md#extract.ts.typeSignature), [extract.ts.reactBindings](extract.md#extract.ts.reactBindings), [extract.ts.importStatement](extract.md#extract.ts.importStatement), [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.importAt](extract.md#extract.ts.importAt), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs), [extract.ts.classDecl](extract.md#extract.ts.classDecl), [extract.ts.commonJsExports](extract.md#extract.ts.commonJsExports), [extract.ts.collectDynamicImports](extract.md#extract.ts.collectDynamicImports), [extract.ts.collectUnsupported](extract.md#extract.ts.collectUnsupported), [extract.ts.collectValueRefs](extract.md#extract.ts.collectValueRefs), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
     - type [ReactBindings](../../src/extract/ts.ts#L429) <!-- internal -->
       <a id="extract.ts.ReactBindings"></a><br>What value imports from React bind in one file.
@@ -325,12 +325,12 @@
       <a id="extract.ts.typeOnlySpecifier"></a><br>`import { type memo as m }`: the specifier that binds `local` is type-only.
       - calls [extract.ts.typeKeyword](extract.md#extract.ts.typeKeyword)
     - fn [decl](../../src/extract/ts.ts#L491) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]) → DeclFact <!-- internal -->
-      <a id="extract.ts.decl"></a>
+      <a id="extract.ts.decl"></a><br>Builds a `DeclFact` record from a parsed TypeScript node, attaching its position via [`extract.treesitter.located`](extract.md#extract.treesitter.located), a content hash via [`extract.treesitter.fingerprint`](extract.md#extract.treesitter.fingerprint), and any doc comment from [`extract.ts.docOf`](extract.md#extract.ts.docOf). The remaining fields (kind, name, signature, export flag, calls… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.ts.docOf](extract.md#extract.ts.docOf), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
     - fn [boundCall](../../src/extract/ts.ts#L497) (call: CallFact, bound: "parameter" | "local" | null) → CallFact <!-- internal -->
-      <a id="extract.ts.boundCall"></a>
+      <a id="extract.ts.boundCall"></a><br>Returns a copy of the call fact with a `bound` field set to `"parameter"` or `"local"` when a binding kind is given, otherwise hands back the original fact unchanged. Used by [`extract.ts.calleeFact`](extract.md#extract.ts.calleeFact) and [`extract.ts.calleeOfCall`](extract.md#extract.ts.calleeOfCall) to tag callees that resolve to parameters or… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [callFact](../../src/extract/ts.ts#L501) (callee: string, node: Node) → CallFact <!-- internal -->
-      <a id="extract.ts.callFact"></a>
+      <a id="extract.ts.callFact"></a><br>Builds a call record by pairing a callee name with the start and end line/column positions of a syntax node, obtained via [`extract.treesitter.located`](extract.md#extract.treesitter.located). Shared by [`extract.ts.calleeFact`](extract.md#extract.ts.calleeFact), [`extract.ts.calleeOfCall`](extract.md#extract.ts.calleeOfCall), [`extract.ts.componentOfTag`](extract.md#extract.ts.componentOfTag), and [`extract.ts.opaqueCall`](extract.md#extract.ts.opaqueCall). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [opaqueCall](../../src/extract/ts.ts#L507) (node: Node) → CallFact <!-- internal -->
       <a id="extract.ts.opaqueCall"></a><br>A call through an expression keylang does not name: a hole with the source text.
@@ -351,7 +351,7 @@
       <a id="extract.ts.requireKind"></a><br>What a `require` identifier is: Node's (`global`), one made by `createRequire(…)` (`created`), which also loads modules, or a parameter or local of another value (`shadowed`), whose call is not an import.
       - calls [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
     - fn [importAt](../../src/extract/ts.ts#L617) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
-      <a id="extract.ts.importAt"></a>
+      <a id="extract.ts.importAt"></a><br>Builds an `ImportFact` record by combining the given module source, bindings, and reexport flag with the line/column span and raw text that [`extract.treesitter.located`](extract.md#extract.treesitter.located) reads from the syntax node. It is the shared constructor used by [`extract.ts.importStatement`](extract.md#extract.ts.importStatement)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [lineDeeperThan](../../src/extract/ts.ts#L625) (root: Node, limit: number) → number | null <!-- internal -->
       <a id="extract.ts.lineDeeperThan"></a><br>1-based line of the first node nested deeper than `limit` below `root`; null when none is.
@@ -375,7 +375,7 @@
       <a id="extract.ts.initializer"></a><br>A synthesized member over the initializers it runs, from the first to the last.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
     - fn [memberName](../../src/extract/ts.ts#L798) (node: Node) → string <!-- internal -->
-      <a id="extract.ts.memberName"></a>
+      <a id="extract.ts.memberName"></a><br>Normalizes a property-key syntax node to a plain identifier: string-literal keys are unquoted via [`extract.ts.stringValue`](extract.md#extract.ts.stringValue) (falling back to raw text), and a leading `#` on private members is stripped. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue)
     - type [ClassScope](../../src/extract/ts.ts#L804) <!-- internal -->
       <a id="extract.ts.ClassScope"></a><br>Where `this.<field>` values come from, for `this.decoder.feed()` and `this.run()`.
@@ -383,7 +383,7 @@
       <a id="extract.ts.classScope"></a><br>Builds a map of a class's field names to their declared or constructed types by scanning field definitions, constructor parameter properties, and `this.x = ...` assignments in the constructor body. Also records injectable hooks where a field defaults to a fallback via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.typeName](extract.md#extract.ts.typeName), [extract.ts.newClass](extract.md#extract.ts.newClass), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee), [extract.ts.fallbackOf](extract.md#extract.ts.fallbackOf)
     - fn [importStatement](../../src/extract/ts.ts#L865) (node: Node) → ImportFact[] <!-- internal -->
-      <a id="extract.ts.importStatement"></a>
+      <a id="extract.ts.importStatement"></a><br>Turns a parsed TS/JS import node into import facts, handling `import x = require("…")` as a whole-module binding and otherwise collecting default, namespace, and named (aliased) bindings. Resolves the module specifier via [`extract.ts.stringValue`](extract.md#extract.ts.stringValue) and builds the fact with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.importAt](extract.md#extract.ts.importAt)
     - fn [collectDynamicImports](../../src/extract/ts.ts#L897) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.ts.collectDynamicImports"></a><br>Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge.
@@ -392,7 +392,7 @@
       <a id="extract.ts.collectUnsupported"></a><br>Namespace, `eval`, `new Function`, and a call through `obj[expr]` are coverage, not edges.
       - calls [extract.ts.walkNamed](extract.md#extract.ts.walkNamed), [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.unsupported](extract.md#extract.ts.unsupported), [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue)
     - fn [unsupported](../../src/extract/ts.ts#L945) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
-      <a id="extract.ts.unsupported"></a>
+      <a id="extract.ts.unsupported"></a><br>Builds a record describing a construct the TypeScript extractor refuses to handle, copying the span and source text from [`extract.treesitter.located`](extract.md#extract.treesitter.located) and attaching the given reason. Used by [`extract.ts.classDecl`](extract.md#extract.ts.classDecl), [`extract.ts.collectDynamicImports`](extract.md#extract.ts.collectDynamicImports), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
     - fn [calleeFact](../../src/extract/ts.ts#L955) (n: Node, stop: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       <a id="extract.ts.calleeFact"></a><br>The callee of a call or a function value in an argument: `f`, `a.b`, `this.m`, or `this.field.m` when the field's class is known. Null for any other shape.
@@ -411,7 +411,7 @@
     - fn [newClass](../../src/extract/ts.ts#L1034) (value: Node | null) → string | null <!-- internal -->
       <a id="extract.ts.newClass"></a><br>`new X(…)` → `X`.
     - type [Declaration](../../src/extract/ts.ts#L1039) <!-- internal -->
-      <a id="extract.ts.Declaration"></a>
+      <a id="extract.ts.Declaration"></a><br>Tagged union classifying what an identifier resolves to during TypeScript extraction: a local binding with its node, a function parameter with its owning function and position, or anything else. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [declarationOf](../../src/extract/ts.ts#L1046) (from: Node, name: string, stop: Node) → Declaration | null <!-- internal -->
       <a id="extract.ts.declarationOf"></a><br>The nearest binding of `name` between `from` and `stop`, in the scopes `bindingOf` walks: a declarator or a parameter; `other` for a loop or `catch` variable, a nested function or class name. Null when nothing binds it.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.patternNames](extract.md#extract.ts.patternNames), [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
@@ -428,7 +428,7 @@
       <a id="extract.ts.localHook"></a><br>The hook behind a call of a local or parameter `name`: `const g = request.generate ?? generateMap`, `const { g = f } = request`, `function run(g = f)`, `function run({ g = f })`. Injection is known only for a parameter of the declaration itself.
       - calls [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.defaultIn](extract.md#extract.ts.defaultIn), [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee), [extract.ts.fallbackOf](extract.md#extract.ts.fallbackOf), [extract.ts.plainParameter](extract.md#extract.ts.plainParameter)
     - fn [plainParameter](../../src/extract/ts.ts#L1163) (node: Node) → boolean <!-- internal -->
-      <a id="extract.ts.plainParameter"></a>
+      <a id="extract.ts.plainParameter"></a><br>Returns true when a tree-sitter parameter node is a bare identifier, a required/optional parameter whose pattern is an identifier, or a default-value parameter whose left side is an identifier, rejecting destructured forms. Used by [`extract.ts.localHook`](extract.md#extract.ts.localHook). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [defaultIn](../../src/extract/ts.ts#L1170) (node: Node, name: string, path: string) → { value: Node; path: string } | null <!-- internal -->
       <a id="extract.ts.defaultIn"></a><br>The default value of `name` in a parameter or pattern, with its property path.
       - calls [extract.ts.memberName](extract.md#extract.ts.memberName)
@@ -444,7 +444,7 @@
       <a id="extract.ts.stringsOf"></a><br>Strings an expression can evaluate to: a literal, a ternary of literals, a `const` bound to one.
       - calls [extract.ts.stringValue](extract.md#extract.ts.stringValue), [extract.ts.declarationOf](extract.md#extract.ts.declarationOf), [extract.ts.parentOf](extract.md#extract.ts.parentOf)
     - fn [isImportMetaUrl](../../src/extract/ts.ts#L1307) (node: Node | undefined) → boolean <!-- internal -->
-      <a id="extract.ts.isImportMetaUrl"></a>
+      <a id="extract.ts.isImportMetaUrl"></a><br>Checks whether a syntax node, after stripping all whitespace, spells exactly `import.meta.url`, returning false for an undefined node. [`extract.ts.moduleUrlSpecs`](extract.md#extract.ts.moduleUrlSpecs) uses it to recognise module-URL expressions. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [moduleUrlSpecs](../../src/extract/ts.ts#L1320) (node: Node) → { spec: string; optional: boolean }[] | null <!-- internal -->
       <a id="extract.ts.moduleUrlSpecs"></a><br>Module files named relative to this module: `new URL("./worker.ts", import.meta.url)` (a `Worker`, a loader) and `register(spec, import.meta.url | { parentURL: import.meta.url })`. Null when the specifier is not a string the syntax fixes: a module edge may be hidden there.
       - calls [extract.ts.isImportMetaUrl](extract.md#extract.ts.isImportMetaUrl), [extract.ts.stringsOf](extract.md#extract.ts.stringsOf), [extract.ts.staticSuffix](extract.md#extract.ts.staticSuffix), [extract.ts.extensionless](extract.md#extract.ts.extensionless)
@@ -457,10 +457,10 @@
       <a id="extract.ts.bindingOf"></a><br>Where the head identifier of a call is bound between the call and `stop` (the declaration being extracted): a parameter, a local, a destructured name, a nested function or class, a loop or catch variable. Such a call does not name the module-level symbol of the same name.
       - calls [extract.ts.parentOf](extract.md#extract.ts.parentOf), [extract.ts.patternNames](extract.md#extract.ts.patternNames), [extract.ts.blockDeclares](extract.md#extract.ts.blockDeclares), [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
     - fn [blockDeclares](../../src/extract/ts.ts#L1397) (block: Node, name: string) → boolean <!-- internal -->
-      <a id="extract.ts.blockDeclares"></a>
+      <a id="extract.ts.blockDeclares"></a><br>Scans a block's statements, unwrapping `export_statement` to its declaration, and reports whether any of them declares the given name according to [`extract.ts.declaredNames`](extract.md#extract.ts.declaredNames). Used by [`extract.ts.bindingOf`](extract.md#extract.ts.bindingOf) to decide if a name is a local binding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.declaredNames](extract.md#extract.ts.declaredNames)
     - fn [declaredNames](../../src/extract/ts.ts#L1406) (stmt: Node) → string[] <!-- internal -->
-      <a id="extract.ts.declaredNames"></a>
+      <a id="extract.ts.declaredNames"></a><br>Collects the identifiers a statement introduces: for `let`/`const`/`var` it expands each declarator's name through [`extract.ts.patternNames`](extract.md#extract.ts.patternNames) (so destructuring yields every bound name), for functions and classes it returns the single name field, and anything else yields nothing. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.patternNames](extract.md#extract.ts.patternNames)
     - fn [patternNames](../../src/extract/ts.ts#L1421) (node: Node) → string[] <!-- internal -->
       <a id="extract.ts.patternNames"></a><br>Every identifier bound by a parameter list or a destructuring pattern.
@@ -474,17 +474,17 @@
       <a id="extract.ts.commonJsExports"></a><br>`module.exports = {…}`, `module.exports = f`, `exports.x = …`. A function value assigned there is a fn of the module, like `export const x = () => …`: `exports.run = function () {}` and `module.exports = { go() {} }` declare `run` and `go`; `module.exports = function () {}`…
       - calls [extract.ts.unwrapValue](extract.md#extract.ts.unwrapValue), [extract.ts.decl](extract.md#extract.ts.decl), [extract.ts.signature](extract.md#extract.ts.signature), [extract.ts.collectTypeRefs](extract.md#extract.ts.collectTypeRefs)
     - fn [stringValue](../../src/extract/ts.ts#L1534) (n: Node) → string | null <!-- internal -->
-      <a id="extract.ts.stringValue"></a>
+      <a id="extract.ts.stringValue"></a><br>Returns the literal text of a tree-sitter `string` node by reading its `string_fragment` child, yielding an empty string for an empty literal and `null` for any other node type. Used by import, member-name, and string-collection helpers in [`extract.ts`](extract.md#extract.ts) to read literal values. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [signature](../../src/extract/ts.ts#L1539) (fn: Node) → string <!-- internal -->
-      <a id="extract.ts.signature"></a>
+      <a id="extract.ts.signature"></a><br>Builds a one-line signature string from a function-like tree-sitter node: its parameter list (wrapped in parentheses if it isn't a formal parameter list) plus an arrow and return type when present. Whitespace in both parts is squeezed via [`extract.ts.collapse`](extract.md#extract.ts.collapse), and the leading… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
     - fn [typeSignature](../../src/extract/ts.ts#L1548) (n: Node) → string | null <!-- internal -->
-      <a id="extract.ts.typeSignature"></a>
+      <a id="extract.ts.typeSignature"></a><br>Builds the display suffix for a type-like declaration: for a type alias it whitespace-collapses the aliased type via [`extract.ts.collapse`](extract.md#extract.ts.collapse) and returns `= T` only when 60 chars or shorter. For anything else it defers to [`extract.ts.heritage`](extract.md#extract.ts.heritage) to render extends/implements clauses. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse), [extract.ts.heritage](extract.md#extract.ts.heritage)
     - fn [heritage](../../src/extract/ts.ts#L1557) (n: Node) → string | null <!-- internal -->
-      <a id="extract.ts.heritage"></a>
+      <a id="extract.ts.heritage"></a><br>Finds the first child of a tree-sitter node whose type is a class heritage, extends-type, or extends clause and returns its source text whitespace-normalised via [`extract.ts.collapse`](extract.md#extract.ts.collapse), or null when no such clause exists. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.collapse](extract.md#extract.ts.collapse)
     - fn [collapse](../../src/extract/ts.ts#L1562) (s: string) → string <!-- internal -->
-      <a id="extract.ts.collapse"></a>
+      <a id="extract.ts.collapse"></a><br>Squeezes every run of whitespace in a string down to a single space and strips leading and trailing blanks. Normalizes source text extracted for signatures and heritage by callers like [`extract.ts.signature`](extract.md#extract.ts.signature) and [`extract.ts.heritage`](extract.md#extract.ts.heritage). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [isNodeBuiltin](../../src/extract/ts.ts#L1567) (spec: string) → boolean
       <a id="extract.ts.isNodeBuiltin"></a><br>Is this specifier a Node built-in (`fs`, `node:fs`)?

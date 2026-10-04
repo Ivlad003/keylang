@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5968ec12b2d4c0f40d9ea39dc64d19ade8a77f8a520942b2981e241f7d2f5887 lang=en detail=brief -->
+Picks the effective timeout by returning the caller-specific value when it is set and smaller than the environment-derived one, otherwise the environment value, tagging which source won. Used by `features.llm.llmClient` to build the request deadline.

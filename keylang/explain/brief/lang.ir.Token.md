@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2780352cbc711d496fce47cc64341db91331d612a047cf77789ea381cc7bb8e0 lang=en detail=brief -->
+Describes a single lexical unit in the intermediate representation: a `TokenKind` category tag, the raw source text it covers, and the `Span` locating it in the file. It is a pure data shape used by the lang layer to pass tokens between stages.

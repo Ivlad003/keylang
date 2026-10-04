@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=77e48496fcbdb37a21a0918447179d1a4d355b816c0434bef16090b39adce518 lang=en detail=brief -->
+Folds the marks of all evidence entries whose line falls within the inclusive range into a single worst-case mark via `tui.evidence.worse`, returning null when no entry is in range. Used by `tui.nav.treeOf` to label tree nodes spanning a line range.

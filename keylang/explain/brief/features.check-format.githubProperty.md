@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1563c4d8b10d79d3bdfcc02042d77f119a1245ec37ba0eaefc60e5aaf3a0736f lang=en detail=brief -->
+Escapes a string for use as a property value in a GitHub Actions workflow command: runs it through `features.check-format.githubData`, then percent-encodes colons and commas. Used by `features.check-format.githubText` when emitting annotations.

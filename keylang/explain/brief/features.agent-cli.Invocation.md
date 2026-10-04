@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a6feda9b014d8e94daba33b989d6d3091749d360ba167a73defd0f809e49636e lang=en detail=brief -->
+Describes a fully prepared external agent CLI run: the binary and arguments, optional stdin text, environment, how the answer is retrieved (`AnswerKind`), and any files to write (mode 0600) beforehand, including an answer file path when the answer is read from disk.

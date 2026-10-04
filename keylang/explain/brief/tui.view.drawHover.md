@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=10a7813cea15ba8ce40bd68796077a9872460a0dd6056ec5893d10dd9cbfc9ee lang=en detail=brief -->
+Sizes and positions a hover popup inside the editor rectangle (preferring below the anchor, clamped to fit), draws its frame via `tui.view.drawBox`, then writes each line with `tui.screen.Grid.write` using per-kind colors, rendering "rule" lines as a horizontal separator.

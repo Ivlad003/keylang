@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7c53b5494a50065b87795dd4c54428a5effba24cc914603c0a8dba9847b6ed7a lang=en detail=brief -->
+Describes one allow/deny edge from a source `Ref` to one or more target refs in the architecture spec's intermediate form. The `generated` flag marks baseline rules from a generated file, which manual rules over the same areas override.

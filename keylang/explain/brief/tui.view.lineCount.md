@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=843724bd7b159c8208036f21cd15d53d9129542d93c74e453f811e194a97c6c0 lang=en detail=brief -->
+Returns how many lines a buffer contains by taking the length of the array produced by `tui.buffer.bufferLines`. It feeds `tui.view.editorRows` and `tui.view.gutterWidth`, which size the editor's visible rows and line-number column.

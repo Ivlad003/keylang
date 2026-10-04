@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e8ed7b09b4b4f08439a4a0e86606303ec5d06dba940bdb1d892e1908cc39c9e9 lang=en detail=brief -->
+Collects the `refs` from all children of a parsed `entry` line into a single list and returns `null` when there are none. Otherwise it builds an `entry` record holding those refs plus source location from `lang.spec-ir.at`, for use by `lang.spec-ir.compileRules`.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e3bb613f42bc69bd4f0d340afec0a488d05b104d59043f1b877cedbe3fbb5004 lang=en detail=brief -->
+Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by `map.declared-packages.table` and the package/crate readers to check parsed manifest shapes before indexing fields.

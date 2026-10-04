@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=25c20241829561b9da3063b09b9eaf12418a0ffe29cb1c4d26e6c839570d44bb lang=en detail=brief -->
+Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by `features.harness.planAgents` and `features.harness.agentsPlanProblems` to inspect existing harness files.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=18e44dcacc909c0764731372c7996f27cb40f10775d5ae576a9daec9951eb122 lang=en detail=brief -->
+Returns the substring after the final dot in the input, or the whole string when no dot is present; used by `check.flows.callName`, `check.flows.describeHole`, `check.flows.directCall` and `check.flows.possibleRoute` to strip dotted prefixes from node identifiers.

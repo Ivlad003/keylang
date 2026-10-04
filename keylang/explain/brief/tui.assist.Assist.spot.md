@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=99fbde70c70a16f67029dc4d513b40a0b8c3be9e546d5575dcbf2af9ae868f8a lang=en detail=brief -->
+Builds a lightweight snapshot pairing the buffer's path and version with the current editing mode, so `tui.assist.Assist.ghostSoon` and `tui.assist.Assist.voice` can later check whether a request still matches the state it was issued for.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c797e867661c1c54dc40a6c7f050838a6952bab2dca7fc131905372e8826b1ae lang=en detail=brief -->
+Contract a per-language analyzer fulfils: extracting facts from one file, building a per-graph resolver over the set of analyzed sources, and declaring which edge kinds it reports plus which global names count as external rather than unresolved.

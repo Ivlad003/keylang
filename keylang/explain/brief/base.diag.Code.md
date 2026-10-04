@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=ede368213f6e408dc875cccae23cc7a5fa06d053b779a6fd0cf10ee6628c81e4 lang=en detail=brief -->
-A string-literal union enumerating every diagnostic code the tool can emit, grouped by range: K001–K008 for parsing and ID-resolution problems, K101–K107 for layer/dependency rule violations, K201–K202 for `planned` declarations versus implemented symbols, and K301–K302 for…
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=be9b3149a87d58d7bce0a92202fc1753db04d3c375428fbcda29d2a29196babb lang=en detail=brief -->
+A string union of every diagnostic code keylang can emit, grouped by stage: parsing/resolution (K001–K008), rules (K101–K107), flows (K201–K203), and wiring (K301–K302). Each member carries a doc comment stating what it signals and whether it is a warning.

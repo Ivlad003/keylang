@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=dc805f2fecc750be4376f07fc9fbab2ee0df8976f9e7ffd41ee4daddca5595f1 lang=en detail=brief -->
+Tears down the assistant's live state by discarding any pending ghost suggestion via `tui.assist.Assist.cancelGhost` and stopping the active recording's microphone if one exists. Invoked from `tui.app.App.close` during application shutdown.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f271a339741b8c81bc03dd6ace8046c0fe1fadd5f749a4f1a9696d17a1fc6cd8 lang=en detail=brief -->
+Contract for mapping an import specifier, seen from a given file, to a resolution result, backed by a record of every config file consulted (path to text or null if missing). That record feeds the snapshot id, so cache validity tracks the configs that shaped the resolution.

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2488bb95fdc67fbeb778ad4153b6fea0ee01f3941c8502757fe8c41d3b71025e lang=en detail=brief -->
+Returns the literal text of a tree-sitter `string` node by reading its `string_fragment` child, yielding an empty string for an empty literal and `null` for any other node type. Used by import, member-name, and string-collection helpers in `extract.ts` to read literal values.

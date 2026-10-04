@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=326aa715e1553d29e623ba937ab9643e92a7b4033e96d1bd53cdee74632d2d23 lang=en detail=brief -->
+Removes a finished operation from the pending map, releases its slot, unrefs the worker once nothing is in flight, and terminates it if `tui.background.OperationWorker.close` already ran. Finally resolves the caller's promise with the result.

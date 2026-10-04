@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=524a535fbe4e2b8140eaa0680f08c329676089d2c3ef48e4b31c2db1aae05e19 lang=en detail=brief -->
+Scans every line of captured stdout through `features.agent-cli.parseResultLine` and keeps the last one that parses, returning null if none did. Used by `features.agent-cli.readAnswer` to pick the final result record from an agent's streamed output.

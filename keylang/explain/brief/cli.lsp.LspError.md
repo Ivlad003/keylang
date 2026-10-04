@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4a1b95eb743680e104dc792fbe01624a84188e2fb547002382a60540001cf20f lang=en detail=brief -->
+Error subclass carrying a numeric JSON-RPC-style code alongside the message, so callers catching failures from the language server can branch on the code rather than parsing text. Construction via `cli.lsp.LspError.constructor` just forwards the message and stores the code.

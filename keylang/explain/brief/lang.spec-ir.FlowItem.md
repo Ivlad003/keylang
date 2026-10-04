@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c081918c731cfa650bce7c621eec7fd9fb76e4423ff7251e42e6dcb59e5a1b5c lang=en detail=brief -->
+A union type covering every entry that can appear in a spec's flow block: a plain step, a `when`/`then` pair, a claim, a call reference, or a test item. It lets the flow be stored as one ordered list while each entry keeps its own distinct shape.

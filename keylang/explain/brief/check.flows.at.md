@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0b09c880b25896300a58c9dc8ce8e68eabab49f093264f71cacca61f7ca5305f lang=en detail=brief -->
+Formats a snapshot edge's file, line and column into a single `file:line:col` location string. Used by `check.flows.directCall`, `check.flows.escapeOf` and `check.flows.reachability` to cite where a flow was observed in their verdict messages.

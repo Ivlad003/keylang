@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a5ad3fcc70a0bea4a433ea555d5b52bb82bad858fac9adf9f4c2643eb60d15b2 lang=en detail=brief -->
+Shape of one entry the completion provider returns: a label with an LSP kind code, optional detail, description, sort key, and a `filterText`/`textEdit` pair that lets the dotted label replace the whole typed path rather than just the last segment after a dot.

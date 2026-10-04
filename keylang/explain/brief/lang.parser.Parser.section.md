@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=959d23bb6e80f48379d8a202473d211a3e902e826192f8a6ac6bea374a948849 lang=en detail=brief -->
+Returns the last section in `this.doc.sections`, first appending a default heading-less "map" section with no items when the document has none yet, so callers like `lang.parser.Parser.item` and `lang.parser.Parser.closeList` always have a section to write into.

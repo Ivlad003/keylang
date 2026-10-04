@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c6892b5ceec8ffee6bd98f9e52fb4d8ca6779c4fb789a342f2a73e4924529630 lang=en detail=brief -->
+Splits a comma-separated argument string into pieces, ignoring commas nested inside parentheses or inside double-quoted strings (with backslash escapes), and drops empty pieces. Used by `extract.rust.requiresTest` to break apart cfg predicate arguments.

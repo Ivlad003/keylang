@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=49f810a0da4d653cfd4e1a12621bb4bf4679e3aa1c811fd8e66903844ca9355a lang=en detail=brief -->
+Builds the path to the per-user agent settings file by joining the given home directory with `.config/keylang/agents.json`. Used by `features.agent-cli.readAgentSettings`, `features.agent-cli.cliClient`, and `features.agent-cli.presetBinary` to locate that file.

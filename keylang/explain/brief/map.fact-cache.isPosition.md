@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=694134d262a69e30e64c570b3b9a19b57f24ecf2176824176174a950ffabee01 lang=en detail=brief -->
+Returns true only when the input passes `map.fact-cache.isInteger` and is at least 1, i.e. a positive whole number usable as a line or column. Used by `map.fact-cache.isRange` and `map.fact-cache.isStoredFacts` to validate cached location fields.

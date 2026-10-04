@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9b301c1458d13a2b3982fed5024b7bb3683f7f659597526702d79894062ae286 lang=en detail=brief -->
+Looks up the buffer for the currently active file key in the app state's buffer map, returning null when no file is current or the key has no entry. Nearly every editing and cursor method in `tui.app.App` goes through it to reach the open document.

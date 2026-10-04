@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=504fe10ba19671770569ae68ce4dbb4ab43b7cde7a3936436e3e60b28360fc63 lang=en detail=brief -->
+Type guard that returns true only for non-null, non-array object values, narrowing them to a string-keyed record. Used by `map.rust-imports.RustResolver.crateAt` and `map.rust-imports.RustResolver.workspaceMembers` to validate parsed Cargo.toml tables before reading fields.

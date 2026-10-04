@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9ec3c58e6ca2d1ab0dc644f31dc7eef01cb166dc578f3144019948867732bd00 lang=en detail=brief -->
+Renders the current state into a character grid via `tui.view.render`, then writes only the changes from the last frame to the terminal surface using `tui.screen.renderDiff`, caching the grid for the next diff. Does nothing when no surface is attached.
