@@ -33,8 +33,11 @@ interface Reading {
   owner: Map<number, number | null>;
 }
 
+// The corpus holds this repository's own generated map, whose IR grows with the code (67 MB on 2026-10-05).
+const MAX_OUTPUT = 256 * 1024 * 1024;
+
 function keylang(cwd: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(process.execPath, [bin, ...args], { cwd, encoding: "utf8", maxBuffer: MAX_OUTPUT });
   if (r.error) throw r.error;
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
