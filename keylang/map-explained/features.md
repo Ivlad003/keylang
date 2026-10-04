@@ -473,28 +473,30 @@
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
     - fn [explanationRequest](../../src/explain-llm.ts#L82) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.explanationRequest"></a><br>The request: the node's summary, its code, the signatures around it, and the words of the specs that mention it (layer, flows, rules). Not the repository.
-      - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members)
-    - fn [members](../../src/explain-llm.ts#L126) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+      - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members), [features.explain-llm.unresolved](features.md#features.explain-llm.unresolved)
+    - fn [unresolved](../../src/explain-llm.ts#L132) (analysis: Analysis, id: string) → string[] <!-- internal -->
+      <a id="features.explain-llm.unresolved"></a><br>The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`.
+    - fn [members](../../src/explain-llm.ts#L151) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       <a id="features.explain-llm.members"></a><br>The members right under a module, class or layer with their explanations (doc comments, briefs): a layer is explained through its modules, a module through its functions and types.
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [sourceLines](../../src/explain-llm.ts#L142) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [sourceLines](../../src/explain-llm.ts#L167) (text: string, from: number, to: number) → string <!-- internal -->
       <a id="features.explain-llm.sourceLines"></a><br>Extracts the 1-based inclusive line range `from`–`to` from `text` and returns it joined with newlines. If the slice exceeds 200 lines, only the first 200 are kept, followed by a note stating how many lines were omitted; used by [`features.explain-llm.explanationRequest`](features.md#features.explain-llm.explanationRequest) to embed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BriefBatch](../../src/explain-llm.ts#L149) = "missing" | "stale"
+    - type [BriefBatch](../../src/explain-llm.ts#L174) = "missing" | "stale"
       <a id="features.explain-llm.BriefBatch"></a><br>Which briefs a batch writes: nodes with no explanation or a stale brief (`missing`), or only stale briefs (`stale`).
-    - type [BriefLevel](../../src/explain-llm.ts#L152) = "fn/type" | "class/module" | "layer" | "system"
+    - type [BriefLevel](../../src/explain-llm.ts#L177) = "fn/type" | "class/module" | "layer" | "system"
       <a id="features.explain-llm.BriefLevel"></a><br>Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs.
-    - type [PlannedBrief](../../src/explain-llm.ts#L154)
+    - type [PlannedBrief](../../src/explain-llm.ts#L179)
       <a id="features.explain-llm.PlannedBrief"></a><br>Records a single brief-generation task: a node id, its `BriefLevel`, and a wave index that orders generation so each node only depends on briefs produced in earlier waves (functions and types first, then modules deepest-first, then layers). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planBriefs](../../src/explain-llm.ts#L168) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [planBriefs](../../src/explain-llm.ts#L193) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers, then the repository itself (`SYSTEM_ID`). A node with a doc comment is never asked about: the code already says what it does; nor is the repository when…
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [base.span.compareText](base.md#base.span.compareText)
-    - fn [systemRequest](../../src/explain-llm.ts#L198) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [systemRequest](../../src/explain-llm.ts#L223) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.systemRequest"></a><br>The request for the repository's brief: its name, its layers with what the explained map says about them, its flows and the packages it uses. The README and manifests had nothing to say, or no model is asked at all.
       - calls [map.explanations.ownLayers](map.md#map.explanations.ownLayers), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [estimateTokens](../../src/explain-llm.ts#L223) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [estimateTokens](../../src/explain-llm.ts#L248) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       <a id="features.explain-llm.estimateTokens"></a><br>A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out.
       - calls [features.explain-llm.briefRequest](features.md#features.explain-llm.briefRequest)
-    - fn [briefRequest](../../src/explain-llm.ts#L233) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+    - fn [briefRequest](../../src/explain-llm.ts#L258) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
       <a id="features.explain-llm.briefRequest"></a><br>The request for the brief of `id`: the repository's or a node's; null when the id is gone from the snapshot.
       - calls [features.explain-llm.systemRequest](features.md#features.explain-llm.systemRequest), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
   - module [explain-node](../../src/explain-node.ts#L1)

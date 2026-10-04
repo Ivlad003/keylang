@@ -93,6 +93,7 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     ...(summary.calls.length > 0 ? [`It calls:\n${summary.calls.map(signature).join("\n")}`] : []),
     ...(summary.callers.length > 0 ? [`Called by:\n${summary.callers.map(signature).join("\n")}`] : []),
     ...members(analysis, summary.id, options.briefs),
+    ...(options.detail === "full" ? unresolved(analysis, summary.id) : []),
     `Layer: ${summary.id.split(".")[0]}`,
   ];
   const brief = options.detail === "brief";
@@ -100,7 +101,7 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     ? `Write at most two short sentences in one paragraph, no line breaks, about ${BRIEF_TARGET} characters in all: what the node does, for a reader scanning a map of the codebase. Do not repeat its name or signature.`
     : options.detail === "short"
       ? "Write 2-3 sentences: what the node is for and why it exists."
-      : "Explain its purpose, then its steps and branches, then edge cases. No line-by-line narration.";
+      : `Answer in five sections, each under a \`## \` heading written in that language: ${FULL_SECTIONS.join("; ")}. No line-by-line narration.`;
   const system = [
     "You explain one node of a codebase to a developer, using the architecture description keylang keeps for the repository.",
     `Answer in the language with code \`${options.lang}\`. ${detail}`,
@@ -110,6 +111,30 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     brief ? "Say only what the code does; no remarks about the input or what it leaves out." : "Say plainly when the input does not show something (for example calls keylang could not resolve).",
   ].join("\n");
   return { system, prompt: parts.join("\n\n"), maxTokens: options.detail === "full" ? 4096 : 1024 };
+}
+
+/**
+ * The sections of a `full` explanation, in order (c4-zoom/06): a reader zooms
+ * from what the node is for down to what it calls and where it takes part.
+ */
+const FULL_SECTIONS = [
+  "what it is for",
+  "its steps",
+  "its branches and edge cases",
+  "what it calls: name the IDs given; for a construct keylang did not resolve, say so and do not guess its target",
+  "the flows and rules it takes part in",
+];
+
+/** Most unresolved constructs a `full` prompt lists; the summary already counts them all. */
+const MAX_UNRESOLVED = 20;
+
+/** The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`. */
+function unresolved(analysis: Analysis, id: string): string[] {
+  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id);
+  if (items.length === 0) return [];
+  const lines = items.slice(0, MAX_UNRESOLVED).map((c) => `- ${c.file}:${c.line}: \`${c.text.replace(/\s+/g, " ").trim()}\` — ${c.reason}`);
+  if (items.length > MAX_UNRESOLVED) lines.push(`… (${items.length - MAX_UNRESOLVED} more not shown)`);
+  return [`Constructs inside it keylang did not resolve to an edge:\n${lines.join("\n")}`];
 }
 
 /** The length a brief is asked for: under the 280 characters `briefOf` cuts at, so a brief ends on its own sentence. */

@@ -1701,7 +1701,11 @@ export class App {
     lines.push({ text: `the session's analysis${overlay ? " · with unsaved buffers (overlay)" : ""}${outdated ? " · outdated" : ""} · Ctrl+P Explain reads the saved files`, kind: "evidence" });
     const answer = (label: string, saved: SavedAnswer): void => {
       lines.push({ text: "", kind: "rule" });
-      for (const text of saved.text.split("\n")) lines.push({ text, kind: "text" });
+      // A `full` answer is in sections: its `##` headings read as titles.
+      for (const text of saved.text.split("\n")) {
+        const heading = /^#{1,6}\s+(.*)$/.exec(text);
+        lines.push(heading ? { text: heading[1]!, kind: "title" } : { text, kind: "text" });
+      }
       lines.push({ text: `${label} · ${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale"}`, kind: "evidence" });
       if (saved.unknownIds.length > 0) lines.push({ text: `unknown ids: ${saved.unknownIds.join(", ")}`, kind: "evidence" });
     };

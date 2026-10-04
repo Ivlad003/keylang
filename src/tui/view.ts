@@ -629,7 +629,11 @@ export function batchState(payload: ExplainBatchPayload, id: string): string {
 /** A saved answer or brief: its provenance on one row, then its text and the IDs it made up. */
 function savedRows(rows: { text: string; style: Style }[], label: string, saved: SavedAnswer): void {
   rows.push({ text: `── ${label} · ${saved.detail} · ${saved.agent} · ${saved.date} · ${saved.fresh ? "fresh" : "stale: the code changed since"} · ${saved.file} ──`, style: { ...THEME.panel, fg: saved.fresh ? 243 : 179 } });
-  for (const line of saved.text.split("\n")) rows.push({ text: `  ${line}`, style: THEME.panel });
+  for (const line of saved.text.split("\n")) {
+    // A `full` answer is in sections: a `##` heading is a bold title row.
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    rows.push(heading ? { text: `  ${heading[1]!}`, style: { ...THEME.panel, bold: true } } : { text: `  ${line}`, style: THEME.panel });
+  }
   if (saved.unknownIds.length > 0) rows.push({ text: `  unknown ids (in no snapshot, no planned; not followed): ${saved.unknownIds.join(", ")}`, style: { ...THEME.panel, fg: 179 } });
 }
 

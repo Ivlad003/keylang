@@ -8827,8 +8827,28 @@ async function explainRepo(t: { after: (f: () => void) => void }, specs: Record<
   return { root, prompts };
 }
 
-const storedExplanation = (closure: string, detail: "short" | "brief", text: string): string =>
+const storedExplanation = (closure: string, detail: "short" | "full" | "brief", text: string): string =>
   `<!-- keylang:explain agent=anthropic:claude-opus-5 date=2026-09-30 closure=${closure} lang=en detail=${detail} -->\n${text}\n`;
+
+test("tui: a saved full answer reads in sections: its `##` headings are titles of the explain hover (c4-zoom/06)", async (t) => {
+  const order = "/** Creates an order. */\nexport function create(): void {}\n";
+  const { root, prompts } = await explainRepo(t, { "src/domain/order.ts": order });
+  const s = session(root, { cols: 200, rows: 50 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const id = "domain.order.create";
+  mkdirSync(join(root, "keylang/explain"), { recursive: true });
+  const full = "## What it is for\nCreates an order.\n\n## Calls\nNothing it calls is unresolved.";
+  writeFileSync(join(root, `keylang/explain/${id}.md`), storedExplanation(currentBaseline(s.app.state.analysis!, id)!, "full", full));
+  s.app.state.cursor = { line: 6, col: 0 };
+  s.send("e");
+  const lines = s.app.state.hover!.lines;
+  const at = (text: string): string | undefined => lines.find((line) => line.text === text)?.kind;
+  assert.deepEqual([at("What it is for"), at("Calls"), at("Creates an order.")], ["title", "title", "text"], lines.map((line) => `${line.kind}: ${line.text}`).join("\n"));
+  assert.ok(!lines.some((line) => line.text.startsWith("## ")), "no heading mark is left");
+  assert.ok(lines.some((line) => line.text === "saved full answer · anthropic:claude-opus-5 · 2026-09-30 · fresh"));
+  assert.equal(prompts.length, 0, "no model is asked");
+});
 
 test("tui: explain of a diagnostic code in any case and of an unknown code is the CLI's text and code with no save step; e on a line with K001 shows its help; no model is asked, nothing written", async (t) => {
   const { root, prompts } = await explainRepo(t, { "keylang/flows/checkout.md": `${CHECKOUT_FLOW}  - step domain.order.nope\n` });
