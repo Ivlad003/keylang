@@ -139,7 +139,7 @@ test("python: init detects the language; map follows relative and absolute impor
   const edge = (kind: string, source: string, target: string): boolean => index.edges.some((e) => e.kind === kind && e.source === source && e.target === target);
   assert.ok(edge("import", "domain.order", "infra.db"), "`from ..infra.db import Db`");
   assert.ok(edge("import", "app.main", "infra.store"), "`from .infra.store import save`");
-  assert.ok(edge("import", "infra.store", "external.json"), "a name outside the repository is a package");
+  assert.ok(!index.edges.some((e) => e.target === "external.json") && !("external.json" in index.nodes), "`import json` is the standard library: no node, no edge");
   assert.ok(!index.edges.some((e) => e.target === "domain.__init__"), "`from shop.domain import order` binds the module `order`, not the package");
   assert.ok(edge("call", "infra.store.save", "domain.order.place"), "`order.place()` through the module binding");
   assert.ok(edge("call", "domain.order.Order.paid", "domain.order.Order.total"), "`self.total()`");
@@ -642,4 +642,29 @@ test("init: two directories in the repository root, a package without subpackage
   const ts = repo(t, { "src/app/main.ts": "export const x = 1;\n", "src/domain/order.ts": "export const y = 2;\n", "src/index.ts": "export {};\n" });
   assert.equal(keylang(ts, ["init", "--agents=none"]).status, 0);
   assert.deepEqual(JSON.parse(readFileSync(join(ts, "keylang.json"), "utf8")).layers, { app: ["src/app/**"], domain: ["src/domain/**"], main: ["src/*"] });
+});
+
+test("python: the standard library is no `external.*` node, edge or K102; another package is, and a repository module of a stdlib name resolves to the repository", (t) => {
+  const mail = "import asyncio\nimport typing\nfrom email.message import EmailMessage\nimport aiosmtplib\nfrom .logging import setup\n\n\ndef send():\n    asyncio.run(None)\n    aiosmtplib.send(EmailMessage())\n    setup()\n";
+  const dir = repo(t, { "app/__init__.py": "", "app/mail.py": mail, "app/logging.py": "def setup():\n    pass\n" });
+  assert.equal(keylang(dir, ["init", "--agents=none"]).status, 0);
+  const index = snapshot(dir);
+  const externals = Object.keys(index.nodes).filter((id) => id.startsWith("external."));
+  assert.deepEqual(externals, ["external.aiosmtplib"]);
+  assert.ok(index.edges.some((e) => e.kind === "import" && e.source === "app.mail" && e.target === "app.logging"), "`from .logging import setup` is the repository's `app/logging.py`");
+  assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.mail.send" && e.target === "app.logging.setup"));
+  assert.deepEqual(index.coverage.filter((c) => c.file === "app/mail.py"), [], "a call into the standard library is external, not a hole");
+  assert.doesNotMatch(readFileSync(join(dir, "keylang/map/external.md"), "utf8"), /asyncio|email|typing/);
+  const baseline = readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8");
+  assert.match(baseline, /^- allow app external\.aiosmtplib$/m);
+  assert.doesNotMatch(baseline, /asyncio|email|typing/);
+  // A new standard-library import under `deny app external` is no divergence; a new package is.
+  writeFileSync(join(dir, "app/mail.py"), `import json\nimport smtplib\n${mail}`);
+  const clean = keylang(dir, ["check"]);
+  assert.equal(clean.status, 0, clean.stdout);
+  writeFileSync(join(dir, "app/mail.py"), `import httpx\n${mail}`);
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(o.stdout, /K102 divergence: `app\.mail` depends on `external\.httpx`/);
+  assert.doesNotMatch(o.stdout, /external\.(asyncio|email|typing|json|smtplib)/);
 });

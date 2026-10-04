@@ -99,7 +99,7 @@
 | 10 | [Інтеграція через `planned module external.<pkg>`](issues/10-planned-external.md) | ready-for-agent |
 | 11 | [Перевірка на чужих репо через Claude Code і Codex](issues/11-dogfood-harnesses.md) | resolved |
 | 12 | [`scaffold` для методів класу й файлів з крапкою](issues/12-scaffold-class-methods.md) | ready-for-agent |
-| 13 | [Stdlib Python — не `external`](issues/13-python-stdlib-not-external.md) | ready-for-agent |
+| 13 | [Stdlib Python — не `external`](issues/13-python-stdlib-not-external.md) | resolved |
 | 14 | [Python static через анотовані параметри й локальні змінні](issues/14-python-static-method-calls.md) | needs-triage |
 | 15 | [Заздалегідь дозволити нове ребро між шарами](issues/15-preauthorize-planned-dependency.md) | needs-triage |
 | 16 | [Codex: апрув MCP і `check --changed` у пісочниці](issues/16-codex-mcp-approval-and-sandbox.md) | ready-for-agent |

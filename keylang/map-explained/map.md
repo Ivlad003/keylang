@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -359,42 +359,42 @@
     - fn [buildGraph](../../src/graph.ts#L210) (config: Config, files: FileFacts[]) → Graph
       <a id="map.graph.buildGraph"></a><br>Turns per-file facts into the whole map graph: places files into layer modules via [`map.graph.placeFile`](map.md#map.graph.placeFile), records declarations with [`map.graph.addDecl`](map.md#map.graph.addDecl), resolves imports into dependencies and external packages, then links calls and exports. Collisions, unresolved imports and… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.graph.notIndexed](map.md#map.graph.notIndexed), [map.graph.importTarget](map.md#map.graph.importTarget), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.config.layerName](base.md#base.config.layerName), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.addCall](map.md#map.graph.addCall), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
-    - type [ImportTarget](../../src/graph.ts#L855) <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L860) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
-    - fn [importTarget](../../src/graph.ts#L863) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L893) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
       <a id="map.graph.importTarget"></a><br>A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module.
-    - fn [exportInput](../../src/graph.ts#L875) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L905) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
       <a id="map.graph.exportInput"></a><br>One export row of a file, with what it stands for: a declaration of the module, a name or the namespace of the module an import binds, or nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes through its own import; any other name through a declaration…
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [importedPackages](../../src/graph.ts#L894) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L924) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
       <a id="map.graph.importedPackages"></a><br>Names of the external packages (and `node` for built-ins) the files import.
-    - fn [notIndexed](../../src/graph.ts#L911) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L941) (config: Config, file: string) → string | null <!-- internal -->
       <a id="map.graph.notIndexed"></a><br>Why a resolved source file has no module; null when it is left out on purpose: not source code (JSON, CSS), a test or declaration file, `exclude`, outside guessed layers.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside), [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [isIndexFile](../../src/graph.ts#L918) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L948) (file: string) → boolean <!-- internal -->
       <a id="map.graph.isIndexFile"></a><br>Reports whether a path's extension-stripped basename appears in the per-language index list, resolving the language via [`base.languages.languageOf`](base.md#base.languages.languageOf) and returning false when no language matches. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [addCall](../../src/graph.ts#L929) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L959) (fn: Fn, call: Call) → boolean <!-- internal -->
       <a id="map.graph.addCall"></a><br>Add a call unless an edge to the same target already says as much: a direct call proves what a hook edge does, a call outside a closure what one inside does. A stronger edge replaces the weaker ones.
-    - fn [holeReason](../../src/graph.ts#L937) (c: CallFact) → string <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L967) (c: CallFact) → string <!-- internal -->
       <a id="map.graph.holeReason"></a><br>Builds a human-readable explanation for why a call site could not be resolved to a concrete target, distinguishing hook-based calls, calls through `this`, and calls through local values. [`map.graph.buildGraph`](map.md#map.graph.buildGraph) uses the string to annotate unresolved edges. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [markEscapes](../../src/graph.ts#L949) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L979) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       <a id="map.graph.markEscapes"></a><br>Functions that code may reach without naming them in a call: read as a value (`later(save)` names the declaration `save` resolves to; `obj.save` any method `save`), called implicitly, or the constructor of a class read as a value (`extends A` runs `A`'s constructor).
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [base.languages.implicitMember](base.md#base.languages.implicitMember)
-    - fn [markOpaque](../../src/graph.ts#L964) (m: Module) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L994) (m: Module) → void <!-- internal -->
       <a id="map.graph.markOpaque"></a><br>Sets a module's `members` field to the string `"opaque"`, then recurses into each entry of `m.children` so the whole subtree is marked the same way; used by [`map.graph.buildGraph`](map.md#map.graph.buildGraph). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Decls](../../src/graph.ts#L970) <!-- internal -->
+    - type [Decls](../../src/graph.ts#L1000) <!-- internal -->
       <a id="map.graph.Decls"></a><br>Where each declaration went: several facts (overloads) may share one node.
-    - fn [memberKey](../../src/graph.ts#L981) (member: string, isStatic: boolean) → string
+    - fn [memberKey](../../src/graph.ts#L1011) (member: string, isStatic: boolean) → string
       <a id="map.graph.memberKey"></a><br>Lookup key of a class member: `this.#m` in a static method is `static #m`.
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [memberSegments](../../src/graph.ts#L995) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L1025) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1017) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1047) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a><br>Registers one declaration fact as a graph node under `module`: merging duplicate or overloaded fns into the first node (extending its range, joining fingerprints), resolving interface/class name clashes, and creating class child modules whose members it recurses into via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments)
-    - fn [placeFile](../../src/graph.ts#L1103) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
+    - fn [placeFile](../../src/graph.ts#L1133) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
       <a id="map.graph.placeFile"></a><br>Where `file` lands: its layer, module ID segments and path stem, and the layer glob that placed it (none for `outside`).
       - calls [base.config.isOutside](base.md#base.config.isOutside), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)
@@ -403,88 +403,88 @@
     - config [base.config](base.md#base.config)
     - ts [extract.ts](extract.md#extract.ts)
     - type [Resolution](../../src/imports.ts#L23)
-      <a id="map.imports.Resolution"></a><br>Classifies where an import specifier resolved: a file inside the repo (optionally tagged with its workspace package, whole-module, or nested-module flags), the importing file itself, an external package, a runtime builtin, generated code, or nothing. Internal results carry the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [SourceResolver](../../src/imports.ts#L35)
+      <a id="map.imports.Resolution"></a><br>Classifies where an import specifier resolved: a file inside the repo (optionally tagged with its workspace package, whole-module, or nested-module flags), the importing file itself, an external package, a runtime builtin, generated code, or nothing. Internal results carry the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [SourceResolver](../../src/imports.ts#L37)
       <a id="map.imports.SourceResolver"></a><br>Contract for mapping an import specifier, seen from a given file, to a resolution result, backed by a record of every config file consulted (path to text or null if missing). That record feeds the snapshot id, so cache validity tracks the configs that shaped the resolution. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [PathRule](../../src/imports.ts#L43) <!-- internal -->
+    - type [PathRule](../../src/imports.ts#L45) <!-- internal -->
       <a id="map.imports.PathRule"></a><br>Pairs a module-specifier pattern with the list of filesystem targets it maps to, each already resolved relative to the repository root. Used by the import resolver to turn aliased specifiers into candidate paths. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [ImportResolver](../../src/imports.ts#L49)
+    - module [ImportResolver](../../src/imports.ts#L51)
       <a id="map.imports.ImportResolver"></a><br>Maps an import specifier from a given file to a repository source file, a Node builtin, an external or generated module, or unresolved, honoring tsconfig `paths`/`baseUrl`, `#` subpath imports, and workspace packages. It records every config file and `node_modules` lookup it… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [constructor](../../src/imports.ts#L67) (root: string, sources: ReadonlySet<string> = new Set())
+      - fn [constructor](../../src/imports.ts#L69) (root: string, sources: ReadonlySet<string> = new Set())
         <a id="map.imports.ImportResolver.constructor"></a><br>Builds a cached file reader that records each read's text, then uses it via [`map.imports.loadTsconfig`](map.md#map.imports.loadTsconfig) to pick up baseUrl/paths from tsconfig or jsconfig. Also parses package.json to collect declared dependency names and workspace globs. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.imports.readText](map.md#map.imports.readText), [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.imports.loadTsconfig](map.md#map.imports.loadTsconfig), [map.imports.isObject](map.md#map.imports.isObject)
-      - fn [known](../../src/imports.ts#L89) (pkg: string) → boolean <!-- internal -->
+      - fn [known](../../src/imports.ts#L91) (pkg: string) → boolean <!-- internal -->
         <a id="map.imports.ImportResolver.known"></a><br>A package the project declares, or one installed in a `node_modules` at or above the root.
         - calls [map.imports.ImportResolver.locate](map.md#map.imports.ImportResolver.locate)
-      - fn [locate](../../src/imports.ts#L100) (pkg: string) → Located <!-- internal -->
+      - fn [locate](../../src/imports.ts#L102) (pkg: string) → Located <!-- internal -->
         <a id="map.imports.ImportResolver.locate"></a><br>Where `node_modules` at or above the root has the package: a link into the repository is a workspace package. Without an install, a `workspaces` entry of the root `package.json` with that `name` is one too.
         - calls [map.imports.inside](map.md#map.imports.inside), [map.imports.ImportResolver.workspaceDirs](map.md#map.imports.ImportResolver.workspaceDirs)
-      - fn [workspaceDirs](../../src/imports.ts#L129) () → string[] <!-- internal -->
+      - fn [workspaceDirs](../../src/imports.ts#L131) () → string[] <!-- internal -->
         <a id="map.imports.ImportResolver.workspaceDirs"></a><br>Directories the root `workspaces` globs name (`packages/*`, `apps/web`).
         - calls [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [packageEntry](../../src/imports.ts#L153) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [packageEntry](../../src/imports.ts#L155) (dir: string, subpath: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.packageEntry"></a><br>The source file a workspace package names for `subpath` (`""`, `/util`): `exports` (a string, subpaths, `*` patterns, conditions), else `module`, `main`, `index`. A declaration file is not source.
         - calls [map.imports.flattenTarget](map.md#map.imports.flattenTarget), [map.imports.isObject](map.md#map.imports.isObject), [map.imports.matchPattern](map.md#map.imports.matchPattern), [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe), [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [resolve](../../src/imports.ts#L183) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L185) (fromFile: string, spec: string) → Resolution
         <a id="map.imports.ImportResolver.resolve"></a><br>Memoizes import resolution per `(fromFile, spec)` pair in an instance cache keyed by a NUL-joined string, delegating to [`map.imports.ImportResolver.resolveUncached`](map.md#map.imports.ImportResolver.resolveUncached) only on a miss and storing its result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.imports.ImportResolver.resolveUncached](map.md#map.imports.ImportResolver.resolveUncached)
-      - fn [resolveUncached](../../src/imports.ts#L193) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L195) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolveUncached"></a><br>Classifies an import specifier as generated, internal, builtin, package, or unresolved, trying relative paths via [`map.imports.ImportResolver.probe`](map.md#map.imports.ImportResolver.probe), `#` subpaths, tsconfig `paths` through [`map.imports.bestMatch`](map.md#map.imports.bestMatch), then `baseUrl`. Falls back to [`extract.ts.isNodeBuiltin`](extract.md#extract.ts.isNodeBuiltin) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe), [map.imports.ImportResolver.resolveSubpathImport](map.md#map.imports.ImportResolver.resolveSubpathImport), [map.imports.bestMatch](map.md#map.imports.bestMatch), [extract.ts.isNodeBuiltin](extract.md#extract.ts.isNodeBuiltin), [map.imports.ImportResolver.resolvePackage](map.md#map.imports.ImportResolver.resolvePackage)
-      - fn [resolveSubpathImport](../../src/imports.ts#L222) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveSubpathImport](../../src/imports.ts#L224) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolveSubpathImport"></a><br>`#alias`: the `imports` of the nearest `package.json` above the importing file, as Node scopes them (an exact key, else the longest pattern prefix). A target that is not a relative path names a package.
         - calls [map.imports.ImportResolver.scopeImports](map.md#map.imports.ImportResolver.scopeImports), [map.imports.bestMatch](map.md#map.imports.bestMatch), [base.config.toPosix](base.md#base.config.toPosix), [map.imports.ImportResolver.resolve](map.md#map.imports.ImportResolver.resolve), [map.imports.ImportResolver.probe](map.md#map.imports.ImportResolver.probe)
-      - fn [scopeImports](../../src/imports.ts#L245) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L247) (dir: string) → PathRule[] | null <!-- internal -->
         <a id="map.imports.ImportResolver.scopeImports"></a><br>`imports` of `<dir>/package.json`; an empty list when it has none, null without the file.
         - calls [map.imports.isObject](map.md#map.imports.isObject), [map.imports.flattenTarget](map.md#map.imports.flattenTarget)
-      - fn [resolvePackage](../../src/imports.ts#L255) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L257) (fromFile: string, spec: string) → Resolution <!-- internal -->
         <a id="map.imports.ImportResolver.resolvePackage"></a><br>Extracts the package name via [`map.imports.packageName`](map.md#map.imports.packageName) and, if [`map.imports.ImportResolver.locate`](map.md#map.imports.ImportResolver.locate) finds it in the workspace, maps the subpath to a file with [`map.imports.ImportResolver.packageEntry`](map.md#map.imports.ImportResolver.packageEntry) as an internal result. Otherwise marks it external when… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.imports.packageName](map.md#map.imports.packageName), [map.imports.ImportResolver.locate](map.md#map.imports.ImportResolver.locate), [map.imports.ImportResolver.packageEntry](map.md#map.imports.ImportResolver.packageEntry), [map.imports.ImportResolver.known](map.md#map.imports.ImportResolver.known), [map.imports.ImportResolver.knownNear](map.md#map.imports.ImportResolver.knownNear)
-      - fn [knownNear](../../src/imports.ts#L266) (fromFile: string, pkg: string) → boolean <!-- internal -->
+      - fn [knownNear](../../src/imports.ts#L268) (fromFile: string, pkg: string) → boolean <!-- internal -->
         <a id="map.imports.ImportResolver.knownNear"></a><br>Declared in, or installed next to, a `package.json` between `fromFile` and the root.
         - calls [map.imports.isObject](map.md#map.imports.isObject)
-      - fn [probe](../../src/imports.ts#L285) (candidate: string) → string | null <!-- internal -->
+      - fn [probe](../../src/imports.ts#L287) (candidate: string) → string | null <!-- internal -->
         <a id="map.imports.ImportResolver.probe"></a><br>Candidate file (POSIX, relative to root) → existing source file, or null.
-    - type [Located](../../src/imports.ts#L311) <!-- internal -->
+    - type [Located](../../src/imports.ts#L313) <!-- internal -->
       <a id="map.imports.Located"></a><br>Describes where an imported package was resolved: inside a workspace member at a given directory, in installed dependencies, or not found at all (`null`). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [inside](../../src/imports.ts#L314) (root: string, abs: string) → string | null <!-- internal -->
+    - fn [inside](../../src/imports.ts#L316) (root: string, abs: string) → string | null <!-- internal -->
       <a id="map.imports.inside"></a><br>`abs` (after links) as a POSIX path under `root`, outside any `node_modules`; null otherwise.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [isObject](../../src/imports.ts#L329) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L331) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.imports.isObject"></a><br>Type guard that returns true only for non-null, non-array object values, narrowing them to a string-keyed record. Used by the resolver and tsconfig loaders in [`map.imports`](map.md#map.imports) to validate parsed JSON before reading fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [bestMatch](../../src/imports.ts#L339) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [bestMatch](../../src/imports.ts#L341) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       <a id="map.imports.bestMatch"></a><br>The rule `tsc` (`matchPatternOrExact`) and Node (`PATTERN_KEY_COMPARE`) apply: an exact key, else the matching pattern with the longest prefix before `*` (then the longer key), else the first in the file. `star` is the text the `*` stands for.
       - calls [map.imports.matchPattern](map.md#map.imports.matchPattern)
-    - fn [matchPattern](../../src/imports.ts#L351) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [matchPattern](../../src/imports.ts#L353) (pattern: string, spec: string) → string | null <!-- internal -->
       <a id="map.imports.matchPattern"></a><br>Tests a module specifier against a single-wildcard glob (prefix`*`suffix), returning the text matched by the star, an empty string for an exact literal match, or null when it doesn't fit. Used by [`map.imports.ImportResolver.packageEntry`](map.md#map.imports.ImportResolver.packageEntry) and [`map.imports.bestMatch`](map.md#map.imports.bestMatch) to resolve… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [flattenTarget](../../src/imports.ts#L362) (t: unknown) → string[] <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L364) (t: unknown) → string[] <!-- internal -->
       <a id="map.imports.flattenTarget"></a><br>Recursively collapses a package.json `exports`/`imports` target—string, array, or conditional object—into a flat list of every string path it contains, dropping anything else. [`map.imports.ImportResolver.packageEntry`](map.md#map.imports.ImportResolver.packageEntry) and [`map.imports.ImportResolver.scopeImports`](map.md#map.imports.ImportResolver.scopeImports) use it to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [packageName](../../src/imports.ts#L369) (spec: string) → string
+    - fn [packageName](../../src/imports.ts#L371) (spec: string) → string
       <a id="map.imports.packageName"></a><br>Extracts the bare package name from an import specifier, keeping the first path segment, or the first two when the specifier starts with `@` (a scoped package). Used by [`map.imports.ImportResolver.resolvePackage`](map.md#map.imports.ImportResolver.resolvePackage) to locate the package being imported. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readJsonc](../../src/imports.ts#L375) (path: string) → unknown
+    - fn [readJsonc](../../src/imports.ts#L377) (path: string) → unknown
       <a id="map.imports.readJsonc"></a><br>JSON with comments and trailing commas (tsconfig style).
       - calls [map.imports.readText](map.md#map.imports.readText), [map.imports.parseJsonc](map.md#map.imports.parseJsonc)
-    - fn [parseJsonc](../../src/imports.ts#L381) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L383) (text: string) → unknown
       <a id="map.imports.parseJsonc"></a><br>The value of JSONC text; null when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [parseJsoncStrict](../../src/imports.ts#L390) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L392) (text: string) → unknown
       <a id="map.imports.parseJsoncStrict"></a><br>The value of JSONC text; throws the `JSON.parse` error when it does not parse.
       - calls [map.imports.stripJsonc](map.md#map.imports.stripJsonc)
-    - fn [readText](../../src/imports.ts#L395) (path: string) → string | null <!-- internal -->
+    - fn [readText](../../src/imports.ts#L397) (path: string) → string | null <!-- internal -->
       <a id="map.imports.readText"></a><br>A file's text, or null when it is missing.
-    - fn [stripJsonc](../../src/imports.ts#L400) (text: string) → string <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L402) (text: string) → string <!-- internal -->
       <a id="map.imports.stripJsonc"></a><br>Remove comments and trailing commas outside of strings.
-    - type [Tsconfig](../../src/imports.ts#L421) <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L423) <!-- internal -->
       <a id="map.imports.Tsconfig"></a><br>Holds the resolved compiler options from a tsconfig that matter for import resolution: an optional base directory and a list of `PathRule` alias patterns used to rewrite module specifiers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MergedOptions](../../src/imports.ts#L427) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L429) <!-- internal -->
       <a id="map.imports.MergedOptions"></a><br>Options of one config after its `extends` chain, before `paths` targets are placed.
-    - fn [loadTsconfig](../../src/imports.ts#L440) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L442) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
       <a id="map.imports.loadTsconfig"></a><br>`compilerOptions.baseUrl`/`paths` following relative `extends` chains. As in `tsc`, `paths` targets resolve against the `baseUrl` of the final options (a child config's `baseUrl` moves inherited `paths` too), or the directory of the config that declares them.
       - calls [map.imports.mergedOptions](map.md#map.imports.mergedOptions), [map.imports.placePaths](map.md#map.imports.placePaths), [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [mergedOptions](../../src/imports.ts#L459) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L461) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       <a id="map.imports.mergedOptions"></a><br>Resolves a tsconfig's effective `baseUrl` and `paths` by recursively following relative `extends` entries (up to depth 5, skipping package names and paths outside the tree), letting child settings override parents. Returned values are anchored to each config's directory, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.imports.isObject](map.md#map.imports.isObject), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [placePaths](../../src/imports.ts#L478) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L480) (options: MergedOptions) → PathRule[] <!-- internal -->
       <a id="map.imports.placePaths"></a><br>Turns the tsconfig `paths` block into rules whose target entries are resolved to normalized POSIX paths under `baseUrl` (or the paths file's directory), dropping non-string targets. Uses [`base.config.toPosix`](base.md#base.config.toPosix) and feeds [`map.imports.loadTsconfig`](map.md#map.imports.loadTsconfig). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.config.toPosix](base.md#base.config.toPosix)
   - module [map](../../src/map.ts#L1)
@@ -569,23 +569,28 @@
     <a id="map.python-imports"></a><br>Python dotted path → file. `.m.x` starts at the importing file's package (one dot per level), `a.b.x` at a source root (the repository root, then `src/`). A module is `p.py` or the package `p/__init__.py`; the longest prefix of the path that is a module names the file, and when…
     - node [external.node](external.md#external.node)
     - imports [map.imports](map.md#map.imports)
-    - module [PythonResolver](../../src/python-imports.ts#L15)
-      <a id="map.python-imports.PythonResolver"></a><br>Maps Python import specifiers to repository files: relative imports walk up from the importing file, absolute ones probe each existing root dir, matching `x.py` or `x/__init__.py` among indexed sources or on disk. Unmatched top-level names are reported as external packages. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [constructor](../../src/python-imports.ts#L24) (root: string, sources: ReadonlySet<string> = new Set())
+    - python-stdlib [map.python-stdlib](map.md#map.python-stdlib)
+    - module [PythonResolver](../../src/python-imports.ts#L17)
+      <a id="map.python-imports.PythonResolver"></a><br>Maps Python import specifiers to repository files: relative imports walk up from the importing file, absolute ones probe each existing root dir, matching `x.py` or `x/__init__.py` among indexed sources or on disk. Unmatched top-level names are reported as external packages. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - fn [constructor](../../src/python-imports.ts#L26) (root: string, sources: ReadonlySet<string> = new Set())
         <a id="map.python-imports.PythonResolver.constructor"></a><br>Stores the project root and known source files, derives their containing directories via [`map.python-imports.directoriesOf`](map.md#map.python-imports.directoriesOf), and keeps only the candidate root dirs that exist on disk per [`map.python-imports.PythonResolver.isDir`](map.md#map.python-imports.PythonResolver.isDir). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.python-imports.directoriesOf](map.md#map.python-imports.directoriesOf), [map.python-imports.PythonResolver.isDir](map.md#map.python-imports.PythonResolver.isDir)
-      - fn [resolve](../../src/python-imports.ts#L31) (fromFile: string, spec: string) → Resolution
-        <a id="map.python-imports.PythonResolver.resolve"></a><br>Resolves a Python import specifier to a file: leading dots walk up from the importing file's directory, otherwise each configured root is probed via [`map.python-imports.PythonResolver.moduleFile`](map.md#map.python-imports.PythonResolver.moduleFile) and [`map.python-imports.PythonResolver.isDir`](map.md#map.python-imports.PythonResolver.isDir). The first match is delegated to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-        - calls [map.python-imports.PythonResolver.longest](map.md#map.python-imports.PythonResolver.longest), [map.python-imports.PythonResolver.moduleFile](map.md#map.python-imports.PythonResolver.moduleFile), [map.python-imports.PythonResolver.isDir](map.md#map.python-imports.PythonResolver.isDir)
-      - fn [longest](../../src/python-imports.ts#L50) (base: string, segments: string[], fromFile: string) → Resolution | null <!-- internal -->
+      - fn [resolve](../../src/python-imports.ts#L33) (fromFile: string, spec: string) → Resolution
+        <a id="map.python-imports.PythonResolver.resolve"></a><br>Resolves a Python import specifier to a file: leading dots walk up from the importing file's directory, otherwise each configured root is probed via [`map.python-imports.PythonResolver.moduleFile`](map.md#map.python-imports.PythonResolver.moduleFile) and [`map.python-imports.PythonResolver.isDir`](map.md#map.python-imports.PythonResolver.isDir). The first match is delegated to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+        - calls [map.python-imports.PythonResolver.longest](map.md#map.python-imports.PythonResolver.longest), [map.python-imports.PythonResolver.moduleFile](map.md#map.python-imports.PythonResolver.moduleFile), [map.python-imports.PythonResolver.isDir](map.md#map.python-imports.PythonResolver.isDir), [map.python-stdlib.isPythonStdlib](map.md#map.python-stdlib.isPythonStdlib)
+      - fn [longest](../../src/python-imports.ts#L52) (base: string, segments: string[], fromFile: string) → Resolution | null <!-- internal -->
         <a id="map.python-imports.PythonResolver.longest"></a><br>Tries progressively shorter prefixes of the dotted import path under a base directory, asking [`map.python-imports.PythonResolver.moduleFile`](map.md#map.python-imports.PythonResolver.moduleFile) for a matching file. Returns a local resolution if it hits the importing file itself, an internal one otherwise (flagged whole when every… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [map.python-imports.PythonResolver.moduleFile](map.md#map.python-imports.PythonResolver.moduleFile)
-      - fn [moduleFile](../../src/python-imports.ts#L62) (path: string) → string | null <!-- internal -->
+      - fn [moduleFile](../../src/python-imports.ts#L64) (path: string) → string | null <!-- internal -->
         <a id="map.python-imports.PythonResolver.moduleFile"></a><br>`a/b.py`, else the package `a/b/__init__.py`; null for neither.
-      - fn [isDir](../../src/python-imports.ts#L67) (path: string) → boolean <!-- internal -->
+      - fn [isDir](../../src/python-imports.ts#L69) (path: string) → boolean <!-- internal -->
         <a id="map.python-imports.PythonResolver.isDir"></a><br>Reports whether a repo-relative path is a package directory, answering true immediately if it is in the known source set and otherwise checking the filesystem under the root. Used by [`map.python-imports.PythonResolver.resolve`](map.md#map.python-imports.PythonResolver.resolve) to walk candidate module paths. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [directoriesOf](../../src/python-imports.ts#L75) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
+    - fn [directoriesOf](../../src/python-imports.ts#L77) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
       <a id="map.python-imports.directoriesOf"></a><br>Every directory above a file of `files` (POSIX, relative).
+  - module [python-stdlib](../../src/python-stdlib.ts#L1)
+    <a id="map.python-stdlib"></a><br>Top-level modules of the Python standard library: the union of `sys.stdlib_module_names` over CPython 3.10–3.14, copied from the generated `Python/stdlib_module_names.h` of each CPython branch (no npm package carries this list, and analysis never runs a Python interpreter). The…
+    - fn [isPythonStdlib](../../src/python-stdlib.ts#L49) (name: string) → boolean
+      <a id="map.python-stdlib.isPythonStdlib"></a><br>`name` (the first segment of a dotted import) is a module of the Python standard library.
   - module [rust-imports](../../src/rust-imports.ts#L1)
     <a id="map.rust-imports"></a><br>Rust path → file. A crate is a directory with `Cargo.toml` and `[package]`; each target — the library (`src/lib.rs` or `[lib] path`), and each binary (`src/main.rs`, `src/bin/*.rs`, `src/bin/*/main.rs`, `[[bin]] path`) — is a module tree of its own rooted at that file…
     - node [external.node](external.md#external.node)

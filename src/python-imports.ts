@@ -3,12 +3,14 @@
 // `src/`). A module is `p.py` or the package `p/__init__.py`; the longest
 // prefix of the path that is a module names the file, and when that is the
 // whole path the import binds the module itself. A top-level name found in
-// no source root is a package: Python has no path aliases, so a name that is
-// not in the repository comes from the environment (stdlib or installed).
+// no source root is the standard library when `sys.stdlib_module_names` lists
+// it, else a package: Python has no path aliases, so a name that is not in the
+// repository comes from the environment.
 
 import { existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { Resolution, SourceResolver } from "./imports.ts";
+import { isPythonStdlib } from "./python-stdlib.ts";
 
 const ROOTS = ["", "src"];
 
@@ -44,7 +46,7 @@ export class PythonResolver implements SourceResolver {
       if (!this.moduleFile(head) && !this.isDir(head)) continue;
       return this.longest(root, segments, fromFile) ?? { kind: "unresolved" };
     }
-    return { kind: "external", pkg: segments[0]! };
+    return isPythonStdlib(segments[0]!) ? { kind: "stdlib" } : { kind: "external", pkg: segments[0]! };
   }
 
   private longest(base: string, segments: string[], fromFile: string): Resolution | null {

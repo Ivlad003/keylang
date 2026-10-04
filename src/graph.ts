@@ -373,6 +373,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         // `crate::run()` or `self::X` in the file that declares them: the name is this module's own.
         for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(module, b, false)]);
         continue;
+      } else if (r.kind === "stdlib") {
+        // Bound to a module outside the graph: calls through the name stay external, and no node or edge appears.
+        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(STDLIB_MODULE, b, false)]);
+        if (star) module.starSources.push({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
+        continue;
       } else if (r.kind === "generated") {
         if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
@@ -858,6 +863,31 @@ interface ImportTarget {
   /** The export the binding names: its name, `default`, or null for the whole module. */
   imported: string | null;
 }
+
+/**
+ * What a standard-library import (Python `typing`) binds: an external module
+ * that is never added to the graph. Its ID is no valid ID, so it names no node.
+ */
+const STDLIB_MODULE: Module = {
+  id: `${EXTERNAL}.<stdlib>`,
+  layer: EXTERNAL,
+  name: "<stdlib>",
+  path: null,
+  line: null,
+  col: null,
+  endLine: null,
+  endCol: null,
+  synthetic: true,
+  class: false,
+  comment: null,
+  doc: null,
+  deps: [],
+  fns: [],
+  types: [],
+  children: [],
+  members: "opaque",
+  starSources: [],
+};
 
 /** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
 function importTarget(module: Module, binding: ImportBinding, whole: boolean): ImportTarget {

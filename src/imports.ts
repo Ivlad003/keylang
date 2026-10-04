@@ -29,6 +29,8 @@ export type Resolution =
   | { kind: "local" }
   | { kind: "external"; pkg: string }
   | { kind: "builtin" }
+  /** A module of the language's standard library that is no package (Python `typing`): no node, no dependency; calls through it are external. */
+  | { kind: "stdlib" }
   | { kind: "generated" }
   | { kind: "unresolved" };
 

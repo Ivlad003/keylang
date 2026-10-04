@@ -229,84 +229,84 @@
     - type [FileEntry](../../src/graph.ts#L205) <!-- internal -->
     - fn [buildGraph](../../src/graph.ts#L210) (config: Config, files: FileFacts[]) → Graph
       - calls map.frontends.frontendOf, map.frontends.frontendFor, map.graph.placeFile, map.graph.isIndexFile, map.graph.addDecl, map.graph.markOpaque, map.declared-packages.readManifests, base.external-ids.assignExternalIds, map.graph.importedPackages, base.span.compareText, map.graph.notIndexed, map.graph.importTarget, base.external-ids.externalSegment, base.config.layerName, map.graph.exportInput, map.exports.resolveExports, map.graph.memberKey, map.graph.globalsOf, map.graph.addCall, map.graph.holeReason, base.languages.constructorName, map.graph.markEscapes
-    - type [ImportTarget](../../src/graph.ts#L855) <!-- internal -->
-    - fn [importTarget](../../src/graph.ts#L863) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
-    - fn [exportInput](../../src/graph.ts#L875) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L860) <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L893) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L905) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
       - calls base.config.layerName
-    - fn [importedPackages](../../src/graph.ts#L894) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
-    - fn [notIndexed](../../src/graph.ts#L911) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L924) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L941) (config: Config, file: string) → string | null <!-- internal -->
       - calls base.languages.languageOf, base.config.isExcluded, base.config.isOutside, map.graph.placeFile
-    - fn [isIndexFile](../../src/graph.ts#L918) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L948) (file: string) → boolean <!-- internal -->
       - calls base.languages.languageOf
-    - fn [addCall](../../src/graph.ts#L929) (fn: Fn, call: Call) → boolean <!-- internal -->
-    - fn [holeReason](../../src/graph.ts#L937) (c: CallFact) → string <!-- internal -->
-    - fn [markEscapes](../../src/graph.ts#L949) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L959) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L967) (c: CallFact) → string <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L979) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       - calls base.languages.constructorName, base.languages.implicitMember
-    - fn [markOpaque](../../src/graph.ts#L964) (m: Module) → void <!-- internal -->
-    - type [Decls](../../src/graph.ts#L970) <!-- internal -->
-    - fn [memberKey](../../src/graph.ts#L981) (member: string, isStatic: boolean) → string
+    - fn [markOpaque](../../src/graph.ts#L994) (m: Module) → void <!-- internal -->
+    - type [Decls](../../src/graph.ts#L1000) <!-- internal -->
+    - fn [memberKey](../../src/graph.ts#L1011) (member: string, isStatic: boolean) → string
       - calls base.config.layerName
-    - fn [memberSegments](../../src/graph.ts#L995) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L1025) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       - calls map.graph.memberKey, base.config.layerName
-    - fn [addDecl](../../src/graph.ts#L1017) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1047) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       - calls base.config.layerName, map.graph.memberSegments
-    - fn [placeFile](../../src/graph.ts#L1103) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
+    - fn [placeFile](../../src/graph.ts#L1133) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
       - calls base.config.isOutside, base.glob.matchesGlob, base.glob.globPrefix, base.languages.languageOf
   - module [imports](../../src/imports.ts#L1)
     - node external.node
     - config base.config
     - ts extract.ts
     - type [Resolution](../../src/imports.ts#L23)
-    - type [SourceResolver](../../src/imports.ts#L35)
-    - type [PathRule](../../src/imports.ts#L43) <!-- internal -->
-    - module [ImportResolver](../../src/imports.ts#L49)
-      - fn [constructor](../../src/imports.ts#L67) (root: string, sources: ReadonlySet<string> = new Set())
+    - type [SourceResolver](../../src/imports.ts#L37)
+    - type [PathRule](../../src/imports.ts#L45) <!-- internal -->
+    - module [ImportResolver](../../src/imports.ts#L51)
+      - fn [constructor](../../src/imports.ts#L69) (root: string, sources: ReadonlySet<string> = new Set())
         - calls map.imports.readText, map.imports.parseJsonc, map.imports.loadTsconfig, map.imports.isObject
-      - fn [known](../../src/imports.ts#L89) (pkg: string) → boolean <!-- internal -->
+      - fn [known](../../src/imports.ts#L91) (pkg: string) → boolean <!-- internal -->
         - calls map.imports.ImportResolver.locate
-      - fn [locate](../../src/imports.ts#L100) (pkg: string) → Located <!-- internal -->
+      - fn [locate](../../src/imports.ts#L102) (pkg: string) → Located <!-- internal -->
         - calls map.imports.inside, map.imports.ImportResolver.workspaceDirs
-      - fn [workspaceDirs](../../src/imports.ts#L129) () → string[] <!-- internal -->
+      - fn [workspaceDirs](../../src/imports.ts#L131) () → string[] <!-- internal -->
         - calls base.config.toPosix
-      - fn [packageEntry](../../src/imports.ts#L153) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [packageEntry](../../src/imports.ts#L155) (dir: string, subpath: string) → string | null <!-- internal -->
         - calls map.imports.flattenTarget, map.imports.isObject, map.imports.matchPattern, map.imports.ImportResolver.probe, base.config.toPosix
-      - fn [resolve](../../src/imports.ts#L183) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L185) (fromFile: string, spec: string) → Resolution
         - calls map.imports.ImportResolver.resolveUncached
-      - fn [resolveUncached](../../src/imports.ts#L193) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L195) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.probe, map.imports.ImportResolver.resolveSubpathImport, map.imports.bestMatch, extract.ts.isNodeBuiltin, map.imports.ImportResolver.resolvePackage
-      - fn [resolveSubpathImport](../../src/imports.ts#L222) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveSubpathImport](../../src/imports.ts#L224) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix, map.imports.ImportResolver.resolve, map.imports.ImportResolver.probe
-      - fn [scopeImports](../../src/imports.ts#L245) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L247) (dir: string) → PathRule[] | null <!-- internal -->
         - calls map.imports.isObject, map.imports.flattenTarget
-      - fn [resolvePackage](../../src/imports.ts#L255) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L257) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.packageName, map.imports.ImportResolver.locate, map.imports.ImportResolver.packageEntry, map.imports.ImportResolver.known, map.imports.ImportResolver.knownNear
-      - fn [knownNear](../../src/imports.ts#L266) (fromFile: string, pkg: string) → boolean <!-- internal -->
+      - fn [knownNear](../../src/imports.ts#L268) (fromFile: string, pkg: string) → boolean <!-- internal -->
         - calls map.imports.isObject
-      - fn [probe](../../src/imports.ts#L285) (candidate: string) → string | null <!-- internal -->
-    - type [Located](../../src/imports.ts#L311) <!-- internal -->
-    - fn [inside](../../src/imports.ts#L314) (root: string, abs: string) → string | null <!-- internal -->
+      - fn [probe](../../src/imports.ts#L287) (candidate: string) → string | null <!-- internal -->
+    - type [Located](../../src/imports.ts#L313) <!-- internal -->
+    - fn [inside](../../src/imports.ts#L316) (root: string, abs: string) → string | null <!-- internal -->
       - calls base.config.toPosix
-    - fn [isObject](../../src/imports.ts#L329) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [bestMatch](../../src/imports.ts#L339) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L331) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [bestMatch](../../src/imports.ts#L341) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       - calls map.imports.matchPattern
-    - fn [matchPattern](../../src/imports.ts#L351) (pattern: string, spec: string) → string | null <!-- internal -->
-    - fn [flattenTarget](../../src/imports.ts#L362) (t: unknown) → string[] <!-- internal -->
-    - fn [packageName](../../src/imports.ts#L369) (spec: string) → string
-    - fn [readJsonc](../../src/imports.ts#L375) (path: string) → unknown
+    - fn [matchPattern](../../src/imports.ts#L353) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L364) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](../../src/imports.ts#L371) (spec: string) → string
+    - fn [readJsonc](../../src/imports.ts#L377) (path: string) → unknown
       - calls map.imports.readText, map.imports.parseJsonc
-    - fn [parseJsonc](../../src/imports.ts#L381) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L383) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [parseJsoncStrict](../../src/imports.ts#L390) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L392) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [readText](../../src/imports.ts#L395) (path: string) → string | null <!-- internal -->
-    - fn [stripJsonc](../../src/imports.ts#L400) (text: string) → string <!-- internal -->
-    - type [Tsconfig](../../src/imports.ts#L421) <!-- internal -->
-    - type [MergedOptions](../../src/imports.ts#L427) <!-- internal -->
-    - fn [loadTsconfig](../../src/imports.ts#L440) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [readText](../../src/imports.ts#L397) (path: string) → string | null <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L402) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L423) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L429) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L442) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
       - calls map.imports.mergedOptions, map.imports.placePaths, map.imports.isObject, base.config.toPosix
-    - fn [mergedOptions](../../src/imports.ts#L459) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L461) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       - calls map.imports.isObject, base.config.toPosix
-    - fn [placePaths](../../src/imports.ts#L478) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L480) (options: MergedOptions) → PathRule[] <!-- internal -->
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
@@ -362,16 +362,19 @@
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
     - imports map.imports
-    - module [PythonResolver](../../src/python-imports.ts#L15)
-      - fn [constructor](../../src/python-imports.ts#L24) (root: string, sources: ReadonlySet<string> = new Set())
+    - python-stdlib map.python-stdlib
+    - module [PythonResolver](../../src/python-imports.ts#L17)
+      - fn [constructor](../../src/python-imports.ts#L26) (root: string, sources: ReadonlySet<string> = new Set())
         - calls map.python-imports.directoriesOf, map.python-imports.PythonResolver.isDir
-      - fn [resolve](../../src/python-imports.ts#L31) (fromFile: string, spec: string) → Resolution
-        - calls map.python-imports.PythonResolver.longest, map.python-imports.PythonResolver.moduleFile, map.python-imports.PythonResolver.isDir
-      - fn [longest](../../src/python-imports.ts#L50) (base: string, segments: string[], fromFile: string) → Resolution | null <!-- internal -->
+      - fn [resolve](../../src/python-imports.ts#L33) (fromFile: string, spec: string) → Resolution
+        - calls map.python-imports.PythonResolver.longest, map.python-imports.PythonResolver.moduleFile, map.python-imports.PythonResolver.isDir, map.python-stdlib.isPythonStdlib
+      - fn [longest](../../src/python-imports.ts#L52) (base: string, segments: string[], fromFile: string) → Resolution | null <!-- internal -->
         - calls map.python-imports.PythonResolver.moduleFile
-      - fn [moduleFile](../../src/python-imports.ts#L62) (path: string) → string | null <!-- internal -->
-      - fn [isDir](../../src/python-imports.ts#L67) (path: string) → boolean <!-- internal -->
-    - fn [directoriesOf](../../src/python-imports.ts#L75) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
+      - fn [moduleFile](../../src/python-imports.ts#L64) (path: string) → string | null <!-- internal -->
+      - fn [isDir](../../src/python-imports.ts#L69) (path: string) → boolean <!-- internal -->
+    - fn [directoriesOf](../../src/python-imports.ts#L77) (files: ReadonlySet<string>) → Set<string> <!-- internal -->
+  - module [python-stdlib](../../src/python-stdlib.ts#L1)
+    - fn [isPythonStdlib](../../src/python-stdlib.ts#L49) (name: string) → boolean
   - module [rust-imports](../../src/rust-imports.ts#L1)
     - node external.node
     - smol-toml external.smol-toml
