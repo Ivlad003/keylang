@@ -126,6 +126,8 @@ Commands:
                             (Python, Rust), with the snapshot id and file hashes
   check [paths…] [--changed] [--since <ref>]
                             Resolve IDs and check rules (default: ./keylang)
+                            Given files, it prints verdicts and the summary for those
+                            files only (e.g. check keylang/flows/buy.md)
                             Rebuilds the analysis in memory; does not write the map.
                             --changed reports only findings that touch files changed
                             since <ref> (default HEAD) plus untracked files

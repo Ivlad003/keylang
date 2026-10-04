@@ -30,7 +30,7 @@
 | `mcp` | MCP через stdio для агентів | пише лише пропозицію `apply_diff` | 0, 2 | [MCP](#mcp) |
 | `wire` | генерує `keylang.gen.ts` з `# wiring` | пише файл; `--check` і помилка розділу не пишуть | 0, 1, 2 | [wire](#wire) |
 | `trace-plan` | JSON функцій потоку для адаптера trace | нічого не пише | 0, 2 | [trace](#trace) |
-| `check` | резолвить ID і перевіряє правила в пам'яті; `--stale` — проза, під якою змінився код, проти `<dir>/baseline.json` | не пише карту; `--changed` звітує лише змінені файли; `--stale` нічого не пише (код 0 чи 2), `--stale --accept` пише `<dir>/baseline.json` ([format.md](format.md#стейлнес-прози-check---stale-dirbaselinejson)) | 0, 1, 2 | [формати](#formats) |
+| `check` | резолвить ID і перевіряє правила в пам'яті; `check <файл>` — вердикти й підсумок лише цього файла; `--stale` — проза, під якою змінився код, проти `<dir>/baseline.json` | не пише карту; `--changed` звітує лише змінені файли; `--stale` нічого не пише (код 0 чи 2), `--stale --accept` пише `<dir>/baseline.json` ([format.md](format.md#стейлнес-прози-check---stale-dirbaselinejson)) | 0, 1, 2 | [формати](#formats) |
 | `parse` | друкує IR файлів | нічого не пише | 0, 1, 2 | [format.md](format.md) §8–§9 |
 | `fmt` | переписує файли в канонічну форму | пише файли; `--check` не пише | 0, 1, 2 | [format.md](format.md) §8 |
 
@@ -47,6 +47,8 @@
 - `json` — лише JSON у stdout: `{snapshotId, results[], coverage[]}`; кожен результат має `criterion`, `area`, `verdict` (`fail` / `unverified` / `ok`; для діагностики рівня warning, як K006, K103 чи K106, — `warning`: вона не валить перевірку), `evidence`, `snapshotId`, `specHash`, `provenance`, `file`, `line`, `col`, `code`; результат K005 має ще `reason` (`arguments`, `id`, `link`, `quote`, `layer`, `scope`), інші коди — ні; діагностика правила чи потоку бере критерій, область, `specHash` і `provenance` свого вердикту, а діагностика без вердикту (K003, K201…) — `specHash` як SHA-256 свого коду й повідомлення; `provenance` — `syntactic`, крім доказів `test-report` і `trace`;
 - `sarif` — SARIF 2.1.0: `fail` → `error`, `warning` → `warning`, `unverified` → `note` з `ruleId: unverified` (зокрема докази потоків); `ruleId` іншого результату — K-код або вид доказу потоку (`static`, `tests`, `trace`); `properties` результату несуть verdict, criterion, area, `snapshotId`, `specHash` і `provenance`, а для K005 ще `reason`; run має `columnKind: "unicodeCodePoints"`, бо типова одиниця SARIF — UTF-16;
 - `github` — workflow-команди `::error` / `::warning` / `::notice` з `title` — тим самим `ruleId`, з екранованими `%`, переносами, `:` і `,`; `col` — та сама колонка в символах Unicode (GitHub одиниці не задає).
+
+**Вердикти одного файла.** `check` без шляхів перевіряє всю теку `keylang/`, і підсумок у stderr (`N fail, M unverified, K ok`) один на весь запуск: у ньому змішано вердикти згенерованого `rules.baseline.md` і ручних специфікацій. `check <файл>…` друкує вердикти й підсумок лише названих файлів, тож `check keylang/flows/buy.md` показує, чи перевірено саме цей потік. У `--format json` поле `file` кожного результату дає ту саму розбивку.
 
 У всіх форматах `line` і `col` починаються з 1, а `col` рахує символи Unicode (code points), для специфікацій і для коду.
 
