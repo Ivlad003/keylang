@@ -464,8 +464,8 @@
     - fn [ghostSignal](../../src/ghost.ts#L16) (path: string, text: string, line: number, col: number) → boolean
       <a id="features.ghost.ghostSignal"></a><br>The cursor line starts a new list item (`- ` and nothing after it) inside a `# flow` with a trigger.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [ghostSuggestions](../../src/ghost.ts#L29) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null) → Promise<string[]>
-      <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs.
+    - fn [ghostSuggestions](../../src/ghost.ts#L36) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null, signal?: AbortSignal) → Promise<string[]>
+      <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs. `signal` cancels the request (`LlmCancelled`) once the line it was asked for is gone.
       - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.parse](lang.md#lang.parser.parse)
   - module [git-changes](../../src/git-changes.ts#L1)
     <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`. Git runs as an argument array in the given root, never through a shell; a ref that looks like an option is refused before git sees it.
@@ -643,34 +643,44 @@
     - eventsource-parser [external.eventsource-parser](external.md#external.eventsource-parser)
     - node [external.node](external.md#external.node)
     - keys [features.keys](features.md#features.keys)
-    - type [LlmRequest](../../src/llm.ts#L20)
+    - type [LlmRequest](../../src/llm.ts#L23)
       <a id="features.llm.LlmRequest"></a>
-    - type [LlmCallOptions](../../src/llm.ts#L27)
-      <a id="features.llm.LlmCallOptions"></a><br>Per call: `signal` cancels the request (and its stream); without options a call ends by its answer or the timeout.
-    - type [LlmClient](../../src/llm.ts#L31)
+    - type [LlmCallOptions](../../src/llm.ts#L30)
+      <a id="features.llm.LlmCallOptions"></a><br>Per call: `signal` cancels the request (and its stream); `timeoutMs` bounds it tighter than `KEYLANG_LLM_TIMEOUT_MS`. Without options a call ends by its answer or the timeout.
+    - type [LlmClientOptions](../../src/llm.ts#L39)
+      <a id="features.llm.LlmClientOptions"></a><br>Where a client runs: `root` is the repository (the working directory of an agent CLI to come); `env` and `home` default to the process's own.
+    - type [LlmClient](../../src/llm.ts#L45)
       <a id="features.llm.LlmClient"></a>
-    - module [LlmCancelled](../../src/llm.ts#L39)
+    - module [LlmCancelled](../../src/llm.ts#L53)
       <a id="features.llm.LlmCancelled"></a><br>The caller cancelled the request: not a timeout, not a provider error, and no partial answer.
-      - fn [constructor](../../src/llm.ts#L40) (provider: string)
+      - fn [constructor](../../src/llm.ts#L54) (provider: string)
         <a id="features.llm.LlmCancelled.constructor"></a>
-    - type [LlmSetup](../../src/llm.ts#L46) = { client: LlmClient } | { missing: string }
+    - fn [isCancelled](../../src/llm.ts#L61) (error: unknown) → error is LlmCancelled
+      <a id="features.llm.isCancelled"></a><br>The error of a request its caller cancelled.
+    - type [LlmSetup](../../src/llm.ts#L65) = { client: LlmClient } | { missing: string }
       <a id="features.llm.LlmSetup"></a>
-    - type [Env](../../src/llm.ts#L48) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Env](../../src/llm.ts#L67) = Readonly<Record<string, string | undefined>> <!-- internal -->
       <a id="features.llm.Env"></a>
-    - fn [llmClient](../../src/llm.ts#L55) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
+    - fn [llmClient](../../src/llm.ts#L74) (agent: string | null, options: LlmClientOptions) → LlmSetup
       <a id="features.llm.llmClient"></a>
-      - calls [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
-    - fn [timeoutMs](../../src/llm.ts#L82) (env: Env) → number | string <!-- internal -->
+      - calls [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.deadline](features.md#features.llm.deadline), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
+    - fn [timeoutMs](../../src/llm.ts#L103) (env: Env) → number | string <!-- internal -->
       <a id="features.llm.timeoutMs"></a><br>`KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one.
-    - fn [callSignal](../../src/llm.ts#L93) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - type [Deadline](../../src/llm.ts#L110) <!-- internal -->
+      <a id="features.llm.Deadline"></a><br>A call's bound: the variable's, or the call's own when that is tighter; `fromVariable` decides whether the timeout message cites the variable.
+    - fn [deadline](../../src/llm.ts#L115) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+      <a id="features.llm.deadline"></a>
+    - fn [timeoutMessage](../../src/llm.ts#L119) (provider: string, bound: Deadline) → string <!-- internal -->
+      <a id="features.llm.timeoutMessage"></a>
+    - fn [callSignal](../../src/llm.ts#L128) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
       <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
-    - fn [anthropicComplete](../../src/llm.ts#L117) (client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L152) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.anthropicComplete"></a>
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled)
-    - fn [openrouterComplete](../../src/llm.ts#L151) (base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
+    - fn [openrouterComplete](../../src/llm.ts#L186) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.openrouterComplete"></a>
-      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled)
-    - fn [parseJson](../../src/llm.ts#L210) (text: string) → unknown <!-- internal -->
+      - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
+    - fn [parseJson](../../src/llm.ts#L245) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a>
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.

@@ -251,7 +251,7 @@
       - calls operations.operations.messageOf, features.proposals.proposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, features.proposals.writeProposal
     - fn [countProposed](../../src/operations.ts#L3879) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
       - calls features.stats.updateStats, features.stats.addDrafts, operations.operations.messageOf
-    - fn [modelSetup](../../src/operations.ts#L3893) (mode: "algo" | "llm" | "hybrid", agent: string | null, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> <!-- internal -->
+    - fn [modelSetup](../../src/operations.ts#L3893) (mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> <!-- internal -->
     - fn [modelDraft](../../src/operations.ts#L3903) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       - calls operations.operations.flowSteps, operations.operations.messageOf
     - fn [flowSteps](../../src/operations.ts#L3921) (text: string, trigger: string) → string[] <!-- internal -->
@@ -269,7 +269,7 @@
     - fn [emptyDoctor](../../src/operations.ts#L4014) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
     - fn [runDoctor](../../src/operations.ts#L4018) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
       - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L4071) (config: Config, llmClient: (agent: string | null) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
+    - fn [agentState](../../src/operations.ts#L4071) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → DoctorPayload["agent"] <!-- internal -->
       - calls operations.operations.messageOf
     - fn [engineState](../../src/operations.ts#L4083) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
       - calls operations.operations.messageOf

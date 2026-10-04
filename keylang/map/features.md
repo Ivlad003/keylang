@@ -301,7 +301,7 @@
     - parser lang.parser
     - fn [ghostSignal](../../src/ghost.ts#L16) (path: string, text: string, line: number, col: number) → boolean
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
-    - fn [ghostSuggestions](../../src/ghost.ts#L29) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null) → Promise<string[]>
+    - fn [ghostSuggestions](../../src/ghost.ts#L36) (analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null, signal?: AbortSignal) → Promise<string[]>
       - calls features.agent-context.contextText, lang.ir.sectionNodes, lang.ir.walk, lang.parser.parse
   - module [git-changes](../../src/git-changes.ts#L1)
     - node external.node
@@ -411,22 +411,27 @@
     - eventsource-parser external.eventsource-parser
     - node external.node
     - keys features.keys
-    - type [LlmRequest](../../src/llm.ts#L20)
-    - type [LlmCallOptions](../../src/llm.ts#L27)
-    - type [LlmClient](../../src/llm.ts#L31)
-    - module [LlmCancelled](../../src/llm.ts#L39)
-      - fn [constructor](../../src/llm.ts#L40) (provider: string)
-    - type [LlmSetup](../../src/llm.ts#L46) = { client: LlmClient } | { missing: string }
-    - type [Env](../../src/llm.ts#L48) = Readonly<Record<string, string | undefined>> <!-- internal -->
-    - fn [llmClient](../../src/llm.ts#L55) (agent: string | null, env: Env = process.env, home: string = homedir()) → LlmSetup
-      - calls features.llm.timeoutMs, features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
-    - fn [timeoutMs](../../src/llm.ts#L82) (env: Env) → number | string <!-- internal -->
-    - fn [callSignal](../../src/llm.ts#L93) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L117) (client: Anthropic, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.LlmCancelled
-    - fn [openrouterComplete](../../src/llm.ts#L151) (base: string, key: string, model: string, request: LlmRequest, timeout: number, outer?: AbortSignal) → Promise<string> <!-- internal -->
-      - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled
-    - fn [parseJson](../../src/llm.ts#L210) (text: string) → unknown <!-- internal -->
+    - type [LlmRequest](../../src/llm.ts#L23)
+    - type [LlmCallOptions](../../src/llm.ts#L30)
+    - type [LlmClientOptions](../../src/llm.ts#L39)
+    - type [LlmClient](../../src/llm.ts#L45)
+    - module [LlmCancelled](../../src/llm.ts#L53)
+      - fn [constructor](../../src/llm.ts#L54) (provider: string)
+    - fn [isCancelled](../../src/llm.ts#L61) (error: unknown) → error is LlmCancelled
+    - type [LlmSetup](../../src/llm.ts#L65) = { client: LlmClient } | { missing: string }
+    - type [Env](../../src/llm.ts#L67) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - fn [llmClient](../../src/llm.ts#L74) (agent: string | null, options: LlmClientOptions) → LlmSetup
+      - calls features.llm.timeoutMs, features.keys.readKey, features.llm.anthropicComplete, features.llm.deadline, features.llm.openrouterComplete
+    - fn [timeoutMs](../../src/llm.ts#L103) (env: Env) → number | string <!-- internal -->
+    - type [Deadline](../../src/llm.ts#L110) <!-- internal -->
+    - fn [deadline](../../src/llm.ts#L115) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+    - fn [timeoutMessage](../../src/llm.ts#L119) (provider: string, bound: Deadline) → string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L128) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L152) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage
+    - fn [openrouterComplete](../../src/llm.ts#L186) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+      - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled, features.llm.timeoutMessage
+    - fn [parseJson](../../src/llm.ts#L245) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze

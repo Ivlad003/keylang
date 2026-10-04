@@ -25,15 +25,22 @@ export function ghostSignal(path: string, text: string, line: number, col: numbe
   return trigger;
 }
 
-/** Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs. */
-export async function ghostSuggestions(analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null): Promise<string[]> {
+/** A ghost line is worth a short wait only: a request is bounded by a minute, under `KEYLANG_LLM_TIMEOUT_MS`. */
+export const GHOST_TIMEOUT_MS = 60_000;
+
+/**
+ * Up to three one-line continuations; each keeps the indentation of the
+ * cursor line and names only known IDs. `signal` cancels the request
+ * (`LlmCancelled`) once the line it was asked for is gone.
+ */
+export async function ghostSuggestions(analysis: Analysis, client: LlmClient, path: string, text: string, line: number, pack: ContextPack | null, signal?: AbortSignal): Promise<string[]> {
   const lines = text.split("\n");
   const indent = /^\s*/.exec(lines[line] ?? "")![0];
   const answer = await client.complete({
     system: "You continue a keylang flow by one line. Reply with up to three alternatives, one per line, each a complete list item such as `- step <id>`, `- when <condition>` or `- invariant <text>`. Use only IDs from the input. No other text.",
     prompt: [`The flow so far (the cursor is on the last line):\n${lines.slice(0, line + 1).join("\n")}`, ...(pack ? [`Context:\n${contextText(pack)}`] : [])].join("\n\n"),
     maxTokens: 256,
-  });
+  }, { timeoutMs: GHOST_TIMEOUT_MS, ...(signal ? { signal } : {}) });
   const planned = new Set<string>();
   for (const doc of analysis.docs) for (const section of doc.sections) for (const top of sectionNodes(section)) walk(top, (node) => {
     if (node.kind === "planned" && node.id) planned.add(node.id);

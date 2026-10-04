@@ -33,7 +33,7 @@ import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, t
 import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
-import type { LlmClient, LlmSetup } from "./llm.ts";
+import type { LlmClient, LlmClientOptions, LlmSetup } from "./llm.ts";
 import type { DraftStatus } from "./draft-llm.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan, type SourceInputs } from "./map.ts";
@@ -2459,7 +2459,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
   }
   const { llmClient, LlmCancelled } = await import("./llm.ts");
-  const setup = llmClient(config.agent);
+  const setup = llmClient(config.agent, { root: config.root });
   if ("missing" in setup) {
     payload.source = "offline";
     payload.unavailable = setup.missing;
@@ -2636,7 +2636,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     return { ...emptyExplainBatch("completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
   }
   const { llmClient, LlmCancelled } = await import("./llm.ts");
-  const setup = llmClient(config.agent);
+  const setup = llmClient(config.agent, { root: config.root });
   if ("missing" in setup) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
   const client = setup.client;
   payload.agent = client.agent;
@@ -2978,7 +2978,7 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   // What the draft was computed from: a commit checks that keylang.json and the sources are still these.
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
-  const setup = await modelSetup(mode, analyzed.config.agent);
+  const setup = await modelSetup(mode, analyzed.config);
   if ("error" in setup) return emptyDraftFlow("failed", 2, setup.error);
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
@@ -3098,7 +3098,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   for (const [id, node] of Object.entries(snapshot.nodes)) if (node.kind === "module") modules.set(id, new Set((node.deps ?? []).filter((dep) => snapshot.nodes[dep]?.layer !== "external")));
   const cyclic = stronglyConnected(modules).length > 0;
   const algo = draftRules(snapshot, cyclic);
-  const setup = await modelSetup(mode, analyzed.config.agent, "draft rules");
+  const setup = await modelSetup(mode, analyzed.config, "draft rules");
   if ("error" in setup) return emptyDraftRules("failed", 2, setup.error);
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
   const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
@@ -3197,7 +3197,7 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
     return emptyDraftLayout("failed", 2, messageOf(error));
   }
   const configExists = existsSync(join(root, CONFIG_FILE));
-  const setup = await modelSetup(mode, config.agent, "draft map");
+  const setup = await modelSetup(mode, config, "draft map");
   if ("error" in setup) return emptyDraftLayout("failed", 2, setup.error);
   const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
   if (setup.client === null) {
@@ -3356,7 +3356,7 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
       return emptyCodeToSpec("failed", 2, messageOf(error));
     }
   }
-  const setup = await modelSetup(mode, analyzed.config.agent, "code-to-spec");
+  const setup = await modelSetup(mode, analyzed.config, "code-to-spec");
   if ("error" in setup) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: setup.error }] };
   if (setup.fallback !== null) notes.push({ level: "warning", text: setup.fallback });
   const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
@@ -3505,7 +3505,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   if (!snapshot) return emptySpecToCode("failed", 2, "spec-to-code: no supported source files; run `keylang init`");
   const basis: CandidateBasis = { ...sourceInputs(analyzed.config, snapshot.manifest.files), specs: specHashes(root, analyzed.docs) };
   const into = request.into === undefined ? undefined : toPosix(request.into);
-  const setup = await modelSetup(mode, analyzed.config.agent, "spec-to-code");
+  const setup = await modelSetup(mode, analyzed.config, "spec-to-code");
   if ("error" in setup) return emptySpecToCode("failed", 2, setup.error);
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
   const model = setup.client;
@@ -3890,10 +3890,10 @@ function countProposed(root: string, counts: Record<DraftStatus, number>): strin
  * configured, and `llm` fails as the CLI does (`<command> --mode llm: …`)
  * while `hybrid` drafts as algo, saying why. Algo: no client.
  */
-async function modelSetup(mode: "algo" | "llm" | "hybrid", agent: string | null, command = "draft"): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
+async function modelSetup(mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft"): Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> {
   if (mode === "algo") return { client: null, fallback: null };
   const { llmClient } = await import("./llm.ts");
-  const setup = llmClient(agent);
+  const setup = llmClient(config.agent, { root: config.root });
   if (!("missing" in setup)) return { client: setup.client, fallback: null };
   if (mode === "llm") return { error: `${command} --mode llm: ${setup.missing}` };
   return { client: null, fallback: `${setup.missing}; drafting from the snapshot only (--mode algo)` };
@@ -4068,10 +4068,10 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
 }
 
 /** The configured agent and its credential state, without the key value. */
-function agentState(config: Config, llmClient: (agent: string | null) => LlmSetup): DoctorPayload["agent"] {
+function agentState(config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup): DoctorPayload["agent"] {
   if (config.agent === null) return { configured: null, state: "missing", detail: "not configured (keylang.json `agent`)" };
   try {
-    const setup = llmClient(config.agent);
+    const setup = llmClient(config.agent, { root: config.root });
     if ("missing" in setup) return { configured: config.agent, state: "missing", detail: setup.missing };
     return { configured: config.agent, state: "ok", detail: "credentials found" };
   } catch (error) {

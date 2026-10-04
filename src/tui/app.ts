@@ -315,6 +315,8 @@ export class App {
     } catch (error) {
       this.state.message = `error: ${errorText(error)}`;
     }
+    // Whatever path the event took (Esc, a click on another file, MERGE, a panel), a ghost request for a place left is aborted.
+    this.assist.cancelStaleGhost();
   }
 
   /** The current frame, as the transport would show it. */
@@ -2774,7 +2776,7 @@ export class App {
     if (this.llmSetup !== null) return;
     this.track(
       import("../llm.ts").then(({ llmClient }) => {
-        this.llmSetup = (agent) => llmClient(agent);
+        this.llmSetup = (agent) => llmClient(agent, { root: this.state.root });
         if (this.state.prompt?.kind === "explain" && this.state.prompt.explainModel) {
           this.explainNote();
           this.draw();
@@ -2845,7 +2847,7 @@ export class App {
     // The batch row names the model it would ask; the client module loads off the key path.
     this.track(
       import("../llm.ts").then(({ llmClient }) => {
-        this.llmSetup = (agent) => llmClient(agent);
+        this.llmSetup = (agent) => llmClient(agent, { root: this.state.root });
         if (this.state.prompt?.kind === "explain" && this.state.prompt.explainPlan) {
           this.refreshExplainPlanPrompt();
           this.draw();
@@ -3074,7 +3076,7 @@ export class App {
     this.state.message = `agent: drafting flow ${name}…`;
     const work = (async () => {
       const { llmClient } = await import("../llm.ts");
-      const setup = llmClient(analysis.config.agent);
+      const setup = llmClient(analysis.config.agent, { root: this.state.root });
       if ("missing" in setup) {
         this.state.message = `agent: ${setup.missing}`;
         return;
