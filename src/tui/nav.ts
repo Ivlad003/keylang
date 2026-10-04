@@ -98,6 +98,16 @@ function treeOf(analysis: Analysis): Tree {
   return tree;
 }
 
+/**
+ * Layers in the map's order and the direct children of every layer, module
+ * and class (top modules of a layer; nested modules and members of a
+ * module): one index for this panel and the zoom screen (`zoom.ts`).
+ */
+export function codeTree(analysis: Analysis): { layers: readonly string[]; children: ReadonlyMap<string, readonly string[]> } {
+  const tree = treeOf(analysis);
+  return { layers: tree.layers, children: tree.children };
+}
+
 /** Visible items for the expanded keys. Layers start expanded unless `-<key>` collapses them. */
 export function navItems(analysis: Analysis | null, expanded: ReadonlySet<string>): NavItem[] {
   if (!analysis) return [];

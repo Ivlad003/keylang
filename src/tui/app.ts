@@ -31,6 +31,7 @@ import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
+import { MAX_DEPTH, zoomLevel, zoomParent, zoomTarget, ZOOM_ROOT, type ZoomRow } from "./zoom.ts";
 import { readExplanation } from "../explain-llm.ts";
 import { selectedAgent } from "../agent-cli.ts";
 import { defaultBriefJobs, positiveIntegerProblem } from "../explain-inventory.ts";
@@ -65,7 +66,7 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit } from "./view.ts";
+import { batchState, contextTop, edgeItems, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -214,6 +215,7 @@ export class App {
       quit: null,
       results: { open: false, entry: "record", index: 0, finding: 0, gap: 0, filter: { ...DEFAULT_FILTER }, top: 0, left: 0, scrollReport: false, viewing: false, origin: null, previousFocus: "editor" },
       briefs: new Map(),
+      zoom: null,
     };
     // The helpers reach the session through closures: its private methods stay private.
     this.merges = new MergeSession({
@@ -1112,6 +1114,8 @@ export class App {
         return this.merges.key(event);
       case "code":
         return this.codeKey(event);
+      case "zoom":
+        return this.zoomKey(event);
       case "edit":
         return this.editKey(event);
       default:
@@ -1350,6 +1354,8 @@ export class App {
         return this.explainAtCursor();
       case "t":
         return this.toggleMap();
+      case "z":
+        return this.openZoom(this.idAtCursor() ?? this.nodeAtCursor());
       case "s":
         this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
         return this.findNodes();
@@ -1695,6 +1701,11 @@ export class App {
       this.state.hover = { x, y: anchor.y, lines, source: "key" };
       return;
     }
+    this.state.hover = { x, y: anchor.y, lines: this.explainLines(id!, found), source: "key" };
+  }
+
+  /** The explain hover of a known node: the summary, the session's analysis, and each saved explanation with its origin. */
+  private explainLines(id: string, found: Exclude<ReturnType<typeof nodeExplanation>, { unknown: string }>): Hover["lines"] {
     const lines: Hover["lines"] = formatSummary(found.summary).split("\n").map((text, i) => ({ text, kind: i === 0 ? "title" : "text" }));
     const overlay = this.dirtyInputs().some((path) => path.endsWith(".md"));
     const outdated = this.state.outdated || this.state.updating || this.state.error !== null;
@@ -1712,7 +1723,7 @@ export class App {
     if (found.saved) answer(`saved ${found.saved.detail} answer`, found.saved);
     if (found.brief) answer("saved brief", found.brief);
     if (!found.saved) lines.push({ text: `no saved answer · offline: e asks no model (Ctrl+P Explain with the model, or keylang explain ${id} --llm, does)`, kind: "evidence" });
-    this.state.hover = { x, y: anchor.y, lines, source: "key" };
+    return lines;
   }
 
   private navKey(event: KeyEvent): void {
@@ -1752,6 +1763,8 @@ export class App {
       case "escape":
         this.state.focus = "editor";
         return;
+      case "z":
+        return this.openZoom(item?.id ?? null);
       case "q":
         return this.quit();
       case "?":
@@ -1785,6 +1798,233 @@ export class App {
         return;
       case "q":
         return this.quit();
+      default:
+        return;
+    }
+  }
+
+  // ---------- the zoom screen (c4-zoom/07) ----------
+
+  /**
+   * `z`: the zoom screen at `id` (its own level, or the level it is a row
+   * of, that row selected), else at the repository. The view underneath stays
+   * as it is; `q` comes back to it at the node selected last.
+   */
+  private openZoom(id: string | null): void {
+    const analysis = this.state.analysis;
+    if (!analysis?.snapshot) {
+      this.state.message = analysis ? (noSnapshotReason(this.state) ?? "no code snapshot to zoom into") : "analysis is still running";
+      return;
+    }
+    const target = (id === null ? null : zoomTarget(analysis, id)) ?? { focus: ZOOM_ROOT, select: null };
+    this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0 };
+    this.state.mode = "zoom";
+    this.state.focus = "editor";
+    this.state.hover = null;
+    this.state.completion = null;
+    this.state.selection = null;
+    this.zoomTo(target.focus, target.select);
+  }
+
+  /** The level of `focus`, `select` (or the row selected there before) under the cursor. */
+  private zoomTo(focus: string, select: string | null): void {
+    const zoom = this.state.zoom!;
+    zoom.focus = focus;
+    zoom.top = 0;
+    if (select !== null) {
+      const index = this.zoomRows().findIndex((row) => row.id === select);
+      if (index >= 0) zoom.selected.set(focus, index);
+    }
+    this.state.hover = null;
+    this.keepZoomVisible();
+  }
+
+  /** The rows of the level shown; the repository's when the focus left the snapshot with a new analysis. */
+  private zoomRows(): ZoomRow[] {
+    const analysis = this.state.analysis;
+    const zoom = this.state.zoom;
+    if (!analysis?.snapshot || !zoom) return [];
+    if (zoom.focus !== ZOOM_ROOT && !analysis.snapshot.nodes[zoom.focus]) {
+      zoom.focus = ZOOM_ROOT;
+      this.state.message = "that level is gone from the snapshot: back at the repository";
+    }
+    return zoomLevel(analysis, zoom.focus, zoom.depth).rows;
+  }
+
+  private zoomIndex(rows: readonly ZoomRow[]): number {
+    const zoom = this.state.zoom!;
+    return Math.max(0, Math.min(zoom.selected.get(zoom.focus) ?? 0, rows.length - 1));
+  }
+
+  /** Keeps the selected row inside the shown rows of the zoom screen. */
+  private keepZoomVisible(): void {
+    const zoom = this.state.zoom;
+    if (!zoom) return;
+    const visible = Math.max(1, zoomListHeight(this.state, layout(this.state).editor));
+    const at = this.zoomIndex(this.zoomRows());
+    if (at < zoom.top) zoom.top = at;
+    else if (at >= zoom.top + visible) zoom.top = at - visible + 1;
+  }
+
+  /** One level up, the cursor on the node it came from; at the repository Esc closes the screen. */
+  private zoomUp(close: boolean): void {
+    const analysis = this.state.analysis!;
+    const zoom = this.state.zoom!;
+    const above = zoomParent(analysis, zoom.focus);
+    if (above === null) {
+      if (close) return this.closeZoom();
+      this.state.message = "the repository is the top level: q closes the zoom";
+      return;
+    }
+    this.zoomTo(above, zoom.focus);
+  }
+
+  /** `>` and `<`: neighbors one edge farther or nearer, from none up to `MAX_DEPTH`. */
+  private zoomDepth(delta: number): void {
+    const zoom = this.state.zoom!;
+    const depth = Math.max(0, Math.min(MAX_DEPTH, zoom.depth + delta));
+    if (depth === zoom.depth) {
+      this.state.message = delta > 0 ? `depth ${MAX_DEPTH} is the farthest` : "depth 0: only the children";
+      return;
+    }
+    const before = this.zoomRows();
+    const selected = before[this.zoomIndex(before)]?.id ?? null;
+    zoom.depth = depth;
+    const rows = this.zoomRows();
+    const index = selected === null ? -1 : rows.findIndex((row) => row.id === selected);
+    zoom.selected.set(zoom.focus, index >= 0 ? index : this.zoomIndex(rows));
+    this.keepZoomVisible();
+  }
+
+  /** `q`: back to the view, at the node selected on the level (in the map of its layer), or at the focus. */
+  private closeZoom(follow = true): void {
+    const rows = this.zoomRows();
+    const row = rows[this.zoomIndex(rows)];
+    const focus = this.state.zoom?.focus ?? ZOOM_ROOT;
+    this.state.mode = "view";
+    this.state.hover = null;
+    if (!follow) return;
+    const id = row && row.kind !== "more" ? row.id : focus;
+    if (id !== ZOOM_ROOT) this.goToNode(id);
+  }
+
+  /** Enter on a fn or type: its code in the viewer; Esc there comes back to this level. */
+  private zoomCode(id: string): void {
+    const node = this.state.analysis?.snapshot?.nodes[id];
+    if (!node?.file) {
+      this.state.message = `\`${id}\` has no code to open`;
+      return;
+    }
+    this.jump(resolve(this.state.root, node.file), node.line ?? 1);
+  }
+
+  /** The wheel scrolls the rows of the zoom screen; a click on a row selects it and opens nothing. */
+  private zoomMouse(event: MouseEvent, editor: { x: number; y: number; width: number; height: number }): void {
+    const zoom = this.state.zoom;
+    if (!zoom) return;
+    const rows = this.zoomRows();
+    if (event.action === "wheel-up" || event.action === "wheel-down") {
+      zoom.top = Math.max(0, Math.min(Math.max(0, rows.length - 1), zoom.top + (event.action === "wheel-up" ? -3 : 3)));
+      this.state.hover = null;
+      return;
+    }
+    if (event.action !== "down" || event.button !== 0) return;
+    const index = zoom.top + event.y - editor.y - ZOOM_HEAD;
+    if (event.y < editor.y + ZOOM_HEAD || index >= rows.length) return;
+    zoom.selected.set(zoom.focus, index);
+    this.state.hover = null;
+  }
+
+  /** `e` and `K`: the explain hover of the selected node, as `e` shows it in the view. */
+  private zoomExplain(row: ZoomRow | undefined): void {
+    const analysis = this.state.analysis;
+    if (!analysis || !row || row.kind === "more") return;
+    const found = nodeExplanation(analysis, row.id, analysis.config.explain.detail);
+    if ("unknown" in found) {
+      this.state.message = unknownIdMessage(row.id, found.suggestion);
+      return;
+    }
+    const editor = layout(this.state).editor;
+    const zoom = this.state.zoom!;
+    const y = editor.y + ZOOM_HEAD + (this.zoomIndex(this.zoomRows()) - zoom.top);
+    this.state.hover = { x: editor.x + 2, y, lines: this.explainLines(row.id, found), source: "key" };
+  }
+
+  private zoomKey(event: KeyEvent): void {
+    const analysis = this.state.analysis;
+    const zoom = this.state.zoom;
+    if (!analysis?.snapshot || !zoom) {
+      this.state.mode = "view";
+      return;
+    }
+    const rows = this.zoomRows();
+    const at = this.zoomIndex(rows);
+    const row = rows[at];
+    const page = Math.max(1, zoomListHeight(this.state, layout(this.state).editor) - 1);
+    const select = (index: number): void => {
+      zoom.selected.set(zoom.focus, Math.max(0, Math.min(index, rows.length - 1)));
+      this.state.hover = null;
+      this.keepZoomVisible();
+    };
+    if (event.alt && event.name === "enter") {
+      if (!row || row.kind === "more") return;
+      this.closeZoom(false);
+      return this.goToSpec(row.id);
+    }
+    if (event.ctrl || event.alt) return;
+    switch (event.name) {
+      case "up":
+      case "k":
+        return select(at - 1);
+      case "down":
+      case "j":
+        return select(at + 1);
+      case "pageup":
+        return select(at - page);
+      case "pagedown":
+        return select(at + page);
+      case "home":
+      case "g":
+        return select(0);
+      case "end":
+      case "G":
+        return select(rows.length - 1);
+      case "+":
+      case "=":
+      case "enter": {
+        if (!row) return;
+        if (row.kind === "more") return this.zoomDepth(1);
+        if (row.container) return this.zoomTo(row.id, null);
+        if (event.name === "enter") return this.zoomCode(row.id);
+        this.state.message = `\`${row.id}\` has no level of its own: Enter opens its code`;
+        return;
+      }
+      case "-":
+      case "backspace":
+        return this.zoomUp(false);
+      case "escape":
+        if (this.state.hover) {
+          this.state.hover = null;
+          return;
+        }
+        return this.zoomUp(true);
+      case ">":
+        return this.zoomDepth(1);
+      case "<":
+        return this.zoomDepth(-1);
+      case "s":
+        this.state.prompt = { kind: "node", text: "", items: [], ids: [], index: 0 };
+        return this.findNodes();
+      case "e":
+      case "K":
+        return this.zoomExplain(row);
+      case ":":
+        return this.openPalette();
+      case "?":
+        this.state.help = true;
+        return;
+      case "q":
+        return this.closeZoom();
       default:
         return;
     }
@@ -4701,6 +4941,8 @@ export class App {
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
     const context = this.state.context.open && inside(area.nav);
+    // The zoom screen covers the editor: its rows, not the hidden buffer, take the wheel and the clicks.
+    if (this.state.mode === "zoom" && inside(area.editor)) return this.zoomMouse(event, area.editor);
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       const delta = event.action === "wheel-up" ? -3 : 3;
       if (this.state.mode === "code" && this.state.code) this.state.code.top = Math.max(0, Math.min(this.state.code.lines.length - 1, this.state.code.top + delta));
@@ -4928,7 +5170,8 @@ export class App {
         this.addToContext(prompt.text.trim().replace(/^@/, ""));
       } else if (prompt.kind === "node") {
         const id = prompt.ids?.[prompt.index];
-        if (id) this.goToNode(id);
+        if (id && this.state.mode === "zoom") this.openZoom(id);
+        else if (id) this.goToNode(id);
       } else {
         const id = prompt.ids?.[prompt.index];
         if (id) this.runAction(id);
@@ -4979,6 +5222,8 @@ export class App {
         return this.toggleFiles(focusable);
       case "navigation":
         return this.toggleNav(focusable);
+      case "zoom":
+        return this.openZoom(null);
       case "context":
         return this.toggleContext(true);
       case "results":

@@ -20,8 +20,8 @@ The tree of the map with a brief under each node: the documentation comment from
 | [map](map.md) | Turns source files into facts, a graph and a versioned snapshot ([`map.frontends`](map.md#map.frontends), [`map.graph`](map.md#map.graph), [`map.snapshot`](map.md#map.snapshot)), then renders generated map files with explanations ([`map.emit`](map.md#map.emit), [`map.explanations`](map.md#map.explanations)). Also derives wiring code and trace plans from that snapshot ([`map.wire-gen`](map.md#map.wire-gen)… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_ | 139 | 125 | 9 | 2 |
 | [operations](operations.md) | Holds the transport-independent orchestration of application actions in [`operations.operations`](operations.md#operations.operations), taking typed requests with an explicit absolute root and returning typed domain results. Both the CLI and the TUI drive the same interface rather than duplicating logic. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_ | 147 | 31 | 2 | 0 |
 | [outside](outside.md) | Collects the repository code that sits beyond the analyzed source layers: benchmark scripts in [`outside.bench`](outside.md#outside.bench), browser prototype assets in [`outside.design`](outside.md#outside.design), the VS Code integration in [`outside.editors`](outside.md#outside.editors), samples in [`outside.examples`](outside.md#outside.examples), and build helpers in [`outside.scripts`](outside.md#outside.scripts). _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 0 | 34 | 0 | 0 |
-| [tui](tui.md) | The interactive editor: a session ([`tui.app`](tui.md#tui.app), [`tui.state`](tui.md#tui.state)) decodes input ([`tui.input`](tui.md#tui.input)), draws frames into a grid ([`tui.view`](tui.md#tui.view), [`tui.screen`](tui.md#tui.screen)), and runs analysis in workers ([`tui.background`](tui.md#tui.background)). The same session serves a terminal ([`tui.terminal`](tui.md#tui.terminal)) or a browser over WebSocket… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_ | 440 | 158 | 51 | 0 |
-| **all** | | 1410 | 771 | 130 | 8 |
+| [tui](tui.md) | The interactive editor: a session ([`tui.app`](tui.md#tui.app), [`tui.state`](tui.md#tui.state)) decodes input ([`tui.input`](tui.md#tui.input)), draws frames into a grid ([`tui.view`](tui.md#tui.view), [`tui.screen`](tui.md#tui.screen)), and runs analysis in workers ([`tui.background`](tui.md#tui.background)). The same session serves a terminal ([`tui.terminal`](tui.md#tui.terminal)) or a browser over WebSocket… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_ | 467 | 156 | 53 | 9 |
+| **all** | | 1437 | 769 | 132 | 17 |
 
 ## Index
 
@@ -68,3 +68,5 @@ Modules and classes by name; the parent ID follows each one.
 **V** · [verdict](check.md#check.verdict) (check) · [view](tui.md#tui.view) (tui) · [voice](features.md#features.voice) (features) · [voice-local](features.md#features.voice-local) (features) · [vscode](outside.md#outside.editors.vscode) (outside.editors)
 
 **W** · [web](tui.md#tui.web) (tui) · [width](tui.md#tui.width) (tui) · [wire-gen](map.md#map.wire-gen) (map) · [wiring](check.md#check.wiring) (check) · [wiring-lifecycle](outside.md#outside.examples.wiring-lifecycle) (outside.examples)
+
+**Z** · [zoom](tui.md#tui.zoom) (tui)

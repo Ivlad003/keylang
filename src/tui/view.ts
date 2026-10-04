@@ -8,7 +8,7 @@ import { explainCode } from "../explain.ts";
 import { formatSummary } from "../explain-node.ts";
 import { briefCounts } from "../explain-inventory.ts";
 import type { SavedAnswer } from "../explain-offline.ts";
-import { explanationOf } from "../explanations.ts";
+import { explanationOf, modelName, type NodeExplanation } from "../explanations.ts";
 import { ACTIONS, actionKey, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
@@ -16,6 +16,7 @@ import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, 
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
+import { zoomLevel, type ZoomRow } from "./zoom.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
@@ -310,6 +311,84 @@ function drawCode(grid: Grid, state: State, rect: Rect): void {
     grid.write(rect.x, y, target ? "▶" : " ", { ...base, fg: 75 });
     grid.write(rect.x + 2, y, String(index + 1).padStart(numberWidth), { ...base, fg: THEME.lineNumber.fg! });
     drawRuns(grid, rect.x + numberWidth + 3, y, rect.width - numberWidth - 3, fromText(code.lines[index]!), runs[index] ?? [], base);
+  }
+}
+
+/** Rows above the list of the zoom screen: the crumbs, then two rows of what the focus is. */
+export const ZOOM_HEAD = 3;
+
+/** Rows the list of the zoom screen has in `rect`. */
+export function zoomListHeight(state: Pick<State, "rows">, rect: Rect): number {
+  return Math.max(1, rect.height - ZOOM_HEAD);
+}
+
+/** Below this many terminal columns a zoom row leaves its brief out; the mark and the edges stay. */
+const ZOOM_BRIEF_COLS = 100;
+
+const ZOOM_KIND: Record<ZoomRow["kind"], string> = { layer: "layer", module: "module", class: "class", package: "pkg", fn: "fn", type: "type", more: "" };
+
+/** Where an explanation's words come from, as the nav panel says it. */
+function originText(e: NodeExplanation): string {
+  if (e.origin === "llm") return ` (llm · ${modelName(e.agent ?? "?")} · ${e.date ?? "?"}${e.stale ? " · stale" : ""})`;
+  return e.source ? ` (${e.source})` : " (code)";
+}
+
+/** Crumbs that fit `width`: the nearest levels kept, the farthest cut first behind `…`. */
+export function fitCrumbs(labels: readonly string[], width: number): string {
+  for (let from = 0; from < labels.length; from++) {
+    const text = `${from > 0 ? "… › " : ""}${labels.slice(from).join(" › ")}`;
+    if (stringWidth(text) <= width) return text;
+  }
+  return labels.at(-1) ?? "";
+}
+
+/** The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room. */
+export function zoomRowText(state: State, row: ZoomRow, width: number): { text: string; right: string } {
+  if (row.kind === "more") return { text: `  … ${row.more} more at depth ${row.distance}: > shows them`, right: "" };
+  const away = row.distance > 0 ? ` ·${row.distance}` : "";
+  const right = `${row.mark ? MARK_GLYPH[row.mark] : " "} ↔ ${row.edges}`;
+  const head = `${row.container ? "▸" : " "} ${ZOOM_KIND[row.kind].padEnd(6)} ${row.label}${away}`;
+  const e = state.analysis?.snapshot ? explanationOf(state.analysis.snapshot, state.briefs, row.id) : null;
+  if (state.cols < ZOOM_BRIEF_COLS) return { text: head, right };
+  const room = width - stringWidth(head) - stringWidth(right) - 5;
+  const brief = e === null ? "—" : e.text.replace(/\s+/g, " ");
+  return { text: room > 4 ? `${head} · ${fitWidth(brief, room)}` : head, right };
+}
+
+/**
+ * The zoom screen (c4-zoom/07): crumbs and depth, what the focus is with
+ * where the words come from, then the level's rows — children, then the
+ * neighbors with their distance — the selected one highlighted.
+ */
+function drawZoom(grid: Grid, state: State, rect: Rect): void {
+  const analysis = state.analysis;
+  const zoom = state.zoom;
+  if (!analysis?.snapshot || !zoom) return;
+  const level = zoomLevel(analysis, zoom.focus, zoom.depth);
+  grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
+  const right = ` depth ${zoom.depth} `;
+  grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), rect.width - stringWidth(right) - 2), THEME.panelTitle, rect.width - stringWidth(right) - 2);
+  grid.write(rect.x + rect.width - stringWidth(right), rect.y, right, THEME.panelTitle);
+  const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
+  const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wrapWords(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
+  about.forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
+  const height = zoomListHeight(state, rect);
+  const selected = Math.max(0, Math.min(zoom.selected.get(zoom.focus) ?? 0, level.rows.length - 1));
+  if (level.rows.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "nothing inside: - goes up", THEME.hint);
+  for (let i = 0; i < height; i++) {
+    const index = zoom.top + i;
+    const row = level.rows[index];
+    if (!row) break;
+    const y = rect.y + ZOOM_HEAD + i;
+    const style = index === selected ? THEME.selected : row.kind === "more" || row.distance > 0 ? { ...THEME.text, fg: 245 } : THEME.text;
+    grid.fill(rect.x, y, rect.width, 1, style);
+    const { text, right } = zoomRowText(state, row, rect.width);
+    grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
+    if (right !== "") {
+      const markStyle = row.mark ? { ...style, ...MARK_STYLE[row.mark], bg: style.bg ?? THEME.text.bg! } : style;
+      grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right.slice(0, 1), markStyle);
+      grid.write(rect.x + rect.width - stringWidth(right) - 1 + 1, y, right.slice(1), style);
+    }
   }
 }
 
@@ -1619,9 +1698,23 @@ function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer):
 
 /** The keys of each mode as key and meaning; the help lays them out in two columns where they fit. */
 const HELP: Record<string, [string, string][]> = {
+  zoom: [
+    ["↑↓ PgUp PgDn g G", "move"],
+    ["+ / Enter", "zoom into a layer, module or class"],
+    ["Enter on fn or type", "its code; Esc comes back here"],
+    ["- / Esc / Backspace", "one level up; Esc at the top closes"],
+    ["> / <", "neighbors one edge farther / nearer (0–3)"],
+    ["s", "find a node and zoom to its level"],
+    ["e / K", "explain the node"],
+    ["Alt+Enter", "go to its declaration"],
+    ["q", "back to the view at the node"],
+    [": / Ctrl+P", "actions"],
+    ["F6", "results"],
+  ],
   view: [
     ["↑↓ PgUp PgDn g G", "move"],
     ["Enter / Ctrl+click", "go to code"],
+    ["z", "zoom: the map level by level"],
     ["K / mouse hover", "hover"],
     ["Alt+Enter", "go to spec"],
     ["Tab", "next panel"],
@@ -1813,6 +1906,7 @@ const HINTS: Record<string, { keys: string[]; tail: string }> = {
   read: { keys: ["Enter code", "v raw", "F5 check"], tail: "? keys · Ctrl+P actions" },
   code: { keys: ["Esc back", "↑↓ scroll"], tail: "? keys · Ctrl+P actions" },
   merge: { keys: ["a accept", "r reject", "u undo", "n next", "w write"], tail: "Esc cancel · ? keys" },
+  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
 };
 
 /** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */
@@ -1923,7 +2017,7 @@ export function render(state: State): Grid {
   const readOnly = buffer?.readOnly ? " [generated, read-only]" : "";
   grid.write(1, 0, `keylang · ${state.current ?? "no spec files"}${dirty}${readOnly}`, THEME.statusKey, state.cols - 14);
   const modeLabel = ` ${state.mode.toUpperCase()} `;
-  grid.write(state.cols - modeLabel.length, 0, modeLabel, { ...THEME.statusKey, bg: state.mode === "edit" ? 28 : state.mode === "merge" ? 94 : 25 });
+  grid.write(state.cols - modeLabel.length, 0, modeLabel, { ...THEME.statusKey, bg: state.mode === "edit" ? 28 : state.mode === "merge" ? 94 : state.mode === "zoom" ? 30 : 25 });
   // Body
   // The start screen takes the whole body: there are no panels to show before Browse.
   const start = state.start !== null && state.mode === "view";
@@ -1939,13 +2033,14 @@ export function render(state: State): Grid {
   }
   if (start) drawStart(grid, state, { x: 0, y: area.editor.y, width: state.cols, height: area.editor.height });
   else if (state.mode === "code" && state.code) drawCode(grid, state, area.editor);
+  else if (state.mode === "zoom" && state.zoom) drawZoom(grid, state, area.editor);
   else if (state.mode === "merge" && state.merge) drawMerge(grid, state, area.editor);
   else if (buffer && state.mode === "read") drawRead(grid, state, area.editor, buffer);
   else if (buffer) drawEditor(grid, state, area.editor, buffer);
   else grid.write(area.editor.x + 2, area.editor.y + 1, state.error ?? "No spec files. Run `keylang init`, then add rules or flows under keylang/.", THEME.hint);
   // Detail line: a transient message, else the finding on the cursor line.
   grid.fill(0, area.detail.y, state.cols, 1, {});
-  const item = buffer && state.analysis && state.mode !== "merge" && state.mode !== "code" ? evidenceOf(state.analysis, buffer.path).get(state.cursor.line + 1) : undefined;
+  const item = buffer && state.analysis && state.mode !== "merge" && state.mode !== "code" && state.mode !== "zoom" ? evidenceOf(state.analysis, buffer.path).get(state.cursor.line + 1) : undefined;
   const detail = state.message ? { text: state.message, style: THEME.hint } : lineMessage(item);
   if (detail) grid.write(1, area.detail.y, detail.text, detail.style, state.cols - 2);
   // Status bar
@@ -1989,7 +2084,7 @@ export function render(state: State): Grid {
   grid.write(Math.max(x + 2, state.cols - stringWidth(hints) - 1), area.status.y, hints, THEME.status);
   // Popups
   if (state.results.open && !state.results.viewing) drawResults(grid, state, area.panel);
-  if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read")) drawHover(grid, state, area.editor);
+  if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read" || state.mode === "zoom")) drawHover(grid, state, area.editor);
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
   if (state.help) drawHelp(grid, state);
   if (state.prompt) drawPrompt(grid, state, area.detail, area.panel);

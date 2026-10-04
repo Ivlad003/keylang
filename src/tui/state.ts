@@ -10,7 +10,7 @@ import type { ExportFormat, OperationRequest, OperationResult, OperationStatus }
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
-export type Mode = "view" | "edit" | "read" | "code" | "merge";
+export type Mode = "view" | "edit" | "read" | "code" | "merge" | "zoom";
 export type Focus = "editor" | "nav" | "files" | "context" | "results";
 
 export interface Cursor {
@@ -336,6 +336,21 @@ export interface Place {
   mode: Mode;
 }
 
+/**
+ * The zoom screen (c4-zoom/07): the map one level at a time. Lives only in
+ * the session; leaving it drops nothing on disk.
+ */
+export interface ZoomState {
+  /** The node whose level is shown: `@system`, a layer, a module or a class. */
+  focus: string;
+  /** Neighbors as far as this many edges away (0 to 3). */
+  depth: number;
+  /** The selected row of each level visited, by focus: going back up selects the node you came from. */
+  selected: Map<string, number>;
+  /** The first shown row. */
+  top: number;
+}
+
 export interface State {
   root: string;
   config: ConfigState;
@@ -432,4 +447,6 @@ export interface State {
   };
   /** Model briefs saved under `<dir>/explain/brief/`, read with each analysis: explanations for the nav panel and the node search. */
   briefs: ReadonlyMap<string, StoredExplanation>;
+  /** The zoom screen while it is open (mode `zoom`), or the last one: `z` reopens where it was. */
+  zoom: ZoomState | null;
 }

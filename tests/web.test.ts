@@ -890,3 +890,21 @@ test("web: the expiry of a detached session and server.close() cancel a held wri
   assert.equal(held.runs(), 2);
   assert.deepEqual(artifacts(root), before, "nothing written after the close");
 });
+
+test("web: the zoom screen over the real transport: z from the palette, + into a layer, - back up (c4-zoom/07)", async (t) => {
+  const root = checkoutRepo(t);
+  const { url } = await startWeb(t, root);
+  const client = new Client(url, "session-zoom", 120, 30);
+  t.after(() => client.close());
+  await client.opened;
+  const screen = clientScreen(client);
+  await waitFor(() => analysed(screen), "the first analysis");
+  palette(screen, "zoom");
+  await waitFor(() => / ZOOM $/.test(screen.lines()[0] ?? "") && /▸ layer  domain/.test(screen.text()), "the zoom screen at the repository");
+  screen.input("+");
+  await waitFor(() => /system › domain +depth 1/.test(screen.text()) && /module order/.test(screen.text()), "the domain's level");
+  screen.input("-");
+  await waitFor(() => /system +depth 1/.test(screen.text()) && !/system › domain/.test(screen.text()), "back at the repository");
+  screen.input("q");
+  await waitFor(() => !/ ZOOM $/.test(screen.lines()[0] ?? ""), "the view again");
+});

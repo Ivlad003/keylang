@@ -91,6 +91,14 @@ export const ACTIONS: readonly Action[] = [
   },
   { id: "files", label: "Files panel", group: "View", aliases: ["files", "file panel"], key: "F2" },
   { id: "navigation", label: "Navigation panel", group: "View", aliases: ["navigation", "nav"], key: "F3" },
+  {
+    id: "zoom",
+    label: "Zoom: explore the map by levels",
+    group: "View",
+    aliases: ["zoom", "c4", "levels", "explore"],
+    key: "z",
+    when: (ctx) => ctx.noSnapshot ?? (ctx.merge ? "finish the merge first" : null),
+  },
   { id: "context", label: "Agent context panel", group: "View", aliases: ["context", "agent context"], key: "F4" },
   { id: "results", label: "Operation results", group: "View", aliases: ["results", "history", "reports"], key: "F6" },
   {
