@@ -596,6 +596,40 @@
     - fn [stubFor](../../src/spec-to-code.ts#L273) (file: string, name: string, id: string, signature: string | null, newFile: boolean) → string <!-- internal -->
     - fn [modelBody](../../src/spec-to-code.ts#L289) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       - calls features.spec-to-code.flowsMentioning
+  - module [stale](../../src/stale.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - explanations map.explanations
+    - ir lang.ir
+    - safe-write base.safe-write
+    - snapshot map.snapshot
+    - span base.span
+    - type [StaleBaseline](../../src/stale.ts#L21) = ReadonlyMap<string, ReadonlyMap<string, string>>
+    - type [Statement](../../src/stale.ts#L24)
+    - type [StaleFinding](../../src/stale.ts#L41) extends Statement
+    - type [StaleReport](../../src/stale.ts#L53)
+    - fn [staleBaselinePath](../../src/stale.ts#L61) (config: Pick<Config, "dir">) → string
+    - fn [specStatements](../../src/stale.ts#L70) (docs: readonly Document[]) → Statement[]
+      - calls features.stale.sectionRefs, features.stale.subtreeRefs, lang.ir.sectionNodes
+    - fn [subtreeRefs](../../src/stale.ts#L105) (node: Node) → string[] <!-- internal -->
+    - fn [sectionRefs](../../src/stale.ts#L109) (section: Section) → string[] <!-- internal -->
+      - calls lang.ir.sectionNodes
+    - fn [statementPrint](../../src/stale.ts#L118) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
+      - calls map.explanations.snapshotBaseline, features.stale.closureComplete
+    - fn [closureComplete](../../src/stale.ts#L131) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
+    - fn [staleReport](../../src/stale.ts#L148) (docs: readonly Document[], snapshot: AnalysisSnapshot, baseline: StaleBaseline, whole = false) → StaleReport
+      - calls features.stale.specStatements, features.stale.statementPrint, base.span.compareText
+    - fn [acceptBaseline](../../src/stale.ts#L170) (baseline: StaleBaseline, report: StaleReport, checked: readonly string[]) → StaleBaseline
+    - fn [baselineJson](../../src/stale.ts#L183) (baseline: StaleBaseline) → string
+    - fn [parseBaseline](../../src/stale.ts#L198) (text: string, path: string) → StaleBaseline
+      - calls features.stale.isRecord
+    - fn [isRecord](../../src/stale.ts#L219) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [staleLine](../../src/stale.ts#L224) (f: StaleFinding) → string
+    - fn [staleSummary](../../src/stale.ts#L237) (report: StaleReport) → string
+    - type [StaleCheck](../../src/stale.ts#L245)
+    - fn [runStaleCheck](../../src/stale.ts#L259) (request: { root: string; base: string; paths: readonly string[]; accept: boolean }) → Promise<StaleCheck>
+      - calls base.config.loadConfig, base.config.toPosix, map.analyze.within, features.stale.staleBaselinePath, features.stale.parseBaseline, map.analyze.analyze, features.stale.staleReport, features.stale.acceptBaseline, features.stale.baselineJson, base.safe-write.safeWrite
   - module [stats](../../src/stats.ts#L1)
     - node external.node
     - safe-write base.safe-write

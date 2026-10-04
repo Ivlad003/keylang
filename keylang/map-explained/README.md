@@ -8,16 +8,16 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 57 | 0 | 0 | 33 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 46 | 0 | 0 | 58 |
+| [cli](cli.md) |  | 47 | 0 | 0 | 58 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 118 | 0 | 0 | 64 |
-| [features](features.md) |  | 228 | 0 | 0 | 140 |
+| [features](features.md) |  | 242 | 0 | 0 | 146 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 127 | 0 | 0 | 134 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [outside](outside.md) |  | 0 | 0 | 0 | 34 |
 | [tui](tui.md) |  | 440 | 0 | 0 | 209 |
-| **all** | | 1296 | 0 | 0 | 875 |
+| **all** | | 1311 | 0 | 0 | 881 |
 
 ## Index
 
@@ -57,7 +57,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **R** · [resolve](check.md#check.resolve) (check) · [rules](check.md#check.rules) (check) · [run](outside.md#outside.bench.run) (outside.bench) · [run-id](cli.md#cli.run-id) (cli) · [rust](extract.md#extract.rust) (extract) · [rust-imports](map.md#map.rust-imports) (map) · [RustResolver](map.md#map.rust-imports.RustResolver) (map.rust-imports)
 
-**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [scripts](outside.md#outside.design.scripts) (outside.design) · [scripts](outside.md#outside.scripts) (outside) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-ir](lang.md#lang.spec-ir) (lang) · [spec-to-code](features.md#features.spec-to-code) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
+**S** · [safe-write](base.md#base.safe-write) (base) · [scc](check.md#check.scc) (check) · [screen](tui.md#tui.screen) (tui) · [scripts](outside.md#outside.design.scripts) (outside.design) · [scripts](outside.md#outside.scripts) (outside) · [Server](cli.md#cli.lsp.Server) (cli.lsp) · [snapshot](map.md#map.snapshot) (map) · [SnapshotWorker](tui.md#tui.background.SnapshotWorker) (tui.background) · [span](base.md#base.span) (base) · [spec-ir](lang.md#lang.spec-ir) (lang) · [spec-to-code](features.md#features.spec-to-code) (features) · [stale](features.md#features.stale) (features) · [state](tui.md#tui.state) (tui) · [stats](features.md#features.stats) (features)
 
 **T** · [terminal](tui.md#tui.terminal) (tui) · [test-report](check.md#check.test-report) (check) · [text-to-spec](tui.md#tui.text-to-spec) (tui) · [theme](tui.md#tui.theme) (tui) · [trace](cli.md#cli.trace) (cli) · [trace-evidence](check.md#check.trace-evidence) (check) · [trace-hooks](cli.md#cli.trace-hooks) (cli) · [trace-plan](map.md#map.trace-plan) (map) · [treesitter](extract.md#extract.treesitter) (extract) · [ts](extract.md#extract.ts) (extract)
 

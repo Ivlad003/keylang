@@ -26,6 +26,7 @@ import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
 import { checkSkipNote, checkSummary, featureSummary, gapLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
+import { runStaleCheck, staleLine, staleSummary } from "./stale.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -126,6 +127,13 @@ Commands:
                             Rebuilds the analysis in memory; does not write the map.
                             --changed reports only findings that touch files changed
                             since <ref> (default HEAD) plus untracked files
+  check --stale [paths…] [--accept]
+                            Prose whose code changed since it was accepted: node
+                            descriptions and flow when/then/invariant, against the
+                            fingerprints in <dir>/baseline.json (callees and cycles
+                            included; "incomplete" when keylang cannot see all the
+                            code). A warning: exit 0. Writes nothing; --accept writes
+                            the current fingerprints of the checked specs after review
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only);
                             a file it cannot read or write is named and the rest are done (exit 2)
@@ -170,6 +178,7 @@ const OPTIONS = {
   limit: { type: "string" },
   jobs: { type: "string" },
   stale: { type: "boolean" },
+  accept: { type: "boolean" },
   strict: { type: "boolean" },
   format: { type: "string" },
   static: { type: "string" },
@@ -245,6 +254,7 @@ async function run(argv: readonly string[]): Promise<number> {
         changed: values.changed === true,
         since: values.since,
         stale: values.stale === true,
+        accept: values.accept === true,
       });
     case "explain":
       return cmdExplain(paths[0], {
@@ -932,9 +942,13 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean }): Promise<number> {
-  // Without this a parsed but unread `--stale` would run a plain check and pass.
-  if (opts.stale) throw new Error("check --stale: not implemented yet (design-v0.2/21)");
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }): Promise<number> {
+  if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
+  if (opts.stale) {
+    const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.strict ? "--strict" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
+    if (other !== null) throw new Error(`check: --stale cannot be combined with ${other}`);
+    return cmdCheckStale(paths, opts.accept);
+  }
   const format = opts.format;
   if (!isCheckFormat(format)) throw new Error(`unknown --format \`${format}\`; expected ${CHECK_FORMATS.join(", ")}`);
   let staticMode: StaticMode | undefined;
@@ -976,6 +990,22 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
   process.stdout.write(checkReportText(format, payload));
   process.stderr.write(`${checkSummary(payload.counts)}\n`);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `check --stale`: one line per statement to review on stdout (stale, new, or
+ * unchanged but incomplete), the counts on stderr. Stale is a warning: the
+ * code is 0 unless the invocation or I/O fails.
+ */
+async function cmdCheckStale(paths: string[], accept: boolean): Promise<number> {
+  const cwd = process.cwd();
+  const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
+  for (const f of report.findings) if (f.state !== "fresh" || f.incomplete.length > 0) process.stdout.write(`${staleLine(f)}\n`);
+  for (const o of report.obsolete) process.stdout.write(`${path}: obsolete \`${o.key}\` of ${o.file}: no such statement any more\n`);
+  process.stderr.write(`${staleSummary(report)}\n`);
+  if (accepted !== null) process.stderr.write(`keylang: accepted ${accepted} fingerprint${accepted === 1 ? "" : "s"} in ${path}\n`);
+  else if (report.findings.some((f) => f.state !== "fresh") || report.obsolete.length > 0) process.stderr.write("keylang: after review, run `keylang check --stale --accept`\n");
+  return 0;
 }
 
 /**

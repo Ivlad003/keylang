@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -926,6 +926,60 @@
     - fn [modelBody](../../src/spec-to-code.ts#L289) (analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function from the model, with its declared name; the rest of its answer is dropped.
       - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning)
+  - module [stale](../../src/stale.ts#L1)
+    <a id="features.stale"></a><br>Staleness of prose in specs (design §4.4): every node description and every flow `when` / `then` / `invariant` gets the fingerprint of the code it talks about — the closure fingerprints of the snapshot, so a change in a callee, a cycle included, reaches it. The accepted…
+    - node [external.node](external.md#external.node)
+    - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - explanations [map.explanations](map.md#map.explanations)
+    - ir [lang.ir](lang.md#lang.ir)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [StaleBaseline](../../src/stale.ts#L21) = ReadonlyMap<string, ReadonlyMap<string, string>>
+      <a id="features.stale.StaleBaseline"></a><br>Accepted fingerprints: spec file (relative to the root, POSIX) → statement key → fingerprint.
+    - type [Statement](../../src/stale.ts#L24)
+      <a id="features.stale.Statement"></a><br>One piece of prose bound to code.
+    - type [StaleFinding](../../src/stale.ts#L41) extends Statement
+      <a id="features.stale.StaleFinding"></a>
+    - type [StaleReport](../../src/stale.ts#L53)
+      <a id="features.stale.StaleReport"></a>
+    - fn [staleBaselinePath](../../src/stale.ts#L61) (config: Pick<Config, "dir">) → string
+      <a id="features.stale.staleBaselinePath"></a><br>Where the accepted fingerprints live, relative to the root, POSIX.
+    - fn [specStatements](../../src/stale.ts#L70) (docs: readonly Document[]) → Statement[]
+      <a id="features.stale.specStatements"></a><br>The statements of hand-written specs: descriptions of nodes in map and flow sections, and every flow `when`, `then` and `invariant`. Generated map files are skipped: their text is the code's own.
+      - calls [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+    - fn [subtreeRefs](../../src/stale.ts#L105) (node: Node) → string[] <!-- internal -->
+      <a id="features.stale.subtreeRefs"></a>
+    - fn [sectionRefs](../../src/stale.ts#L109) (section: Section) → string[] <!-- internal -->
+      <a id="features.stale.sectionRefs"></a>
+      - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
+    - fn [statementPrint](../../src/stale.ts#L118) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
+      <a id="features.stale.statementPrint"></a><br>The fingerprint of a statement's subjects in the snapshot, and what makes it incomplete. A subject the snapshot lacks hashes as `?`, so it turning up later is a change too.
+      - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.stale.closureComplete](features.md#features.stale.closureComplete)
+    - fn [closureComplete](../../src/stale.ts#L131) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
+      <a id="features.stale.closureComplete"></a><br>A fn or type: its closure; a module or layer: every fn and type under it.
+    - fn [staleReport](../../src/stale.ts#L148) (docs: readonly Document[], snapshot: AnalysisSnapshot, baseline: StaleBaseline, whole = false) → StaleReport
+      <a id="features.stale.staleReport"></a><br>The statements of `docs` against the snapshot and the accepted baseline. Entries of the checked (hand-written) files can be obsolete; with `whole` (every spec of the repository was read) so can those of a file that is gone.
+      - calls [features.stale.specStatements](features.md#features.stale.specStatements), [features.stale.statementPrint](features.md#features.stale.statementPrint), [base.span.compareText](base.md#base.span.compareText)
+    - fn [acceptBaseline](../../src/stale.ts#L170) (baseline: StaleBaseline, report: StaleReport, checked: readonly string[]) → StaleBaseline
+      <a id="features.stale.acceptBaseline"></a><br>The baseline after accepting `report`: the checked files' entries are replaced by the current fingerprints (a file with no statement left is dropped); other files keep theirs.
+    - fn [baselineJson](../../src/stale.ts#L183) (baseline: StaleBaseline) → string
+      <a id="features.stale.baselineJson"></a><br>The baseline as committed: files, then keys in code-unit order; two-space JSON with a final newline.
+    - fn [parseBaseline](../../src/stale.ts#L198) (text: string, path: string) → StaleBaseline
+      <a id="features.stale.parseBaseline"></a><br>Reads a committed baseline; throws `path: problem` naming the field when it is not one.
+      - calls [features.stale.isRecord](features.md#features.stale.isRecord)
+    - fn [isRecord](../../src/stale.ts#L219) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.stale.isRecord"></a>
+    - fn [staleLine](../../src/stale.ts#L224) (f: StaleFinding) → string
+      <a id="features.stale.staleLine"></a><br>One report line: `file:line:col: stale invariant `…`: …`.
+    - fn [staleSummary](../../src/stale.ts#L237) (report: StaleReport) → string
+      <a id="features.stale.staleSummary"></a><br>The stderr summary: counts by state, incomplete and obsolete.
+    - type [StaleCheck](../../src/stale.ts#L245)
+      <a id="features.stale.StaleCheck"></a>
+    - fn [runStaleCheck](../../src/stale.ts#L259) (request: { root: string; base: string; paths: readonly string[]; accept: boolean }) → Promise<StaleCheck>
+      <a id="features.stale.runStaleCheck"></a><br>`check --stale [paths…] [--accept]`: analyses the repository (nothing of it is written), compares its specs with the committed baseline, and with `accept` writes the current fingerprints of the checked files. Throws on a usage or I/O problem, naming the file.
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.within](map.md#map.analyze.within), [features.stale.staleBaselinePath](features.md#features.stale.staleBaselinePath), [features.stale.parseBaseline](features.md#features.stale.parseBaseline), [map.analyze.analyze](map.md#map.analyze.analyze), [features.stale.staleReport](features.md#features.stale.staleReport), [features.stale.acceptBaseline](features.md#features.stale.acceptBaseline), [features.stale.baselineJson](features.md#features.stale.baselineJson), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [stats](../../src/stats.ts#L1)
     <a id="features.stats"></a><br>`.keylang/stats.json`: how often people accept what a model proposed (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines, and per kind of suggestion; local, never a verdict.
     - node [external.node](external.md#external.node)
