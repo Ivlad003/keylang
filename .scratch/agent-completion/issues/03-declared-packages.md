@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -16,9 +16,9 @@
 - [x] `declared-packages.ts` переписано: межі маніфестів, `exclude`, workspaces, `@types`, JSONC; старі тексти помилок збережено; `map`/`map --check` дають 2 на зламаному маніфесті-предку
 - [x] `knownExternal` для резолвера будується з `packages`; режим без коду читає лише кореневі маніфести
 - [x] тести: `exclude: ["bench/**"]` з `bench/x/package.json` → `step external.junk` стає K001 (зміна поведінки, зафіксована); `@scope/pkg` і `scope-pkg` разом → `external.scope-pkg-2` з попередженням; workspace-пакет не в `knownExternal`
-- [ ] повний `npm test` у реальному дереві без регресій (це зміна snapshotId і кешу фактів)
+- [x] повний `npm test` у реальному дереві без регресій (це зміна snapshotId і кешу фактів)
 - [x] `docs/format.md` §6 (межі, колізії, Python не читається, `@types`, workspaces); `docs/adr/0010-declared-packages.md` з аргументом «bug fix у межах ADR 0007»; у підсумку PR — явна позначка несумісності для посилань, відомих лише через вкладений/виключений маніфест
-- [ ] `npm run typecheck`, `npm test`, `map` (переглянути diff), `map --check`, `check` — зелені
+- [x] `npm run typecheck`, `npm test`, `map` (переглянути diff), `map --check`, `check` — зелені
 
 Ключові файли: новий `src/external-ids.ts`, `src/graph.ts`, `src/declared-packages.ts`, `src/analyze.ts`, `src/snapshot.ts`
 
@@ -51,3 +51,15 @@
 - Docs: `docs/format.md` §6 (два абзаци), `docs/tools.md` рядок `map`, `docs/adr/0010-declared-packages.md`.
 - Перевірено: `npm run typecheck` — ok; цільові тести — ok; `node bin/keylang.js map` (diff переглянуто: новий модуль у base, declared-packages/graph/analyze) — закомічено; `map --check` — 0; `check` — 0 fail.
 - **Лишилось:** повний `npm test` у реальному дереві (не запускався; відомі незалежні macOS-збої: snapshot spelling, два tui /var vs /private/var, packed tarball). Після зеленого прогону — відмітити два останні пункти й поставити `resolved`. У PR позначити несумісність: посилання, відомі лише через вкладений/виключений маніфест, тепер K001; колізійні ID; одноразова зміна snapshotId.
+
+### Несумісні зміни
+
+- Пакет, оголошений лише у вкладеному маніфесті поза шляхом до коду або у виключеному (`exclude`), більше не відомий: посилання `external.<x>` на нього тепер K001.
+- Колізія сегментів імен (напр. `@scope/pkg` і `scope-pkg`) розв'язується один раз над імпортованими й оголошеними пакетами: ID може стати суфіксним (`external.scope-pkg-2`, з попередженням); оголошений та імпортований пакет тепер мають один ID.
+- `EXTRACTOR_VERSION` m1.8 → m1.9, тексти маніфестів входять у входи резолвера: одноразова зміна `snapshotId` та інвалідація кешу фактів.
+
+### Завершення — 2026-10-04, Claude Code (subagent, гілка `done/agent-completion-03`)
+
+- `wip/agent-completion-03` перебазовано на master `5dfda93` (дублікати комітів нотаток пропущено).
+- Перевірки: `npm run typecheck` — ok; `npm test` — 594 тести: 593 pass, 0 fail, 1 skip (voice/whisper.cpp, очікувано); `node bin/keylang.js map --check` — 0 (карта актуальна); `node bin/keylang.js check` — 0 fail, 24 unverified, 47 ok.
+- `spec.md` фічі не має розділу «Несумісні зміни», тому їх зафіксовано тут.
