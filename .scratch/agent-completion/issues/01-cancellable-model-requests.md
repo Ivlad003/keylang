@@ -6,18 +6,18 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-info
+**Status:** resolved
 
 **Type:** code
 
 **Verify:** `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] `LlmRequest` приймає `signal` і `timeoutMs`; Anthropic та OpenRouter поєднують їх зі своїм таймаутом; перерваний запит кидає `AbortError`, який розпізнає експортований хелпер
-- [ ] усі виклики клієнта (CLI-команди, ghost, чернетка агента) переведені на об'єкт опцій з `root`
-- [ ] TUI: `Esc`, друк, зміна режиму/буфера, MERGE, `Ctrl+Space`, `close()` скасовують ghost і чернетку в польоті
-- [ ] e2e у `tests/tui.test.ts`: мок-модель із затримкою 2 с і лічильником перерваних з'єднань; після `Esc` рівно 1 перерваний запит, повідомлення порожнє, ghost не показано; наявний тест «два ghost-запити» лишається зеленим
-- [ ] `docs/tools.md` (абзац ghost у TUI) описує скасування
-- [ ] `npm run typecheck`, `npm test`, `map --check`, `check` — зелені
+- [x] `LlmRequest` приймає `signal` і `timeoutMs`; Anthropic та OpenRouter поєднують їх зі своїм таймаутом; перерваний запит кидає `AbortError`, який розпізнає експортований хелпер
+- [x] усі виклики клієнта (CLI-команди, ghost, чернетка агента) переведені на об'єкт опцій з `root`
+- [x] TUI: `Esc`, друк, зміна режиму/буфера, MERGE, `Ctrl+Space`, `close()` скасовують ghost і чернетку в польоті
+- [x] e2e у `tests/tui.test.ts`: мок-модель із затримкою 2 с і лічильником перерваних з'єднань; після `Esc` рівно 1 перерваний запит, повідомлення порожнє, ghost не показано; наявний тест «два ghost-запити» лишається зеленим
+- [x] `docs/tools.md` (абзац ghost у TUI) описує скасування
+- [x] `npm run typecheck`, `npm test`, `map --check`, `check` — зелені
 
 Ключові файли: `src/llm.ts`, `src/ghost.ts`, `src/tui/assist.ts`, `src/tui/app.ts`, `src/cli.ts` (місця виклику клієнта)
 
@@ -121,6 +121,11 @@ src/ghost.ts      |  6 ++++--
 > - ✅ `docs/tools.md` описує переривання; карта перегенерована
 > - ✅ `npm run typecheck`, `map --check`, `check` — зелені
 > - ⏳ `npm test` — у фоні
-<shiftwork:needs-info reason="review gave no verdict twice; review it by hand"/>
 
 - Branch kept: shiftwork/agent-completion-01
+
+### Resolved — 2026-10-04 (вручну, гілка `done/agent-completion-01`)
+- Основа — `origin/wip/agent-completion-01` (переписано з нуля), перебазовано на `master`; `ad382d2` (shiftwork, поверх старого `c3ef9b7`) відкинуто: там `signal`/`timeoutMs` дублювалися в `LlmRequest` і `LlmCallOptions`, `isAborted` додатково ловив будь-який `AbortError`, зайве `OperationContext.controller`, а тест `Esc` читав лічильник без очікування (флейк 4/6).
+- Відхилення від тексту критерію 1 (за аудитом 2026-10-01): `signal` і `timeoutMs` — в опціях виклику `complete(request, { signal, timeoutMs })`, не в `LlmRequest`; скасування — `LlmCancelled`, хелпер — `isCancelled`, без окремого `AbortError`.
+- Знахідки ревʼю: тест `Esc` чекає `waitUntil(() => model.aborted === 1)`; повідомлення тайм-ауту називає `KEYLANG_LLM_TIMEOUT_MS` лише коли межею була змінна (ghost: `anthropic: no answer within 60000 ms`); у `docs/tools.md` записано, що `Esc` і друк чернетку агента не скасовують (лише Cancel операції і закриття сесії; `close()` зупиняє worker, тест «close() aborts the agent's flow draft in flight»).
+- Перевірки: `npm run typecheck` 0; `npm test` 593 pass / 0 fail / 1 skip (whisper.cpp), ~22 хв під навантаженням; `map --check` 0 після `map` (diff — зсуви рядків і нові символи `llm.ts`/`assist.ts`); `check` 0 fail. Тести з таймінгом (`tests/tui.test.ts` ghost/Ctrl+Space/close/Cancel — 29, `tests/draft.test.ts` llm/Cancel — 4) — 5 прогонів поспіль, усі зелені.
