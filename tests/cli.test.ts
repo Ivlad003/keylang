@@ -58,6 +58,34 @@ test("check diagnostics fixture", () => {
   assert.equal(o.stdout, readFileSync(join(root, "tests/fixtures/diagnostics.expected"), "utf8"));
 });
 
+// `planned` is a top-level declaration, not a modifier of `step`/`trigger`:
+// K005 sits on the word and says how to write it; other arities keep the old text.
+test("K005 on `step planned <id>` points at the `planned` declaration", (t) => {
+  const dir = tempDir(t, "keylang-step-planned-");
+  const flow = "# flow p\n\n- trigger planned a.b.c\n- step a.b.d\n  - step planned a.b.e\n- step a.b c\n- step planned type a.b.f\n";
+  writeTree(dir, { "keylang/flows/p.md": flow });
+  const hint = (id: string, keyword = "step", kind = "fn"): string =>
+    `K005 \`planned\` is a declaration, not a ${keyword} modifier: add \`- planned ${kind} ${id}\` at the top of the flow and keep \`- ${keyword} ${id}\``;
+  const o = keylang(dir, ["check", "keylang/flows/p.md"]);
+  assert.equal(o.status, 1, o.stdout + o.stderr);
+  const k005 = o.stdout.split("\n").filter((line) => line.includes("K005"));
+  assert.deepEqual(k005, [
+    `keylang/flows/p.md:3:11: ${hint("a.b.c", "trigger")}`,
+    `keylang/flows/p.md:5:10: ${hint("a.b.e")}`,
+    "keylang/flows/p.md:6:12: K005 expected a single ID",
+    `keylang/flows/p.md:7:8: ${hint("a.b.f", "step", "type")}`,
+  ]);
+  const json = JSON.parse(keylang(dir, ["check", "--format", "json", "keylang/flows/p.md"]).stdout) as { results: { line: number; code: string | null; evidence: string; reason?: string }[] };
+  const row = json.results.find((r) => r.code === "K005" && r.line === 5);
+  assert.equal(row?.evidence, hint("a.b.e").slice("K005 ".length));
+  assert.equal(row?.reason, "arguments");
+  const parsed = keylang(dir, ["parse", "--json", "keylang/flows/p.md"]);
+  const diag = (JSON.parse(parsed.stdout) as { diagnostics: { message: string; reason?: string; span: { start: { line: number; col: number } } }[] }[])[0]!.diagnostics.find((d) => d.span.start.line === 3);
+  assert.equal(diag?.message, hint("a.b.c", "trigger").slice("K005 ".length));
+  assert.equal(diag?.span.start.col, 11);
+  assert.equal(diag?.reason, "arguments");
+});
+
 test("deferred flow properties and a query rule stay K004, and help has no migrate", (t) => {
   const dir = tempDir(t, "keylang-deferred-");
   writeTree(dir, {

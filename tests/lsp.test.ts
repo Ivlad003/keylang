@@ -235,7 +235,7 @@ test("lsp: check.static shape leaves a hook step unverified, same as check", asy
 });
 
 test("lsp: a pulled K005 has data.reason and data.verdict; another code has no data.reason", async (t) => {
-  const dir = fixture(t, { "keylang/flows/bad.md": '# flow bad\n\n- test f.ts "x\n- step domain.order.missingFn\n' });
+  const dir = fixture(t, { "keylang/flows/bad.md": '# flow bad\n\n- test f.ts "x\n- step domain.order.missingFn\n- step planned domain.order.later\n' });
   const s = await open(t, dir);
   const flowUri = uri(dir, "keylang/flows/bad.md");
   s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: readFileSync(join(dir, "keylang/flows/bad.md"), "utf8") } });
@@ -243,6 +243,10 @@ test("lsp: a pulled K005 has data.reason and data.verdict; another code has no d
   const quote = pulled.find((item) => item.code === "K005" && item.message === "unterminated quote");
   assert.equal(quote?.data?.reason, "quote");
   assert.equal(quote?.data?.verdict, "fail");
+  const planned = pulled.find((item) => item.code === "K005" && item.range.start.line === 4);
+  assert.deepEqual(planned?.range.start, { line: 4, character: 7 });
+  assert.equal(planned?.message, "`planned` is a declaration, not a step modifier: add `- planned fn domain.order.later` at the top of the flow and keep `- step domain.order.later`");
+  assert.equal(planned?.data?.reason, "arguments");
   const other = pulled.find((item) => item.code === "K001");
   assert.ok(other, JSON.stringify(pulled));
   assert.equal(other.data?.reason, undefined);

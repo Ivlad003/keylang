@@ -1,6 +1,6 @@
 # 05: K005 на `step planned <id>` не підказує окремий рядок `planned`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -32,11 +32,16 @@
 
 Поза цим тікетом: дозволити `step planned <kind> <id>` як скорочення — це зміна граматики (кандидат 1 пілоту, друга половина); окреме рішення після проби з людьми.
 
-- [ ] фікстура: `- step planned a.b.c` і `- trigger planned a.b.c` дають новий текст K005 з колонкою слова `planned`; `- step a.b c` — старий `expected a single ID`
-- [ ] `parse --json`, `check --format json` (`reason: "arguments"`) і LSP-діагностика несуть той самий текст
-- [ ] format.md: виконуваний приклад (`diagnostics`) з новим текстом; `node --test tests/format-examples.test.ts` проходить
-- [ ] `tests/fixtures/diagnostics.expected` змінюється лише там, де є `step planned`
+- [x] фікстура: `- step planned a.b.c` і `- trigger planned a.b.c` дають новий текст K005 з колонкою слова `planned`; `- step a.b c` — старий `expected a single ID`
+- [x] `parse --json`, `check --format json` (`reason: "arguments"`) і LSP-діагностика несуть той самий текст
+- [x] format.md: виконуваний приклад (`diagnostics`) з новим текстом; `node --test tests/format-examples.test.ts` проходить
+- [x] `tests/fixtures/diagnostics.expected` змінюється лише там, де є `step planned`
 
 Ключові файли: `src/parser.ts`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- Відтворено справжнім CLI: `- trigger planned …` і `- step planned …` давали `K005 expected a single ID` на слові після `planned`.
+- Зроблено: `plannedModifier` у `src/parser.ts` перед `oneRef` для `step` і `trigger`; K005 на `planned`, `reason: arguments`. Тест `tests/cli.test.ts` (check, `check --format json`, `parse --json`), LSP — у `tests/lsp.test.ts` (pulled K005), рядок у `tests/fixtures/diagnostics/flow.md` і `.expected`, виконуваний приклад у format.md (§5 «Аргументи»).
+- Припущення: для `trigger` текст називає своє ключове слово — `not a trigger modifier … keep \`- trigger <id>\``, бо `keep - step` змінило б сенс рядка. Для `step` текст точно як у тікеті.
+- Припущення: `step planned <fn|module|type|event> <id>` теж отримує підказку з цим видом замість `fn` (інакше K005 «expected a single ID» на виді). Граматику не змінено: рядок і далі не перевіряється.

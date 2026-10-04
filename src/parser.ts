@@ -118,6 +118,8 @@ function ctxOf(section: SectionKind, parent: NodeKind | undefined): Ctx {
   }
 }
 
+const PLANNED_KINDS: ReadonlySet<string> = new Set(["fn", "module", "type", "event"]);
+
 const RULES = ["layers", "allow", "deny", "entry", "module", "no-cycles"];
 
 /** Keywords an item may start with under `parent` (none at the top of a section). */
@@ -502,9 +504,11 @@ class Parser {
         }
         break;
       }
-      case "rule-module":
       case "trigger":
       case "step":
+        if (!this.plannedModifier(n, rest)) this.oneRef(n, rest);
+        break;
+      case "rule-module":
       case "wire":
       case "compose":
         this.oneRef(n, rest);
@@ -554,9 +558,8 @@ class Parser {
       case "planned": {
         const kindTok = rest[0];
         const idTok = rest[1];
-        const kinds = new Set(["fn", "module", "type", "event"]);
-        if (!kindTok || !idTok || !kinds.has(kindTok.text) || !isId(idTok.text)) {
-          const badId = kindTok !== undefined && idTok !== undefined && kinds.has(kindTok.text) && !isId(idTok.text);
+        if (!kindTok || !idTok || !PLANNED_KINDS.has(kindTok.text) || !isId(idTok.text)) {
+          const badId = kindTok !== undefined && idTok !== undefined && PLANNED_KINDS.has(kindTok.text) && !isId(idTok.text);
           this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
           break;
         }
@@ -694,6 +697,27 @@ class Parser {
     const msg = brokenLink ? "malformed link, expected `[id](href)`" : `expected an ID, found \`${t.text}\``;
     this.err("K005", t.span, msg, brokenLink ? "link" : "id");
     return null;
+  }
+
+  /**
+   * `step planned <id>` (or `step planned <kind> <id>`) reads like a modifier,
+   * but `planned` is a declaration of its own: K005 on the word says how to
+   * write it. Without a line kind the hint assumes `fn`.
+   */
+  private plannedModifier(n: Node, rest: Token[]): boolean {
+    const [word, ...tail] = rest;
+    if (word?.text !== "planned") return false;
+    const kind = tail.length === 2 && PLANNED_KINDS.has(tail[0]!.text) ? tail[0]!.text : tail.length === 1 ? "fn" : null;
+    const id = tail.at(-1);
+    if (kind === null || !id || id.kind !== "word" || !isId(id.text)) return false;
+    const keyword = kindLabel(n.kind);
+    this.err(
+      "K005",
+      word.span,
+      `\`planned\` is a declaration, not a ${keyword} modifier: add \`- planned ${kind} ${id.text}\` at the top of the flow and keep \`- ${keyword} ${id.text}\``,
+      "arguments",
+    );
+    return true;
   }
 
   private oneRef(n: Node, rest: Token[]): void {

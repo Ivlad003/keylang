@@ -42,7 +42,7 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 | 02 | [`calls` / `reads` під кроком потоку не перевіряються](issues/02-flow-calls-unchecked.md) | needs-triage |
 | 03 | [`then` одним словом без кандидата мовчить; доповнення після `then` пропонує ID](issues/03-then-bare-word-no-candidate.md) | needs-triage |
 | 04 | [Рядок із K003 отримує `ok`](issues/04-k003-line-gets-ok.md) | needs-triage |
-| 05 | [K005 на `step planned <id>` не підказує окремий рядок `planned`](issues/05-k005-step-planned-hint.md) | ready-for-agent |
+| 05 | [K005 на `step planned <id>` не підказує окремий рядок `planned`](issues/05-k005-step-planned-hint.md) | resolved |
 | 06 | [`explain K005` відсилає до `format.md`, якого немає в пакеті](issues/06-explain-without-format-md.md) | ready-for-agent |
 | 07 | [K001 у згенерованому baseline не каже «перегенеруй»](issues/07-k001-generated-file-hint.md) | ready-for-agent |
 | 08 | [Hover на ключових словах і рядках без ID](issues/08-hover-keyword-role.md) | ready-for-agent |

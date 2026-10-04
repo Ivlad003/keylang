@@ -365,6 +365,18 @@ Alias залежності не збігається з контекстним �
 keylang/map.md:1:11: K005 unexpected arguments after layer `options` (a dependency `<alias> <path>` must be nested under a module)
 ```
 
+`planned` — окрема декларація верхнього рівня, а не модифікатор кроку. `step planned <id>` чи `trigger planned <id>` (також `step planned <вид> <id>`) — K005 на слові `planned` з підказкою, як записати; вид без явного — `fn`. `reason` — `arguments`.
+
+```keylang path=keylang/flows/pay.md
+# flow pay
+
+- step planned app.pay.charge
+```
+
+```diagnostics
+keylang/flows/pay.md:3:8: K005 `planned` is a declaration, not a step modifier: add `- planned fn app.pay.charge` at the top of the flow and keep `- step app.pay.charge`
+```
+
 **Р10. `then` вгадує форму**: `then application.purchase.OutOfStock` — посилання, `then retry ≤ 3, backoff …` — текст. Критерій — рівно один токен, який є ID (голим чи текстом лінка) і містить крапку. Якщо той токен крапки не має, а його текст точно (з урахуванням регістру) дорівнює останньому сегменту оголошеного ID карти або `planned` — K008 (warning) на цьому слові, а для лінка — на ID усередині `[…]`. Підказка перелічує всіх кандидатів у стабільному порядку: `did you mean then <повний id>`. Шар (ID з одного сегмента) кандидатом не є. Багатослівний `then`, ID з крапкою і слово без кандидата мовчать; нечіткого пошуку немає. K008 не валить `check`, `--strict`, `feature` і Stop. `fmt` рядок не переписує: заміна тексту посиланням змінила б семантику. `parse` K008 не друкує, бо без індексу резолвера кандидатів немає.
 
 ID з крапкою — посилання. Кілька слів — текст, і K008 немає. Одне слово без крапки, що збігається з останнім сегментом оголошення, — K008:

@@ -5,7 +5,7 @@
 # map
 
 - lang
-  <a id="lang"></a><br>Reads keylang Markdown files into an IR via [`lang.files`](lang.md#lang.files) and [`lang.parser`](lang.md#lang.parser), then renders it back as canonical text ([`lang.fmt`](lang.md#lang.fmt), [`lang.parse-format`](lang.md#lang.parse-format)) or compiles it into typed assertions ([`lang.spec-ir`](lang.md#lang.spec-ir)). It has no dependency on `map`, `extract`, or web-tree-sitter. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  <a id="lang"></a><br>Reads keylang Markdown files into an IR via [`lang.files`](lang.md#lang.files) and [`lang.parser`](lang.md#lang.parser), then renders it back as canonical text ([`lang.fmt`](lang.md#lang.fmt), [`lang.parse-format`](lang.md#lang.parse-format)) or compiles it into typed assertions ([`lang.spec-ir`](lang.md#lang.spec-ir)). It has no dependency on `map`, `extract`, or web-tree-sitter. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [files](../../src/files.ts#L1)
     <a id="lang.files"></a><br>File discovery and loading.
     - node [external.node](external.md#external.node)
@@ -89,7 +89,7 @@
     - ir [lang.ir](lang.md#lang.ir)
     - span [base.span](base.md#base.span)
     - fn [parse](../../src/parser.ts#L11) (path: string, src: string) → Document
-      <a id="lang.parser.parse"></a><br>Splits the source into lines via [`lang.parser.splitInclusive`](lang.md#lang.parser.splitInclusive), strips a leading BOM and trailing line breaks, and feeds each as a [`lang.parser.Line`](lang.md#lang.parser.Line) with byte offsets to [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line). Returns the `Document` built by [`lang.parser.Parser.finish`](lang.md#lang.parser.Parser.finish). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="lang.parser.parse"></a><br>Splits the source into lines via [`lang.parser.splitInclusive`](lang.md#lang.parser.splitInclusive), strips a leading BOM and trailing line breaks, and feeds each as a [`lang.parser.Line`](lang.md#lang.parser.Line) with byte offsets to [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line). Returns the `Document` built by [`lang.parser.Parser.finish`](lang.md#lang.parser.Parser.finish). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [lang.parser.Parser](lang.md#lang.parser.Parser), [lang.parser.splitInclusive](lang.md#lang.parser.splitInclusive), [lang.parser.Parser.line](lang.md#lang.parser.Parser.line), [lang.parser.Line](lang.md#lang.parser.Line), [lang.parser.Parser.finish](lang.md#lang.parser.Parser.finish)
     - fn [splitInclusive](../../src/parser.ts#L27) (src: string) → string[] <!-- internal -->
       <a id="lang.parser.splitInclusive"></a><br>Split keeping the `\n` on each line (like Rust's `split_inclusive`).
@@ -109,116 +109,119 @@
       <a id="lang.parser.Ctx"></a><br>Where an item stands, which decides the keywords it may use.
     - fn [ctxOf](../../src/parser.ts#L86) (section: SectionKind, parent: NodeKind | undefined) → Ctx <!-- internal -->
       <a id="lang.parser.ctxOf"></a><br>Maps a parent node kind and the current section into the parsing context used by [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) and [`lang.parser.keywordsAt`](lang.md#lang.parser.keywordsAt), grouping related kinds (e.g. `layers`/`entry` → `ref-list`). Unknown parents fall back to a `leaf:` prefix, and `when` depends on whether the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [keywordsAt](../../src/parser.ts#L124) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
+    - fn [keywordsAt](../../src/parser.ts#L126) (section: SectionKind, parent: NodeKind | undefined) → readonly string[]
       <a id="lang.parser.keywordsAt"></a><br>Keywords an item may start with under `parent` (none at the top of a section).
       - calls [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf), [lang.parser.ctxOf](lang.md#lang.parser.ctxOf)
-    - fn [keywordsOf](../../src/parser.ts#L128) (ctx: Ctx) → readonly string[] <!-- internal -->
+    - fn [keywordsOf](../../src/parser.ts#L130) (ctx: Ctx) → readonly string[] <!-- internal -->
       <a id="lang.parser.keywordsOf"></a><br>Maps a parsing context to the fixed list of keywords permitted there, e.g. `module`/`fn`/`type`/`event` inside a module block, with `map-top` prepending `layer` to `RULES`; unknown contexts yield an empty list. Used by [`lang.parser.Parser.bare`](lang.md#lang.parser.Parser.bare) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [keywordKind](../../src/parser.ts#L160) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
+    - fn [keywordKind](../../src/parser.ts#L162) (ctx: Ctx, kw: string) → NodeKind <!-- internal -->
       <a id="lang.parser.keywordKind"></a><br>Maps a keyword string to the node kind used by [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret), passing most keywords through unchanged and returning "unknown" for anything unrecognized. The one context-sensitive case is "module", which becomes "rule-module" when the context is "map-top" or… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Parent](../../src/parser.ts#L194) <!-- internal -->
+    - type [Parent](../../src/parser.ts#L196) <!-- internal -->
       <a id="lang.parser.Parent"></a><br>Describes the enclosing syntax node while walking a parsed tree: its `NodeKind`, the declared identifier if any, and an optional target name, both nullable when the parent has no such piece. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [Parser](../../src/parser.ts#L200) <!-- internal -->
-      <a id="lang.parser.Parser"></a><br>Line-by-line state machine that turns a markdown file into a `Document`: tracks open list items by indent depth, code fences, HTML blocks and prose, and emits sections, nodes and diagnostics. Headings ([`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading)) open map/rules/flow/wiring sections; bullets… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [constructor](../../src/parser.ts#L215) (path: string)
+    - module [Parser](../../src/parser.ts#L202) <!-- internal -->
+      <a id="lang.parser.Parser"></a><br>Line-by-line state machine that turns a markdown file into a `Document`: tracks open list items by indent depth, code fences, HTML blocks and prose, and emits sections, nodes and diagnostics. Headings ([`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading)) open map/rules/flow/wiring sections; bullets… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - fn [constructor](../../src/parser.ts#L217) (path: string)
         <a id="lang.parser.Parser.constructor"></a><br>Stores the given file path and initializes an empty document record carrying that path, a null `generated` marker, and empty `sections` and `diagnostics` lists for later parsing to fill. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [err](../../src/parser.ts#L220) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
+      - fn [err](../../src/parser.ts#L222) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
         <a id="lang.parser.Parser.err"></a><br>Appends a diagnostic for the current file to the document's diagnostics list via [`base.diag.diagnostic`](base.md#base.diag.diagnostic), attaching the structured reason only when the code is "K005" and one is supplied. Every parse-error site in [`lang.parser.Parser`](lang.md#lang.parser.Parser) funnels through this method. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-      - fn [section](../../src/parser.ts#L227) () → Section <!-- internal -->
+      - fn [section](../../src/parser.ts#L229) () → Section <!-- internal -->
         <a id="lang.parser.Parser.section"></a><br>Returns the last section in `this.doc.sections`, first appending a default heading-less "map" section with no items when the document has none yet, so callers like [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) and [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList) always have a section to write into. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [sectionKind](../../src/parser.ts#L234) () → SectionKind <!-- internal -->
+      - fn [sectionKind](../../src/parser.ts#L236) () → SectionKind <!-- internal -->
         <a id="lang.parser.Parser.sectionKind"></a><br>Returns the kind of the most recently opened section in the document being parsed, defaulting to "map" when no section has been started yet; [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item) uses it to decide how to interpret an item line. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [flushProse](../../src/parser.ts#L238) () → void <!-- internal -->
+      - fn [flushProse](../../src/parser.ts#L240) () → void <!-- internal -->
         <a id="lang.parser.Parser.flushProse"></a><br>If any buffered prose lines exist, wraps them into a single `prose` item appended to the current section from [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section), then clears the buffer. Does nothing when no prose is pending. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section)
-      - fn [pushDescription](../../src/parser.ts#L246) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
+      - fn [pushDescription](../../src/parser.ts#L248) (l: Line, text: string, lead: Lead, depth: number) → void <!-- internal -->
         <a id="lang.parser.Parser.pushDescription"></a><br>A non-empty line that belongs to an open item as its description (§3).
         - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Line.span](lang.md#lang.parser.Line.span)
-      - fn [closeList](../../src/parser.ts#L253) (depth: number) → void <!-- internal -->
+      - fn [closeList](../../src/parser.ts#L255) (depth: number) → void <!-- internal -->
         <a id="lang.parser.Parser.closeList"></a><br>Pops nested list nodes off the parser stack until it is at most `depth` deep, attaching each popped node to its parent's children or, when no parent remains, to the current section from [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section) as a top-level item. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section)
-      - fn [finish](../../src/parser.ts#L262) () → Document
+      - fn [finish](../../src/parser.ts#L264) () → Document
         <a id="lang.parser.Parser.finish"></a><br>Flushes any still-open code fence as a code item into the current section via [`lang.parser.Parser.section`](lang.md#lang.parser.Parser.section), then runs [`lang.parser.Parser.flushProse`](lang.md#lang.parser.Parser.flushProse) and [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList) to depth 0 before returning the built document. Called once at end of input by… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList)
-      - fn [line](../../src/parser.ts#L272) (l: Line) → void
-        <a id="lang.parser.Parser.line"></a><br>Dispatches a single source line based on parser state: continues an open code fence or HTML block, else classifies it as blank, generated marker, heading, fence start, bullet, item description, or prose. Delegates to [`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading), [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [line](../../src/parser.ts#L274) (l: Line) → void
+        <a id="lang.parser.Parser.line"></a><br>Dispatches a single source line based on parser state: continues an open code fence or HTML block, else classifies it as blank, generated marker, heading, fence start, bullet, item description, or prose. Delegates to [`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading), [`lang.parser.Parser.item`](lang.md#lang.parser.Parser.item), and… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.closesFence](lang.md#lang.parser.closesFence), [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace), [lang.parser.Parser.pushDescription](lang.md#lang.parser.Parser.pushDescription), [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.htmlBlockStart](lang.md#lang.parser.htmlBlockStart), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.Parser.heading](lang.md#lang.parser.Parser.heading), [lang.parser.opensFence](lang.md#lang.parser.opensFence), [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.isBullet](lang.md#lang.parser.isBullet), [lang.parser.Parser.item](lang.md#lang.parser.Parser.item), [lang.parser.Line.span](lang.md#lang.parser.Line.span)
-      - fn [heading](../../src/parser.ts#L362) (l: Line) → void <!-- internal -->
+      - fn [heading](../../src/parser.ts#L364) (l: Line) → void <!-- internal -->
         <a id="lang.parser.Parser.heading"></a><br>Opens a new document section from a `#` heading line: it flushes pending prose via [`lang.parser.Parser.flushProse`](lang.md#lang.parser.Parser.flushProse), closes open lists, lexes the title with [`lang.parser.lex`](lang.md#lang.parser.lex), and picks the kind (`map`, `rules`, `flow`, `wiring`). Unknown kinds fall back to `map` with a K006… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.lex](lang.md#lang.parser.lex), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.isSegment](lang.md#lang.parser.isSegment)
-      - fn [item](../../src/parser.ts#L393) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
-        <a id="lang.parser.Parser.item"></a><br>Parses one bullet line into a `Node`: it validates indentation (reporting K003 errors), closes deeper lists via [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList), and tokenizes the content with [`lang.parser.lex`](lang.md#lang.parser.lex). It then builds the node with context from [`lang.parser.ctxOf`](lang.md#lang.parser.ctxOf), passes it to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [item](../../src/parser.ts#L395) (l: Line, wsLen: number, indent: number) → void <!-- internal -->
+        <a id="lang.parser.Parser.item"></a><br>Parses one bullet line into a `Node`: it validates indentation (reporting K003 errors), closes deeper lists via [`lang.parser.Parser.closeList`](lang.md#lang.parser.Parser.closeList), and tokenizes the content with [`lang.parser.lex`](lang.md#lang.parser.lex). It then builds the node with context from [`lang.parser.ctxOf`](lang.md#lang.parser.ctxOf), passes it to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
         - calls [lang.parser.Parser.flushProse](lang.md#lang.parser.Parser.flushProse), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.Parser.closeList](lang.md#lang.parser.Parser.closeList), [lang.parser.Parser.section](lang.md#lang.parser.Parser.section), [lang.parser.lex](lang.md#lang.parser.lex), [lang.parser.ctxOf](lang.md#lang.parser.ctxOf), [lang.parser.Parser.sectionKind](lang.md#lang.parser.Parser.sectionKind), [lang.parser.Parser.interpret](lang.md#lang.parser.Parser.interpret)
-      - fn [interpret](../../src/parser.ts#L446) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
-        <a id="lang.parser.Parser.interpret"></a><br>Dispatches a parsed item on its leading keyword (checked via [`lang.parser.keywordsOf`](lang.md#lang.parser.keywordsOf) for the current context), delegating to [`lang.parser.Parser.decl`](lang.md#lang.parser.Parser.decl), [`lang.parser.Parser.refList`](lang.md#lang.parser.Parser.refList), [`lang.parser.Parser.oneRef`](lang.md#lang.parser.Parser.oneRef), [`lang.parser.Parser.freeText`](lang.md#lang.parser.Parser.freeText) or inline handling to fill the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-        - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf), [lang.parser.Parser.bare](lang.md#lang.parser.Parser.bare), [lang.parser.keywordKind](lang.md#lang.parser.keywordKind), [lang.parser.Parser.decl](lang.md#lang.parser.Parser.decl), [lang.parser.Parser.refList](lang.md#lang.parser.Parser.refList), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.Parser.layers](lang.md#lang.parser.Parser.layers), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-      - fn [bare](../../src/parser.ts#L595) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+      - fn [interpret](../../src/parser.ts#L448) (n: Node, l: Line, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
+        <a id="lang.parser.Parser.interpret"></a><br>Dispatches a parsed item on its leading keyword (checked via [`lang.parser.keywordsOf`](lang.md#lang.parser.keywordsOf) for the current context), delegating to [`lang.parser.Parser.decl`](lang.md#lang.parser.Parser.decl), [`lang.parser.Parser.refList`](lang.md#lang.parser.Parser.refList), [`lang.parser.Parser.oneRef`](lang.md#lang.parser.Parser.oneRef), [`lang.parser.Parser.freeText`](lang.md#lang.parser.Parser.freeText) or inline handling to fill the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+        - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf), [lang.parser.Parser.bare](lang.md#lang.parser.Parser.bare), [lang.parser.keywordKind](lang.md#lang.parser.keywordKind), [lang.parser.Parser.decl](lang.md#lang.parser.Parser.decl), [lang.parser.Parser.refList](lang.md#lang.parser.Parser.refList), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.Parser.layers](lang.md#lang.parser.Parser.layers), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.Parser.plannedModifier](lang.md#lang.parser.Parser.plannedModifier), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.Parser.freeText](lang.md#lang.parser.Parser.freeText), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
+      - fn [bare](../../src/parser.ts#L598) (n: Node, ctx: Ctx, parent: Parent | undefined) → void <!-- internal -->
         <a id="lang.parser.Parser.bare"></a><br>Item whose first word is not a keyword of its context.
         - calls [lang.parser.Parser.decl](lang.md#lang.parser.Parser.decl), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.spanned](lang.md#lang.parser.spanned), [lang.parser.Parser.oneRef](lang.md#lang.parser.Parser.oneRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.keywordsOf](lang.md#lang.parser.keywordsOf)
-      - fn [decl](../../src/parser.ts#L645) (n: Node, rest: Token[], parentId: string | null, sig: boolean) → void <!-- internal -->
+      - fn [decl](../../src/parser.ts#L648) (n: Node, rest: Token[], parentId: string | null, sig: boolean) → void <!-- internal -->
         <a id="lang.parser.Parser.decl"></a><br>`<name>` or `[name](path#Lnn)` + optional signature.
         - calls [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.isSegment](lang.md#lang.parser.isSegment), [lang.parser.linkTextSpan](lang.md#lang.parser.linkTextSpan), [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-      - fn [makeRef](../../src/parser.ts#L682) (t: Token) → Ref | null <!-- internal -->
+      - fn [makeRef](../../src/parser.ts#L685) (t: Token) → Ref | null <!-- internal -->
         <a id="lang.parser.Parser.makeRef"></a><br>A bare ID, or `[id](href)`: the link text is the ID, the target is kept and never checked.
         - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.linkTextSpan](lang.md#lang.parser.linkTextSpan), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [oneRef](../../src/parser.ts#L699) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [plannedModifier](../../src/parser.ts#L707) (n: Node, rest: Token[]) → boolean <!-- internal -->
+        <a id="lang.parser.Parser.plannedModifier"></a><br>`step planned <id>` (or `step planned <kind> <id>`) reads like a modifier, but `planned` is a declaration of its own: K005 on the word says how to write it. Without a line kind the hint assumes `fn`.
+        - calls [lang.parser.isId](lang.md#lang.parser.isId), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
+      - fn [oneRef](../../src/parser.ts#L723) (n: Node, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.oneRef"></a><br>Takes the leftover tokens of a line and, when exactly one remains, converts it via [`lang.parser.Parser.makeRef`](lang.md#lang.parser.Parser.makeRef) into a reference appended to the node. With zero or several tokens it reports a K005 error through [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err) instead. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [refList](../../src/parser.ts#L710) (n: Node, rest: Token[], min: number) → void <!-- internal -->
+      - fn [refList](../../src/parser.ts#L734) (n: Node, rest: Token[], min: number) → void <!-- internal -->
         <a id="lang.parser.Parser.refList"></a><br>Walks the remaining tokens, skipping commas, and resolves each one through [`lang.parser.Parser.makeRef`](lang.md#lang.parser.Parser.makeRef), appending the successful references to the node. If fewer non-comma tokens than the required minimum were seen, it reports a K005 diagnostic via [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-      - fn [layers](../../src/parser.ts#L724) (n: Node, rest: Token[]) → void <!-- internal -->
+      - fn [layers](../../src/parser.ts#L748) (n: Node, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.layers"></a><br>`layers a < b < c`
         - calls [lang.parser.Parser.makeRef](lang.md#lang.parser.Parser.makeRef), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err)
-      - fn [freeText](../../src/parser.ts#L738) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
+      - fn [freeText](../../src/parser.ts#L762) (n: Node, l: Line, rest: Token[]) → void <!-- internal -->
         <a id="lang.parser.Parser.freeText"></a><br>Stores the remaining tokens of a line as the node's description, re-rendered via [`lang.parser.renderTokens`](lang.md#lang.parser.renderTokens) into canonical spacing with a span relative to the line from [`lang.parser.Line.span`](lang.md#lang.parser.Line.span). When no tokens remain, it reports error K005 through [`lang.parser.Parser.err`](lang.md#lang.parser.Parser.err)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens), [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.Parser.err](lang.md#lang.parser.Parser.err), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel)
-    - fn [spanned](../../src/parser.ts#L752) (t: Token) → Spanned<string> <!-- internal -->
+    - fn [spanned](../../src/parser.ts#L776) (t: Token) → Spanned<string> <!-- internal -->
       <a id="lang.parser.spanned"></a><br>Wraps a token's text together with its source span into a `Spanned<string>` value, so callers like [`lang.parser.Parser.bare`](lang.md#lang.parser.Parser.bare) and [`lang.parser.Parser.interpret`](lang.md#lang.parser.Parser.interpret) can keep location info attached to the extracted string. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Lead](../../src/parser.ts#L756) <!-- internal -->
+    - type [Lead](../../src/parser.ts#L780) <!-- internal -->
       <a id="lang.parser.Lead"></a><br>Holds the measured leading whitespace of a source line: the raw prefix string, its indent width where a tab counts as two spaces, its CommonMark column count where a tab advances to the next multiple of 4, and a flag noting whether any tab was present. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [leadingWhitespace](../../src/parser.ts#L765) (text: string) → Lead <!-- internal -->
+    - fn [leadingWhitespace](../../src/parser.ts#L789) (text: string) → Lead <!-- internal -->
       <a id="lang.parser.leadingWhitespace"></a><br>Measures the run of spaces and tabs at the start of a line, counting each tab as two indent units and advancing columns to the next multiple of four, and reports whether any tab was present. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line), [`lang.parser.openFence`](lang.md#lang.parser.openFence), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FenceOpen](../../src/parser.ts#L781) <!-- internal -->
+    - type [FenceOpen](../../src/parser.ts#L805) <!-- internal -->
       <a id="lang.parser.FenceOpen"></a><br>Records the shape of a Markdown fence opener: which fence character was used, how many of them, the fence's column width, and the leading-space count (null when a tab sits in the indent). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [openFence](../../src/parser.ts#L790) (text: string) → FenceOpen | null <!-- internal -->
+    - fn [openFence](../../src/parser.ts#L814) (text: string) → FenceOpen | null <!-- internal -->
       <a id="lang.parser.openFence"></a><br>A fence opener, ignoring the indent-of-4 rule. An info string with a backtick is not an opener.
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [opensFence](../../src/parser.ts#L807) (text: string, listOpen: boolean) → boolean <!-- internal -->
+    - fn [opensFence](../../src/parser.ts#L831) (text: string, listOpen: boolean) → boolean <!-- internal -->
       <a id="lang.parser.opensFence"></a><br>CommonMark fence: indent under 4 spaces, or any indent while a list is open (Р9). A backtick info string that itself contains a backtick is prose.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence)
-    - fn [closesFence](../../src/parser.ts#L812) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
+    - fn [closesFence](../../src/parser.ts#L836) (text: string, open: { char: string; len: number; columns: number }) → boolean <!-- internal -->
       <a id="lang.parser.closesFence"></a><br>Decides whether a line terminates a code fence opened with the given character, length, and indent by measuring its leading whitespace via [`lang.parser.leadingWhitespace`](lang.md#lang.parser.leadingWhitespace). The line must be indented at most max(3, opener indent), start with at least as many fence characters as… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.leadingWhitespace](lang.md#lang.parser.leadingWhitespace)
-    - fn [dedentFenceLines](../../src/parser.ts#L829) (lines: string[]) → string[]
+    - fn [dedentFenceLines](../../src/parser.ts#L853) (lines: string[]) → string[]
       <a id="lang.parser.dedentFenceLines"></a><br>Drop the indent `fmt` owes a fence that was written under a list item. The opener and the closer lose all of their indent; each body line loses as many spaces as the opener had, and never more than it has.
       - calls [lang.parser.openFence](lang.md#lang.parser.openFence), [lang.parser.closesFence](lang.md#lang.parser.closesFence)
-    - fn [htmlBlockStart](../../src/parser.ts#L850) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
+    - fn [htmlBlockStart](../../src/parser.ts#L874) (rest: string) → { end: (line: string) => boolean } | null <!-- internal -->
       <a id="lang.parser.htmlBlockStart"></a><br>Start of a CommonMark HTML block of types 1–5, or null. The end test reads the whole line.
-    - fn [isBullet](../../src/parser.ts#L861) (rest: string) → boolean <!-- internal -->
+    - fn [isBullet](../../src/parser.ts#L885) (rest: string) → boolean <!-- internal -->
       <a id="lang.parser.isBullet"></a><br>Checks whether a line remainder starts with `-`, `*`, or `+` followed by either end-of-string or a single space, marking it as a list bullet. Used by [`lang.parser.Parser.line`](lang.md#lang.parser.Parser.line) to classify lines during parsing. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isSegment](../../src/parser.ts#L868) (s: string) → boolean
+    - fn [isSegment](../../src/parser.ts#L892) (s: string) → boolean
       <a id="lang.parser.isSegment"></a><br>A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`.
-    - fn [isId](../../src/parser.ts#L874) (s: string) → boolean
+    - fn [isId](../../src/parser.ts#L898) (s: string) → boolean
       <a id="lang.parser.isId"></a><br>A dotted ID: `segment(.segment)*`.
-    - fn [linkTextSpan](../../src/parser.ts#L880) (t: Token) → Span
+    - fn [linkTextSpan](../../src/parser.ts#L904) (t: Token) → Span
       <a id="lang.parser.linkTextSpan"></a><br>The span of the text inside `[…]`, the same span a link reference uses.
       - calls [lang.parser.parseLink](lang.md#lang.parser.parseLink), [lang.parser.codePoints](lang.md#lang.parser.codePoints)
-    - fn [parseLink](../../src/parser.ts#L886) (t: Token) → Link <!-- internal -->
+    - fn [parseLink](../../src/parser.ts#L910) (t: Token) → Link <!-- internal -->
       <a id="lang.parser.parseLink"></a><br>Splits a markdown-style `[text](target)` token into display text and target, decoding the path via [`lang.parser.decodeLinkPath`](lang.md#lang.parser.decodeLinkPath) and extracting an optional `#L<n>` fragment as a line number. Returns these fields together with the token's span. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.parser.decodeLinkPath](lang.md#lang.parser.decodeLinkPath)
-    - fn [decodeLinkPath](../../src/parser.ts#L905) (path: string) → string <!-- internal -->
+    - fn [decodeLinkPath](../../src/parser.ts#L929) (path: string) → string <!-- internal -->
       <a id="lang.parser.decodeLinkPath"></a><br>Percent-decoding for map links. A broken escape is kept as written so the diagnostic still points at the source.
-    - fn [lex](../../src/parser.ts#L919) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
+    - fn [lex](../../src/parser.ts#L943) (l: Line, start: number, errs: [Span, string][]) → { tokens: Token[]; comment: Spanned<string> | null } <!-- internal -->
       <a id="lang.parser.lex"></a><br>Split an item head into tokens. Words end at whitespace or `,`; `[text](target)` and `"quoted"` are single tokens (a `[` that opens no link is an ordinary word); `<!-- … -->` ends the head and is returned separately.
       - calls [lang.parser.Line.span](lang.md#lang.parser.Line.span), [lang.parser.linkEnd](lang.md#lang.parser.linkEnd)
-    - fn [linkEnd](../../src/parser.ts#L978) (s: string, i: number) → number | null <!-- internal -->
+    - fn [linkEnd](../../src/parser.ts#L1002) (s: string, i: number) → number | null <!-- internal -->
       <a id="lang.parser.linkEnd"></a><br>Scans forward from a `[` for a markdown-style `[text](target)` link, returning the index just past the closing `)` when the text is non-empty and the target has no whitespace, else null. Used by [`lang.parser.lex`](lang.md#lang.parser.lex) to decide whether a bracket starts a link token. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [renderMeaning](../../src/parser.ts#L992) (node: Node) → string
+    - fn [renderMeaning](../../src/parser.ts#L1016) (node: Node) → string
       <a id="lang.parser.renderMeaning"></a><br>What an item's head says, for comparing meaning (a verdict's `specHash`, a rule already written): canonical tokens, with a reference written as a link `[id](href)` counted as its ID, so linking a reference changes nothing.
       - calls [lang.parser.renderTokens](lang.md#lang.parser.renderTokens)
-    - fn [renderTokens](../../src/parser.ts#L998) (tokens: readonly Token[]) → string
+    - fn [renderTokens](../../src/parser.ts#L1022) (tokens: readonly Token[]) → string
       <a id="lang.parser.renderTokens"></a><br>Canonical rendering of head tokens: single spaces, `a, b` for commas.
   - module [spec-ir](../../src/spec-ir.ts#L1)
     <a id="lang.spec-ir"></a><br>SpecIR: typed assertions compiled from the text IR. `compileSpec` checks assertion form (a layer order, a wiring condition). Checks that need the snapshot still run later.
