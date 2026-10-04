@@ -908,3 +908,19 @@ test("web: the zoom screen over the real transport: z from the palette, + into a
   screen.input("q");
   await waitFor(() => !/ ZOOM $/.test(screen.lines()[0] ?? ""), "the view again");
 });
+
+test("web: the edges view of the zoom screen over the real transport: c, then Enter follows an edge (c4-zoom/08)", async (t) => {
+  const root = checkoutRepo(t);
+  const { url } = await startWeb(t, root);
+  const client = new Client(url, "session-zoom-edges", 130, 30);
+  t.after(() => client.close());
+  await client.opened;
+  const screen = clientScreen(client);
+  await waitFor(() => analysed(screen), "the first analysis");
+  palette(screen, "zoom");
+  await waitFor(() => / ZOOM $/.test(screen.lines()[0] ?? ""), "the zoom screen");
+  screen.input("c");
+  await waitFor(() => /system +edges/.test(screen.text()) && /inside +application → domain · call ×1, import ×1/.test(screen.text()), "the edges of the repository");
+  screen.input(KEY.enter);
+  await waitFor(() => /system › domain +edges/.test(screen.text()) && /in +application\.purchase → order/.test(screen.text()), "the edges of the domain");
+});

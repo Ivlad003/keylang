@@ -349,6 +349,10 @@ export interface ZoomState {
   selected: Map<string, number>;
   /** The first shown row. */
   top: number;
+  /** `nodes`: the children and the neighbors; `edges`: the edges of the level as rows (`c`, c4-zoom/08). */
+  view: "nodes" | "edges";
+  /** A node `x` marked as the from end; the next `x` explains the edges from it to another node. */
+  from: string | null;
 }
 
 export interface State {

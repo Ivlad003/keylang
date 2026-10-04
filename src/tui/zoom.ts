@@ -220,3 +220,72 @@ export function zoomLevel(analysis: Analysis, focus: string, depth: number): Zoo
   if (past > 0) rows.push({ id: "", kind: "more", label: `${past} more at depth ${depth + 1}`, distance: depth + 1, container: false, edges: 0, mark: null, more: past });
   return { focus, crumbs, rows };
 }
+
+/**
+ * One row of the edges view (c4-zoom/08): the edges of the snapshot between
+ * two ends at the level's granularity — a child of the focus, or a unit
+ * outside it grouped as the neighbors are — with their kinds and count.
+ */
+export interface ZoomEdge {
+  group: "in" | "out" | "external" | "inside" | "unresolved";
+  from: string;
+  to: string;
+  /** Kinds of the edges and how many of each, most first. */
+  kinds: { kind: string; count: number }[];
+  count: number;
+  /** Where Enter zooms: the end outside the focus, or the target of an edge between children. */
+  other: string;
+  /** The `unresolved` row: constructs inside the focus keylang did not turn into edges, by kind. */
+  reasons?: { reason: string; count: number }[];
+}
+
+const EDGE_GROUPS: readonly ZoomEdge["group"][] = ["in", "out", "external", "inside", "unresolved"];
+
+/**
+ * The edges view of a level: incoming from outside, outgoing to the code and
+ * to packages, between the children, and what inside it keylang could not
+ * resolve. Only edges the snapshot has: no row is drawn from a guess.
+ */
+export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
+  const snapshot = analysis.snapshot;
+  if (!snapshot) return [];
+  const index = indexOf(analysis);
+  const children = focus === ZOOM_ROOT ? index.layers : (index.children.get(focus) ?? []);
+  const focusIsLayer = snapshot.nodes[focus]?.kind === "layer";
+  const childOf = (id: string): string => children.find((child) => inside(id, child)) ?? focus;
+  const end = (id: string): { unit: string; in: boolean } => (inside(id, focus) ? { unit: childOf(id), in: true } : { unit: unitOf(index, focusIsLayer, id), in: false });
+  const rows = new Map<string, ZoomEdge>();
+  for (const edge of snapshot.edges) {
+    if (edge.target === null) continue;
+    const a = end(edge.source);
+    const b = end(edge.target);
+    if (!a.in && !b.in) continue;
+    if (a.unit === b.unit) continue;
+    const group: ZoomEdge["group"] = a.in && b.in ? "inside" : !a.in ? "in" : b.unit === EXTERNAL || b.unit.startsWith(`${EXTERNAL}.`) ? "external" : "out";
+    const key = `${group}\0${a.unit}\0${b.unit}`;
+    let row = rows.get(key);
+    if (!row) rows.set(key, (row = { group, from: a.unit, to: b.unit, kinds: [], count: 0, other: group === "in" ? a.unit : b.unit }));
+    row.count++;
+    const kind = row.kinds.find((item) => item.kind === edge.kind);
+    if (kind) kind.count++;
+    else row.kinds.push({ kind: edge.kind, count: 1 });
+  }
+  const out = [...rows.values()];
+  for (const row of out) row.kinds.sort((a, b) => b.count - a.count || compareText(a.kind, b.kind));
+  out.sort((a, b) => EDGE_GROUPS.indexOf(a.group) - EDGE_GROUPS.indexOf(b.group) || b.count - a.count || compareText(a.from, b.from) || compareText(a.to, b.to));
+  const holes = new Map<string, number>();
+  for (const item of snapshot.coverage) {
+    if (item.source === null || !inside(item.source, focus) || item.kind === "skipped-file" || item.kind === "outside-file") continue;
+    holes.set(item.kind, (holes.get(item.kind) ?? 0) + 1);
+  }
+  if (holes.size > 0) {
+    const reasons = [...holes].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || compareText(a.reason, b.reason));
+    out.push({ group: "unresolved", from: focus, to: "", kinds: [], count: reasons.reduce((sum, item) => sum + item.count, 0), other: focus, reasons });
+  }
+  return out;
+}
+
+/** The key a level's selected row is kept under: one per focus and view. */
+export function zoomSelectKey(zoom: { focus: string; view: "nodes" | "edges" }): string {
+  return zoom.view === "edges" ? `edges\0${zoom.focus}` : zoom.focus;
+}

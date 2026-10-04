@@ -16,7 +16,7 @@ import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, 
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
-import { zoomLevel, type ZoomRow } from "./zoom.ts";
+import { zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
@@ -355,6 +355,23 @@ export function zoomRowText(state: State, row: ZoomRow, width: number): { text: 
   return { text: room > 4 ? `${head} · ${fitWidth(brief, room)}` : head, right };
 }
 
+const EDGE_GROUP: Record<ZoomEdge["group"], string> = { in: "in", out: "out", external: "package", inside: "inside", unresolved: "◌" };
+
+/** An end of an edge row as the level names it: a child by its name under the focus, anything else by its ID. */
+function endLabel(focus: string, id: string): string {
+  return focus !== ZOOM_ROOT && id.startsWith(`${focus}.`) ? id.slice(focus.length + 1) : id;
+}
+
+/** The text of an edges-view row: group, `from → to`, the kinds with counts, and the count. */
+export function zoomEdgeText(focus: string, edge: ZoomEdge): { text: string; right: string } {
+  if (edge.group === "unresolved") {
+    const reasons = (edge.reasons ?? []).map((item) => `${item.reason} ×${item.count}`).join(", ");
+    return { text: `◌ unresolved inside: ${reasons}`, right: `${edge.count}` };
+  }
+  const kinds = edge.kinds.map((item) => `${item.kind} ×${item.count}`).join(", ");
+  return { text: `  ${EDGE_GROUP[edge.group].padEnd(8)} ${endLabel(focus, edge.from)} → ${endLabel(focus, edge.to)} · ${kinds}`, right: `${edge.count}` };
+}
+
 /**
  * The zoom screen (c4-zoom/07): crumbs and depth, what the focus is with
  * where the words come from, then the level's rows — children, then the
@@ -366,14 +383,30 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   if (!analysis?.snapshot || !zoom) return;
   const level = zoomLevel(analysis, zoom.focus, zoom.depth);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
-  const right = ` depth ${zoom.depth} `;
+  const right = zoom.view === "edges" ? " edges " : ` depth ${zoom.depth} `;
   grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), rect.width - stringWidth(right) - 2), THEME.panelTitle, rect.width - stringWidth(right) - 2);
   grid.write(rect.x + rect.width - stringWidth(right), rect.y, right, THEME.panelTitle);
   const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
   const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wrapWords(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
   about.forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
   const height = zoomListHeight(state, rect);
-  const selected = Math.max(0, Math.min(zoom.selected.get(zoom.focus) ?? 0, level.rows.length - 1));
+  if (zoom.view === "edges") {
+    const edges = zoomEdges(analysis, zoom.focus);
+    const at = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, edges.length - 1));
+    if (edges.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "no edges here: c goes back to the nodes", THEME.hint);
+    for (let i = 0; i < height; i++) {
+      const edge = edges[zoom.top + i];
+      if (!edge) break;
+      const y = rect.y + ZOOM_HEAD + i;
+      const style = zoom.top + i === at ? THEME.selected : edge.group === "unresolved" ? { ...THEME.text, fg: 179 } : THEME.text;
+      grid.fill(rect.x, y, rect.width, 1, style);
+      const { text, right } = zoomEdgeText(zoom.focus, edge);
+      grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
+      grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right, style);
+    }
+    return;
+  }
+  const selected = Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, level.rows.length - 1));
   if (level.rows.length === 0) grid.write(rect.x + 2, rect.y + ZOOM_HEAD, "nothing inside: - goes up", THEME.hint);
   for (let i = 0; i < height; i++) {
     const index = zoom.top + i;
@@ -1706,6 +1739,8 @@ const HELP: Record<string, [string, string][]> = {
     ["> / <", "neighbors one edge farther / nearer (0–3)"],
     ["s", "find a node and zoom to its level"],
     ["e / K", "explain the node"],
+    ["c", "the level's edges as rows: in, out, packages, inside, unresolved"],
+    ["x", "explain an edge: on an edge row its edges; on nodes, x then x on another"],
     ["Alt+Enter", "go to its declaration"],
     ["q", "back to the view at the node"],
     [": / Ctrl+P", "actions"],
@@ -1906,7 +1941,7 @@ const HINTS: Record<string, { keys: string[]; tail: string }> = {
   read: { keys: ["Enter code", "v raw", "F5 check"], tail: "? keys · Ctrl+P actions" },
   code: { keys: ["Esc back", "↑↓ scroll"], tail: "? keys · Ctrl+P actions" },
   merge: { keys: ["a accept", "r reject", "u undo", "n next", "w write"], tail: "Esc cancel · ? keys" },
-  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
+  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "c edges", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
 };
 
 /** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */

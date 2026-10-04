@@ -31,7 +31,7 @@ import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
-import { MAX_DEPTH, zoomLevel, zoomParent, zoomTarget, ZOOM_ROOT, type ZoomRow } from "./zoom.ts";
+import { MAX_DEPTH, zoomContainer, zoomEdges, zoomLevel, zoomParent, zoomSelectKey, zoomTarget, ZOOM_ROOT, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { readExplanation } from "../explain-llm.ts";
 import { selectedAgent } from "../agent-cli.ts";
 import { defaultBriefJobs, positiveIntegerProblem } from "../explain-inventory.ts";
@@ -1817,7 +1817,7 @@ export class App {
       return;
     }
     const target = (id === null ? null : zoomTarget(analysis, id)) ?? { focus: ZOOM_ROOT, select: null };
-    this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0 };
+    this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0, view: "nodes", from: null };
     this.state.mode = "zoom";
     this.state.focus = "editor";
     this.state.hover = null;
@@ -1831,12 +1831,26 @@ export class App {
     const zoom = this.state.zoom!;
     zoom.focus = focus;
     zoom.top = 0;
-    if (select !== null) {
+    if (select !== null && zoom.view === "nodes") {
       const index = this.zoomRows().findIndex((row) => row.id === select);
       if (index >= 0) zoom.selected.set(focus, index);
     }
     this.state.hover = null;
     this.keepZoomVisible();
+  }
+
+  /** The edges view of the level shown (`c`): its rows. */
+  private zoomEdgeRows(): ZoomEdge[] {
+    const analysis = this.state.analysis;
+    const zoom = this.state.zoom;
+    if (!analysis?.snapshot || !zoom) return [];
+    this.zoomRows();
+    return zoomEdges(analysis, zoom.focus);
+  }
+
+  /** How many rows the shown view of the level has. */
+  private zoomCount(): number {
+    return this.state.zoom?.view === "edges" ? this.zoomEdgeRows().length : this.zoomRows().length;
   }
 
   /** The rows of the level shown; the repository's when the focus left the snapshot with a new analysis. */
@@ -1851,9 +1865,10 @@ export class App {
     return zoomLevel(analysis, zoom.focus, zoom.depth).rows;
   }
 
-  private zoomIndex(rows: readonly ZoomRow[]): number {
+  /** The selected row of the shown view, clamped to `rows`. */
+  private zoomIndex(rows: readonly unknown[]): number {
     const zoom = this.state.zoom!;
-    return Math.max(0, Math.min(zoom.selected.get(zoom.focus) ?? 0, rows.length - 1));
+    return Math.max(0, Math.min(zoom.selected.get(zoomSelectKey(zoom)) ?? 0, rows.length - 1));
   }
 
   /** Keeps the selected row inside the shown rows of the zoom screen. */
@@ -1861,7 +1876,7 @@ export class App {
     const zoom = this.state.zoom;
     if (!zoom) return;
     const visible = Math.max(1, zoomListHeight(this.state, layout(this.state).editor));
-    const at = this.zoomIndex(this.zoomRows());
+    const at = zoom.view === "edges" ? this.zoomIndex(this.zoomEdgeRows()) : this.zoomIndex(this.zoomRows());
     if (at < zoom.top) zoom.top = at;
     else if (at >= zoom.top + visible) zoom.top = at - visible + 1;
   }
@@ -1882,6 +1897,10 @@ export class App {
   /** `>` and `<`: neighbors one edge farther or nearer, from none up to `MAX_DEPTH`. */
   private zoomDepth(delta: number): void {
     const zoom = this.state.zoom!;
+    if (zoom.view === "edges") {
+      this.state.message = "the edges view shows direct edges: c goes back to the nodes and their depth";
+      return;
+    }
     const depth = Math.max(0, Math.min(MAX_DEPTH, zoom.depth + delta));
     if (depth === zoom.depth) {
       this.state.message = delta > 0 ? `depth ${MAX_DEPTH} is the farthest` : "depth 0: only the children";
@@ -1924,14 +1943,14 @@ export class App {
     if (!zoom) return;
     const rows = this.zoomRows();
     if (event.action === "wheel-up" || event.action === "wheel-down") {
-      zoom.top = Math.max(0, Math.min(Math.max(0, rows.length - 1), zoom.top + (event.action === "wheel-up" ? -3 : 3)));
+      zoom.top = Math.max(0, Math.min(Math.max(0, this.zoomCount() - 1), zoom.top + (event.action === "wheel-up" ? -3 : 3)));
       this.state.hover = null;
       return;
     }
     if (event.action !== "down" || event.button !== 0) return;
     const index = zoom.top + event.y - editor.y - ZOOM_HEAD;
-    if (event.y < editor.y + ZOOM_HEAD || index >= rows.length) return;
-    zoom.selected.set(zoom.focus, index);
+    if (event.y < editor.y + ZOOM_HEAD || index >= this.zoomCount()) return;
+    zoom.selected.set(zoomSelectKey(zoom), index);
     this.state.hover = null;
   }
 
@@ -1946,8 +1965,52 @@ export class App {
     }
     const editor = layout(this.state).editor;
     const zoom = this.state.zoom!;
-    const y = editor.y + ZOOM_HEAD + (this.zoomIndex(this.zoomRows()) - zoom.top);
+    const at = zoom.view === "edges" ? this.zoomIndex(this.zoomEdgeRows()) : this.zoomIndex(this.zoomRows());
+    const y = editor.y + ZOOM_HEAD + (at - zoom.top);
     this.state.hover = { x: editor.x + 2, y, lines: this.explainLines(row.id, found), source: "key" };
+  }
+
+  /** `c`: the level's edges as rows, or back to its nodes. */
+  private zoomToggleView(): void {
+    const zoom = this.state.zoom!;
+    zoom.view = zoom.view === "edges" ? "nodes" : "edges";
+    zoom.top = 0;
+    this.state.hover = null;
+    this.keepZoomVisible();
+  }
+
+  /** Enter on an edge: the level of its other end, in the edges view; a fn or type, the level it is a row of. */
+  private zoomAlongEdge(edge: ZoomEdge): void {
+    const analysis = this.state.analysis!;
+    const target = zoomContainer(analysis, edge.other) ? edge.other : zoomParent(analysis, edge.other);
+    if (target === null || edge.group === "unresolved") {
+      this.state.message = edge.group === "unresolved" ? "these constructs have no edge to follow: e explains the node" : `\`${edge.other}\` has no level`;
+      return;
+    }
+    this.zoomTo(target, null);
+  }
+
+  /** `x`: in the edges view the edges of the selected row; on nodes, the first `x` marks the from end, the second explains from it to the selected node. */
+  private zoomExplainEdge(row: ZoomRow | undefined, edge: ZoomEdge | undefined): void {
+    const zoom = this.state.zoom!;
+    let from: string;
+    let to: string;
+    if (zoom.view === "edges") {
+      if (!edge || edge.group === "unresolved") return;
+      from = edge.from;
+      to = edge.to;
+    } else {
+      if (!row || row.kind === "more") return;
+      if (zoom.from === null || zoom.from === row.id) {
+        zoom.from = row.id;
+        this.state.message = `from ${row.id}: x on another node explains the edges between them`;
+        return;
+      }
+      from = zoom.from;
+      to = row.id;
+      zoom.from = null;
+    }
+    this.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from: from === ZOOM_ROOT ? to : from, to });
   }
 
   private zoomKey(event: KeyEvent): void {
@@ -1957,19 +2020,23 @@ export class App {
       this.state.mode = "view";
       return;
     }
-    const rows = this.zoomRows();
-    const at = this.zoomIndex(rows);
+    const edges = zoom.view === "edges" ? this.zoomEdgeRows() : [];
+    const rows = zoom.view === "edges" ? [] : this.zoomRows();
+    const count = zoom.view === "edges" ? edges.length : rows.length;
+    const at = zoom.view === "edges" ? this.zoomIndex(edges) : this.zoomIndex(rows);
     const row = rows[at];
+    const edge = edges[at];
     const page = Math.max(1, zoomListHeight(this.state, layout(this.state).editor) - 1);
     const select = (index: number): void => {
-      zoom.selected.set(zoom.focus, Math.max(0, Math.min(index, rows.length - 1)));
+      zoom.selected.set(zoomSelectKey(zoom), Math.max(0, Math.min(index, count - 1)));
       this.state.hover = null;
       this.keepZoomVisible();
     };
     if (event.alt && event.name === "enter") {
-      if (!row || row.kind === "more") return;
+      const id = zoom.view === "edges" ? edge?.other : row && row.kind !== "more" ? row.id : undefined;
+      if (id === undefined) return;
       this.closeZoom(false);
-      return this.goToSpec(row.id);
+      return this.goToSpec(id);
     }
     if (event.ctrl || event.alt) return;
     switch (event.name) {
@@ -1988,10 +2055,11 @@ export class App {
         return select(0);
       case "end":
       case "G":
-        return select(rows.length - 1);
+        return select(count - 1);
       case "+":
       case "=":
       case "enter": {
+        if (zoom.view === "edges") return edge ? this.zoomAlongEdge(edge) : undefined;
         if (!row) return;
         if (row.kind === "more") return this.zoomDepth(1);
         if (row.container) return this.zoomTo(row.id, null);
@@ -2017,7 +2085,11 @@ export class App {
         return this.findNodes();
       case "e":
       case "K":
-        return this.zoomExplain(row);
+        return zoom.view === "edges" ? this.zoomExplain(edge ? this.zoomRows().find((item) => item.id === edge.other) : undefined) : this.zoomExplain(row);
+      case "c":
+        return this.zoomToggleView();
+      case "x":
+        return this.zoomExplainEdge(row, edge);
       case ":":
         return this.openPalette();
       case "?":
