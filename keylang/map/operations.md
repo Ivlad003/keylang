@@ -178,101 +178,101 @@
     - fn [emptyExplainLlm](../../src/operations.ts#L2402) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-llm"> <!-- internal -->
     - fn [runExplainLlm](../../src/operations.ts#L2421) (request: ExplainLlmRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-llm">> <!-- internal -->
       - calls operations.operations.emptyExplainLlm, features.explain-offline.isDiagnosticCode, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-offline.nodeExplanation, features.explain-offline.unknownIdMessage, map.explanations.explanationPath, operations.operations.readTextOrNull, features.explain-llm.readExplanation, features.explain-offline.savedAnswer, features.explain-offline.savedAnswerMiss, features.agent-cli.selectedAgent, features.explain-offline.savedAnswerText, features.explain-node.formatSummary, map.map.sourceInputs, operations.operations.specHashes, features.explain-llm.explanationRequest, map.explanations.loadBriefs, features.explain-llm.briefText, features.explain-llm.currentBaseline, base.safe-write.writeProblem, map.explanations.explainDir, map.map.sourceInputProblems, operations.operations.specProblems, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation
-    - fn [emptyExplainPlan](../../src/operations.ts#L2539) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-plan"> <!-- internal -->
-    - fn [runExplainPlan](../../src/operations.ts#L2550) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">> <!-- internal -->
+    - fn [emptyExplainPlan](../../src/operations.ts#L2540) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-plan"> <!-- internal -->
+    - fn [runExplainPlan](../../src/operations.ts#L2551) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">> <!-- internal -->
       - calls operations.operations.emptyExplainPlan, map.analyze.analyze, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.staleInventory, features.explain-inventory.staleInventoryText, features.explain-inventory.briefPlan, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlanText
-    - fn [emptyExplainBatch](../../src/operations.ts#L2583) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-batch"> <!-- internal -->
-    - fn [explainBatchText](../../src/operations.ts#L2588) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
-    - fn [runExplainBatch](../../src/operations.ts#L2607) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">> <!-- internal -->
+    - fn [emptyExplainBatch](../../src/operations.ts#L2584) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-batch"> <!-- internal -->
+    - fn [explainBatchText](../../src/operations.ts#L2589) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
+    - fn [runExplainBatch](../../src/operations.ts#L2608) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">> <!-- internal -->
       - calls operations.operations.emptyExplainBatch, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlan, map.map.sourceInputs, operations.operations.specHashes, map.explanations.explanationPath, operations.operations.readTextOrNull, map.explanations.loadBriefs, features.explain-node.summarizeNode, features.explain-llm.explanationRequest, features.explain-llm.briefText, base.safe-write.writeProblem, map.explanations.explainDir, map.map.sourceInputProblems, operations.operations.specProblems, features.explain-llm.currentBaseline, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation, base.span.compareText, operations.operations.explainBatchText
-    - fn [emptyExport](../../src/operations.ts#L2753) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"export"> <!-- internal -->
-    - fn [exportFormatOf](../../src/operations.ts#L2758) (source: ExportSource) → ExportFormat
-    - fn [exportText](../../src/operations.ts#L2763) (source: ExportSource) → string
+    - fn [emptyExport](../../src/operations.ts#L2755) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"export"> <!-- internal -->
+    - fn [exportFormatOf](../../src/operations.ts#L2760) (source: ExportSource) → ExportFormat
+    - fn [exportText](../../src/operations.ts#L2765) (source: ExportSource) → string
       - calls features.check-format.checkReportText, lang.parse-format.parseReportText, map.trace-plan.tracePlanText
-    - fn [exportTargetProblem](../../src/operations.ts#L2777) (root: string, path: string) → string | null
+    - fn [exportTargetProblem](../../src/operations.ts#L2779) (root: string, path: string) → string | null
       - calls base.safe-write.writeProblem, base.safe-write.landing, base.config.toPosix, operations.operations.specDirOf
-    - fn [specDirOf](../../src/operations.ts#L2790) (root: string) → string <!-- internal -->
-    - fn [runExport](../../src/operations.ts#L2808) (request: ExportRequest, context: OperationContext) → Promise<OperationEnvelope<"export">> <!-- internal -->
+    - fn [specDirOf](../../src/operations.ts#L2792) (root: string) → string <!-- internal -->
+    - fn [runExport](../../src/operations.ts#L2810) (request: ExportRequest, context: OperationContext) → Promise<OperationEnvelope<"export">> <!-- internal -->
       - calls operations.operations.emptyExport, operations.operations.exportText, operations.operations.exportFormatOf, operations.operations.messageOf, operations.operations.exportTargetProblem, base.safe-write.writeProblem, base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [emptyParse](../../src/operations.ts#L2853) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"parse"> <!-- internal -->
-    - fn [runParse](../../src/operations.ts#L2865) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">> <!-- internal -->
+    - fn [emptyParse](../../src/operations.ts#L2855) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"parse"> <!-- internal -->
+    - fn [runParse](../../src/operations.ts#L2867) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">> <!-- internal -->
       - calls operations.operations.emptyParse, base.config.assertFormatOnly, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, operations.operations.messageOf, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
-    - fn [emptyTracePlan](../../src/operations.ts#L2903) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"trace-plan"> <!-- internal -->
-    - fn [runTracePlan](../../src/operations.ts#L2914) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">> <!-- internal -->
+    - fn [emptyTracePlan](../../src/operations.ts#L2905) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"trace-plan"> <!-- internal -->
+    - fn [runTracePlan](../../src/operations.ts#L2916) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">> <!-- internal -->
       - calls operations.operations.emptyTracePlan, map.trace-plan.tracePlan, base.config.loadConfig, operations.operations.messageOf, map.trace-plan.tracePlanText
-    - fn [emptyDraftFlow](../../src/operations.ts#L2932) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-flow"> <!-- internal -->
-    - fn [flowCandidate](../../src/operations.ts#L2942) (root: string, specDir: string, generated: (path: string) => boolean, draft: FlowDraft, into?: string) → FlowCandidate
+    - fn [emptyDraftFlow](../../src/operations.ts#L2934) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-flow"> <!-- internal -->
+    - fn [flowCandidate](../../src/operations.ts#L2944) (root: string, specDir: string, generated: (path: string) => boolean, draft: FlowDraft, into?: string) → FlowCandidate
       - calls base.config.toPosix, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, features.draft.withFlow
-    - fn [runDraftFlow](../../src/operations.ts#L2968) (request: DraftFlowRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-flow">> <!-- internal -->
+    - fn [runDraftFlow](../../src/operations.ts#L2970) (request: DraftFlowRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-flow">> <!-- internal -->
       - calls operations.operations.emptyDraftFlow, operations.operations.messageOf, map.map.sourceInputs, features.draft.draftFlow, operations.operations.modelSetup, base.config.toPosix, operations.operations.flowCandidate, operations.operations.proposalRefusal, operations.operations.modelDraft, features.draft.withFlow, operations.operations.draftCountsText, operations.operations.draftNotes, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptyDraftRules](../../src/operations.ts#L3059) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-rules"> <!-- internal -->
-    - fn [rulesCandidate](../../src/operations.ts#L3069) (root: string, specDir: string, generated: (path: string) => boolean, rules: string, into?: string) → RulesCandidate
+    - fn [emptyDraftRules](../../src/operations.ts#L3061) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-rules"> <!-- internal -->
+    - fn [rulesCandidate](../../src/operations.ts#L3071) (root: string, specDir: string, generated: (path: string) => boolean, rules: string, into?: string) → RulesCandidate
       - calls base.config.toPosix, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, features.draft.withRules
-    - fn [runDraftRules](../../src/operations.ts#L3090) (request: DraftRulesRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-rules">> <!-- internal -->
+    - fn [runDraftRules](../../src/operations.ts#L3092) (request: DraftRulesRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-rules">> <!-- internal -->
       - calls operations.operations.emptyDraftRules, operations.operations.messageOf, map.map.sourceInputs, check.scc.stronglyConnected, features.draft.draftRules, operations.operations.modelSetup, base.config.toPosix, operations.operations.rulesCandidate, operations.operations.proposalRefusal, operations.operations.rulesCountText, features.draft.withRules, operations.operations.draftCountsText, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptyDraftLayout](../../src/operations.ts#L3185) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-layout"> <!-- internal -->
-    - fn [runDraftLayout](../../src/operations.ts#L3198) (request: DraftLayoutRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-layout">> <!-- internal -->
+    - fn [emptyDraftLayout](../../src/operations.ts#L3187) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-layout"> <!-- internal -->
+    - fn [runDraftLayout](../../src/operations.ts#L3200) (request: DraftLayoutRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-layout">> <!-- internal -->
       - calls operations.operations.emptyDraftLayout, base.config.loadConfig, operations.operations.messageOf, operations.operations.modelSetup, base.config.guessLayout, base.config.configToJson
-    - fn [emptyCodeToSpec](../../src/operations.ts#L3245) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"code-to-spec"> <!-- internal -->
-    - type [CodeDrafted](../../src/operations.ts#L3250) <!-- internal -->
-    - fn [codeToSpecCandidate](../../src/operations.ts#L3265) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
+    - fn [emptyCodeToSpec](../../src/operations.ts#L3247) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"code-to-spec"> <!-- internal -->
+    - type [CodeDrafted](../../src/operations.ts#L3252) <!-- internal -->
+    - fn [codeToSpecCandidate](../../src/operations.ts#L3267) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
       - calls operations.operations.codePosition, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, operations.operations.mergedFlows
-    - fn [mergedFlows](../../src/operations.ts#L3276) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
+    - fn [mergedFlows](../../src/operations.ts#L3278) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
       - calls features.draft.withFlow
-    - fn [codePosition](../../src/operations.ts#L3283) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
-    - fn [describedIds](../../src/operations.ts#L3289) (docs: readonly Document[]) → Set<string> <!-- internal -->
+    - fn [codePosition](../../src/operations.ts#L3285) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
+    - fn [describedIds](../../src/operations.ts#L3291) (docs: readonly Document[]) → Set<string> <!-- internal -->
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [runCodeToSpec](../../src/operations.ts#L3320) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">> <!-- internal -->
+    - fn [runCodeToSpec](../../src/operations.ts#L3322) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">> <!-- internal -->
       - calls operations.operations.emptyCodeToSpec, operations.operations.messageOf, map.map.sourceInputs, features.draft.changedFlows, features.git-changes.gitChangedLines, operations.operations.describedIds, features.draft.codeToSpec, operations.operations.modelSetup, base.config.toPosix, operations.operations.codeToSpecCandidate, operations.operations.codePosition, operations.operations.codeSummary, operations.operations.proposalRefusal, operations.operations.modelFlows, operations.operations.mergedFlows, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptySpecToCode](../../src/operations.ts#L3436) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"spec-to-code"> <!-- internal -->
-    - fn [specToCodeCandidate](../../src/operations.ts#L3441) (root: string, built: CodeCandidate, basis: CandidateBasis) → SpecToCodeCandidate <!-- internal -->
+    - fn [emptySpecToCode](../../src/operations.ts#L3438) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"spec-to-code"> <!-- internal -->
+    - fn [specToCodeCandidate](../../src/operations.ts#L3443) (root: string, built: CodeCandidate, basis: CandidateBasis) → SpecToCodeCandidate <!-- internal -->
       - calls base.safe-write.writeProblem, operations.operations.existingText, features.spec-to-code.fileDiffText, features.spec-to-code.specToCodeText
-    - fn [specHashes](../../src/operations.ts#L3459) (root: string, docs: readonly Document[]) → CandidateBasis["specs"] <!-- internal -->
+    - fn [specHashes](../../src/operations.ts#L3461) (root: string, docs: readonly Document[]) → CandidateBasis["specs"] <!-- internal -->
       - calls operations.operations.hashOrNull, operations.operations.readTextOrNull
-    - fn [hashOrNull](../../src/operations.ts#L3463) (text: string | null) → string | null <!-- internal -->
+    - fn [hashOrNull](../../src/operations.ts#L3465) (text: string | null) → string | null <!-- internal -->
       - calls map.snapshot.sha256
-    - fn [specProblems](../../src/operations.ts#L3468) (root: string, specs: CandidateBasis["specs"], subject = "the candidate") → string[] <!-- internal -->
+    - fn [specProblems](../../src/operations.ts#L3470) (root: string, specs: CandidateBasis["specs"], subject = "the candidate") → string[] <!-- internal -->
       - calls operations.operations.hashOrNull, operations.operations.readTextOrNull
-    - fn [runSpecToCode](../../src/operations.ts#L3499) (request: SpecToCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"spec-to-code">> <!-- internal -->
+    - fn [runSpecToCode](../../src/operations.ts#L3501) (request: SpecToCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"spec-to-code">> <!-- internal -->
       - calls operations.operations.emptySpecToCode, operations.operations.messageOf, map.map.sourceInputs, operations.operations.specHashes, base.config.toPosix, operations.operations.modelSetup, features.spec-to-code.plannedCodeTarget, base.safe-write.writeProblem, operations.operations.existingText, operations.operations.specToCodeCandidate, features.spec-to-code.specToCode, features.proposals.codeProposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, operations.operations.specProblems, features.proposals.writeProposal
-    - fn [emptyApplyCode](../../src/operations.ts#L3640) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"apply-code"> <!-- internal -->
-    - fn [applyProblems](../../src/operations.ts#L3653) (request: ApplyCodeRequest) → { policy: string | null; refused: string[] } <!-- internal -->
+    - fn [emptyApplyCode](../../src/operations.ts#L3642) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"apply-code"> <!-- internal -->
+    - fn [applyProblems](../../src/operations.ts#L3655) (request: ApplyCodeRequest) → { policy: string | null; refused: string[] } <!-- internal -->
       - calls features.proposals.codeProposalProblem, base.safe-write.writeProblem, operations.operations.readTextOrNull, map.map.sourceInputProblems, base.config.loadConfig, operations.operations.specProblems
-    - fn [runApplyCode](../../src/operations.ts#L3693) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">> <!-- internal -->
+    - fn [runApplyCode](../../src/operations.ts#L3695) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">> <!-- internal -->
       - calls operations.operations.emptyApplyCode, operations.operations.applyProblems, operations.operations.messageOf, base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [codeSummary](../../src/operations.ts#L3770) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
+    - fn [codeSummary](../../src/operations.ts#L3772) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
       - calls operations.operations.draftCountsText
-    - fn [modelFlows](../../src/operations.ts#L3781) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+    - fn [modelFlows](../../src/operations.ts#L3783) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       - calls operations.operations.flowSteps, operations.operations.messageOf
-    - fn [rulesCountText](../../src/operations.ts#L3815) (rules: string) → string <!-- internal -->
-    - fn [proposalRefusal](../../src/operations.ts#L3825) (root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft") → { exitCode: 1 | 2; error: string; refused: string[] } | null <!-- internal -->
+    - fn [rulesCountText](../../src/operations.ts#L3817) (rules: string) → string <!-- internal -->
+    - fn [proposalRefusal](../../src/operations.ts#L3827) (root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft") → { exitCode: 1 | 2; error: string; refused: string[] } | null <!-- internal -->
       - calls base.safe-write.writeProblem
-    - type [ProposalCommit](../../src/operations.ts#L3838) <!-- internal -->
-    - fn [commitProposal](../../src/operations.ts#L3858) (commit: ProposalCommit, context: OperationContext) → Promise<{ proposal: string } | { refused: string[] } | { failed: string; writing: boolean } | { cancelled: true }> <!-- internal -->
+    - type [ProposalCommit](../../src/operations.ts#L3840) <!-- internal -->
+    - fn [commitProposal](../../src/operations.ts#L3860) (commit: ProposalCommit, context: OperationContext) → Promise<{ proposal: string } | { refused: string[] } | { failed: string; writing: boolean } | { cancelled: true }> <!-- internal -->
       - calls operations.operations.messageOf, features.proposals.proposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, features.proposals.writeProposal
-    - fn [countProposed](../../src/operations.ts#L3889) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
+    - fn [countProposed](../../src/operations.ts#L3891) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
       - calls features.stats.updateStats, features.stats.addDrafts, operations.operations.messageOf
-    - fn [modelSetup](../../src/operations.ts#L3903) (mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> <!-- internal -->
-    - fn [modelDraft](../../src/operations.ts#L3913) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+    - fn [modelSetup](../../src/operations.ts#L3905) (mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> <!-- internal -->
+    - fn [modelDraft](../../src/operations.ts#L3915) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
       - calls operations.operations.flowSteps, operations.operations.messageOf
-    - fn [flowSteps](../../src/operations.ts#L3931) (text: string, trigger: string) → string[] <!-- internal -->
+    - fn [flowSteps](../../src/operations.ts#L3933) (text: string, trigger: string) → string[] <!-- internal -->
       - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
-    - fn [draftCountsText](../../src/operations.ts#L3943) (counts: Record<string, number>) → string <!-- internal -->
-    - fn [draftNotes](../../src/operations.ts#L3948) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
-    - fn [existingText](../../src/operations.ts#L3958) (abs: string) → string | null <!-- internal -->
-    - fn [checkSkipNote](../../src/operations.ts#L3962) (path: string) → string
-    - fn [checkSummary](../../src/operations.ts#L3967) (counts: CheckPayload["counts"]) → string
-    - fn [emptyFeature](../../src/operations.ts#L3974) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
-    - fn [runFeature](../../src/operations.ts#L3984) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
+    - fn [draftCountsText](../../src/operations.ts#L3945) (counts: Record<string, number>) → string <!-- internal -->
+    - fn [draftNotes](../../src/operations.ts#L3950) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
+    - fn [existingText](../../src/operations.ts#L3960) (abs: string) → string | null <!-- internal -->
+    - fn [checkSkipNote](../../src/operations.ts#L3964) (path: string) → string
+    - fn [checkSummary](../../src/operations.ts#L3969) (counts: CheckPayload["counts"]) → string
+    - fn [emptyFeature](../../src/operations.ts#L3976) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
+    - fn [runFeature](../../src/operations.ts#L3986) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
       - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.git-changes.readFeatureBase, features.feature-status.featureStatus, operations.operations.gapLine, operations.operations.featureSummary
-    - fn [gapLine](../../src/operations.ts#L4024) (gap: Gap) → string
-    - fn [featureSummary](../../src/operations.ts#L4029) (report: FeatureReport) → string
-    - fn [emptyDoctor](../../src/operations.ts#L4033) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
-    - fn [runDoctor](../../src/operations.ts#L4037) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
+    - fn [gapLine](../../src/operations.ts#L4026) (gap: Gap) → string
+    - fn [featureSummary](../../src/operations.ts#L4031) (report: FeatureReport) → string
+    - fn [emptyDoctor](../../src/operations.ts#L4035) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
+    - fn [runDoctor](../../src/operations.ts#L4039) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
       - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, features.agent-cli.probeAgentClis, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L4092) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
+    - fn [agentState](../../src/operations.ts#L4094) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
       - calls features.agent-cli.resolveAgent, operations.operations.messageOf, features.agent-cli.cliVersion
-    - fn [engineState](../../src/operations.ts#L4115) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+    - fn [engineState](../../src/operations.ts#L4117) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
       - calls operations.operations.messageOf
-    - fn [doctorLines](../../src/operations.ts#L4132) (payload: DoctorPayload) → string[] <!-- internal -->
-    - fn [messageOf](../../src/operations.ts#L4161) (error: unknown) → string <!-- internal -->
+    - fn [doctorLines](../../src/operations.ts#L4134) (payload: DoctorPayload) → string[] <!-- internal -->
+    - fn [messageOf](../../src/operations.ts#L4163) (error: unknown) → string <!-- internal -->

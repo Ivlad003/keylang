@@ -10,6 +10,7 @@
 //                     error-result | hang | linger
 // FAKE_AGENT_REPLY    the answer text
 // FAKE_AGENT_VERSION  what `--version` prints
+// FAKE_AGENT_MODEL    claude: the model its result's `modelUsage` names (beside a smaller side model)
 
 import { spawn } from "node:child_process";
 import { existsSync, openSync, readFileSync, writeFileSync, closeSync } from "node:fs";
@@ -91,7 +92,7 @@ function answer(text, isError) {
     case "cursor-agent":
     case "agent":
       process.stdout.write(`${JSON.stringify({ type: "system", subtype: "init" })}\n`);
-      process.stdout.write(`${JSON.stringify({ type: "result", subtype: isError ? "error_during_execution" : "success", is_error: isError, result: isError ? "rate limited" : text })}\n`);
+      process.stdout.write(`${JSON.stringify({ type: "result", subtype: isError ? "error_during_execution" : "success", is_error: isError, result: isError ? "rate limited" : text, ...usage() })}\n`);
       return;
     case "codex": {
       const out = args[args.indexOf("-o") + 1];
@@ -118,6 +119,13 @@ function answer(text, isError) {
       if (isError) process.exit(1);
       process.stdout.write(`${text}\n`);
   }
+}
+
+/** Claude Code's `modelUsage`: the answering model wrote more output than the side model. */
+function usage() {
+  const model = process.env.FAKE_AGENT_MODEL;
+  if (as !== "claude" || !model) return {};
+  return { modelUsage: { "claude-haiku-5": { inputTokens: 50, outputTokens: 3 }, [model]: { inputTokens: 900, outputTokens: 60 } } };
 }
 
 function readStdin() {

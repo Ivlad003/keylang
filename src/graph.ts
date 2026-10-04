@@ -1009,15 +1009,26 @@ function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: stri
   return out;
 }
 
+/** The key the last declaration of each scope (`names`) went under: overloads follow one another. */
+const lastKeys = new WeakMap<Map<string, string>, string>();
+
 function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }): void {
   const name = member?.segment ?? layerName(d.name);
   const key = member?.key ?? name;
+  const previous = lastKeys.get(names);
+  lastKeys.set(names, key);
   const existing = names.get(key);
   if (existing !== undefined) {
     // Overloads and duplicate declarations: the implementation's calls join the first node.
     if (d.kind === "fn" && decls.fns.has(existing)) {
       decls.ids.set(d, existing);
       const fn = decls.fns.get(existing)!;
+      // Overloads stand next to each other: the node's range runs on to the implementation,
+      // so its code (an explanation's prompt, `context`) holds the body. A duplicate declared further away keeps its own range.
+      if (previous === key && fn.file === file && d.line > fn.endLine) {
+        fn.endLine = d.endLine;
+        fn.endCol = d.endCol;
+      }
       if (fn.fingerprint !== undefined && d.fingerprint !== undefined) fn.fingerprint = `${fn.fingerprint}:${d.fingerprint}`;
       if (fn.doc === undefined && d.doc !== undefined) fn.doc = d.doc;
       return;

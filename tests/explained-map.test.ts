@@ -241,7 +241,9 @@ test("explain --llm --brief: a brief in keylang/explain/brief/ shows in the expl
   mock.reply = (prompt) => (askedId(prompt) === "domain.order.createOrder" ? "Creates an order with its total. It never saves it. A third sentence the map leaves out." : "Sums the prices; see `domain.order.nope`.");
   const brief = await keylangAsync(dir, ["explain", "domain.order.createOrder", "--llm", "--brief"], env);
   assert.equal(brief.status, 0, brief.stderr);
-  assert.match(mock.prompts[0]!.system, /one or two sentences in one paragraph/);
+  // Short enough not to be cut at 280 characters, and no remarks about the input on the map.
+  assert.match(mock.prompts[0]!.system, /at most two short sentences in one paragraph, no line breaks, about 200 characters in all/);
+  assert.doesNotMatch(mock.prompts[0]!.system, /does not show/);
   assert.equal(brief.stdout, `Creates an order with its total. It never saves it.\n\nanthropic:claude-opus-5 · ${today} · fresh\n`);
   const saved = readFileSync(join(dir, "keylang/explain/brief/domain.order.createOrder.md"), "utf8");
   assert.match(saved, /^<!-- keylang:explain agent=anthropic:claude-opus-5 date=\S+ closure=[0-9a-f]{64} lang=en detail=brief -->\nCreates an order with its total\. It never saves it\.\n$/);
@@ -264,6 +266,33 @@ test("explain --llm --brief: a brief in keylang/explain/brief/ shows in the expl
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.equal(after("fn [createOrder]"), `      <a id="domain.order.createOrder"></a><br>Creates an order with its total. It never saves it. _(llm · claude-opus-5 · ${today} · stale)_`);
   assert.match(keylang(dir, ["explain", "--stale"]).stdout, /^domain\.order\.createOrder \(brief\): stale \(explained \S+\); run `keylang explain domain\.order\.createOrder --llm --brief`$/m);
+});
+
+test("explain --llm: an overloaded function's prompt carries every signature and the implementation's body; a short answer may still say what the input does not show", async (t) => {
+  const dir = copy(t);
+  const mock = await mockAnthropic(t);
+  const env = withModel(dir, mock);
+  mock.reply = () => "Formats an amount.";
+  const order = join(dir, "src/domain/order.ts");
+  writeFileSync(order, `${readFileSync(order, "utf8")}
+export function format(cents: number): string;
+export function format(cents: number, currency: string): string;
+export function format(cents: number, currency?: string): string {
+  return currency === undefined ? String(cents) : \`\${cents} \${currency}\`;
+}
+
+export function after(): number {
+  return 1;
+}
+`);
+  const brief = await keylangAsync(dir, ["explain", "domain.order.format", "--llm", "--brief"], env);
+  assert.equal(brief.status, 0, brief.stderr);
+  const code = /^Code \(src\/domain\/order\.ts:\d+\):\n```\n([\s\S]*?)\n```$/m.exec(mock.prompts[0]!.prompt)?.[1];
+  assert.equal(code, ["export function format(cents: number): string;", "export function format(cents: number, currency: string): string;", "export function format(cents: number, currency?: string): string {", "  return currency === undefined ? String(cents) : `${cents} ${currency}`;", "}"].join("\n"));
+  const short = await keylangAsync(dir, ["explain", "domain.order.after", "--llm"], env);
+  assert.equal(short.status, 0, short.stderr);
+  assert.match(mock.prompts[1]!.prompt, /^Code \(src\/domain\/order\.ts:\d+\):\n```\nexport function after\(\): number \{\n  return 1;\n\}\n```$/m);
+  assert.match(mock.prompts[1]!.system, /Say plainly when the input does not show something/);
 });
 
 test("saved explanations are not specs; the store of keylang 0.1 is named with a way to move it", async (t) => {

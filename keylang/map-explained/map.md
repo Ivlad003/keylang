@@ -388,10 +388,10 @@
     - fn [memberSegments](../../src/graph.ts#L993) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1012) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1015) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a>
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments)
-    - fn [placeFile](../../src/graph.ts#L1089) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
+    - fn [placeFile](../../src/graph.ts#L1100) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
       <a id="map.graph.placeFile"></a><br>Layer and module path segments for a file, from the first matching layer glob. `stem` is the path the module stands for, before segments are sanitized: the file without its extension (`src/a/b` for `src/a/b.ts` and `src/a/b/index.ts`), or its directory in `dir` mode. Two files…
       - calls [base.config.isOutside](base.md#base.config.isOutside), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)

@@ -34,6 +34,8 @@ export interface LlmRequest {
 export interface LlmCallOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Told the model that answered when the agent names none and its CLI reports one (`cli:claude`). */
+  onModel?: (model: string) => void;
 }
 
 /**
@@ -97,7 +99,7 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
     const cli = setup.client;
     const complete = async (request: LlmRequest, call?: LlmCallOptions): Promise<string> => {
       try {
-        return await cli.complete(request, { ...deadline(timeout, call?.timeoutMs), ...(call?.signal ? { signal: call.signal } : {}) });
+        return await cli.complete(request, { ...deadline(timeout, call?.timeoutMs), ...(call?.signal ? { signal: call.signal } : {}), ...(call?.onModel ? { onModel: call.onModel } : {}) });
       } catch (error) {
         if (error instanceof CliCancelled) throw new LlmCancelled(agent);
         throw error;
@@ -125,6 +127,14 @@ export function llmClient(configAgent: string | null, options: LlmClientOptions)
     return { client: { agent, model, complete: (request, call) => openrouterComplete(base, key, model, request, deadline(timeout, call?.timeoutMs), call?.signal) } };
   }
   return { missing: `unknown provider \`${provider}\` in agent \`${agent}\`` };
+}
+
+/**
+ * The agent an answer is signed with: `cli:claude` becomes `cli:claude:<model>`
+ * when the CLI reported the model; an agent that names its model stays as configured.
+ */
+export function answeringAgent(client: LlmClient, reported: string | null): string {
+  return client.model === "" && reported !== null ? `${client.agent}:${reported}` : client.agent;
 }
 
 /** `KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one. */

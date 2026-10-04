@@ -31,7 +31,7 @@ export interface FakeAgents {
 }
 
 /** Wrappers named `names` (claude, codex, opencode, cursor-agent, agent, or any custom name). */
-export function fakeAgents(t: { after: (f: () => void) => void }, names: string[], options: { modes?: string; reply?: string; version?: string } = {}): FakeAgents {
+export function fakeAgents(t: { after: (f: () => void) => void }, names: string[], options: { modes?: string; reply?: string; version?: string; model?: string } = {}): FakeAgents {
   const dir = mkdtempSync(join(tmpdir(), "keylang-fake-agent-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "bin");
@@ -46,6 +46,7 @@ export function fakeAgents(t: { after: (f: () => void) => void }, names: string[
   const env: Record<string, string> = { FAKE_AGENT_LOG: log, FAKE_AGENT_MODES: options.modes ?? "ok" };
   if (options.reply !== undefined) env.FAKE_AGENT_REPLY = options.reply;
   if (options.version !== undefined) env.FAKE_AGENT_VERSION = options.version;
+  if (options.model !== undefined) env.FAKE_AGENT_MODEL = options.model;
   return {
     bin,
     env,

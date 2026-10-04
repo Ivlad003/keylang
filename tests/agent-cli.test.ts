@@ -75,7 +75,8 @@ const NODE = "app.checkout.checkout";
 
 test("explain --llm through cli:claude: the exact argv, system text in --system-prompt, the prompt on stdin, cwd = PWD = root, KEYLANG_NESTED", async (t) => {
   const dir = copy(t);
-  const fake = fakeAgents(t, ["claude"], { reply: "Checks out an order." });
+  // The agent names its model: the answer is signed as configured, not with the model the CLI reports.
+  const fake = fakeAgents(t, ["claude"], { reply: "Checks out an order.", model: "claude-opus-5-5" });
   const o = await keylang(dir, ["explain", NODE, "--llm"], fake, { KEYLANG_AGENT: "cli:claude:opus" });
   assert.equal(o.status, 0, o.stderr);
   assert.match(o.stdout, /Checks out an order\./);
@@ -157,9 +158,9 @@ test("explain --llm through codex, opencode, cursor and a custom CLI: each gets 
   });
 });
 
-test("explain --missing --llm --limit through keylang.json cli:claude: briefs written, two requests at a time by default", async (t) => {
-  const dir = copy(t, "explained", { agent: "cli:claude" });
-  const fake = fakeAgents(t, ["claude"], { reply: "A brief.", modes: "slow" });
+test("explain --missing --llm --limit through keylang.json cli:claude: briefs written, two requests at a time by default, signed with the model the CLI reports", async (t) => {
+  const dir = copy(t, "explained", { agent: "cli:claude", explain: { map: true } });
+  const fake = fakeAgents(t, ["claude"], { reply: "A brief.", modes: "slow", model: "claude-opus-5-5" });
   const o = await keylang(dir, ["explain", "--missing", "--llm", "--limit", "3"], fake);
   assert.equal(o.status, 0, o.stderr);
   assert.equal(o.stdout, "explained 3 of 3 node(s)\n");
@@ -170,7 +171,10 @@ test("explain --missing --llm --limit through keylang.json cli:claude: briefs wr
   assert.equal(Math.max(...calls.map((call) => inFlight(call.started))), 2);
   const briefs = readdirSync(join(dir, "keylang/explain/brief"));
   assert.equal(briefs.length, 3);
-  assert.match(readFileSync(join(dir, "keylang/explain/brief", briefs[0]!), "utf8"), /^<!-- keylang:explain agent=cli:claude date=/);
+  assert.match(readFileSync(join(dir, "keylang/explain/brief", briefs[0]!), "utf8"), /^<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=/);
+  assert.equal((await keylang(dir, ["map"], fake)).status, 0);
+  const map = readdirSync(join(dir, "keylang/map-explained")).map((file) => readFileSync(join(dir, "keylang/map-explained", file), "utf8")).join("");
+  assert.equal(map.split(`_(llm · claude:claude-opus-5-5 · ${today})_`).length - 1, 3, map);
   const plan = await keylang(dir, ["explain", "--missing", "--dry-run"], fake);
   assert.equal(plan.status, 0, plan.stderr);
 });

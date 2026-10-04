@@ -2468,7 +2468,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     payload.text = savedAnswerText(previous);
     return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
   }
-  const { llmClient, LlmCancelled } = await import("./llm.ts");
+  const { answeringAgent, llmClient, LlmCancelled } = await import("./llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
   if ("missing" in setup) {
     payload.source = "offline";
@@ -2485,8 +2485,9 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"explain-llm"> => ({ ...emptyExplainLlm("failed", exitCode), payload, messages: [...notes, ...messages] });
   context.onProgress?.({ text: `asking ${client.agent}` });
   let answer: string;
+  let reported: string | null = null;
   try {
-    answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), context.signal ? { signal: context.signal } : {});
+    answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptyExplainLlm("cancelled", null);
     payload.error = messageOf(error);
@@ -2498,7 +2499,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     payload.error = `${client.agent} answered without text; nothing written`;
     return failed(2, [{ level: "error", text: payload.error }]);
   }
-  const e: Explanation = { agent: client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail, text };
+  const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail, text };
   payload.answer = savedAnswer(analyzed, id, e);
   const keep = { level: "info" as const, text: previous === null ? "nothing was written" : `nothing was written; ${file} keeps the saved answer` };
   context.onProgress?.({ text: "waiting to write" });
@@ -2645,7 +2646,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     payload.text = "nothing to explain\n";
     return { ...emptyExplainBatch("completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
   }
-  const { llmClient, LlmCancelled } = await import("./llm.ts");
+  const { answeringAgent, llmClient, LlmCancelled } = await import("./llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
   if ("missing" in setup) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
   const client = setup.client;
@@ -2682,8 +2683,9 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     const summary = summarizeNode(analyzed, id);
     if ("unknown" in summary) return finish(id, "the id is gone from the snapshot");
     let answer: string;
+    let reported: string | null = null;
     try {
-      answer = await client.complete(explanationRequest(analyzed, summary.summary, { lang, detail: "brief", briefs }), { signal });
+      answer = await client.complete(explanationRequest(analyzed, summary.summary, { lang, detail: "brief", briefs }), { signal, onModel: (model) => (reported = model) });
     } catch (error) {
       if (cancelled()) stop("cancelled");
       if (error instanceof LlmCancelled || signal.aborted) return void notStarted.add(id);
@@ -2715,7 +2717,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
       return void notStarted.add(id);
     }
     if (target !== null) return finish(id, `${file}: ${target}`);
-    const e: Explanation = { agent: client.agent, date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail: "brief", text };
+    const e: Explanation = { agent: answeringAgent(client, reported), date: new Date().toISOString().slice(0, 10), closure: currentBaseline(analyzed, id) ?? "", lang, detail: "brief", text };
     try {
       writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
     } catch (error) {

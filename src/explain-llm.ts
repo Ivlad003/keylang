@@ -94,21 +94,25 @@ export function explanationRequest(analysis: Analysis, summary: NodeSummary, opt
     ...members(analysis, summary.id, options.briefs),
     `Layer: ${summary.id.split(".")[0]}`,
   ];
-  const detail =
-    options.detail === "brief"
-      ? "Write one or two sentences in one paragraph, no line breaks: what the node does, for a reader scanning a map of the codebase. Do not repeat its name or signature."
-      : options.detail === "short"
-        ? "Write 2-3 sentences: what the node is for and why it exists."
-        : "Explain its purpose, then its steps and branches, then edge cases. No line-by-line narration.";
+  const brief = options.detail === "brief";
+  const detail = brief
+    ? `Write at most two short sentences in one paragraph, no line breaks, about ${BRIEF_TARGET} characters in all: what the node does, for a reader scanning a map of the codebase. Do not repeat its name or signature.`
+    : options.detail === "short"
+      ? "Write 2-3 sentences: what the node is for and why it exists."
+      : "Explain its purpose, then its steps and branches, then edge cases. No line-by-line narration.";
   const system = [
     "You explain one node of a codebase to a developer, using the architecture description keylang keeps for the repository.",
     `Answer in the language with code \`${options.lang}\`. ${detail}`,
     "Refer to code only by the IDs given in the input, written in backticks. Never invent an ID.",
     summary.kind.startsWith("planned") ? "The node is planned and has no code yet: describe the intention, not behavior." : "Describe what the code does, not what its name suggests.",
-    "Say plainly when the input does not show something (for example calls keylang could not resolve).",
+    // A brief is read on the map, not as an answer: remarks about the input there are noise (ticket explained-map/12).
+    brief ? "Say only what the code does; no remarks about the input or what it leaves out." : "Say plainly when the input does not show something (for example calls keylang could not resolve).",
   ].join("\n");
   return { system, prompt: parts.join("\n\n"), maxTokens: options.detail === "full" ? 4096 : 1024 };
 }
+
+/** The length a brief is asked for: under the 280 characters `briefOf` cuts at, so a brief ends on its own sentence. */
+const BRIEF_TARGET = 200;
 
 /** Most member lines a prompt carries; a layer of hundreds of modules is summed up by its first ones. */
 const MAX_MEMBERS = 80;

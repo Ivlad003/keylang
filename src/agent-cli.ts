@@ -41,6 +41,8 @@ export interface CliCallOptions {
   signal?: AbortSignal;
   ms: number;
   fromVariable: boolean;
+  /** Told the model that answered, when the CLI reports it (Claude Code's `modelUsage`). */
+  onModel?: (model: string) => void;
 }
 
 export interface CliClient {
@@ -431,13 +433,33 @@ function wellFormed(text: string): string {
   return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
 }
 
-/** A `{"type":"result"}` line of Claude Code or Cursor: the answer, an error, or null for any other line. */
-export function parseResultLine(line: string): { text: string } | { error: string } | null {
+type ResultLine = { text: string; model: string | null } | { error: string };
+
+/** A `{"type":"result"}` line of Claude Code or Cursor: the answer with the model that wrote it, an error, or null for any other line. */
+export function parseResultLine(line: string): ResultLine | null {
   const value = parseJson(line.trim());
   if (!isObject(value) || value.type !== "result") return null;
   const result = typeof value.result === "string" ? value.result : "";
   if (value.is_error === true || (typeof value.subtype === "string" && value.subtype.startsWith("error"))) return { error: result || String(value.subtype ?? "error") };
-  return { text: result };
+  return { text: result, model: answeringModel(value.modelUsage) };
+}
+
+/**
+ * The model of Claude Code's `modelUsage` (`{"<model>": {"outputTokens": n, …}}`)
+ * that wrote the most output: the CLI may also use a small model on the side.
+ * Null when the line has none (Cursor) or its shape is not that.
+ */
+function answeringModel(usage: unknown): string | null {
+  if (!isObject(usage)) return null;
+  let best: { model: string; output: number } | null = null;
+  for (const model of Object.keys(usage).sort()) {
+    const entry = usage[model];
+    // It goes into the `<!-- keylang:explain agent=… -->` header: no spaces, `<`, `>` or `--` (ADR 0012).
+    if (!/^[\w.\-/@[\]]+$/.test(model) || model.includes("--") || !isObject(entry)) continue;
+    const output = typeof entry.outputTokens === "number" ? entry.outputTokens : 0;
+    if (best === null || output > best.output) best = { model, output };
+  }
+  return best?.model ?? null;
 }
 
 /** opencode's NDJSON: the text parts after the last step start, or the first error. */
@@ -472,8 +494,9 @@ async function completeWith(agent: string, runner: Runner, model: string, reques
     for (const file of inv.files) writeFileSync(file.path, file.text, { mode: 0o600 });
     const run = await runInvocation(agent, inv, options.root, call);
     const answer = readAnswer(agent, inv, run);
-    if (answer.trim() === "") throw new Error(`${agent} answered without text`);
-    return answer.trim();
+    if (answer.text.trim() === "") throw new Error(`${agent} answered without text`);
+    if (answer.model !== null) call.onModel?.(answer.model);
+    return answer.text.trim();
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -482,31 +505,32 @@ async function completeWith(agent: string, runner: Runner, model: string, reques
 interface RunResult {
   stdout: string;
   /** An early `type:"result"` line already parsed. */
-  result: { text: string } | { error: string } | null;
+  result: ResultLine | null;
 }
 
-function readAnswer(agent: string, inv: Invocation, run: RunResult): string {
+/** The answer, with the model that wrote it when the CLI's output names it. */
+function readAnswer(agent: string, inv: Invocation, run: RunResult): { text: string; model: string | null } {
   switch (inv.answer) {
     case "result-json": {
       const result = run.result ?? lastResult(run.stdout);
       if (result === null) throw new Error(`${agent} answered without text`);
       if ("error" in result) throw new Error(`${agent}: ${result.error}`);
-      return result.text;
+      return result;
     }
     case "file":
-      return inv.answerFile !== null && existsSync(inv.answerFile) ? readFileSync(inv.answerFile, "utf8") : "";
+      return { text: inv.answerFile !== null && existsSync(inv.answerFile) ? readFileSync(inv.answerFile, "utf8") : "", model: null };
     case "opencode-events": {
       const events = parseOpencodeEvents(run.stdout);
       if ("error" in events) throw new Error(`${agent}: ${events.error}`);
-      return events.text;
+      return { text: events.text, model: null };
     }
     case "stdout":
-      return run.stdout;
+      return { text: run.stdout, model: null };
   }
 }
 
-function lastResult(stdout: string): { text: string } | { error: string } | null {
-  let found: { text: string } | { error: string } | null = null;
+function lastResult(stdout: string): ResultLine | null {
+  let found: ResultLine | null = null;
   for (const line of stdout.split("\n")) found = parseResultLine(line) ?? found;
   return found;
 }

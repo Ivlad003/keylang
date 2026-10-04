@@ -13,62 +13,65 @@
     - type [AgentSource](../../src/agent-cli.ts#L32) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
     - type [CliRequest](../../src/agent-cli.ts#L34)
     - type [CliCallOptions](../../src/agent-cli.ts#L40)
-    - type [CliClient](../../src/agent-cli.ts#L46)
-    - module [CliCancelled](../../src/agent-cli.ts#L57)
-      - fn [constructor](../../src/agent-cli.ts#L58) (agent: string)
-    - fn [agentsFile](../../src/agent-cli.ts#L73) (home: string) → string
-    - fn [readAgentSettings](../../src/agent-cli.ts#L78) (home: string) → AgentSettings
+    - type [CliClient](../../src/agent-cli.ts#L48)
+    - module [CliCancelled](../../src/agent-cli.ts#L59)
+      - fn [constructor](../../src/agent-cli.ts#L60) (agent: string)
+    - fn [agentsFile](../../src/agent-cli.ts#L75) (home: string) → string
+    - fn [readAgentSettings](../../src/agent-cli.ts#L80) (home: string) → AgentSettings
       - calls features.agent-cli.agentsFile, features.agent-cli.parseAgentSettings
-    - fn [parseAgentSettings](../../src/agent-cli.ts#L91) (file: string, value: unknown) → AgentSettings
+    - fn [parseAgentSettings](../../src/agent-cli.ts#L93) (file: string, value: unknown) → AgentSettings
       - calls features.agent-cli.isObject, base.config.isAgent, features.agent-cli.cliDefinition
-    - fn [cliDefinition](../../src/agent-cli.ts#L107) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
+    - fn [cliDefinition](../../src/agent-cli.ts#L109) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
       - calls features.agent-cli.isObject
-    - fn [resolveAgent](../../src/agent-cli.ts#L142) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
+    - fn [resolveAgent](../../src/agent-cli.ts#L144) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
       - calls base.config.isAgent, features.agent-cli.readAgentSettings
-    - fn [selectedAgent](../../src/agent-cli.ts#L157) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
+    - fn [selectedAgent](../../src/agent-cli.ts#L159) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
       - calls features.agent-cli.resolveAgent
-    - fn [parseCliAgent](../../src/agent-cli.ts#L166) (agent: string) → { name: string; model: string }
-    - type [Runner](../../src/agent-cli.ts#L173) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
-    - fn [cliClient](../../src/agent-cli.ts#L180) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
+    - fn [parseCliAgent](../../src/agent-cli.ts#L168) (agent: string) → { name: string; model: string }
+    - type [Runner](../../src/agent-cli.ts#L175) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
+    - fn [cliClient](../../src/agent-cli.ts#L182) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
       - calls features.agent-cli.parseCliAgent, features.agent-cli.readAgentSettings, features.agent-cli.agentsFile, features.agent-cli.findBinary, features.agent-cli.presetBinary, features.agent-cli.completeWith
-    - fn [presetBinary](../../src/agent-cli.ts#L215) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
+    - fn [presetBinary](../../src/agent-cli.ts#L217) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
       - calls features.agent-cli.findBinary, features.agent-cli.agentsFile, features.agent-cli.binaryVersion
-    - fn [binaryVersion](../../src/agent-cli.ts#L236) (bin: string, env: Env) → string | null <!-- internal -->
-    - fn [shortVersion](../../src/agent-cli.ts#L246) (line: string) → string
-    - fn [cliVersion](../../src/agent-cli.ts#L251) (bin: string, env: Env = process.env) → Promise<string | null>
+    - fn [binaryVersion](../../src/agent-cli.ts#L238) (bin: string, env: Env) → string | null <!-- internal -->
+    - fn [shortVersion](../../src/agent-cli.ts#L248) (line: string) → string
+    - fn [cliVersion](../../src/agent-cli.ts#L253) (bin: string, env: Env = process.env) → Promise<string | null>
       - calls features.agent-cli.shortVersion
-    - type [AgentCliProbe](../../src/agent-cli.ts#L270)
-    - fn [probeAgentClis](../../src/agent-cli.ts#L277) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
+    - type [AgentCliProbe](../../src/agent-cli.ts#L272)
+    - fn [probeAgentClis](../../src/agent-cli.ts#L279) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
       - calls features.agent-cli.readAgentSettings, features.agent-cli.presetBinary, features.agent-cli.cliVersion
-    - fn [findBinary](../../src/agent-cli.ts#L295) (name: string, env: Env) → string | null
+    - fn [findBinary](../../src/agent-cli.ts#L297) (name: string, env: Env) → string | null
       - calls features.agent-cli.executable
-    - fn [executable](../../src/agent-cli.ts#L305) (path: string) → boolean <!-- internal -->
-    - type [AnswerKind](../../src/agent-cli.ts#L318) = "result-json" | "file" | "opencode-events" | "stdout"
-    - type [Invocation](../../src/agent-cli.ts#L320)
-    - fn [invocation](../../src/agent-cli.ts#L335) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
+    - fn [executable](../../src/agent-cli.ts#L307) (path: string) → boolean <!-- internal -->
+    - type [AnswerKind](../../src/agent-cli.ts#L320) = "result-json" | "file" | "opencode-events" | "stdout"
+    - type [Invocation](../../src/agent-cli.ts#L322)
+    - fn [invocation](../../src/agent-cli.ts#L337) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
       - calls features.agent-cli.wellFormed, features.agent-cli.opencodeConfig
-    - fn [opencodeConfig](../../src/agent-cli.ts#L416) (existing: string | undefined, system: string) → string <!-- internal -->
+    - fn [opencodeConfig](../../src/agent-cli.ts#L418) (existing: string | undefined, system: string) → string <!-- internal -->
       - calls features.agent-cli.isObject
-    - fn [wellFormed](../../src/agent-cli.ts#L430) (text: string) → string <!-- internal -->
-    - fn [parseResultLine](../../src/agent-cli.ts#L435) (line: string) → { text: string } | { error: string } | null
+    - fn [wellFormed](../../src/agent-cli.ts#L432) (text: string) → string <!-- internal -->
+    - type [ResultLine](../../src/agent-cli.ts#L436) = { text: string; model: string | null } | { error: string } <!-- internal -->
+    - fn [parseResultLine](../../src/agent-cli.ts#L439) (line: string) → ResultLine | null
+      - calls features.agent-cli.parseJson, features.agent-cli.isObject, features.agent-cli.answeringModel
+    - fn [answeringModel](../../src/agent-cli.ts#L452) (usage: unknown) → string | null <!-- internal -->
+      - calls features.agent-cli.isObject
+    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L466) (output: string) → { text: string } | { error: string }
       - calls features.agent-cli.parseJson, features.agent-cli.isObject
-    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L444) (output: string) → { text: string } | { error: string }
-      - calls features.agent-cli.parseJson, features.agent-cli.isObject
-    - fn [completeWith](../../src/agent-cli.ts#L463) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
+    - fn [completeWith](../../src/agent-cli.ts#L485) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
       - calls features.agent-cli.CliCancelled, features.agent-cli.invocation, features.agent-cli.runInvocation, features.agent-cli.readAnswer
-    - type [RunResult](../../src/agent-cli.ts#L482) <!-- internal -->
-    - fn [readAnswer](../../src/agent-cli.ts#L488) (agent: string, inv: Invocation, run: RunResult) → string <!-- internal -->
+    - type [RunResult](../../src/agent-cli.ts#L505) <!-- internal -->
+    - fn [readAnswer](../../src/agent-cli.ts#L512) (agent: string, inv: Invocation, run: RunResult) → { text: string; model: string | null } <!-- internal -->
       - calls features.agent-cli.lastResult, features.agent-cli.parseOpencodeEvents
-    - fn [lastResult](../../src/agent-cli.ts#L508) (stdout: string) → { text: string } | { error: string } | null <!-- internal -->
+    - fn [lastResult](../../src/agent-cli.ts#L532) (stdout: string) → ResultLine | null <!-- internal -->
       - calls features.agent-cli.parseResultLine
-    - fn [killGroup](../../src/agent-cli.ts#L518) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
-    - fn [hookExit](../../src/agent-cli.ts#L527) () → void <!-- internal -->
+    - fn [killGroup](../../src/agent-cli.ts#L542) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
+    - fn [hookExit](../../src/agent-cli.ts#L551) () → void <!-- internal -->
       - calls features.agent-cli.killGroup
-    - fn [runInvocation](../../src/agent-cli.ts#L546) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
+    - fn [runInvocation](../../src/agent-cli.ts#L570) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
       - calls features.agent-cli.hookExit, features.agent-cli.killGroup, features.agent-cli.CliCancelled, features.agent-cli.parseResultLine, features.agent-cli.stripAnsi
-    - fn [stripAnsi](../../src/agent-cli.ts#L644) (text: string) → string <!-- internal -->
-    - fn [parseJson](../../src/agent-cli.ts#L649) (text: string) → unknown <!-- internal -->
-    - fn [isObject](../../src/agent-cli.ts#L658) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [stripAnsi](../../src/agent-cli.ts#L668) (text: string) → string <!-- internal -->
+    - fn [parseJson](../../src/agent-cli.ts#L673) (text: string) → unknown <!-- internal -->
+    - fn [isObject](../../src/agent-cli.ts#L682) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [agent-context](../../src/agent-context.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -296,15 +299,15 @@
       - calls features.lsp-features.plannedDecl
     - fn [explanationRequest](../../src/explain-llm.ts#L81) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       - calls features.agent-context.snapshotSource, features.explain-llm.sourceLines, features.explain-node.formatSummary, features.explain-llm.members
-    - fn [members](../../src/explain-llm.ts#L121) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [members](../../src/explain-llm.ts#L125) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       - calls map.explanations.explanationOf
-    - fn [sourceLines](../../src/explain-llm.ts#L137) (text: string, from: number, to: number) → string <!-- internal -->
-    - type [BriefBatch](../../src/explain-llm.ts#L144) = "missing" | "stale"
-    - type [BriefLevel](../../src/explain-llm.ts#L147) = "fn/type" | "class/module" | "layer"
-    - type [PlannedBrief](../../src/explain-llm.ts#L149)
-    - fn [planBriefs](../../src/explain-llm.ts#L162) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [sourceLines](../../src/explain-llm.ts#L141) (text: string, from: number, to: number) → string <!-- internal -->
+    - type [BriefBatch](../../src/explain-llm.ts#L148) = "missing" | "stale"
+    - type [BriefLevel](../../src/explain-llm.ts#L151) = "fn/type" | "class/module" | "layer"
+    - type [PlannedBrief](../../src/explain-llm.ts#L153)
+    - fn [planBriefs](../../src/explain-llm.ts#L166) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       - calls map.explanations.snapshotBaseline, base.span.compareText
-    - fn [estimateTokens](../../src/explain-llm.ts#L180) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [estimateTokens](../../src/explain-llm.ts#L184) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       - calls features.explain-node.summarizeNode, features.explain-llm.explanationRequest
   - module [explain-node](../../src/explain-node.ts#L1)
     - analyze map.analyze
@@ -498,25 +501,26 @@
     - keys features.keys
     - type [LlmRequest](../../src/llm.ts#L27)
     - type [LlmCallOptions](../../src/llm.ts#L34)
-    - type [LlmClientOptions](../../src/llm.ts#L43)
-    - type [LlmClient](../../src/llm.ts#L49)
-    - module [LlmCancelled](../../src/llm.ts#L59)
-      - fn [constructor](../../src/llm.ts#L60) (provider: string)
-    - fn [isCancelled](../../src/llm.ts#L67) (error: unknown) → error is LlmCancelled
-    - type [LlmSetup](../../src/llm.ts#L71) = { client: LlmClient } | { missing: string }
-    - type [Env](../../src/llm.ts#L73) = Readonly<Record<string, string | undefined>> <!-- internal -->
-    - fn [llmClient](../../src/llm.ts#L85) (configAgent: string | null, options: LlmClientOptions) → LlmSetup
+    - type [LlmClientOptions](../../src/llm.ts#L45)
+    - type [LlmClient](../../src/llm.ts#L51)
+    - module [LlmCancelled](../../src/llm.ts#L61)
+      - fn [constructor](../../src/llm.ts#L62) (provider: string)
+    - fn [isCancelled](../../src/llm.ts#L69) (error: unknown) → error is LlmCancelled
+    - type [LlmSetup](../../src/llm.ts#L73) = { client: LlmClient } | { missing: string }
+    - type [Env](../../src/llm.ts#L75) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - fn [llmClient](../../src/llm.ts#L87) (configAgent: string | null, options: LlmClientOptions) → LlmSetup
       - calls features.agent-cli.resolveAgent, features.llm.timeoutMs, base.config.isCliAgent, features.agent-cli.cliClient, features.llm.deadline, features.llm.LlmCancelled, features.keys.readKey, features.llm.anthropicComplete, features.llm.openrouterComplete
-    - fn [timeoutMs](../../src/llm.ts#L131) (env: Env) → number | string <!-- internal -->
-    - type [Deadline](../../src/llm.ts#L138) <!-- internal -->
-    - fn [deadline](../../src/llm.ts#L143) (variable: number, own: number | undefined) → Deadline <!-- internal -->
-    - fn [timeoutMessage](../../src/llm.ts#L147) (provider: string, bound: Deadline) → string <!-- internal -->
-    - fn [callSignal](../../src/llm.ts#L156) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
-    - fn [anthropicComplete](../../src/llm.ts#L180) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [answeringAgent](../../src/llm.ts#L136) (client: LlmClient, reported: string | null) → string
+    - fn [timeoutMs](../../src/llm.ts#L141) (env: Env) → number | string <!-- internal -->
+    - type [Deadline](../../src/llm.ts#L148) <!-- internal -->
+    - fn [deadline](../../src/llm.ts#L153) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+    - fn [timeoutMessage](../../src/llm.ts#L157) (provider: string, bound: Deadline) → string <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L166) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L190) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       - calls features.llm.callSignal, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [openrouterComplete](../../src/llm.ts#L214) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L224) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       - calls features.llm.callSignal, features.llm.parseJson, features.llm.LlmCancelled, features.llm.timeoutMessage
-    - fn [parseJson](../../src/llm.ts#L273) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/llm.ts#L283) (text: string) → unknown <!-- internal -->
   - module [lsp-features](../../src/lsp-features.ts#L1)
     - node external.node
     - analyze map.analyze

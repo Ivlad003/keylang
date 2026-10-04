@@ -246,9 +246,9 @@
       - calls base.config.layerName
     - fn [memberSegments](../../src/graph.ts#L993) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       - calls map.graph.memberKey, base.config.layerName
-    - fn [addDecl](../../src/graph.ts#L1012) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1015) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       - calls base.config.layerName, map.graph.memberSegments
-    - fn [placeFile](../../src/graph.ts#L1089) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
+    - fn [placeFile](../../src/graph.ts#L1100) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
       - calls base.config.isOutside, base.glob.matchesGlob, base.glob.globPrefix, base.languages.languageOf
   - module [imports](../../src/imports.ts#L1)
     - node external.node
