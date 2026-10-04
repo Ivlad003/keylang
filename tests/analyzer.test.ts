@@ -851,6 +851,29 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
   assert.deepEqual(shadow.calls[0]!.passes?.map((p) => `${p.arg}:${p.callee}`), ["0:Cart"]);
 });
 
+test("jsx: a type-only import from React binds no factory: `import type React`, `{ type createElement }`, `import type * as React` keep one ordinary call", (t) => {
+  const dir = repo(t, {
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+    "src/ui/cart.ts": "export function Cart() { return null; }\n",
+    "src/app/default.ts": ['import type React from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { return React.createElement(Cart); }", ""].join("\n"),
+    "src/app/named.ts": ['import { type createElement, type createElement as h } from "react";', 'import { type jsx } from "react/jsx-runtime";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); h(Cart); return jsx(Cart, {}); }", ""].join("\n"),
+    "src/app/ns.ts": ['import type * as React from "react";', 'import type * as Runtime from "react/jsx-runtime";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { Runtime.jsx(Cart, {}); return React.createElement(Cart); }", ""].join("\n"),
+    "src/app/value.ts": ['import React, { type memo, createElement } from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); return React.createElement(Cart); }", ""].join("\n"),
+  });
+  const snap = snapshot(dir);
+  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
+  assert.deepEqual(calls, [
+    "app.default.Page: React.createElement → null",
+    "app.named.Page: createElement → null",
+    "app.named.Page: h → null",
+    "app.named.Page: jsx → null",
+    "app.ns.Page: React.createElement → null",
+    "app.ns.Page: Runtime.jsx → null",
+    "app.value.Page: Cart → ui.cart.Cart",
+    "app.value.Page: Cart → ui.cart.Cart",
+  ]);
+});
+
 test("jsx: a local `createElement` or one imported from another module does not call its first argument", (t) => {
   const dir = repo(t, {
     "src/ui/cart.ts": "export function Cart() { return null; }\n",
