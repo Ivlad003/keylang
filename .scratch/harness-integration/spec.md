@@ -90,7 +90,14 @@
 | 08 | [`check --changed`](issues/08-check-changed.md) | ready-for-agent |
 | 09 | [Хук `Stop` для Claude, Codex, Cursor](issues/09-stop-hook.md) | ready-for-agent |
 | 10 | [Інтеграція через `planned module external.<pkg>`](issues/10-planned-external.md) | ready-for-agent |
-| 11 | [Перевірка на чужих репо через Claude Code і Codex](issues/11-dogfood-harnesses.md) | ready-for-human |
+| 11 | [Перевірка на чужих репо через Claude Code і Codex](issues/11-dogfood-harnesses.md) | resolved |
+| 12 | [`scaffold` для методів класу й файлів з крапкою](issues/12-scaffold-class-methods.md) | ready-for-agent |
+| 13 | [Stdlib Python — не `external`](issues/13-python-stdlib-not-external.md) | ready-for-agent |
+| 14 | [Python static через анотовані параметри й локальні змінні](issues/14-python-static-method-calls.md) | needs-triage |
+| 15 | [Заздалегідь дозволити нове ребро між шарами](issues/15-preauthorize-planned-dependency.md) | needs-triage |
+| 16 | [Codex: апрув MCP і `check --changed` у пісочниці](issues/16-codex-mcp-approval-and-sandbox.md) | ready-for-agent |
+| 17 | [CLI-запас із версією і три повідомлення](issues/17-cli-fallback-and-messages.md) | ready-for-agent |
+| 18 | [`done` через переписування файла фічі](issues/18-feature-done-by-rewriting-spec.md) | needs-triage |
 
 <!-- shiftwork:tickets:start -->
 | NN | title | status | last route |
