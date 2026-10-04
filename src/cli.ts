@@ -133,13 +133,15 @@ Commands:
                             Rebuilds the analysis in memory; does not write the map.
                             --changed reports only findings that touch files changed
                             since <ref> (default HEAD) plus untracked files
-  check --stale [paths…] [--accept]
+  check --stale [paths…] [--accept | --strict]
                             Prose whose code changed since it was accepted: node
                             descriptions and flow when/then/invariant, against the
                             fingerprints in <dir>/baseline.json (callees and cycles
                             included; "incomplete" when keylang cannot see all the
-                            code). A warning: exit 0. Writes nothing; --accept writes
-                            the current fingerprints of the checked specs after review
+                            code). A warning: exit 0; --strict: exit 1 when any
+                            statement or obsolete entry is listed. Writes nothing;
+                            --accept writes the current fingerprints of the checked
+                            specs after review
   parse [--json] <paths…>   Parse files (or all *.md under directories) and print the IR
   fmt [--check] <paths…>    Rewrite files in canonical format (--check: report only);
                             a file it cannot read or write is named and the rest are done (exit 2)
@@ -148,6 +150,7 @@ Options:
   -h, --help                Show this help
   -V, --version             Show version
   --strict                  Exit 1 when a required result is unverified
+                            (check --stale: when any statement is to review)
   --format <name>           check output: human (default), json, sarif, github
   --static <mode>           check: which calls prove a flow step statically.
                             Precedence: this flag, then keylang.json check.static,
@@ -166,8 +169,9 @@ keylang.json \`agent\`: "anthropic:<model>", "openrouter:<model>" (API key), or
 opencode, cursor, or a command in agents.json "clis"). KEYLANG_LLM_TIMEOUT_MS bounds
 a request (default 600000).
 
-Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict)
-or a stale map with --check, 2 usage or I/O error.
+Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict,
+or prose to review with check --stale --strict) or a stale map with --check,
+2 usage or I/O error.
 `;
 
 /** The flags of every command; `completions` completes this same table. */
@@ -962,9 +966,10 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
 async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }): Promise<number> {
   if (opts.accept && !opts.stale) throw new Error("check: --accept requires --stale");
   if (opts.stale) {
-    const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.strict ? "--strict" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
+    const other = opts.explain ? "--explain-edge" : opts.changed ? "--changed" : opts.static !== undefined ? "--static" : opts.format !== "human" ? "--format" : null;
     if (other !== null) throw new Error(`check: --stale cannot be combined with ${other}`);
-    return cmdCheckStale(paths, opts.accept);
+    if (opts.accept && opts.strict) throw new Error("check: --accept writes the baseline and --strict gates on it; pass one of them");
+    return cmdCheckStale(paths, opts.accept, opts.strict);
   }
   const format = opts.format;
   if (!isCheckFormat(format)) throw new Error(`unknown --format \`${format}\`; expected ${CHECK_FORMATS.join(", ")}`);
@@ -1011,18 +1016,20 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
 
 /**
  * `check --stale`: one line per statement to review on stdout (stale, new, or
- * unchanged but incomplete), the counts on stderr. Stale is a warning: the
- * code is 0 unless the invocation or I/O fails.
+ * unchanged but incomplete) and per obsolete baseline entry, the counts on
+ * stderr. Stale is a warning: the code is 0 unless the invocation or I/O
+ * fails; with `strict`, any such line is 1, so CI can gate on review.
  */
-async function cmdCheckStale(paths: string[], accept: boolean): Promise<number> {
+async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean): Promise<number> {
   const cwd = process.cwd();
   const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
-  for (const f of report.findings) if (f.state !== "fresh" || f.incomplete.length > 0) process.stdout.write(`${staleLine(f)}\n`);
+  const toReview = report.findings.filter((f) => f.state !== "fresh" || f.incomplete.length > 0);
+  for (const f of toReview) process.stdout.write(`${staleLine(f)}\n`);
   for (const o of report.obsolete) process.stdout.write(`${path}: obsolete \`${o.key}\` of ${o.file}: no such statement any more\n`);
   process.stderr.write(`${staleSummary(report)}\n`);
   if (accepted !== null) process.stderr.write(`keylang: accepted ${accepted} fingerprint${accepted === 1 ? "" : "s"} in ${path}\n`);
   else if (report.findings.some((f) => f.state !== "fresh") || report.obsolete.length > 0) process.stderr.write("keylang: after review, run `keylang check --stale --accept`\n");
-  return 0;
+  return strict && (toReview.length > 0 || report.obsolete.length > 0) ? 1 : 0;
 }
 
 /**

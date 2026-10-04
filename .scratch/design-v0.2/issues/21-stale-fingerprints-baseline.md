@@ -29,3 +29,4 @@
   - Стан `stale` у hover/TUI лишається дорожньою картою.
 
 - 2026-10-04 — рішення людини: `check --stale` дає 0 (попередження), а `check --stale --strict` — 1, якщо є `stale`, `new` чи `incomplete` твердження до перегляду.
+- 2026-10-04 — зроблено: `check --stale --strict` дає 1, коли stdout не порожній — є `stale`, `new`, `incomplete` або `obsolete`; без `--strict` — 0, як і було. Припущення: `obsolete` теж блокує, бо це розходження baseline зі специфікаціями, яке знімає лише `--accept` (правило «є рядок до перегляду — код 1» лишається простим). `--accept --strict` — код 2 (прийняття пише baseline, `--strict` його перевіряє). Решта комбінацій (`--format`, `--static`, `--changed`, `--explain-edge`) і далі код 2. Оновлено `--help`, `docs/tools.md`, `docs/format.md` («Стейлнес прози»), `tests/stale.test.ts`.

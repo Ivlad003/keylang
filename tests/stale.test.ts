@@ -165,7 +165,44 @@ test("check --stale: a bad baseline or invocation is exit 2 and writes nothing",
   const accept = r.run("check", "--accept");
   assert.equal(accept.status, 2);
   assert.match(accept.stderr, /--accept requires --stale/);
+  const both = r.run("check", "--stale", "--accept", "--strict");
+  assert.equal(both.status, 2);
+  assert.match(both.stderr, /--accept writes the baseline and --strict gates on it/);
   const json = r.run("check", "--stale", "--format", "json");
   assert.equal(json.status, 2);
   assert.match(json.stderr, /--stale cannot be combined with --format/);
+});
+
+test("check --stale --strict: exit 1 while a statement or obsolete entry is to review, 0 once accepted", (t) => {
+  const r = repo(t, { "src/order.ts": ORDER, "keylang/flows/order.md": ORDER_FLOW });
+  const fresh = r.run("check", "--stale", "--strict");
+  assert.equal(fresh.status, 1, "new statements are to review");
+  assert.match(fresh.stdout, /new description of `main\.order\.describe`/);
+  assert.equal(r.read("keylang/baseline.json"), null, "--strict writes nothing");
+
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const clean = r.run("check", "--stale", "--strict");
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+  assert.equal(clean.stdout, "");
+
+  r.write("src/order.ts", ORDER.replace("total > 0", "total >= 0"));
+  const stale = r.run("check", "--stale", "--strict");
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /stale description of `main\.order\.valid`/);
+  assert.equal(r.run("check", "--stale").status, 0, "without --strict stale stays a warning");
+
+  r.write("src/order.ts", ORDER);
+  r.write("keylang/flows/order.md", ORDER_FLOW.replace("    - invariant total is positive\n", ""));
+  const obsolete = r.run("check", "--stale", "--strict");
+  assert.equal(obsolete.status, 1, "an obsolete entry is to review too");
+  assert.match(obsolete.stdout, /obsolete `invariant:total is positive`/);
+  assert.doesNotMatch(obsolete.stdout, /(stale|new|incomplete) /);
+
+  // An unresolved call keeps the statement incomplete even when unchanged.
+  r.write("src/order.ts", ORDER.replace('return "order";', 'return (globalThis as { pick(): string }).pick();'));
+  r.write("keylang/flows/order.md", ORDER_FLOW);
+  assert.equal(r.run("check", "--stale", "--accept").status, 0);
+  const incomplete = r.run("check", "--stale", "--strict");
+  assert.match(incomplete.stdout, /incomplete/);
+  assert.equal(incomplete.status, 1, incomplete.stdout);
 });

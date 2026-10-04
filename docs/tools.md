@@ -30,7 +30,7 @@
 | `mcp` | MCP через stdio для агентів | пише лише пропозицію `apply_diff` | 0, 2 | [MCP](#mcp) |
 | `wire` | генерує `keylang.gen.ts` з `# wiring` | пише файл; `--check` і помилка розділу не пишуть | 0, 1, 2 | [wire](#wire) |
 | `trace-plan` | JSON функцій потоку для адаптера trace | нічого не пише | 0, 2 | [trace](#trace) |
-| `check` | резолвить ID і перевіряє правила в пам'яті; `check <файл>` — вердикти й підсумок лише цього файла; `--stale` — проза, під якою змінився код, проти `<dir>/baseline.json` | не пише карту; `--changed` звітує лише змінені файли; `--stale` нічого не пише (код 0 чи 2), `--stale --accept` пише `<dir>/baseline.json` ([format.md](format.md#стейлнес-прози-check---stale-dirbaselinejson)) | 0, 1, 2 | [формати](#formats) |
+| `check` | резолвить ID і перевіряє правила в пам'яті; `check <файл>` — вердикти й підсумок лише цього файла; `--stale` — проза, під якою змінився код, проти `<dir>/baseline.json` | не пише карту; `--changed` звітує лише змінені файли; `--stale` нічого не пише (код 0 чи 2; з `--strict` — 1, коли є що переглянути), `--stale --accept` пише `<dir>/baseline.json` ([format.md](format.md#стейлнес-прози-check---stale-dirbaselinejson)) | 0, 1, 2 | [формати](#formats) |
 | `parse` | друкує IR файлів | нічого не пише | 0, 1, 2 | [format.md](format.md) §8–§9 |
 | `fmt` | переписує файли в канонічну форму | пише файли; `--check` не пише | 0, 1, 2 | [format.md](format.md) §8 |
 
