@@ -159,6 +159,76 @@ function keywordsOf(ctx: Ctx): readonly string[] {
   }
 }
 
+const RULE_ROLES: Partial<Record<NodeKind, string>> = {
+  layers: "a layer order: a dependency may only point down, to a layer on the left",
+  allow: "a rule: the first ID may depend on the rest",
+  deny: "a rule: the first ID must not depend on the rest",
+  entry: "entry points: a module the nested IDs do not reach is K103",
+  "rule-module": "a reference to a module the nested rules apply to",
+  "no-cycles": "a rule: no import cycle anywhere",
+};
+
+const TEST_ROLE = "a test that must pass in the `check.tests` report";
+
+/**
+ * What an item does where it stands (format.md §5), for hover. Keyed like
+ * `keywordsOf`, which K004 reads, so the roles follow the allowed keywords.
+ */
+const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
+  "map-top": { layer: "a layer declaration", ...RULE_ROLES },
+  "rules-top": RULE_ROLES,
+  "flow-top": {
+    kind: "the kind of the flow: `business` or `technical`",
+    trigger: "where the flow starts: a trace is matched from the first trigger",
+    step: "a step the trigger must reach: a call path in code (static) and a run in a trace",
+    reads: "data the trigger reads: only that the ID exists is checked",
+    emits: "an event the flow emits: the name is not resolved",
+    calls: "a direct call of the trigger, checked without order",
+    invariant: "an invariant: text; the nested `test` lines are its evidence",
+    when: "a branch: text, its steps are optional in a trace",
+    test: `evidence for the flow: ${TEST_ROLE}`,
+    planned: "an intention: an ID that is not implemented yet; steps refer to it as usual",
+  },
+  "wiring-top": { wire: "the wiring of a module: how its dependencies are built" },
+  layer: { module: "a module declaration in this layer" },
+  module: {
+    module: "a submodule declaration",
+    fn: "a function declaration of this module",
+    type: "a type declaration of this module",
+    event: "an event declaration of this module",
+    dep: "a dependency of this module: an alias and the ID it points at",
+  },
+  fn: { calls: "calls this function makes in code" },
+  "rule-module": {
+    exports: "the public names of this module, compared with the code both ways",
+    "no-cycles": "a rule: no import cycle through this module or its submodules",
+  },
+  step: {
+    step: "a step the parent step must reach: a call path in code (static) and a run in a trace",
+    reads: "data the parent step reads: only that the ID exists is checked",
+    emits: "an event the parent step emits: the name is not resolved",
+    calls: "a direct call of the parent step, checked without order",
+    when: "a branch: text, its steps are optional in a trace",
+    test: `evidence for the parent step: ${TEST_ROLE}`,
+    invariant: "an invariant of the parent step: text; the nested `test` lines are its evidence",
+  },
+  when: {
+    then: "the outcome of the branch",
+    step: "a step of the branch: optional in a trace that does not take the branch",
+    test: `evidence for the branch: ${TEST_ROLE}`,
+  },
+  invariant: { test: `evidence for the invariant: ${TEST_ROLE}` },
+  then: { test: `evidence for the outcome: ${TEST_ROLE}` },
+  wire: { "wire-dep": "an override of a dependency of the wired module" },
+  "wire-dep": { when: "a condition → id: the dependency is that ID when the condition holds", compose: "a decorator composed around the dependency" },
+};
+
+/** The role of an item of `kind` under `parent` (or at the top of `section`), or `null` when it has none there. */
+export function roleAt(section: SectionKind, parent: NodeKind | undefined, kind: NodeKind): string | null {
+  if (kind === "ref") return parent === "entry" ? "an entry point: what it reaches counts as used" : "a layer outside the order: a dependency into it is free unless denied";
+  return ROLES[ctxOf(section, parent)]?.[kind] ?? null;
+}
+
 function keywordKind(ctx: Ctx, kw: string): NodeKind {
   switch (kw) {
     case "layer":

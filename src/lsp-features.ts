@@ -12,10 +12,10 @@ import type { Diagnostic } from "./diag.ts";
 import { isGeneratedMap } from "./emit.ts";
 import { capText } from "./brief.ts";
 import type { StoredExplanation } from "./explanations.ts";
-import { sectionNodes, walk, type Document, type Node, type Section } from "./ir.ts";
+import { kindLabel, sectionNodes, walk, type Document, type Node, type Section, type SectionKind } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
-import { keywordsAt, parse } from "./parser.ts";
+import { keywordsAt, parse, roleAt } from "./parser.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
 import { walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
@@ -272,9 +272,12 @@ export function flowsUsing(spec: SpecIR, id: string): string[] {
   return [...flows].sort();
 }
 
-export function hover(ws: Workspace, path: string, position: LspPosition): { contents: { kind: "markdown"; value: string }; range: LspRange } | null {
+type HoverResult = { contents: { kind: "markdown"; value: string }; range: LspRange };
+
+export function hover(ws: Workspace, path: string, position: LspPosition): HoverResult | null {
   const target = at(ws, path, position);
-  if (!target || target.kind !== "id") return null;
+  if (!target) return roleHover(ws, path, position);
+  if (target.kind !== "id") return null;
   const info = describe(ws, target.id);
   if (!info) return null;
   const lines = [`**${info.kind}** \`${info.id}\`${info.signature ? ` \`${info.signature}\`` : ""}`];
@@ -291,6 +294,41 @@ export function hover(ws: Workspace, path: string, position: LspPosition): { con
   const flows = flowsUsing(ws.analysis.spec, target.id);
   if (flows.length > 0) lines.push(`flows: ${flows.join(", ")}`);
   return { contents: { kind: "markdown", value: lines.join("\n\n") }, range: fromSpan(ws.text(path), target.span) };
+}
+
+const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flow: "a flow", wiring: "wiring" };
+
+/**
+ * Hover on a keyword, or on a line without an ID: what the line does under
+ * its parent (format.md §5), then the diagnostics and verdicts of that line.
+ */
+function roleHover(ws: Workspace, path: string, position: LspPosition): HoverResult | null {
+  const doc = docOf(ws, path);
+  const text = ws.text(path);
+  if (!doc || text === null) return null;
+  const offset = toOffset(text, position);
+  const hit = nodesOf(doc).find(({ node }) => spanContains(node.span, offset));
+  if (!hit) return null;
+  const { node, section, parent } = hit;
+  const onKeyword = node.keyword !== null && spanContains(node.keyword, offset);
+  if (!onKeyword && (node.id !== null || node.refs.length > 0)) return null;
+  const role = roleAt(section.kind, parent?.kind, node.kind);
+  if (role === null) return null;
+  const where = parent ? `under \`${kindLabel(parent.kind)}\`` : `in ${PLACE[section.kind]}`;
+  let detail = "";
+  if (node.kind === "then") {
+    const ref = node.refs[0];
+    detail = ref ? `: a reference to \`${ref.target}\`` : ": text, not a reference";
+  }
+  if (node.kind === "test" && section.kind === "flow" && ws.analysis.config.check.tests === undefined) detail = "; no evidence is checked: `check.tests` is not set";
+  const lines = [`**\`${kindLabel(node.kind)}\`** ${where} — ${role}${detail}`];
+  const line = node.span.start.line;
+  const { diagnostics, verdicts } = ws.analysis;
+  for (const diag of diagnostics) if (diag.file === path && diag.span.start.line === line) lines.push(`- ${diag.code}: ${diag.message}`);
+  for (const verdict of verdicts) {
+    if (verdict.file === path && verdict.line === line && !sameFinding(verdict, diagnostics)) lines.push(`- ${verdict.criterion}: ${verdict.message}`);
+  }
+  return { contents: { kind: "markdown", value: lines.join("\n\n") }, range: fromSpan(text, onKeyword && node.keyword ? node.keyword : node.span) };
 }
 
 export function definition(ws: Workspace, path: string, position: LspPosition): Location | null {

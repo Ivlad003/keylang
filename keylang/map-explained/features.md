@@ -917,59 +917,64 @@
     - fn [flowsUsing](../../src/lsp-features.ts#L265) (spec: SpecIR, id: string) → string[]
       <a id="features.lsp-features.flowsUsing"></a><br>Walks every flow in the spec via [`lang.spec-ir.walkFlow`](lang.md#lang.spec-ir.walkFlow) and collects the names of flows whose steps or triggers target the given id. Returns those names deduplicated and sorted, serving [`features.lsp-features.hover`](features.md#features.lsp-features.hover), [`features.lsp-features.codeLenses`](features.md#features.lsp-features.codeLenses) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [hover](../../src/lsp-features.ts#L275) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
+    - type [HoverResult](../../src/lsp-features.ts#L275) <!-- internal -->
+      <a id="features.lsp-features.HoverResult"></a>
+    - fn [hover](../../src/lsp-features.ts#L277) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null
       <a id="features.lsp-features.hover"></a><br>Resolves the identifier under a cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at), then builds a markdown summary from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), matching analysis verdicts, and [`features.lsp-features.flowsUsing`](features.md#features.lsp-features.flowsUsing). Returns null when nothing describable is there, otherwise pairs the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [definition](../../src/lsp-features.ts#L296) (ws: Workspace, path: string, position: LspPosition) → Location | null
+      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - fn [roleHover](../../src/lsp-features.ts#L305) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null <!-- internal -->
+      <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (format.md §5), then the diagnostics and verdicts of that line.
+      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - fn [definition](../../src/lsp-features.ts#L334) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a><br>Resolves what sits under a cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at): a link becomes a file URL pointing at its line, otherwise the symbol is looked up with [`features.lsp-features.describe`](features.md#features.lsp-features.describe) and its source position converted through [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
-    - fn [signatureHelp](../../src/lsp-features.ts#L310) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
+    - fn [signatureHelp](../../src/lsp-features.ts#L348) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
       <a id="features.lsp-features.signatureHelp"></a><br>Reads the line at the cursor from `ws`, takes the last dotted identifier before the cursor, and resolves it via [`features.lsp-features.describe`](features.md#features.lsp-features.describe). Returns one signature labelled with the id and signature, with file:line as documentation, or null if nothing resolves. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.describe](features.md#features.lsp-features.describe)
-    - fn [references](../../src/lsp-features.ts#L324) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L362) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       <a id="features.lsp-features.references"></a><br>Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [SymbolInformation](../../src/lsp-features.ts#L340)
+    - type [SymbolInformation](../../src/lsp-features.ts#L378)
       <a id="features.lsp-features.SymbolInformation"></a><br>Shape of a workspace/document symbol result sent to LSP clients: a display name, a numeric symbol-kind code, the `Location` where it is defined, and an optional enclosing container name. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L360) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L398) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
-    - fn [symbolKind](../../src/lsp-features.ts#L376) (kind: string) → number <!-- internal -->
+    - fn [symbolKind](../../src/lsp-features.ts#L414) (kind: string) → number <!-- internal -->
       <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [symbolLocation](../../src/lsp-features.ts#L385) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+    - fn [symbolLocation](../../src/lsp-features.ts#L423) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       <a id="features.lsp-features.symbolLocation"></a><br>Converts a search hit into an LSP location: for layers it scans keylang.json for the matching key line via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), otherwise it resolves the declaration column from the snapshot or [`features.lsp-features.plannedDecl`](features.md#features.lsp-features.plannedDecl) and builds a zero-width range with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - type [DocumentSymbol](../../src/lsp-features.ts#L405)
+    - type [DocumentSymbol](../../src/lsp-features.ts#L443)
       <a id="features.lsp-features.DocumentSymbol"></a><br>Describes a hierarchical outline entry in the LSP document-symbol shape: a name, optional detail, numeric kind, full and selection `LspRange`s, and nested children of the same shape. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [statusOf](../../src/lsp-features.ts#L418) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [statusOf](../../src/lsp-features.ts#L456) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
       <a id="features.lsp-features.statusOf"></a><br>Worst verdict on a line of this document: `fail` > `unverified` > `ok`.
-    - fn [flowPhrases](../../src/lsp-features.ts#L428) (spec: SpecIR) → Map<Node, string> <!-- internal -->
+    - fn [flowPhrases](../../src/lsp-features.ts#L466) (spec: SpecIR) → Map<Node, string> <!-- internal -->
       <a id="features.lsp-features.flowPhrases"></a><br>Written phrase of a trigger, step, when, or then, keyed by its text-IR node.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.lsp-features.itemPhrase](features.md#features.lsp-features.itemPhrase)
-    - fn [itemPhrase](../../src/lsp-features.ts#L439) (item: Trigger | FlowItem) → string | null <!-- internal -->
+    - fn [itemPhrase](../../src/lsp-features.ts#L477) (item: Trigger | FlowItem) → string | null <!-- internal -->
       <a id="features.lsp-features.itemPhrase"></a><br>Extracts the human-readable text from a flow element by kind: the target string for triggers, steps, and ref-form `then` items, the condition for `when`, and the prose for non-ref `then`. Returns null for any other kind, which [`features.lsp-features.flowPhrases`](features.md#features.lsp-features.flowPhrases) uses to skip… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [documentSymbols](../../src/lsp-features.ts#L446) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [documentSymbols](../../src/lsp-features.ts#L484) (ws: Workspace, path: string) → DocumentSymbol[]
       <a id="features.lsp-features.documentSymbols"></a><br>Builds the LSP outline for a document by converting each section's IR nodes (via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes)) into nested symbols, grouping flow and rules sections under a heading symbol. Each symbol's detail carries the worst verdict status among the node and its children, computed… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.flowPhrases](features.md#features.lsp-features.flowPhrases), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [CompletionItem](../../src/lsp-features.ts#L533)
+    - type [CompletionItem](../../src/lsp-features.ts#L571)
       <a id="features.lsp-features.CompletionItem"></a><br>Shape of one entry the completion provider returns: a label with an LSP kind code, optional detail, description, sort key, and a `filterText`/`textEdit` pair that lets the dotted label replace the whole typed path rather than just the last segment after a dot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [completions](../../src/lsp-features.ts#L560) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - fn [completions](../../src/lsp-features.ts#L598) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
-    - fn [sectionAt](../../src/lsp-features.ts#L608) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L646) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a><br>Walks the document's sections in order and returns the last one whose heading starts on or before the given line, defaulting to the first section (headingless sections count as starting at line 1). Used by [`features.lsp-features.completions`](features.md#features.lsp-features.completions) to know which section the cursor is… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [enclosing](../../src/lsp-features.ts#L618) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L656) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L627) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L665) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a><br>Walks up the parent links from [`features.lsp-features.nodesOf`](features.md#features.lsp-features.nodesOf) to return the given node followed by each enclosing node out to the root. Each step is a linear scan of the flattened node list, so the chain costs O(depth × nodes). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L640) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L678) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L655) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L693) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a><br>Shape of a single code lens entry returned to the LSP client: a document range plus the command to run when clicked, carrying a title, command identifier, and a list of string-array arguments. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [codeLenses](../../src/lsp-features.ts#L661) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L699) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
       - calls [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [node-search](../../src/node-search.ts#L1)

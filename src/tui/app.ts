@@ -1280,7 +1280,10 @@ export class App {
     const at = this.targetNear(this.state.cursor);
     const buffer = this.buffer();
     if (!at || !buffer) {
-      this.state.message = "no id on this line";
+      // A line without an ID: the hover is the role of the line under the cursor, if it has one.
+      const anchor = this.cursorAnchor(this.state.cursor.col);
+      this.state.hover = buffer ? this.hoverAt(this.state.cursor, anchor.x, anchor.y, "key") : null;
+      if (!this.state.hover) this.state.message = "no id on this line";
       return;
     }
     const anchor = this.cursorAnchor(at.col);

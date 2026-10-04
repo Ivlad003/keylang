@@ -440,6 +440,44 @@ test("lsp: hover on a flow step shows the signature and each kind of evidence; p
   assert.match(later.contents.value, /- static: unverified domain\.order\.later: planned fn, not implemented/);
 });
 
+// A line's role depends on its parent (format.md §5): hover on a keyword, or on
+// the text of a line without an ID, says what the line does there.
+const PILOT = '# flow pilot\n\n- trigger app.checkout.checkout\n- step domain.order.createOrder\n  - calls infra.db.save\n  - test tests/nope.test.ts "creates order"\n- invariant total is the sum of items\n  - test tests/missing.test.ts "sums"\n- when items are empty\n  - then Rejected\n  - then domain.order.total\n';
+const ROLE_RULES = "# rules\n\n- layers domain < app\n- module domain.order\n  - no-cycles\n- entry\n  - app.checkout\n";
+test("lsp: hover on a keyword or a line without an ID tells the line's role under its parent", async (t) => {
+  const dir = fixture(t, { "keylang/flows/pilot.md": PILOT, "keylang/rules.md": ROLE_RULES });
+  const s = await open(t, dir);
+  const shownAt = async (path: string, text: string, needle: string, word: string): Promise<string> => {
+    const line = lineOf(text, needle);
+    const shown = await s.request<{ contents: { value: string } } | null>("textDocument/hover", { textDocument: { uri: uri(dir, path) }, position: { line, character: charOf(text, line, word) } });
+    assert.ok(shown, `hover on \`${word}\` of \`${needle}\``);
+    return shown.contents.value;
+  };
+  const flow = (needle: string, word: string): Promise<string> => shownAt("keylang/flows/pilot.md", PILOT, needle, word);
+  const rules = (needle: string, word: string): Promise<string> => shownAt("keylang/rules.md", ROLE_RULES, needle, word);
+
+  const step = await flow("- step domain", "step");
+  assert.match(step, /^\*\*`step`\*\* in a flow — /);
+  assert.match(step, /- ID: ok domain\.order\.createOrder: exact/, "the line's verdicts");
+  assert.match(await flow("- calls", "calls"), /direct call of the parent step/);
+  const stepTest = await flow("nope.test.ts", "test");
+  assert.match(stepTest, /^\*\*`test`\*\* under `step` — evidence for the parent step/);
+  assert.match(stepTest, /no evidence is checked: `check\.tests` is not set/);
+  assert.equal(await flow("nope.test.ts", "creates"), stepTest, "the text of a line without an ID");
+  const invariantTest = await flow("missing.test.ts", "test");
+  assert.match(invariantTest, /^\*\*`test`\*\* under `invariant` — evidence for the invariant/);
+  assert.match(await flow("- invariant", "sum"), /^\*\*`invariant`\*\* in a flow — /);
+  assert.match(await flow("- when", "when"), /a branch: text, its steps are optional in a trace/);
+  const thenText = await flow("then Rejected", "Rejected");
+  assert.match(thenText, /^\*\*`then`\*\* under `when` — /);
+  assert.match(thenText, /text, not a reference/);
+  assert.match(await flow("then domain", "then"), /a reference to `domain\.order\.total`/);
+  assert.match(await rules("- layers", "layers"), /^\*\*`layers`\*\* in rules — /);
+  assert.match(await rules("- module", "module"), /a reference to a module the nested rules apply to/);
+  assert.match(await rules("- no-cycles", "no-cycles"), /^\*\*`no-cycles`\*\* under `module` — /);
+  assert.match(await rules("- entry", "entry"), /^\*\*`entry`\*\* in rules — /);
+});
+
 test("lsp: spans are half-open, so the character after an id is not that id", async (t) => {
   const text = "# flow pair\n\n- trigger app.checkout.checkout\n  - calls domain.order.total, domain.order.createOrder\n";
   const dir = fixture(t, { "keylang/flows/pair.md": text });

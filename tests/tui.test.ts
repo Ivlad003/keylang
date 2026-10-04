@@ -247,6 +247,16 @@ test("tui: hover by mouse and by K shows signature, code, and flows", async (t) 
   assert.match(s.text(), /fn domain\.order\.create/);
 });
 
+test("tui: K on a line without an ID shows the role of the line under its parent", async (t) => {
+  const s = session(checkoutRepo(t, { [FLOW_PATH]: `${CHECKOUT_FLOW}- invariant the order is saved once\n` }));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 8; i++) s.send(KEY.down);
+  s.send("K");
+  assert.ok(s.app.state.hover, s.app.state.message ?? "");
+  assert.match(s.app.state.hover!.lines[0]!.text, /^invariant in a flow — an invariant: text/);
+});
+
 test("tui: Enter opens the code in the built-in viewer, Ctrl+O comes back, Alt+Enter opens the spec", async (t) => {
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());

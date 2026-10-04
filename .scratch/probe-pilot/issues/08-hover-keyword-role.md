@@ -1,6 +1,6 @@
 # 08: Hover на ключових словах і рядках без ID
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -34,10 +34,16 @@
 
 Тексти ролей тримати в одній таблиці поруч із тією, з якої K004 знає дозволені ключові слова, щоб вони не розходились. TUI (`e`) і web беруть ту саму функцію, якщо вони показують hover.
 
-- [ ] тест LSP через CLI (`keylang lsp`): hover на `step`, `test` під кроком, `test` під `invariant`, `then`-тексті, `when`, `layers`, `module` у rules — непорожній, роль відрізняє `test` під кроком від `test` під `invariant`
-- [ ] hover на ID не змінився
-- [ ] `docs/tools.md` (LSP) описує hover на ключових словах
+- [x] тест LSP через CLI (`keylang lsp`): hover на `step`, `test` під кроком, `test` під `invariant`, `then`-тексті, `when`, `layers`, `module` у rules — непорожній, роль відрізняє `test` під кроком від `test` під `invariant`
+- [x] hover на ID не змінився
+- [x] `docs/tools.md` (LSP) описує hover на ключових словах
 
 Ключові файли: `src/lsp-features.ts`, `src/parser.ts` (контексти K004), `docs/tools.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- Відтворено через `keylang lsp`: hover на `step` у `- step domain.order.createOrder` повертав `null` (червоний тест до зміни).
+- Зроблено: таблиця `ROLES` і `roleAt(section, parent, kind)` у `src/parser.ts` поруч із `keywordsOf` (K004), ключі — ті самі контексти `Ctx`. `hover()` у `src/lsp-features.ts`: коли під курсором немає ID чи лінка, а курсор на ключовому слові або на рядку без ID — `**\`kw\`** under \`parent\` — <роль>` (або `in a flow`/`in rules`/`in the map`/`in wiring` на верхньому рівні), далі K-діагностики й вердикти рядка. `then` додає «text, not a reference» чи «a reference to `<id>`» (K008 — серед діагностик рядка); `test` у потоці без `check.tests` — «no evidence is checked: `check.tests` is not set».
+- TUI: наведення мишею бере ту саму функцію без змін; `K` на рядку без ID тепер теж показує роль (раніше «no id on this line»). Web — той самий TUI.
+- Припущення: на рядку з ID hover поза ключовим словом лишається як був (кома після ID — `null`), бо ID має власний hover. Ролі `layers`/`entry`/`allow`/`deny` сформульовано за format.md «Семантика правил»; вкладені під `layers` ID — «a layer outside the order».
+- Тести: `tests/lsp.test.ts` (step, calls, test під step і під invariant, текст рядка без ID, invariant, when, then-текст і then-ID, layers, module і no-cycles у rules, entry); `tests/tui.test.ts` (`K` на `invariant`). Наявний тест hover на ID не змінився й проходить.

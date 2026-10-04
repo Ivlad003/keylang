@@ -45,7 +45,7 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 | 05 | [K005 на `step planned <id>` не підказує окремий рядок `planned`](issues/05-k005-step-planned-hint.md) | resolved |
 | 06 | [`explain K005` відсилає до `format.md`, якого немає в пакеті](issues/06-explain-without-format-md.md) | ready-for-agent |
 | 07 | [K001 у згенерованому baseline не каже «перегенеруй»](issues/07-k001-generated-file-hint.md) | ready-for-agent |
-| 08 | [Hover на ключових словах і рядках без ID](issues/08-hover-keyword-role.md) | ready-for-agent |
+| 08 | [Hover на ключових словах і рядках без ID](issues/08-hover-keyword-role.md) | resolved |
 | 09 | [`new module` пише `# flow <name>` у `features/`](issues/09-new-module-flow-heading.md) | needs-triage |
 | 10 | [`init` на Python-пакеті вгадує один шар](issues/10-init-python-package-layers.md) | resolved |
 | 11 | [Два неточні повідомлення розкладки: `new module` без `keylang.json`, колізія module ID](issues/11-layout-messages.md) | resolved |

@@ -582,39 +582,42 @@
       - calls features.lsp-features.nodesOf
     - fn [flowsUsing](../../src/lsp-features.ts#L265) (spec: SpecIR, id: string) → string[]
       - calls lang.spec-ir.walkFlow
-    - fn [hover](../../src/lsp-features.ts#L275) (ws: Workspace, path: string, position: LspPosition) → { contents: { kind: "markdown"; value: string }; range: LspRange } | null
-      - calls features.lsp-features.at, features.lsp-features.describe, features.lsp-features.flowsUsing, features.lsp-features.fromSpan
-    - fn [definition](../../src/lsp-features.ts#L296) (ws: Workspace, path: string, position: LspPosition) → Location | null
+    - type [HoverResult](../../src/lsp-features.ts#L275) <!-- internal -->
+    - fn [hover](../../src/lsp-features.ts#L277) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null
+      - calls features.lsp-features.at, features.lsp-features.roleHover, features.lsp-features.describe, features.lsp-features.flowsUsing, features.lsp-features.fromSpan
+    - fn [roleHover](../../src/lsp-features.ts#L305) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null <!-- internal -->
+      - calls features.lsp-features.docOf, features.lsp-features.toOffset, features.lsp-features.nodesOf, base.span.spanContains, lang.parser.roleAt, lang.ir.kindLabel, check.assess.sameFinding, features.lsp-features.fromSpan
+    - fn [definition](../../src/lsp-features.ts#L334) (ws: Workspace, path: string, position: LspPosition) → Location | null
       - calls features.lsp-features.at, features.lsp-features.describe, features.lsp-features.lspPoint, features.lsp-features.uriOf
-    - fn [signatureHelp](../../src/lsp-features.ts#L310) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
+    - fn [signatureHelp](../../src/lsp-features.ts#L348) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
       - calls features.lsp-features.describe
-    - fn [references](../../src/lsp-features.ts#L324) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L362) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       - calls features.lsp-features.at, features.lsp-features.nodesOf, features.lsp-features.uriOf, features.lsp-features.fromSpan
-    - type [SymbolInformation](../../src/lsp-features.ts#L340)
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L360) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
+    - type [SymbolInformation](../../src/lsp-features.ts#L378)
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L398) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       - calls features.node-search.searchNodes, features.lsp-features.symbolLocation, base.brief.capText, features.lsp-features.symbolKind
-    - fn [symbolKind](../../src/lsp-features.ts#L376) (kind: string) → number <!-- internal -->
-    - fn [symbolLocation](../../src/lsp-features.ts#L385) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+    - fn [symbolKind](../../src/lsp-features.ts#L414) (kind: string) → number <!-- internal -->
+    - fn [symbolLocation](../../src/lsp-features.ts#L423) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       - calls features.lsp-features.uriOf, features.lsp-features.lineRange, features.lsp-features.plannedDecl, features.lsp-features.lspPoint
-    - type [DocumentSymbol](../../src/lsp-features.ts#L405)
-    - fn [statusOf](../../src/lsp-features.ts#L418) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
-    - fn [flowPhrases](../../src/lsp-features.ts#L428) (spec: SpecIR) → Map<Node, string> <!-- internal -->
+    - type [DocumentSymbol](../../src/lsp-features.ts#L443)
+    - fn [statusOf](../../src/lsp-features.ts#L456) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [flowPhrases](../../src/lsp-features.ts#L466) (spec: SpecIR) → Map<Node, string> <!-- internal -->
       - calls lang.spec-ir.walkFlow, features.lsp-features.itemPhrase
-    - fn [itemPhrase](../../src/lsp-features.ts#L439) (item: Trigger | FlowItem) → string | null <!-- internal -->
-    - fn [documentSymbols](../../src/lsp-features.ts#L446) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [itemPhrase](../../src/lsp-features.ts#L477) (item: Trigger | FlowItem) → string | null <!-- internal -->
+    - fn [documentSymbols](../../src/lsp-features.ts#L484) (ws: Workspace, path: string) → DocumentSymbol[]
       - calls features.lsp-features.docOf, features.lsp-features.flowPhrases, lang.ir.walk, features.lsp-features.statusOf, lang.ir.sectionNodes, features.lsp-features.fromPos, features.lsp-features.fromSpan
-    - type [CompletionItem](../../src/lsp-features.ts#L533)
-    - fn [completions](../../src/lsp-features.ts#L560) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - type [CompletionItem](../../src/lsp-features.ts#L571)
+    - fn [completions](../../src/lsp-features.ts#L598) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       - calls features.lsp-features.docOf, features.lsp-features.enclosing, features.lsp-features.sectionAt, lang.parser.keywordsAt, features.lsp-features.moduleAround, check.rules.dependencyKindOf, check.rules.blocksDependency
-    - fn [sectionAt](../../src/lsp-features.ts#L608) (doc: Document, line: number) → Section | undefined <!-- internal -->
-    - fn [enclosing](../../src/lsp-features.ts#L618) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L646) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L656) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [ancestors](../../src/lsp-features.ts#L627) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L665) (doc: Document, node: Node) → Node[] <!-- internal -->
       - calls features.lsp-features.nodesOf
-    - fn [moduleAround](../../src/lsp-features.ts#L640) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L678) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       - calls features.lsp-features.ancestors
-    - type [CodeLens](../../src/lsp-features.ts#L655) <!-- internal -->
-    - fn [codeLenses](../../src/lsp-features.ts#L661) (ws: Workspace, path: string) → CodeLens[]
+    - type [CodeLens](../../src/lsp-features.ts#L693) <!-- internal -->
+    - fn [codeLenses](../../src/lsp-features.ts#L699) (ws: Workspace, path: string) → CodeLens[]
       - calls features.lsp-features.flowsUsing, features.lsp-features.lspPoint
   - module [node-search](../../src/node-search.ts#L1)
     - analyze map.analyze
