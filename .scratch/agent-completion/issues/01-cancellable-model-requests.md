@@ -12,7 +12,7 @@
 
 **Verify:** `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [x] `LlmRequest` приймає `signal` і `timeoutMs`; Anthropic та OpenRouter поєднують їх зі своїм таймаутом; перерваний запит кидає `AbortError`, який розпізнає експортований хелпер
+- [x] `complete(request, { signal, timeoutMs })` приймає їх в опціях виклику; Anthropic та OpenRouter поєднують їх зі своїм таймаутом; перерваний запит кидає `LlmCancelled`, який розпізнає експортований хелпер `isCancelled`
 - [x] усі виклики клієнта (CLI-команди, ghost, чернетка агента) переведені на об'єкт опцій з `root`
 - [x] TUI: `Esc`, друк, зміна режиму/буфера, MERGE, `Ctrl+Space`, `close()` скасовують ghost і чернетку в польоті
 - [x] e2e у `tests/tui.test.ts`: мок-модель із затримкою 2 с і лічильником перерваних з'єднань; після `Esc` рівно 1 перерваний запит, повідомлення порожнє, ghost не показано; наявний тест «два ghost-запити» лишається зеленим
@@ -129,3 +129,5 @@ src/ghost.ts      |  6 ++++--
 - Відхилення від тексту критерію 1 (за аудитом 2026-10-01): `signal` і `timeoutMs` — в опціях виклику `complete(request, { signal, timeoutMs })`, не в `LlmRequest`; скасування — `LlmCancelled`, хелпер — `isCancelled`, без окремого `AbortError`.
 - Знахідки ревʼю: тест `Esc` чекає `waitUntil(() => model.aborted === 1)`; повідомлення тайм-ауту називає `KEYLANG_LLM_TIMEOUT_MS` лише коли межею була змінна (ghost: `anthropic: no answer within 60000 ms`); у `docs/tools.md` записано, що `Esc` і друк чернетку агента не скасовують (лише Cancel операції і закриття сесії; `close()` зупиняє worker, тест «close() aborts the agent's flow draft in flight»).
 - Перевірки: `npm run typecheck` 0; `npm test` 593 pass / 0 fail / 1 skip (whisper.cpp), ~22 хв під навантаженням; `map --check` 0 після `map` (diff — зсуви рядків і нові символи `llm.ts`/`assist.ts`); `check` 0 fail. Тести з таймінгом (`tests/tui.test.ts` ghost/Ctrl+Space/close/Cancel — 29, `tests/draft.test.ts` llm/Cancel — 4) — 5 прогонів поспіль, усі зелені.
+
+- 2026-10-04 — рішення людини: відхилення від первинного критерію 1 прийнято як контракт (опції виклику замість `LlmRequest`, `LlmCancelled` замість `AbortError`); критерій переписано під нього.

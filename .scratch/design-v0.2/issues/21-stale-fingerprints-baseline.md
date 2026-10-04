@@ -8,10 +8,14 @@
 
 **Blocked by:** 04 (знімок), 16 (SpecIR)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] зміна `total > 0` на `total >= 0` без зміни сигнатури та імпортів → опис функції та `invariant`, що на неї посилається, `stale`
 - [ ] зміна лише форматування/коментарів у тілі → не stale
 - [ ] зміна в залежності B інвалідує опис A, що викликає B; цикл A↔B не зациклює перевірку
 - [ ] `map` не оновлює baseline; прийняття — окрема явна дія
 - [ ] `docs/format.md` описує baseline і `check --stale`
+
+## Comments
+
+- 2026-10-04 — рішення людини: baseline — один `keylang/baseline.json` під git; ключ — шлях файла специфікації, далі ID вузла (або `invariant:<текст>` / `when:`/`then:`), значення — fingerprint. Оновлюється лише явною дією `check --stale --accept`, `map` його не чіпає. До реалізації `check --stale` має давати код 2 з повідомленням «not implemented yet (design-v0.2/21)» замість мовчазного звичайного `check`.

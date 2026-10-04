@@ -37,3 +37,7 @@
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `src/flows.ts`, `src/trace-evidence.ts`, `docs/format.md`, `tests/flows.test.ts`
+
+## Comments
+
+- 2026-10-04 — рішення людини: реалізація після заморожування v1 (design-v0.2/40); ADR — 0009, не 0008. Статус needs-triage лишається до freeze.

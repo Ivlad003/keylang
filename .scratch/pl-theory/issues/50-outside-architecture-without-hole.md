@@ -8,7 +8,7 @@
 
 **Blocked by:** 07
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** code
 
@@ -20,3 +20,5 @@
 - [ ] keylang переведено на новий механізм; `check --strict` на самому репозиторії = 0, якщо інших прогалин немає
 
 ## Comments
+
+- 2026-10-04 — рішення людини: нове поле `outside: [glob…]` у `keylang.json` поруч з `exclude` (не позначка в `exclude` і не рядок у `rules.md`). Файли `outside` видно в карті й index як виведені з аналізу; `layers`, глобальний `no-cycles` і `deny` над ними не стають `unverified`. Імпорт з архітектурного коду (файл у шарі) в `outside`-файл — порушення (`fail`): продукт не залежить від скриптів. Імпорт з `outside` в архітектурний код дозволено. keylang переводить `bench/**`, `design/**`, `editors/**`, `examples/**`, `scripts/**` на `outside`.
