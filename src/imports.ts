@@ -386,6 +386,11 @@ export function parseJsonc(text: string): unknown {
   }
 }
 
+/** The value of JSONC text; throws the `JSON.parse` error when it does not parse. */
+export function parseJsoncStrict(text: string): unknown {
+  return JSON.parse(stripJsonc(text));
+}
+
 /** A file's text, or null when it is missing. */
 function readText(path: string): string | null {
   return existsSync(path) ? readFileSync(path, "utf8") : null;

@@ -6,17 +6,17 @@ The tree of the map with a brief under each node: the documentation comment from
 
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
-| [base](base.md) |  | 51 | 0 | 0 | 32 |
+| [base](base.md) |  | 55 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
 | [cli](cli.md) |  | 39 | 0 | 0 | 49 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 118 | 0 | 0 | 64 |
 | [features](features.md) |  | 220 | 0 | 0 | 136 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
-| [map](map.md) |  | 119 | 0 | 0 | 131 |
+| [map](map.md) |  | 127 | 0 | 0 | 134 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [tui](tui.md) |  | 437 | 0 | 0 | 209 |
-| **all** | | 1264 | 0 | 0 | 824 |
+| **all** | | 1276 | 0 | 0 | 827 |
 
 ## Index
 
@@ -30,7 +30,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 
-**E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-inventory](features.md#features.explain-inventory) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explain-offline](features.md#features.explain-offline) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map)
+**E** · [emit](map.md#map.emit) (map) · [evidence](tui.md#tui.evidence) (tui) · [explain](features.md#features.explain) (features) · [explain-edge](features.md#features.explain-edge) (features) · [explain-inventory](features.md#features.explain-inventory) (features) · [explain-llm](features.md#features.explain-llm) (features) · [explain-node](features.md#features.explain-node) (features) · [explain-offline](features.md#features.explain-offline) (features) · [explanations](map.md#map.explanations) (map) · [exports](map.md#map.exports) (map) · [external-ids](base.md#base.external-ids) (base)
 
 **F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 

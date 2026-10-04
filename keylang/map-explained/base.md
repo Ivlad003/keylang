@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
+[README](README.md) · modules: [brief](#base.brief) · [config](#base.config) · [diag](#base.diag) · [external-ids](#base.external-ids) · [glob](#base.glob) · [languages](#base.languages) · [safe-write](#base.safe-write) · [span](#base.span)
 
 # map
 
@@ -124,6 +124,17 @@
       <a id="base.diag.formatDiagnostic"></a><br>`file:line:col: CODE message`
     - fn [compareDiagnostics](../../src/diag.ts#L100) (a: Diagnostic, b: Diagnostic) → number
       <a id="base.diag.compareDiagnostics"></a><br>Stable order: file, position, code.
+  - module [external-ids](../../src/external-ids.ts#L1)
+    <a id="base.external-ids"></a><br>IDs of external packages: `external.<segment>`, one ID space for every package name a repository imports or declares. The map, the rules and the language server all name a package by this ID, so they share this module.
+    - config [base.config](base.md#base.config)
+    - fn [externalSegment](../../src/external-ids.ts#L10) (pkg: string) → string
+      <a id="base.external-ids.externalSegment"></a><br>ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`.
+      - calls [base.config.layerName](base.md#base.config.layerName)
+    - fn [assignExternalIds](../../src/external-ids.ts#L20) (names: Iterable<string>) → { ids: Map<string, string>; warnings: string[] }
+      <a id="base.external-ids.assignExternalIds"></a><br>Module IDs of package names. Two names that sanitize to one segment (`@scope/pkg` and `scope-pkg`) get two IDs: the one whose name is the segment keeps it, the others get `-2`, `-3`… in name order, with a warning.
+      - calls [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment)
+    - fn [externalPackageId](../../src/external-ids.ts#L44) (id: string) → string | null
+      <a id="base.external-ids.externalPackageId"></a><br>The package part of an external ID (`external.pg.Pool` → `external.pg`); null for any other ID.
   - module [glob](../../src/glob.ts#L1)
     <a id="base.glob"></a><br>Minimal glob matching for `keylang.json` (no dependency, no experimental Node API). Supports `**`, `*`, `?` and `{a,b}`; paths are POSIX-relative.
     - fn [globToRegExp](../../src/glob.ts#L4) (glob: string) → RegExp

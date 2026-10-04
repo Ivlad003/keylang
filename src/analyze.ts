@@ -6,8 +6,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
-import { declaredExternalIds } from "./declared-packages.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
+import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
 import type { Document } from "./ir.ts";
@@ -45,6 +45,11 @@ export interface Analysis extends Assessment {
   docs: Document[];
   /** Paths the request named that hold no specs (the explained map, saved explanations), as displayed. */
   notSpecs: string[];
+  /**
+   * Packages the repository declares, sorted by id: the map's, or without
+   * languages those of the root manifests; none for specs checked without code.
+   */
+  packages: readonly DeclaredPackage[];
 }
 
 export async function analyze(request: AnalysisRequest): Promise<Analysis> {
@@ -86,6 +91,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const testFiles = evidence ? evidenceFiles(config, "tests") : null;
   const traceFiles = evidence ? evidenceFiles(config, "trace") : null;
   const staticMode = resolveStatic(request.static, config.check.static);
+  const packages = request.withoutCode === true ? [] : (map?.graph.packages ?? readManifests(config, []).packages);
   const assessment = assess(
     docs,
     snapshot,
@@ -94,11 +100,11 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
       traces: traceFiles === null ? null : loadTraces(root, traceFiles),
       static: staticMode.mode,
       ...(staticMode.setBy ? { staticSetBy: staticMode.setBy } : {}),
-      ...(request.withoutCode ? {} : { knownExternal: declaredExternalIds(root) }),
+      ...(request.withoutCode ? {} : { knownExternal: new Set(packages.map((p) => p.id)) }),
     },
     config.format,
   );
-  return { ...assessment, config, map, snapshot, docs, notSpecs };
+  return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
 }
 
 /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */

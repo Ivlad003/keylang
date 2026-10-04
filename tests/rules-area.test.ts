@@ -468,6 +468,69 @@ test("a declared package with no import anywhere is not K001 and adds no snapsho
   assert.doesNotMatch(mapText, /external\.pg/);
 });
 
+test("a manifest outside the analysed tree is not read: `exclude` keeps a bench manifest out, so `step external.junk` is K001", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }, { exclude: ["bench/**"] }),
+    "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
+    "bench/x/package.json": `${JSON.stringify({ dependencies: { junk: "1.0.0" } })}\n`,
+    "bench/x/run.ts": "export function run(): void {}\n",
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/infra/db.ts": "export function db(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- allow infra external.pg\n",
+    "keylang/flows/bench.md": "# flow bench\n\n- trigger app.a.a\n  - step external.junk\n",
+  });
+  const run = check(dir);
+  assert.equal(run.status, 1, run.stdout);
+  assert.ok(run.results.some((row) => row.code === "K001" && row.evidence.includes("external.junk")), run.stdout);
+  assert.ok(!run.results.some((row) => row.code === "K001" && row.evidence.includes("external.pg")), run.stdout);
+});
+
+test("a manifest counts only on the path from an analysed file to the root, and parses as JSONC", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
+    "package.json": '{\n  // the root manifest\n  "dependencies": { "pg": "1.0.0", },\n}\n',
+    "src/infra/package.json": `${JSON.stringify({ dependencies: { redis: "4" } })}\n`,
+    "tools/package.json": `${JSON.stringify({ dependencies: { stray: "1" } })}\n`,
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/infra/db.ts": "export function db(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- allow infra external.pg\n- allow infra external.redis\n- allow infra external.stray\n",
+  });
+  const run = check(dir);
+  assert.equal(run.status, 1, run.stdout);
+  const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence);
+  assert.equal(unknown.length, 1, run.stdout);
+  assert.match(unknown[0]!, /external\.stray/);
+});
+
+test("a workspace package is internal, not a known external: a `workspace:` range and a root `workspaces` name are K001; `@types/x` counts as `x`", (t) => {
+  const dir = repo(t, {
+    "keylang.json": config({ app: "src/app/**", infra: "src/infra/**" }),
+    "package.json": `${JSON.stringify({ dependencies: { wslib: "workspace:*", named: "1.0.0", local: "file:../local" }, devDependencies: { "@types/node-fetch": "2", "@types/babel__core": "7" }, workspaces: ["packages/*"] })}\n`,
+    "packages/named/package.json": `${JSON.stringify({ name: "named", version: "1.0.0" })}\n`,
+    "src/app/a.ts": "export function a(): void {}\n",
+    "src/infra/db.ts": "export function db(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- allow infra external.wslib\n- allow infra external.named\n- allow infra external.local\n- allow infra external.node-fetch\n- allow infra external.babel-core\n",
+  });
+  const run = check(dir);
+  assert.equal(run.status, 1, run.stdout);
+  const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence).join("\n");
+  for (const name of ["external.wslib", "external.named", "external.local"]) assert.match(unknown, new RegExp(name.replace(".", "\\.")), run.stdout);
+  for (const name of ["external.node-fetch", "external.babel-core", "external.types"]) assert.doesNotMatch(unknown, new RegExp(name.replace(".", "\\.")), run.stdout);
+});
+
+test("without languages only the root manifests declare packages", (t) => {
+  const dir = repo(t, {
+    "keylang.json": `${JSON.stringify({ languages: [], layers: { app: "src/app/**" } })}\n`,
+    "package.json": `${JSON.stringify({ dependencies: { pg: "1.0.0" } })}\n`,
+    "src/app/package.json": `${JSON.stringify({ dependencies: { redis: "4" } })}\n`,
+    "keylang/rules.md": "# rules\n\n- allow app external.pg\n- allow app external.redis\n",
+  });
+  const run = check(dir);
+  const unknown = run.results.filter((row) => row.code === "K001").map((row) => row.evidence).join("\n");
+  assert.doesNotMatch(unknown, /external\.pg/, run.stdout);
+  assert.match(unknown, /external\.redis/, run.stdout);
+});
+
 test("a type or a planned event on deny is K005 scope and applies nowhere", (t) => {
   const dir = repo(t, {
     "keylang.json": config({ app: "src/app/**", domain: "src/domain/**" }),

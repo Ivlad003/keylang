@@ -4,12 +4,17 @@
 
 import { posix } from "node:path";
 import { isExcluded, layerName, type Config } from "./config.ts";
+import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
+import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import type { Resolution } from "./imports.ts";
 import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { compareText } from "./span.ts";
+
+export { EXTERNAL };
 
 export interface Graph {
   layers: Layer[];
@@ -26,6 +31,8 @@ export interface Graph {
   resolverInputs: Map<string, string | null>;
   /** Public names of every indexed module, resolved to symbols; sorted by module and name. */
   exports: ExportEntry[];
+  /** Packages the manifests at the root and on the ancestors of analysed files declare, sorted by id. */
+  packages: DeclaredPackage[];
 }
 
 export interface Gap {
@@ -184,8 +191,6 @@ export interface Stats {
   unassignedFiles: number;
 }
 
-export const EXTERNAL = "external";
-
 /** Words that, under a module, start a declaration rather than a dependency alias. */
 const CONTEXT_ALIAS = new Set(["module", "fn", "type", "event", "calls"]);
 
@@ -322,7 +327,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
 
   // 3. Imports → dependencies.
   const externalLayer = getLayer(EXTERNAL);
-  const externalIds = externalModuleIds(files, resolve, warnings);
+  // Declared and imported packages share one ID space: a package's ID does not
+  // depend on which of two colliding packages the code happens to import.
+  const resolverInputs = (): Map<string, string | null> => new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs]));
+  const manifests = readManifests(config, files.map((f) => f.path), resolverInputs());
+  const assigned = assignExternalIds([...importedPackages(files, resolve), ...manifests.packages.map((p) => p.name)]);
+  const externalIds = assigned.ids;
+  warnings.push(...assigned.warnings);
+  const packages = manifests.packages.map((p) => ({ ...p, id: externalIds.get(p.name)! })).sort((a, b) => compareText(a.id, b.id));
   const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
@@ -820,8 +832,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     warnings,
     gaps,
     openEdges,
-    resolverInputs: new Map([...resolvers.values()].flatMap((resolver) => [...resolver.inputs])),
+    // Manifests are inputs too: the snapshot id (and the MCP cache keyed on it) covers them.
+    resolverInputs: new Map([...manifests.inputs, ...resolverInputs()]),
     exports: exportTables.entries(),
+    packages,
   };
 }
 
@@ -866,18 +880,8 @@ function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported:
   return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
 }
 
-/** ID segment of a package: `@scope/pkg` → `scope-pkg`, `lodash.get` → `lodash_get`. */
-function externalSegment(pkg: string): string {
-  return layerName(pkg.replace(/^@/, "").replace("/", "-"));
-}
-
-/**
- * Module IDs of the external packages the files import. Two packages whose
- * names sanitize to one segment (`@scope/pkg` and `scope-pkg`) get two IDs:
- * the one whose name is the segment keeps it, the others get `-2`, `-3`… in
- * name order, with a warning; the IDs do not depend on file order.
- */
-function externalModuleIds(files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution, warnings: string[]): Map<string, string> {
+/** Names of the external packages (and `node` for built-ins) the files import. */
+function importedPackages(files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution): Set<string> {
   const packages = new Set<string>();
   for (const f of files) {
     for (const imp of f.imports) {
@@ -886,25 +890,7 @@ function externalModuleIds(files: readonly FileFacts[], resolve: (file: string, 
       else if (r.kind === "builtin") packages.add("node");
     }
   }
-  const bySegment = new Map<string, string[]>();
-  for (const pkg of [...packages].sort()) {
-    const segment = externalSegment(pkg);
-    bySegment.set(segment, [...(bySegment.get(segment) ?? []), pkg]);
-  }
-  const ids = new Map<string, string>();
-  for (const [segment, names] of bySegment) {
-    const keeper = names.find((n) => n === segment) ?? names[0]!;
-    ids.set(keeper, `${EXTERNAL}.${segment}`);
-    let n = 2;
-    for (const name of names) {
-      if (name === keeper) continue;
-      while (bySegment.has(`${segment}-${n}`)) n++;
-      const id = `${EXTERNAL}.${segment}-${n++}`;
-      ids.set(name, id);
-      warnings.push(`packages \`${keeper}\` and \`${name}\` share the ID segment \`${segment}\`; \`${name}\` is \`${id}\``);
-    }
-  }
-  return ids;
+  return packages;
 }
 
 /**
