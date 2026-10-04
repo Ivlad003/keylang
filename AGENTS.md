@@ -80,7 +80,7 @@
 
 ### Shiftwork
 
-Тікети виконує `npx shiftwork run`; моделі, рівні й worktree-setup — у `.pi/shiftwork.json`. Кожен тікет іде у свіжому контексті в окремому worktree, і закривають його лише команди `**Verify:**`. Пишучи тікет, дотримуйся полів shiftwork із `docs/agents/issue-tracker.md`: `Verify`, `Type` і `Blocked by`, де кожне число — блокер тієї ж фічі.
+Тікети виконує `npx shiftwork run`; моделі, рівні й worktree-setup — у `.pi/shiftwork.json`. Кожен тікет іде у свіжому контексті в окремому worktree, і закривають його лише команди `**Verify:**`. Перед злиттям зміну оцінює review-зміна (`review` у конфігу): `accept` зливає гілку, `reopen` повертає тікет із зауваженнями в `### Review`, `follow-up` зливає й створює новий тікет. Пишучи тікет, дотримуйся полів shiftwork із `docs/agents/issue-tracker.md`: `Verify`, `Type` і `Blocked by`, де кожне число — блокер тієї ж фічі.
 
 Коли працюєш як воркер зміни (промпт `.pi/shiftwork-worker.md`):
 

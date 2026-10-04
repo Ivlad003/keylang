@@ -4,6 +4,7 @@
   "maxAttempts": 3,
   "maxHandoffs": 3,
   "softLimitPct": 80,
+  "verifyTimeoutMin": 20,
   "worktree": {
     "enabled": true,
     "setup": [
@@ -45,16 +46,17 @@
       "budget": {
         "maxTurns": 40,
         "maxContextPct": 60,
-        "stallTurns": 5
+        "stallTurns": 50
       }
     },
     "standard": {
       "chain": [
-        "opencode:opencode-go/kimi-k3",
         "opencode:opencode-go/glm-5.3",
-        "grok:grok-4.7",
-        "opencode-go/glm-5.3",
         "opencode-go/deepseek-v4-pro",
+        "grok:grok-4.7",
+        "opencode:opencode-go/kimi-k3",
+        "claude:claude-opus-5-5",
+        "opencode-go/glm-5.3",
         "opencode-go/kimi-k3",
         "opencode-go/qwen3.8-max",
         "xai/grok-4.6",
@@ -85,7 +87,7 @@
     "default": {
       "maxTurns": 60,
       "maxWallMin": 45,
-      "stallTurns": 8
+      "stallTurns": 50
     },
     "tiers": {},
     "models": {},
@@ -139,5 +141,12 @@
       "openrouter/typesafe/jev-1.13",
       "opencode/jev-1.13-free"
     ]
+  },
+  "review": {
+    "enabled": true,
+    "tier": "premium",
+    "budget": {
+      "maxWallMin": 45
+    }
   }
 }
