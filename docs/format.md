@@ -298,15 +298,15 @@ Alias залежності не збігається з контекстним �
 |---|---|---|
 | верх секції map | `layer`, `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | `<name>` — шар (сумісність зі слайдами) |
 | верх секції rules | `layers`, `allow`, `deny`, `entry`, `module`, `no-cycles` | K004 |
-| верх секції flow | `kind`, `trigger`, `step`, `reads`, `emits`, `calls`, `invariant`, `when`, `test`, `planned` | K004 |
+| верх секції flow | `kind`, `trigger`, `step`, `reads`, `emits`, `calls`, `invariant`, `when`, `test`, `planned`, `?` | K004 |
 | верх секції wiring | `wire` | K004 |
 | під `layer` | `module` | `<name>` — модуль |
 | під `module` (map) | `module`, `fn`, `type`, `event` | `<alias> <id>` — залежність |
 | під `fn` | `calls` | K004 |
 | під `layers`, `entry` | — | `<id>` — посилання |
 | під `module` (rules) | `exports`, `no-cycles` | K004 |
-| під `step` / `trigger` | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant` | K004 |
-| під `when` (flow) | `then`, `step`, `test` | K004 |
+| під `step` / `trigger` | `step`, `reads`, `emits`, `calls`, `when`, `test`, `invariant`, `?` | K004 |
+| під `when` (flow) | `then`, `step`, `test`, `?` | K004 |
 | під `invariant`, `then` | `test` | K004 |
 | під `wire` | — | `<alias> <id>` — перевизначення залежності |
 | під залежністю в `wire` | `when`, `compose` | K004 |
@@ -347,13 +347,14 @@ Alias залежності не збігається з контекстним �
 | `planned fn\|module\|type\|event <id> [signature]` | вид, ID, довільний підпис | намір; не оголошення в індексі і не ребро знімка |
 | `emits [event] <name>` | ім'я події | `text`; не резолвиться |
 | `invariant <текст>` | довільний текст | `text` |
+| `? <текст>` | довільний текст, обов'язковий | `text`; відкрите питання, не твердження (Р16) |
 | `when <текст>` (flow) | довільний текст | `text` |
 | `then <id>` / `then <текст>` | один токен-ID з крапкою → посилання, інакше текст | |
 | `test <file> ["<name>"]` | шлях + назва в лапках | `text` = файл, `label` = назва |
 | `wire <id>`, `compose <id>` | одне ID | посилання |
 | `when <умова> → <id>` (wiring) | текст, `→` або `->`, ID | `text` + посилання |
 
-`text` вільного тексту (`invariant`, `when`, текстовий `then`) — канонічний, як його пише `fmt`: токени через один пробіл, кома — `a, b`. Тож `fmt` не змінює ні текст, ні `specHash` вердиктів над ним.
+`text` вільного тексту (`invariant`, `?`, `when`, текстовий `then`) — канонічний, як його пише `fmt`: токени через один пробіл, кома — `a, b`. Тож `fmt` не змінює ні текст, ні `specHash` вердиктів над ним.
 
 Порушення форми — K005. Приклад зі слайда: `- options infrastructure.config.server` на верхньому рівні — це шар `options` із зайвим аргументом, тож K005 з підказкою «залежність має бути вкладена в модуль».
 
@@ -409,6 +410,47 @@ keylang/flows/buy.md:5:10: K008 `then OutOfStock` is read as text, not a referen
 ```
 
 ```diagnostics
+```
+
+**Р16. `? <текст>` — відкрите питання.** Питання записує те, чого ще не вирішено: хто ініціює повернення, чи потрібне підтвердження оператора. Воно стоїть на верхньому рівні потоку, під `trigger` чи `step` і під `when`, у будь-якому потоці, бо вид секції визначає заголовок, а не шлях (Р2). Питання — не твердження: `check` його не оцінює й діагностик для нього не дає. Файл фічі з відкритим питанням не готовий (`keylang feature`, прогалина `question`), а питання, яке було в базовому коміті й зникло, — послаблений план (прогалина `spec`, [tools.md](tools.md)): на питання відповідають комітом, а не видаленням. `?` — ключове слово лише в цих позиціях і лише окремим токеном: `?хто` — інше слово. Зміна додавальна: раніше такий рядок давав K004, тож значення наявних текстів не змінилося, і нової редакції немає ([ADR 0007](adr/0007-format-editions.md)).
+
+```keylang Р16 path=keylang/flows/refund.md
+# flow refund
+- ? who starts a refund: the customer or an operator?
+- step app.refund.start
+  - ? is an operator needed?
+  - when the order is paid
+    - ? what about partial refunds?
+```
+
+```keylang path=keylang/map.md
+- layer app
+  - module refund
+    - fn start
+```
+
+```diagnostics
+```
+
+Текст обов'язковий, а вкладених елементів питання не має.
+
+```keylang path=keylang/flows/refund.md
+# flow refund
+- ?
+- step app.refund.start
+  - ? who answers?
+    - step app.refund.start
+```
+
+```keylang path=keylang/map.md
+- layer app
+  - module refund
+    - fn start
+```
+
+```diagnostics
+keylang/flows/refund.md:2:1: K005 `?` needs a description
+keylang/flows/refund.md:5:5: K004 `?` cannot have nested items
 ```
 
 ## 6. ID та резолвінг
@@ -914,16 +956,16 @@ comment = "<!--" { rest of line } ;
 (* Позиції §5. Слово в лапках — ключове. `-> kind` — kind в IR, коли він не збігається зі словом. *)
 map-top = "layer" | "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
 rules-top = "layers" | "allow" | "deny" | "entry" | "module" -> rule-module | "no-cycles" ;
-flow-top = "kind" | "trigger" | "step" | "reads" | "emits" | "calls" | "invariant" | "when" | "test" | "planned" ;
+flow-top = "kind" | "trigger" | "step" | "reads" | "emits" | "calls" | "invariant" | "when" | "test" | "planned" | "?" -> question ;
 wiring-top = "wire" ;
 under-layer = "module" ;
 under-module = "module" | "fn" | "type" | "event" ;
 under-fn = "calls" ;
 under-ref = (* під layers і під entry: голе id, без ключових слів *) ;
 under-rule-module = "exports" | "no-cycles" ;
-under-step = "step" | "reads" | "emits" | "calls" | "when" | "test" | "invariant" ;
+under-step = "step" | "reads" | "emits" | "calls" | "when" | "test" | "invariant" | "?" -> question ;
 (* under-step також під trigger *)
-under-when = "then" | "step" | "test" ;
+under-when = "then" | "step" | "test" | "?" -> question ;
 under-invariant = "test" ;
 (* under-invariant також під then *)
 under-wire = (* гола залежність alias id, без ключових слів *) ;
@@ -947,6 +989,7 @@ step-args = ( "trigger" | "step" ) id ;
 planned-args = "planned" ( "fn" | "module" | "type" | "event" ) id [ signature ] ;
 emits-args = "emits" [ "event" ] segment ;
 invariant-args = "invariant" text ;
+question-args = "?" text ;
 when-flow-args = "when" text ;
 then-args = "then" ( id | text ) ;
 test-args = "test" file [ '"' name '"' ] ;

@@ -11,7 +11,7 @@ import { isError } from "./diag.ts";
 import { plannedMismatch } from "./flows.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { compareText, type Span } from "./span.ts";
-import { compileSpec, walkFlow, type Flow, type FlowItem, type FlowStep, type SpecIR, type Trigger } from "./spec-ir.ts";
+import { compileSpec, walkFlow, type Flow, type FlowItem, type FlowStep, type QuestionItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import type { Verdict } from "./verdict.ts";
 
 /**
@@ -25,7 +25,7 @@ export type Stage = "idea" | "behavior" | "structure" | "ready" | "done";
 
 /** What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed. */
 export interface Gap {
-  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic";
+  kind: "planned" | "static" | "rule" | "spec" | "empty" | "diagnostic" | "question";
   id: string;
   file: string;
   line: number;
@@ -91,7 +91,7 @@ const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
 /** Errors of the spec itself: a line keylang could not read is no claim it checks. */
 const SPEC_CODES = new Set(["K001", "K002", "K003", "K004", "K005"]);
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
-const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, planned: 2, static: 3, rule: 4, spec: 5 };
+const KIND_ORDER: Record<Gap["kind"], number> = { empty: 0, diagnostic: 1, question: 2, planned: 3, static: 4, rule: 5, spec: 6 };
 const HINT_ORDER: Record<Hint["kind"], number> = { trigger: 0, steps: 1 };
 
 /** Ids declared or named in one spec, in first-seen order. */
@@ -135,6 +135,14 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   const specErrors = input.diagnostics.filter((diag) => diag.file === path && isError(diag) && SPEC_CODES.has(diag.code));
   for (const diag of specErrors) {
     gaps.push({ kind: "diagnostic", id: diag.code, file: path, line: diag.span.start.line, col: diag.span.start.col, reason: diag.message, stage: "structure" });
+  }
+
+  // An open question keeps the feature from done: a person answers it, in a commit (c4-zoom/04).
+  for (const flow of flows) {
+    walkFlow(flow, (item) => {
+      if (item.kind !== "question") return;
+      gaps.push({ kind: "question", id: flow.name, file: path, line: item.span.start.line, col: item.span.start.col, reason: `open question: ${item.question}`, stage: "structure" });
+    });
   }
 
   for (const item of planned) {
@@ -228,8 +236,9 @@ function claimsOf(flow: Flow): { id: string; span: Span }[] {
 
 /**
  * Where the feature file weakened its plan since `ref`: a `planned` removed
- * while the code does not implement it (no K202), and a `trigger` or `step`
- * that is no longer there under the same flow and parents. Added items and
+ * while the code does not implement it (no K202), and a `trigger`, `step` or
+ * open question that is no longer there under the same flow and parents: a
+ * question is answered in a commit, never by deleting it. Added items and
  * order among siblings are not compared. Positions are the base file's.
  */
 function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Document): Gap[] {
@@ -253,6 +262,10 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
         now.set(key, left - 1);
         continue;
       }
+      if (item.kind === "question") {
+        gaps.push({ kind: "spec", id: flow.name, file: path, line: item.span.start.line, col: item.span.start.col, reason: `question «${item.question}» of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was removed; done is judged against the plan at ${ref}: answer the question in a commit`, stage: "ready" });
+        continue;
+      }
       const id = item.target.target;
       gaps.push({ kind: "spec", id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was changed or removed; done is judged against the plan at ${ref}`, stage: "ready" });
     }
@@ -260,15 +273,16 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
   return gaps;
 }
 
-type PlanItem = Trigger | FlowStep;
+type PlanItem = Trigger | FlowStep | QuestionItem;
 
-/** Every `trigger` and `step` of a flow with a key: the flow, its parents, and itself. */
+/** Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself. */
 function planItems(flow: Flow): { key: string; item: PlanItem }[] {
   const out: { key: string; item: PlanItem }[] = [];
   const visit = (item: Trigger | FlowItem, parents: string): void => {
-    const self = item.kind === "trigger" || item.kind === "step" ? `${item.kind} ${item.target.target}` : item.kind === "when" ? `when ${item.condition}` : item.kind;
+    const self =
+      item.kind === "trigger" || item.kind === "step" ? `${item.kind} ${item.target.target}` : item.kind === "when" ? `when ${item.condition}` : item.kind === "question" ? `? ${item.question}` : item.kind;
     const key = `${parents}\0${self}`;
-    if (item.kind === "trigger" || item.kind === "step") out.push({ key, item });
+    if (item.kind === "trigger" || item.kind === "step" || item.kind === "question") out.push({ key, item });
     if (item.kind === "test") return;
     for (const child of item.children) visit(child, key);
   };

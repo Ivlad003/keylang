@@ -113,6 +113,14 @@ export interface CallsItem extends Located {
   children: readonly FlowItem[];
 }
 
+/** `? <text>`: an open question of a flow. No claim: `check` judges nothing in it; a feature with one is not done. */
+export interface QuestionItem extends Located {
+  kind: "question";
+  question: string;
+  /** Always empty: a question has no nested items (K004). */
+  children: readonly FlowItem[];
+}
+
 export interface TestItem extends Located {
   kind: "test";
   /** The test file, as written. */
@@ -120,7 +128,7 @@ export interface TestItem extends Located {
   name: string | null;
 }
 
-export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem;
+export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem | QuestionItem;
 
 export interface Flow {
   file: string;
@@ -459,6 +467,11 @@ function flowNode(file: string, flow: string, node: Node): FlowItem[] {
     const [first, ...rest] = node.refs;
     if (!first) return flowItems(file, flow, node.children);
     return [{ kind: "calls", targets: [first, ...rest], children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
+  }
+  if (node.kind === "question") {
+    const question = node.text?.value;
+    if (question === undefined) return [];
+    return [{ kind: "question", question, children: [], ...flowAt(file, flow, node) }];
   }
   if (node.kind === "test") {
     const path = node.text?.value;

@@ -1309,7 +1309,7 @@
     - fn [heading](../../src/tui/nav.ts#L55) (key: string, label: string) → NavItem <!-- internal -->
       <a id="tui.nav.heading"></a><br>Builds a top-level section header entry for the navigation list, with depth zero, no linked id/spec/code, and marked expanded. Used by [`tui.nav.navItems`](tui.md#tui.nav.navItems) to separate groups of items. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [treeOf](../../src/tui/nav.ts#L59) (analysis: Analysis) → Tree <!-- internal -->
-      <a id="tui.nav.treeOf"></a><br>Builds and caches a navigation tree from an analysis: parents module, fn, and type snapshot nodes under their enclosing module or layer, and collects flow and rules items from hand-written docs with marks via [`tui.nav.markOver`](tui.md#tui.nav.markOver). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="tui.nav.treeOf"></a><br>Builds and caches a navigation tree from an analysis: parents module, fn, and type snapshot nodes under their enclosing module or layer, and collects flow and rules items from hand-written docs with marks via [`tui.nav.markOver`](tui.md#tui.nav.markOver). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.nav.markOver](tui.md#tui.nav.markOver), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [tui.nav.lastLine](tui.md#tui.nav.lastLine)
     - fn [navItems](../../src/tui/nav.ts#L102) (analysis: Analysis | null, expanded: ReadonlySet<string>) → NavItem[]
       <a id="tui.nav.navItems"></a><br>Visible items for the expanded keys. Layers start expanded unless `-<key>` collapses them.
@@ -1580,7 +1580,7 @@
       <a id="tui.view.drawPanelList"></a><br>Fills a rectangle with the panel theme, writes a title row, then renders the visible slice of entries from `top`, highlighting the selected row (dimmer when unfocused) and drawing each entry's optional mark glyph in the last two columns via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
     - fn [navEntries](../../src/tui/view.ts#L357) (state: State) → NavItem[]
-      <a id="tui.view.navEntries"></a><br>Builds the current navigation list by passing the state's analysis and set of expanded node keys to [`tui.nav.navItems`](tui.md#tui.nav.navItems), so drawing, mouse, and key handlers all see the same ordered entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="tui.view.navEntries"></a><br>Builds the current navigation list by passing the state's analysis and set of expanded node keys to [`tui.nav.navItems`](tui.md#tui.nav.navItems), so drawing, mouse, and key handlers all see the same ordered entries. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [tui.nav.navItems](tui.md#tui.nav.navItems)
     - fn [navNote](../../src/tui/view.ts#L369) (state: State, width: number) → string[]
       <a id="tui.view.navNote"></a><br>The explanation of the node selected in the nav panel, wrapped to `width` cells with its origin (`code`, or `llm · model · date`, `stale`); none for a node without one or an item that is no node.

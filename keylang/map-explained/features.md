@@ -592,20 +592,20 @@
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
     - fn [featureStatus](../../src/feature-status.ts#L115) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [base.diag.isError](base.md#base.diag.isError), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
-    - fn [stageOf](../../src/feature-status.ts#L209) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
+    - fn [stageOf](../../src/feature-status.ts#L217) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
       <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
-    - fn [claimsOf](../../src/feature-status.ts#L219) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L227) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [planGaps](../../src/feature-status.ts#L235) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
-      <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger` or `step` that is no longer there under the same flow and parents. Added items and order among siblings are not compared.
+    - fn [planGaps](../../src/feature-status.ts#L244) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+      <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in a commit, never by deleting it.…
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L263) = Trigger | FlowStep <!-- internal -->
-      <a id="features.feature-status.PlanItem"></a><br>Union type naming a single element of a feature's execution plan, which is either a `Trigger` or a `FlowStep`. It lets plan-building and status code handle both kinds of entries in one list without separate collections. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planItems](../../src/feature-status.ts#L266) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-      <a id="features.feature-status.planItems"></a><br>Every `trigger` and `step` of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L279) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L276) = Trigger | FlowStep | QuestionItem <!-- internal -->
+      <a id="features.feature-status.PlanItem"></a><br>Union type naming a single element of a feature's execution plan, which is either a `Trigger` or a `FlowStep`. It lets plan-building and status code handle both kinds of entries in one list without separate collections. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [planItems](../../src/feature-status.ts#L279) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+      <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
+    - fn [finding](../../src/feature-status.ts#L293) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…

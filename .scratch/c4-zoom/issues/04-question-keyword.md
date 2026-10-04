@@ -21,17 +21,20 @@
 
 **Model:** claude:claude-opus-5-5
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Verify:** `node --test tests/question-keyword.test.ts` · `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] тести тікета — у новому файлі `tests/question-keyword.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
-- [ ] `parse --json`: вузол питання з текстом і spans на верхньому рівні, під `trigger`, `step`, `when`; під `then` чи `invariant` — K004
-- [ ] `- ?` з вкладеним елементом → K004; `- ?` без тексту → K005
-- [ ] `check` на файлі з питаннями: жодної діагностики й вердикту для них; `fmt` ідемпотентний, `fmt --check` проходить
-- [ ] `feature`: кожне питання — прогалина `question` з позицією, код 1, `stage structure`
-- [ ] питання, видалене без коміту, → прогалина `spec`; після коміту видалення вона зникає
-- [ ] LSP-доповнення пропонує `? ` під тригером
-- [ ] format.md (§5, Додаток А, приклад), SKILL.md, `CONTEXT.md` і design-v0.2/40 оновлено
+- [x] тести тікета — у новому файлі `tests/question-keyword.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
+- [x] `parse --json`: вузол питання з текстом і spans на верхньому рівні, під `trigger`, `step`, `when`; під `then` чи `invariant` — K004
+- [x] `- ?` з вкладеним елементом → K004; `- ?` без тексту → K005
+- [x] `check` на файлі з питаннями: жодної діагностики й вердикту для них; `fmt` ідемпотентний, `fmt --check` проходить
+- [x] `feature`: кожне питання — прогалина `question` з позицією, код 1, `stage structure`
+- [x] питання, видалене без коміту, → прогалина `spec`; після коміту видалення вона зникає
+- [x] LSP-доповнення пропонує `? ` під тригером
+- [x] format.md (§5, Додаток А, приклад), SKILL.md, `CONTEXT.md` і design-v0.2/40 оновлено
 
 ## Comments
+
+- 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. Вид вузла `question` (пишеться `?`) у `src/ir.ts`, ключове слово в позиціях верху потоку, під `trigger`/`step` і під `when` (`src/parser.ts`), `QuestionItem` у SpecIR із завжди порожніми `children`, щоб наявні обходи потоків працювали без змін. `feature`: прогалина `question` (id — ім'я потоку, reason `open question: …`), зникле питання — прогалина `spec` через `planGaps`. format.md Р16 з виконуваними прикладами, Додаток А (перевіряється тестом проти парсера), SKILL.md п. 6, тікет design-v0.2/40. Тести — `tests/question-keyword.test.ts`.
+- Повідомлення K004 у цих позиціях тепер перелічує й `?`: оновлено `tests/fixtures/diagnostics.expected` і перелік ключових слів у тесті LSP-доповнень.

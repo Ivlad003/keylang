@@ -1,7 +1,7 @@
 tests/fixtures/diagnostics/dup-b.md:4:13: K002 duplicate ID `domain.order` (first declared at tests/fixtures/diagnostics/dup-a.md:4:13)
 tests/fixtures/diagnostics/flow.md:3:1: K005 `kind` must be `business` or `technical`
 tests/fixtures/diagnostics/flow.md:4:11: K001 dangling reference `domain.order.missing`; declare `planned` if this is an intention
-tests/fixtures/diagnostics/flow.md:5:3: K004 unknown keyword `stepp` here; expected one of: kind, trigger, step, reads, emits, calls, invariant, when, test, planned
+tests/fixtures/diagnostics/flow.md:5:3: K004 unknown keyword `stepp` here; expected one of: kind, trigger, step, reads, emits, calls, invariant, when, test, planned, ?
 tests/fixtures/diagnostics/flow.md:8:8: K005 `planned` is a declaration, not a step modifier: add `- planned fn domain.order.later` at the top of the flow and keep `- step domain.order.later`
 tests/fixtures/diagnostics/indent.md:4:4: K003 indentation must be a multiple of 2 spaces, found 3
 tests/fixtures/diagnostics/indent.md:6:7: K003 item indented too deep: 6 spaces, at most 2 expected here

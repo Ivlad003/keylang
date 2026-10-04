@@ -376,15 +376,15 @@
     - fn [idsIn](../../src/feature-status.ts#L98) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
     - fn [featureStatus](../../src/feature-status.ts#L115) (input: FeatureInput, slug: string) → FeatureReport | null
-      - calls base.diag.isError, features.feature-status.finding, features.feature-status.claimsOf, check.assess.sameFinding, features.feature-status.planGaps, lang.spec-ir.walkFlow, base.span.compareText, features.feature-status.stageOf
-    - fn [stageOf](../../src/feature-status.ts#L209) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [claimsOf](../../src/feature-status.ts#L219) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+      - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.finding, features.feature-status.claimsOf, check.assess.sameFinding, features.feature-status.planGaps, base.span.compareText, features.feature-status.stageOf
+    - fn [stageOf](../../src/feature-status.ts#L217) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L227) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [planGaps](../../src/feature-status.ts#L235) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L244) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L263) = Trigger | FlowStep <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L266) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L279) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L276) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L279) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L293) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context

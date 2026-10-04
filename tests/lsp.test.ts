@@ -660,7 +660,7 @@ test("lsp: completion under a module leaves out what deny forbids; after step on
   const keywordText = `${FLOW}- `;
   s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 3 }, contentChanges: [{ text: keywordText }] });
   const keywords = await s.request<Completion>("textDocument/completion", { textDocument: { uri: flowUri }, position: { line: keywordText.split("\n").length - 1, character: 2 } });
-  assert.deepEqual(keywords.items.map((item) => item.label).sort(), ["calls", "emits", "invariant", "kind", "planned", "reads", "step", "test", "trigger", "when"]);
+  assert.deepEqual(keywords.items.map((item) => item.label).sort(), ["?", "calls", "emits", "invariant", "kind", "planned", "reads", "step", "test", "trigger", "when"]);
 });
 
 test("lsp: a completion replaces the whole dotted prefix, which editors split at dots", async (t) => {

@@ -68,6 +68,8 @@ export type NodeKind =
   | "when"
   | "then"
   | "test"
+  /** `? <text>`: an open question of a flow; a person answers it (c4-zoom/04). Spelled `?`. */
+  | "question"
   // wiring
   | "wire"
   /** `planned <kind> <id> <signature>` — an intention, not an implementation. */
@@ -92,7 +94,7 @@ export function isDecl(kind: NodeKind): boolean {
 
 /** The keyword as written in the language (`rule-module` is spelled `module`). */
 export function kindLabel(kind: NodeKind): string {
-  return kind === "rule-module" ? "module" : kind;
+  return kind === "rule-module" ? "module" : kind === "question" ? "?" : kind;
 }
 
 /** One list item `- <kind>? <name> <args…>` and everything nested under it. */

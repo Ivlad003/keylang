@@ -134,7 +134,7 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rules-top":
       return RULES;
     case "flow-top":
-      return ["kind", "trigger", "step", "reads", "emits", "calls", "invariant", "when", "test", "planned"];
+      return ["kind", "trigger", "step", "reads", "emits", "calls", "invariant", "when", "test", "planned", "?"];
     case "wiring-top":
       return ["wire"];
     case "layer":
@@ -146,12 +146,12 @@ function keywordsOf(ctx: Ctx): readonly string[] {
     case "rule-module":
       return ["exports", "no-cycles"];
     case "step":
-      return ["step", "reads", "emits", "calls", "when", "test", "invariant"];
+      return ["step", "reads", "emits", "calls", "when", "test", "invariant", "?"];
     case "invariant":
     case "then":
       return ["test"];
     case "when":
-      return ["then", "step", "test"];
+      return ["then", "step", "test", "?"];
     case "wire-dep":
       return ["when", "compose"];
     default:
@@ -169,6 +169,8 @@ const RULE_ROLES: Partial<Record<NodeKind, string>> = {
 };
 
 const TEST_ROLE = "a test that must pass in the `check.tests` report";
+
+const QUESTION_ROLE = "an open question: not a claim `check` judges; a feature with one is not done until a person answers it";
 
 /**
  * What an item does where it stands (format.md §5), for hover. Keyed like
@@ -188,6 +190,7 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     when: "a branch: text, its steps are optional in a trace",
     test: `evidence for the flow: ${TEST_ROLE}`,
     planned: "an intention: an ID that is not implemented yet; steps refer to it as usual",
+    question: QUESTION_ROLE,
   },
   "wiring-top": { wire: "the wiring of a module: how its dependencies are built" },
   layer: { module: "a module declaration in this layer" },
@@ -211,11 +214,13 @@ const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
     when: "a branch: text, its steps are optional in a trace",
     test: `evidence for the parent step: ${TEST_ROLE}`,
     invariant: "an invariant of the parent step: text; the nested `test` lines are its evidence",
+    question: QUESTION_ROLE,
   },
   when: {
     then: "the outcome of the branch",
     step: "a step of the branch: optional in a trace that does not take the branch",
     test: `evidence for the branch: ${TEST_ROLE}`,
+    question: QUESTION_ROLE,
   },
   invariant: { test: `evidence for the invariant: ${TEST_ROLE}` },
   then: { test: `evidence for the outcome: ${TEST_ROLE}` },
@@ -258,6 +263,8 @@ function keywordKind(ctx: Ctx, kw: string): NodeKind {
     case "wire":
     case "compose":
       return kw;
+    case "?":
+      return "question";
     default:
       return "unknown";
   }
@@ -600,6 +607,7 @@ class Parser {
         break;
       }
       case "invariant":
+      case "question":
         this.freeText(n, l, rest);
         break;
       case "when":
