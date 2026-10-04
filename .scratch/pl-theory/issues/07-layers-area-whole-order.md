@@ -15,13 +15,13 @@ format.md:261 уже обіцяє область «модулі його шар�
 
 Сам запис `unassigned-file` («outside any layer», src/graph.ts:297) прогалиною для порядку не є, бо ребра такого файла відомі. Прогалини всередині такого файла (`exclude`, нерозв'язаний імпорт) прогалинами лишаються. Рядок, чий шар порушено, як і зараз, вердикту не має: є лише K101.
 
-`deny unassigned …` і його прогалини тікет не змінює: для `deny` `DEPENDENCY_HOLES` (src/rules.ts:386) лишається як є. На самому репозиторії записів `unassigned-file` немає, тож вердикт його рядка `layers` не змінюється (перевірено).
+Множина прогалин для `deny` (`DEPENDENCY_HOLES`, src/rules.ts:386) не змінюється. Проте явно виключений файл поза всіма шарами тепер є у знімку (opaque-модуль в `unassigned` із записом `skipped-file`), тож `deny unassigned …`, чиє єдине порушне ребро йшло з такого файла, отримує `unverified` замість хибного `ok` (раніше цей файл зникав із графа разом із K102). Самий репозиторій виключає файли поза шарами (`bench/**`, `design/**`, `editors/**`, `examples/**`, `scripts/**`), тож його рядок `layers` і глобальний `no-cycles` стають `unverified` (рішення людини 2026-10-04, див. `### Notes`).
 
 Виправлення робиться в поточному `rules.ts`, до міграції на SpecIR: 19 заблокований цим тікетом і зберігає поведінку. 06 змінює сусідню ділянку того самого `evaluateOnSnapshot`, тож ці тікети зливають по черзі. Якщо 05 уже злито, цей тікет знімає `todo` з підтесту свого випадку в tests/metamorphic.test.ts.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-info
+**Status:** resolved
 
 **Type:** code
 
@@ -41,6 +41,8 @@ format.md:261 уже обіцяє область «модулі його шар�
 ## Comments
 
 - 2026-10-01 — аудит під shiftwork: частково реалізовано (6dcdc78): випадки 1 і 3 та незв'язні порядки працюють (tests/rules-area.test.ts «a layers hole covers the connected order and not a disconnected one»; проба випадку 1 дає unverified з src/infra/x.ts:1:1, --strict = 1); format.md §7 пункт `layers` описує зв'язну компоненту й `unassigned-file`. Лишилось: випадок 2 — проба 2026-10-01 (`layers domain < app` з `infra`, `src/misc/z.ts` імпортує `src/app/y.ts`, `exclude: ["src/misc/z.ts"]`) дає `ok` замість `unverified` з `src/misc/z.ts:1:1`: виключений файл поза всіма шарами не стає прогалиною. Та сама причина ламає `no-cycles` під модулем (06): цикл `app.a ↔ src/misc/b.ts` з `exclude` b дає ok замість unverified — виправляти разом. Додати тест випадку 2 (і варіанта no-cycles) та, якщо 05 ще відкритий, підтест у tests/metamorphic.test.ts.
+
+- 2026-10-04 — доведено за рішенням людини 2026-10-04 (явно виключений файл поза всіма шарами — прогалина, opaque-модуль в `unassigned`; явний «поза архітектурою без прогалини» — тікет 50). Код — `src/map.ts` (див. `### Notes`); додано тест «deny unassigned counts an excluded source outside every layer as a hole» (раніше такий файл зникав разом із K102, і `deny unassigned app` давав хибний `ok`). Виправлено речення тікета про `deny unassigned`; format.md §11 переписано: виключений файл поза шарами — модуль `unassigned` і прогалина для `layers`, глобального `no-cycles` і `deny`; вгадана розкладка — як раніше. spec «Несумісні зміни» (06, 07) доповнено: нові модулі `unassigned` у карті й індексі, `unverified` для рядків самого keylang. Перевірки: `npm run typecheck` ✓; `node --test tests/rules-area.test.ts tests/metamorphic.test.ts tests/core.test.ts` — 52/52; `node bin/keylang.js map` — нові `keylang/map/unassigned.md`, `keylang/map-explained/unassigned.md` (25 opaque-модулів `<!-- excluded -->`), індекс README, у `map.md` лише зсув рядків `src/map.ts`; `map --check` = 0; `check` = 0 (0 fail, 26 unverified, 45 ok; з них правил два — `keylang/rules.md:16` `layers` і `:33` `no-cycles` «excluded by keylang.json (bench/clone.ts:1:1)», решта — trace/tests без локальних звітів), `check --strict` = 1. Повний `npm test` під навантаженням (load ≈ 18, паралельні прогони інших агентів) обірвано таймаутом 30 хв на `tests/tui.test.ts`: до того 483 pass, 1 fail — таймінговий флейк `tests/explain.test.ts:202` («took 3875 ms» проти 2000), окремо теж падає лише за часом; файли, яких зміна не торкається. Повний прогін на підсумковому стані — у коментарі тікета 05.
 
 ### Notes
 

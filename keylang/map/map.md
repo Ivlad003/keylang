@@ -322,40 +322,40 @@
     - type [MapResult](../../src/map.ts#L18)
     - fn [generateMap](../../src/map.ts#L38) (config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}) → Promise<MapResult>
       - calls base.config.sourceTree, base.config.toPosix, base.languages.languageOf, base.config.isExcluded, map.map.readSource, map.snapshot.sha256, map.graph.placeFile, map.fact-cache.FactCache.open, map.map.extractorCode, map.snapshot.grammarVersions, map.frontends.frontendFor, map.map.extractGuarded, base.config.excludedSourceFiles, map.map.opaqueFacts, map.graph.buildGraph, map.snapshot.buildSnapshot, map.explanations.loadBriefs, map.emit.renderExplainedMap, map.explanations.explanationOf, map.emit.renderMap
-    - fn [opaqueFacts](../../src/map.ts#L114) (path: string) → FileFacts <!-- internal -->
-    - fn [readSource](../../src/map.ts#L119) (abs: string) → string | null <!-- internal -->
-    - fn [extractGuarded](../../src/map.ts#L133) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
+    - fn [opaqueFacts](../../src/map.ts#L115) (path: string) → FileFacts <!-- internal -->
+    - fn [readSource](../../src/map.ts#L120) (abs: string) → string | null <!-- internal -->
+    - fn [extractGuarded](../../src/map.ts#L134) (extract: (path: string, src: string) => Promise<FileFacts>, path: string, src: string) → Promise<FileFacts> <!-- internal -->
       - calls map.map.opaqueFacts
-    - type [MapDiff](../../src/map.ts#L144)
-    - fn [targets](../../src/map.ts#L155) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
-    - fn [extraGenerated](../../src/map.ts#L163) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
+    - type [MapDiff](../../src/map.ts#L145)
+    - fn [targets](../../src/map.ts#L156) (config: Config, r: MapResult) → { dir: string; files: ReadonlyMap<string, string>; artifact: "map" | "explained" }[] <!-- internal -->
+    - fn [extraGenerated](../../src/map.ts#L164) (dir: string, files: ReadonlyMap<string, string>) → string[] <!-- internal -->
       - calls map.emit.isGeneratedMap
-    - fn [mapConflicts](../../src/map.ts#L171) (config: Config, r: MapResult) → string[]
+    - fn [mapConflicts](../../src/map.ts#L172) (config: Config, r: MapResult) → string[]
       - calls map.map.targets, map.emit.isGeneratedMap
-    - type [MapArtifact](../../src/map.ts#L183) = "map" | "explained" | "index" | "facts"
-    - type [MapStep](../../src/map.ts#L186)
-    - type [PlannedStep](../../src/map.ts#L192) extends MapStep <!-- internal -->
-    - type [MapPlan](../../src/map.ts#L208)
-    - type [SourceInputs](../../src/map.ts#L220)
-    - type [MapInputs](../../src/map.ts#L228) extends SourceInputs <!-- internal -->
-    - fn [sourceInputs](../../src/map.ts#L234) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
+    - type [MapArtifact](../../src/map.ts#L184) = "map" | "explained" | "index" | "facts"
+    - type [MapStep](../../src/map.ts#L187)
+    - type [PlannedStep](../../src/map.ts#L193) extends MapStep <!-- internal -->
+    - type [MapPlan](../../src/map.ts#L209)
+    - type [SourceInputs](../../src/map.ts#L221)
+    - type [MapInputs](../../src/map.ts#L229) extends SourceInputs <!-- internal -->
+    - fn [sourceInputs](../../src/map.ts#L235) (config: Config, sources: readonly { path: string; sha256: string }[]) → SourceInputs
       - calls map.map.readOrNull
-    - fn [sourceInputProblems](../../src/map.ts#L243) (config: Config, inputs: SourceInputs, subject: string) → string[]
+    - fn [sourceInputProblems](../../src/map.ts#L244) (config: Config, inputs: SourceInputs, subject: string) → string[]
       - calls map.map.readOrNull, base.config.sourceTree, map.snapshot.sha256
-    - type [CommittedStep](../../src/map.ts#L262) extends MapStep
-    - type [MapCommit](../../src/map.ts#L267)
-    - fn [planMap](../../src/map.ts#L278) (config: Config, r: MapResult) → MapPlan
+    - type [CommittedStep](../../src/map.ts#L263) extends MapStep
+    - type [MapCommit](../../src/map.ts#L268)
+    - fn [planMap](../../src/map.ts#L279) (config: Config, r: MapResult) → MapPlan
       - calls base.config.toPosix, map.map.targets, map.map.readOrNull, map.map.extraGenerated, map.map.mapConflicts, map.map.sourceInputs, map.map.briefsKey
-    - fn [mapPlanProblems](../../src/map.ts#L312) (plan: MapPlan) → string[]
+    - fn [mapPlanProblems](../../src/map.ts#L313) (plan: MapPlan) → string[]
       - calls base.safe-write.writeProblem, map.map.sourceInputProblems, map.map.briefsKey
-    - fn [commitMap](../../src/map.ts#L331) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
+    - fn [commitMap](../../src/map.ts#L332) (plan: MapPlan, options: { signal?: AbortSignal; onStep?: (step: MapStep) => void } = {}) → Promise<MapCommit>
       - calls base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [briefsKey](../../src/map.ts#L360) (config: Config) → string <!-- internal -->
+    - fn [briefsKey](../../src/map.ts#L361) (config: Config) → string <!-- internal -->
       - calls map.snapshot.sha256, map.explanations.loadBriefs
-    - fn [readOrNull](../../src/map.ts#L365) (abs: string) → string | null <!-- internal -->
-    - fn [diffMap](../../src/map.ts#L374) (config: Config, r: MapResult) → MapDiff
+    - fn [readOrNull](../../src/map.ts#L366) (abs: string) → string | null <!-- internal -->
+    - fn [diffMap](../../src/map.ts#L375) (config: Config, r: MapResult) → MapDiff
       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
-    - fn [extractorCode](../../src/map.ts#L396) () → string <!-- internal -->
+    - fn [extractorCode](../../src/map.ts#L397) () → string <!-- internal -->
       - calls map.snapshot.sha256
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
