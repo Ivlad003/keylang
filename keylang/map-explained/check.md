@@ -125,10 +125,13 @@
       <a id="check.flows.moduleMembers"></a>
     - fn [collectPlanned](../../src/flows.ts#L632) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       <a id="check.flows.collectPlanned"></a><br>`planned` declarations. A duplicate is K002.
-      - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature)
-    - fn [normalizeSignature](../../src/flows.ts#L655) (text: string) → string <!-- internal -->
+      - calls [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [base.diag.diagnostic](base.md#base.diag.diagnostic)
+    - fn [plannedMismatch](../../src/flows.ts#L658) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }) → "kind" | "signature" | null
+      <a id="check.flows.plannedMismatch"></a><br>How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches.
+      - calls [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature)
+    - fn [normalizeSignature](../../src/flows.ts#L664) (text: string) → string <!-- internal -->
       <a id="check.flows.normalizeSignature"></a>
-    - fn [specHash](../../src/flows.ts#L659) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L668) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a>
   - module [resolve](../../src/resolve.ts#L1)
     <a id="check.resolve"></a><br>Cross-file ID resolution: builds the declaration index and reports duplicate declarations (K002) and dangling references (K001).

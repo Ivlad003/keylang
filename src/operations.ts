@@ -32,7 +32,7 @@ import { codeProposalProblem, PROPOSALS_DIR, proposalProblem, proposalWriteProbl
 import { fileDiffText, plannedCodeTarget, specToCode, specToCodeText, type CodeCandidate, type FileCandidate } from "./spec-to-code.ts";
 import type { Verdict } from "./verdict.ts";
 import { changedFlows, codeToSpec, draftFlow, draftRules, withFlow, withRules, type FlowDraft } from "./draft.ts";
-import { featureStatus, type FeatureReport, type Gap } from "./feature-status.ts";
+import { featureStatus, type FeatureBase, type FeatureReport, type Gap } from "./feature-status.ts";
 import { agentsPlanProblems, commitAgents, planAgents, type AgentsPlan, type HarnessCategory, type HarnessChoice, type HarnessName, type HarnessStep } from "./harness.ts";
 import type { Stats } from "./graph.ts";
 import type { LlmClient, LlmClientOptions, LlmSetup } from "./llm.ts";
@@ -45,7 +45,7 @@ import { sha256, type CoverageItem } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
 import type { VoiceEngine } from "./voice.ts";
-import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines, type ChangedFiles } from "./git-changes.ts";
+import { changedPathSet, deletedModuleIds, gitChangedFiles, gitChangedLines, readFeatureBase, type ChangedFiles } from "./git-changes.ts";
 import { generateWire, WIRE_MARKER } from "./wire-gen.ts";
 import { tracePlan, tracePlanText, type TracePlan } from "./trace-plan.ts";
 
@@ -63,6 +63,8 @@ export interface FeatureRequest {
   root: string;
   /** The feature: `<dir>/features/<slug>.md`. */
   slug: string;
+  /** Base commit the plan is compared with; default `HEAD`. An explicit one that cannot be read fails with code 2. */
+  since?: string;
 }
 
 /** Whether the generated map on disk matches the code (`keylang map --check`). Read-only. */
@@ -3999,7 +4001,16 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
     return emptyFeature("failed", 2, messageOf(error));
   }
   if (context.signal?.aborted) return emptyFeature("cancelled", null);
-  const report = featureStatus({ dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts }, request.slug);
+  let base: FeatureBase;
+  try {
+    base = readFeatureBase(request.root, file, request.since, "feature");
+  } catch (error) {
+    return emptyFeature("failed", 2, messageOf(error));
+  }
+  const report = featureStatus(
+    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base },
+    request.slug,
+  );
   if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
   const messages: OperationMessage[] = [...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })), { level: report.done ? "info" : "warning", text: featureSummary(report) }];
   return {

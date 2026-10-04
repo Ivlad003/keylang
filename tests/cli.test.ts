@@ -1838,7 +1838,68 @@ test("feature: planned, static and rule gaps, then done; JSON is the only stdout
   assert.equal(keylang(dir, ["baseline"]).status, 0);
   const done = keylang(dir, ["feature", "pay", "--format", "json"]);
   assert.equal(done.status, 0, done.stdout + done.stderr);
-  assert.equal((JSON.parse(done.stdout) as { done: boolean }).done, true);
+  const doneBody = JSON.parse(done.stdout) as { done: boolean; info: { base: { ref: string; state: string; reason?: string } } };
+  assert.equal(doneBody.done, true);
+  // Without git the plan is not compared: an informational field, not a gap.
+  assert.equal(doneBody.info.base.state, "unavailable");
+  assert.match(doneBody.info.base.reason ?? "", /^feature: /);
+});
+
+test("feature: a plan weakened since the base commit is a spec gap; planned removed after K202 is done; --since picks the base", (t) => {
+  const dir = tempDir(t, "keylang-feature-base-");
+  const plan = "# flow remind\n\n- planned fn app.pay.refund (n: number) → number\n- planned fn app.pay.remind () → number\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step app.pay.remind\n";
+  writeTree(dir, { "keylang.json": `${JSON.stringify(LAYERS)}\n`, "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER, "keylang/features/remind.md": plan });
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "plan"]);
+  const status = (args: string[] = []): { status: number | null; body: { done: boolean; gaps: { kind: string; id: string; line: number; reason: string }[]; info: { base: { ref: string; state: string } } } } => {
+    const r = keylang(dir, ["feature", "remind", "--format", "json", ...args]);
+    return { status: r.status, body: JSON.parse(r.stdout || "null") };
+  };
+  assert.equal(status().body.info.base.state, "compared");
+
+  // Rewrite the plan: drop both planned, and swap the reminder step for a wrapper that the code has.
+  writeFileSync(join(dir, "src/app/pay.ts"), "export function charge(): number {\n  return refund(1) + wrapper();\n}\nexport function refund(n: number): number {\n  return n;\n}\nexport function wrapper(): number {\n  return 0;\n}\n");
+  writeFileSync(join(dir, "keylang/features/remind.md"), "# flow remind\n\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step app.pay.wrapper\n");
+  const rewritten = status();
+  assert.equal(rewritten.status, 1, JSON.stringify(rewritten.body));
+  assert.equal(rewritten.body.done, false);
+  const spec = rewritten.body.gaps.filter((gap) => gap.kind === "spec");
+  assert.deepEqual(
+    spec.map((gap) => [gap.id, gap.line]),
+    [
+      ["app.pay.remind", 4],
+      ["app.pay.remind", 7],
+    ],
+  );
+  assert.match(spec[0]!.reason, /planned fn `app\.pay\.remind` \(line 4 at HEAD\) was removed, but the code does not have it/);
+  assert.match(spec[1]!.reason, /step `app\.pay\.remind` of flow `remind` \(line 7 at HEAD\) was changed or removed/);
+  assert.ok(!rewritten.body.gaps.some((gap) => gap.id === "app.pay.refund"), "refund is implemented: removing its planned is fine");
+  const human = keylang(dir, ["feature", "remind"]);
+  assert.match(human.stdout, /keylang\/features\/remind\.md:7:\d+: spec app\.pay\.remind: /);
+
+  // Implement the plan as written and drop the planned lines after K202: done.
+  writeFileSync(join(dir, "src/app/pay.ts"), "export function charge(): number {\n  return refund(1) + remind();\n}\nexport function refund(n: number): number {\n  return n;\n}\nexport function remind(): number {\n  return 0;\n}\n");
+  writeFileSync(join(dir, "keylang/features/remind.md"), "# flow remind\n\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step app.pay.remind\n");
+  const done = status();
+  assert.equal(done.status, 0, JSON.stringify(done.body));
+  assert.equal(done.body.done, true);
+
+  // A person commits a changed plan: HEAD is the new base, an older one is still reachable with --since.
+  const first = spawnSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(dir, "src/app/pay.ts"), "export function charge(): number {\n  return refund(1) + wrapper();\n}\nexport function refund(n: number): number {\n  return n;\n}\nexport function wrapper(): number {\n  return 0;\n}\n");
+  writeFileSync(join(dir, "keylang/features/remind.md"), "# flow remind\n\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step app.pay.wrapper\n");
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "replan"]);
+  assert.equal(status().status, 0);
+  const since = status(["--since", first]);
+  assert.equal(since.status, 1);
+  assert.equal(since.body.info.base.ref, first);
+  assert.ok(since.body.gaps.some((gap) => gap.kind === "spec" && gap.id === "app.pay.remind"));
+  const bad = keylang(dir, ["feature", "remind", "--since", "no-such-ref"]);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /feature: `no-such-ref` is not a commit/);
+  assert.equal(bad.stdout, "");
 });
 
 test("check --changed filters to the touched files; hook stop blocks once and writes nothing", (t) => {

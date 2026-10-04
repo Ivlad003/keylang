@@ -1,5 +1,6 @@
 // What git says changed in the working tree since a ref: the inputs of
-// `check --changed`, `hook stop` and `code-to-spec --since`. Git runs as an
+// `check --changed`, `hook stop` and `code-to-spec --since`, and the feature
+// file at its base commit for `feature`. Git runs as an
 // argument array in the given root, never through a shell; a ref that looks
 // like an option is refused before git sees it. Every failure (no git, not a
 // repository, an unknown ref) is an error naming the caller, never an empty
@@ -9,7 +10,9 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { join, relative } from "node:path";
 import { toPosix, type Config } from "./config.ts";
 import { deletedDiffPaths, diffHunks, type ChangedLines } from "./draft.ts";
+import type { FeatureBase } from "./feature-status.ts";
 import { placeFile } from "./graph.ts";
+import { parse } from "./parser.ts";
 
 /** Files changed since a ref. Paths are POSIX, relative to the root. */
 export interface ChangedFiles {
@@ -79,6 +82,43 @@ export function changedPathSet(root: string, files: Iterable<string>, base: stri
     changed.add(toPosix(relative(base, join(root, file))));
   }
   return changed;
+}
+
+/**
+ * The text of `path` (POSIX, relative to `root`) at `ref`, or null when the
+ * file is not in that commit or `HEAD` has no commit yet. An unknown ref,
+ * no git, or no repository is an error naming the caller.
+ */
+export function gitFileAt(root: string, ref: string, path: string, label: string): string | null {
+  assertRef(ref, label);
+  const { run, git } = gitIn(root, label);
+  git(["rev-parse", "--is-inside-work-tree"]);
+  if (run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).status !== 0) {
+    if (ref === "HEAD") return null;
+    throw new Error(`${label}: \`${ref}\` is not a commit`);
+  }
+  // `./` makes the path relative to `root`, not to the repository's top level.
+  const object = `${ref}:./${path}`;
+  if (run(["cat-file", "-e", object]).status !== 0) return null;
+  return git(["show", object]);
+}
+
+/**
+ * The feature file at its base commit (`since`, else `HEAD`). Without an
+ * explicit `since`, a failure to read git is an informational state, not an
+ * error; with it, the error is thrown.
+ */
+export function readFeatureBase(root: string, path: string, since: string | undefined, label: string): FeatureBase {
+  const ref = since ?? "HEAD";
+  let text: string | null;
+  try {
+    text = gitFileAt(root, ref, path, label);
+  } catch (error) {
+    if (since !== undefined) throw error;
+    return { ref, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
+  }
+  if (text === null) return { ref, state: "absent" };
+  return { ref, state: "compared", doc: parse(path, text) };
 }
 
 /** Module id a deleted source file had, so a flow step that named it is still "changed". */

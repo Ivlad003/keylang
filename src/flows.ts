@@ -641,15 +641,24 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
     planned.set(item.id, entry);
     if (!code) continue;
     entry.implemented = true;
-    if (code.kind !== kind) {
-      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${code.file ?? "?"}:${code.line ?? 1})`));
-    } else if (signature !== null && code.signature && normalizeSignature(signature) !== normalizeSignature(code.signature)) {
-      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${code.file ?? "?"}:${code.line ?? 1})`));
+    const where = `${code.file ?? "?"}:${code.line ?? 1}`;
+    const mismatch = plannedMismatch(item, code);
+    if (mismatch === "kind") {
+      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented as a ${code.kind} (${where})`));
+    } else if (mismatch === "signature") {
+      diagnostics.push(diagnostic("K201", item.file, item.span, `planned ${kind} \`${item.id}\` has signature \`${signature}\`, the code has \`${code.signature}\` (${where})`));
     } else {
-      diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${code.file ?? "?"}:${code.line ?? 1}); remove the declaration`));
+      diagnostics.push(diagnostic("K202", item.file, item.span, `planned ${kind} \`${item.id}\` is implemented (${where}); remove the declaration`));
     }
   }
   return planned;
+}
+
+/** How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches. */
+export function plannedMismatch(item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }): "kind" | "signature" | null {
+  if (code.kind !== item.decl) return "kind";
+  if (item.signature !== null && code.signature && normalizeSignature(item.signature) !== normalizeSignature(code.signature)) return "signature";
+  return null;
 }
 
 function normalizeSignature(text: string): string {

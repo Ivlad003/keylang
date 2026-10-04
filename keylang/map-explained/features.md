@@ -547,28 +547,40 @@
     - fn [explainCode](../../src/explain.ts#L109) (code: string) → string | null
       <a id="features.explain.explainCode"></a>
   - module [feature-status](../../src/feature-status.ts#L1)
-    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step in it is static ok, and no rule fail exists in any spec. Tests and trace are reported and do not block.
+    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base commit. Tests and trace are reported and do not block.
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
+    - flows [check.flows](check.md#check.flows)
     - ir [lang.ir](lang.md#lang.ir)
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Gap](../../src/feature-status.ts#L13)
+    - type [Gap](../../src/feature-status.ts#L15)
       <a id="features.feature-status.Gap"></a>
-    - type [FeatureInfo](../../src/feature-status.ts#L22)
+    - type [FeatureInfo](../../src/feature-status.ts#L24)
       <a id="features.feature-status.FeatureInfo"></a>
-    - type [FeatureReport](../../src/feature-status.ts#L31)
+    - type [FeatureBase](../../src/feature-status.ts#L38)
+      <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit (`HEAD` or `--since`). `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet); `unavailable`: the history could not be read, so the plan is not compared.
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L44)
+      <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it.
+    - type [FeatureReport](../../src/feature-status.ts#L46)
       <a id="features.feature-status.FeatureReport"></a>
-    - type [FeatureInput](../../src/feature-status.ts#L37)
+    - type [FeatureInput](../../src/feature-status.ts#L52)
       <a id="features.feature-status.FeatureInput"></a>
-    - fn [idsIn](../../src/feature-status.ts#L50) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L69) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L67) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L86) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [features.feature-status.finding](features.md#features.feature-status.finding), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.span.compareText](base.md#base.span.compareText)
-    - fn [finding](../../src/feature-status.ts#L125) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+      - calls [features.feature-status.finding](features.md#features.feature-status.finding), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText)
+    - fn [planGaps](../../src/feature-status.ts#L154) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+      <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger` or `step` that is no longer there under the same flow and parents. Added items and order among siblings are not compared.
+      - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
+    - type [PlanItem](../../src/feature-status.ts#L182) = Trigger | FlowStep <!-- internal -->
+      <a id="features.feature-status.PlanItem"></a>
+    - fn [planItems](../../src/feature-status.ts#L185) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+      <a id="features.feature-status.planItems"></a><br>Every `trigger` and `step` of a flow with a key: the flow, its parents, and itself.
+    - fn [finding](../../src/feature-status.ts#L198) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a>
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
@@ -584,31 +596,39 @@
       <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs. `signal` cancels the request (`LlmCancelled`) once the line it was asked for is gone.
       - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.parse](lang.md#lang.parser.parse)
   - module [git-changes](../../src/git-changes.ts#L1)
-    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`. Git runs as an argument array in the given root, never through a shell; a ref that looks like an option is refused before git sees it.
+    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`, and the feature file at its base commit for `feature`. Git runs as an argument array in the given root, never through a shell; a ref that looks like…
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
     - draft [features.draft](features.md#features.draft)
+    - feature-status [features.feature-status](features.md#features.feature-status)
     - graph [map.graph](map.md#map.graph)
-    - type [ChangedFiles](../../src/git-changes.ts#L15)
+    - parser [lang.parser](lang.md#lang.parser)
+    - type [ChangedFiles](../../src/git-changes.ts#L18)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - fn [gitIn](../../src/git-changes.ts#L25) (root: string, label: string) → { run: (args: string[], input?: string) => SpawnSyncReturns<string>; git: (args: string[], input?: string) => string } <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L28) (root: string, label: string) → { run: (args: string[], input?: string) => SpawnSyncReturns<string>; git: (args: string[], input?: string) => string } <!-- internal -->
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
-    - fn [assertRef](../../src/git-changes.ts#L38) (ref: string, label: string) → void <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L41) (ref: string, label: string) → void <!-- internal -->
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L44) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L47) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a>
-    - fn [untracked](../../src/git-changes.ts#L46) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L49) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a>
-    - fn [gitChangedFiles](../../src/git-changes.ts#L52) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitChangedFiles](../../src/git-changes.ts#L55) (root: string, ref: string, label = "check --changed") → ChangedFiles
       <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [gitChangedLines](../../src/git-changes.ts#L66) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitChangedLines](../../src/git-changes.ts#L69) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L75) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L78) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L85) (config: Config, files: readonly string[]) → string[]
+    - fn [gitFileAt](../../src/git-changes.ts#L92) (root: string, ref: string, path: string, label: string) → string | null
+      <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
+      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
+    - fn [readFeatureBase](../../src/git-changes.ts#L111) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+      <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit (`since`, else `HEAD`). Without an explicit `since`, a failure to read git is an informational state, not an error; with it, the error is thrown.
+      - calls [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [deletedModuleIds](../../src/git-changes.ts#L125) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)

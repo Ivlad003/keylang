@@ -255,6 +255,34 @@ test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
   assert.equal(treeBytes(mcp.dir), disk);
 });
 
+test("mcp: feature_status compares the feature with its base commit; a rewritten plan is not done", async (t) => {
+  const mcp = await connect(t);
+  mkdirSync(join(mcp.dir, "keylang/features"), { recursive: true });
+  writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- planned fn domain.order.refund (order: Order) → void\n- trigger app.checkout.checkout\n  - step domain.order.refund\n");
+  const git = (args: string[]): void => {
+    const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: mcp.dir, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  git(["init"]);
+  git(["add", "."]);
+  git(["commit", "-m", "plan"]);
+  // The agent drops the planned fn and points the step at code that already exists.
+  writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n");
+  const status = JSON.parse((await mcp.call("feature_status", { slug: "refund" })).text) as { done: boolean; gaps: { kind: string; id: string }[]; info: { base: { ref: string; state: string } } };
+  assert.equal(status.done, false, JSON.stringify(status));
+  assert.deepEqual(status.info.base, { ref: "HEAD", state: "compared" });
+  assert.deepEqual(
+    status.gaps.map((gap) => [gap.kind, gap.id]),
+    [
+      ["spec", "domain.order.refund"],
+      ["spec", "domain.order.refund"],
+    ],
+  );
+  const bad = await mcp.call("feature_status", { slug: "refund", since: "no-such-ref" });
+  assert.equal(bad.isError, true);
+  assert.match(bad.text, /`no-such-ref` is not a commit/);
+});
+
 // Ticket harness-integration/02: the command `agents` writes to `.mcp.json`,
 // run as written, starts a server that answers `tools/list`. The published
 // `npx -y keylang@<VERSION>` needs the npm registry, so the test swaps that

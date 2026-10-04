@@ -15,7 +15,8 @@ import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
 import { analyze, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
-import { featureStatus, idsIn } from "./feature-status.ts";
+import { featureStatus, idsIn, type FeatureBase } from "./feature-status.ts";
+import { readFeatureBase } from "./git-changes.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
@@ -284,12 +285,24 @@ export function mcpServer(root: string, version: string): McpServer {
     "feature_status",
     {
       description:
-        "Whether keylang/features/<slug>.md is done: every planned id is implemented (K202, not K201), every flow step is static ok, and no rule fail remains. Gaps are planned, static, or rule. Tests and trace are informational and do not block.",
-      inputSchema: { slug: z.string().min(1) },
+        "Whether keylang/features/<slug>.md is done: every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. Gaps are planned, static, rule, or spec. Tests, trace, and the base (info.base) are informational and do not block.",
+      inputSchema: { slug: z.string().min(1), since: z.string().min(1).optional() },
     },
-    async ({ slug }) => {
+    async ({ slug, since }) => {
       const analysis = await fresh();
-      const report = featureStatus({ dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts }, slug);
+      const path = `${analysis.config.dir}/features/${slug}.md`;
+      // Only a feature keylang read is looked up in the history: the slug never names another path.
+      if (!analysis.docs.some((doc) => doc.path === path)) return failure(`no feature \`${slug}\``);
+      let base: FeatureBase;
+      try {
+        base = readFeatureBase(root, path, since, "feature_status");
+      } catch (error) {
+        return failure(error instanceof Error ? error.message : String(error));
+      }
+      const report = featureStatus(
+        { dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts, nodes: analysis.snapshot?.nodes ?? {}, base },
+        slug,
+      );
       if (report === null) return failure(`no feature \`${slug}\``);
       return json(report);
     },

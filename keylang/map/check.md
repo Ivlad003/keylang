@@ -80,9 +80,11 @@
       - calls base.span.compareText
     - fn [moduleMembers](../../src/flows.ts#L616) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
     - fn [collectPlanned](../../src/flows.ts#L632) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
-      - calls base.diag.diagnostic, check.flows.normalizeSignature
-    - fn [normalizeSignature](../../src/flows.ts#L655) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L659) (text: string) → string <!-- internal -->
+      - calls check.flows.plannedMismatch, base.diag.diagnostic
+    - fn [plannedMismatch](../../src/flows.ts#L658) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }) → "kind" | "signature" | null
+      - calls check.flows.normalizeSignature
+    - fn [normalizeSignature](../../src/flows.ts#L664) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L668) (text: string) → string <!-- internal -->
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag

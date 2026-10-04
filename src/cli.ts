@@ -48,11 +48,13 @@ Commands:
   baseline [--check]        Write <dir>/rules.baseline.md from the current layer graph
                             (--check: fail when it does not match; says to run
                             \`keylang baseline\`; writes nothing)
-  feature <slug> [--format json]
+  feature <slug> [--since <ref>] [--format json]
                             Whether <dir>/features/<slug>.md is done: every planned
                             id is implemented (K202, not K201), every flow step is
-                            static ok, and no rule fail remains. 0 done, 1 gaps,
-                            2 missing file or bad invocation
+                            static ok, no rule fail remains, and the plan was not
+                            weakened since <ref> (default HEAD; without git only
+                            info.base says so). 0 done, 1 gaps, 2 missing file,
+                            unreadable --since ref, or bad invocation
   hook stop                 Read a harness Stop event (JSON) from stdin, run
                             check --changed, and print a JSON decision. Writes nothing
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
@@ -246,7 +248,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "baseline":
       return cmdBaseline(findRoot(process.cwd()), values.check === true);
     case "feature":
-      return cmdFeature(paths[0], values.format ?? "human");
+      return cmdFeature(paths[0], values.format ?? "human", values.since);
     case "hook":
       return cmdHook(paths[0], values.check === true);
     case "new":
@@ -767,10 +769,10 @@ function printBaseline(result: OperationEnvelope<"baseline">): number {
 }
 
 /** Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation. */
-async function cmdFeature(slug: string | undefined, format: string): Promise<number> {
+async function cmdFeature(slug: string | undefined, format: string, since: string | undefined): Promise<number> {
   if (!slug) throw new Error("feature: a slug is required");
   if (format !== "human" && format !== "json") throw new Error(`feature: unknown --format \`${format}\`; expected human, json`);
-  const result = await runOperation({ kind: "feature", root: findRoot(process.cwd()), slug });
+  const result = await runOperation({ kind: "feature", root: findRoot(process.cwd()), slug, ...(since !== undefined ? { since } : {}) });
   if (result.payload === null) {
     for (const message of result.messages) process.stderr.write(`keylang: ${message.text}\n`);
     return result.exitCode ?? 2;
