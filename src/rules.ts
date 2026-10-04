@@ -27,6 +27,8 @@ interface Rule {
   file: string;
   span: Span;
   text: string;
+  /** From the generated baseline: a manual rule over the same areas overrides it. */
+  generated: boolean;
 }
 
 /** One `layers a < b < c` line: `a` lowest. */
@@ -264,6 +266,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
           file: winner.rule.file,
           line: winner.rule.span.start.line,
           incomparable: crossRules(hit, winner),
+          baseline: sameAreas(hit, winner) && hit.rule.generated && !winner.rule.generated,
           winnerScore: winner.score,
           denyScore: hit.score,
         });
@@ -561,6 +564,8 @@ interface OverrideNote {
   file: string;
   line: number;
   incomparable: boolean;
+  /** A manual rule over the same areas as this baseline deny. */
+  baseline: boolean;
   winnerScore: number;
   denyScore: number;
 }
@@ -610,15 +615,26 @@ function crossRules(a: RuleHit, b: RuleHit): boolean {
   return (sourceA && targetB) || (sourceB && targetA);
 }
 
+function sameAreas(a: RuleHit, b: RuleHit): boolean {
+  return a.rule.a === b.rule.a && a.target === b.target;
+}
+
+/** The baseline is a lower rule layer: a manual hit over the same areas drops a generated one. */
+function overManualRules(hits: readonly RuleHit[]): RuleHit[] {
+  return hits.filter((hit) => !(hit.rule.generated && hits.some((other) => !other.rule.generated && sameAreas(other, hit))));
+}
+
 function areaWithin(id: string, scope: string): boolean {
   return id === scope || id.startsWith(`${scope}.`);
 }
 
 /**
+ * First a manual hit drops a baseline hit over the same areas (both formats).
  * Format 1: the greatest depth sum, and every `deny` on that sum.
  * Format 2: drop dominated hits; any undominated `deny` wins (deny-overrides).
  */
-function decide(hits: readonly RuleHit[], format: RuleFormat): { winners: RuleHit[]; denyWins: boolean } {
+function decide(all: readonly RuleHit[], format: RuleFormat): { winners: RuleHit[]; denyWins: boolean } {
+  const hits = overManualRules(all);
   if (format === 1) {
     const best = hits.reduce((score, hit) => Math.max(score, hit.score), -1);
     const top = hits.filter((hit) => hit.score === best);
@@ -649,16 +665,18 @@ function incomparableAside(deny: RuleHit, hits: readonly RuleHit[], format: Rule
 }
 
 function overrideEvidence(deny: Rule, targets: string, notes: readonly OverrideNote[]): string {
-  const specific = [...new Set(notes.filter((note) => !note.incomparable).map((note) => note.text))].sort();
+  const manual = [...new Set(notes.filter((note) => note.baseline).map((note) => note.text))].sort();
+  const specific = [...new Set(notes.filter((note) => !note.incomparable && !note.baseline).map((note) => note.text))].sort();
   const cross = [...new Map(notes.filter((note) => note.incomparable).map((note) => [`${note.file}:${note.line}:${note.text}`, note])).values()].sort((a, b) =>
     a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0),
   );
   const head = `convergence: the edges from \`${deny.a}\` to ${targets} are decided by `;
   const tail = "; no other edge and no dependency hole in the area";
-  if (cross.length === 0) return `${head}more specific rules (${specific.map((text) => `\`${text}\``).join(", ")})${tail}`;
-  const named = cross.map((note) => `incomparable \`${note.text}\` (${note.file}:${note.line}) on depth sum (${note.winnerScore} > ${note.denyScore})`).join(", ");
-  const extra = specific.length > 0 ? ` and by more specific rules (${specific.map((text) => `\`${text}\``).join(", ")})` : "";
-  return `${head}${named}${extra}${tail}`;
+  const quoted = (texts: readonly string[]): string => texts.map((text) => `\`${text}\``).join(", ");
+  const parts = cross.map((note) => `incomparable \`${note.text}\` (${note.file}:${note.line}) on depth sum (${note.winnerScore} > ${note.denyScore})`);
+  if (specific.length > 0) parts.push(`${parts.length > 0 ? "by " : ""}more specific rules (${quoted(specific)})`);
+  if (manual.length > 0) parts.push(`${parts.length > 0 ? "by " : ""}manual rules over the baseline (${quoted(manual)})`);
+  return `${head}${parts.join(" and ")}${tail}`;
 }
 
 /** One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required. */
@@ -804,7 +822,7 @@ function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined):
         diagnostics.push(diagnostic("K005", rule.file, ref.span, `\`${rule.effect}\` takes layers, modules and ID prefixes; \`${ref.target}\` is a ${kind}, name its module \`${module}\``, "scope"));
       }
       if (members.length > 0) continue;
-      const built = { a: rule.from.target, b: rule.to.map((ref) => ref.target), file: rule.file, span: rule.span, text: rule.text };
+      const built = { a: rule.from.target, b: rule.to.map((ref) => ref.target), file: rule.file, span: rule.span, text: rule.text, generated: rule.generated };
       (rule.effect === "allow" ? allows : denies).push(built);
     } else if (rule.kind === "entry") {
       entryNodes.push({ file: rule.file, span: rule.span, text: rule.text });

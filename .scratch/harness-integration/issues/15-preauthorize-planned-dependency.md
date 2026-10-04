@@ -1,6 +1,6 @@
 # 15: Людина не може заздалегідь дозволити нове ребро між шарами для фічі
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** design
 
@@ -22,12 +22,13 @@
 2. Ручні правила мають пріоритет над baseline при рівному score (baseline — нижчий шар правил).
 3. `planned`-кроки фічі між шарами автоматично дозволяють ребро (ризиковано: агент пише файл фічі сам, див. 18).
 
-- [ ] рішення записане в spec/ADR і format.md §7 «Семантика правил»
-- [ ] фікстура: шар `mail`, `rules.md` з `allow article mail`, код `article → mail` — немає K102; без `allow` — K102 від baseline
-- [ ] `baseline --check` і хук Stop поводяться узгоджено з рішенням
+- [x] рішення записане в spec/ADR і format.md §7 «Семантика правил»
+- [x] фікстура: шар `mail`, `rules.md` з `allow article mail`, код `article → mail` — немає K102; без `allow` — K102 від baseline
+- [x] `baseline --check` і хук Stop поводяться узгоджено з рішенням
 
 Ключові файли: `src/baseline.ts`, `src/rules.ts`, `docs/format.md`, `docs/tools.md`
 
 ## Comments
 
 - 2026-10-04 — рішення людини: варіант 2 — ручні правила мають пріоритет над baseline при рівній точності (baseline — нижчий шар правил); deny-overrides лишається всередині ручних правил. Записати в ADR/spec і format.md §7 «Семантика правил».
+- 2026-10-04 — зроблено (варіант 2). `DependencyRule.generated` позначає правило з файла з маркером `keylang:generated`, тобто з baseline. У `decide` (`src/rules.ts`) правило baseline відкидається, якщо на ребрі є ручне правило з тим самим джерелом і тією самою найглибшою ціллю; так в обох редакціях. Вужче правило baseline і далі перемагає ширше ручне; deny-overrides між ручними не змінився. Рядок baseline `deny`, чиї ребра вирішили ручні правила, — `ok` з доказом «manual rules over the baseline». Генератор baseline не змінено: після появи ребра `check` і `hook stop` не дають K102, а `baseline --check` дає 1 (stale), і людина приймає граф через `keylang baseline`. Записано в ADR 0013, format.md §7, tools.md і skill. Тест: `tests/cli.test.ts` «baseline is a lower rule layer…» (редакції 1 і 2). Припущення: редакцію 1 змінено без нової редакції, бо до заморожування v1 вона змінна, а без baseline значення текстів те саме.

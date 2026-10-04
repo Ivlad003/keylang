@@ -1774,6 +1774,43 @@ test("baseline: a new cross-layer import or package is K102; an allowed package 
   assert.equal(allowed.status, 0, allowed.stdout);
 });
 
+test("baseline is a lower rule layer: a manual allow over the same layers lifts its deny; without it the baseline gives K102", (t) => {
+  for (const format of [1, 2]) {
+    const dir = tempDir(t, `keylang-baseline-layer-${format}-`);
+    const config = { languages: ["typescript"], module: "file", format, layers: { article: ["src/article/**"], mail: ["src/mail/**"] } };
+    writeTree(dir, {
+      "keylang.json": `${JSON.stringify(config)}\n`,
+      "src/article/post.ts": "export function publish(): number {\n  return 1;\n}\n",
+      "src/mail/send.ts": "export function send(): number {\n  return 2;\n}\n",
+      "keylang/rules.md": "# rules\n\n- allow article mail\n",
+    });
+    assert.equal(keylang(dir, ["baseline"]).status, 0);
+    assert.match(readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8"), /- deny article external, mail, unassigned/);
+    git(dir, ["init"]);
+    git(dir, ["add", "."]);
+    git(dir, ["commit", "-m", "base"]);
+    writeFileSync(join(dir, "src/article/post.ts"), 'import { send } from "../mail/send.ts";\nexport function publish(): number {\n  return send();\n}\n');
+    const event = JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false });
+    const hook = (): string => spawnSync(process.execPath, [bin, "hook", "stop"], { cwd: dir, input: event, encoding: "utf8" }).stdout;
+
+    const allowed = keylang(dir, ["check", "--format", "json"]);
+    assert.equal(allowed.status, 0, allowed.stdout);
+    assert.doesNotMatch(allowed.stdout, /K102/);
+    assert.match(allowed.stdout, /manual rules over the baseline \(`allow article mail`\)/);
+    assert.equal(hook(), "{}\n");
+    // The graph now has the edge a person allowed: the baseline is stale until `keylang baseline` accepts it.
+    const stale = keylang(dir, ["baseline", "--check"]);
+    assert.equal(stale.status, 1, stale.stdout + stale.stderr);
+    assert.match(stale.stdout + stale.stderr, /keylang baseline/);
+
+    writeFileSync(join(dir, "keylang/rules.md"), "# rules\n");
+    const denied = keylang(dir, ["check"]);
+    assert.equal(denied.status, 1, denied.stdout);
+    assert.match(denied.stdout, /K102 divergence: `article\.post` depends on `mail\.send`, which is denied by `deny article external mail unassigned` \(keylang\/rules\.baseline\.md:\d+\)/);
+    assert.equal((JSON.parse(hook()) as { decision?: string }).decision, "block");
+  }
+});
+
 test("feature: planned, static and rule gaps, then done; JSON is the only stdout", (t) => {
   const dir = tempDir(t, "keylang-feature-");
   writeTree(dir, {

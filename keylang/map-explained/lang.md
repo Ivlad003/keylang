@@ -239,105 +239,105 @@
       <a id="lang.spec-ir.RejectedLayers"></a><br>A `layers` line that is not an order. It is not an assertion; its text still enters the no-snapshot hash when it names an order.
     - type [DependencyRule](../../src/spec-ir.ts#L45) extends Located
       <a id="lang.spec-ir.DependencyRule"></a>
-    - type [Entry](../../src/spec-ir.ts#L52) extends Located
+    - type [Entry](../../src/spec-ir.ts#L54) extends Located
       <a id="lang.spec-ir.Entry"></a>
-    - type [NoCycles](../../src/spec-ir.ts#L57) extends Located
+    - type [NoCycles](../../src/spec-ir.ts#L59) extends Located
       <a id="lang.spec-ir.NoCycles"></a>
-    - type [ExportsRule](../../src/spec-ir.ts#L63) extends Located
+    - type [ExportsRule](../../src/spec-ir.ts#L65) extends Located
       <a id="lang.spec-ir.ExportsRule"></a>
-    - type [RuleAssertion](../../src/spec-ir.ts#L69) = LayerOrder | DependencyRule | Entry | NoCycles | ExportsRule
+    - type [RuleAssertion](../../src/spec-ir.ts#L71) = LayerOrder | DependencyRule | Entry | NoCycles | ExportsRule
       <a id="lang.spec-ir.RuleAssertion"></a>
-    - type [SpecModule](../../src/spec-ir.ts#L72)
+    - type [SpecModule](../../src/spec-ir.ts#L74)
       <a id="lang.spec-ir.SpecModule"></a><br>A `module x` line. It scopes nested rules and is not itself an assertion, so nothing hashes it.
-    - type [FlowStep](../../src/spec-ir.ts#L79) extends Located
+    - type [FlowStep](../../src/spec-ir.ts#L81) extends Located
       <a id="lang.spec-ir.FlowStep"></a>
-    - type [Trigger](../../src/spec-ir.ts#L85) extends Located
+    - type [Trigger](../../src/spec-ir.ts#L87) extends Located
       <a id="lang.spec-ir.Trigger"></a>
-    - type [WhenItem](../../src/spec-ir.ts#L91) extends Located
+    - type [WhenItem](../../src/spec-ir.ts#L93) extends Located
       <a id="lang.spec-ir.WhenItem"></a>
-    - type [ThenItem](../../src/spec-ir.ts#L97)
+    - type [ThenItem](../../src/spec-ir.ts#L99)
       <a id="lang.spec-ir.ThenItem"></a>
-    - type [ClaimItem](../../src/spec-ir.ts#L99) extends Located
+    - type [ClaimItem](../../src/spec-ir.ts#L101) extends Located
       <a id="lang.spec-ir.ClaimItem"></a>
-    - type [TestItem](../../src/spec-ir.ts#L107) extends Located
+    - type [TestItem](../../src/spec-ir.ts#L109) extends Located
       <a id="lang.spec-ir.TestItem"></a>
-    - type [FlowItem](../../src/spec-ir.ts#L114) = FlowStep | WhenItem | ThenItem | ClaimItem | TestItem
+    - type [FlowItem](../../src/spec-ir.ts#L116) = FlowStep | WhenItem | ThenItem | ClaimItem | TestItem
       <a id="lang.spec-ir.FlowItem"></a>
-    - type [Flow](../../src/spec-ir.ts#L116)
+    - type [Flow](../../src/spec-ir.ts#L118)
       <a id="lang.spec-ir.Flow"></a>
-    - type [Planned](../../src/spec-ir.ts#L128) extends Located
+    - type [Planned](../../src/spec-ir.ts#L130) extends Located
       <a id="lang.spec-ir.Planned"></a>
-    - type [WireWhen](../../src/spec-ir.ts#L136) extends Located
+    - type [WireWhen](../../src/spec-ir.ts#L138) extends Located
       <a id="lang.spec-ir.WireWhen"></a><br>A `when` whose condition is `env.NAME = value` and whose target resolved.
-    - type [WireCompose](../../src/spec-ir.ts#L142) extends Located
+    - type [WireCompose](../../src/spec-ir.ts#L144) extends Located
       <a id="lang.spec-ir.WireCompose"></a>
-    - type [WireDep](../../src/spec-ir.ts#L146) extends Located
+    - type [WireDep](../../src/spec-ir.ts#L148) extends Located
       <a id="lang.spec-ir.WireDep"></a>
-    - type [Wire](../../src/spec-ir.ts#L153) extends Located
+    - type [Wire](../../src/spec-ir.ts#L155) extends Located
       <a id="lang.spec-ir.Wire"></a>
-    - type [SpecIR](../../src/spec-ir.ts#L158)
+    - type [SpecIR](../../src/spec-ir.ts#L160)
       <a id="lang.spec-ir.SpecIR"></a>
-    - fn [walkFlow](../../src/spec-ir.ts#L172) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
+    - fn [walkFlow](../../src/spec-ir.ts#L174) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
       <a id="lang.spec-ir.walkFlow"></a><br>Triggers and top-level items, then nested items, in source order.
-    - type [LayerCandidate](../../src/spec-ir.ts#L183) <!-- internal -->
+    - type [LayerCandidate](../../src/spec-ir.ts#L185) <!-- internal -->
       <a id="lang.spec-ir.LayerCandidate"></a>
-    - type [PlacedRule](../../src/spec-ir.ts#L194) <!-- internal -->
+    - type [PlacedRule](../../src/spec-ir.ts#L196) <!-- internal -->
       <a id="lang.spec-ir.PlacedRule"></a>
-    - fn [compileSpec](../../src/spec-ir.ts#L199) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
+    - fn [compileSpec](../../src/spec-ir.ts#L201) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
       <a id="lang.spec-ir.compileSpec"></a>
       - calls [lang.spec-ir.compileRules](lang.md#lang.spec-ir.compileRules), [lang.spec-ir.compileFlow](lang.md#lang.spec-ir.compileFlow), [lang.spec-ir.compileWires](lang.md#lang.spec-ir.compileWires), [lang.spec-ir.settleLayers](lang.md#lang.spec-ir.settleLayers)
-    - fn [compileRules](../../src/spec-ir.ts#L223) ( file: string, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
+    - fn [compileRules](../../src/spec-ir.ts#L225) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
       <a id="lang.spec-ir.compileRules"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.considerLayers](lang.md#lang.spec-ir.considerLayers), [lang.spec-ir.dependency](lang.md#lang.spec-ir.dependency), [lang.spec-ir.entryLine](lang.md#lang.spec-ir.entryLine), [lang.spec-ir.noCycles](lang.md#lang.spec-ir.noCycles), [lang.spec-ir.exportsRule](lang.md#lang.spec-ir.exportsRule)
-    - fn [considerLayers](../../src/spec-ir.ts#L262) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
+    - fn [considerLayers](../../src/spec-ir.ts#L265) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
       <a id="lang.spec-ir.considerLayers"></a><br>A `layers` line the old text IR would have kept, with K005 for a non-layer or a repeated layer. An empty line is absent.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic)
-    - fn [settleLayers](../../src/spec-ir.ts#L289) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
+    - fn [settleLayers](../../src/spec-ir.ts#L292) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
       <a id="lang.spec-ir.settleLayers"></a><br>One partial order across every document, in encounter order. A line that contradicts an earlier order is K005 and not an order.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [lang.spec-ir.layersAbove](lang.md#lang.spec-ir.layersAbove), [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [layersAbove](../../src/spec-ir.ts#L341) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [layersAbove](../../src/spec-ir.ts#L344) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="lang.spec-ir.layersAbove"></a>
-    - fn [dependency](../../src/spec-ir.ts#L357) (file: string, node: Node, effect: "allow" | "deny") → DependencyRule | null <!-- internal -->
+    - fn [dependency](../../src/spec-ir.ts#L360) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
       <a id="lang.spec-ir.dependency"></a>
       - calls [lang.spec-ir.nonEmpty](lang.md#lang.spec-ir.nonEmpty), [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [nonEmpty](../../src/spec-ir.ts#L364) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
+    - fn [nonEmpty](../../src/spec-ir.ts#L367) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
       <a id="lang.spec-ir.nonEmpty"></a>
-    - fn [entryLine](../../src/spec-ir.ts#L369) (file: string, node: Node) → Entry | null <!-- internal -->
+    - fn [entryLine](../../src/spec-ir.ts#L372) (file: string, node: Node) → Entry | null <!-- internal -->
       <a id="lang.spec-ir.entryLine"></a>
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [noCycles](../../src/spec-ir.ts#L376) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
+    - fn [noCycles](../../src/spec-ir.ts#L379) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
       <a id="lang.spec-ir.noCycles"></a>
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [exportsRule](../../src/spec-ir.ts#L380) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
+    - fn [exportsRule](../../src/spec-ir.ts#L383) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
       <a id="lang.spec-ir.exportsRule"></a>
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at)
-    - fn [compileFlow](../../src/spec-ir.ts#L387) (file: string, section: Section, planned: Planned[]) → Flow <!-- internal -->
+    - fn [compileFlow](../../src/spec-ir.ts#L390) (file: string, section: Section, planned: Planned[]) → Flow <!-- internal -->
       <a id="lang.spec-ir.compileFlow"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.plannedDecl](lang.md#lang.spec-ir.plannedDecl), [lang.spec-ir.triggerItem](lang.md#lang.spec-ir.triggerItem), [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowNode](lang.md#lang.spec-ir.flowNode)
-    - fn [flowNode](../../src/spec-ir.ts#L423) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
+    - fn [flowNode](../../src/spec-ir.ts#L426) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
       <a id="lang.spec-ir.flowNode"></a>
       - calls [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowAt](lang.md#lang.spec-ir.flowAt)
-    - fn [flowItems](../../src/spec-ir.ts#L457) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
+    - fn [flowItems](../../src/spec-ir.ts#L460) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
       <a id="lang.spec-ir.flowItems"></a>
       - calls [lang.spec-ir.flowNode](lang.md#lang.spec-ir.flowNode)
-    - fn [triggerItem](../../src/spec-ir.ts#L461) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
+    - fn [triggerItem](../../src/spec-ir.ts#L464) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
       <a id="lang.spec-ir.triggerItem"></a>
       - calls [lang.spec-ir.flowItems](lang.md#lang.spec-ir.flowItems), [lang.spec-ir.flowAt](lang.md#lang.spec-ir.flowAt)
-    - fn [plannedDeclKind](../../src/spec-ir.ts#L467) (value: string) → Planned["decl"] | null <!-- internal -->
+    - fn [plannedDeclKind](../../src/spec-ir.ts#L470) (value: string) → Planned["decl"] | null <!-- internal -->
       <a id="lang.spec-ir.plannedDeclKind"></a>
-    - fn [plannedDecl](../../src/spec-ir.ts#L472) (file: string, node: Node) → Planned | null <!-- internal -->
+    - fn [plannedDecl](../../src/spec-ir.ts#L475) (file: string, node: Node) → Planned | null <!-- internal -->
       <a id="lang.spec-ir.plannedDecl"></a>
       - calls [lang.spec-ir.plannedDeclKind](lang.md#lang.spec-ir.plannedDeclKind), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [compileWires](../../src/spec-ir.ts#L478) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [compileWires](../../src/spec-ir.ts#L481) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
       <a id="lang.spec-ir.compileWires"></a>
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning), [lang.spec-ir.wireWhen](lang.md#lang.spec-ir.wireWhen)
-    - fn [wireWhen](../../src/spec-ir.ts#L504) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
+    - fn [wireWhen](../../src/spec-ir.ts#L507) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
       <a id="lang.spec-ir.wireWhen"></a><br>`env.NAME = value` with a target. A condition of another shape is K005 and is not stored.
       - calls [lang.spec-ir.wireConditionText](lang.md#lang.spec-ir.wireConditionText), [base.diag.diagnostic](base.md#base.diag.diagnostic), [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)
-    - fn [wireConditionText](../../src/spec-ir.ts#L522) (node: Node) → string <!-- internal -->
+    - fn [wireConditionText](../../src/spec-ir.ts#L525) (node: Node) → string <!-- internal -->
       <a id="lang.spec-ir.wireConditionText"></a><br>Condition text of `- when <condition> → <id>`, matching the bytes the wiring check compares: tokens between the keyword and the arrow, joined only where they do not already touch. `env.DB = a,b` stays `a,b`.
-    - fn [at](../../src/spec-ir.ts#L535) (file: string, node: Node, text: string) → Located <!-- internal -->
+    - fn [at](../../src/spec-ir.ts#L538) (file: string, node: Node, text: string) → Located <!-- internal -->
       <a id="lang.spec-ir.at"></a>
-    - fn [flowAt](../../src/spec-ir.ts#L539) (file: string, flow: string, node: Node) → Located <!-- internal -->
+    - fn [flowAt](../../src/spec-ir.ts#L542) (file: string, flow: string, node: Node) → Located <!-- internal -->
       <a id="lang.spec-ir.flowAt"></a>
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)

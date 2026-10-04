@@ -567,6 +567,11 @@ depth(Id) = кількість сегментів.
 dominates(R1, R2) :- джерело R1 у within джерела R2, збігла ціль R1 у within цілі R2,
   і хоча б одна область вужча.
 incomparable(R1, R2) :- одне вужче за джерелом, інше — за ціллю.
+generated(R) :- R у файлі з маркером keylang:generated (baseline, rules.baseline.md).
+hits(E) = правила, що покривають ребро E, без кожного generated R, для якого є
+  не-generated правило з тим самим джерелом і тією самою найглибшою ціллю на E
+  (baseline — нижчий шар правил: ручне правило за рівної точності його заміщає).
+  winner нижче обирається серед hits(E), в обох форматах.
 winner(E) у форматі 1 = правила з найбільшим score на ребрі E;
   за рівності — кожен deny, а allow лише коли deny з тим самим score немає.
 winner(E) у форматі 2 = правила, яких ніхто не dominates;
@@ -616,6 +621,8 @@ k107(U1, U2) :- edge між U1 і U2, outside(U2), not outside(U1).
   Одна на пару файлів, на першому ребрі; allow її не знімає, рядка правил не потребує.
   Запис покриття outside-file не є hole.
 ```
+
+**Baseline — нижчий шар правил** ([ADR 0013](adr/0013-baseline-lower-rule-layer.md)). Ручний `- allow article mail` у `rules.md` дозволяє ребро `article → mail`, хоча baseline має `- deny article app, mail, …`: області однакові, тож ручне правило заміщає згенероване, і K102 немає. Без цього `allow` ребро дає K102 з рядком `rules.baseline.md`. Вужче правило baseline (`allow app external.stripe`) і далі перемагає ширше ручне (`deny app external`). Між ручними правилами deny-overrides діє як завжди. Рядок `deny` з baseline, чиї ребра вирішили ручні правила, має `ok` з доказом «manual rules over the baseline».
 
 Приклад K106. Файла `keylang.json` немає, тож редакція 2: пара непорівнювана, перемагає `deny`, попередження стоїть на рядку `allow`.
 

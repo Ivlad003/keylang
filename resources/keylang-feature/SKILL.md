@@ -20,7 +20,7 @@ keylang is the spec and the check. You write the code with your own edits. Do no
 
 ## Rules
 
-Change `keylang/rules.md` and `keylang/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. A new dependency the baseline does not allow is a K102; after it is accepted, `keylang baseline` regenerates the baseline from the graph.
+Change `keylang/rules.md` and `keylang/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. A new dependency the baseline does not allow is a K102 from `keylang/rules.baseline.md`. To ask for a new edge between layers, propose `- allow <from-layer> <to-layer>` in `keylang/rules.md`: a manual rule over the same layers overrides the baseline line. After the code has the edge, `keylang baseline` regenerates the baseline from the graph; a person runs it.
 
 ## CLI fallback
 

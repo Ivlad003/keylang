@@ -47,6 +47,8 @@ export interface DependencyRule extends Located {
   effect: "allow" | "deny";
   from: Ref;
   to: NonEmpty<Ref>;
+  /** From a generated rules file (the baseline): a lower layer that a manual rule over the same areas overrides. */
+  generated: boolean;
 }
 
 export interface Entry extends Located {
@@ -208,7 +210,7 @@ export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnost
   const nextSeq = (): number => seq++;
   for (const doc of docs) {
     for (const section of doc.sections) {
-      if (section.kind === "rules" || section.kind === "map") compileRules(doc.path, section, placed, candidates, modules, diagnostics, nextSeq);
+      if (section.kind === "rules" || section.kind === "map") compileRules(doc.path, doc.generated !== null, section, placed, candidates, modules, diagnostics, nextSeq);
       else if (section.kind === "flow" && section.name) flows.push(compileFlow(doc.path, section, planned));
       else if (section.kind === "wiring") compileWires(doc.path, section, wires, diagnostics);
     }
@@ -222,6 +224,7 @@ export function compileSpec(docs: readonly Document[]): { spec: SpecIR; diagnost
 
 function compileRules(
   file: string,
+  generated: boolean,
   section: Section,
   placed: PlacedRule[],
   candidates: LayerCandidate[],
@@ -237,7 +240,7 @@ function compileRules(
       const line = considerLayers(file, node, diagnostics);
       if (line) candidates.push({ ...line, seq: nextSeq() });
     } else if (node.kind === "allow" || node.kind === "deny") {
-      const rule = dependency(file, node, node.kind);
+      const rule = dependency(file, node, node.kind, generated);
       if (rule) place(rule);
     } else if (node.kind === "entry") {
       const entry = entryLine(file, node);
@@ -354,11 +357,11 @@ function layersAbove(direct: ReadonlyMap<string, ReadonlySet<string>>): Map<stri
   return out;
 }
 
-function dependency(file: string, node: Node, effect: "allow" | "deny"): DependencyRule | null {
+function dependency(file: string, node: Node, effect: "allow" | "deny", generated: boolean): DependencyRule | null {
   const [from, ...rest] = node.refs;
   const to = nonEmpty(rest);
   if (!from || !to) return null;
-  return { kind: "dependency", effect, from, to, ...at(file, node, `${effect} ${from.target} ${rest.map((ref) => ref.target).join(" ")}`) };
+  return { kind: "dependency", effect, from, to, generated, ...at(file, node, `${effect} ${from.target} ${rest.map((ref) => ref.target).join(" ")}`) };
 }
 
 function nonEmpty(refs: readonly Ref[]): NonEmpty<Ref> | null {

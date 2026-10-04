@@ -146,62 +146,62 @@
     - type [LayerOrder](../../src/spec-ir.ts#L27) extends Located
     - type [RejectedLayers](../../src/spec-ir.ts#L36)
     - type [DependencyRule](../../src/spec-ir.ts#L45) extends Located
-    - type [Entry](../../src/spec-ir.ts#L52) extends Located
-    - type [NoCycles](../../src/spec-ir.ts#L57) extends Located
-    - type [ExportsRule](../../src/spec-ir.ts#L63) extends Located
-    - type [RuleAssertion](../../src/spec-ir.ts#L69) = LayerOrder | DependencyRule | Entry | NoCycles | ExportsRule
-    - type [SpecModule](../../src/spec-ir.ts#L72)
-    - type [FlowStep](../../src/spec-ir.ts#L79) extends Located
-    - type [Trigger](../../src/spec-ir.ts#L85) extends Located
-    - type [WhenItem](../../src/spec-ir.ts#L91) extends Located
-    - type [ThenItem](../../src/spec-ir.ts#L97)
-    - type [ClaimItem](../../src/spec-ir.ts#L99) extends Located
-    - type [TestItem](../../src/spec-ir.ts#L107) extends Located
-    - type [FlowItem](../../src/spec-ir.ts#L114) = FlowStep | WhenItem | ThenItem | ClaimItem | TestItem
-    - type [Flow](../../src/spec-ir.ts#L116)
-    - type [Planned](../../src/spec-ir.ts#L128) extends Located
-    - type [WireWhen](../../src/spec-ir.ts#L136) extends Located
-    - type [WireCompose](../../src/spec-ir.ts#L142) extends Located
-    - type [WireDep](../../src/spec-ir.ts#L146) extends Located
-    - type [Wire](../../src/spec-ir.ts#L153) extends Located
-    - type [SpecIR](../../src/spec-ir.ts#L158)
-    - fn [walkFlow](../../src/spec-ir.ts#L172) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
-    - type [LayerCandidate](../../src/spec-ir.ts#L183) <!-- internal -->
-    - type [PlacedRule](../../src/spec-ir.ts#L194) <!-- internal -->
-    - fn [compileSpec](../../src/spec-ir.ts#L199) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
+    - type [Entry](../../src/spec-ir.ts#L54) extends Located
+    - type [NoCycles](../../src/spec-ir.ts#L59) extends Located
+    - type [ExportsRule](../../src/spec-ir.ts#L65) extends Located
+    - type [RuleAssertion](../../src/spec-ir.ts#L71) = LayerOrder | DependencyRule | Entry | NoCycles | ExportsRule
+    - type [SpecModule](../../src/spec-ir.ts#L74)
+    - type [FlowStep](../../src/spec-ir.ts#L81) extends Located
+    - type [Trigger](../../src/spec-ir.ts#L87) extends Located
+    - type [WhenItem](../../src/spec-ir.ts#L93) extends Located
+    - type [ThenItem](../../src/spec-ir.ts#L99)
+    - type [ClaimItem](../../src/spec-ir.ts#L101) extends Located
+    - type [TestItem](../../src/spec-ir.ts#L109) extends Located
+    - type [FlowItem](../../src/spec-ir.ts#L116) = FlowStep | WhenItem | ThenItem | ClaimItem | TestItem
+    - type [Flow](../../src/spec-ir.ts#L118)
+    - type [Planned](../../src/spec-ir.ts#L130) extends Located
+    - type [WireWhen](../../src/spec-ir.ts#L138) extends Located
+    - type [WireCompose](../../src/spec-ir.ts#L144) extends Located
+    - type [WireDep](../../src/spec-ir.ts#L148) extends Located
+    - type [Wire](../../src/spec-ir.ts#L155) extends Located
+    - type [SpecIR](../../src/spec-ir.ts#L160)
+    - fn [walkFlow](../../src/spec-ir.ts#L174) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
+    - type [LayerCandidate](../../src/spec-ir.ts#L185) <!-- internal -->
+    - type [PlacedRule](../../src/spec-ir.ts#L196) <!-- internal -->
+    - fn [compileSpec](../../src/spec-ir.ts#L201) (docs: readonly Document[]) → { spec: SpecIR; diagnostics: Diagnostic[] }
       - calls lang.spec-ir.compileRules, lang.spec-ir.compileFlow, lang.spec-ir.compileWires, lang.spec-ir.settleLayers
-    - fn [compileRules](../../src/spec-ir.ts#L223) ( file: string, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
+    - fn [compileRules](../../src/spec-ir.ts#L225) ( file: string, generated: boolean, section: Section, placed: PlacedRule[], candidates: LayerCandidate[], modules: SpecModule[], diagnostics: Diagnostic[], nextSeq: () => number, ) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.considerLayers, lang.spec-ir.dependency, lang.spec-ir.entryLine, lang.spec-ir.noCycles, lang.spec-ir.exportsRule
-    - fn [considerLayers](../../src/spec-ir.ts#L262) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
+    - fn [considerLayers](../../src/spec-ir.ts#L265) (file: string, node: Node, diagnostics: Diagnostic[]) → Omit<LayerCandidate, "seq"> | null <!-- internal -->
       - calls base.diag.diagnostic
-    - fn [settleLayers](../../src/spec-ir.ts#L289) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
+    - fn [settleLayers](../../src/spec-ir.ts#L292) (candidates: readonly LayerCandidate[], diagnostics: Diagnostic[]) → { orders: PlacedRule[]; rejectedLayers: RejectedLayers[] } <!-- internal -->
       - calls base.diag.diagnostic, lang.spec-ir.layersAbove, lang.spec-ir.at
-    - fn [layersAbove](../../src/spec-ir.ts#L341) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
-    - fn [dependency](../../src/spec-ir.ts#L357) (file: string, node: Node, effect: "allow" | "deny") → DependencyRule | null <!-- internal -->
+    - fn [layersAbove](../../src/spec-ir.ts#L344) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [dependency](../../src/spec-ir.ts#L360) (file: string, node: Node, effect: "allow" | "deny", generated: boolean) → DependencyRule | null <!-- internal -->
       - calls lang.spec-ir.nonEmpty, lang.spec-ir.at
-    - fn [nonEmpty](../../src/spec-ir.ts#L364) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
-    - fn [entryLine](../../src/spec-ir.ts#L369) (file: string, node: Node) → Entry | null <!-- internal -->
+    - fn [nonEmpty](../../src/spec-ir.ts#L367) (refs: readonly Ref[]) → NonEmpty<Ref> | null <!-- internal -->
+    - fn [entryLine](../../src/spec-ir.ts#L372) (file: string, node: Node) → Entry | null <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [noCycles](../../src/spec-ir.ts#L376) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
+    - fn [noCycles](../../src/spec-ir.ts#L379) (file: string, node: Node, under: Ref | null) → NoCycles <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [exportsRule](../../src/spec-ir.ts#L380) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
+    - fn [exportsRule](../../src/spec-ir.ts#L383) (file: string, node: Node, module: Ref) → ExportsRule | null <!-- internal -->
       - calls lang.spec-ir.at
-    - fn [compileFlow](../../src/spec-ir.ts#L387) (file: string, section: Section, planned: Planned[]) → Flow <!-- internal -->
+    - fn [compileFlow](../../src/spec-ir.ts#L390) (file: string, section: Section, planned: Planned[]) → Flow <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.plannedDecl, lang.spec-ir.triggerItem, lang.spec-ir.flowItems, lang.spec-ir.flowNode
-    - fn [flowNode](../../src/spec-ir.ts#L423) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
+    - fn [flowNode](../../src/spec-ir.ts#L426) (file: string, flow: string, node: Node) → FlowItem[] <!-- internal -->
       - calls lang.spec-ir.flowItems, lang.spec-ir.flowAt
-    - fn [flowItems](../../src/spec-ir.ts#L457) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
+    - fn [flowItems](../../src/spec-ir.ts#L460) (file: string, flow: string, nodes: readonly Node[]) → FlowItem[] <!-- internal -->
       - calls lang.spec-ir.flowNode
-    - fn [triggerItem](../../src/spec-ir.ts#L461) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
+    - fn [triggerItem](../../src/spec-ir.ts#L464) (file: string, flow: string, node: Node) → Trigger | null <!-- internal -->
       - calls lang.spec-ir.flowItems, lang.spec-ir.flowAt
-    - fn [plannedDeclKind](../../src/spec-ir.ts#L467) (value: string) → Planned["decl"] | null <!-- internal -->
-    - fn [plannedDecl](../../src/spec-ir.ts#L472) (file: string, node: Node) → Planned | null <!-- internal -->
+    - fn [plannedDeclKind](../../src/spec-ir.ts#L470) (value: string) → Planned["decl"] | null <!-- internal -->
+    - fn [plannedDecl](../../src/spec-ir.ts#L475) (file: string, node: Node) → Planned | null <!-- internal -->
       - calls lang.spec-ir.plannedDeclKind, lang.spec-ir.at, lang.parser.renderMeaning
-    - fn [compileWires](../../src/spec-ir.ts#L478) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
+    - fn [compileWires](../../src/spec-ir.ts#L481) (file: string, section: Section, wires: Wire[], diagnostics: Diagnostic[]) → void <!-- internal -->
       - calls lang.ir.sectionNodes, lang.spec-ir.at, lang.parser.renderMeaning, lang.spec-ir.wireWhen
-    - fn [wireWhen](../../src/spec-ir.ts#L504) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
+    - fn [wireWhen](../../src/spec-ir.ts#L507) (file: string, option: Node, diagnostics: Diagnostic[]) → WireWhen | null <!-- internal -->
       - calls lang.spec-ir.wireConditionText, base.diag.diagnostic, lang.spec-ir.at, lang.parser.renderMeaning
-    - fn [wireConditionText](../../src/spec-ir.ts#L522) (node: Node) → string <!-- internal -->
-    - fn [at](../../src/spec-ir.ts#L535) (file: string, node: Node, text: string) → Located <!-- internal -->
-    - fn [flowAt](../../src/spec-ir.ts#L539) (file: string, flow: string, node: Node) → Located <!-- internal -->
+    - fn [wireConditionText](../../src/spec-ir.ts#L525) (node: Node) → string <!-- internal -->
+    - fn [at](../../src/spec-ir.ts#L538) (file: string, node: Node, text: string) → Located <!-- internal -->
+    - fn [flowAt](../../src/spec-ir.ts#L542) (file: string, flow: string, node: Node) → Located <!-- internal -->
       - calls lang.spec-ir.at, lang.parser.renderMeaning
