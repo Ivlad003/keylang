@@ -12,12 +12,14 @@
 
 **Model:** claude:claude-opus-5-5
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Verify:** `test -f docs/adr/0014-one-model-many-views.md` · `grep -q "Представлення (view)" CONTEXT.md` · `npm run typecheck` · `npm test`
 
-- [ ] ADR має дату, статус, контекст, рішення, наслідки й альтернативи
-- [ ] `CONTEXT.md` має термін «Представлення (view)» з _Avoid_
-- [ ] design.md §5.4 посилається на ADR 0014
+- [x] ADR має дату, статус, контекст, рішення, наслідки й альтернативи
+- [x] `CONTEXT.md` має термін «Представлення (view)» з _Avoid_
+- [x] design.md §5.4 посилається на ADR 0014
 
 ## Comments
+
+- 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. `docs/adr/0014-one-model-many-views.md`, термін **Представлення (view)** у `CONTEXT.md` (_Avoid_: «вид», бо в глосарії це kind), посилання з design §5.4. Verify: ADR і термін є, `npm run typecheck` і `npm test` проходять.
