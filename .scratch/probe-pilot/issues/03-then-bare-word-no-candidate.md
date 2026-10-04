@@ -40,3 +40,5 @@
 Ключові файли: `src/resolve.ts`, `src/lsp-features.ts` (`completions()`), `src/explain.ts`, `docs/format.md`
 
 ## Comments
+
+- 2026-10-04 — рішення людини: варіант «нічого не змінювати до проби з людьми» — щоб завдання error-proneness міряло поточну поведінку. Рішення Р-9 — після design-v0.2/28. Статус лишається needs-triage.

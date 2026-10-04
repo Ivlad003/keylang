@@ -1,6 +1,6 @@
 # 01: `test` і `invariant` без `check.tests` мовчать, навіть коли файла тесту немає
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -29,3 +29,5 @@
 Ключові файли: `src/flows.ts`, `src/check-results.ts`, `src/diag.ts`, `src/explain.ts`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- 2026-10-04 — рішення людини: варіант 1 — `test` з файлом, якого немає в репозиторії, завжди дає warning (новий K-код), незалежно від `check.tests`; решта поведінки без змін. Плюс hover на `test` пояснює, що докази є лише з `check.tests` (через тікет 08).

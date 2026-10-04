@@ -1,6 +1,6 @@
 # 18: `feature_status: done` досягається переписуванням файла фічі
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -23,3 +23,7 @@ Spec (Q6–Q8) дозволяє харнесу писати файли фіч н
 - [ ] фікстура: прибраний `planned` без реалізації і перейменований крок → не `done` (або явне поле), прибраний після K202 → `done`
 
 Ключові файли: `src/feature-status.ts`, `src/changed.ts`, `resources/keylang-feature/SKILL.md`, `docs/tools.md`
+
+## Comments
+
+- 2026-10-04 — рішення людини: варіант 1 — `feature_status` порівнює файл фічі з версією на базовому коміті (`HEAD` або `--since`): прибраний `planned` без реалізації та змінений/видалений `trigger`/`step` — прогалини `kind: "spec"`, `done` не видається; без git — інформаційне поле. Фраза без ID («once a day») — визнати межею keylang у skill.

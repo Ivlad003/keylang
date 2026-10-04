@@ -1,6 +1,6 @@
 # 04: Рядок із K003 отримує `ok`
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -37,3 +37,5 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 Ключові файли: `src/parser.ts`, `src/flows.ts`, `src/rules.ts`, `src/check-results.ts`, `docs/format.md`
 
 ## Comments
+
+- 2026-10-04 — рішення людини: варіант 1 — на рядку з K003 і в його піддереві `ok` стає `unverified` з причиною «structure recovered after K003 at L:C»; `fail` лишається `fail`.

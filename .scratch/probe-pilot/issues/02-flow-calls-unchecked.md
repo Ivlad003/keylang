@@ -1,6 +1,6 @@
 # 02: `calls` / `reads` під кроком потоку не перевіряються
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -29,3 +29,5 @@
 Ключові файли: `src/flows.ts`, `src/spec-ir.ts`, `src/check-results.ts`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- 2026-10-04 — рішення людини: варіант 1 — `calls` під кроком є static-доказом без порядку: прямий resolved-виклик з fn батька → `static ok`; надійна відсутність за правилами `absence` → `fail`; інакше `unverified`. `reads` — лише `ID ok` до окремого рішення.

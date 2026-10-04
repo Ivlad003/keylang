@@ -1,6 +1,6 @@
 # 09: `new module` пише `# flow <name>` у `features/`
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -42,3 +42,5 @@ keylang/features/billing.md:3:1: planned users.billing: planned `users.billing` 
 Ключові файли: `src/cli.ts` (`new`), `docs/tools.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- 2026-10-04 — рішення людини: варіант 1 — пояснювальний абзац у шаблоні `new module` під `# flow <name>`, граматика без змін. `# feature` — лише якщо проба з людьми покаже ту саму плутанину. Закриває й відкрите питання design-v0.2/27.

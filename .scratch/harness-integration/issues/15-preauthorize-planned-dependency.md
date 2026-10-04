@@ -1,6 +1,6 @@
 # 15: Людина не може заздалегідь дозволити нове ребро між шарами для фічі
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Type:** design
 
@@ -27,3 +27,7 @@
 - [ ] `baseline --check` і хук Stop поводяться узгоджено з рішенням
 
 Ключові файли: `src/baseline.ts`, `src/rules.ts`, `docs/format.md`, `docs/tools.md`
+
+## Comments
+
+- 2026-10-04 — рішення людини: варіант 2 — ручні правила мають пріоритет над baseline при рівній точності (baseline — нижчий шар правил); deny-overrides лишається всередині ручних правил. Записати в ADR/spec і format.md §7 «Семантика правил».
