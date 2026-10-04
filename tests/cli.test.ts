@@ -58,6 +58,13 @@ test("check diagnostics fixture", () => {
   assert.equal(o.stdout, readFileSync(join(root, "tests/fixtures/diagnostics.expected"), "utf8"));
 });
 
+test("check --stale is refused until it is implemented, not run as a plain check", () => {
+  const o = keylang(root, ["check", "--stale", "examples/shop-fixed"]);
+  assert.equal(o.status, 2, o.stdout);
+  assert.equal(o.stdout, "");
+  assert.match(o.stderr, /check --stale: not implemented yet \(design-v0\.2\/21\)/);
+});
+
 test("deferred flow properties and a query rule stay K004, and help has no migrate", (t) => {
   const dir = tempDir(t, "keylang-deferred-");
   writeTree(dir, {

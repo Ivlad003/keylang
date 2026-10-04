@@ -244,6 +244,7 @@ async function run(argv: readonly string[]): Promise<number> {
         static: values.static,
         changed: values.changed === true,
         since: values.since,
+        stale: values.stale === true,
       });
     case "explain":
       return cmdExplain(paths[0], {
@@ -931,7 +932,9 @@ async function cmdParse(paths: string[], json: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined }): Promise<number> {
+async function cmdCheck(paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean }): Promise<number> {
+  // Without this a parsed but unread `--stale` would run a plain check and pass.
+  if (opts.stale) throw new Error("check --stale: not implemented yet (design-v0.2/21)");
   const format = opts.format;
   if (!isCheckFormat(format)) throw new Error(`unknown --format \`${format}\`; expected ${CHECK_FORMATS.join(", ")}`);
   let staticMode: StaticMode | undefined;
