@@ -39,7 +39,7 @@
     - type [ImportFact](../../src/extract/facts.ts#L42)
       <a id="extract.facts.ImportFact"></a>
     - type [ImportBinding](../../src/extract/facts.ts#L63)
-      <a id="extract.facts.ImportBinding"></a>
+      <a id="extract.facts.ImportBinding"></a><br>A tagged union recording how one local name is bound by an import or `require`: as the whole module namespace, as the module's `default` export, or as a specific named export under a possibly renamed local identifier. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [DeclKind](../../src/extract/facts.ts#L71) = "fn" | "class" | "type"
       <a id="extract.facts.DeclKind"></a>
     - type [DeclFact](../../src/extract/facts.ts#L73)
@@ -297,9 +297,9 @@
       <a id="extract.ts.extractTs"></a>
       - calls [extract.treesitter.grammarFor](extract.md#extract.treesitter.grammarFor), [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.ts.extractTree](extract.md#extract.ts.extractTree)
     - fn [parentOf](../../src/extract/ts.ts#L55) (node: Node) → Node | null <!-- internal -->
-      <a id="extract.ts.parentOf"></a>
+      <a id="extract.ts.parentOf"></a><br>Resolves a syntax node's parent, consulting a module-level `parents` map by node id first and falling back to the node's own `parent` link. Shared by every scope- and ancestry-walking helper in [`extract.ts`](extract.md#extract.ts), such as [`extract.ts.declarationOf`](extract.md#extract.ts.declarationOf) and [`extract.ts.insideClosure`](extract.md#extract.ts.insideClosure). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [parentIndex](../../src/extract/ts.ts#L59) (root: Node) → Map<number, Node> <!-- internal -->
-      <a id="extract.ts.parentIndex"></a>
+      <a id="extract.ts.parentIndex"></a><br>Walks a tree-sitter syntax tree iteratively from `root` and builds a map from each named child's numeric id to its parent node, skipping null children. [`extract.ts.extractTree`](extract.md#extract.ts.extractTree) uses it to look up parents during fact extraction. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [extractTree](../../src/extract/ts.ts#L72) (path: string, root: Node, language: Language, g: Grammar) → FileFacts <!-- internal -->
       <a id="extract.ts.extractTree"></a>
       - calls [extract.ts.parentIndex](extract.md#extract.ts.parentIndex), [extract.ts.moduleHeader](extract.md#extract.ts.moduleHeader), [extract.ts.extractIndexed](extract.md#extract.ts.extractIndexed)
@@ -380,7 +380,7 @@
     - type [ClassScope](../../src/extract/ts.ts#L804) <!-- internal -->
       <a id="extract.ts.ClassScope"></a><br>Where `this.<field>` values come from, for `this.decoder.feed()` and `this.run()`.
     - fn [classScope](../../src/extract/ts.ts#L811) (items: readonly Node[]) → ClassScope <!-- internal -->
-      <a id="extract.ts.classScope"></a>
+      <a id="extract.ts.classScope"></a><br>Builds a map of a class's field names to their declared or constructed types by scanning field definitions, constructor parameter properties, and `this.x = ...` assignments in the constructor body. Also records injectable hooks where a field defaults to a fallback via… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [extract.ts.typeName](extract.md#extract.ts.typeName), [extract.ts.newClass](extract.md#extract.ts.newClass), [extract.ts.memberName](extract.md#extract.ts.memberName), [extract.ts.fallbackCallee](extract.md#extract.ts.fallbackCallee), [extract.ts.fallbackOf](extract.md#extract.ts.fallbackOf)
     - fn [importStatement](../../src/extract/ts.ts#L865) (node: Node) → ImportFact[] <!-- internal -->
       <a id="extract.ts.importStatement"></a>

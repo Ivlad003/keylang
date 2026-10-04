@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=01cb5f83306ddb72afbb36fa82d4165bb64dc7cd2c313485e02830288a78a06e lang=en detail=brief -->
+Contract for a handle onto an external agent CLI binary: it exposes the agent identifier, the chosen model (empty for the CLI default) and the executable path. Its single method sends a `CliRequest` with `CliCallOptions` and resolves to the CLI's text output.

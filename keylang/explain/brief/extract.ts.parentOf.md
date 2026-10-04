@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a0e88d8017805355468c52e849c3c3cc0bede8b290011d552dfdce1d0cb330e6 lang=en detail=brief -->
+Resolves a syntax node's parent, consulting a module-level `parents` map by node id first and falling back to the node's own `parent` link. Shared by every scope- and ancestry-walking helper in `extract.ts`, such as `extract.ts.declarationOf` and `extract.ts.insideClosure`.

@@ -5,7 +5,7 @@
 # map
 
 - tui
-  <a id="tui"></a>
+  <a id="tui"></a><br>The interactive editor: a session ([`tui.app`](tui.md#tui.app), [`tui.state`](tui.md#tui.state)) decodes input ([`tui.input`](tui.md#tui.input)), draws frames into a grid ([`tui.view`](tui.md#tui.view), [`tui.screen`](tui.md#tui.screen)), and runs analysis in workers ([`tui.background`](tui.md#tui.background)). The same session serves a terminal ([`tui.terminal`](tui.md#tui.terminal)) or a browser over WebSocket… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [actions](../../src/tui/actions.ts#L1)
     <a id="tui.actions"></a><br>The catalogue of TUI actions: one registry used by the palette (`:` / Ctrl+P) and by the help popup. An action has a stable id, a label, a group, search aliases, an optional key hint and an availability predicate with a reason; `App.runAction(id)` executes it.
     - agent-cli [features.agent-cli](features.md#features.agent-cli)
@@ -127,7 +127,7 @@
     - type [AppOptions](../../src/tui/app.ts#L83)
       <a id="tui.app.AppOptions"></a>
     - module [App](../../src/tui/app.ts#L117)
-      <a id="tui.app.App"></a>
+      <a id="tui.app.App"></a><br>The terminal session: it owns the editor state, decodes keys into edits and commands, runs analyses and operations (dropping in-flight analyses around a file-writing commit), and draws frames onto an attached surface via [`tui.app.App.draw`](tui.md#tui.app.App.draw). Proposals, merges and model-backed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [barrierInputs](../../src/tui/app.ts#L150) () <!-- internal -->
         <a id="tui.app.App.barrierInputs"></a><br>Which dirty buffers the open save step lists: the inputs its operation reads.
       - fn [constructor](../../src/tui/app.ts#L163) (options: AppOptions)
@@ -211,7 +211,7 @@
       - fn [buffer](../../src/tui/app.ts#L582) () → Buffer | null <!-- internal -->
         <a id="tui.app.App.buffer"></a>
       - fn [load](../../src/tui/app.ts#L586) (path: string) → Buffer <!-- internal -->
-        <a id="tui.app.App.load"></a>
+        <a id="tui.app.App.load"></a><br>Returns the cached editor buffer for a path, or builds one by reading the file via [`tui.disk.readText`](tui.md#tui.disk.readText), preferring the analysis-side text from [`features.lsp-features.workspace`](features.md#features.lsp-features.workspace) when present. The content is split by [`tui.disk.splitEol`](tui.md#tui.disk.splitEol), wrapped with [`tui.buffer.newBuffer`](tui.md#tui.buffer.newBuffer), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.disk.readText](tui.md#tui.disk.readText), [features.lsp-features.workspace](features.md#features.lsp-features.workspace), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.buffer.newBuffer](tui.md#tui.buffer.newBuffer)
       - fn [open](../../src/tui/app.ts#L598) (path: string, cursor: Cursor, remember = true) → void <!-- internal -->
         <a id="tui.app.App.open"></a>
@@ -866,7 +866,7 @@
         <a id="tui.app.App.runAction"></a><br>Executes a palette action by its id. An unavailable action explains its reason; execution never synthesizes fake key events.
         - calls [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.app.App.browse](tui.md#tui.app.App.browse), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze), [tui.app.App.toggleFiles](tui.md#tui.app.App.toggleFiles), [tui.app.App.toggleNav](tui.md#tui.app.App.toggleNav), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext), [tui.app.App.openResults](tui.md#tui.app.App.openResults), [tui.app.App.startOperation](tui.md#tui.app.App.startOperation), [tui.app.App.openFeaturePrompt](tui.md#tui.app.App.openFeaturePrompt), [tui.app.App.openCheckPrompt](tui.md#tui.app.App.openCheckPrompt), [tui.app.App.openEdgePrompt](tui.md#tui.app.App.openEdgePrompt), [tui.app.App.openExportPrompt](tui.md#tui.app.App.openExportPrompt), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.app.App.openBaselinePrompt](tui.md#tui.app.App.openBaselinePrompt), [tui.app.App.openAgentsPrompt](tui.md#tui.app.App.openAgentsPrompt), [tui.app.App.openInitPrompt](tui.md#tui.app.App.openInitPrompt), [tui.app.App.openFmtPrompt](tui.md#tui.app.App.openFmtPrompt), [tui.app.App.openParsePrompt](tui.md#tui.app.App.openParsePrompt), [tui.app.App.openTracePlanPrompt](tui.md#tui.app.App.openTracePlanPrompt), [tui.app.App.openExplainPrompt](tui.md#tui.app.App.openExplainPrompt), [tui.app.App.openExplainModelPrompt](tui.md#tui.app.App.openExplainModelPrompt), [tui.app.App.openExplainPlanPrompt](tui.md#tui.app.App.openExplainPlanPrompt), [tui.app.App.openDraftPrompt](tui.md#tui.app.App.openDraftPrompt), [tui.app.App.openRulesDraftPrompt](tui.md#tui.app.App.openRulesDraftPrompt), [tui.app.App.openLayoutDraftPrompt](tui.md#tui.app.App.openLayoutDraftPrompt), [tui.app.App.openCodeDraftPrompt](tui.md#tui.app.App.openCodeDraftPrompt), [tui.app.App.openSpecCodePrompt](tui.md#tui.app.App.openSpecCodePrompt), [tui.app.App.openWirePrompt](tui.md#tui.app.App.openWirePrompt), [tui.app.App.cancelOperation](tui.md#tui.app.App.cancelOperation), [tui.app.App.findNodes](tui.md#tui.app.App.findNodes), [tui.app.App.toggleMap](tui.md#tui.app.App.toggleMap), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.goBack](tui.md#tui.app.App.goBack), [tui.app.App.hoverAtCursor](tui.md#tui.app.App.hoverAtCursor), [tui.app.App.explainAtCursor](tui.md#tui.app.App.explainAtCursor), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.save](tui.md#tui.app.App.save), [tui.app.App.textToSpec](tui.md#tui.app.App.textToSpec), [tui.app.App.draftAtCursor](tui.md#tui.app.App.draftAtCursor), [tui.assist.Assist.voice](tui.md#tui.assist.Assist.voice), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.undo](tui.md#tui.merge-session.MergeSession.undo), [tui.actions.applyRecord](tui.md#tui.actions.applyRecord), [tui.app.App.applyCandidate](tui.md#tui.app.App.applyCandidate), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.mergeOrPick](tui.md#tui.app.App.mergeOrPick), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals), [tui.app.App.openNewSpec](tui.md#tui.app.App.openNewSpec), [tui.app.packageVersion](tui.md#tui.app.packageVersion), [tui.app.App.quit](tui.md#tui.app.App.quit)
       - fn [findNext](../../src/tui/app.ts#L5096) () → void <!-- internal -->
-        <a id="tui.app.App.findNext"></a>
+        <a id="tui.app.App.findNext"></a><br>Scans forward from the cursor (wrapping around) for the next line containing the current search query, case-insensitively, and moves the cursor to the match using [`tui.width.graphemes`](tui.md#tui.width.graphemes) for the column before calling [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible). If nothing matches, it sets a "not… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.app.App.lines](tui.md#tui.app.App.lines), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
       - fn [textToSpec](../../src/tui/app.ts#L5114) () → void <!-- internal -->
         <a id="tui.app.App.textToSpec"></a>
@@ -1162,7 +1162,7 @@
     - fn [partialSuffix](../../src/tui/input.ts#L58) (text: string, marker: string) → number <!-- internal -->
       <a id="tui.input.partialSuffix"></a><br>Length of the longest suffix of `text` that is a proper prefix of `marker`.
     - module [InputDecoder](../../src/tui/input.ts#L63)
-      <a id="tui.input.InputDecoder"></a>
+      <a id="tui.input.InputDecoder"></a><br>Turns raw terminal input chunks into key, mouse and paste events via [`tui.input.InputDecoder.feed`](tui.md#tui.input.InputDecoder.feed), holding back incomplete escape sequences and bracketed-paste text until more arrives. [`tui.input.InputDecoder.flush`](tui.md#tui.input.InputDecoder.flush) resolves a lone ESC or an unterminated paste after a pause. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [feed](../../src/tui/input.ts#L68) (chunk: string) → InputEvent[]
         <a id="tui.input.InputDecoder.feed"></a><br>Events of a chunk; an incomplete sequence at the end waits for the next one.
         - calls [tui.input.partialSuffix](tui.md#tui.input.partialSuffix), [tui.input.InputDecoder.next](tui.md#tui.input.InputDecoder.next)
@@ -1218,7 +1218,7 @@
     - type [ProposalEntry](../../src/tui/merge-session.ts#L39)
       <a id="tui.merge-session.ProposalEntry"></a><br>One pending target of the proposals list: its kind, how many hunks it has against the file on disk, and why it cannot be merged now (null: it can). Built from disk each time the list opens or Enter is pressed; building it writes nothing.
     - module [MergeSession](../../src/tui/merge-session.ts#L52)
-      <a id="tui.merge-session.MergeSession"></a>
+      <a id="tui.merge-session.MergeSession"></a><br>Lists the files under `.keylang/proposals/`, checks each against the spec-directory and code limits via `problem`, and opens a chosen one as a hunk-by-hunk merge against the file on disk. Handles the merge keys, writes accepted hunks to disk or the buffer, drops the matching… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/tui/merge-session.ts#L55) (host: MergeHost)
         <a id="tui.merge-session.MergeSession.constructor"></a>
       - fn [state](../../src/tui/merge-session.ts#L59) () → State <!-- internal -->
@@ -1409,7 +1409,7 @@
     - type [CodeView](../../src/tui/state.ts#L58)
       <a id="tui.state.CodeView"></a>
     - type [MergeState](../../src/tui/state.ts#L68)
-      <a id="tui.state.MergeState"></a>
+      <a id="tui.state.MergeState"></a><br>Holds everything an in-progress hunk-by-hunk merge needs: target path and origin, the mode to return to, base lines, the on-disk and proposal snapshots used to detect concurrent edits at `w`, plus hunks, decisions, undo history, and cursor/scroll position. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [LastMerge](../../src/tui/state.ts#L93)
       <a id="tui.state.LastMerge"></a>
     - type [Prompt](../../src/tui/state.ts#L110)
@@ -1800,7 +1800,7 @@
     - fn [pathOf](../../src/tui/web.ts#L395) (target: string | undefined) → string | null <!-- internal -->
       <a id="tui.web.pathOf"></a><br>The path of a request target, or null when it is not a URL at all.
     - fn [reply](../../src/tui/web.ts#L403) (response: ServerResponse, status: number, type: string, body: string | Buffer) → void <!-- internal -->
-      <a id="tui.web.reply"></a>
+      <a id="tui.web.reply"></a><br>Writes a complete HTTP response for [`tui.web.serveWeb`](tui.md#tui.web.serveWeb): sets the given status and content type, adds `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` headers, then ends the response with the body. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [page](../../src/tui/web.ts#L409) () → string <!-- internal -->
       <a id="tui.web.page"></a><br>The page: xterm.js from `/assets/`, a WebSocket back to this server, reconnect with the same session.
   - module [width](../../src/tui/width.ts#L1)

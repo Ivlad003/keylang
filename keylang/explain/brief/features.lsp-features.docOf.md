@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=96f2ffdfd37a13fb0a859cf70b2f283243cc852ec151ce48c0435ddc00248d4c lang=en detail=brief -->
+Looks up a document by path in the workspace's analysed docs, falling back to `features.lsp-features.readingDoc` when it isn't there. Shared lookup used by `features.lsp-features.at`, `features.lsp-features.completions`, and `features.lsp-features.documentSymbols`.

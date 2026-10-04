@@ -5,7 +5,7 @@
 # map
 
 - map
-  <a id="map"></a>
+  <a id="map"></a><br>Turns source files into facts, a graph and a versioned snapshot ([`map.frontends`](map.md#map.frontends), [`map.graph`](map.md#map.graph), [`map.snapshot`](map.md#map.snapshot)), then renders generated map files with explanations ([`map.emit`](map.md#map.emit), [`map.explanations`](map.md#map.explanations)). Also derives wiring code and trace plans from that snapshot ([`map.wire-gen`](map.md#map.wire-gen)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [analyze](../../src/analyze.ts#L1)
     <a id="map.analyze"></a><br>One analysis for the CLI and the language server: config, a fresh snapshot, spec documents, and their assessment. Generated map files are replaced by the map rendered from the fresh snapshot, so IDs resolve against current code, not a stale committed map.
     - node [external.node](external.md#external.node)
@@ -279,7 +279,7 @@
     - fn [isRecord](../../src/fact-cache.ts#L165) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.fact-cache.isRecord"></a>
     - module [FactCache](../../src/fact-cache.ts#L171)
-      <a id="map.fact-cache.FactCache"></a>
+      <a id="map.fact-cache.FactCache"></a><br>Caches per-file extraction results keyed by path and content hash, serving them from process memory or `FACT_CACHE_FILE` on disk when the hash matches and calling `extract` otherwise, while counting hits and misses. [`map.fact-cache.FactCache.serialize`](map.md#map.fact-cache.FactCache.serialize) writes back only the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/fact-cache.ts#L180) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
         <a id="map.fact-cache.FactCache.constructor"></a>
       - fn [open](../../src/fact-cache.ts#L187) (root: string, version: string) → FactCache
@@ -355,9 +355,9 @@
       <a id="map.graph.globalsOf"></a>
       - calls [map.frontends.frontendFor](map.md#map.frontends.frontendFor)
     - type [FileEntry](../../src/graph.ts#L205) <!-- internal -->
-      <a id="map.graph.FileEntry"></a>
+      <a id="map.graph.FileEntry"></a><br>Pairs a file's extracted facts with the module it belongs to, giving the graph builder a single record per source file to hold both pieces of per-file state together. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [buildGraph](../../src/graph.ts#L210) (config: Config, files: FileFacts[]) → Graph
-      <a id="map.graph.buildGraph"></a>
+      <a id="map.graph.buildGraph"></a><br>Turns per-file facts into the whole map graph: places files into layer modules via [`map.graph.placeFile`](map.md#map.graph.placeFile), records declarations with [`map.graph.addDecl`](map.md#map.graph.addDecl), resolves imports into dependencies and external packages, then links calls and exports. Collisions, unresolved imports and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.graph.notIndexed](map.md#map.graph.notIndexed), [map.graph.importTarget](map.md#map.graph.importTarget), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.config.layerName](base.md#base.config.layerName), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.addCall](map.md#map.graph.addCall), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
     - type [ImportTarget](../../src/graph.ts#L853) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
@@ -409,7 +409,7 @@
     - type [PathRule](../../src/imports.ts#L43) <!-- internal -->
       <a id="map.imports.PathRule"></a>
     - module [ImportResolver](../../src/imports.ts#L49)
-      <a id="map.imports.ImportResolver"></a>
+      <a id="map.imports.ImportResolver"></a><br>Maps an import specifier from a given file to a repository source file, a Node builtin, an external or generated module, or unresolved, honoring tsconfig `paths`/`baseUrl`, `#` subpath imports, and workspace packages. It records every config file and `node_modules` lookup it… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/imports.ts#L67) (root: string, sources: ReadonlySet<string> = new Set())
         <a id="map.imports.ImportResolver.constructor"></a>
         - calls [map.imports.readText](map.md#map.imports.readText), [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.imports.loadTsconfig](map.md#map.imports.loadTsconfig), [map.imports.isObject](map.md#map.imports.isObject)
@@ -595,7 +595,7 @@
     - type [Crate](../../src/rust-imports.ts#L23) <!-- internal -->
       <a id="map.rust-imports.Crate"></a>
     - module [RustResolver](../../src/rust-imports.ts#L36)
-      <a id="map.rust-imports.RustResolver"></a>
+      <a id="map.rust-imports.RustResolver"></a><br>Resolves Rust `use` paths from a file to a crate's module file, an external package, or unresolved, reading Cargo manifests (`crateAt`, `workspaceMembers`) and locating `.rs`/`mod.rs` files via `moduleFile` and `rootOf`. It records read manifests in `inputs` and checks `mod`… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/rust-imports.ts#L46) (root: string, sources: ReadonlySet<string> = new Set())
         <a id="map.rust-imports.RustResolver.constructor"></a>
         - calls [map.rust-imports.RustResolver.crateAt](map.md#map.rust-imports.RustResolver.crateAt), [map.rust-imports.RustResolver.workspaceMembers](map.md#map.rust-imports.RustResolver.workspaceMembers)
@@ -638,7 +638,7 @@
     - web-tree-sitter [external.web-tree-sitter](external.md#external.web-tree-sitter)
     - vscode-tree-sitter-wasm [external.vscode-tree-sitter-wasm](external.md#external.vscode-tree-sitter-wasm)
     - type [Resolution](../../src/snapshot.ts#L18) = "resolved" | "ambiguous" | "unresolved"
-      <a id="map.snapshot.Resolution"></a>
+      <a id="map.snapshot.Resolution"></a><br>A string union naming the three outcomes of resolving a reference in the map snapshot: a single target found, several candidates competing, or no target at all. Used as a tag on snapshot entries to record how each lookup fared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Provenance](../../src/snapshot.ts#L19) = "syntactic"
       <a id="map.snapshot.Provenance"></a>
     - type [EdgeKind](../../src/snapshot.ts#L20) = "import" | "call" | "type" | "reexport"
@@ -701,7 +701,7 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - wiring [check.wiring](check.md#check.wiring)
     - type [WireInput](../../src/wire-gen.ts#L18)
-      <a id="map.wire-gen.WireInput"></a>
+      <a id="map.wire-gen.WireInput"></a><br>Input of `keylang wire`: the repository root, the POSIX output path relative to it (the generated `keylang.gen.ts` wiring code), the `# wiring` entries, and the snapshot that resolves their IDs. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Names](../../src/wire-gen.ts#L27) <!-- internal -->
       <a id="map.wire-gen.Names"></a><br>Local names of one ID in the generated file.
     - fn [generateWire](../../src/wire-gen.ts#L35) (input: WireInput) → string

@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=95849a8606c5734480d212728e5e0b4bd1ff7a2ee05831a497ab1be468026a46 lang=en detail=brief -->
+Reads keylang Markdown files into an IR via `lang.files` and `lang.parser`, then renders it back as canonical text (`lang.fmt`, `lang.parse-format`) or compiles it into typed assertions (`lang.spec-ir`). It has no dependency on `map`, `extract`, or web-tree-sitter.

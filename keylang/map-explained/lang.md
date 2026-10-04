@@ -5,7 +5,7 @@
 # map
 
 - lang
-  <a id="lang"></a>
+  <a id="lang"></a><br>Reads keylang Markdown files into an IR via [`lang.files`](lang.md#lang.files) and [`lang.parser`](lang.md#lang.parser), then renders it back as canonical text ([`lang.fmt`](lang.md#lang.fmt), [`lang.parse-format`](lang.md#lang.parse-format)) or compiles it into typed assertions ([`lang.spec-ir`](lang.md#lang.spec-ir)). It has no dependency on `map`, `extract`, or web-tree-sitter. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [files](../../src/files.ts#L1)
     <a id="lang.files"></a><br>File discovery and loading.
     - node [external.node](external.md#external.node)
@@ -119,7 +119,7 @@
     - type [Parent](../../src/parser.ts#L194) <!-- internal -->
       <a id="lang.parser.Parent"></a>
     - module [Parser](../../src/parser.ts#L200) <!-- internal -->
-      <a id="lang.parser.Parser"></a>
+      <a id="lang.parser.Parser"></a><br>Line-by-line state machine that turns a markdown file into a `Document`: tracks open list items by indent depth, code fences, HTML blocks and prose, and emits sections, nodes and diagnostics. Headings ([`lang.parser.Parser.heading`](lang.md#lang.parser.Parser.heading)) open map/rules/flow/wiring sections; bullets… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/parser.ts#L215) (path: string)
         <a id="lang.parser.Parser.constructor"></a>
       - fn [err](../../src/parser.ts#L220) (code: Exclude<Code, "K005">, span: Span, msg: string) → void <!-- internal -->
@@ -266,7 +266,7 @@
     - type [FlowItem](../../src/spec-ir.ts#L123)
       <a id="lang.spec-ir.FlowItem"></a>
     - type [Flow](../../src/spec-ir.ts#L125)
-      <a id="lang.spec-ir.Flow"></a>
+      <a id="lang.spec-ir.Flow"></a><br>Describes a parsed flow block in the spec IR: its source location, name, business/technical kind, trigger list, and non-trigger items, plus `top` preserving the source-order interleaving of both. Downstream passes read triggers and items separately while `top` keeps the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Planned](../../src/spec-ir.ts#L137) extends Located
       <a id="lang.spec-ir.Planned"></a>
     - type [WireWhen](../../src/spec-ir.ts#L145) extends Located
@@ -278,7 +278,7 @@
     - type [Wire](../../src/spec-ir.ts#L162) extends Located
       <a id="lang.spec-ir.Wire"></a>
     - type [SpecIR](../../src/spec-ir.ts#L167)
-      <a id="lang.spec-ir.SpecIR"></a>
+      <a id="lang.spec-ir.SpecIR"></a><br>The compiled shape of a spec document: rule assertions, declared modules, flows, planned items, and wires, plus `layers` lines that failed to form an order. A `hasRules` flag records that some section produced a rule even when its order was rejected. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [walkFlow](../../src/spec-ir.ts#L181) (flow: Flow, visit: (item: Trigger | FlowItem) => void) → void
       <a id="lang.spec-ir.walkFlow"></a><br>Triggers and top-level items, then nested items, in source order.
     - type [LayerCandidate](../../src/spec-ir.ts#L192) <!-- internal -->
@@ -341,5 +341,5 @@
     - fn [at](../../src/spec-ir.ts#L550) (file: string, node: Node, text: string) → Located <!-- internal -->
       <a id="lang.spec-ir.at"></a>
     - fn [flowAt](../../src/spec-ir.ts#L554) (file: string, flow: string, node: Node) → Located <!-- internal -->
-      <a id="lang.spec-ir.flowAt"></a>
+      <a id="lang.spec-ir.flowAt"></a><br>Builds a `Located` entry for a node inside a named flow by delegating to [`lang.spec-ir.at`](lang.md#lang.spec-ir.at) with a text key combining the flow name, the node kind, and the node's rendered meaning from [`lang.parser.renderMeaning`](lang.md#lang.parser.renderMeaning). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.spec-ir.at](lang.md#lang.spec-ir.at), [lang.parser.renderMeaning](lang.md#lang.parser.renderMeaning)

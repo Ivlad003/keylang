@@ -159,7 +159,7 @@
     - type [Unverified](../../src/resolve.ts#L43)
       <a id="check.resolve.Unverified"></a><br>A reference into a module whose contents the snapshot does not know: neither confirmed nor dangling.
     - module [Index](../../src/resolve.ts#L54)
-      <a id="check.resolve.Index"></a>
+      <a id="check.resolve.Index"></a><br>Holds declarations, flows, and planned entries by dotted ID, resolving a lookup to exact, missing, or opaque by walking to the longest known module prefix and consulting the snapshot's member status. [`check.resolve.Index.suggest`](check.md#check.resolve.Index.suggest) finds the closest sibling name for a missing… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/resolve.ts#L61) (members?: Members)
         <a id="check.resolve.Index.constructor"></a>
       - fn [lookup](../../src/resolve.ts#L65) (id: string) → Lookup
@@ -368,7 +368,7 @@
     - fn [keysOf](../../src/trace-evidence.ts#L193) (nodes: readonly ShapeNode[]) → number[] <!-- internal -->
       <a id="check.trace-evidence.keysOf"></a>
     - module [OverBudget](../../src/trace-evidence.ts#L200) <!-- internal -->
-      <a id="check.trace-evidence.OverBudget"></a>
+      <a id="check.trace-evidence.OverBudget"></a><br>An empty `Error` subclass with no extra fields or behavior, used as a distinct throwable type that callers can catch to recognize this specific failure when a limit is exceeded during trace-evidence checking. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [Assignment](../../src/trace-evidence.ts#L203) <!-- internal -->
       <a id="check.trace-evidence.Assignment"></a><br>Spans assigned to flow nodes: an outcome per node and the spans it took.
     - fn [assignment](../../src/trace-evidence.ts#L212) (outcomes: [number, Outcome][], spans: string[] = []) → Assignment <!-- internal -->

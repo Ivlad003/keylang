@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=85a89f37bd80cc6fab7501da1260bde5a4bfb7b5a326d9f8b8163da7a0541c41 lang=en detail=brief -->
+The compiled shape of a spec document: rule assertions, declared modules, flows, planned items, and wires, plus `layers` lines that failed to form an order. A `hasRules` flag records that some section produced a rule even when its order was rejected.

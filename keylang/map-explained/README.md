@@ -7,17 +7,17 @@ The tree of the map with a brief under each node: the documentation comment from
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
 | [base](base.md) |  | 59 | 29 | 3 | 1 |
-| [check](check.md) |  | 94 | 6 | 2 | 74 |
-| [cli](cli.md) |  | 47 | 0 | 0 | 58 |
+| [check](check.md) |  | 94 | 8 | 2 | 72 |
+| [cli](cli.md) |  | 47 | 5 | 0 | 53 |
 | [external](external.md) |  | | | | |
-| [extract](extract.md) |  | 121 | 0 | 0 | 65 |
-| [features](features.md) |  | 279 | 0 | 0 | 165 |
-| [lang](lang.md) |  | 46 | 0 | 0 | 89 |
-| [map](map.md) |  | 128 | 0 | 0 | 134 |
-| [operations](operations.md) |  | 146 | 0 | 0 | 33 |
+| [extract](extract.md) |  | 121 | 4 | 0 | 61 |
+| [features](features.md) | The shared operations every entry point builds on: check reporting and `--changed` filtering ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), drafting and explaining through a model or offline ([`features.draft`](features.md#features.draft), [`features.explain-llm`](features.md#features.explain-llm)), proposals, staleness, git and voice. Each… _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 279 | 5 | 0 | 160 |
+| [lang](lang.md) | Reads keylang Markdown files into an IR via [`lang.files`](lang.md#lang.files) and [`lang.parser`](lang.md#lang.parser), then renders it back as canonical text ([`lang.fmt`](lang.md#lang.fmt), [`lang.parse-format`](lang.md#lang.parse-format)) or compiles it into typed assertions ([`lang.spec-ir`](lang.md#lang.spec-ir)). It has no dependency on `map`, `extract`, or web-tree-sitter. _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 46 | 5 | 0 | 84 |
+| [map](map.md) | Turns source files into facts, a graph and a versioned snapshot ([`map.frontends`](map.md#map.frontends), [`map.graph`](map.md#map.graph), [`map.snapshot`](map.md#map.snapshot)), then renders generated map files with explanations ([`map.emit`](map.md#map.emit), [`map.explanations`](map.md#map.explanations)). Also derives wiring code and trace plans from that snapshot ([`map.wire-gen`](map.md#map.wire-gen)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 128 | 8 | 0 | 126 |
+| [operations](operations.md) | Holds the transport-independent orchestration of application actions in [`operations.operations`](operations.md#operations.operations), taking typed requests with an explicit absolute root and returning typed domain results. Both the CLI and the TUI drive the same interface rather than duplicating logic. _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 146 | 3 | 0 | 30 |
 | [outside](outside.md) |  | 0 | 0 | 0 | 34 |
-| [tui](tui.md) |  | 440 | 0 | 0 | 209 |
-| **all** | | 1360 | 35 | 5 | 862 |
+| [tui](tui.md) | The interactive editor: a session ([`tui.app`](tui.md#tui.app), [`tui.state`](tui.md#tui.state)) decodes input ([`tui.input`](tui.md#tui.input)), draws frames into a grid ([`tui.view`](tui.md#tui.view), [`tui.screen`](tui.md#tui.screen)), and runs analysis in workers ([`tui.background`](tui.md#tui.background)). The same session serves a terminal ([`tui.terminal`](tui.md#tui.terminal)) or a browser over WebSocket… _(llm · claude:claude-fable-5-1 · 2026-10-04)_ | 440 | 8 | 0 | 201 |
+| **all** | | 1360 | 75 | 5 | 822 |
 
 ## Index
 

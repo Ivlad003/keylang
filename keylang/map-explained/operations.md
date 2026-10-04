@@ -5,7 +5,7 @@
 # map
 
 - operations
-  <a id="operations"></a>
+  <a id="operations"></a><br>Holds the transport-independent orchestration of application actions in [`operations.operations`](operations.md#operations.operations), taking typed requests with an explicit absolute root and returning typed domain results. Both the CLI and the TUI drive the same interface rather than duplicating logic. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [operations](../../src/operations.ts#L1)
     <a id="operations.operations"></a><br>Shared workspace operations (ADR 0008): transport-independent orchestration of the application-level actions. The CLI and the TUI call the same interface: a typed request with an explicit absolute root, a typed result with a domain payload.
     - node [external.node](external.md#external.node)
@@ -276,7 +276,7 @@
     - fn [readTextOrNull](../../src/operations.ts#L2218) (abs: string) → string | null <!-- internal -->
       <a id="operations.operations.readTextOrNull"></a>
     - fn [emptyCheck](../../src/operations.ts#L2226) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"check"> <!-- internal -->
-      <a id="operations.operations.emptyCheck"></a>
+      <a id="operations.operations.emptyCheck"></a><br>Builds a bare "check" result envelope with the given status and exit code, a null payload, empty written/removed/proposals lists, and a single error-level message when an error string is supplied. Used by [`operations.operations.runCheck`](operations.md#operations.operations.runCheck) to return early-exit outcomes without… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [runCheck](../../src/operations.ts#L2240) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">> <!-- internal -->
       <a id="operations.operations.runCheck"></a><br>`keylang check` on the saved files: the paths (the spec directory by default), the static mode (request, then keylang.json, then `behavior`) and `strict`. Code 1 for a failure, or with `strict` for an unverified verdict; an unverified one without `strict` is code 0 and stays in…
       - calls [operations.operations.emptyCheck](operations.md#operations.operations.emptyCheck), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.messageOf](operations.md#operations.operations.messageOf), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.analyze](map.md#map.analyze.analyze), [features.check-results.checkReport](features.md#features.check-results.checkReport), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [base.config.resolveStatic](base.md#base.config.resolveStatic), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary), [features.check-results.checkExitCode](features.md#features.check-results.checkExitCode)
@@ -430,7 +430,7 @@
     - fn [existingText](../../src/operations.ts#L3960) (abs: string) → string | null <!-- internal -->
       <a id="operations.operations.existingText"></a><br>The file's text, null when there is none; a directory or an unreadable file throws.
     - fn [checkSkipNote](../../src/operations.ts#L3964) (path: string) → string
-      <a id="operations.operations.checkSkipNote"></a>
+      <a id="operations.operations.checkSkipNote"></a><br>The note for a path `check` skips because it is the explained map or saved explanations, not a spec: [`operations.operations.runCheck`](operations.md#operations.operations.runCheck) adds it as a warning, [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) prints it to stderr. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [checkSummary](../../src/operations.ts#L3969) (counts: CheckPayload["counts"]) → string
       <a id="operations.operations.checkSummary"></a><br>The CLI's closing line on stderr: `0 fail, 2 unverified, 5 ok`.
     - fn [emptyFeature](../../src/operations.ts#L3976) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->

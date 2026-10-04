@@ -110,7 +110,7 @@
       <a id="cli.cli.cmdWeb"></a>
       - calls [tui.web.serveWeb](tui.md#tui.web.serveWeb), [map.analyze.findRoot](map.md#map.analyze.findRoot)
     - type [ExplainOptions](../../src/cli.ts#L345) <!-- internal -->
-      <a id="cli.cli.ExplainOptions"></a>
+      <a id="cli.cli.ExplainOptions"></a><br>Shape of the parsed flags for the explain command: booleans toggling LLM use, full/brief output, stale/missing filtering and dry-run, plus optional raw string values for a result limit and parallel job count. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [cmdExplain](../../src/cli.ts#L356) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExplain"></a>
       - calls [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [cli.cli.explainPlanPrinter](cli.md#cli.cli.explainPlanPrinter), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
@@ -163,7 +163,7 @@
       <a id="cli.cli.cmdTracePlan"></a><br>A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
     - fn [needPaths](../../src/cli.ts#L681) (cmd: string, paths: string[]) → void <!-- internal -->
-      <a id="cli.cli.needPaths"></a>
+      <a id="cli.cli.needPaths"></a><br>Guard that throws an `Error` naming the offending command when the argument list is empty, so [`cli.cli.run`](cli.md#cli.cli.run) can reject subcommands invoked without any path operands before doing any work. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [cmdInit](../../src/cli.ts#L686) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
       - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.operations.initSources](operations.md#operations.operations.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printMap](cli.md#cli.cli.printMap)
@@ -181,7 +181,7 @@
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.gapLine](operations.md#operations.operations.gapLine), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
     - fn [cmdHook](../../src/cli.ts#L787) (name: string | undefined, checkOnly: boolean) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdHook"></a>
+      <a id="cli.cli.cmdHook"></a><br>Dispatches the `hook` subcommand: `install` delegates to [`cli.cli.cmdHookInstall`](cli.md#cli.cli.cmdHookInstall), while `stop` reads a hook event from stdin and emits a decision via [`features.changed.hookDecision`](features.md#features.changed.hookDecision). For `stop`, unless the hook is already active, it runs [`map.analyze.analyze`](map.md#map.analyze.analyze), narrows… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [cli.cli.cmdHookInstall](cli.md#cli.cli.cmdHookInstall), [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
     - fn [cmdHookInstall](../../src/cli.ts#L813) (checkOnly: boolean) → number <!-- internal -->
       <a id="cli.cli.cmdHookInstall"></a><br>`hook install [--check]`: keylang's pre-commit hook in git's hooks directory. A hook without keylang's marker is someone else's: install refuses with 2 and names the line to add; --check counts it as not installed.
@@ -219,7 +219,7 @@
   - module [completions](../../src/completions.ts#L1)
     <a id="cli.completions"></a><br>`keylang completions <shell>`: a completion script for bash, zsh or fish. The words come from the help text (commands and their subcommands) and the option table of the argument parser, so a new command or flag is completed as soon as `--help` and the parser know it.
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]
-      <a id="cli.completions.Shell"></a>
+      <a id="cli.completions.Shell"></a><br>Union type of the shell names listed in the `SHELLS` array, derived by indexing its element type so the two can't drift apart. Used to constrain which shell a completion script is generated for. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [isShell](../../src/completions.ts#L9) (name: string) → name is Shell
       <a id="cli.completions.isShell"></a>
     - type [CompletionWords](../../src/completions.ts#L14)
@@ -264,7 +264,7 @@
       <a id="cli.lsp.serveLsp"></a>
       - calls [cli.lsp.Server](cli.md#cli.lsp.Server), [cli.lsp.Server.drain](cli.md#cli.lsp.Server.drain), [cli.lsp.Server.reject](cli.md#cli.lsp.Server.reject), [cli.lsp.Server.receive](cli.md#cli.lsp.Server.receive)
     - module [Server](../../src/lsp.ts#L78) <!-- internal -->
-      <a id="cli.lsp.Server"></a>
+      <a id="cli.lsp.Server"></a><br>Handles LSP JSON-RPC traffic: [`cli.lsp.Server.receive`](cli.md#cli.lsp.Server.receive) routes notifications to [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify) and requests to [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request), keeping open-buffer overlays and cancellation state. Edits bump a generation that debounces reanalysis in [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [constructor](../../src/lsp.ts#L101) (send: (message: Rpc) => void)
         <a id="cli.lsp.Server.constructor"></a>
       - fn [reject](../../src/lsp.ts#L105) (id: number | string | null, code: number, message: string) → void

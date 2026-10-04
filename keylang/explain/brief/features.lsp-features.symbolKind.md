@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2a3ed396e55f8af490318abdb3d69c4656a1b7ba1c9b4aaea0d70bad6deca838 lang=en detail=brief -->
+Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by `features.lsp-features.workspaceSymbols` to tag workspace symbol results.

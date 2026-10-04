@@ -5,7 +5,7 @@
 # map
 
 - features
-  <a id="features"></a>
+  <a id="features"></a><br>The shared operations every entry point builds on: check reporting and `--changed` filtering ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), drafting and explaining through a model or offline ([`features.draft`](features.md#features.draft), [`features.explain-llm`](features.md#features.explain-llm)), proposals, staleness, git and voice. Each… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [agent-cli](../../src/agent-cli.ts#L1)
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
@@ -25,7 +25,7 @@
     - type [CliCallOptions](../../src/agent-cli.ts#L40)
       <a id="features.agent-cli.CliCallOptions"></a><br>`ms`: the call's bound; `fromVariable`: the bound is `KEYLANG_LLM_TIMEOUT_MS`, which the timeout message then names.
     - type [CliClient](../../src/agent-cli.ts#L48)
-      <a id="features.agent-cli.CliClient"></a>
+      <a id="features.agent-cli.CliClient"></a><br>Contract for a handle onto an external agent CLI binary: it exposes the agent identifier, the chosen model (empty for the CLI default) and the executable path. Its single method sends a `CliRequest` with `CliCallOptions` and resolves to the CLI's text output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - module [CliCancelled](../../src/agent-cli.ts#L59)
       <a id="features.agent-cli.CliCancelled"></a><br>The caller cancelled the run; `llm.ts` turns it into `LlmCancelled`.
       - fn [constructor](../../src/agent-cli.ts#L60) (agent: string)
@@ -285,7 +285,7 @@
     - type [DraftStatus](../../src/draft-llm.ts#L20) = "agree" | "llm-only" | "algo-only" | "conflict"
       <a id="features.draft-llm.DraftStatus"></a>
     - type [ModelDraft](../../src/draft-llm.ts#L22)
-      <a id="features.draft-llm.ModelDraft"></a>
+      <a id="features.draft-llm.ModelDraft"></a><br>A flow drafted with a model: the flow name, the flow text after reconciling with the algorithmic draft, counts by status, the IDs still unknown, how many rounds ran (1 or 2), and answer lines dropped because they did not parse. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [draftFlowWithModel](../../src/draft-llm.ts#L47) (analysis: Analysis, trigger: string, client: LlmClient, mode: "llm" | "hybrid", name?: string, context?: string, options: LlmCallOptions = {}) → Promise<ModelDraft>
       <a id="features.draft-llm.draftFlowWithModel"></a><br>`context`: the pack from the TUI context panel, sent as it is shown; `options.signal` cancels the model's rounds.
       - calls [features.draft.draftFlow](features.md#features.draft.draftFlow), [features.draft-llm.compactMap](features.md#features.draft-llm.compactMap), [features.draft-llm.similarFlows](features.md#features.draft-llm.similarFlows), [features.draft-llm.flowText](features.md#features.draft-llm.flowText), [features.draft-llm.unknownIn](features.md#features.draft-llm.unknownIn), [features.draft-llm.reconcile](features.md#features.draft-llm.reconcile)
@@ -882,7 +882,7 @@
       <a id="features.lsp-features.targetAt"></a><br>The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains)
     - fn [docOf](../../src/lsp-features.ts#L157) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
-      <a id="features.lsp-features.docOf"></a>
+      <a id="features.lsp-features.docOf"></a><br>Looks up a document by path in the workspace's analysed docs, falling back to [`features.lsp-features.readingDoc`](features.md#features.lsp-features.readingDoc) when it isn't there. Shared lookup used by [`features.lsp-features.at`](features.md#features.lsp-features.at), [`features.lsp-features.completions`](features.md#features.lsp-features.completions), and [`features.lsp-features.documentSymbols`](features.md#features.lsp-features.documentSymbols). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.readingDoc](features.md#features.lsp-features.readingDoc)
     - fn [readOrNull](../../src/lsp-features.ts#L161) (abs: string) → string | null <!-- internal -->
       <a id="features.lsp-features.readOrNull"></a>
@@ -926,7 +926,7 @@
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
     - fn [symbolKind](../../src/lsp-features.ts#L376) (kind: string) → number <!-- internal -->
-      <a id="features.lsp-features.symbolKind"></a>
+      <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [symbolLocation](../../src/lsp-features.ts#L385) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
       <a id="features.lsp-features.symbolLocation"></a>
       - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)

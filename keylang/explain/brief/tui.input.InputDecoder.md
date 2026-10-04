@@ -1,0 +1,2 @@
+<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0f3c5256aa264528f17488360656c264abf8b2e4d8805b78e8c9f1d9016600f5 lang=en detail=brief -->
+Turns raw terminal input chunks into key, mouse and paste events via `tui.input.InputDecoder.feed`, holding back incomplete escape sequences and bracketed-paste text until more arrives. `tui.input.InputDecoder.flush` resolves a lone ESC or an unterminated paste after a pause.
