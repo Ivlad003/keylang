@@ -509,6 +509,127 @@ test("spec-to-code: a Python stub keeps the declared annotations and result, so 
   assert.doesNotMatch(o.stdout, /K201/);
 });
 
+/** A repository in a temp dir: `keylang.json` and the given files. */
+function repoOf(t: TestContext, config: object, files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-draft-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify(config));
+  for (const [file, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), text);
+  }
+  return dir;
+}
+
+test("spec-to-code: a method of a new class is a class in a file named as the layer's files are; of an existing class, a method in its body (TS, K202 not K201)", (t) => {
+  const dir = repoOf(t, { languages: ["javascript", "typescript"], layers: { article: ["src/article/**"] } }, {
+    "src/article/article.controller.ts": "export class ArticleController {\n  list(): string[] {\n    return [];\n  }\n}\n",
+    "src/article/article.service.ts": "export class ArticleService {\n  find(slug: string): string {\n    return slug;\n  }\n}\n",
+    "src/article/legacy.js": "export function legacy() {\n  return 1;\n}\n",
+    "keylang/flows/bookmark.md": [
+      "# flow bookmark",
+      "",
+      "- planned fn article.bookmark_service.BookmarkService.bookmark (userId: number, slug: string) → Promise<string>",
+      "- planned fn article.article_controller.ArticleController.bookmark (slug: string) → string",
+      "- planned fn article.tags_service.tags () → string[]",
+      "- trigger article.article_controller.ArticleController.bookmark",
+      "",
+    ].join("\n"),
+  });
+  const fresh = keylang(dir, ["spec-to-code", "article.bookmark_service.BookmarkService.bookmark", "--print"]);
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stdout, /^src\/article\/bookmark\.service\.ts \(new file\)\n/);
+  assert.match(fresh.stdout, /K202 planned fn `article\.bookmark_service\.BookmarkService\.bookmark` is implemented/);
+  assert.doesNotMatch(fresh.stdout, /K201/);
+  const existing = keylang(dir, ["spec-to-code", "article.article_controller.ArticleController.bookmark", "--print"]);
+  assert.equal(existing.status, 0, existing.stderr);
+  assert.match(existing.stdout, /^src\/article\/article\.controller\.ts\n/);
+  assert.match(existing.stdout, /K202 planned fn `article\.article_controller\.ArticleController\.bookmark` is implemented/);
+  assert.doesNotMatch(existing.stdout, /K201/);
+
+  for (const id of ["article.bookmark_service.BookmarkService.bookmark", "article.article_controller.ArticleController.bookmark", "article.tags_service.tags"]) {
+    const applied = keylang(dir, ["spec-to-code", id, "--apply"]);
+    assert.equal(applied.status, 0, applied.stderr);
+  }
+  assert.equal(
+    readFileSync(join(dir, "src/article/bookmark.service.ts"), "utf8"),
+    'export class BookmarkService {\n  async bookmark(userId: number, slug: string): Promise<string> {\n    throw new Error("not implemented: article.bookmark_service.BookmarkService.bookmark");\n  }\n}\n',
+  );
+  assert.equal(
+    readFileSync(join(dir, "src/article/article.controller.ts"), "utf8"),
+    'export class ArticleController {\n  list(): string[] {\n    return [];\n  }\n\n  bookmark(slug: string): string {\n    throw new Error("not implemented: article.article_controller.ArticleController.bookmark");\n  }\n}\n',
+  );
+  assert.equal(readFileSync(join(dir, "src/article/tags.service.ts"), "utf8"), 'export function tags(): string[] {\n  throw new Error("not implemented: article.tags_service.tags");\n}\n');
+  const check = keylang(dir, ["check"]);
+  assert.match(check.stdout, /K202 planned fn `article\.bookmark_service\.BookmarkService\.bookmark`/);
+  assert.match(check.stdout, /K202 planned fn `article\.article_controller\.ArticleController\.bookmark`/);
+  assert.match(check.stdout, /K202 planned fn `article\.tags_service\.tags`/);
+  assert.doesNotMatch(check.stdout, /K201/);
+});
+
+test("spec-to-code: a Python method goes into its class (with `self`), a new class into its module's file or a new one (K202, not K201)", (t) => {
+  const dir = repoOf(t, { languages: ["python"], layers: { app: ["app/**"] } }, {
+    "app/services/mail.py": "class Mailer:\n    def ping(self) -> bool:\n        return True\n",
+    "keylang/flows/mail.md": [
+      "# flow mail",
+      "",
+      "- planned fn app.services.mail.Mailer.send (to: str) → bool",
+      "- planned fn app.services.mail.EmailSender.send (to: str) → bool",
+      "- planned fn app.services.sms.SmsSender.send (to: str) → bool",
+      "",
+    ].join("\n"),
+  });
+  const printed = keylang(dir, ["spec-to-code", "app.services.mail.EmailSender.send", "--print"]);
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.match(printed.stdout, /^app\/services\/mail\.py\n/);
+  assert.match(printed.stdout, /K202 planned fn `app\.services\.mail\.EmailSender\.send` is implemented/);
+  for (const id of ["app.services.mail.Mailer.send", "app.services.mail.EmailSender.send", "app.services.sms.SmsSender.send"]) {
+    const applied = keylang(dir, ["spec-to-code", id, "--apply"]);
+    assert.equal(applied.status, 0, applied.stderr);
+  }
+  assert.equal(
+    readFileSync(join(dir, "app/services/mail.py"), "utf8"),
+    [
+      "class Mailer:",
+      "    def ping(self) -> bool:",
+      "        return True",
+      "",
+      "    def send(self, to: str) -> bool:",
+      '        raise NotImplementedError("not implemented: app.services.mail.Mailer.send")',
+      "",
+      "",
+      "class EmailSender:",
+      "    def send(self, to: str) -> bool:",
+      '        raise NotImplementedError("not implemented: app.services.mail.EmailSender.send")',
+      "",
+    ].join("\n"),
+  );
+  assert.equal(
+    readFileSync(join(dir, "app/services/sms.py"), "utf8"),
+    'from __future__ import annotations\n\n\nclass SmsSender:\n    def send(self, to: str) -> bool:\n        raise NotImplementedError("not implemented: app.services.sms.SmsSender.send")\n',
+  );
+  const check = keylang(dir, ["check"]);
+  for (const id of ["app.services.mail.Mailer.send", "app.services.mail.EmailSender.send", "app.services.sms.SmsSender.send"]) {
+    assert.match(check.stdout, new RegExp(`K202 planned fn \`${id.replace(/\./g, "\\.")}\``), check.stdout);
+  }
+  assert.doesNotMatch(check.stdout, /K201/);
+});
+
+test("spec-to-code: a file name the layer's two conventions make ambiguous is an error naming both; --into settles it", (t) => {
+  const dir = repoOf(t, { languages: ["typescript"], layers: { shop: ["src/shop/**"] } }, {
+    "src/shop/a.service.ts": "export function a(): void {}\n",
+    "src/shop/b_service.ts": "export function b(): void {}\n",
+    "keylang/flows/c.md": "# flow c\n\n- planned fn shop.c_service.CService.run () → void\n",
+  });
+  const o = keylang(dir, ["spec-to-code", "shop.c_service.CService.run", "--print"]);
+  assert.equal(o.status, 2);
+  assert.match(o.stderr, /src\/shop\/c\.service\.ts or src\/shop\/c_service\.ts/);
+  assert.match(o.stderr, /--into/);
+  const into = keylang(dir, ["spec-to-code", "shop.c_service.CService.run", "--into", "src/shop/c_service.ts", "--print"]);
+  assert.equal(into.status, 0, into.stderr);
+  assert.match(into.stdout, /^src\/shop\/c_service\.ts \(new file\)\n@@ line 1 @@\n\+export class CService \{\n\+ {2}run\(\): void \{/);
+});
+
 test("draft: --print writes nothing, stats included; draft rules join the `# rules` section, never a trailing `# flow`", async (t) => {
   const dir = copy(t);
   const config = join(dir, "keylang.json");

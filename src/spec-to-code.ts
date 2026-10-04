@@ -7,11 +7,12 @@
 // no code is guessed from a possible typo.
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 import { analyze, type Analysis } from "./analyze.ts";
 import { toPosix, type Config } from "./config.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { globPrefix } from "./glob.ts";
+import { languageOf } from "./languages.ts";
 import { placeFile } from "./graph.ts";
 import { plannedDecl } from "./lsp-features.ts";
 import { codeProposalProblem, lineDiff } from "./proposals.ts";
@@ -51,22 +52,34 @@ const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js
  * the first one, so the candidate's `before` is the text it was asked about.
  */
 export async function specToCode(analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}): Promise<CodeCandidate> {
-  const placed = plannedCodeTarget(analysis, id, into);
-  if ("error" in placed) throw new Error(placed.error);
-  const { file, name, signature } = placed;
+  const target = plannedCodeTarget(analysis, id, into);
+  if ("error" in target) throw new Error(target.error);
   const config = analysis.config;
-  const abs = join(config.root, file);
+  const abs = join(config.root, target.file);
   const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
-  const stub = model ? await modelBody(analysis, model, file, name, id, signature, lf, options) : stubFor(file, name, id, signature, lf === null);
-  const joined = lf === null || lf.trim() === "" ? stub : `${lf.replace(/\n*$/, "")}\n\n${stub}`;
+  const code = model ? await modelBody(analysis, model, target, id, lf, options) : stubFor(target, id);
+  const joined = placeStub(lf, target, code);
   // A file with CRLF on every line keeps it.
   const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
   // The candidate is checked as the code it would be, without touching the disk, against the code without it.
   const next = await analyze({ root: config.root, overlay: new Map([[abs, after]]), withoutEvidence: true });
   const { verdicts, diagnostics } = introduced(analysis, next);
-  const { tests, notes } = await testCandidates(analysis, id, file, after, model, options);
-  return { id, file, before, after, verdicts, diagnostics, tests, testNotes: notes };
+  const { tests, notes } = await testCandidates(analysis, id, target, after, model, options);
+  return { id, file: target.file, before, after, verdicts, diagnostics, tests, testNotes: notes };
+}
+
+/** Where the code of a planned fn goes: the file, and the class it is a method of. */
+export interface CodeTarget {
+  file: string;
+  name: string;
+  signature: string | null;
+  /**
+   * The class the fn is a method of: one in the code (`span`: its lines,
+   * the method goes into its body) or a new one the stub declares (`null`).
+   * Absent owner: a function of the file's module.
+   */
+  owner: { name: string; span: { line: number; endLine: number; endCol: number | null } | null } | null;
 }
 
 /**
@@ -74,10 +87,14 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
  * none — the checks it makes before any file is read: not planned (with a
  * suggestion), not a fn, already implemented (with the place), a `deny`
  * its flow would break (`field: "id"`); a file not of its module, a layer
- * without one root, a file a code proposal may not change (`field: "into"`).
+ * without one root, a file name the layer's conventions leave ambiguous, a
+ * file a code proposal may not change (`field: "into"`).
+ * The prefix of the ID is a class when the code has it as one, or when it
+ * is new and its last segment starts with a capital under a module
+ * (`article.bookmark_service.BookmarkService`): the fn is then a method.
  * Reads the analysis and, for links, the file system; writes nothing.
  */
-export function plannedCodeTarget(analysis: Analysis, id: string, into?: string): { file: string; name: string; signature: string | null } | { error: string; field: "id" | "into" } {
+export function plannedCodeTarget(analysis: Analysis, id: string, into?: string): CodeTarget | { error: string; field: "id" | "into" } {
   const plan = plannedDecl(analysis.docs, id);
   if (!plan) {
     const present = analysis.snapshot?.nodes[id];
@@ -94,21 +111,63 @@ export function plannedCodeTarget(analysis: Analysis, id: string, into?: string)
     if (blocksDependency(analysis.spec, caller, id, dependencyKindOf(analysis.spec, analysis.index, analysis.snapshot?.nodes), analysis.config.format)) return { field: "id", error: `\`deny\` forbids \`${caller}\` → \`${id}\`, which its flow needs; change the rule or the plan first` };
   }
   const config = analysis.config;
-  const moduleId = id.slice(0, id.lastIndexOf("."));
   const name = id.slice(id.lastIndexOf(".") + 1);
-  const existing = analysis.snapshot?.nodes[moduleId];
-  let file: string;
+  let placement: Placement;
   try {
-    file = into ?? (existing?.kind === "module" && existing.file ? existing.file : newModuleFile(config, moduleId));
+    placement = placeCode(analysis, parentId(id), into);
   } catch (error) {
     return { field: "into", error: error instanceof Error ? error.message : String(error) };
   }
-  const placed = placeFile(config, file);
-  if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) return { field: "into", error: `${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module` };
+  const { file, moduleId, owner } = placement;
+  if (moduleId !== null) {
+    const placed = placeFile(config, file);
+    if (!placed || [placed.layer, ...placed.segments].join(".") !== moduleId) return { field: "into", error: `${file} is not module \`${moduleId}\` under keylang.json layers; pass --into with a file of that module` };
+  }
   // The rules of a code proposal, before the file is read: inside the repository, not generated (`keylang.gen.ts`).
   const problem = codeProposalProblem(config.root, file);
   if (problem) return { field: "into", error: `${file}: ${problem}` };
-  return { file, name, signature: plan.signature };
+  return { file, name, signature: plan.signature, owner };
+}
+
+/** The file and owner of a planned fn under `ownerId`; `moduleId`: the module the file must be (null: the code says where the class is). */
+interface Placement {
+  file: string;
+  moduleId: string | null;
+  owner: CodeTarget["owner"];
+}
+
+function parentId(id: string): string {
+  return id.slice(0, id.lastIndexOf("."));
+}
+
+function placeCode(analysis: Analysis, ownerId: string, into: string | undefined): Placement {
+  const config = analysis.config;
+  const nodes = analysis.snapshot?.nodes ?? {};
+  const node = nodes[ownerId];
+  const className = ownerId.slice(ownerId.lastIndexOf(".") + 1);
+  if (node?.kind === "module" && node.class === true && node.file) {
+    // A class in the code: the method goes into its body, wherever the class sits (nested ones included).
+    if (into !== undefined && into !== node.file) throw new Error(`\`${ownerId}\` is a class in ${node.file}; --into names another file`);
+    const span = node.line !== null && node.endLine !== undefined ? { line: node.line, endLine: node.endLine, endCol: node.endCol ?? null } : null;
+    if (span === null) throw new Error(`\`${ownerId}\` is a class in ${node.file} without its lines in the snapshot; run \`keylang map\``);
+    return { file: node.file, moduleId: null, owner: { name: className, span } };
+  }
+  const moduleId = parentId(ownerId);
+  const moduleNode = nodes[moduleId];
+  const newClass = node === undefined && moduleId.includes(".") && /^\p{Lu}/u.test(className) && moduleNode?.class !== true;
+  // `--into` with a file of `ownerId` itself says the capital segment is a file, not a class.
+  const intoOwner = into !== undefined && newClass && placedModule(config, into) === ownerId;
+  if (!newClass || intoOwner) {
+    const file = into ?? (node?.kind === "module" && node.file ? node.file : newModuleFile(analysis, ownerId));
+    return { file, moduleId: ownerId, owner: null };
+  }
+  const file = into ?? (moduleNode?.kind === "module" && moduleNode.file ? moduleNode.file : newModuleFile(analysis, moduleId));
+  return { file, moduleId, owner: { name: className, span: null } };
+}
+
+function placedModule(config: Config, file: string): string | null {
+  const placed = placeFile(config, file);
+  return placed ? [placed.layer, ...placed.segments].join(".") : null;
 }
 
 /**
@@ -182,8 +241,9 @@ function flowOwns(spec: SpecIR, flow: Flow, line: number): boolean {
  * existing file, or in a language without a `node:test` shape, is a note:
  * editing someone's test file is theirs to do.
  */
-async function testCandidates(analysis: Analysis, id: string, codeFile: string, code: string, model: LlmClient | undefined, options: LlmCallOptions): Promise<{ tests: FileCandidate[]; notes: string[] }> {
+async function testCandidates(analysis: Analysis, id: string, target: CodeTarget, code: string, model: LlmClient | undefined, options: LlmCallOptions): Promise<{ tests: FileCandidate[]; notes: string[] }> {
   const root = analysis.config.root;
+  const codeFile = target.file;
   const byFile = new Map<string, { flow: string; name: string }[]>();
   const notes: string[] = [];
   for (const t of flowTests(analysis, id)) {
@@ -206,28 +266,36 @@ async function testCandidates(analysis: Analysis, id: string, codeFile: string, 
     if (!list.some((x) => x.name === t.name)) list.push({ flow: t.flow, name: t.name });
     byFile.set(t.file, list);
   }
-  const name = id.slice(id.lastIndexOf(".") + 1);
+  // A method is reached through its class: the test imports the class.
+  const subject = target.owner ? { imported: target.owner.name, value: `${target.owner.name}.prototype.${target.name}` } : { imported: target.name, value: target.name };
   const tests: FileCandidate[] = [];
   for (const [file, entries] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
     let from = toPosix(relative(dirname(file), codeFile));
     if (!from.startsWith(".")) from = `./${from}`;
-    const after = model ? await modelTest(model, file, from, name, id, code, entries, options) : testStub(from, name, entries);
+    const after = model ? await modelTest(model, file, from, subject, id, code, entries, options) : testStub(from, subject, entries);
     tests.push({ file, before: null, after });
   }
   return { tests, notes };
 }
 
-function testStub(from: string, name: string, entries: readonly { flow: string; name: string }[]): string {
+/** `imported`: the name the test imports; `value`: the function it reaches through it (`X.prototype.m` for a method). */
+interface TestSubject {
+  imported: string;
+  value: string;
+}
+
+function testStub(from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]): string {
   const cases = entries.map(
-    (e) => `test(${JSON.stringify(e.name)}, () => {\n  assert.equal(typeof ${name}, "function");\n  assert.fail(${JSON.stringify(`not written: drive flow \`${e.flow}\` through ${name} and assert what the flow promises`)});\n});\n`,
+    (e) => `test(${JSON.stringify(e.name)}, () => {\n  assert.equal(typeof ${subject.value}, "function");\n  assert.fail(${JSON.stringify(`not written: drive flow \`${e.flow}\` through ${subject.value} and assert what the flow promises`)});\n});\n`,
   );
-  return `import assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { ${name} } from ${JSON.stringify(from)};\n\n${cases.join("\n")}`;
+  return `import assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { ${subject.imported} } from ${JSON.stringify(from)};\n\n${cases.join("\n")}`;
 }
 
 /** The e2e test file from the model; each declared test name must be in it verbatim. */
-async function modelTest(model: LlmClient, file: string, from: string, name: string, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
+async function modelTest(model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
+  const reach = subject.value === subject.imported ? "" : ` and reach \`${subject.value}\` through it`;
   const answer = await model.complete({
-    system: `You write one end-to-end test file with node:test and node:assert/strict. Import \`${name}\` from ${JSON.stringify(from)}. Use exactly the test names given. Answer with the whole file only, in one fenced code block.`,
+    system: `You write one end-to-end test file with node:test and node:assert/strict. Import \`${subject.imported}\` from ${JSON.stringify(from)}${reach}. Use exactly the test names given. Answer with the whole file only, in one fenced code block.`,
     prompt: [
       `Test file: ${file}`,
       `Tests (flow → name):\n${entries.map((e) => `- flow ${e.flow}: ${JSON.stringify(e.name)}`).join("\n")}`,
@@ -254,43 +322,168 @@ function callersInFlows(analysis: Analysis, id: string): string[] {
   return [...out].sort();
 }
 
-/** `<layer glob prefix>/<segments>.<ext>`; one prefix per layer, or the path is ambiguous. */
-function newModuleFile(config: Config, moduleId: string): string {
+/**
+ * `<layer glob prefix>/<segments>.<ext>` for a module the code lacks; one
+ * prefix per layer, or the path is ambiguous. The extension is the language
+ * most files of the layer are written in (then of the repository, then the
+ * first of `languages`); the file name follows the layer's files: the
+ * module `bookmark_service` is `bookmark.service.ts` beside `x.service.ts`.
+ */
+function newModuleFile(analysis: Analysis, moduleId: string): string {
+  const config = analysis.config;
   const [layer, ...segments] = moduleId.split(".");
   const globs = config.layers.get(layer!);
   if (!globs) throw new Error(`no layer \`${layer}\` in keylang.json`);
   const prefixes = [...new Set(globs.map((g) => globPrefix(g)))];
   if (prefixes.length !== 1) throw new Error(`layer \`${layer}\` has ${prefixes.length} roots (${prefixes.join(", ") || "none"}); pass --into <file>`);
-  const ext = EXTENSIONS[config.languages[0] ?? "typescript"] ?? ".ts";
-  return `${prefixes[0] ? `${prefixes[0]}/` : ""}${segments.join("/")}${ext}`;
+  if (segments.length === 0) throw new Error(`\`${moduleId}\` is a layer, not a module; pass --into <file>`);
+  const sources = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => languageOf(path) !== undefined);
+  const layerFiles = sources.filter((path) => placeFile(config, path)?.layer === layer);
+  const language = mostWritten(layerFiles, config.languages) ?? mostWritten(sources, config.languages) ?? config.languages[0] ?? "typescript";
+  const ext = EXTENSIONS[language] ?? ".ts";
+  const dir = [prefixes[0]!, ...segments.slice(0, -1)].filter((part) => part !== "").join("/");
+  const inDir = layerFiles.filter((path) => posix.dirname(path) === (dir === "" ? "." : dir));
+  const at = (stem: string): string => `${dir === "" ? "" : `${dir}/`}${stem}${ext}`;
+  return at(fileStem(segments.at(-1)!, [inDir, layerFiles], (dotted, plain) => `\`${moduleId}\` could be ${at(dotted)} or ${at(plain)}: the layer names files both ways; pass --into <file>`));
+}
+
+/** The language most of `files` are written in; a tie goes to the one `languages` lists first. */
+function mostWritten(files: readonly string[], languages: readonly string[]): string | null {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const language = languageOf(file);
+    if (language !== undefined) counts.set(language, (counts.get(language) ?? 0) + 1);
+  }
+  const rank = (language: string): number => (languages.includes(language) ? languages.indexOf(language) : languages.length);
+  const best = [...counts].sort(([a, x], [b, y]) => y - x || rank(a) - rank(b) || (a < b ? -1 : 1))[0];
+  return best?.[0] ?? null;
+}
+
+/**
+ * The file name (without extension) of the module segment `segment`. An ID
+ * segment has `_` where the file had `.` (`bookmark.service` → `bookmark_service`),
+ * so the nearest scope whose files end in `.service` or `_service` decides;
+ * a scope with both is ambiguous.
+ */
+function fileStem(segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string): string {
+  const cut = segment.lastIndexOf("_");
+  if (cut <= 0) return segment;
+  const head = segment.slice(0, cut);
+  const suffix = segment.slice(cut + 1);
+  for (const scope of scopes) {
+    const stems = scope.map((path) => posix.basename(path).replace(/\.[^.]+$/, ""));
+    const dotted = stems.some((stem) => stem.endsWith(`.${suffix}`) && stem.length > suffix.length + 1);
+    const plain = stems.some((stem) => stem.endsWith(`_${suffix}`) && stem.length > suffix.length + 1);
+    if (dotted && plain) throw new Error(ambiguous(`${head}.${suffix}`, segment));
+    if (dotted) return `${head}.${suffix}`;
+    if (plain) return segment;
+  }
+  return segment;
 }
 
 /**
  * `(order: Order) → Promise<Refund>` → a function of that signature that
  * fails until written; the declared parameters and result are kept as
- * written, so the stub's own signature matches the plan (no K201).
+ * written, so the stub's own signature matches the plan (no K201). A method
+ * comes without indentation and without its class: `placeStub` puts it in.
+ * A Python method gets `self` when the plan does not name it, as the map
+ * shows it (`(self, to: str)` matches a plan `(to: str)`).
  */
-function stubFor(file: string, name: string, id: string, signature: string | null, newFile: boolean): string {
-  const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
-  const params = m?.[1]?.trim() ?? "";
-  const result = m?.[2]?.trim() ?? null;
+function stubFor(target: CodeTarget, id: string): string {
+  const { file, name, owner } = target;
+  const { params, result } = declared(target.signature);
   const message = JSON.stringify(`not implemented: ${id}`);
   if (file.endsWith(".py")) {
-    // Annotations name types the new file does not import: postponed, they are not evaluated when it loads.
-    const future = newFile && (params.includes(":") || result !== null) ? "from __future__ import annotations\n\n\n" : "";
-    return `${future}def ${name}(${params})${result ? ` -> ${result}` : ""}:\n    raise NotImplementedError(${message})\n`;
+    const receiver = owner !== null && !/^(self|cls)\b/.test(params) ? (params === "" ? "self" : `self, ${params}`) : params;
+    return `def ${name}(${receiver})${result ? ` -> ${result}` : ""}:\n    raise NotImplementedError(${message})\n`;
   }
   if (file.endsWith(".rs")) return `pub fn ${name}(${params})${result ? ` -> ${result}` : ""} {\n    todo!(${message})\n}\n`;
   const isAsync = result !== null && /^Promise</.test(result);
-  return `export ${isAsync ? "async " : ""}function ${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
+  return `${owner ? "" : "export "}${isAsync ? "async " : ""}${owner ? "" : "function "}${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
 }
 
-/** The function from the model, with its declared name; the rest of its answer is dropped. */
-async function modelBody(analysis: Analysis, model: LlmClient, file: string, name: string, id: string, signature: string | null, before: string | null, options: LlmCallOptions): Promise<string> {
+/** The parameters and result of a declared signature, as written. */
+function declared(signature: string | null): { params: string; result: string | null } {
+  const m = /^\s*\((.*)\)\s*(?:(?:→|->)\s*(.+))?$/.exec(signature ?? "()");
+  return { params: m?.[1]?.trim() ?? "", result: m?.[2]?.trim() ?? null };
+}
+
+/**
+ * The file's text with `code` in place: appended to the module, wrapped in
+ * a new class appended to it, or inside the body of the class the code has.
+ * A new Python file gets postponed annotations: they name types it does not
+ * import, and are not evaluated when it loads.
+ */
+function placeStub(before: string | null, target: CodeTarget, code: string): string {
+  const python = target.file.endsWith(".py");
+  const rust = target.file.endsWith(".rs");
+  const { owner } = target;
+  if (owner?.span && before !== null && !rust) return intoClass(before, owner.span, code, python);
+  let block = code;
+  if (owner) {
+    const body = indent(code, python || rust ? "    " : "  ");
+    block = python ? `class ${owner.name}:\n${body}` : rust ? `${owner.span ? "" : `pub struct ${owner.name};\n\n`}impl ${owner.name} {\n${body}}\n` : `export class ${owner.name} {\n${body}}\n`;
+  }
+  if (before === null || before.trim() === "") {
+    const { params, result } = declared(target.signature);
+    const future = python && before === null && (params.includes(":") || result !== null) ?"from __future__ import annotations\n\n\n" : "";
+    return `${future}${block}`;
+  }
+  // PEP 8: two blank lines around a top-level definition.
+  return `${before.replace(/\n*$/, "")}${python ? "\n\n\n" : "\n\n"}${block}`;
+}
+
+/** `code` as the last member of the class whose lines `span` gives, indented as its other members are. */
+function intoClass(text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean): string {
+  const lines = text.split("\n");
+  const start = span.line - 1;
+  const end = span.endLine - 1;
+  const classIndent = leadingSpace(lines[start] ?? "");
+  // Python: the class ends at its last statement; others: at the line of the closing brace.
+  const body = lines.slice(start + 1, python ? end + 1 : end).find((line) => line.trim() !== "" && leadingSpace(line).length > classIndent.length);
+  const memberIndent = body !== undefined ? leadingSpace(body) : `${classIndent}${python ? "    " : "  "}`;
+  const member = indent(code, memberIndent).replace(/\n$/, "").split("\n");
+  if (python) {
+    lines.splice(end + 1, 0, "", ...member);
+    return lines.join("\n");
+  }
+  const closing = lines[end] ?? "";
+  const brace = span.endCol !== null && closing[span.endCol - 2] === "}" ? span.endCol - 2 : closing.lastIndexOf("}");
+  const head = closing.slice(0, brace);
+  if (head.trim() === "") {
+    const opens = (lines[end - 1] ?? "").trimEnd().endsWith("{");
+    lines.splice(end, 0, ...(opens ? [] : [""]), ...member);
+  } else {
+    // `class A {}` on one line: the body opens onto lines of its own.
+    lines.splice(end, 1, head.trimEnd(), ...member, `${classIndent}${closing.slice(brace)}`);
+  }
+  return lines.join("\n");
+}
+
+function leadingSpace(line: string): string {
+  return /^[ \t]*/.exec(line)![0];
+}
+
+/** Each non-blank line of `code` with `prefix` before it. */
+function indent(code: string, prefix: string): string {
+  return code.split("\n").map((line) => (line.trim() === "" ? line : `${prefix}${line}`)).join("\n");
+}
+
+/** `code` without the indentation all its non-blank lines share. */
+function dedent(code: string): string {
+  const lines = code.split("\n");
+  const common = Math.min(...lines.filter((line) => line.trim() !== "").map((line) => leadingSpace(line).length));
+  return Number.isFinite(common) ? lines.map((line) => line.slice(Math.min(common, leadingSpace(line).length))).join("\n") : code;
+}
+
+/** The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped. */
+async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions): Promise<string> {
+  const { file, name, signature, owner } = target;
   const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
+  const what = owner ? `method of class \`${owner.name}\`` : "function";
   const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
   const answer = await model.complete({
-    system: `You implement one planned function in ${language}. Keep its name \`${name}\` and the signature exactly as declared. Answer with the whole function only, in one fenced code block.`,
+    system: `You implement one planned ${what} in ${language}. Keep its name \`${name}\` and the signature exactly as declared. Answer with the whole ${owner ? "method only, without the class around it" : "function only"}, in one fenced code block.`,
     prompt: [
       `Planned: \`${id}\` ${signature ?? "()"}`,
       ...(flows.length > 0 ? [`Flows that use it: ${flows.join(", ")}`] : []),
@@ -298,8 +491,10 @@ async function modelBody(analysis: Analysis, model: LlmClient, file: string, nam
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
-  const code = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
-  const declares = new RegExp(`\\b(function|def|fn)\\s+${name.replace(/[$]/g, "\\$")}\\b`);
-  if (!declares.test(code)) throw new Error(`the model did not return a function named \`${name}\`; nothing written`);
+  const code = dedent((/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
+  const escaped = name.replace(/[$]/g, "\\$");
+  // A TS/JS method has no keyword before its name.
+  const declares = owner && language !== "Python" && language !== "Rust" ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);
+  if (!declares.test(code)) throw new Error(`the model did not return a ${owner ? "method" : "function"} named \`${name}\`; nothing written`);
   return `${code}\n`;
 }

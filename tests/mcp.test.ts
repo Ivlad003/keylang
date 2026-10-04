@@ -204,6 +204,28 @@ test("mcp: explain gives the offline summary without a model", async (t) => {
   assert.equal(r.explanation, null);
 });
 
+test("mcp: scaffold of a class method is what spec-to-code --print gives: the method in the class body, the test through the class", async (t) => {
+  const mcp = await connect(t);
+  writeFileSync(join(mcp.dir, "src/domain/pricing.ts"), "export class Pricing {\n  base(): number {\n    return 1;\n  }\n}\n");
+  writeFileSync(join(mcp.dir, "keylang/flows/discount.md"), '# flow discount\n\n- planned fn domain.pricing.Pricing.discount (rate: number) → number\n- trigger domain.pricing.Pricing.discount\n  - test tests/discount.test.ts "discount applies the rate"\n');
+  const disk = treeBytes(mcp.dir);
+  const scaffold = await mcp.call("scaffold", { id: "domain.pricing.Pricing.discount" });
+  assert.equal(scaffold.isError, false, scaffold.text);
+  const body = JSON.parse(scaffold.text) as { file: string; newFile: boolean; diff: string; stub: string; tests: { file: string; diff: string; text: string }[]; diagnostics: { code: string }[] };
+  assert.equal(body.file, "src/domain/pricing.ts");
+  assert.equal(body.newFile, false);
+  assert.equal(body.stub, 'export class Pricing {\n  base(): number {\n    return 1;\n  }\n\n  discount(rate: number): number {\n    throw new Error("not implemented: domain.pricing.Pricing.discount");\n  }\n}\n');
+  assert.ok(body.diagnostics.some((diag) => diag.code === "K202"), scaffold.text);
+  assert.ok(!body.diagnostics.some((diag) => diag.code === "K201"), scaffold.text);
+  assert.match(body.tests[0]!.text, /import \{ Pricing \} from "\.\.\/src\/domain\/pricing\.ts";/);
+  assert.match(body.tests[0]!.text, /typeof Pricing\.prototype\.discount, "function"/);
+  const printed = spawnSync(process.execPath, [bin, "spec-to-code", "domain.pricing.Pricing.discount", "--print"], { cwd: mcp.dir, encoding: "utf8" });
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.ok(printed.stdout.startsWith(`src/domain/pricing.ts\n${body.diff}`), printed.stdout);
+  assert.ok(printed.stdout.includes(`tests/discount.test.ts (new file)\n${body.tests[0]!.diff}`), printed.stdout);
+  assert.equal(treeBytes(mcp.dir), disk);
+});
+
 test("mcp: context, validate_spec, scaffold and feature_status", async (t) => {
   const mcp = await connect(t);
   const names = await mcp.list();

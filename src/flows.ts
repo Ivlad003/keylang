@@ -736,10 +736,22 @@ function collectPlanned(spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[
 }
 
 /** How the code differs from a `planned` declaration of the same id: K201 for a kind or a signature, null (K202) when it matches. */
-export function plannedMismatch(item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }): "kind" | "signature" | null {
+export function plannedMismatch(item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }): "kind" | "signature" | null {
   if (code.kind !== item.decl) return "kind";
-  if (item.signature !== null && code.signature && normalizeSignature(item.signature) !== normalizeSignature(code.signature)) return "signature";
+  if (item.signature !== null && code.signature && !sameSignature(item.signature, code.signature, code.file ?? null)) return "signature";
   return null;
+}
+
+/**
+ * Signatures match without spaces, `->` as `→`. A Python method shows its
+ * receiver (`(self, to: str)`), a plan may name only what the caller passes
+ * (`(to: str)`): both match.
+ */
+function sameSignature(planned: string, code: string, file: string | null): boolean {
+  const plan = normalizeSignature(planned);
+  const written = normalizeSignature(code);
+  if (plan === written) return true;
+  return file !== null && file.endsWith(".py") && written.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") === plan;
 }
 
 function normalizeSignature(text: string): string {
