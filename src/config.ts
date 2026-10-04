@@ -493,10 +493,13 @@ function detectLanguages(root: string): Language[] {
 
 /**
  * Zero-config layering: the source root is `src/` (or `lib/`) when present,
- * else the repository root. Each directory under it that holds source files
- * becomes a layer; files directly in the source root form the layer `main`.
- * With a separate source root, a top-level `bin/` becomes the layer `bin` and
- * source files in the repository root the layer `app` (entry scripts).
+ * else the one Python package in the repository root when it is the only
+ * layer candidate there and has subdirectories with code (`app/` with
+ * `app/__init__.py`), else the repository root. Each directory under the
+ * source root that holds source files becomes a layer; files directly in the
+ * source root form the layer `main`. With a separate source root, a top-level
+ * `bin/` becomes the layer `bin` and source files in the repository root the
+ * layer `app` (entry scripts).
  */
 export function guessLayers(root: string, exclude: readonly string[]): Map<string, string[]> {
   return guessLayout(root, exclude).layers;
@@ -508,7 +511,7 @@ export function guessLayers(root: string, exclude: readonly string[]): Map<strin
  * directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
  */
 export function guessLayout(root: string, exclude: readonly string[]): { layers: Map<string, string[]>; notes: string[] } {
-  const srcRoot = ["src", "lib"].find((d) => existsSync(join(root, d)) && statSync(join(root, d)).isDirectory()) ?? "";
+  const srcRoot = sourceRoot(root, exclude);
   const layers = new Map<string, string[]>();
   const owners = new Map<string, string>();
   const notes: string[] = [];
@@ -526,16 +529,38 @@ export function guessLayout(root: string, exclude: readonly string[]): { layers:
     if (existsSync(join(root, "bin")) && hasSource(join(root, "bin"), "bin", exclude)) add("bin", "`bin/`", ["bin/**"]);
   }
   const base = srcRoot ? `${srcRoot}/` : "";
-  const entries = readdirSync(join(root, srcRoot), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+  for (const { name, rel } of layerDirs(root, srcRoot, exclude)) add(layerName(name), `\`${rel}/\``, [`${rel}/**`]);
+  if (hasRootFiles(root, srcRoot, exclude)) add("main", srcRoot ? `the files in \`${srcRoot}/\`` : "the files in the repository root", [`${base}*`]);
+  return { layers, notes };
+}
+
+/**
+ * `src` or `lib`; else the single layer candidate of the repository root when
+ * it is a Python package (`__init__.py`) whose subdirectories hold code — one
+ * layer for the whole application would leave nothing to rule; else `""`.
+ */
+function sourceRoot(root: string, exclude: readonly string[]): string {
+  const conventional = ["src", "lib"].find((d) => existsSync(join(root, d)) && statSync(join(root, d)).isDirectory());
+  if (conventional) return conventional;
+  const top = layerDirs(root, "", exclude);
+  if (top.length !== 1) return "";
+  const only = top[0]!.rel;
+  return existsSync(join(root, only, "__init__.py")) && layerDirs(root, only, exclude).length > 0 ? only : "";
+}
+
+/** The directories directly under `dir` (repository-relative, `""` for the root) that become layers. */
+function layerDirs(root: string, dir: string, exclude: readonly string[]): { name: string; rel: string }[] {
+  const base = dir ? `${dir}/` : "";
+  const out: { name: string; rel: string }[] = [];
+  const entries = readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
   for (const e of entries) {
     const rel = `${base}${e.name}`;
     if (!e.isDirectory() || skipDir(join(root, rel), e.name) || e.name === "keylang") continue;
-    if (!srcRoot && (e.name === "bench" || e.name === "examples")) continue;
+    if (!dir && (e.name === "bench" || e.name === "examples")) continue;
     if (matchesGlob(rel, "**/{test,tests,e2e,__tests__,__mocks__}")) continue;
-    if (hasSource(join(root, rel), rel, exclude)) add(layerName(e.name), `\`${rel}/\``, [`${rel}/**`]);
+    if (hasSource(join(root, rel), rel, exclude)) out.push({ name: e.name, rel });
   }
-  if (hasRootFiles(root, srcRoot, exclude)) add("main", srcRoot ? `the files in \`${srcRoot}/\`` : "the files in the repository root", [`${base}*`]);
-  return { layers, notes };
+  return out;
 }
 
 /** `wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`). */

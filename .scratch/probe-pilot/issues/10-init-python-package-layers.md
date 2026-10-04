@@ -1,6 +1,6 @@
 # 10: `init` на Python-пакеті вгадує один шар
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -30,10 +30,15 @@
 
 **Несумісна зміна (zero-config).** `guessLayers` читає і `check`/`map` без `keylang.json` (`src/config.ts:134`). У такому Python-репо ID зміняться: `app.api.routes.get_user` → `api.routes.get_user`. Записати це в `docs/tools.md` і в коміті; репо з `keylang.json` не зачеплені.
 
-- [ ] тест CLI: Python-пакет `app/` з підпакетами → шари за підтеками і `main`; baseline має `deny` між ними
-- [ ] тест CLI: репо з двома теками першого рівня й TS-репо з `src/` — шари без змін
-- [ ] format.md / `docs/tools.md` (опис `init`, «Імена шарів») описують нове правило кореня джерел
+- [x] тест CLI: Python-пакет `app/` з підпакетами → шари за підтеками і `main`; baseline має `deny` між ними
+- [x] тест CLI: репо з двома теками першого рівня й TS-репо з `src/` — шари без змін
+- [x] format.md / `docs/tools.md` (опис `init`, «Імена шарів») описують нове правило кореня джерел
 
 Ключові файли: `src/config.ts` (`guessLayout`), `docs/tools.md`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
+
+- **Зроблено (2026-10-04).** `guessLayout` бере корінь джерел через `sourceRoot`: `src/` / `lib/`; інакше — єдиний кандидат у шари в корені репо, якщо це Python-пакет (`__init__.py`) і серед його підтек є хоча б одна, що дала б шар (тими самими фільтрами: без тек тестів, `keylang`, прихованих); інакше корінь репо. Відтворено до зміни на тимчасовому репо з тікета (`layers: {app: ["app/**"]}`, baseline `deny app external, unassigned`); після — `api`, `core`, `db`, `services`, `main: ["app/*"]`, baseline з `deny` між ними.
+- **Припущення.** «Підтеки з кодом» = підтеки, що за тими самими правилами стали б шарами; пакет без таких підтек (`app/__init__.py`, `app/main.py`) лишається шаром `app`. `bin/` з кодом у корені — другий кандидат, тож правило не діє (як і з будь-якою другою текою).
+- **Несумісна зміна (zero-config).** У такому Python-репо **без** `keylang.json` ID втрачають сегмент пакета (`app.api.routes.get_user` → `api.routes.get_user`); записано в `docs/format.md` («Вгадані шари»), `docs/tools.md` (`init`), `spec.md` («Несумісні зміни») і в коміті. Наслідок у тестах: фікстура `py-shop` (пакет `shop/` з `domain/`, `infra/`) після `init` має шари `domain`, `infra`, `main`; тест докстрінгів оновлено на нові ID.
+- Тести: `tests/languages.test.ts` (Python-пакет → шари за підпакетами і baseline; дві теки в корені, пакет без підпакетів і TS-репо з `src/` — без змін).

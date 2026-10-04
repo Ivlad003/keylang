@@ -47,7 +47,7 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 | 07 | [K001 у згенерованому baseline не каже «перегенеруй»](issues/07-k001-generated-file-hint.md) | ready-for-agent |
 | 08 | [Hover на ключових словах і рядках без ID](issues/08-hover-keyword-role.md) | ready-for-agent |
 | 09 | [`new module` пише `# flow <name>` у `features/`](issues/09-new-module-flow-heading.md) | needs-triage |
-| 10 | [`init` на Python-пакеті вгадує один шар](issues/10-init-python-package-layers.md) | ready-for-agent |
+| 10 | [`init` на Python-пакеті вгадує один шар](issues/10-init-python-package-layers.md) | resolved |
 | 11 | [Два неточні повідомлення розкладки: `new module` без `keylang.json`, колізія module ID](issues/11-layout-messages.md) | ready-for-agent |
 | 12 | [Підсумок `check` не відділяє baseline від ручних специфікацій](issues/12-check-summary-by-origin.md) | needs-triage |
 
@@ -68,6 +68,6 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 
 ## Несумісні зміни
 
-- **10:** у Python-репо **без** `keylang.json`, де весь код — один пакет у корені, вгадана розкладка змінює ID (`app.api.routes.get_user` → `api.routes.get_user`). Репо з `keylang.json` не зачеплені.
+- **10:** у Python-репо **без** `keylang.json`, де весь код — один пакет у корені, вгадана розкладка змінює ID (`app.api.routes.get_user` → `api.routes.get_user`). Репо з `keylang.json` не зачеплені. Реалізовано; описано в `docs/format.md` («Вгадані шари») і `docs/tools.md` (`init`).
 - 05–08, 11 змінюють лише тексти повідомлень і hover.
 - Варіанти в 01–04, 09 і 12 можуть додати вердикти чи попередження в stdout `check` і JSON або змінити граматику; вибраний варіант має дописати себе сюди.

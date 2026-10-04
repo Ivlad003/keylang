@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a><br>Dependency-free foundation shared by every other layer: source spans, diagnostics with stable codes, config and glob matching, language data, external package IDs, brief extraction and the atomic in-repository write protocol. It is denied access to [`external.web-tree-sitter`](external.md#external.web-tree-sitter)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  <a id="base"></a><br>Dependency-free foundation shared by every other layer: source spans, diagnostics with stable codes, config and glob matching, language data, external package IDs, brief extraction and the atomic in-repository write protocol. It is denied access to [`external.web-tree-sitter`](external.md#external.web-tree-sitter)… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -90,29 +90,35 @@
     - fn [detectLanguages](../../src/config.ts#L477) (root: string) → Language[] <!-- internal -->
       <a id="base.config.detectLanguages"></a><br>Walks the directory tree under the given root up to four levels deep, skipping directories that [`base.config.skipDir`](base.md#base.config.skipDir) rejects, and collects every distinct language that [`base.languages.languageOf`](base.md#base.languages.languageOf) maps a file name to (ignoring `.d.ts` files), returning them as a sorted array so… _(llm · claude · 2026-10-04)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [guessLayers](../../src/config.ts#L501) (root: string, exclude: readonly string[]) → Map<string, string[]>
-      <a id="base.config.guessLayers"></a><br>Zero-config layering: the source root is `src/` (or `lib/`) when present, else the repository root. Each directory under it that holds source files becomes a layer; files directly in the source root form the layer `main`.
+    - fn [guessLayers](../../src/config.ts#L504) (root: string, exclude: readonly string[]) → Map<string, string[]>
+      <a id="base.config.guessLayers"></a><br>Zero-config layering: the source root is `src/` (or `lib/`) when present, else the one Python package in the repository root when it is the only layer candidate there and has subdirectories with code (`app/` with `app/__init__.py`), else the repository root. Each directory…
       - calls [base.config.guessLayout](base.md#base.config.guessLayout)
-    - fn [guessLayout](../../src/config.ts#L510) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L513) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       <a id="base.config.guessLayout"></a><br>The guessed layers, and a note for every directory whose layer name had to change: a reserved name (`src/external/` → `external_`) or one that another directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
-      - calls [base.config.freeLayerName](base.md#base.config.freeLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.hasRootFiles](base.md#base.config.hasRootFiles), [base.config.hasSource](base.md#base.config.hasSource), [base.config.skipDir](base.md#base.config.skipDir), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.config.layerName](base.md#base.config.layerName)
-    - fn [freeLayerName](../../src/config.ts#L542) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+      - calls [base.config.sourceRoot](base.md#base.config.sourceRoot), [base.config.freeLayerName](base.md#base.config.freeLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.hasRootFiles](base.md#base.config.hasRootFiles), [base.config.hasSource](base.md#base.config.hasSource), [base.config.layerDirs](base.md#base.config.layerDirs), [base.config.layerName](base.md#base.config.layerName)
+    - fn [sourceRoot](../../src/config.ts#L542) (root: string, exclude: readonly string[]) → string <!-- internal -->
+      <a id="base.config.sourceRoot"></a><br>`src` or `lib`; else the single layer candidate of the repository root when it is a Python package (`__init__.py`) whose subdirectories hold code — one layer for the whole application would leave nothing to rule; else `""`.
+      - calls [base.config.layerDirs](base.md#base.config.layerDirs)
+    - fn [layerDirs](../../src/config.ts#L552) (root: string, dir: string, exclude: readonly string[]) → { name: string; rel: string }[] <!-- internal -->
+      <a id="base.config.layerDirs"></a><br>The directories directly under `dir` (repository-relative, `""` for the root) that become layers.
+      - calls [base.config.skipDir](base.md#base.config.skipDir), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.config.hasSource](base.md#base.config.hasSource)
+    - fn [freeLayerName](../../src/config.ts#L567) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
       <a id="base.config.freeLayerName"></a><br>`wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`).
-    - fn [reservedReason](../../src/config.ts#L551) (name: string) → string <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L576) (name: string) → string <!-- internal -->
       <a id="base.config.reservedReason"></a><br>Produces the human-readable explanation of why a given layer name cannot be used: it returns a specific message for `external`, `unassigned`, and the `OUTSIDE_LAYER` constant, and otherwise a generic message saying the name is a top-of-map keyword. [`base.config.guessLayout`](base.md#base.config.guessLayout) and… _(llm · claude · 2026-10-04)_
-    - fn [hasRootFiles](../../src/config.ts#L558) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L583) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasRootFiles"></a><br>Reads the entries of `dir` under `root` (synchronously, not recursing) and returns true if at least one is a regular file whose extension [`base.languages.languageOf`](base.md#base.languages.languageOf) recognizes and whose relative path is not rejected by [`base.config.isExcluded`](base.md#base.config.isExcluded), giving [`base.config.guessLayout`](base.md#base.config.guessLayout)… _(llm · claude · 2026-10-04)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [hasSource](../../src/config.ts#L562) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L587) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasSource"></a><br>Recursively walks a directory with `readdirSync`, returning true as soon as it finds a file whose name maps to a known language via [`base.languages.languageOf`](base.md#base.languages.languageOf) and whose relative path is not rejected by [`base.config.isExcluded`](base.md#base.config.isExcluded), descending into subdirectories only when… _(llm · claude · 2026-10-04)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [isIdSegment](../../src/config.ts#L575) (s: string) → boolean <!-- internal -->
+    - fn [isIdSegment](../../src/config.ts#L600) (s: string) → boolean <!-- internal -->
       <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
-    - fn [encodeBracketSegment](../../src/config.ts#L603) (name: string) → string <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L628) (name: string) → string <!-- internal -->
       <a id="base.config.encodeBracketSegment"></a><br>A path segment that is not an ID and contains `()[]`, written so `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`, `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`, `$all-slug`, `$opt-slug`); any other name keeps its letters and writes…
-    - fn [decodeLayerName](../../src/config.ts#L624) (segment: string) → string
+    - fn [decodeLayerName](../../src/config.ts#L649) (segment: string) → string
       <a id="base.config.decodeLayerName"></a><br>Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged.
-    - fn [layerName](../../src/config.ts#L648) (name: string) → string
+    - fn [layerName](../../src/config.ts#L673) (name: string) → string
       <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment. An existing segment is kept.
       - calls [base.config.isIdSegment](base.md#base.config.isIdSegment), [base.config.encodeBracketSegment](base.md#base.config.encodeBracketSegment)
   - module [diag](../../src/diag.ts#L1)

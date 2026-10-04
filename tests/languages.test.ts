@@ -450,7 +450,7 @@ test("rust: `///`, `/** */`, `//!` and `/*! */` document items and modules; `#[d
 test("python: docstrings of a package, module, class and def are `doc`; an f-string is none; the map does not change", (t) => {
   const dir = copy(t, "py-shop");
   assert.equal(keylang(dir, ["init"]).status, 0);
-  const before = mapWithoutLines(dir, "shop.md");
+  const before = mapWithoutLines(dir, "domain.md");
   writeFileSync(join(dir, "shop/domain/__init__.py"), `"""The shop's domain."""\n`);
   const order = readFileSync(join(dir, "shop/domain/order.py"), "utf8")
     .replace("from ..infra", '"""Orders and how they are placed.\n\nMore about orders.\n"""\nfrom ..infra')
@@ -462,15 +462,15 @@ test("python: docstrings of a package, module, class and def are `doc`; an f-str
   writeFileSync(join(dir, "shop/domain/order.py"), order);
   assert.equal(keylang(dir, ["map"]).status, 0);
   const d = docs(dir);
-  assert.equal(d["shop.domain"], "The shop's domain.");
-  assert.equal(d["shop.domain.order"], "Orders and how they are placed.");
-  assert.equal(d["shop.domain.order.Order"], "An order with an amount.");
-  assert.equal(d["shop.domain.order.Order.total"], "The amount. Same as `self.amount`.");
-  assert.equal(d["shop.domain.order.Order.paid"], null);
-  assert.equal(d["shop.domain.order.place"], "Places an order and stores it.");
-  assert.equal(d["shop.domain.order._helper"], "One line, single quotes.");
-  assert.equal(d["shop.main.main"], null);
-  assert.equal(mapWithoutLines(dir, "shop.md"), before);
+  assert.equal(d["domain.__init__"], "The shop's domain.");
+  assert.equal(d["domain.order"], "Orders and how they are placed.");
+  assert.equal(d["domain.order.Order"], "An order with an amount.");
+  assert.equal(d["domain.order.Order.total"], "The amount. Same as `self.amount`.");
+  assert.equal(d["domain.order.Order.paid"], null);
+  assert.equal(d["domain.order.place"], "Places an order and stores it.");
+  assert.equal(d["domain.order._helper"], "One line, single quotes.");
+  assert.equal(d["main.main.main"], null);
+  assert.equal(mapWithoutLines(dir, "domain.md"), before);
 });
 
 test("rust and python: a re-exported name has form `reexport`, its symbol and its source module", (t) => {
@@ -612,4 +612,34 @@ test("rust: a span in async code comes from `instrument`, not a guard; a span in
   assert.match(o.stdout, /flows\.md:5:5: trace unverified app\.main\.quick: parent step `app\.main\.slow` not observed/);
   assert.match(o.stdout, /flows\.md:6:3: trace ok app\.main\.quick: observed in shop > @flow a/);
   assert.match(o.stdout, /flows\.md:7:5: trace unverified app\.main\.nested: `app\.main\.nested` is not instrumented/);
+});
+
+test("python: init on a single package in the repository root makes a layer of each subpackage, so the baseline denies between them", (t) => {
+  const pkg = (dir: string): Record<string, string> => ({ [`app/${dir}/__init__.py`]: "", [`app/${dir}/mod.py`]: "x = 1\n" });
+  const dir = repo(t, { "pyproject.toml": "[project]\n", "app/__init__.py": "", "app/main.py": "from app.api import mod\n", ...pkg("api"), ...pkg("services"), ...pkg("db"), ...pkg("core") });
+  const o = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")).layers, {
+    api: ["app/api/**"],
+    core: ["app/core/**"],
+    db: ["app/db/**"],
+    services: ["app/services/**"],
+    main: ["app/*"],
+  });
+  const baseline = readFileSync(join(dir, "keylang/rules.baseline.md"), "utf8");
+  assert.match(baseline, /^- deny api core, db, external, main, services, unassigned$/m);
+  assert.match(baseline, /^- deny main core, db, external, services, unassigned$/m, "`main` imports `api`, so the baseline keeps that edge");
+  assert.equal(keylang(dir, ["check"]).status, 0);
+});
+
+test("init: two directories in the repository root, a package without subpackages and a `src/` repository keep their guessed layers", (t) => {
+  const two = repo(t, { "app/__init__.py": "", "app/api/__init__.py": "", "app/api/mod.py": "x = 1\n", "tools/run.py": "y = 2\n" });
+  assert.equal(keylang(two, ["init", "--agents=none"]).status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(two, "keylang.json"), "utf8")).layers, { app: ["app/**"], tools: ["tools/**"] });
+  const flat = repo(t, { "app/__init__.py": "", "app/main.py": "x = 1\n" });
+  assert.equal(keylang(flat, ["init", "--agents=none"]).status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(flat, "keylang.json"), "utf8")).layers, { app: ["app/**"] });
+  const ts = repo(t, { "src/app/main.ts": "export const x = 1;\n", "src/domain/order.ts": "export const y = 2;\n", "src/index.ts": "export {};\n" });
+  assert.equal(keylang(ts, ["init", "--agents=none"]).status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(join(ts, "keylang.json"), "utf8")).layers, { app: ["src/app/**"], domain: ["src/domain/**"], main: ["src/*"] });
 });
