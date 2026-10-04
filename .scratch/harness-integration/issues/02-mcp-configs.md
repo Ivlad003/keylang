@@ -6,7 +6,7 @@
 
 **Blocked by:** 01
 
-**Status:** needs-info
+**Status:** resolved
 
 **Type:** test
 
@@ -39,3 +39,10 @@
 ### Manual close — 2026-10-02 (скасовано)
 - Помилка: тест «the command .mcp.json pins…» знайдено лише в незакоміченому основному checkout. Його туди записав воркер цього тікета замість worktree, а в `master` теста немає. Тікет не закрито.
 - Роботу воркера (`tests/mcp.test.ts`, `docs/design.md` рядок opencode V2.0.20) перенесено в worktree `shiftwork/harness-integration-02`, незакомічено. Далі потрібні Verify і ревʼю.
+
+### Закриття — 2026-10-04
+- Роботу з `wip/harness-integration-02` перебазовано на `master` у гілці `done/harness-integration-02`. E2e-тест «the command .mcp.json pins starts a server that answers tools/list» у `tests/mcp.test.ts` прибрав зайву перевірку префікса: `deepEqual` усього `args` її вже містить.
+- needs-info знято: opencode V2 приймає форму V1. Перевірено офлайн на встановленому `opencode v2.0.20`. `init --agents=opencode` записав `{"mcp":{"keylang":{"type":"local","command":["npx","-y","keylang@0.4.0","mcp"]}}}`. У копії замінено лише префікс `npx -y keylang@0.4.0` на локальний `node bin/keylang.js`, тоді `OPENCODE_CONFIG=<файл> opencode mcp list` показав `✓ keylang connected`. Застереження: без `OPENCODE_CONFIG` у каталозі, що не є git-репо, opencode пише «No MCP servers configured». Очевидно, проєктний `opencode.json` він шукає від git-кореня (воркер перевіряв у git-репо), тож форма тут ні до чого.
+- Критерії: чужий сервер лишається, застаріла версія в `agents --check` дає 1, невалідний JSON/TOML дає 2 (`tests/cli.test.ts` «agents: MCP servers…», «agents: invalid JSON or TOML…»). E2e `tools/list` є в `tests/mcp.test.ts`. Згадка про trusted-проєкт для Codex перевіряється в тому ж тесті cli.
+- Перевірки: `npm run typecheck`, `npm test`, `node bin/keylang.js map --check`, `node bin/keylang.js check` — усе зелене: `npm test` 586 pass, 0 fail, 1 skipped; `map --check` — 0; `check` — 0 fail, 24 unverified.
+- Неперевірено: справжній запуск `npx -y keylang@<version>` з npm-реєстру (офлайн); інші версії opencode V2, крім 2.0.20.

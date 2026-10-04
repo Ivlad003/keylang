@@ -569,7 +569,7 @@ $ keylang               # TUI з M4; keylang web — те саме в брауз
 | Claude Code | блок в `AGENTS.md`; `@AGENTS.md` у `CLAUDE.md` (Claude Code читає `AGENTS.md` лише без `CLAUDE.md`) | `.mcp.json` | хук `Stop` у `.claude/settings.json` |
 | Codex | блок в `AGENTS.md` (ліміт 32 KiB на всі файли) | `.codex/config.toml` (лише trusted-проєкт) | `.codex/hooks.json`, схвалюється в `/hooks` |
 | Cursor | `AGENTS.md` | `.cursor/mcp.json` | хуки з `.claude/settings.json` (Third-Party Imports) |
-| opencode | `AGENTS.md` | `opencode.json` | лише інструкція (v1) |
+| opencode | `AGENTS.md` | `opencode.json` (`mcp.keylang` у формі V1; перевірено — opencode V2.0.20 приймає її, `mcp list` дає `keylang connected`) | лише інструкція (v1) |
 
 Блоки keylang стоять між маркерами, ідемпотентні й перевіряються `--check`; чужий текст не змінюється. Команда MCP — `npx -y keylang@<version> mcp`, де `<version>` — поле `version` з `package.json` keylang, що виконав `init` або `agents`. Skill `keylang-feature` (стандарт agentskills.io) лежить у `.agents/skills/` і копією в `.claude/skills/`: він описує цикл фічі нижче.
 
