@@ -1,20 +1,41 @@
-# 03: Сходинка фічі в `feature` і `feature_status`
+# 03: Стадія фічі й чесне `done`
 
-**Джерело:** spec §4.2 B1, B4, Р3; research-c4-zoom-tools §4 (Spec Kit, Kiro, OpenSpec), research-c4-zoom-literature §6
+**Джерело:** spec §4.2 B1, B3, Р3, Р9, §1b; research-c4-zoom-tools §4; research-c4-zoom-literature §6
 
-**What to build:** `keylang feature <slug>` і MCP `feature_status` обчислюють сходинку файла фічі з його змісту й знімка, нічого не записуючи: `idea` — є заголовок і проза, немає `flow`/`planned`; `behavior` — є хоча б один `flow`, але є кроки без ID або жодного `planned`; `structure` — є `planned`, але частина без сигнатури чи шару (модуль без `--layer`-відповідника у `keylang.json`), або кроки потоків не всі з ID; `ready` — усі кроки з ID, усі `planned` з сигнатурою й шаром, є прогалини реалізації (K201 / static не ok); `done` — поточний критерій готовності. Текстовий вивід починається рядком `stage: <stage>`; `--format json` отримує поле `stage` і масив `next` (що потрібно для наступної сходинки, тими ж полями, що `Gap`). Коди виходу не змінюються: `done` → 0, інакше 1, помилка → 2. У `src/feature-status.ts` сходинка — чиста функція від `Document` + `Gap[]`.
+**What to build:** `featureStatus` (`src/feature-status.ts`) повертає `stage` і `hints[]` поруч із `gaps[]`. Інваріант «`done` тоді й лише тоді, коли `gaps` порожній» лишається. Кожна прогалина й підказка отримує поле `stage`.
 
-**Blocked by:** —
+Нові прогалини, що блокують `done` (Р9):
+
+- `empty` — у файлі немає жодного `planned`, `trigger`, `step` чи `calls`. Зараз такий файл, наприклад лише з прозою, `feature` вважає готовим (відтворено 2026-10-04).
+- `diagnostic` — діагностика-помилка K001–K005 у самому файлі фічі, з кодом і позицією. Зараз рядок, який парсер відкинув з K004, просто не перевіряється: файл «готовий», хоча `check` на ньому дає код 1 (відтворено 2026-10-04).
+
+Нові підказки, що не блокують `done`: `trigger` — потік без `trigger`; `steps` — потік без жодного `step`, `calls`, `when` чи `invariant`.
+
+**Стадія.** `done`, коли прогалин немає. Інакше перша умова згори:
+
+1. `idea` — у файлі немає секції `# flow`;
+2. `behavior` — є підказка `trigger` чи `steps`;
+3. `structure` — є прогалина чи підказка стадії structure: тут `diagnostic`, а тікети 04–05 додають `question`, `deny`, `layer`, `signature`;
+4. `ready` — лишились тільки прогалини реалізації: `planned`, `static`, `rule`, `spec`.
+
+**Вивід.** Людський: прогалини як зараз, далі рядки `hint: …`, підсумок `<n> gap(s) · stage <stage>`; рядок `done` готової фічі не змінюється. `--format json` і MCP `feature_status` отримують `stage` і `hints`. Коди виходу ті самі (0 готово, 1 прогалини, 2 помилка), але файл без перевірюваних тверджень і файл з помилками специфікації тепер дають 1. Це зміна контракту: позначити її в tools.md, `resources/keylang-feature/SKILL.md`, визначенні Feature у `CONTEXT.md` і критерії готовності в design §7.6.
+
+**Blocked by:** None (can start immediately)
 
 **Type:** code
 
-**Status:** needs-triage
+**Model:** claude:claude-opus-5-5
 
-**Verify:** `npm run typecheck` · `npm test`
+**Status:** ready-for-agent
 
-- [ ] e2e: п'ять фікстур фіч → `idea`, `behavior`, `structure`, `ready`, `done`; стабільний `--format json` з `stage` і `next`
-- [ ] MCP `feature_status` повертає ті самі `stage` і `next` (tests/mcp або cli e2e через stdio)
-- [ ] файл не змінюється після виклику (хеш до/після)
-- [ ] `--help`, tools.md (`feature`, MCP) і resources/keylang-feature/SKILL.md описують сходинки
+**Verify:** `node --test tests/feature-stage.test.ts` · `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
+
+- [ ] тести тікета — у новому файлі `tests/feature-stage.test.ts`: Verify запускає його окремо, тож без нього тікет не закриється
+- [ ] e2e: файл лише з прозою → код 1, прогалина `empty`, `stage idea`
+- [ ] e2e: невідоме ключове слово під тригером (`- foo bar`) → код 1, прогалина `diagnostic` з K004 і позицією
+- [ ] e2e: потік із `planned module` без `trigger`, як у шаблоні `keylang new module` → `stage behavior`, підказки `trigger` і `steps`; після реалізації модуля → `done`, код 0 (чинний сценарій не ламається)
+- [ ] e2e: лише прогалини реалізації → `stage ready`; без прогалин → `done`
+- [ ] `--format json` стабільний: `stage`, `gaps[].stage`, `hints[]`; MCP `feature_status` повертає той самий об'єкт
+- [ ] `--help`, tools.md (`feature`, MCP), SKILL.md, `CONTEXT.md` (Feature) і design §7.6 описують стадії й новий критерій
 
 ## Comments
