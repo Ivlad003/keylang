@@ -6,6 +6,7 @@
 // time: each feature ticket adds its own, not every handler in advance.
 
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
@@ -16,7 +17,8 @@ import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, r
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
-import { briefPlan, briefPlanText, DEFAULT_BRIEF_JOBS, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
+import { cliVersion, probeAgentClis, resolveAgent, selectedAgent, type AgentCliProbe, type AgentSource } from "./agent-cli.ts";
+import { briefPlan, briefPlanText, defaultBriefJobs, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
 import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, type ExplanationDetail } from "./explanations.ts";
@@ -252,7 +254,7 @@ export type ExplainPlanRequest =
       batch: BriefBatch;
       /** `--limit`: a whole number of at least 1; absent for every candidate. */
       limit?: number;
-      /** `--jobs` of the batch it plans: a whole number of at least 1; default 4. */
+      /** `--jobs` of the batch it plans: a whole number of at least 1; default 4, 2 for an agent CLI. */
       jobs?: number;
       /** `--dry-run`: count the plan and estimate its tokens. */
       estimate?: boolean;
@@ -277,7 +279,7 @@ export interface ExplainBatchRequest {
   batch: BriefBatch;
   /** `--limit`: a whole number of at least 1; absent for every candidate. */
   limit?: number;
-  /** `--jobs`: requests in flight within a wave, a whole number of at least 1; default 4. */
+  /** `--jobs`: requests in flight within a wave, a whole number of at least 1; default 4, 2 for an agent CLI. */
   jobs?: number;
 }
 
@@ -595,8 +597,14 @@ export interface DoctorPayload {
   configFile: boolean;
   /** True when the file exists but declares no `layers` (a guessed layout). */
   guessed: boolean;
-  /** The configured agent and the state of its credentials, never the key value. */
-  agent: { configured: string | null; state: "ok" | "missing" | "error"; detail: string };
+  /**
+   * The effective agent, where it came from (`KEYLANG_AGENT`, agents.json or
+   * keylang.json), and the state of its credentials or its CLI binary, never
+   * the key value.
+   */
+  agent: { configured: string | null; source: AgentSource | null; state: "ok" | "missing" | "error"; detail: string };
+  /** The agent CLI presets on this machine and their versions (`--version` only). */
+  agentClis: AgentCliProbe[];
   explanations: {
     /** Saved answers and briefs, and how the explained map is configured. */
     saved: number;
@@ -2440,7 +2448,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     summary: found.summary,
     detail,
     lang,
-    agent: config.agent,
+    agent: selectedAgent(config.agent),
     source: "cache",
     reason,
     unavailable: null,
@@ -2564,7 +2572,7 @@ async function runExplainPlan(request: ExplainPlanRequest, context: OperationCon
     return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: `${stale} stale, ${inventory.entries.length - stale} gone of ${inventory.saved} saved explanation(s)` }] };
   }
   if (!analyzed.snapshot) return { ...emptyExplainPlan("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
-  const plan = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs: request.jobs ?? DEFAULT_BRIEF_JOBS, estimate: request.estimate === true });
+  const plan = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs: request.jobs ?? defaultBriefJobs(selectedAgent(analyzed.config.agent)), estimate: request.estimate === true });
   const payload: ExplainPlanPayload = { list: "briefs", ...plan, snapshotId, text: briefPlanText(plan) };
   const summary = plan.plan.length === 0 ? "nothing to explain" : `${plan.plan.length} brief(s) planned${plan.estimate === null ? "" : `, ~${plan.estimate.input} in, ~${plan.estimate.output} out (approximate)`}`;
   return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
@@ -2613,14 +2621,14 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   const old = oldExplanations(config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
   if (!analyzed.snapshot) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
-  const jobs = request.jobs ?? DEFAULT_BRIEF_JOBS;
+  const jobs = request.jobs ?? defaultBriefJobs(selectedAgent(config.agent));
   const { plan } = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs, estimate: false });
   const { lang } = config.explain;
   const payload: ExplainBatchPayload = {
     batch: request.batch,
     limit: request.limit ?? null,
     jobs,
-    agent: config.agent ?? "",
+    agent: selectedAgent(config.agent) ?? "",
     lang,
     plan,
     done: [],
@@ -4038,7 +4046,8 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
   const native = await localStatus();
   if (context.signal?.aborted) return emptyDoctor("cancelled", null);
   const microphone = await microphoneStatus();
-  const agent = agentState(config, llmClient);
+  const [agent, agentClis] = await Promise.all([agentState(config, llmClient), probeAgentClis()]);
+  if (context.signal?.aborted) return emptyDoctor("cancelled", null);
   const engine = engineState(config, native.status === "ok", voiceEngine);
   const old = oldExplanations(request.root);
   const payload: DoctorPayload = {
@@ -4046,6 +4055,7 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
     configFile: existsSync(join(request.root, CONFIG_FILE)),
     guessed: config.guessed,
     agent,
+    agentClis,
     explanations: {
       saved: explainedIds(config, "answers").length,
       briefs: explainedIds(config, "briefs").length,
@@ -4067,15 +4077,26 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
   return { ...emptyDoctor("completed", 0), payload, messages: report.map((text) => ({ level: "info" as const, text })) };
 }
 
-/** The configured agent and its credential state, without the key value. */
-function agentState(config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup): DoctorPayload["agent"] {
-  if (config.agent === null) return { configured: null, state: "missing", detail: "not configured (keylang.json `agent`)" };
+/** The effective agent, its source and its credential or binary state, without the key value. */
+async function agentState(config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup): Promise<DoctorPayload["agent"]> {
+  let resolved: ReturnType<typeof resolveAgent>;
+  try {
+    resolved = resolveAgent(config.agent, process.env, homedir());
+  } catch (error) {
+    return { configured: config.agent, source: null, state: "error", detail: messageOf(error) };
+  }
+  const { agent: configured, source } = resolved;
+  if (configured === null) return { configured: null, source: null, state: "missing", detail: "not configured (keylang.json `agent`, KEYLANG_AGENT or ~/.config/keylang/agents.json)" };
   try {
     const setup = llmClient(config.agent, { root: config.root });
-    if ("missing" in setup) return { configured: config.agent, state: "missing", detail: setup.missing };
-    return { configured: config.agent, state: "ok", detail: "credentials found" };
+    if ("missing" in setup) return { configured, source, state: "missing", detail: setup.missing };
+    const bin = setup.client.bin;
+    if (bin === undefined) return { configured, source, state: "ok", detail: "credentials found" };
+    // Login is the CLI's own: keylang never runs a login or status command.
+    const version = await cliVersion(bin);
+    return { configured, source, state: "ok", detail: `${bin} (${version ?? "no version"}); login is checked on the first request` };
   } catch (error) {
-    return { configured: config.agent, state: "error", detail: messageOf(error) };
+    return { configured, source, state: "error", detail: messageOf(error) };
   }
 }
 
@@ -4116,7 +4137,8 @@ function doctorLines(payload: DoctorPayload): string[] {
         : `unavailable: ${voice.microphone.reason} (keylang web uses the browser's microphone)`;
   return [
     `languages: ${payload.languages.join(", ") || "none found"}${payload.configFile ? "" : ` (guessed; no ${CONFIG_FILE})`}`,
-    `agent: ${agent.configured === null ? agent.detail : `${agent.configured}: ${agent.detail}`}`,
+    `agent: ${agent.configured === null ? agent.detail : `${agent.configured}${agent.source === null || agent.source === "keylang.json" ? "" : ` (from ${agent.source})`}: ${agent.detail}`}`,
+    `agent CLIs: ${payload.agentClis.map((cli) => `${cli.name} ${cli.bin === null ? "—" : (cli.version ?? "?")}`).join(" · ")}`,
     `explanations: ${explanations.saved} saved, ${explanations.briefs} brief(s) in ${explanations.dir}/explain/; explained map ${explanations.map ? "on" : "off"} (keylang.json \`explain.map\`)${explanations.old > 0 ? `; ${explanations.moveHint}` : ""}`,
     `voice: engine ${voice.engine} → ${engine}`,
     `voice model: ${voice.model ?? `none in ${voice.modelsDir}`}`,

@@ -1,6 +1,8 @@
-// One text completion from the configured model (`keylang.json` `agent`):
+// One text completion from the configured model (`KEYLANG_AGENT`, else
+// `~/.config/keylang/agents.json` "use", else `keylang.json` `agent`):
 // `anthropic:<model>` through the official SDK, `openrouter:<model>` through
-// its chat completions endpoint with SSE. Keys come from the environment or
+// its chat completions endpoint with SSE, `cli:<name>[:<model>]` through an
+// installed agent CLI (`agent-cli.ts`, ADR 0011). Keys come from the environment or
 // `~/.config/keylang/<provider>.key` (mode 0600). Base URLs can be moved
 // (`ANTHROPIC_BASE_URL`, `OPENROUTER_BASE_URL`), which is how tests run
 // against a local server without the network. A request that takes longer
@@ -18,6 +20,8 @@ import { createParser } from "eventsource-parser";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { CliCancelled, cliClient, resolveAgent } from "./agent-cli.ts";
+import { isCliAgent } from "./config.ts";
 import { readKey } from "./keys.ts";
 
 export interface LlmRequest {
@@ -34,7 +38,7 @@ export interface LlmCallOptions {
 
 /**
  * Where a client runs: `root` is the repository (the working directory of an
- * agent CLI to come); `env` and `home` default to the process's own.
+ * agent CLI); `env` and `home` default to the process's own.
  */
 export interface LlmClientOptions {
   root: string;
@@ -46,6 +50,8 @@ export interface LlmClient {
   /** `anthropic:claude-opus-5`, as configured. */
   agent: string;
   model: string;
+  /** The binary of an agent CLI (`cli:*`); absent for an API. */
+  bin?: string;
   complete(request: LlmRequest, options?: LlmCallOptions): Promise<string>;
 }
 
@@ -71,12 +77,34 @@ const FALLBACK_MODELS = /^claude-(opus-5|fable-5|mythos-5)/;
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
-export function llmClient(agent: string | null, options: LlmClientOptions): LlmSetup {
+/**
+ * The client of the effective agent: `configAgent` is keylang.json's, which
+ * `KEYLANG_AGENT` and agents.json "use" override. An invalid variable or
+ * agents.json throws, naming it; a missing key or binary is `missing`.
+ */
+export function llmClient(configAgent: string | null, options: LlmClientOptions): LlmSetup {
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
-  if (agent === null) return { missing: "no model configured: set `agent` in keylang.json, e.g. \"anthropic:claude-opus-5\" or \"openrouter:<model>\"" };
+  const { agent } = resolveAgent(configAgent, env, home);
+  if (agent === null) return { missing: "no model configured: set `agent` in keylang.json, e.g. \"anthropic:claude-opus-5\" or \"cli:claude\"" };
   const timeout = timeoutMs(env);
   if (typeof timeout === "string") return { missing: timeout };
+  if (isCliAgent(agent)) {
+    // An agent keylang started runs keylang with KEYLANG_NESTED: it never starts another agent.
+    if (env.KEYLANG_NESTED !== undefined && env.KEYLANG_NESTED !== "") return { missing: `${agent}: cli agents are off inside an agent keylang started (KEYLANG_NESTED)` };
+    const setup = cliClient(agent, { root: options.root, env, home });
+    if ("missing" in setup) return setup;
+    const cli = setup.client;
+    const complete = async (request: LlmRequest, call?: LlmCallOptions): Promise<string> => {
+      try {
+        return await cli.complete(request, { ...deadline(timeout, call?.timeoutMs), ...(call?.signal ? { signal: call.signal } : {}) });
+      } catch (error) {
+        if (error instanceof CliCancelled) throw new LlmCancelled(agent);
+        throw error;
+      }
+    };
+    return { client: { agent, model: cli.model, bin: cli.bin, complete } };
+  }
   const colon = agent.indexOf(":");
   const provider = agent.slice(0, colon);
   const model = agent.slice(colon + 1);

@@ -57,12 +57,12 @@ export interface Config {
    */
   outside: string[];
   check: { tests?: string; trace?: string; static?: StaticMode };
-  /** `anthropic:<model>` or `openrouter:<model>`; null: no model is configured. */
+  /** `anthropic:<model>`, `openrouter:<model>` or `cli:<name>[:<model>]` (an agent CLI); null: no model is configured. */
   agent: string | null;
   /** Voice input (`Ctrl+R`): which recognizer, and the OpenRouter model with audio input. */
   voice: { engine: "local" | "openrouter" | "auto"; model: string | null };
-  /** Ghost text: pause in ms before the agent is asked for a next line (design §7.3). */
-  ghost: { delay: number };
+  /** Ghost text: pause in ms before the agent is asked for a next line (design §7.3); null: the default, 1500 ms for an agent CLI and 400 ms otherwise. */
+  ghost: { delay: number | null };
   /**
    * Language and detail of LLM explanations (`keylang explain <id> --llm`);
    * `map`: `keylang map` also writes the explained map, `<dir>/map-explained/`.
@@ -70,6 +70,26 @@ export interface Config {
   explain: { lang: string; detail: "short" | "full"; map: boolean };
   /** True when the layout was guessed (no `layers` in the file). */
   guessed: boolean;
+}
+
+/** The agent CLIs keylang knows how to run as a model (`cli:<name>`); other names are defined in `~/.config/keylang/agents.json`. */
+export const AGENT_CLI_PRESETS = ["claude", "codex", "opencode", "cursor"] as const;
+
+/** What a valid `agent` looks like, for error messages. */
+export const AGENT_FORMS = '"anthropic:<model>", "openrouter:<model>" or "cli:<name>[:<model>]" (a model has no spaces, `<`, `>` or `--` and does not start with `-`)';
+
+// A model is one argv element after `--model` and a value in comment headers:
+// a leading `-` would be read as a flag, `--`/`<`/`>` would break `<!-- … -->`.
+const AGENT_PATTERN = /^(anthropic|openrouter):\S+$|^cli:[a-z][a-z0-9-]*(:(?!-)(?!.*--)[^\s<>]+)?$/;
+
+/** `agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it. */
+export function isAgent(value: string): boolean {
+  return AGENT_PATTERN.test(value);
+}
+
+/** The agent runs through an agent CLI (`cli:claude`), not an API. */
+export function isCliAgent(agent: string | null): boolean {
+  return agent !== null && agent.startsWith("cli:");
 }
 
 export const CONFIG_FILE = "keylang.json";
@@ -127,7 +147,7 @@ export interface RawConfig {
   outside?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
-  ghost?: { delay?: number };
+  ghost?: { delay?: number | null };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
 }
@@ -159,7 +179,7 @@ export function loadConfig(root: string): Config {
     outside,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
-    ghost: { delay: raw.ghost?.delay ?? 400 },
+    ghost: { delay: raw.ghost?.delay ?? null },
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     guessed,
@@ -250,15 +270,15 @@ export function parseConfig(file: string, text: string): RawConfig {
     raw.check = check;
   }
   if (value.agent !== undefined) {
-    raw.agent = typeof value.agent === "string" && /^(anthropic|openrouter):\S+$/.test(value.agent) ? value.agent : fail("agent", '"anthropic:<model>" or "openrouter:<model>"', value.agent);
+    raw.agent = typeof value.agent === "string" && isAgent(value.agent) ? value.agent : fail("agent", AGENT_FORMS, value.agent);
   }
   if (value.ghost !== undefined) {
     if (!isObject(value.ghost)) return fail("ghost", "an object", value.ghost);
     for (const [key, v] of Object.entries(value.ghost)) {
       if (key !== "delay") throw new Error(`${file}: unknown field \`ghost.${key}\``);
-      if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10000) fail("ghost.delay", "milliseconds from 0 to 10000", v);
+      if (v !== null && (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10000)) fail("ghost.delay", "milliseconds from 0 to 10000, or null for the default", v);
     }
-    raw.ghost = value.ghost as { delay?: number };
+    raw.ghost = value.ghost as { delay?: number | null };
   }
   if (value.voice !== undefined) {
     if (!isObject(value.voice)) return fail("voice", "an object", value.voice);

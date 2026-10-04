@@ -5,6 +5,7 @@
 // the model through the `explain-batch` operation (`operations.ts`).
 
 import type { Analysis } from "./analyze.ts";
+import { isCliAgent } from "./config.ts";
 import { currentBaseline, estimateTokens, explainedIds, isStale, planBriefs, readExplanation, type BriefBatch, type BriefLevel, type PlannedBrief } from "./explain-llm.ts";
 import { explanationPath, loadBriefs, snapshotBaseline } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
@@ -12,6 +13,11 @@ import { plannedDecl } from "./lsp-features.ts";
 
 /** Requests a batch keeps in flight: enough to be quick, few enough for a provider's rate limit. */
 export const DEFAULT_BRIEF_JOBS = 4;
+
+/** The default `--jobs` for an agent: 2 for an agent CLI (each request is a whole CLI process on this machine), else 4. */
+export function defaultBriefJobs(agent: string | null): number {
+  return isCliAgent(agent) ? 2 : DEFAULT_BRIEF_JOBS;
+}
 
 /** The CLI's complaint about `--limit`/`--jobs` text that is not a whole number of at least 1, or null when it is one. */
 export function positiveIntegerProblem(flag: string, text: string): string | null {

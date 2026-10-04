@@ -31,6 +31,7 @@ import { inline } from "../src/tui/markdown.ts";
 import { editorCommand, runTerminal, splitCommand, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { textToSpec } from "../src/tui/text-to-spec.ts";
 import { sliceCells, stringWidth } from "../src/tui/width.ts";
+import { alive, fakeAgents } from "./agent-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_CONFIG_LINE, CYCLE_FEATURE_TEXT, CYCLE_FILES, CYCLE_TEMPLATE_CODE, refundCycle } from "./cycle-fixture.ts";
@@ -2025,6 +2026,42 @@ test("tui: Esc aborts a ghost request in flight, silently and without a ghost li
   assert.equal(s.app.state.ghost, null);
   assert.equal(model.prompts.length, 1);
   assert.equal(model.aborted, 1);
+});
+
+test("tui: ghost through an agent CLI: a newer request kills the older agent, Esc kills the one in flight, close() leaves none alive", async (t) => {
+  const root = checkoutRepo(t);
+  withConfig(root, { ghost: { delay: 0 } });
+  const fake = fakeAgents(t, ["claude"], { modes: "hang,ok,hang", reply: "- step domain.order.create" });
+  const saved = { PATH: process.env.PATH, KEYLANG_AGENT: process.env.KEYLANG_AGENT, FAKE_AGENT_LOG: process.env.FAKE_AGENT_LOG, FAKE_AGENT_MODES: process.env.FAKE_AGENT_MODES, FAKE_AGENT_REPLY: process.env.FAKE_AGENT_REPLY };
+  Object.assign(process.env, { PATH: `${fake.bin}:${process.env.PATH ?? ""}`, KEYLANG_AGENT: "cli:claude" }, fake.env);
+  const s = session(root, { cols: 150 });
+  t.after(() => {
+    s.app.close();
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  await s.app.idle();
+  s.send("i");
+  for (let i = 0; i < 7; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  s.send(KEY.enter);
+  await waitUntil(() => fake.pids(1).length === 2, "the first agent, hanging");
+  // The same place asked again: the first agent's group is killed, the second one answers.
+  s.send(KEY.end);
+  await waitUntil(() => s.app.state.ghost !== null, "the second agent's variants");
+  assert.deepEqual(s.app.state.ghost!.variants.map((v) => v.trim()), ["- step domain.order.create"]);
+  await waitUntil(() => fake.pids(1).every((pid) => !alive(pid)), "the first agent's group to die");
+  s.send(KEY.end);
+  await waitUntil(() => fake.pids(3).length === 2, "the third agent, hanging");
+  s.send("\x1b");
+  await waitUntil(() => fake.pids(3).every((pid) => !alive(pid)), "Esc to kill the third agent");
+  await s.app.idle();
+  assert.equal(s.app.state.message, null, "a cancel is no error");
+  assert.equal(fake.calls().length, 3);
+  s.app.close();
+  for (const n of [1, 2, 3]) for (const pid of fake.pids(n)) await waitUntil(() => !alive(pid), `agent ${n} to be gone after close()`);
 });
 
 test("tui: typing on, Ctrl+Space, another buffer and close() each abort the ghost request in flight", async (t) => {

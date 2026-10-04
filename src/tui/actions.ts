@@ -5,6 +5,7 @@
 // key events. A new action joins this registry with the feature that
 // implements it — an unimplemented generator is not listed as a fake success.
 
+import { selectedAgent } from "../agent-cli.ts";
 import { isDirty } from "./buffer.ts";
 import type { OperationRecord, State } from "./state.ts";
 
@@ -388,7 +389,7 @@ export function availabilityOf(state: State): ActionContext {
     noExport: "reason" in exported ? exported.reason : null,
     noApply: "reason" in applied ? applied.reason : null,
     dirty: buffer !== undefined && !buffer.readOnly && isDirty(buffer),
-    agent: state.analysis?.config.agent ?? null,
+    agent: state.analysis ? selectedAgent(state.analysis.config.agent) : null,
   };
 }
 

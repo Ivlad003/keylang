@@ -1,11 +1,122 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
 - features
   <a id="features"></a>
+  - module [agent-cli](../../src/agent-cli.ts#L1)
+    <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
+    - node [external.node](external.md#external.node)
+    - config [base.config](base.md#base.config)
+    - type [Env](../../src/agent-cli.ts#L19) = Readonly<Record<string, string | undefined>> <!-- internal -->
+      <a id="features.agent-cli.Env"></a>
+    - type [Preset](../../src/agent-cli.ts#L20) = (typeof AGENT_CLI_PRESETS)[number] <!-- internal -->
+      <a id="features.agent-cli.Preset"></a>
+    - type [CliDefinition](../../src/agent-cli.ts#L23) = { command: string[] } | { bin: string }
+      <a id="features.agent-cli.CliDefinition"></a><br>A user's own CLI: `command[0]` is the binary; `{prompt_file}` and `{model}` are placeholders. A preset name takes only `bin`.
+    - type [AgentSettings](../../src/agent-cli.ts#L26)
+      <a id="features.agent-cli.AgentSettings"></a><br>`~/.config/keylang/agents.json`, validated.
+    - type [AgentSource](../../src/agent-cli.ts#L32) = "KEYLANG_AGENT" | "agents.json" | "keylang.json"
+      <a id="features.agent-cli.AgentSource"></a><br>Where the effective agent came from.
+    - type [CliRequest](../../src/agent-cli.ts#L34)
+      <a id="features.agent-cli.CliRequest"></a>
+    - type [CliCallOptions](../../src/agent-cli.ts#L40)
+      <a id="features.agent-cli.CliCallOptions"></a><br>`ms`: the call's bound; `fromVariable`: the bound is `KEYLANG_LLM_TIMEOUT_MS`, which the timeout message then names.
+    - type [CliClient](../../src/agent-cli.ts#L46)
+      <a id="features.agent-cli.CliClient"></a>
+    - module [CliCancelled](../../src/agent-cli.ts#L57)
+      <a id="features.agent-cli.CliCancelled"></a><br>The caller cancelled the run; `llm.ts` turns it into `LlmCancelled`.
+      - fn [constructor](../../src/agent-cli.ts#L58) (agent: string)
+        <a id="features.agent-cli.CliCancelled.constructor"></a>
+    - fn [agentsFile](../../src/agent-cli.ts#L73) (home: string) → string
+      <a id="features.agent-cli.agentsFile"></a>
+    - fn [readAgentSettings](../../src/agent-cli.ts#L78) (home: string) → AgentSettings
+      <a id="features.agent-cli.readAgentSettings"></a><br>agents.json, validated; an absent file is empty settings. Errors name the file and the field.
+      - calls [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.parseAgentSettings](features.md#features.agent-cli.parseAgentSettings)
+    - fn [parseAgentSettings](../../src/agent-cli.ts#L91) (file: string, value: unknown) → AgentSettings
+      <a id="features.agent-cli.parseAgentSettings"></a><br>The settings of an agents.json already parsed as JSON.
+      - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject), [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.cliDefinition](features.md#features.agent-cli.cliDefinition)
+    - fn [cliDefinition](../../src/agent-cli.ts#L107) (file: string, name: string, def: unknown) → CliDefinition <!-- internal -->
+      <a id="features.agent-cli.cliDefinition"></a>
+      - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
+    - fn [resolveAgent](../../src/agent-cli.ts#L142) (configAgent: string | null, env: Env, home: string) → { agent: string | null; source: AgentSource | null }
+      <a id="features.agent-cli.resolveAgent"></a><br>The agent in effect and where it came from: `KEYLANG_AGENT` (an empty variable is unset), else agents.json "use", else keylang.json `agent`. An invalid variable or agents.json throws, naming it.
+      - calls [base.config.isAgent](base.md#base.config.isAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings)
+    - fn [selectedAgent](../../src/agent-cli.ts#L157) (configAgent: string | null, env: Env = process.env, home: string = homedir()) → string | null
+      <a id="features.agent-cli.selectedAgent"></a><br>The effective agent for deciding whether to ask at all (ghost, forms): a broken setting counts as an agent, so the request that follows reports it.
+      - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent)
+    - fn [parseCliAgent](../../src/agent-cli.ts#L166) (agent: string) → { name: string; model: string }
+      <a id="features.agent-cli.parseCliAgent"></a><br>`cli:opencode:anthropic/claude-sonnet-5` → name and model (the model keeps its colons).
+    - type [Runner](../../src/agent-cli.ts#L173) = { preset: Preset; bin: string } | { command: string[] } <!-- internal -->
+      <a id="features.agent-cli.Runner"></a><br>What `cliClient` runs: a preset with its binary, or a user's command.
+    - fn [cliClient](../../src/agent-cli.ts#L180) (agent: string, options: { root: string; env: Env; home: string }) → { client: CliClient } | { missing: string }
+      <a id="features.agent-cli.cliClient"></a><br>A client for a `cli:` agent, or why there is none (a missing binary, a Grok `agent` where Cursor's was expected): only a PATH scan and, for an `agent` binary, one memoized `--version`. Invalid agents.json throws.
+      - calls [features.agent-cli.parseCliAgent](features.md#features.agent-cli.parseCliAgent), [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.completeWith](features.md#features.agent-cli.completeWith)
+    - fn [presetBinary](../../src/agent-cli.ts#L215) (preset: Preset, bin: string | null, env: Env, home: string) → { bin: string } | { missing: string } <!-- internal -->
+      <a id="features.agent-cli.presetBinary"></a><br>The binary of a preset: `bin` from agents.json, else its name on PATH; Cursor's is `cursor-agent`, or `agent` when its version is Cursor's.
+      - calls [features.agent-cli.findBinary](features.md#features.agent-cli.findBinary), [features.agent-cli.agentsFile](features.md#features.agent-cli.agentsFile), [features.agent-cli.binaryVersion](features.md#features.agent-cli.binaryVersion)
+    - fn [binaryVersion](../../src/agent-cli.ts#L236) (bin: string, env: Env) → string | null <!-- internal -->
+      <a id="features.agent-cli.binaryVersion"></a><br>The first line of `<bin> --version`, at most 5 s, memoized per process; null when it gives none.
+    - fn [shortVersion](../../src/agent-cli.ts#L246) (line: string) → string
+      <a id="features.agent-cli.shortVersion"></a><br>`2.1.289 (Claude Code)` → `2.1.289`; `codex-cli 0.155.1` → `0.155.1`; a Cursor build keeps its hash.
+    - fn [cliVersion](../../src/agent-cli.ts#L251) (bin: string, env: Env = process.env) → Promise<string | null>
+      <a id="features.agent-cli.cliVersion"></a><br>The version of a binary for doctor, asynchronously (5 s cap, never a login or status command).
+      - calls [features.agent-cli.shortVersion](features.md#features.agent-cli.shortVersion)
+    - type [AgentCliProbe](../../src/agent-cli.ts#L270)
+      <a id="features.agent-cli.AgentCliProbe"></a><br>A preset as doctor sees it: its binary (null: none usable) and that binary's version (null: it gave none).
+    - fn [probeAgentClis](../../src/agent-cli.ts#L277) (env: Env = process.env, home: string = homedir()) → Promise<AgentCliProbe[]>
+      <a id="features.agent-cli.probeAgentClis"></a><br>Every preset, probed in parallel with `--version` only: offline, never a login or status command.
+      - calls [features.agent-cli.readAgentSettings](features.md#features.agent-cli.readAgentSettings), [features.agent-cli.presetBinary](features.md#features.agent-cli.presetBinary), [features.agent-cli.cliVersion](features.md#features.agent-cli.cliVersion)
+    - fn [findBinary](../../src/agent-cli.ts#L295) (name: string, env: Env) → string | null
+      <a id="features.agent-cli.findBinary"></a><br>A name on PATH or a path, if it is an executable file.
+      - calls [features.agent-cli.executable](features.md#features.agent-cli.executable)
+    - fn [executable](../../src/agent-cli.ts#L305) (path: string) → boolean <!-- internal -->
+      <a id="features.agent-cli.executable"></a>
+    - type [AnswerKind](../../src/agent-cli.ts#L318) = "result-json" | "file" | "opencode-events" | "stdout"
+      <a id="features.agent-cli.AnswerKind"></a><br>How the answer is read: a `type:"result"` JSON line, Codex's `-o` file, opencode's NDJSON events, or stdout.
+    - type [Invocation](../../src/agent-cli.ts#L320)
+      <a id="features.agent-cli.Invocation"></a>
+    - fn [invocation](../../src/agent-cli.ts#L335) (runner: Runner, model: string, request: CliRequest, root: string, env: Env, tmp: string) → Invocation
+      <a id="features.agent-cli.invocation"></a><br>The process to run for one request; `tmp` is a private directory outside the repository.
+      - calls [features.agent-cli.wellFormed](features.md#features.agent-cli.wellFormed), [features.agent-cli.opencodeConfig](features.md#features.agent-cli.opencodeConfig)
+    - fn [opencodeConfig](../../src/agent-cli.ts#L416) (existing: string | undefined, system: string) → string <!-- internal -->
+      <a id="features.agent-cli.opencodeConfig"></a><br>The user's `OPENCODE_CONFIG_CONTENT` with keylang's agent on top: every permission denied.
+      - calls [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
+    - fn [wellFormed](../../src/agent-cli.ts#L430) (text: string) → string <!-- internal -->
+      <a id="features.agent-cli.wellFormed"></a>
+    - fn [parseResultLine](../../src/agent-cli.ts#L435) (line: string) → { text: string } | { error: string } | null
+      <a id="features.agent-cli.parseResultLine"></a><br>A `{"type":"result"}` line of Claude Code or Cursor: the answer, an error, or null for any other line.
+      - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
+    - fn [parseOpencodeEvents](../../src/agent-cli.ts#L444) (output: string) → { text: string } | { error: string }
+      <a id="features.agent-cli.parseOpencodeEvents"></a><br>opencode's NDJSON: the text parts after the last step start, or the first error.
+      - calls [features.agent-cli.parseJson](features.md#features.agent-cli.parseJson), [features.agent-cli.isObject](features.md#features.agent-cli.isObject)
+    - fn [completeWith](../../src/agent-cli.ts#L463) (agent: string, runner: Runner, model: string, request: CliRequest, options: { root: string; env: Env }, call: CliCallOptions) → Promise<string> <!-- internal -->
+      <a id="features.agent-cli.completeWith"></a>
+      - calls [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.invocation](features.md#features.agent-cli.invocation), [features.agent-cli.runInvocation](features.md#features.agent-cli.runInvocation), [features.agent-cli.readAnswer](features.md#features.agent-cli.readAnswer)
+    - type [RunResult](../../src/agent-cli.ts#L482) <!-- internal -->
+      <a id="features.agent-cli.RunResult"></a>
+    - fn [readAnswer](../../src/agent-cli.ts#L488) (agent: string, inv: Invocation, run: RunResult) → string <!-- internal -->
+      <a id="features.agent-cli.readAnswer"></a>
+      - calls [features.agent-cli.lastResult](features.md#features.agent-cli.lastResult), [features.agent-cli.parseOpencodeEvents](features.md#features.agent-cli.parseOpencodeEvents)
+    - fn [lastResult](../../src/agent-cli.ts#L508) (stdout: string) → { text: string } | { error: string } | null <!-- internal -->
+      <a id="features.agent-cli.lastResult"></a>
+      - calls [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine)
+    - fn [killGroup](../../src/agent-cli.ts#L518) (pid: number, signal: NodeJS.Signals) → void <!-- internal -->
+      <a id="features.agent-cli.killGroup"></a>
+    - fn [hookExit](../../src/agent-cli.ts#L527) () → void <!-- internal -->
+      <a id="features.agent-cli.hookExit"></a><br>Once: keylang's exit kills every live group; a fatal signal with no handler of its own kills them first and is raised again.
+      - calls [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup)
+    - fn [runInvocation](../../src/agent-cli.ts#L546) (agent: string, inv: Invocation, root: string, call: CliCallOptions) → Promise<RunResult> <!-- internal -->
+      <a id="features.agent-cli.runInvocation"></a>
+      - calls [features.agent-cli.hookExit](features.md#features.agent-cli.hookExit), [features.agent-cli.killGroup](features.md#features.agent-cli.killGroup), [features.agent-cli.CliCancelled](features.md#features.agent-cli.CliCancelled), [features.agent-cli.parseResultLine](features.md#features.agent-cli.parseResultLine), [features.agent-cli.stripAnsi](features.md#features.agent-cli.stripAnsi)
+    - fn [stripAnsi](../../src/agent-cli.ts#L644) (text: string) → string <!-- internal -->
+      <a id="features.agent-cli.stripAnsi"></a>
+    - fn [parseJson](../../src/agent-cli.ts#L649) (text: string) → unknown <!-- internal -->
+      <a id="features.agent-cli.parseJson"></a>
+    - fn [isObject](../../src/agent-cli.ts#L658) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="features.agent-cli.isObject"></a>
   - module [agent-context](../../src/agent-context.ts#L1)
     <a id="features.agent-context"></a><br>What goes to the model (design §7.3 «Контекст»): the buffer, the nodes on the cursor line and their neighbours, the flows and rules naming them, their code and the tests of those flows — each item with a token estimate, so the person sees and trims what the agent reads. `@id`…
     - node [external.node](external.md#external.node)
@@ -279,34 +390,38 @@
   - module [explain-inventory](../../src/explain-inventory.ts#L1)
     <a id="features.explain-inventory"></a><br>Which explanations need work, without asking a model or writing a file: the stale and gone saved explanations (`explain --stale`), and the plan of a brief batch (`explain --missing|--stale` without `--llm`) with its dry-run size. One result for the CLI and the TUI; the batch…
     - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
     - lsp-features [features.lsp-features](features.md#features.lsp-features)
-    - fn [positiveIntegerProblem](../../src/explain-inventory.ts#L17) (flag: string, text: string) → string | null
+    - fn [defaultBriefJobs](../../src/explain-inventory.ts#L18) (agent: string | null) → number
+      <a id="features.explain-inventory.defaultBriefJobs"></a><br>The default `--jobs` for an agent: 2 for an agent CLI (each request is a whole CLI process on this machine), else 4.
+      - calls [base.config.isCliAgent](base.md#base.config.isCliAgent)
+    - fn [positiveIntegerProblem](../../src/explain-inventory.ts#L23) (flag: string, text: string) → string | null
       <a id="features.explain-inventory.positiveIntegerProblem"></a><br>The CLI's complaint about `--limit`/`--jobs` text that is not a whole number of at least 1, or null when it is one.
-    - type [NodePlace](../../src/explain-inventory.ts#L23)
+    - type [NodePlace](../../src/explain-inventory.ts#L29)
       <a id="features.explain-inventory.NodePlace"></a><br>Where a node is declared: its code, or the `planned` line of a spec; null for a node with no file (a layer).
-    - type [StaleExplanation](../../src/explain-inventory.ts#L32)
+    - type [StaleExplanation](../../src/explain-inventory.ts#L38)
       <a id="features.explain-inventory.StaleExplanation"></a><br>A saved explanation that no longer matches the code: `stale` (the closure changed) or `gone` (the ID is in no snapshot and no `planned`).
-    - type [StaleInventory](../../src/explain-inventory.ts#L48)
+    - type [StaleInventory](../../src/explain-inventory.ts#L54)
       <a id="features.explain-inventory.StaleInventory"></a><br>`explain --stale`: every saved answer, then every saved brief, that is stale or gone.
-    - type [PlannedBriefEntry](../../src/explain-inventory.ts#L55) extends PlannedBrief
+    - type [PlannedBriefEntry](../../src/explain-inventory.ts#L61) extends PlannedBrief
       <a id="features.explain-inventory.PlannedBriefEntry"></a><br>One node of a brief plan, with why it is planned.
-    - type [BriefPlan](../../src/explain-inventory.ts#L66)
+    - type [BriefPlan](../../src/explain-inventory.ts#L72)
       <a id="features.explain-inventory.BriefPlan"></a><br>A brief batch as it would run, computed before any request: the nodes bottom-up (`wave`), counts by level and, when asked, an approximate size in tokens. A preview: a batch plans again on its own analysis.
-    - fn [nodePlace](../../src/explain-inventory.ts#L87) (analysis: Analysis, id: string) → NodePlace | null <!-- internal -->
+    - fn [nodePlace](../../src/explain-inventory.ts#L93) (analysis: Analysis, id: string) → NodePlace | null <!-- internal -->
       <a id="features.explain-inventory.nodePlace"></a>
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [staleInventory](../../src/explain-inventory.ts#L96) (analysis: Analysis) → StaleInventory
+    - fn [staleInventory](../../src/explain-inventory.ts#L102) (analysis: Analysis) → StaleInventory
       <a id="features.explain-inventory.staleInventory"></a><br>The saved answers and briefs that are stale or gone, in the CLI's order.
       - calls [features.explain-llm.explainedIds](features.md#features.explain-llm.explainedIds), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace)
-    - fn [staleInventoryText](../../src/explain-inventory.ts#L113) (inventory: StaleInventory) → string
+    - fn [staleInventoryText](../../src/explain-inventory.ts#L119) (inventory: StaleInventory) → string
       <a id="features.explain-inventory.staleInventoryText"></a><br>`explain --stale` on stdout, byte for byte.
-    - fn [briefPlan](../../src/explain-inventory.ts#L123) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
+    - fn [briefPlan](../../src/explain-inventory.ts#L129) (analysis: Analysis, options: { batch: BriefBatch; limit: number | null; jobs: number; estimate: boolean }) → BriefPlan
       <a id="features.explain-inventory.briefPlan"></a><br>The plan of a brief batch on `analysis` (which must have a snapshot), cut to `limit` before the estimate.
       - calls [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.explain-llm.planBriefs](features.md#features.explain-llm.planBriefs), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.estimateTokens](features.md#features.explain-llm.estimateTokens)
-    - fn [briefPlanText](../../src/explain-inventory.ts#L161) (plan: BriefPlan) → string
+    - fn [briefPlanText](../../src/explain-inventory.ts#L167) (plan: BriefPlan) → string
       <a id="features.explain-inventory.briefPlanText"></a><br>The CLI's stdout of a plan: the dry-run counts and estimate, or the nodes one per line.
   - module [explain-llm](../../src/explain-llm.ts#L1)
     <a id="features.explain-llm"></a><br>The plain-language explanation of a node (design §5.4, ADR 0004): what goes to the model, how the answer is kept, and when it is stale. An explanation lives in `<dir>/explain/<id>.md` (a brief for the explained map in `<dir>/explain/brief/<id>.md`) beside its baseline — the…
@@ -639,49 +754,51 @@
     - fn [readKey](../../src/keys.ts#L8) (home: string, name: string) → string | undefined
       <a id="features.keys.readKey"></a><br>The key in `~/.config/keylang/<name>.key`; a file others can read is refused, not used.
   - module [llm](../../src/llm.ts#L1)
-    <a id="features.llm"></a><br>One text completion from the configured model (`keylang.json` `agent`): `anthropic:<model>` through the official SDK, `openrouter:<model>` through its chat completions endpoint with SSE. Keys come from the environment or `~/.config/keylang/<provider>.key` (mode 0600).
+    <a id="features.llm"></a><br>One text completion from the configured model (`KEYLANG_AGENT`, else `~/.config/keylang/agents.json` "use", else `keylang.json` `agent`): `anthropic:<model>` through the official SDK, `openrouter:<model>` through its chat completions endpoint with SSE, `cli:<name>[:<model>]`…
     - Anthropic [external.anthropic-ai-sdk](external.md#external.anthropic-ai-sdk)
     - eventsource-parser [external.eventsource-parser](external.md#external.eventsource-parser)
     - node [external.node](external.md#external.node)
+    - agent-cli [features.agent-cli](features.md#features.agent-cli)
+    - config [base.config](base.md#base.config)
     - keys [features.keys](features.md#features.keys)
-    - type [LlmRequest](../../src/llm.ts#L23)
+    - type [LlmRequest](../../src/llm.ts#L27)
       <a id="features.llm.LlmRequest"></a>
-    - type [LlmCallOptions](../../src/llm.ts#L30)
+    - type [LlmCallOptions](../../src/llm.ts#L34)
       <a id="features.llm.LlmCallOptions"></a><br>Per call: `signal` cancels the request (and its stream); `timeoutMs` bounds it tighter than `KEYLANG_LLM_TIMEOUT_MS`. Without options a call ends by its answer or the timeout.
-    - type [LlmClientOptions](../../src/llm.ts#L39)
-      <a id="features.llm.LlmClientOptions"></a><br>Where a client runs: `root` is the repository (the working directory of an agent CLI to come); `env` and `home` default to the process's own.
-    - type [LlmClient](../../src/llm.ts#L45)
+    - type [LlmClientOptions](../../src/llm.ts#L43)
+      <a id="features.llm.LlmClientOptions"></a><br>Where a client runs: `root` is the repository (the working directory of an agent CLI); `env` and `home` default to the process's own.
+    - type [LlmClient](../../src/llm.ts#L49)
       <a id="features.llm.LlmClient"></a>
-    - module [LlmCancelled](../../src/llm.ts#L53)
+    - module [LlmCancelled](../../src/llm.ts#L59)
       <a id="features.llm.LlmCancelled"></a><br>The caller cancelled the request: not a timeout, not a provider error, and no partial answer.
-      - fn [constructor](../../src/llm.ts#L54) (provider: string)
+      - fn [constructor](../../src/llm.ts#L60) (provider: string)
         <a id="features.llm.LlmCancelled.constructor"></a>
-    - fn [isCancelled](../../src/llm.ts#L61) (error: unknown) → error is LlmCancelled
+    - fn [isCancelled](../../src/llm.ts#L67) (error: unknown) → error is LlmCancelled
       <a id="features.llm.isCancelled"></a><br>The error of a request its caller cancelled.
-    - type [LlmSetup](../../src/llm.ts#L65) = { client: LlmClient } | { missing: string }
+    - type [LlmSetup](../../src/llm.ts#L71) = { client: LlmClient } | { missing: string }
       <a id="features.llm.LlmSetup"></a>
-    - type [Env](../../src/llm.ts#L67) = Readonly<Record<string, string | undefined>> <!-- internal -->
+    - type [Env](../../src/llm.ts#L73) = Readonly<Record<string, string | undefined>> <!-- internal -->
       <a id="features.llm.Env"></a>
-    - fn [llmClient](../../src/llm.ts#L74) (agent: string | null, options: LlmClientOptions) → LlmSetup
-      <a id="features.llm.llmClient"></a>
-      - calls [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.deadline](features.md#features.llm.deadline), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
-    - fn [timeoutMs](../../src/llm.ts#L103) (env: Env) → number | string <!-- internal -->
+    - fn [llmClient](../../src/llm.ts#L85) (configAgent: string | null, options: LlmClientOptions) → LlmSetup
+      <a id="features.llm.llmClient"></a><br>The client of the effective agent: `configAgent` is keylang.json's, which `KEYLANG_AGENT` and agents.json "use" override. An invalid variable or agents.json throws, naming it; a missing key or binary is `missing`.
+      - calls [features.agent-cli.resolveAgent](features.md#features.agent-cli.resolveAgent), [features.llm.timeoutMs](features.md#features.llm.timeoutMs), [base.config.isCliAgent](base.md#base.config.isCliAgent), [features.agent-cli.cliClient](features.md#features.agent-cli.cliClient), [features.llm.deadline](features.md#features.llm.deadline), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.keys.readKey](features.md#features.keys.readKey), [features.llm.anthropicComplete](features.md#features.llm.anthropicComplete), [features.llm.openrouterComplete](features.md#features.llm.openrouterComplete)
+    - fn [timeoutMs](../../src/llm.ts#L131) (env: Env) → number | string <!-- internal -->
       <a id="features.llm.timeoutMs"></a><br>`KEYLANG_LLM_TIMEOUT_MS`, a positive whole number of milliseconds; the reason when it is not one.
-    - type [Deadline](../../src/llm.ts#L110) <!-- internal -->
+    - type [Deadline](../../src/llm.ts#L138) <!-- internal -->
       <a id="features.llm.Deadline"></a><br>A call's bound: the variable's, or the call's own when that is tighter; `fromVariable` decides whether the timeout message cites the variable.
-    - fn [deadline](../../src/llm.ts#L115) (variable: number, own: number | undefined) → Deadline <!-- internal -->
+    - fn [deadline](../../src/llm.ts#L143) (variable: number, own: number | undefined) → Deadline <!-- internal -->
       <a id="features.llm.deadline"></a>
-    - fn [timeoutMessage](../../src/llm.ts#L119) (provider: string, bound: Deadline) → string <!-- internal -->
+    - fn [timeoutMessage](../../src/llm.ts#L147) (provider: string, bound: Deadline) → string <!-- internal -->
       <a id="features.llm.timeoutMessage"></a>
-    - fn [callSignal](../../src/llm.ts#L128) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
+    - fn [callSignal](../../src/llm.ts#L156) (timeout: number, outer: AbortSignal | undefined) → { signal: AbortSignal; timedOut: () => boolean; cancelled: () => boolean; dispose: () => void } <!-- internal -->
       <a id="features.llm.callSignal"></a><br>One signal for a whole call: aborted by the deadline or by the caller's signal, whichever comes first; `dispose` clears the timer and the listener on the caller's signal, so a long-lived signal does not collect them.
-    - fn [anthropicComplete](../../src/llm.ts#L152) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [anthropicComplete](../../src/llm.ts#L180) (client: Anthropic, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.anthropicComplete"></a>
       - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [openrouterComplete](../../src/llm.ts#L186) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
+    - fn [openrouterComplete](../../src/llm.ts#L214) (base: string, key: string, model: string, request: LlmRequest, bound: Deadline, outer?: AbortSignal) → Promise<string> <!-- internal -->
       <a id="features.llm.openrouterComplete"></a>
       - calls [features.llm.callSignal](features.md#features.llm.callSignal), [features.llm.parseJson](features.md#features.llm.parseJson), [features.llm.LlmCancelled](features.md#features.llm.LlmCancelled), [features.llm.timeoutMessage](features.md#features.llm.timeoutMessage)
-    - fn [parseJson](../../src/llm.ts#L245) (text: string) → unknown <!-- internal -->
+    - fn [parseJson](../../src/llm.ts#L273) (text: string) → unknown <!-- internal -->
       <a id="features.llm.parseJson"></a>
   - module [lsp-features](../../src/lsp-features.ts#L1)
     <a id="features.lsp-features"></a><br>Language features over one analysis: pure functions from an `Analysis`, a document, and a position to LSP results. Positions are LSP's: 0-based line, UTF-16 character.

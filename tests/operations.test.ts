@@ -87,6 +87,13 @@ async function withoutKeys<T>(t: { after: (fn: () => void) => void }, fn: () => 
 test("doctor: computes the report for an explicit root, writes nothing, and matches the CLI", async (t) => {
   await withoutKeys(t, async () => {
     const home = process.env.HOME!;
+    // No agent CLI on PATH: probing the machine's real ones would take this
+    // process off the CPU, and the test runner's own messages would land in the capture.
+    const path = process.env.PATH;
+    process.env.PATH = join(home, "no-bin");
+    t.after(() => {
+      process.env.PATH = path;
+    });
     const dir = repo(t);
     const twin = repo(t);
     const before = treeBytes(dir);
@@ -121,7 +128,8 @@ test("doctor: computes the report for an explicit root, writes nothing, and matc
     assert.equal(cli.stderr, "");
     assert.equal(`${result.messages.map((m) => m.text).join("\n")}\n`, cli.stdout);
     assert.match(cli.stdout, /^languages: typescript$/m);
-    assert.match(cli.stdout, /^agent: not configured \(keylang\.json `agent`\)$/m);
+    assert.match(cli.stdout, /^agent: not configured \(keylang\.json `agent`, KEYLANG_AGENT or ~\/\.config\/keylang\/agents\.json\)$/m);
+    assert.match(cli.stdout, /^agent CLIs: claude — · codex — · opencode — · cursor —$/m);
   });
 });
 

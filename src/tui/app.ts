@@ -32,7 +32,8 @@ import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
 import { readExplanation } from "../explain-llm.ts";
-import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "../explain-inventory.ts";
+import { selectedAgent } from "../agent-cli.ts";
+import { defaultBriefJobs, positiveIntegerProblem } from "../explain-inventory.ts";
 import type { LlmSetup } from "../llm.ts";
 import { EXPLANATIONS } from "../explain.ts";
 import { explainDir, explanationPath, loadBriefs, type ExplanationDetail } from "../explanations.ts";
@@ -2803,7 +2804,7 @@ export class App {
     const prompt = this.state.prompt!;
     const id = this.explainSubject();
     const analysis = this.state.analysis;
-    const agent = analysis?.config.agent ?? null;
+    const agent = analysis ? selectedAgent(analysis.config.agent) : null;
     const lang = analysis?.config.explain.lang ?? "en";
     const settings = `${detail} (←→) · lang ${lang} · agent ${agent ?? "none"} · keylang.json sets lang and agent`;
     if (id === "") {
@@ -2865,7 +2866,7 @@ export class App {
     if (limitProblem !== null) return { field: "limit", text: limitProblem };
     const jobsProblem = jobs === "" ? null : positiveIntegerProblem("--jobs", jobs);
     if (jobsProblem !== null) return { field: "jobs", text: jobsProblem };
-    return { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list, ...(limit !== "" ? { limit: Number(limit) } : {}), jobs: jobs === "" ? DEFAULT_BRIEF_JOBS : Number(jobs), estimate: true };
+    return { kind: "explain-plan", root: this.state.root, list: "briefs", batch: form.list, ...(limit !== "" ? { limit: Number(limit) } : {}), ...(jobs !== "" ? { jobs: Number(jobs) } : {}), estimate: true };
   }
 
   /** The rows (the list; limit and jobs for a brief plan; run), what the selected list is and is not, and a note on the selected row. */
@@ -2883,7 +2884,7 @@ export class App {
     const rows: { id: string; text: string }[] = [{ id: "list", text: `list:   ${names[form.list]} · ←→ ${names[next]}` }];
     if (form.list !== "stale-saved") {
       rows.push({ id: "limit", text: `limit:  ${form.limit}${selected === "limit" ? "▏" : ""}${form.limit.trim() === "" ? "  (empty: every candidate)" : ""}` });
-      rows.push({ id: "jobs", text: `jobs:   ${form.jobs}${selected === "jobs" ? "▏" : ""}${form.jobs.trim() === "" ? `  (empty: ${DEFAULT_BRIEF_JOBS}, the requests a batch keeps in flight)` : ""}` });
+      rows.push({ id: "jobs", text: `jobs:   ${form.jobs}${selected === "jobs" ? "▏" : ""}${form.jobs.trim() === "" ? `  (empty: ${defaultBriefJobs(this.agentName())}, the requests a batch keeps in flight)` : ""}` });
     }
     rows.push({ id: "run", text: form.list === "stale-saved" ? "List them (reads the saved files, no model, writes nothing)" : "Plan and estimate: a dry run (no model, writes nothing)" });
     if (form.list !== "stale-saved") rows.push({ id: "batch", text: "Ask the model for them: the batch (plans again, saves each brief)" });
@@ -2904,7 +2905,7 @@ export class App {
     else if (now === "jobs") prompt.note = "a whole number of at least 1, for the batch the plan is for; a dry run asks nothing";
     else if (now === "batch") {
       const batch = this.explainBatchRequest(request);
-      prompt.note = `${operationLabel(batch)} · ${this.explainBatchAsk()} · plans again on a fresh analysis of the saved files; ${batch.jobs ?? DEFAULT_BRIEF_JOBS} request(s) at a time within a wave, bottom-up; each brief saved to ${explainDir({ dir: this.specDir() })}/brief/ as it lands`;
+      prompt.note = `${operationLabel(batch)} · ${this.explainBatchAsk()} · plans again on a fresh analysis of the saved files; ${batch.jobs ?? defaultBriefJobs(this.agentName())} request(s) at a time within a wave, bottom-up; each brief saved to ${explainDir({ dir: this.specDir() })}/brief/ as it lands`;
     }
     else prompt.note = `${operationLabel(request)} · a fresh analysis of the saved code and specs · no model, writes nothing`;
   }
@@ -2939,7 +2940,7 @@ export class App {
   private explainBatchRequest(plan: ExplainPlanRequest): ExplainBatchRequest {
     const batch = plan.list === "briefs" ? plan.batch : "missing";
     const limit = plan.list === "briefs" ? plan.limit : undefined;
-    return { kind: "explain-batch", root: this.state.root, batch, ...(limit !== undefined ? { limit } : {}), jobs: (plan.list === "briefs" ? plan.jobs : undefined) ?? DEFAULT_BRIEF_JOBS };
+    return { kind: "explain-batch", root: this.state.root, batch, ...(limit !== undefined ? { limit } : {}), jobs: (plan.list === "briefs" ? plan.jobs : undefined) ?? defaultBriefJobs(this.agentName()) };
   }
 
   /** Who the batch row would ask, by the session's configuration, or why no request can be made. */
@@ -3032,9 +3033,10 @@ export class App {
     this.refreshDraftPrompt();
   }
 
-  /** The `agent` of the saved keylang.json as the last analysis read it, or null. Credentials are checked by the operation. */
+  /** The effective agent (`KEYLANG_AGENT`, agents.json, the saved keylang.json as the last analysis read it), or null. Credentials are checked by the operation. */
   private agentName(): string | null {
-    return this.state.analysis?.config.agent ?? null;
+    const analysis = this.state.analysis;
+    return analysis ? selectedAgent(analysis.config.agent) : null;
   }
 
   /**

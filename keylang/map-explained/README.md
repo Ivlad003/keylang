@@ -6,18 +6,18 @@ The tree of the map with a brief under each node: the documentation comment from
 
 | Layer | Explanation | Code | LLM | LLM, stale | None |
 |---|---|---|---|---|---|
-| [base](base.md) |  | 57 | 0 | 0 | 33 |
+| [base](base.md) |  | 59 | 0 | 0 | 33 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
 | [cli](cli.md) |  | 47 | 0 | 0 | 58 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 118 | 0 | 0 | 64 |
-| [features](features.md) |  | 242 | 0 | 0 | 146 |
+| [features](features.md) |  | 270 | 0 | 0 | 164 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 127 | 0 | 0 | 134 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [outside](outside.md) |  | 0 | 0 | 0 | 34 |
 | [tui](tui.md) |  | 440 | 0 | 0 | 209 |
-| **all** | | 1311 | 0 | 0 | 881 |
+| **all** | | 1341 | 0 | 0 | 899 |
 
 ## Index
 
@@ -25,11 +25,11 @@ Modules and classes by name; the parent ID follows each one.
 
 **_** · [_60_archive](outside.md#outside.design.scripts._60_archive) (outside.design.scripts) · [_61_tui](outside.md#outside.design.scripts._61_tui) (outside.design.scripts) · [_62_flow](outside.md#outside.design.scripts._62_flow) (outside.design.scripts) · [_63_merge](outside.md#outside.design.scripts._63_merge) (outside.design.scripts) · [_64_explain](outside.md#outside.design.scripts._64_explain) (outside.design.scripts) · [_65_windows](outside.md#outside.design.scripts._65_windows) (outside.design.scripts) · [_66_export](outside.md#outside.design.scripts._66_export) (outside.design.scripts) · [_70_cleanup](outside.md#outside.design.scripts._70_cleanup) (outside.design.scripts) · [_71_editor](outside.md#outside.design.scripts._71_editor) (outside.design.scripts) · [_72_fix](outside.md#outside.design.scripts._72_fix) (outside.design.scripts) · [_73_fix](outside.md#outside.design.scripts._73_fix) (outside.design.scripts) · [_74_agent](outside.md#outside.design.scripts._74_agent) (outside.design.scripts) · [_75_read_s2c](outside.md#outside.design.scripts._75_read_s2c) (outside.design.scripts) · [_76_fix_export](outside.md#outside.design.scripts._76_fix_export) (outside.design.scripts) · [_77_tbl](outside.md#outside.design.scripts._77_tbl) (outside.design.scripts)
 
-**A** · [actions](tui.md#tui.actions) (tui) · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
+**A** · [actions](tui.md#tui.actions) (tui) · [agent-cli](features.md#features.agent-cli) (features) · [agent-context](features.md#features.agent-context) (features) · [analysis-worker](tui.md#tui.analysis-worker) (tui) · [analyze](map.md#map.analyze) (map) · [app](tui.md#tui.app) (tui) · [App](tui.md#tui.app.App) (tui.app) · [assess](check.md#check.assess) (check) · [assist](tui.md#tui.assist) (tui) · [Assist](tui.md#tui.assist.Assist) (tui.assist) · [AudioQueue](tui.md#tui.web.AudioQueue) (tui.web)
 
 **B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bench](outside.md#outside.bench) (outside) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
 
-**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [clone](outside.md#outside.bench.clone) (outside.bench) · [code-highlight](tui.md#tui.code-highlight) (tui) · [completions](cli.md#cli.completions) (cli) · [config](base.md#base.config) (base) · [copy-wasm](outside.md#outside.scripts.copy-wasm) (outside.scripts) · [copy-web](outside.md#outside.scripts.copy-web) (outside.scripts)
+**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [CliCancelled](features.md#features.agent-cli.CliCancelled) (features.agent-cli) · [clone](outside.md#outside.bench.clone) (outside.bench) · [code-highlight](tui.md#tui.code-highlight) (tui) · [completions](cli.md#cli.completions) (cli) · [config](base.md#base.config) (base) · [copy-wasm](outside.md#outside.scripts.copy-wasm) (outside.scripts) · [copy-web](outside.md#outside.scripts.copy-web) (outside.scripts)
 
 **D** · [declared-packages](map.md#map.declared-packages) (map) · [demo](outside.md#outside.examples.wiring-lifecycle.demo) (outside.examples.wiring-lifecycle) · [design](outside.md#outside.design) (outside) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 

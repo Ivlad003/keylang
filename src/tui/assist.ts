@@ -11,6 +11,8 @@
 
 import type { Analysis } from "../analyze.ts";
 import type { ContextPack } from "../agent-context.ts";
+import { selectedAgent } from "../agent-cli.ts";
+import { isCliAgent } from "../config.ts";
 import { ghostSignal, ghostSuggestions } from "../ghost.ts";
 import { updateStats } from "../stats.ts";
 import { glossary, speechToSpec, transcribeOpenRouter, voiceEngine } from "../voice.ts";
@@ -147,7 +149,8 @@ export class Assist {
     this.cancelGhost();
     const buffer = this.host.buffer();
     const analysis = this.state.analysis;
-    if (!buffer || !analysis?.snapshot || !analysis.config.agent || this.state.completion || this.state.activeOperation !== null) return;
+    const agent = analysis ? selectedAgent(analysis.config.agent) : null;
+    if (!buffer || !analysis?.snapshot || agent === null || this.state.completion || this.state.activeOperation !== null) return;
     const { line, col } = this.state.cursor;
     if (!ghostSignal(buffer.path, buffer.text, line, col)) return;
     const spot = this.spot(buffer);
@@ -182,7 +185,8 @@ export class Assist {
           if (this.ghostFlight === flight) this.ghostFlight = null;
         });
       this.host.track(work);
-    }, analysis.config.ghost.delay);
+      // An agent CLI starts a process per request: it waits for a longer pause.
+    }, analysis.config.ghost.delay ?? (isCliAgent(agent) ? 1500 : 400));
   }
 
   /** `Tab` on a ghost line: taken only into the text it was shown for. */

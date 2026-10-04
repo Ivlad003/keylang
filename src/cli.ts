@@ -17,7 +17,7 @@ import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import type { BriefBatch } from "./explain-llm.ts";
-import { DEFAULT_BRIEF_JOBS, positiveIntegerProblem } from "./explain-inventory.ts";
+import { positiveIntegerProblem } from "./explain-inventory.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
 import { lineDiff } from "./proposals.ts";
@@ -86,7 +86,8 @@ Commands:
                             so a rerun goes on where it stopped. --stale --llm: only
                             the stale briefs. Without --llm: list the nodes.
                             --dry-run: counts and a token estimate, no request;
-                            --limit N: at most N nodes; --jobs N: requests at once (4)
+                            --limit N: at most N nodes; --jobs N: requests at once
+                            (4; 2 with an agent CLI)
   draft flow <trigger>      Propose a flow from the snapshot's calls as
                             .keylang/proposals/<spec>; merge it with m in the TUI
                             (--mode algo|llm|hybrid, default hybrid: the model's steps
@@ -111,8 +112,9 @@ Commands:
                             writes nothing: the layout changes only when you edit it
                             (--mode llm|hybrid: the model's layout, validated, printed)
   lsp [--stdio]             Speak LSP over stdio (--stdio is accepted for clients)
-  doctor                    What is set up: languages, the agent's credentials, voice
-                            (engine, local model, microphone); changes nothing
+  doctor                    What is set up: languages, the agent (its source, and its
+                            credentials or its CLI binary and version), the agent CLIs
+                            on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
                             feature_status, apply_diff (proposals only; nothing else is written)
@@ -153,6 +155,12 @@ Options:
   --explain-edge <a> <b>    Print snapshot edges between ids a and b (a → b, then b → a),
                             or the unresolved constructs in a that could form one;
                             writes nothing
+
+The model (agent): KEYLANG_AGENT, else "use" in ~/.config/keylang/agents.json, else
+keylang.json \`agent\`: "anthropic:<model>", "openrouter:<model>" (API key), or
+"cli:<name>[:<model>]", an installed agent CLI asked for text only (claude, codex,
+opencode, cursor, or a command in agents.json "clis"). KEYLANG_LLM_TIMEOUT_MS bounds
+a request (default 600000).
 
 Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict)
 or a stale map with --check, 2 usage or I/O error.
@@ -382,12 +390,13 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
  */
 async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise<number> {
   const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
-  const jobs = opts.jobs === undefined ? DEFAULT_BRIEF_JOBS : positiveInteger("--jobs", opts.jobs);
+  // No --jobs: the operation takes the agent's default (4, or 2 for an agent CLI).
+  const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
   // The list and the dry run: a printer over the shared read-only plan.
-  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), jobs, estimate: opts.dryRun });
+  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}), estimate: opts.dryRun });
   // The batch: a printer over the shared operation; a progress line per node on stderr.
   const result = await runOperation(
-    { kind: "explain-batch", root: findRoot(process.cwd()), batch, ...(limit !== undefined ? { limit } : {}), jobs },
+    { kind: "explain-batch", root: findRoot(process.cwd()), batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
     { onProgress: ({ step }) => step && process.stderr.write(`[${step.done}/${step.total}] ${step.id}${step.failed === null ? "" : `: failed: ${step.failed}`}\n`) },
   );
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
