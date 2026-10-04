@@ -136,6 +136,46 @@ test("static: no path in a fully resolved graph is unverified while the step is 
   assert.match(row(rows, "static", "application.purchase")!.evidence, /is a module, not a callable/);
 });
 
+test("calls: a direct call of the parent is static ok, a reliable absence fails, a call keylang cannot pin is unverified; reads is ID only", (t) => {
+  const flow = [
+    "# flow calls",
+    "",
+    "- trigger presentation.terminal.checkout",
+    "  - calls application.purchase.buy",
+    "  - calls domain.order.create",
+    "- step application.purchase.buy",
+    "  - calls domain.order.create, infrastructure.store.save",
+    "  - reads domain.order.create",
+    "  - calls presentation.terminal.checkout",
+    "",
+  ].join("\n");
+  const later = "# flow later\n\n- trigger application.purchase.later\n  - calls infrastructure.store.save\n";
+  const dir = repo(t, CHECKOUT, { "flows/calls.md": flow, "flows/later.md": later });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  const lines = o.stdout.split("\n").filter((line) => /flows\/(calls|later)\.md:([4-9]):/.test(line));
+  assert.deepEqual(lines, [
+    "keylang/flows/calls.md:4:11: ID ok application.purchase.buy: exact",
+    "keylang/flows/calls.md:4:11: static ok application.purchase.buy: called from presentation.terminal.checkout",
+    "keylang/flows/calls.md:5:11: ID ok domain.order.create: exact",
+    "keylang/flows/calls.md:5:11: static fail domain.order.create: absence: `presentation.terminal.checkout` does not call `domain.order.create` (it reaches it via application.purchase.buy; `step` proves a path)",
+    "keylang/flows/calls.md:6:1: ID ok application.purchase.buy: exact",
+    "keylang/flows/calls.md:6:1: static ok application.purchase.buy: called from presentation.terminal.checkout",
+    "keylang/flows/calls.md:7:11: ID ok domain.order.create: exact",
+    "keylang/flows/calls.md:7:11: static ok domain.order.create: called from application.purchase.buy",
+    "keylang/flows/calls.md:7:32: ID ok infrastructure.store.save: exact",
+    "keylang/flows/calls.md:7:32: static ok infrastructure.store.save: called from application.purchase.buy",
+    "keylang/flows/calls.md:8:11: ID ok domain.order.create: exact",
+    "keylang/flows/calls.md:9:11: ID ok presentation.terminal.checkout: exact",
+    "keylang/flows/calls.md:9:11: static fail presentation.terminal.checkout: absence: `application.purchase.buy` does not call `presentation.terminal.checkout`",
+    "keylang/flows/later.md:4:11: ID ok infrastructure.store.save: exact",
+    "keylang/flows/later.md:4:11: static unverified infrastructure.store.save: no resolved call from application.purchase.later; `save` is read as a value at src/application/purchase.ts:13:9, so code keylang cannot follow may call `infrastructure.store.save`",
+  ]);
+  assert.match(o.stderr, /^2 fail, /m);
+  // The spec text is untouched: fmt keeps it.
+  assert.equal(keylang(dir, ["fmt", "--check", "keylang/flows"]).status, 0);
+});
+
 // A step that only its own name can reach: a call whose receiver keylang does
 // not know can still be it when the method name matches, never otherwise.
 const BY_NAME: Record<string, string> = {
@@ -159,6 +199,14 @@ test("static: a step no call can reach is a confirmed absence; a call with the s
   const escaped = results(dir).rows.filter((r) => r.criterion === "static" && r.area === "application.purchase.buy");
   assert.deepEqual(escaped.map((r) => r.verdict), ["unverified", "unverified", "unverified"]);
   assert.match(escaped[0]!.evidence, /`buy` is read as a value at src\/presentation\/terminal\.ts:5:25/);
+});
+
+test("calls: an unresolved call by the target's name in the parent keeps it unverified; another name does not", (t) => {
+  const flow = (fn: string): string => `# flow ${fn}\n\n- trigger domain.order.${fn}\n  - calls application.purchase.buy\n`;
+  const dir = repo(t, BY_NAME, { "flows/poke.md": flow("poke"), "flows/other.md": flow("other") });
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /flows\/poke\.md:4:11: static unverified application\.purchase\.buy: no resolved call from domain\.order\.poke; call through a local value `x\.buy` at src\/domain\/order\.ts:6:3 may be it/);
+  assert.match(o.stdout, /flows\/other\.md:4:11: static fail application\.purchase\.buy: absence: `domain\.order\.other` does not call `application\.purchase\.buy`$/m);
 });
 
 test("static: the hole named is the one with the step's name nearest the parent, not the first file", (t) => {

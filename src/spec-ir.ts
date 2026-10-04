@@ -106,6 +106,13 @@ export interface ClaimItem extends Located {
   children: readonly FlowItem[];
 }
 
+/** `calls <id>[, <id>…]` under a step or trigger: the parent fn calls each target directly. */
+export interface CallsItem extends Located {
+  kind: "calls";
+  targets: NonEmpty<Ref>;
+  children: readonly FlowItem[];
+}
+
 export interface TestItem extends Located {
   kind: "test";
   /** The test file, as written. */
@@ -113,7 +120,7 @@ export interface TestItem extends Located {
   name: string | null;
 }
 
-export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | TestItem;
+export type FlowItem = FlowStep | WhenItem | ThenItem | ClaimItem | CallsItem | TestItem;
 
 export interface Flow {
   file: string;
@@ -447,6 +454,11 @@ function flowNode(file: string, flow: string, node: Node): FlowItem[] {
     const body = node.text?.value ?? target?.target;
     if (body === undefined) return flowItems(file, flow, node.children);
     return [{ kind: node.kind, body, target, children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
+  }
+  if (node.kind === "calls") {
+    const [first, ...rest] = node.refs;
+    if (!first) return flowItems(file, flow, node.children);
+    return [{ kind: "calls", targets: [first, ...rest], children: flowItems(file, flow, node.children), ...flowAt(file, flow, node) }];
   }
   if (node.kind === "test") {
     const path = node.text?.value;

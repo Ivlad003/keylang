@@ -552,7 +552,7 @@
     - fn [explainCode](../../src/explain.ts#L114) (code: string) → string | null
       <a id="features.explain.explainCode"></a>
   - module [feature-status](../../src/feature-status.ts#L1)
-    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base commit. Tests and trace are reported and do not block.
+    <a id="features.feature-status"></a><br>Whether a feature file is done: every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base commit. Tests and trace are reported and do not block.
     - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
     - flows [check.flows](check.md#check.flows)
@@ -578,14 +578,14 @@
     - fn [featureStatus](../../src/feature-status.ts#L86) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
       - calls [features.feature-status.finding](features.md#features.feature-status.finding), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText)
-    - fn [planGaps](../../src/feature-status.ts#L154) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L156) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger` or `step` that is no longer there under the same flow and parents. Added items and order among siblings are not compared.
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L182) = Trigger | FlowStep <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L184) = Trigger | FlowStep <!-- internal -->
       <a id="features.feature-status.PlanItem"></a>
-    - fn [planItems](../../src/feature-status.ts#L185) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L187) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
       <a id="features.feature-status.planItems"></a><br>Every `trigger` and `step` of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L198) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L200) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a>
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…

@@ -40,51 +40,53 @@
     - type [Channel](../../src/flows.ts#L80) = "ID" | "static" | "tests" | "trace" <!-- internal -->
     - type [FlowNode](../../src/flows.ts#L82) = Trigger | FlowItem <!-- internal -->
     - fn [evaluateFlows](../../src/flows.ts#L84) (compiled: SpecIR, index: Index, input: FlowInput) → { diagnostics: Diagnostic[]; verdicts: Verdict[] }
-      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, check.trace-evidence.traceFlow, check.flows.idVerdict, check.flows.reachability, check.flows.traceProvenance, check.flows.claimArea, check.flows.quantitative, base.diag.diagnostic, check.test-report.matchTest
-    - fn [claimArea](../../src/flows.ts#L201) (node: ClaimItem | ThenItem | WhenItem) → string <!-- internal -->
-    - fn [traceProvenance](../../src/flows.ts#L207) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
-    - fn [quantitative](../../src/flows.ts#L212) (text: string) → boolean <!-- internal -->
-    - fn [idVerdict](../../src/flows.ts#L216) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
+      - calls check.flows.collectPlanned, check.flows.callGraph, check.flows.specHash, check.trace-evidence.traceFlow, check.flows.idVerdict, check.flows.reachability, check.flows.traceProvenance, check.flows.directCall, check.flows.claimArea, check.flows.quantitative, base.diag.diagnostic, check.test-report.matchTest
+    - fn [claimArea](../../src/flows.ts#L225) (node: ClaimItem | ThenItem | WhenItem) → string <!-- internal -->
+    - fn [traceProvenance](../../src/flows.ts#L231) (evidence: TraceEvidence) → Verdict["evidence"] <!-- internal -->
+    - fn [quantitative](../../src/flows.ts#L236) (text: string) → boolean <!-- internal -->
+    - fn [idVerdict](../../src/flows.ts#L240) ( id: string, plan: Planned | undefined, span: Span, file: string, index: Index, input: FlowInput, verdict: (channel: Channel, area: string, value: Verdict["verdict"], file: string, span: Span, message: string) => void, ) → Verdict["verdict"] <!-- internal -->
       - calls check.resolve.Index.lookup, check.flows.moduleMembers
-    - type [Step](../../src/flows.ts#L235) <!-- internal -->
-    - type [CallGraph](../../src/flows.ts#L241) <!-- internal -->
-    - fn [callGraph](../../src/flows.ts#L265) (input: FlowInput) → CallGraph <!-- internal -->
+    - type [Step](../../src/flows.ts#L259) <!-- internal -->
+    - type [CallGraph](../../src/flows.ts#L265) <!-- internal -->
+    - fn [callGraph](../../src/flows.ts#L289) (input: FlowInput) → CallGraph <!-- internal -->
       - calls base.languages.constructorName, check.flows.callName, check.flows.doubtfulBodies
-    - fn [doubtfulBodies](../../src/flows.ts#L302) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
+    - fn [doubtfulBodies](../../src/flows.ts#L326) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
       - calls base.span.compareText
-    - fn [lastSegment](../../src/flows.ts#L322) (text: string) → string <!-- internal -->
-    - fn [callName](../../src/flows.ts#L330) (id: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/flows.ts#L346) (text: string) → string <!-- internal -->
+    - fn [callName](../../src/flows.ts#L354) (id: string) → string <!-- internal -->
       - calls check.flows.lastSegment
-    - fn [namedLike](../../src/flows.ts#L339) (graph: CallGraph, name: string) → string[] <!-- internal -->
-    - fn [describeVia](../../src/flows.ts#L344) (edge: SnapshotEdge) → string <!-- internal -->
-    - fn [describeHole](../../src/flows.ts#L348) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+    - fn [namedLike](../../src/flows.ts#L363) (graph: CallGraph, name: string) → string[] <!-- internal -->
+    - fn [describeVia](../../src/flows.ts#L368) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L372) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       - calls check.flows.describeVia, check.flows.lastSegment, check.flows.callName
-    - fn [at](../../src/flows.ts#L360) (edge: SnapshotEdge) → string <!-- internal -->
-    - fn [reachability](../../src/flows.ts#L387) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [at](../../src/flows.ts#L384) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L411) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.externalImport, check.flows.search, check.flows.routeMessage, check.flows.routeSteps, check.flows.possibleRoute, check.flows.at, check.flows.describeHole, check.flows.callersOf, check.flows.escapeOf, check.flows.holeNear
-    - fn [search](../../src/flows.ts#L447) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
-    - fn [routeSteps](../../src/flows.ts#L470) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
-    - fn [fileModule](../../src/flows.ts#L483) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
-    - fn [externalImport](../../src/flows.ts#L495) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [directCall](../../src/flows.ts#L475) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+      - calls check.flows.externalImport, check.flows.routeMessage, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, check.flows.callName, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
+    - fn [search](../../src/flows.ts#L519) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L542) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L555) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L567) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.fileModule
-    - fn [routeMessage](../../src/flows.ts#L505) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [routeMessage](../../src/flows.ts#L577) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       - calls check.flows.routeSteps, check.flows.describeVia
-    - fn [possibleRoute](../../src/flows.ts#L518) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L590) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       - calls check.flows.namedLike, check.flows.callName, check.flows.lastSegment
-    - fn [callersOf](../../src/flows.ts#L546) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
-    - fn [escapeOf](../../src/flows.ts#L564) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L618) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L636) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       - calls check.flows.fnAt, check.flows.at, check.flows.callName, base.span.compareText
-    - fn [identifierPattern](../../src/flows.ts#L590) (name: string) → RegExp <!-- internal -->
-    - fn [fnAt](../../src/flows.ts#L595) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
-    - fn [holeNear](../../src/flows.ts#L609) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L662) (name: string) → RegExp <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L667) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L681) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       - calls base.span.compareText
-    - fn [moduleMembers](../../src/flows.ts#L625) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
-    - fn [collectPlanned](../../src/flows.ts#L641) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L697) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L713) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       - calls check.flows.plannedMismatch, base.diag.diagnostic
-    - fn [plannedMismatch](../../src/flows.ts#L667) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L739) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null }) → "kind" | "signature" | null
       - calls check.flows.normalizeSignature
-    - fn [normalizeSignature](../../src/flows.ts#L673) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L677) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L745) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L749) (text: string) → string <!-- internal -->
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag

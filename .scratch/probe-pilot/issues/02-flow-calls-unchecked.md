@@ -1,6 +1,6 @@
 # 02: `calls` / `reads` під кроком потоку не перевіряються
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** design
 
@@ -22,12 +22,13 @@
 
 **Рекомендація:** варіант 1 для `calls` (прямий виклик — найпростіший доказ, який уже є в знімку), `reads` — `ID ok` до окремого рішення. Варіант 3 — лише якщо проба з людьми покаже, що `calls` у потоці ніхто не відрізняє від `step`.
 
-- [ ] рішення записане тут і в format.md («Flows: докази кроку», таблиця доказів)
-- [ ] фікстура: `calls` на fn, яку батько викликає, і на fn, яку не викликає — вердикти за рішенням; `fmt`, `parse --json` і `specHash` не змінюються
-- [ ] `feature_status` і `--strict` поводяться узгоджено з рішенням
+- [x] рішення записане тут і в format.md («Flows: докази кроку», таблиця доказів)
+- [x] фікстура: `calls` на fn, яку батько викликає, і на fn, яку не викликає — вердикти за рішенням; `fmt`, `parse --json` і `specHash` не змінюються
+- [x] `feature_status` і `--strict` поводяться узгоджено з рішенням
 
 Ключові файли: `src/flows.ts`, `src/spec-ir.ts`, `src/check-results.ts`, `docs/format.md`, `tests/cli.test.ts`
 
 ## Comments
 
 - 2026-10-04 — рішення людини: варіант 1 — `calls` під кроком є static-доказом без порядку: прямий resolved-виклик з fn батька → `static ok`; надійна відсутність за правилами `absence` → `fail`; інакше `unverified`. `reads` — лише `ID ok` до окремого рішення.
+- 2026-10-04 — зроблено за варіантом 1. `calls` під кроком/тригером: кожне ID дає `ID` і `static` на своїй колонці. `static ok` — resolved-виклик у тілі fn батька, який доводить поточний режим (не closure; хук лише в `behavior`); `static fail` `` absence: `<батько>` does not call `<ціль>` `` — коли жоден виклик батька не може бути ціллю (нерозв'язаний/неоднозначний виклик її назви, перевизначення, closure, хук у `shape`), тіло батька розібрано і ціль не «тікає» (`escapeOf`, як у absence кроку); інакше `unverified`. Якщо шлях через інші виклики є, `fail` додає підказку `(it reaches it via …; `step` proves a path)`. `reads` — лише `ID` на кожне ID. SpecIR отримав вид `calls` (`CallsItem`); парсер, `fmt`, `parse --json` не змінювались. `feature_status`: кожне ID у `calls` без `static ok` — гап `static` (як крок); `--strict` рахує `unverified` як завжди. Відтворення пілоту: рядок 5 тепер `static fail infra.db.save: absence: `domain.order.createOrder` does not call `infra.db.save``. Припущення: ціль, що «тікає» будь-де в репозиторії, робить `calls` `unverified` (консервативно, як для кроку). Тести: `tests/flows.test.ts` «calls: …» (2), `tests/cli.test.ts` «feature: …». format.md — абзац «`calls` у потоці», tools.md — умова готовності фічі.

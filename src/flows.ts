@@ -165,6 +165,30 @@ export function evaluateFlows(compiled: SpecIR, index: Index, input: FlowInput):
         for (const child of node.children) visit(child, id, claim, childBlock);
         return;
       }
+      if (node.kind === "calls") {
+        // A static proof without order: the parent fn calls each target itself.
+        const parentPlanned = parent !== null && planned.get(parent)?.implemented === false;
+        for (const ref of node.targets) {
+          const id = ref.target;
+          const plan = planned.get(id);
+          const pending = plan !== undefined && !plan.implemented;
+          if (idVerdict(id, pending ? plan : undefined, ref.span, file, index, input, verdict) === "fail") continue;
+          if (pending) verdict("static", id, "unverified", file, ref.span, `planned ${plan.kind}, not implemented`);
+          else if (parentPlanned) verdict("static", id, "unverified", file, ref.span, `parent \`${parent}\` is planned, not implemented`);
+          else if (input.nodes[id] !== undefined) {
+            const call = directCall(graph, input, parent, id);
+            verdict("static", id, call.verdict, file, ref.span, call.message, { provenance: "syntactic" });
+          } else verdict("static", id, "unverified", file, ref.span, "not in the snapshot (opaque module)");
+        }
+        return;
+      }
+      // `reads` says only that the ID exists, until reads have evidence of their own.
+      if (node.kind === "reads") {
+        for (const ref of node.source.refs) {
+          const plan = planned.get(ref.target);
+          idVerdict(ref.target, plan !== undefined && !plan.implemented ? plan : undefined, ref.span, file, index, input, verdict);
+        }
+      }
       if (node.kind === "when") {
         const evidence = traceOf();
         if (evidence) verdict("trace", `when ${node.condition}`, evidence.verdict, file, node.span, evidence.message, traceProvenance(evidence));
@@ -437,6 +461,54 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
   if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
   return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them` };
+}
+
+/**
+ * Static evidence for `calls`: whether `parent` calls `target` itself, without
+ * order. `ok` is a resolved call in the parent's own body that this mode
+ * follows. `fail` is a confirmed absence under the rules of a step's absence:
+ * no call of the parent can be the target (no unresolved or ambiguous call by
+ * its name, no override, no closure or hook call of it), the parent's body is
+ * what keylang read, and nothing keylang cannot follow may call the target.
+ * Anything else is `unverified`.
+ */
+function directCall(graph: CallGraph, input: FlowInput, parent: string | null, target: string): { verdict: Verdict["verdict"]; message: string } {
+  if (parent === null) return { verdict: "unverified", message: "no trigger or step to call it from" };
+  const from = input.nodes[parent];
+  if (!from) return { verdict: "unverified", message: `parent \`${parent}\` is not in the snapshot` };
+  if (from.kind !== "fn") return { verdict: "unverified", message: `parent \`${parent}\` is a ${from.kind}, not a callable` };
+  const to = input.nodes[target];
+  if (to?.kind === "module" && to.layer === "external") return externalImport(input, parent, target);
+  if (to && to.kind !== "fn") return { verdict: "unverified", message: `\`${target}\` is a ${to.kind}, not a callable` };
+  const behavior = input.static === "behavior";
+  const proves = (step: Step): boolean => !step.edge.closure && (behavior || step.edge.via === undefined);
+  const own = graph.resolved.get(parent) ?? [];
+  const unread = graph.unreadable.get(parent);
+  const direct = own.filter((step) => step.to === target);
+  const sure = direct.find(proves);
+  if (sure) {
+    const message = routeMessage(parent, target, new Map([[target, sure]]));
+    return unread ? { verdict: "unverified", message: `${message}, but ${unread}` } : { verdict: "ok", message };
+  }
+  const weak = direct[0];
+  if (weak?.edge.closure) return { verdict: "unverified", message: `\`${weak.edge.text ?? ""}\` at ${at(weak.edge)} is in a closure of ${parent} and runs only when that function value is called` };
+  if (weak) return { verdict: "unverified", message: `${describeHole(weak.edge, target, input)} at ${at(weak.edge)}` };
+  const lead = `no resolved call from ${parent}`;
+  if (unread) return { verdict: "unverified", message: `${lead}; ${unread}` };
+  // A call keylang cannot pin to one target may be the target itself.
+  for (const edge of graph.open.get(parent) ?? []) {
+    const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, lastSegment(edge.text ?? ""));
+    if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
+  }
+  const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && callName(step.to) === callName(target));
+  if (override) return { verdict: "unverified", message: `${lead}; ${describeHole(override.edge, target, input)} at ${at(override.edge)}` };
+  const blocker = escapeOf(graph, input, new Set([target]), new Set([parent]));
+  if (blocker) return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
+  // A path through other calls is what `step` proves; say so, it is the likely intent.
+  const { route } = search(graph, parent, target, proves);
+  const via = route ? routeSteps(parent, target, route).slice(0, -1).map((step) => step.to) : [];
+  const hint = via.length > 0 ? ` (it reaches it via ${via.join(" → ")}; \`step\` proves a path)` : "";
+  return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}` };
 }
 
 /**

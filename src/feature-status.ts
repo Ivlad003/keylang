@@ -1,7 +1,7 @@
 // Whether a feature file is done: every `planned` in it is implemented
-// (K202, not K201), every flow step in it is static ok, no rule fail exists
-// in any spec, and the plan was not weakened since the base commit. Tests
-// and trace are reported and do not block.
+// (K202, not K201), every flow step and `calls` in it is static ok, no rule
+// fail exists in any spec, and the plan was not weakened since the base
+// commit. Tests and trace are reported and do not block.
 
 import { sameFinding } from "./assess.ts";
 import type { Diagnostic } from "./diag.ts";
@@ -101,18 +101,20 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
   for (const flow of input.spec.flows) {
     if (flow.file !== path) continue;
     walkFlow(flow, (item) => {
-      if (item.kind !== "step") return;
-      const id = item.target.target;
-      const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === item.span.start.line && entry.area === id);
-      if (verdict?.verdict === "ok") return;
-      gaps.push({
-        kind: "static",
-        id,
-        file: path,
-        line: item.span.start.line,
-        col: item.span.start.col,
-        reason: verdict?.message ?? `no static ok for \`${id}\``,
-      });
+      // A `calls` line is a static claim like a step: each target needs its own static ok.
+      const claims = item.kind === "step" ? [{ id: item.target.target, span: item.span }] : item.kind === "calls" ? item.targets.map((ref) => ({ id: ref.target, span: ref.span })) : [];
+      for (const { id, span } of claims) {
+        const verdict = input.verdicts.find((entry) => entry.file === path && entry.criterion === "static" && entry.line === span.start.line && entry.area === id);
+        if (verdict?.verdict === "ok") continue;
+        gaps.push({
+          kind: "static",
+          id,
+          file: path,
+          line: span.start.line,
+          col: span.start.col,
+          reason: verdict?.message ?? `no static ok for \`${id}\``,
+        });
+      }
     });
   }
 

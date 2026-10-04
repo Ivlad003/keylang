@@ -1817,7 +1817,7 @@ test("feature: planned, static and rule gaps, then done; JSON is the only stdout
     "keylang.json": `${JSON.stringify(LAYERS)}\n`,
     "src/app/pay.ts": PAY,
     "src/domain/order.ts": ORDER,
-    "keylang/features/pay.md": "# flow pay\n\n- planned fn app.pay.refund (n: number) → number\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step domain.order.price\n",
+    "keylang/features/pay.md": "# flow pay\n\n- planned fn app.pay.refund (n: number) → number\n- trigger app.pay.charge\n  - step app.pay.refund\n  - step domain.order.price\n  - calls domain.order.price\n",
   });
   assert.equal(keylang(dir, ["baseline"]).status, 0);
   const gap = keylang(dir, ["feature", "pay", "--format", "json"]);
@@ -1825,7 +1825,8 @@ test("feature: planned, static and rule gaps, then done; JSON is the only stdout
   const body = JSON.parse(gap.stdout) as { done: boolean; gaps: { kind: string; id: string }[] };
   assert.equal(body.done, false);
   assert.ok(body.gaps.some((item) => item.kind === "planned" && item.id === "app.pay.refund"));
-  assert.ok(body.gaps.some((item) => item.kind === "static" && item.id === "domain.order.price"));
+  // The step and the `calls` line each need their own static ok.
+  assert.equal(body.gaps.filter((item) => item.kind === "static" && item.id === "domain.order.price").length, 2);
   assert.equal(gap.stdout.trimEnd() + "\n", gap.stdout);
   const missing = keylang(dir, ["feature", "nope"]);
   assert.equal(missing.status, 2);
