@@ -13,7 +13,8 @@
     "extract": ["src/extract/**"],
     "base": ["src/span.ts", "src/brief.ts", "src/diag.ts", "src/config.ts", "src/glob.ts", "src/languages.ts", "src/safe-write.ts", "src/external-ids.ts"]
   },
-  "exclude": ["bench/**", "examples/**", "design/**", "slides/**", "scripts/**", "editors/**"],
+  "exclude": ["slides/**"],
+  "outside": ["bench/**", "design/**", "editors/**", "examples/**", "scripts/**"],
   "explain": { "map": true },
   "check": {
     "tests": ".keylang/reports/*.json",

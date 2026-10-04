@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { isExcluded, toPosix, type Config } from "./config.ts";
+import { isAnalysed, toPosix, type Config } from "./config.ts";
 import { assignExternalIds } from "./external-ids.ts";
 import { parseJsonc, parseJsoncStrict } from "./imports.ts";
 import { compareText } from "./span.ts";
@@ -75,11 +75,11 @@ export function readManifests(config: Config, files: readonly string[], known: R
   for (const dir of [...manifestDirs(files)].sort(compareText)) {
     const pkg = dir === "" ? "package.json" : `${dir}/package.json`;
     const cargo = dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`;
-    if (!isExcluded(pkg, config.exclude)) {
+    if (isAnalysed(pkg, config)) {
       const text = read(pkg);
       if (text !== null) addPackages(pkg, text, add);
     }
-    if (!isExcluded(cargo, config.exclude)) {
+    if (isAnalysed(cargo, config)) {
       const text = read(cargo);
       if (text !== null) addCrates(cargo, text, add);
     }

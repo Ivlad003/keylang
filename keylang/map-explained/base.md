@@ -30,76 +30,85 @@
       <a id="base.config.resolveStatic"></a><br>Flag, then `check.static`, then `behavior`.
     - type [Config](../../src/config.ts#L36)
       <a id="base.config.Config"></a>
-    - fn [skipDir](../../src/config.ts#L104) (abs: string, name: string) → boolean <!-- internal -->
+    - fn [skipDir](../../src/config.ts#L116) (abs: string, name: string) → boolean <!-- internal -->
       <a id="base.config.skipDir"></a><br>A directory we never descend into: hidden, build output, or a nested repository.
-    - type [RawConfig](../../src/config.ts#L108)
+    - type [RawConfig](../../src/config.ts#L120)
       <a id="base.config.RawConfig"></a>
-    - fn [loadConfig](../../src/config.ts#L123) (root: string) → Config
+    - fn [loadConfig](../../src/config.ts#L136) (root: string) → Config
       <a id="base.config.loadConfig"></a><br>Load `<root>/keylang.json`, or guess a config for `root`.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig), [base.config.detectLanguages](base.md#base.config.detectLanguages), [base.config.guessLayers](base.md#base.config.guessLayers), [base.config.defaultModule](base.md#base.config.defaultModule)
-    - fn [defaultModule](../../src/config.ts#L155) (languages: readonly Language[]) → Config["module"] <!-- internal -->
+    - fn [defaultModule](../../src/config.ts#L170) (languages: readonly Language[]) → Config["module"] <!-- internal -->
       <a id="base.config.defaultModule"></a><br>The languages' own module granularity when they agree; a file otherwise.
-    - fn [parseConfig](../../src/config.ts#L161) (file: string, text: string) → RawConfig
+    - fn [parseConfig](../../src/config.ts#L176) (file: string, text: string) → RawConfig
       <a id="base.config.parseConfig"></a><br>Parse and validate `keylang.json`. Errors name the file and the field.
       - calls [base.glob.globToRegExp](base.md#base.glob.globToRegExp), [base.config.isObject](base.md#base.config.isObject), [base.config.acceptFormat](base.md#base.config.acceptFormat), [base.languages.isLanguage](base.md#base.languages.isLanguage), [base.config.layerName](base.md#base.config.layerName), [base.config.reservedReason](base.md#base.config.reservedReason)
-    - fn [isObject](../../src/config.ts#L268) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isObject](../../src/config.ts#L287) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="base.config.isObject"></a>
-    - fn [acceptFormat](../../src/config.ts#L273) (file: string, got: unknown) → RuleFormat
+    - fn [acceptFormat](../../src/config.ts#L292) (file: string, got: unknown) → RuleFormat
       <a id="base.config.acceptFormat"></a><br>`format` when it is present: a positive integer this keylang can read.
-    - fn [assertFormatOnly](../../src/config.ts#L287) (file: string, text: string) → void
+    - fn [assertFormatOnly](../../src/config.ts#L306) (file: string, text: string) → void
       <a id="base.config.assertFormatOnly"></a><br>`fmt` and `parse` read nothing of the config except `format`. Invalid JSON or a non-object root cannot tell them the edition, so they stop.
       - calls [base.config.isObject](base.md#base.config.isObject), [base.config.acceptFormat](base.md#base.config.acceptFormat)
-    - fn [configToJson](../../src/config.ts#L299) (c: Config) → string
+    - fn [configToJson](../../src/config.ts#L318) (c: Config) → string
       <a id="base.config.configToJson"></a><br>The config as it would be written by `keylang init`.
-    - fn [withLayers](../../src/config.ts#L319) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
+    - fn [withLayers](../../src/config.ts#L339) (file: string, text: string, layers: Readonly<Record<string, readonly string[]>>) → { text: string } | { error: string }
       <a id="base.config.withLayers"></a><br>`text` (a `keylang.json` as written or being edited) with only its `layers` replaced: every other field stays, unknown ones included, in its order; a missing `layers` is appended. Whitespace is not kept (the result is 2-space JSON).
       - calls [base.config.isObject](base.md#base.config.isObject)
-    - fn [sourceFiles](../../src/config.ts#L333) (c: Config) → string[]
+    - fn [sourceFiles](../../src/config.ts#L353) (c: Config) → string[]
       <a id="base.config.sourceFiles"></a><br>All indexable source files under root, POSIX paths relative to root, sorted.
-      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [sourceTree](../../src/config.ts#L341) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
+      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isAnalysed](base.md#base.config.isAnalysed)
+    - fn [sourceTree](../../src/config.ts#L361) (c: Config) → { files: string[]; unreadable: { dir: string; reason: string }[] }
       <a id="base.config.sourceTree"></a><br>The indexable source files and the directories that could not be listed (no permission): their files are unknown, which is a hole, not an absence.
-      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [excludedSourceFiles](../../src/config.ts#L346) (c: Config) → string[]
+      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isAnalysed](base.md#base.config.isAnalysed)
+    - fn [isAnalysed](../../src/config.ts#L366) (rel: string, c: Pick<Config, "exclude" | "outside">) → boolean
+      <a id="base.config.isAnalysed"></a><br>A source file keylang reads: not left out by the built-in list, `exclude` or `outside`.
+      - calls [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside)
+    - fn [excludedSourceFiles](../../src/config.ts#L371) (c: Config) → string[]
       <a id="base.config.excludedSourceFiles"></a><br>Source files left out only by the `exclude` of `keylang.json`: their modules are opaque.
-      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [walkSources](../../src/config.ts#L351) (c: Config, keep: (rel: string) => boolean) → { files: string[]; unreadable: { dir: string; reason: string }[] } <!-- internal -->
+      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside)
+    - fn [outsideSourceFiles](../../src/config.ts#L380) (c: Config) → string[]
+      <a id="base.config.outsideSourceFiles"></a><br>Source files `outside` of `keylang.json` puts outside the architecture; the built-in list (tests) wins, and `outside` wins over `exclude`.
+      - calls [base.config.walkSources](base.md#base.config.walkSources), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside)
+    - fn [isOutside](../../src/config.ts#L385) (rel: string, outside: readonly string[]) → boolean
+      <a id="base.config.isOutside"></a>
+      - calls [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
+    - fn [walkSources](../../src/config.ts#L389) (c: Config, keep: (rel: string) => boolean) → { files: string[]; unreadable: { dir: string; reason: string }[] } <!-- internal -->
       <a id="base.config.walkSources"></a>
       - calls [base.config.toPosix](base.md#base.config.toPosix), [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [evidenceFiles](../../src/config.ts#L389) (c: Config, field: "tests" | "trace") → string[] | null
+    - fn [evidenceFiles](../../src/config.ts#L427) (c: Config, field: "tests" | "trace") → string[] | null
       <a id="base.config.evidenceFiles"></a><br>Files named by `check.tests` / `check.trace`: a plain path (which must exist) or a glob (which may match nothing yet, before the first test run).
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.config.toPosix](base.md#base.config.toPosix), [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
-    - fn [isExcluded](../../src/config.ts#L411) (rel: string, extra: readonly string[]) → boolean
+    - fn [isExcluded](../../src/config.ts#L449) (rel: string, extra: readonly string[]) → boolean
       <a id="base.config.isExcluded"></a>
       - calls [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
-    - fn [toPosix](../../src/config.ts#L415) (p: string) → string
+    - fn [toPosix](../../src/config.ts#L453) (p: string) → string
       <a id="base.config.toPosix"></a>
-    - fn [detectLanguages](../../src/config.ts#L419) (root: string) → Language[] <!-- internal -->
+    - fn [detectLanguages](../../src/config.ts#L457) (root: string) → Language[] <!-- internal -->
       <a id="base.config.detectLanguages"></a>
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [guessLayers](../../src/config.ts#L443) (root: string, exclude: readonly string[]) → Map<string, string[]>
+    - fn [guessLayers](../../src/config.ts#L481) (root: string, exclude: readonly string[]) → Map<string, string[]>
       <a id="base.config.guessLayers"></a><br>Zero-config layering: the source root is `src/` (or `lib/`) when present, else the repository root. Each directory under it that holds source files becomes a layer; files directly in the source root form the layer `main`.
       - calls [base.config.guessLayout](base.md#base.config.guessLayout)
-    - fn [guessLayout](../../src/config.ts#L452) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
+    - fn [guessLayout](../../src/config.ts#L490) (root: string, exclude: readonly string[]) → { layers: Map<string, string[]>; notes: string[] }
       <a id="base.config.guessLayout"></a><br>The guessed layers, and a note for every directory whose layer name had to change: a reserved name (`src/external/` → `external_`) or one that another directory already sanitizes to (`2fa` and `_2fa` → `_2fa`, `_2fa_2`).
       - calls [base.config.freeLayerName](base.md#base.config.freeLayerName), [base.config.reservedReason](base.md#base.config.reservedReason), [base.config.hasRootFiles](base.md#base.config.hasRootFiles), [base.config.hasSource](base.md#base.config.hasSource), [base.config.skipDir](base.md#base.config.skipDir), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.config.layerName](base.md#base.config.layerName)
-    - fn [freeLayerName](../../src/config.ts#L484) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
+    - fn [freeLayerName](../../src/config.ts#L522) (wanted: string, taken: ReadonlyMap<string, unknown>) → string <!-- internal -->
       <a id="base.config.freeLayerName"></a><br>`wanted`, or the first free variant: a reserved name gets `_`, a taken one a number (`_2fa_2`).
-    - fn [reservedReason](../../src/config.ts#L493) (name: string) → string <!-- internal -->
+    - fn [reservedReason](../../src/config.ts#L531) (name: string) → string <!-- internal -->
       <a id="base.config.reservedReason"></a>
-    - fn [hasRootFiles](../../src/config.ts#L499) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasRootFiles](../../src/config.ts#L538) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasRootFiles"></a>
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [hasSource](../../src/config.ts#L503) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
+    - fn [hasSource](../../src/config.ts#L542) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.hasSource"></a>
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
-    - fn [isIdSegment](../../src/config.ts#L516) (s: string) → boolean <!-- internal -->
+    - fn [isIdSegment](../../src/config.ts#L555) (s: string) → boolean <!-- internal -->
       <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
-    - fn [encodeBracketSegment](../../src/config.ts#L544) (name: string) → string <!-- internal -->
+    - fn [encodeBracketSegment](../../src/config.ts#L583) (name: string) → string <!-- internal -->
       <a id="base.config.encodeBracketSegment"></a><br>A path segment that is not an ID and contains `()[]`, written so `decodeLayerName` restores it. A Next route form (`(shop)`, `[id]`, `[...slug]`, `[[...slug]]`) gets a readable prefix (`$g-shop`, `$p-id`, `$all-slug`, `$opt-slug`); any other name keeps its letters and writes…
-    - fn [decodeLayerName](../../src/config.ts#L565) (segment: string) → string
+    - fn [decodeLayerName](../../src/config.ts#L604) (segment: string) → string
       <a id="base.config.decodeLayerName"></a><br>Inverse of the bracket encoding in `layerName`. A segment without a route prefix or `$HH` is unchanged.
-    - fn [layerName](../../src/config.ts#L589) (name: string) → string
+    - fn [layerName](../../src/config.ts#L628) (name: string) → string
       <a id="base.config.layerName"></a><br>Make a directory or file name a valid ID segment. An existing segment is kept.
       - calls [base.config.isIdSegment](base.md#base.config.isIdSegment), [base.config.encodeBracketSegment](base.md#base.config.encodeBracketSegment)
   - module [diag](../../src/diag.ts#L1)
@@ -107,22 +116,22 @@
     - span [base.span](base.md#base.span)
     - type [Code](../../src/diag.ts#L5)
       <a id="base.diag.Code"></a>
-    - type [Severity](../../src/diag.ts#L44) = "error" | "warning"
+    - type [Severity](../../src/diag.ts#L46) = "error" | "warning"
       <a id="base.diag.Severity"></a>
-    - type [K005Reason](../../src/diag.ts#L47) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
+    - type [K005Reason](../../src/diag.ts#L49) = "arguments" | "id" | "link" | "quote" | "layer" | "scope"
       <a id="base.diag.K005Reason"></a><br>Why a K005 is malformed. Other codes do not carry this.
-    - fn [severityOf](../../src/diag.ts#L49) (code: Code) → Severity
+    - fn [severityOf](../../src/diag.ts#L51) (code: Code) → Severity
       <a id="base.diag.severityOf"></a>
-    - type [Diagnostic](../../src/diag.ts#L53)
+    - type [Diagnostic](../../src/diag.ts#L55)
       <a id="base.diag.Diagnostic"></a>
-    - fn [diagnostic](../../src/diag.ts#L79) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
+    - fn [diagnostic](../../src/diag.ts#L81) (code: Exclude<Code, "K005">, file: string, span: Span, message: string, target?: string) → Diagnostic
       <a id="base.diag.diagnostic"></a>
       - calls [base.diag.severityOf](base.md#base.diag.severityOf)
-    - fn [isError](../../src/diag.ts#L90) (d: Diagnostic) → boolean
+    - fn [isError](../../src/diag.ts#L92) (d: Diagnostic) → boolean
       <a id="base.diag.isError"></a>
-    - fn [formatDiagnostic](../../src/diag.ts#L95) (d: Diagnostic) → string
+    - fn [formatDiagnostic](../../src/diag.ts#L97) (d: Diagnostic) → string
       <a id="base.diag.formatDiagnostic"></a><br>`file:line:col: CODE message`
-    - fn [compareDiagnostics](../../src/diag.ts#L100) (a: Diagnostic, b: Diagnostic) → number
+    - fn [compareDiagnostics](../../src/diag.ts#L102) (a: Diagnostic, b: Diagnostic) → number
       <a id="base.diag.compareDiagnostics"></a><br>Stable order: file, position, code.
   - module [external-ids](../../src/external-ids.ts#L1)
     <a id="base.external-ids"></a><br>IDs of external packages: `external.<segment>`, one ID space for every package name a repository imports or declares. The map, the rules and the language server all name a package by this ID, so they share this module.

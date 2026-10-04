@@ -3,7 +3,7 @@
 // from Markdown.
 
 import { createHash } from "node:crypto";
-import { SYNTHETIC_LAYERS, type RuleFormat } from "./config.ts";
+import { OUTSIDE_LAYER, SYNTHETIC_LAYERS, type RuleFormat } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import type { Document } from "./ir.ts";
 import type { Index } from "./resolve.ts";
@@ -240,9 +240,17 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   const overridden = new Map<Rule, OverrideNote[]>();
   /** Upward pairs an `allow` kept inside the order, and the allow lines that did it. */
   const allowedUp = new Map<string, Set<string>>();
+  /** Pairs of an architecture module and a module `outside` it already reported (K107). */
+  const outsidePairs = new Set<string>();
   for (const edge of edges) {
     if (edge.resolution !== "resolved") continue;
     const pair = `${edge.fromUnit}\0${edge.toUnit}`;
+    // `outside` in keylang.json is a rule of its own: no `allow` lifts it, and it needs no line in the rules.
+    if (layerOf(edge.toUnit) === OUTSIDE_LAYER && layerOf(edge.fromUnit) !== OUTSIDE_LAYER && !outsidePairs.has(pair)) {
+      outsidePairs.add(pair);
+      const file = snapshot.nodes[edge.toUnit]?.file;
+      pushFail("K107", edge.file, edge.line, edge.col, `divergence: \`${edge.fromUnit}\` depends on \`${edge.toUnit}\`${file ? ` (${file})` : ""}, which \`outside\` in keylang.json puts outside the architecture`, OUTSIDE_LAYER, edge.fromUnit);
+    }
     const hits = ruleHits(rules, edge.from, edge.to, within);
     const decision = decide(hits, format);
     const deciders = decision.winners;

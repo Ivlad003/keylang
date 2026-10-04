@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_FILE, excludedSourceFiles, isExcluded, sourceTree, toPosix, type Config } from "./config.ts";
+import { CONFIG_FILE, excludedSourceFiles, isAnalysed, outsideSourceFiles, sourceTree, toPosix, type Config } from "./config.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
@@ -43,7 +43,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
   const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
     const language = languageOf(rel);
-    return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && !isExcluded(rel, config.exclude);
+    return !rel.startsWith("../") && !all.includes(rel) && language !== undefined && config.languages.includes(language) && isAnalysed(rel, config);
   });
   if (added.length > 0) {
     all.push(...added);
@@ -81,10 +81,15 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
   const excluded = excludedSourceFiles(config).filter((p) => !config.guessed || placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
+  // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
+  const outside = outsideSourceFiles(config);
+  for (const p of outside) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
-  for (const p of excluded) {
-    const module = graph.byPath.get(p);
-    if (module) module.comment = "excluded";
+  for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
+    for (const p of files) {
+      const module = graph.byPath.get(p);
+      if (module) module.comment = comment;
+    }
   }
   const mapDir = `${config.dir}/map`;
   // An unreadable directory inside a layer: a hole of the module IDs its files would have.
@@ -96,6 +101,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   const index = buildSnapshot(graph, config, indexed, [
     ...skipped.map((file) => ({ file, reason: "outside guessed layers" })),
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
+    ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
   ]);
   let explained: Map<string, string> | null = null;

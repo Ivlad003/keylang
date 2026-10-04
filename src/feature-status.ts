@@ -42,7 +42,7 @@ export interface FeatureInput {
   verdicts: readonly Verdict[];
 }
 
-const RULE_CODES = new Set(["K101", "K102", "K104", "K105"]);
+const RULE_CODES = new Set(["K101", "K102", "K104", "K105", "K107"]);
 const FLOW = new Set(["ID", "static", "tests", "trace"]);
 const KIND_ORDER: Record<Gap["kind"], number> = { planned: 0, static: 1, rule: 2 };
 

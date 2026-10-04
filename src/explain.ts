@@ -68,6 +68,11 @@ export const EXPLANATIONS: Record<Code, { cause: string; example: string; fix: s
     example: "`allow app.x.y domain` and `deny app domain.storefront` both match `app.x.y → domain.storefront`, and neither area contains the other.",
     fix: "Add the intersection, `allow app.x.y domain.storefront` or `deny app.x.y domain.storefront`, so one rule is strictly more specific. That removes K106 in both formats. Format 2 keeps the deny unless the intersection is an allow.",
   },
+  K107: {
+    cause: "A module of the architecture (a layer or `unassigned`) depends on a file that `outside` in keylang.json puts outside the architecture.",
+    example: "`src/cli.ts` imports `scripts/release.ts` while keylang.json has `\"outside\": [\"scripts/**\"]`.",
+    fix: "Move the shared code into a layer and import it from both sides, or take the file out of `outside`. Code outside the architecture may import the architecture, not the other way round.",
+  },
   K201: {
     cause: "A `planned` declaration names a symbol that now exists with another kind or signature.",
     example: "`planned fn app.refund (order: Order) → Refund` while the code declares `type Refund` under that id.",

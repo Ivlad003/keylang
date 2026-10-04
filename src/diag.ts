@@ -30,6 +30,8 @@ export type Code =
   | "K105"
   /** Incomparable `allow` and `deny`: the depth sum and deny-overrides disagree (warning). */
   | "K106"
+  /** Architecture code depends on a file `outside` in keylang.json puts outside the architecture. */
+  | "K107"
   // flows (M2)
   /** A `planned` declaration disagrees with the implemented symbol (kind or signature). */
   | "K201"

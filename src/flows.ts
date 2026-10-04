@@ -4,7 +4,7 @@
 // only compares them with the specs and the snapshot.
 
 import { createHash } from "node:crypto";
-import type { StaticMode, StaticSource } from "./config.ts";
+import { OUTSIDE_LAYER, type StaticMode, type StaticSource } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
 import { constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
@@ -240,7 +240,10 @@ interface CallGraph {
   byName: Map<string, string[]>;
   /** Unsupported constructs by file. */
   unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
-  /** A module keylang has not read (excluded, unparsed): its calls are unknown. */
+  /**
+   * A module keylang has not read (excluded, unparsed): its calls are unknown.
+   * Not one `outside` the architecture: architecture code cannot reach it without a K107.
+   */
   opaque: string | null;
   /** Fns a call of whose name may not run the body keylang read (a decorator that may replace it). */
   replaced: Map<string, string>;
@@ -277,7 +280,7 @@ function callGraph(input: FlowInput): CallGraph {
   for (const [id, node] of Object.entries(input.nodes)) if (node.kind === "fn") add(byName, callName(id), id);
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
-  const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external")?.[0] ?? null;
+  const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
   return { resolved, open, callers, byName, unsupported, opaque, callable, ...doubtfulBodies(input) };
 }
 

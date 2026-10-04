@@ -5,6 +5,7 @@
 // cycle ends. A call keylang did not resolve is a comment on its caller,
 // never a step: the draft claims only what the edges show.
 
+import { SYNTHETIC_LAYERS } from "./config.ts";
 import { sectionNodes } from "./ir.ts";
 import { parse, renderMeaning } from "./parser.ts";
 import { allCrlf } from "./safe-write.ts";
@@ -152,7 +153,7 @@ export function distinctNames(drafts: readonly FlowDraft[]): FlowDraft[] {
  */
 export function draftRules(snapshot: AnalysisSnapshot, cyclic: boolean): string {
   const layers = Object.entries(snapshot.nodes)
-    .filter(([, n]) => n.kind === "layer" && n.layer !== "external" && n.layer !== "unassigned")
+    .filter(([, n]) => n.kind === "layer" && !(SYNTHETIC_LAYERS as readonly string[]).includes(n.layer))
     .map(([id]) => id)
     .sort();
   const uses = new Map(layers.map((l) => [l, new Set<string>()]));

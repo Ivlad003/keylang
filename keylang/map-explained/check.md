@@ -71,64 +71,64 @@
       <a id="check.flows.Step"></a>
     - type [CallGraph](../../src/flows.ts#L232) <!-- internal -->
       <a id="check.flows.CallGraph"></a>
-    - fn [callGraph](../../src/flows.ts#L253) (input: FlowInput) → CallGraph <!-- internal -->
+    - fn [callGraph](../../src/flows.ts#L256) (input: FlowInput) → CallGraph <!-- internal -->
       <a id="check.flows.callGraph"></a>
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [check.flows.callName](check.md#check.flows.callName), [check.flows.doubtfulBodies](check.md#check.flows.doubtfulBodies)
-    - fn [doubtfulBodies](../../src/flows.ts#L290) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
+    - fn [doubtfulBodies](../../src/flows.ts#L293) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
       <a id="check.flows.doubtfulBodies"></a><br>Fns whose body a proof cannot pass through. A decorator in coverage (`@replace` before `def decorated`) belongs to the fn it names as its source or, when its source is the module, to the first fn declared at or after it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [lastSegment](../../src/flows.ts#L310) (text: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/flows.ts#L313) (text: string) → string <!-- internal -->
       <a id="check.flows.lastSegment"></a>
-    - fn [callName](../../src/flows.ts#L318) (id: string) → string <!-- internal -->
+    - fn [callName](../../src/flows.ts#L321) (id: string) → string <!-- internal -->
       <a id="check.flows.callName"></a><br>The name code calls a fn by: `m` for `X.m` and `X.m-static`, `#go` for `X.go-private` (§11: a member that shares its name with another gets a suffix).
       - calls [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [namedLike](../../src/flows.ts#L327) (graph: CallGraph, name: string) → string[] <!-- internal -->
+    - fn [namedLike](../../src/flows.ts#L330) (graph: CallGraph, name: string) → string[] <!-- internal -->
       <a id="check.flows.namedLike"></a><br>Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member whose ID has no suffix.
-    - fn [describeVia](../../src/flows.ts#L332) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [describeVia](../../src/flows.ts#L335) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.describeVia"></a>
-    - fn [describeHole](../../src/flows.ts#L336) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
+    - fn [describeHole](../../src/flows.ts#L339) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       <a id="check.flows.describeHole"></a>
       - calls [check.flows.describeVia](check.md#check.flows.describeVia), [check.flows.lastSegment](check.md#check.flows.lastSegment), [check.flows.callName](check.md#check.flows.callName)
-    - fn [at](../../src/flows.ts#L348) (edge: SnapshotEdge) → string <!-- internal -->
+    - fn [at](../../src/flows.ts#L351) (edge: SnapshotEdge) → string <!-- internal -->
       <a id="check.flows.at"></a>
-    - fn [reachability](../../src/flows.ts#L375) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [reachability](../../src/flows.ts#L378) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.reachability"></a><br>Static reachability of `target` from `parent`.
       - calls [check.flows.externalImport](check.md#check.flows.externalImport), [check.flows.search](check.md#check.flows.search), [check.flows.routeMessage](check.md#check.flows.routeMessage), [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.possibleRoute](check.md#check.flows.possibleRoute), [check.flows.at](check.md#check.flows.at), [check.flows.describeHole](check.md#check.flows.describeHole), [check.flows.callersOf](check.md#check.flows.callersOf), [check.flows.escapeOf](check.md#check.flows.escapeOf), [check.flows.holeNear](check.md#check.flows.holeNear)
-    - fn [search](../../src/flows.ts#L435) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
+    - fn [search](../../src/flows.ts#L438) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
       <a id="check.flows.search"></a><br>Breadth-first from `parent` over the steps `follow` accepts: the route to `target` (null when there is none) and the depth of every fn reached. The search stops at the target, so `depth` is complete only without a route.
-    - fn [routeSteps](../../src/flows.ts#L458) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
+    - fn [routeSteps](../../src/flows.ts#L461) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
       <a id="check.flows.routeSteps"></a><br>The steps of a route from `parent` to `target`, in call order.
-    - fn [fileModule](../../src/flows.ts#L471) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
+    - fn [fileModule](../../src/flows.ts#L474) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
       <a id="check.flows.fileModule"></a><br>The file module of a fn: the nearest module that is not a class.
-    - fn [externalImport](../../src/flows.ts#L483) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
+    - fn [externalImport](../../src/flows.ts#L486) (input: FlowInput, parent: string, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       <a id="check.flows.externalImport"></a><br>Static proof for `external.<pkg>`: a resolved import from the parent fn's own module.
       - calls [check.flows.fileModule](check.md#check.flows.fileModule)
-    - fn [routeMessage](../../src/flows.ts#L493) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
+    - fn [routeMessage](../../src/flows.ts#L496) (parent: string, target: string, previous: Map<string, Step>) → string <!-- internal -->
       <a id="check.flows.routeMessage"></a>
       - calls [check.flows.routeSteps](check.md#check.flows.routeSteps), [check.flows.describeVia](check.md#check.flows.describeVia)
-    - fn [possibleRoute](../../src/flows.ts#L506) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
+    - fn [possibleRoute](../../src/flows.ts#L509) (graph: CallGraph, input: FlowInput, parent: string, target: string, proves: (step: Step) => boolean) → { edge: SnapshotEdge | null; seen: Set<string> } <!-- internal -->
       <a id="check.flows.possibleRoute"></a><br>Breadth-first search that also follows calls with more than one possible target and calls in closures. Returns the first such call on the shortest route (null when there is none) and every fn the search reached.
       - calls [check.flows.namedLike](check.md#check.flows.namedLike), [check.flows.callName](check.md#check.flows.callName), [check.flows.lastSegment](check.md#check.flows.lastSegment)
-    - fn [callersOf](../../src/flows.ts#L534) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
+    - fn [callersOf](../../src/flows.ts#L537) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
       <a id="check.flows.callersOf"></a><br>Every fn with a resolved or candidate route to `target`, the target included.
-    - fn [escapeOf](../../src/flows.ts#L552) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
+    - fn [escapeOf](../../src/flows.ts#L555) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       <a id="check.flows.escapeOf"></a><br>Why code keylang cannot follow may still run a fn of `routes`, and the fn whose code hands that fn on (null when it is not in a fn: module level, an unsupported construct); null when every route is by name.
       - calls [check.flows.fnAt](check.md#check.flows.fnAt), [check.flows.at](check.md#check.flows.at), [check.flows.callName](check.md#check.flows.callName), [base.span.compareText](base.md#base.span.compareText)
-    - fn [identifierPattern](../../src/flows.ts#L578) (name: string) → RegExp <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L581) (name: string) → RegExp <!-- internal -->
       <a id="check.flows.identifierPattern"></a><br>`name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit.
-    - fn [fnAt](../../src/flows.ts#L583) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L586) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
       <a id="check.flows.fnAt"></a><br>The innermost fn whose declaration holds `file:line`.
-    - fn [holeNear](../../src/flows.ts#L597) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L600) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       <a id="check.flows.holeNear"></a><br>The unresolved call in reachable code nearest `from` among the fns `from` calls, itself included: where a value handed on by `from` may be called. Null when no hole is downstream of it.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [moduleMembers](../../src/flows.ts#L613) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L616) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
       <a id="check.flows.moduleMembers"></a>
-    - fn [collectPlanned](../../src/flows.ts#L629) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L632) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       <a id="check.flows.collectPlanned"></a><br>`planned` declarations. A duplicate is K002.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.flows.normalizeSignature](check.md#check.flows.normalizeSignature)
-    - fn [normalizeSignature](../../src/flows.ts#L652) (text: string) → string <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L655) (text: string) → string <!-- internal -->
       <a id="check.flows.normalizeSignature"></a>
-    - fn [specHash](../../src/flows.ts#L656) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L659) (text: string) → string <!-- internal -->
       <a id="check.flows.specHash"></a>
   - module [resolve](../../src/resolve.ts#L1)
     <a id="check.resolve"></a><br>Cross-file ID resolution: builds the declaration index and reports duplicate declarations (K002) and dangling references (K001).
@@ -228,67 +228,67 @@
     - fn [evaluateOnSnapshot](../../src/rules.ts#L149) (rules: EvaluatedRules, index: Index, snapshot: SnapshotView, planned: readonly string[], format: RuleFormat) → RuleReport <!-- internal -->
       <a id="check.rules.evaluateOnSnapshot"></a>
       - calls [check.rules.base](check.md#check.rules.base), [check.rules.ruleHits](check.md#check.rules.ruleHits), [check.rules.decide](check.md#check.rules.decide), [check.rules.crossRules](check.md#check.rules.crossRules), [check.rules.layerViolation](check.md#check.rules.layerViolation), [check.rules.incomparableAside](check.md#check.rules.incomparableAside), [check.rules.componentSpec](check.md#check.rules.componentSpec), [check.rules.layerComponent](check.md#check.rules.layerComponent), [check.rules.overrideEvidence](check.md#check.rules.overrideEvidence), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.pointAt](check.md#check.rules.pointAt), [check.rules.hashText](check.md#check.rules.hashText), [check.resolve.Index.lookup](check.md#check.resolve.Index.lookup), [check.scc.stronglyConnected](check.md#check.scc.stronglyConnected), [check.scc.cycleThrough](check.md#check.scc.cycleThrough)
-    - fn [layerViolation](../../src/rules.ts#L511) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
+    - fn [layerViolation](../../src/rules.ts#L519) (rules: EvaluatedRules, fromLayer: string, toLayer: string) → string | null <!-- internal -->
       <a id="check.rules.layerViolation"></a><br>Why a dependency between two layers breaks the layer orders, or null.
-    - fn [layerComponent](../../src/rules.ts#L520) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
+    - fn [layerComponent](../../src/rules.ts#L528) (rules: EvaluatedRules, layer: string) → Set<string> <!-- internal -->
       <a id="check.rules.layerComponent"></a><br>Layers joined to `layer` by the undirected partial order, including `layer` itself.
-    - fn [componentSpec](../../src/rules.ts#L534) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
+    - fn [componentSpec](../../src/rules.ts#L542) (rules: EvaluatedRules, layer: string) → string <!-- internal -->
       <a id="check.rules.componentSpec"></a><br>Canonical texts of the `layers` lines in `layer`'s connected order, one hash input.
       - calls [check.rules.layerComponent](check.md#check.rules.layerComponent)
-    - type [RuleHit](../../src/rules.ts#L543) <!-- internal -->
+    - type [RuleHit](../../src/rules.ts#L551) <!-- internal -->
       <a id="check.rules.RuleHit"></a>
-    - type [OverrideNote](../../src/rules.ts#L551) <!-- internal -->
+    - type [OverrideNote](../../src/rules.ts#L559) <!-- internal -->
       <a id="check.rules.OverrideNote"></a>
-    - fn [ruleHits](../../src/rules.ts#L561) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/rules.ts#L569) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → RuleHit[] <!-- internal -->
       <a id="check.rules.ruleHits"></a><br>Every allow or deny that matches the edge, scored by the deepest target it names.
       - calls [check.rules.scopeDepth](check.md#check.rules.scopeDepth)
-    - fn [byHit](../../src/rules.ts#L584) (a: RuleHit, b: RuleHit) → number <!-- internal -->
+    - fn [byHit](../../src/rules.ts#L592) (a: RuleHit, b: RuleHit) → number <!-- internal -->
       <a id="check.rules.byHit"></a>
-    - fn [dominates](../../src/rules.ts#L590) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [dominates](../../src/rules.ts#L598) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.dominates"></a><br>`a` is strictly more specific than `b`: neither of its areas is wider, and one is narrower.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [crossRules](../../src/rules.ts#L597) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
+    - fn [crossRules](../../src/rules.ts#L605) (a: RuleHit, b: RuleHit) → boolean <!-- internal -->
       <a id="check.rules.crossRules"></a><br>One rule is narrower on the source and the other on the target.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin)
-    - fn [areaWithin](../../src/rules.ts#L605) (id: string, scope: string) → boolean <!-- internal -->
+    - fn [areaWithin](../../src/rules.ts#L613) (id: string, scope: string) → boolean <!-- internal -->
       <a id="check.rules.areaWithin"></a>
-    - fn [decide](../../src/rules.ts#L613) (hits: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
+    - fn [decide](../../src/rules.ts#L621) (hits: readonly RuleHit[], format: RuleFormat) → { winners: RuleHit[]; denyWins: boolean } <!-- internal -->
       <a id="check.rules.decide"></a><br>Format 1: the greatest depth sum, and every `deny` on that sum. Format 2: drop dominated hits; any undominated `deny` wins (deny-overrides).
       - calls [check.rules.dominates](check.md#check.rules.dominates)
-    - fn [incomparableAside](../../src/rules.ts#L626) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
+    - fn [incomparableAside](../../src/rules.ts#L634) (deny: RuleHit, hits: readonly RuleHit[], format: RuleFormat) → string <!-- internal -->
       <a id="check.rules.incomparableAside"></a>
       - calls [check.rules.crossRules](check.md#check.rules.crossRules)
-    - fn [overrideEvidence](../../src/rules.ts#L643) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
+    - fn [overrideEvidence](../../src/rules.ts#L651) (deny: Rule, targets: string, notes: readonly OverrideNote[]) → string <!-- internal -->
       <a id="check.rules.overrideEvidence"></a>
-    - fn [incomparableWarnings](../../src/rules.ts#L657) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
+    - fn [incomparableWarnings](../../src/rules.ts#L665) (rules: EvaluatedRules, format: RuleFormat) → Diagnostic[] <!-- internal -->
       <a id="check.rules.incomparableWarnings"></a><br>One K106 per incomparable allow/deny line pair, on the allow line. Static: no snapshot required.
       - calls [check.rules.areaWithin](check.md#check.rules.areaWithin), [check.rules.scopeDepth](check.md#check.rules.scopeDepth), [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [canonicalRuleSpec](../../src/rules.ts#L701) (spec: SpecIR, file: string, line: number) → string | null
+    - fn [canonicalRuleSpec](../../src/rules.ts#L709) (spec: SpecIR, file: string, line: number) → string | null
       <a id="check.rules.canonicalRuleSpec"></a><br>Canonical text of the rule line at `file:line`, or null when that line is not a rule. K101, K103, and an unreachable module's entry verdict hash several lines themselves.
       - calls [check.rules.collectRules](check.md#check.rules.collectRules)
-    - fn [noSnapshotSpec](../../src/rules.ts#L718) (spec: SpecIR) → string
+    - fn [noSnapshotSpec](../../src/rules.ts#L726) (spec: SpecIR) → string
       <a id="check.rules.noSnapshotSpec"></a><br>Every rule line of the specs, valid or not, joined in file and line order. The hash of `no snapshot`.
-    - fn [scopeDepth](../../src/rules.ts#L728) (id: string) → number
+    - fn [scopeDepth](../../src/rules.ts#L736) (id: string) → number
       <a id="check.rules.scopeDepth"></a><br>How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters.
-    - fn [specific](../../src/rules.ts#L739) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
+    - fn [specific](../../src/rules.ts#L747) (rules: EvaluatedRules, from: string, to: string, within: (id: string, scope: string) => boolean) → { kind: "allow" | "deny"; rule: Rule } | null <!-- internal -->
       <a id="check.rules.specific"></a><br>The rule that decides `from → to` in format 1: the one whose scopes are deepest in total (`deny app.purchase domain` and `allow app domain.store` both 3), a `deny` on a tie. Format 2 keeps every undominated rule and lets any undominated `deny` win (deny-overrides), so an…
       - calls [check.rules.decide](check.md#check.rules.decide), [check.rules.ruleHits](check.md#check.rules.ruleHits)
-    - type [EvaluatedRules](../../src/rules.ts#L745) <!-- internal -->
+    - type [EvaluatedRules](../../src/rules.ts#L753) <!-- internal -->
       <a id="check.rules.EvaluatedRules"></a>
-    - fn [collectRules](../../src/rules.ts#L766) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
+    - fn [collectRules](../../src/rules.ts#L774) (spec: SpecIR, kindOf: (id: string) => string | undefined) → EvaluatedRules <!-- internal -->
       <a id="check.rules.collectRules"></a>
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.combineOrders](check.md#check.rules.combineOrders)
-    - fn [combineOrders](../../src/rules.ts#L824) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
+    - fn [combineOrders](../../src/rules.ts#L832) (chains: readonly LayerOrder[], diagnostics: Diagnostic[]) → { orders: LayerOrder[]; above: Map<string, Set<string>> } <!-- internal -->
       <a id="check.rules.combineOrders"></a><br>All `layers` lines as one partial order: `a < b` and `b < c` put `c` above `a`, while `a < b` and `c < d` say nothing about `a` and `d`. A line that contradicts the lines before it is K005 and left out.
       - calls [base.diag.diagnostic](base.md#base.diag.diagnostic), [check.rules.transitive](check.md#check.rules.transitive)
-    - fn [transitive](../../src/rules.ts#L854) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
+    - fn [transitive](../../src/rules.ts#L862) (direct: ReadonlyMap<string, ReadonlySet<string>>) → Map<string, Set<string>> <!-- internal -->
       <a id="check.rules.transitive"></a>
-    - fn [pointAt](../../src/rules.ts#L871) (line: number, col: number) → Span <!-- internal -->
+    - fn [pointAt](../../src/rules.ts#L879) (line: number, col: number) → Span <!-- internal -->
       <a id="check.rules.pointAt"></a><br>A one-column span at a code position (a rule finding has no source offset).
-    - fn [base](../../src/rules.ts#L876) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
+    - fn [base](../../src/rules.ts#L884) (snapshot: SnapshotView, criterion: string, area: string, verdict: Verdict["verdict"], file: string, line: number, col: number, code: string | null, message: string, spec = criterion) → Verdict <!-- internal -->
       <a id="check.rules.base"></a><br>`spec` is the rule as written; its hash changes when the rule does.
       - calls [check.rules.hashText](check.md#check.rules.hashText)
-    - fn [hashText](../../src/rules.ts#L880) (text: string) → string <!-- internal -->
+    - fn [hashText](../../src/rules.ts#L888) (text: string) → string <!-- internal -->
       <a id="check.rules.hashText"></a>
   - module [scc](../../src/scc.ts#L1)
     <a id="check.scc"></a><br>Strongly connected components of a directed module graph. A component is cyclic when it has two or more modules, or a self-loop.

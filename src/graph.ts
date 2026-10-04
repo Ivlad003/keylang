@@ -3,7 +3,7 @@
 // a local or missing callee stays a gap instead of a confirmed edge.
 
 import { posix } from "node:path";
-import { isExcluded, layerName, type Config } from "./config.ts";
+import { isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
@@ -900,7 +900,7 @@ function importedPackages(files: readonly FileFacts[], resolve: (file: string, s
  */
 function notIndexed(config: Config, file: string): string | null {
   const language = languageOf(file);
-  if (language === undefined || isExcluded(file, config.exclude)) return null;
+  if (language === undefined || isExcluded(file, config.exclude) || isOutside(file, config.outside)) return null;
   if (config.guessed && placeFile(config, file) === null) return null;
   return config.languages.includes(language) ? `\`${file}\` is not indexed` : `\`${file}\` is ${language}, which \`languages\` does not list`;
 }
@@ -1079,6 +1079,11 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
  * and one stem are one module; two stems of one ID are a collision.
  */
 export function placeFile(config: Config, file: string): { layer: string; segments: string[]; stem: string } | null {
+  // `outside` wins over the layers: such a file is not part of the architecture. Its ID follows its path, as in `unassigned`.
+  if (isOutside(file, config.outside)) {
+    const stem = file.replace(/\.[^./]+$/, "");
+    return { layer: OUTSIDE_LAYER, segments: stem.split("/").map(layerName), stem };
+  }
   for (const [layer, globs] of config.layers) {
     for (const g of globs) {
       if (!matchesGlob(file, g)) continue;

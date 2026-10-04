@@ -48,8 +48,14 @@ export interface Config {
   module: "file" | "dir";
   /** Layer name → globs (POSIX, relative to root). Insertion order = order in the map. */
   layers: Map<string, string[]>;
-  /** Globs excluded from indexing, in addition to the built-in list. */
+  /** Globs excluded from indexing, in addition to the built-in list: opaque modules, a dependency hole. */
   exclude: string[];
+  /**
+   * Globs of code that is not part of the architecture (scripts, benchmarks):
+   * modules of the synthetic layer `outside`, not analysed and not a hole.
+   * Architecture code must not depend on them (K107).
+   */
+  outside: string[];
   check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>` or `openrouter:<model>`; null: no model is configured. */
   agent: string | null;
@@ -68,8 +74,14 @@ export interface Config {
 
 export const CONFIG_FILE = "keylang.json";
 
-/** Layers keylang makes itself: packages outside the repository, and files outside every layer. */
-export const SYNTHETIC_LAYERS = ["external", "unassigned"] as const;
+/**
+ * Layers keylang makes itself: packages outside the repository, files outside
+ * every layer, and files `outside` in `keylang.json` puts outside the architecture.
+ */
+export const SYNTHETIC_LAYERS = ["external", "unassigned", "outside"] as const;
+
+/** The synthetic layer of the files `outside` names. */
+export const OUTSIDE_LAYER = "outside";
 
 /**
  * Names a layer cannot have: the synthetic layers (a layer of that name would
@@ -112,6 +124,7 @@ export interface RawConfig {
   module?: "file" | "dir";
   layers?: Record<string, string | string[]>;
   exclude?: string[];
+  outside?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number };
@@ -126,12 +139,13 @@ export function loadConfig(root: string): Config {
   const raw: RawConfig = fileExists ? parseConfig(file, readFileSync(file, "utf8")) : {};
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
+  const outside = raw.outside ?? [];
   let layers: Map<string, string[]>;
   let guessed = false;
   if (raw.layers) {
     layers = new Map(Object.entries(raw.layers).map(([k, v]) => [k, Array.isArray(v) ? v : [v]]));
   } else {
-    layers = guessLayers(root, exclude);
+    layers = guessLayers(root, [...exclude, ...outside]);
     guessed = true;
   }
   return {
@@ -142,6 +156,7 @@ export function loadConfig(root: string): Config {
     module: raw.module ?? defaultModule(languages),
     layers,
     exclude,
+    outside,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? 400 },
@@ -177,7 +192,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "check", "agent", "explain", "ghost", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "check", "agent", "explain", "ghost", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -214,6 +229,10 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.exclude !== undefined) {
     if (!Array.isArray(value.exclude) || !value.exclude.every((glob) => typeof glob === "string")) return fail("exclude", "an array of globs", value.exclude);
     raw.exclude = (value.exclude as string[]).map((glob, i) => validGlob(`exclude[${i}]`, glob));
+  }
+  if (value.outside !== undefined) {
+    if (!Array.isArray(value.outside) || !value.outside.every((glob) => typeof glob === "string")) return fail("outside", "an array of globs", value.outside);
+    raw.outside = (value.outside as string[]).map((glob, i) => validGlob(`outside[${i}]`, glob));
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
@@ -304,6 +323,7 @@ export function configToJson(c: Config): string {
     layers: Object.fromEntries(c.layers),
   };
   if (c.exclude.length > 0) out.exclude = c.exclude;
+  if (c.outside.length > 0) out.outside = c.outside;
   if (c.dir !== "keylang") out.dir = c.dir;
   if (Object.keys(c.check).length > 0) out.check = c.check;
   return `${JSON.stringify(out, null, 2)}\n`;
@@ -331,7 +351,7 @@ export function withLayers(file: string, text: string, layers: Readonly<Record<s
 
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
-  return walkSources(c, (rel) => !isExcluded(rel, c.exclude)).files;
+  return walkSources(c, (rel) => isAnalysed(rel, c)).files;
 }
 
 /**
@@ -339,13 +359,31 @@ export function sourceFiles(c: Config): string[] {
  * (no permission): their files are unknown, which is a hole, not an absence.
  */
 export function sourceTree(c: Config): { files: string[]; unreadable: { dir: string; reason: string }[] } {
-  return walkSources(c, (rel) => !isExcluded(rel, c.exclude));
+  return walkSources(c, (rel) => isAnalysed(rel, c));
+}
+
+/** A source file keylang reads: not left out by the built-in list, `exclude` or `outside`. */
+export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside">): boolean {
+  return !isExcluded(rel, c.exclude) && !isOutside(rel, c.outside);
 }
 
 /** Source files left out only by the `exclude` of `keylang.json`: their modules are opaque. */
 export function excludedSourceFiles(c: Config): string[] {
   if (c.exclude.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude)).files;
+  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude) && !isOutside(rel, c.outside)).files;
+}
+
+/**
+ * Source files `outside` of `keylang.json` puts outside the architecture; the
+ * built-in list (tests) wins, and `outside` wins over `exclude`.
+ */
+export function outsideSourceFiles(c: Config): string[] {
+  if (c.outside.length === 0) return [];
+  return walkSources(c, (rel) => !isExcluded(rel, []) && isOutside(rel, c.outside)).files;
+}
+
+export function isOutside(rel: string, outside: readonly string[]): boolean {
+  return outside.some((g) => matchesGlob(rel, g));
 }
 
 function walkSources(c: Config, keep: (rel: string) => boolean): { files: string[]; unreadable: { dir: string; reason: string }[] } {
@@ -493,6 +531,7 @@ function freeLayerName(wanted: string, taken: ReadonlyMap<string, unknown>): str
 function reservedReason(name: string): string {
   if (name === "external") return "`external` is reserved for packages outside the repository";
   if (name === "unassigned") return "`unassigned` is reserved for files outside every layer";
+  if (name === OUTSIDE_LAYER) return "`outside` is reserved for files `outside` puts outside the architecture";
   return `\`${name}\` is a keyword at the top of a map`;
 }
 

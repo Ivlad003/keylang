@@ -84,7 +84,8 @@ export interface SnapshotExport {
 }
 
 export interface CoverageItem {
-  kind: Gap["kind"] | "skipped-file";
+  /** `outside-file`: a file `outside` puts outside the architecture; listed, but no hole. */
+  kind: Gap["kind"] | "skipped-file" | "outside-file";
   file: string;
   line: number;
   col: number;
@@ -146,6 +147,7 @@ export interface AnalysisSnapshot {
       module: Config["module"];
       layers: Record<string, string[]>;
       exclude: string[];
+      outside: string[];
       guessed: boolean;
     };
     files: { path: string; sha256: string }[];
@@ -166,7 +168,7 @@ export function buildSnapshot(
   config: Config,
   files: readonly { path: string; sha256: string }[],
   /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
-  skipped: readonly { file: string; reason: string; source?: string }[],
+  skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[],
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -176,6 +178,7 @@ export function buildSnapshot(
     module: config.module,
     layers: Object.fromEntries(config.layers),
     exclude: [...config.exclude],
+    outside: [...config.outside],
     guessed: config.guessed,
   };
   const snapshotId = sha256(
@@ -345,8 +348,8 @@ export function buildSnapshot(
       });
     }
   }
-  for (const { file, reason, source } of skipped) {
-    coverage.push({ kind: "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
+  for (const { file, reason, source, kind } of skipped) {
+    coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
   coverage.sort(compareCoverage);
   closures(ordered, coverage);
