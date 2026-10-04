@@ -1,6 +1,7 @@
 // Python facts: `def`/`class`, imports, `__all__`, calls. Each imported name
 // is one import whose specifier is the dotted path (`..pkg.mod.f`); the
-// resolver decides how much of it is a module. Methods through values,
+// resolver decides how much of it is a module. Methods through values whose
+// class no annotation or `X(…)` names,
 // `getattr`, dynamic imports and replacing decorators are holes, not edges.
 // Every call expression is an edge or a hole: a callee keylang cannot name
 // is a call through a value, never dropped.
@@ -204,7 +205,7 @@ function fnDecl(node: Node, name: string, owner: Owner | null): DeclFact {
   // A `@staticmethod` has no receiver: its first parameter is an ordinary value.
   const receiver = owner?.receiver && firstName ? firstName : null;
   const body = node.childForFieldName("body");
-  const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node) }) : [];
+  const calls = body ? bodyCalls(body, { receiver, owner, bound: boundNames(node), classes: typedValues(node) }) : [];
   const doc = docstring(body);
   return { kind: "fn", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature, exported: false, calls, types: [], members: [], fingerprint: fingerprint(node), ...(doc !== undefined ? { doc } : {}) };
 }
@@ -263,6 +264,82 @@ interface CallScope {
   receiver: string | null;
   owner: Owner | null;
   bound: ReadonlyMap<string, "parameter" | "local">;
+  /** Parameters and locals whose class the syntax names (`typedValues`). */
+  classes: ReadonlyMap<string, string>;
+}
+
+/**
+ * Names in a function whose class the syntax names, bound nowhere else in it:
+ * a parameter annotated with a class (`repo: Repo`, `repo: Repo = Depends(…)`,
+ * `Optional[Repo]`, `Repo | None`, `Annotated[Repo, …]`) or a local whose
+ * only assignment is `x = Repo(…)` or `x: Repo = …`. The graph keeps the
+ * name only when it is a class: then `x.m()` is `Repo.m`. A second binding
+ * anywhere in the function, nested scopes included, drops the name.
+ */
+function typedValues(fn: Node): Map<string, string> {
+  const evidence = new Map<string, string | null>();
+  const bind = (name: string, cls: string | null): void => {
+    evidence.set(name, evidence.has(name) ? null : cls);
+  };
+  const targets = (target: Node | null, cls: string | null): void => {
+    if (!target) return;
+    if (target.type === "identifier") bind(target.text, cls);
+    else if (target.type === "typed_parameter") targets(target.namedChildren[0] ?? null, annotatedClass(target.childForFieldName("type")));
+    else if (target.type === "typed_default_parameter") targets(target.childForFieldName("name"), annotatedClass(target.childForFieldName("type")));
+    else if (target.type === "default_parameter") targets(target.childForFieldName("name"), null);
+    else for (const c of target.namedChildren) targets(c, null);
+  };
+  const params = (owner: Node): void => {
+    for (const p of owner.childForFieldName("parameters")?.namedChildren ?? []) targets(p, null);
+  };
+  params(fn);
+  const walk = (node: Node): void => {
+    if (node.type === "assignment") {
+      const left = node.childForFieldName("left");
+      const cls = left?.type === "identifier" ? (annotatedClass(node.childForFieldName("type")) ?? constructedClass(node.childForFieldName("right"))) : null;
+      targets(left, cls);
+    } else if (node.type === "augmented_assignment" || node.type === "for_statement" || node.type === "for_in_clause") targets(node.childForFieldName("left"), null);
+    else if (node.type === "named_expression") targets(node.childForFieldName("name"), null);
+    else if (node.type === "as_pattern") targets(node.childForFieldName("alias"), null);
+    else if (node.type === "global_statement" || node.type === "nonlocal_statement") targets(node, null);
+    else if (node.type === "function_definition" || node.type === "class_definition") {
+      targets(node.childForFieldName("name"), null);
+      if (node.type === "function_definition") params(node);
+    } else if (node.type === "lambda") params(node);
+    for (const c of node.namedChildren) walk(c);
+  };
+  const body = fn.childForFieldName("body");
+  if (body) walk(body);
+  const out = new Map<string, string>();
+  // A class shadowed in the function is not the module's class.
+  for (const [name, cls] of evidence) if (cls && !evidence.has(cls)) out.set(name, cls);
+  return out;
+}
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** The one class an annotation names: `X`, `"X"`, `Optional[X]`, `X | None`, `Annotated[X, …]`; null for anything else. */
+function annotatedClass(type: Node | null): string | null {
+  return type ? classInAnnotation(type.text.replace(/\s+/g, "")) : null;
+}
+
+function classInAnnotation(text: string): string | null {
+  const quoted = /^(["'])(.*)\1$/.exec(text);
+  if (quoted) return classInAnnotation(quoted[2]!);
+  if (IDENTIFIER.test(text)) return text === "None" ? null : text;
+  const optional = /^(?:typing\.)?Optional\[(.+)\]$/.exec(text);
+  if (optional) return classInAnnotation(optional[1]!);
+  const annotated = /^(?:typing\.|typing_extensions\.)?Annotated\[([^,[\]]+),/.exec(text);
+  if (annotated) return classInAnnotation(annotated[1]!);
+  if (text.includes("[")) return null;
+  const members = text.split("|").filter((part) => part !== "None");
+  return members.length === 1 && members.length < text.split("|").length ? classInAnnotation(members[0]!) : null;
+}
+
+/** `X(…)` → `X`. */
+function constructedClass(value: Node | null): string | null {
+  const fn = value?.type === "call" ? value.childForFieldName("function") : null;
+  return fn?.type === "identifier" ? fn.text : null;
 }
 
 function bodyCalls(body: Node, scope: CallScope): CallFact[] {
@@ -281,11 +358,12 @@ function bodyCalls(body: Node, scope: CallScope): CallFact[] {
 
 /**
  * `f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a
- * static method); `x.m()` through a value → `x.m`, bound. Any other callee
+ * static method); `x.m()` through a value → `x.m`, bound, with the receiver's
+ * class when `typedValues` names it. Any other callee
  * (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang
  * cannot name, written as in the source.
  */
-function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "bound"> {
+function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "bound" | "receiver"> {
   if (!fn) return { callee: "?", bound: "local" };
   // `(f)()` is `f()`.
   if (fn.type === "parenthesized_expression" && fn.namedChildren.length === 1) return callOf(fn.namedChildren[0]!, scope);
@@ -308,13 +386,15 @@ function callOf(fn: Node | null, scope: CallScope): Pick<CallFact, "callee" | "b
   }
   const callee = [head, ...parts].join(".");
   const bound = scope.bound.get(head);
-  return bound ? { callee, bound } : { callee };
+  // `repo.save()` with `repo: Repo` or `repo = Repo()`: the graph looks `save` up in `Repo`.
+  const receiver = parts.length === 1 ? scope.classes.get(head) : undefined;
+  return { callee, ...(bound ? { bound } : {}), ...(receiver ? { receiver } : {}) };
 }
 
 /** Calls outside every `def`: module level and class bodies run when the module loads; so does a decorator. */
 function moduleCalls(root: Node): CallFact[] {
   const out: CallFact[] = [];
-  const noScope: CallScope = { receiver: null, owner: null, bound: new Map() };
+  const noScope: CallScope = { receiver: null, owner: null, bound: new Map(), classes: new Map() };
   const walk = (node: Node): void => {
     if (node.type === "function_definition") return;
     if (node.type === "call") {

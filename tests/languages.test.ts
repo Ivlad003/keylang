@@ -144,8 +144,8 @@ test("python: init detects the language; map follows relative and absolute impor
   assert.ok(edge("call", "infra.store.save", "domain.order.place"), "`order.place()` through the module binding");
   assert.ok(edge("call", "domain.order.Order.paid", "domain.order.Order.total"), "`self.total()`");
   assert.ok(edge("call", "app.main.main", "infra.store.save"));
-  // A method through a variable of unknown type, a dynamic import and a replacing decorator are holes, not edges.
-  assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason.includes("order.total")));
+  assert.ok(edge("call", "domain.order.place", "domain.order.Order.total"), "`order = Order()` names the class of `order`");
+  // A method through a value of unknown class, a dynamic import and a replacing decorator are holes, not edges.
   assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `self.queue.put`"), "a method of an attribute of `self`");
   assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "dynamic import"));
   assert.ok(index.coverage.some((c) => c.kind === "unsupported" && c.reason === "decorator `route` may replace `handler`"));
@@ -184,8 +184,8 @@ test("python: `keylang trace-plan` + the Python adapter give trace evidence; a f
   assert.equal(trace(), 0);
   const o = keylang(dir, ["check"]);
   assert.match(o.stdout, /flows\.md:5:5: trace ok domain\.order\.place: observed in run\.py > @flow save/);
-  // The step static analysis cannot prove (a method through a value) is observed at run time.
-  assert.match(o.stdout, /flows\.md:6:7: static unverified domain\.order\.Order\.total/);
+  // `order = Order(); order.total()`: static and trace evidence agree.
+  assert.match(o.stdout, /flows\.md:6:7: static ok domain\.order\.Order\.total: called from domain\.order\.place/);
   assert.match(o.stdout, /flows\.md:6:7: trace ok domain\.order\.Order\.total/);
 
   // After the plan, `store.py` changes: its function is not instrumented, and the trace belongs to an older snapshot.
@@ -285,6 +285,33 @@ test("python: a call keylang cannot name is a hole; `X()` runs `__init__`, `self
   const index = snapshot(dir);
   assert.ok(index.coverage.some((c) => c.kind === "dynamic-call" && c.reason === "call through a local value `super().m`"));
   assert.equal(index.nodes["app.main.make"]?.escapes?.reason, "`make` is read as a value");
+});
+
+test("python: `x.m()` through a parameter annotated with a class or a local `x = X()` is `X.m`, bases included; other values stay holes", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["python"], layers: { app: ["app/**"] } }),
+    "app/__init__.py": "",
+    "app/repo.py":
+      "class Base:\n    def ping(self):\n        pass\n\n\nclass Repo(Base):\n    def __init__(self, conn):\n        self.conn = conn\n\n    def save(self):\n        pass\n\n    def load(self):\n        pass\n\n    def drop(self):\n        pass\n\n\nclass Sender:\n    def send(self):\n        pass\n\n\nNotify = Sender\n",
+    "app/api.py":
+      "from typing import Annotated, Optional\n\nfrom app.repo import Notify, Repo, Sender\n\n\ndef Depends(x):\n    return x\n\n\ndef annotated(repo: Repo):\n    repo.save()\n    repo.ping()\n\n\ndef injected(repo: Repo = Depends(Repo), sender: Optional[Sender] = None):\n    repo.load()\n    sender.send()\n\n\ndef marked(sender: Annotated[Sender, Depends(Sender)]):\n    sender.send()\n\n\ndef constructed(conn, fallback: Sender | None):\n    repo = Repo(conn)\n    repo.drop()\n    fallback.send()\n\n\ndef reassigned(conn, other):\n    repo = Repo(conn)\n    repo = other\n    repo.save()\n\n\ndef untyped(senders: list[Sender], notify: Notify):\n    senders.send()\n    notify.send()\n",
+    "keylang/flows.md":
+      "# flow a\n\n- trigger app.api.annotated\n  - step app.repo.Repo.save\n  - step app.repo.Base.ping\n\n# flow b\n\n- trigger app.api.injected\n  - step app.repo.Repo.load\n  - step app.repo.Sender.send\n\n# flow c\n\n- trigger app.api.constructed\n  - step app.repo.Repo.drop\n  - step app.repo.Sender.send\n\n# flow d\n\n- trigger app.api.reassigned\n  - step app.repo.Repo.save\n\n# flow e\n\n- trigger app.api.untyped\n  - step app.repo.Sender.send\n\n# flow f\n\n- trigger app.api.marked\n  - step app.repo.Sender.send\n",
+  });
+  const { lines } = verdicts(dir);
+  for (const line of [
+    "static ok app.repo.Repo.save: called from app.api.annotated",
+    "static ok app.repo.Base.ping: called from app.api.annotated",
+    "static ok app.repo.Repo.load: called from app.api.injected",
+    "static ok app.repo.Sender.send: called from app.api.injected",
+    "static ok app.repo.Repo.drop: called from app.api.constructed",
+    "static ok app.repo.Sender.send: called from app.api.marked",
+    "static ok app.repo.Sender.send: called from app.api.constructed",
+    // A second assignment: the value may be anything.
+    "static unverified app.repo.Repo.save: no resolved path from app.api.reassigned; call through a local value `repo.save` at app/api.py:33:5 may reach it",
+    // `list[Sender]` and an alias that is not a class name no class of `x`.
+    "static unverified app.repo.Sender.send: no resolved path from app.api.untyped; call through a local value `senders.send` at app/api.py:37:5 may reach it (and 1 more unresolved call in reachable code)",
+  ]) assert.ok(lines.includes(line), `${line}\n---\n${lines.join("\n")}`);
 });
 
 test("an import inside a function body is a dependency: `deny` fails on it (Python and Rust)", (t) => {

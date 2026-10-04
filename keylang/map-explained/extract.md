@@ -69,75 +69,85 @@
     - facts [extract.facts](extract.md#extract.facts)
     - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
-    - fn [extractPython](../../src/extract/python.ts#L23) (path: string, src: string) → Promise<FileFacts>
+    - fn [extractPython](../../src/extract/python.ts#L24) (path: string, src: string) → Promise<FileFacts>
       <a id="extract.python.extractPython"></a>
       - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.python.extractTree](extract.md#extract.python.extractTree)
-    - fn [extractTree](../../src/extract/python.ts#L27) (path: string, root: Node) → FileFacts <!-- internal -->
+    - fn [extractTree](../../src/extract/python.ts#L28) (path: string, root: Node) → FileFacts <!-- internal -->
       <a id="extract.python.extractTree"></a>
       - calls [extract.python.collectTopLevel](extract.md#extract.python.collectTopLevel), [extract.python.dunderAll](extract.md#extract.python.dunderAll), [extract.python.importsIn](extract.md#extract.python.importsIn), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.classDecl](extract.md#extract.python.classDecl), [extract.python.exportRow](extract.md#extract.python.exportRow), [extract.python.moduleCalls](extract.md#extract.python.moduleCalls), [extract.python.valueRefs](extract.md#extract.python.valueRefs), [extract.python.collectDynamic](extract.md#extract.python.collectDynamic), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
-    - fn [collectTopLevel](../../src/extract/python.ts#L80) (node: Node, out: Node[]) → void <!-- internal -->
+    - fn [collectTopLevel](../../src/extract/python.ts#L81) (node: Node, out: Node[]) → void <!-- internal -->
       <a id="extract.python.collectTopLevel"></a><br>Top-level statements, including those under `if`/`try` at module level (`if TYPE_CHECKING:`, `try: import x`).
-    - fn [dunderAll](../../src/extract/python.ts#L93) (topLevel: Node[]) → Set<string> | null <!-- internal -->
+    - fn [dunderAll](../../src/extract/python.ts#L94) (topLevel: Node[]) → Set<string> | null <!-- internal -->
       <a id="extract.python.dunderAll"></a><br>The names of `__all__`: a literal list or tuple, extended by `+=`, `+`, `.extend([...])` and `.append("x")`; null without an `__all__`.
-    - fn [exportRow](../../src/extract/python.ts#L121) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
+    - fn [exportRow](../../src/extract/python.ts#L122) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
       <a id="extract.python.exportRow"></a>
-    - fn [decorators](../../src/extract/python.ts#L127) (node: Node) → { name: string; node: Node }[] <!-- internal -->
+    - fn [decorators](../../src/extract/python.ts#L128) (node: Node) → { name: string; node: Node }[] <!-- internal -->
       <a id="extract.python.decorators"></a>
-    - fn [isAccessor](../../src/extract/python.ts#L135) (name: string) → boolean <!-- internal -->
+    - fn [isAccessor](../../src/extract/python.ts#L136) (name: string) → boolean <!-- internal -->
       <a id="extract.python.isAccessor"></a><br>`@property`, `@x.setter`: the method runs on attribute access.
-    - fn [noteDecorators](../../src/extract/python.ts#L145) (node: Node, symbol: string, member: boolean, facts: FileFacts) → void <!-- internal -->
+    - fn [noteDecorators](../../src/extract/python.ts#L146) (node: Node, symbol: string, member: boolean, facts: FileFacts) → void <!-- internal -->
       <a id="extract.python.noteDecorators"></a><br>A decorator keylang does not know may return another function: calls of the name may not reach the body (a hole of that declaration), and the decorator holds the function as a value, so code keylang cannot follow may call it (a framework calling a registered handler).
       - calls [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.isAccessor](extract.md#extract.python.isAccessor), [extract.python.unsupported](extract.md#extract.python.unsupported), [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [classDecl](../../src/extract/python.ts#L155) (def: Node, name: string, symbol: string, topLevel: boolean, facts: FileFacts) → DeclFact <!-- internal -->
+    - fn [classDecl](../../src/extract/python.ts#L156) (def: Node, name: string, symbol: string, topLevel: boolean, facts: FileFacts) → DeclFact <!-- internal -->
       <a id="extract.python.classDecl"></a><br>A class and its members: methods, and nested classes with theirs. `symbol` is its dotted path in the file.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.decorators](extract.md#extract.python.decorators), [extract.python.noteDecorators](extract.md#extract.python.noteDecorators), [extract.python.fnDecl](extract.md#extract.python.fnDecl), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
-    - type [Owner](../../src/extract/python.ts#L191) <!-- internal -->
+    - type [Owner](../../src/extract/python.ts#L192) <!-- internal -->
       <a id="extract.python.Owner"></a><br>The class a method belongs to: its name, its static and class methods (for a top-level class), and whether the first parameter is the receiver.
-    - fn [fnDecl](../../src/extract/python.ts#L197) (node: Node, name: string, owner: Owner | null) → DeclFact <!-- internal -->
+    - fn [fnDecl](../../src/extract/python.ts#L198) (node: Node, name: string, owner: Owner | null) → DeclFact <!-- internal -->
       <a id="extract.python.fnDecl"></a>
-      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.bodyCalls](extract.md#extract.python.bodyCalls), [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
-    - fn [docstring](../../src/extract/python.ts#L217) (body: Node | null) → string | undefined <!-- internal -->
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.bodyCalls](extract.md#extract.python.bodyCalls), [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.typedValues](extract.md#extract.python.typedValues), [extract.python.docstring](extract.md#extract.python.docstring), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
+    - fn [docstring](../../src/extract/python.ts#L218) (body: Node | null) → string | undefined <!-- internal -->
       <a id="extract.python.docstring"></a><br>The docstring of a module, class or function body: its first statement when that is a lone string literal. An f-string, a bytes literal or concatenated strings are code, not documentation, and give none.
       - calls [extract.python.cleandoc](extract.md#extract.python.cleandoc), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
-    - fn [cleandoc](../../src/extract/python.ts#L228) (text: string) → string <!-- internal -->
+    - fn [cleandoc](../../src/extract/python.ts#L229) (text: string) → string <!-- internal -->
       <a id="extract.python.cleandoc"></a><br>`inspect.cleandoc`: the first line stripped, the rest dedented by their common indentation.
-    - fn [boundNames](../../src/extract/python.ts#L236) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
+    - fn [boundNames](../../src/extract/python.ts#L237) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
       <a id="extract.python.boundNames"></a><br>Parameter and assigned names in a function: a call through one of them is a call through a value.
-    - type [CallScope](../../src/extract/python.ts#L261) <!-- internal -->
+    - type [CallScope](../../src/extract/python.ts#L262) <!-- internal -->
       <a id="extract.python.CallScope"></a>
-    - fn [bodyCalls](../../src/extract/python.ts#L268) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
+    - fn [typedValues](../../src/extract/python.ts#L279) (fn: Node) → Map<string, string> <!-- internal -->
+      <a id="extract.python.typedValues"></a><br>Names in a function whose class the syntax names, bound nowhere else in it: a parameter annotated with a class (`repo: Repo`, `repo: Repo = Depends(…)`, `Optional[Repo]`, `Repo | None`, `Annotated[Repo, …]`) or a local whose only assignment is `x = Repo(…)` or `x: Repo = …`.…
+      - calls [extract.python.annotatedClass](extract.md#extract.python.annotatedClass), [extract.python.constructedClass](extract.md#extract.python.constructedClass)
+    - fn [annotatedClass](../../src/extract/python.ts#L322) (type: Node | null) → string | null <!-- internal -->
+      <a id="extract.python.annotatedClass"></a><br>The one class an annotation names: `X`, `"X"`, `Optional[X]`, `X | None`, `Annotated[X, …]`; null for anything else.
+      - calls [extract.python.classInAnnotation](extract.md#extract.python.classInAnnotation)
+    - fn [classInAnnotation](../../src/extract/python.ts#L326) (text: string) → string | null <!-- internal -->
+      <a id="extract.python.classInAnnotation"></a>
+    - fn [constructedClass](../../src/extract/python.ts#L340) (value: Node | null) → string | null <!-- internal -->
+      <a id="extract.python.constructedClass"></a><br>`X(…)` → `X`.
+    - fn [bodyCalls](../../src/extract/python.ts#L345) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
       <a id="extract.python.bodyCalls"></a>
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.callOf](extract.md#extract.python.callOf)
-    - fn [callOf](../../src/extract/python.ts#L288) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
-      <a id="extract.python.callOf"></a><br>`f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a static method); `x.m()` through a value → `x.m`, bound. Any other callee (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang cannot name, written as in the source.
-    - fn [moduleCalls](../../src/extract/python.ts#L315) (root: Node) → CallFact[] <!-- internal -->
+    - fn [callOf](../../src/extract/python.ts#L366) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
+      <a id="extract.python.callOf"></a><br>`f()` → `f`; `a.b.f()` → `a.b.f`; `self.m()` → `this.m` (`Order.m` for a static method); `x.m()` through a value → `x.m`, bound, with the receiver's class when `typedValues` names it. Any other callee (`super().m()`, `f().m()`, `x[0]()`) is a call through a value keylang cannot…
+    - fn [moduleCalls](../../src/extract/python.ts#L395) (root: Node) → CallFact[] <!-- internal -->
       <a id="extract.python.moduleCalls"></a><br>Calls outside every `def`: module level and class bodies run when the module loads; so does a decorator.
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.python.callOf](extract.md#extract.python.callOf)
-    - fn [valueRefs](../../src/extract/python.ts#L339) (root: Node, names: ReadonlySet<string>) → ValueRefFact[] <!-- internal -->
+    - fn [valueRefs](../../src/extract/python.ts#L419) (root: Node, names: ReadonlySet<string>) → ValueRefFact[] <!-- internal -->
       <a id="extract.python.valueRefs"></a><br>Functions read as values: `later(hit)`, `{"save": save}`, `callback=self.save`, `mod.save` without a call. Code holding the value may call it.
       - calls [extract.python.boundNames](extract.md#extract.python.boundNames), [extract.python.bindsOrCalls](extract.md#extract.python.bindsOrCalls), [extract.python.assigned](extract.md#extract.python.assigned)
-    - fn [bindsOrCalls](../../src/extract/python.ts#L367) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [bindsOrCalls](../../src/extract/python.ts#L447) (node: Node, parent: Node) → boolean <!-- internal -->
       <a id="extract.python.bindsOrCalls"></a><br>The identifier is a callee, a declared name or a binding — not a value read.
       - calls [extract.python.assigned](extract.md#extract.python.assigned)
-    - fn [assigned](../../src/extract/python.ts#L380) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [assigned](../../src/extract/python.ts#L460) (node: Node, parent: Node) → boolean <!-- internal -->
       <a id="extract.python.assigned"></a><br>The node is the target of an assignment (`x = …`, `x += …`, `self.x = …`).
-    - fn [collectDynamic](../../src/extract/python.ts#L389) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectDynamic](../../src/extract/python.ts#L469) (root: Node, facts: FileFacts) → void <!-- internal -->
       <a id="extract.python.collectDynamic"></a><br>`getattr(x, name)`, `importlib.import_module(name)`, `__import__(name)`, `exec`/`eval`: what they reach is decided at run time. A `getattr` in a `def` is a hole of that function's calls; the others may import anything.
       - calls [extract.python.enclosingFn](extract.md#extract.python.enclosingFn), [extract.python.unsupported](extract.md#extract.python.unsupported)
-    - fn [isDeclarationLevel](../../src/extract/python.ts#L404) (node: Node) → boolean <!-- internal -->
+    - fn [isDeclarationLevel](../../src/extract/python.ts#L484) (node: Node) → boolean <!-- internal -->
       <a id="extract.python.isDeclarationLevel"></a><br>No `def` or `class` encloses the node: it is at the top of the module (possibly under `if`/`try`).
-    - fn [enclosingFn](../../src/extract/python.ts#L414) (node: Node) → string | null <!-- internal -->
+    - fn [enclosingFn](../../src/extract/python.ts#L494) (node: Node) → string | null <!-- internal -->
       <a id="extract.python.enclosingFn"></a><br>The indexed fn whose body holds the node, as a dotted path (`place`, `Order.save`, `Order.Line.price`); a `def` nested in a `def` belongs to the outer one. Null at module level and in a class body outside methods.
-    - fn [importsIn](../../src/extract/python.ts#L436) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [importsIn](../../src/extract/python.ts#L516) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       <a id="extract.python.importsIn"></a><br>Every import of the file, in source order, wherever it is written. `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a` plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`. `reexported(local)`: the name (null for `*`) is part of this…
       - calls [extract.python.importsOf](extract.md#extract.python.importsOf)
-    - fn [importsOf](../../src/extract/python.ts#L449) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [importsOf](../../src/extract/python.ts#L529) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       <a id="extract.python.importsOf"></a>
       - calls [extract.python.isDeclarationLevel](extract.md#extract.python.isDeclarationLevel), [extract.python.importAt](extract.md#extract.python.importAt)
-    - fn [importAt](../../src/extract/python.ts#L493) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/python.ts#L573) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
       <a id="extract.python.importAt"></a>
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
-    - fn [unsupported](../../src/extract/python.ts#L498) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/python.ts#L578) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       <a id="extract.python.unsupported"></a>
       - calls [extract.treesitter.located](extract.md#extract.treesitter.located)
   - module [rust](../../src/extract/rust.ts#L1)

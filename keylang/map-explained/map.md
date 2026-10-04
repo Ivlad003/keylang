@@ -356,42 +356,42 @@
     - fn [buildGraph](../../src/graph.ts#L210) (config: Config, files: FileFacts[]) → Graph
       <a id="map.graph.buildGraph"></a>
       - calls [map.frontends.frontendOf](map.md#map.frontends.frontendOf), [map.frontends.frontendFor](map.md#map.frontends.frontendFor), [map.graph.placeFile](map.md#map.graph.placeFile), [map.graph.isIndexFile](map.md#map.graph.isIndexFile), [map.graph.addDecl](map.md#map.graph.addDecl), [map.graph.markOpaque](map.md#map.graph.markOpaque), [map.declared-packages.readManifests](map.md#map.declared-packages.readManifests), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.graph.importedPackages](map.md#map.graph.importedPackages), [base.span.compareText](base.md#base.span.compareText), [map.graph.notIndexed](map.md#map.graph.notIndexed), [map.graph.importTarget](map.md#map.graph.importTarget), [base.external-ids.externalSegment](base.md#base.external-ids.externalSegment), [base.config.layerName](base.md#base.config.layerName), [map.graph.exportInput](map.md#map.graph.exportInput), [map.exports.resolveExports](map.md#map.exports.resolveExports), [map.graph.memberKey](map.md#map.graph.memberKey), [map.graph.globalsOf](map.md#map.graph.globalsOf), [map.graph.addCall](map.md#map.graph.addCall), [map.graph.holeReason](map.md#map.graph.holeReason), [base.languages.constructorName](base.md#base.languages.constructorName), [map.graph.markEscapes](map.md#map.graph.markEscapes)
-    - type [ImportTarget](../../src/graph.ts#L845) <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L853) <!-- internal -->
       <a id="map.graph.ImportTarget"></a><br>What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself.
-    - fn [importTarget](../../src/graph.ts#L853) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L861) (module: Module, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
       <a id="map.graph.importTarget"></a><br>A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module.
-    - fn [exportInput](../../src/graph.ts#L865) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L873) (row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>) → ExportRowInput <!-- internal -->
       <a id="map.graph.exportInput"></a><br>One export row of a file, with what it stands for: a declaration of the module, a name or the namespace of the module an import binds, or nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes through its own import; any other name through a declaration…
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [importedPackages](../../src/graph.ts#L884) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L892) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
       <a id="map.graph.importedPackages"></a><br>Names of the external packages (and `node` for built-ins) the files import.
-    - fn [notIndexed](../../src/graph.ts#L901) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L909) (config: Config, file: string) → string | null <!-- internal -->
       <a id="map.graph.notIndexed"></a><br>Why a resolved source file has no module; null when it is left out on purpose: not source code (JSON, CSS), a test or declaration file, `exclude`, outside guessed layers.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded), [base.config.isOutside](base.md#base.config.isOutside), [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [isIndexFile](../../src/graph.ts#L908) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L916) (file: string) → boolean <!-- internal -->
       <a id="map.graph.isIndexFile"></a>
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [addCall](../../src/graph.ts#L919) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L927) (fn: Fn, call: Call) → boolean <!-- internal -->
       <a id="map.graph.addCall"></a><br>Add a call unless an edge to the same target already says as much: a direct call proves what a hook edge does, a call outside a closure what one inside does. A stronger edge replaces the weaker ones.
-    - fn [holeReason](../../src/graph.ts#L927) (c: CallFact) → string <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L935) (c: CallFact) → string <!-- internal -->
       <a id="map.graph.holeReason"></a>
-    - fn [markEscapes](../../src/graph.ts#L939) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L947) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
       <a id="map.graph.markEscapes"></a><br>Functions that code may reach without naming them in a call: read as a value (`later(save)` names the declaration `save` resolves to; `obj.save` any method `save`), called implicitly, or the constructor of a class read as a value (`extends A` runs `A`'s constructor).
       - calls [base.languages.constructorName](base.md#base.languages.constructorName), [base.languages.implicitMember](base.md#base.languages.implicitMember)
-    - fn [markOpaque](../../src/graph.ts#L954) (m: Module) → void <!-- internal -->
+    - fn [markOpaque](../../src/graph.ts#L962) (m: Module) → void <!-- internal -->
       <a id="map.graph.markOpaque"></a>
-    - type [Decls](../../src/graph.ts#L960) <!-- internal -->
+    - type [Decls](../../src/graph.ts#L968) <!-- internal -->
       <a id="map.graph.Decls"></a><br>Where each declaration went: several facts (overloads) may share one node.
-    - fn [memberKey](../../src/graph.ts#L971) (member: string, isStatic: boolean) → string
+    - fn [memberKey](../../src/graph.ts#L979) (member: string, isStatic: boolean) → string
       <a id="map.graph.memberKey"></a><br>Lookup key of a class member: `this.#m` in a static method is `static #m`.
       - calls [base.config.layerName](base.md#base.config.layerName)
-    - fn [memberSegments](../../src/graph.ts#L985) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [memberSegments](../../src/graph.ts#L993) (members: readonly DeclFact[]) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       <a id="map.graph.memberSegments"></a><br>ID segments of class members. An instance member keeps its name; a static or `#private` member of the same name as another gets a suffix (`m-static`, `go-private`, `go-static-private`), which no JS name can collide with.
       - calls [map.graph.memberKey](map.md#map.graph.memberKey), [base.config.layerName](base.md#base.config.layerName)
-    - fn [addDecl](../../src/graph.ts#L1004) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1012) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       <a id="map.graph.addDecl"></a>
       - calls [base.config.layerName](base.md#base.config.layerName), [map.graph.memberSegments](map.md#map.graph.memberSegments)
-    - fn [placeFile](../../src/graph.ts#L1081) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
+    - fn [placeFile](../../src/graph.ts#L1089) (config: Config, file: string) → { layer: string; segments: string[]; stem: string } | null
       <a id="map.graph.placeFile"></a><br>Layer and module path segments for a file, from the first matching layer glob. `stem` is the path the module stands for, before segments are sanitized: the file without its extension (`src/a/b` for `src/a/b.ts` and `src/a/b/index.ts`), or its directory in `dir` mode. Two files…
       - calls [base.config.isOutside](base.md#base.config.isOutside), [base.glob.matchesGlob](base.md#base.glob.matchesGlob), [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [imports](../../src/imports.ts#L1)

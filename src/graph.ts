@@ -541,12 +541,20 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
       return [];
     };
-    /** `this.decoder.feed` with `decoder: InputDecoder` → `InputDecoder.feed`, when that class has the member. */
+    /**
+     * `this.decoder.feed` with `decoder: InputDecoder` → `InputDecoder.feed`,
+     * when that class or a base keylang has read declares the member.
+     */
     const receiverTarget = (callee: string, receiver: string | undefined): string | null => {
       if (!receiver) return null;
-      const cls = classNamed(receiver);
-      const member = callee.slice(callee.lastIndexOf(".") + 1);
-      return cls ? (declModule.get(cls)?.get(memberKey(member, false)) ?? null) : null;
+      const member = memberKey(callee.slice(callee.lastIndexOf(".") + 1), false);
+      const seen = new Set<string>();
+      for (let cls = classNamed(receiver); cls && !seen.has(cls); cls = classBase.get(cls)?.internal ?? null) {
+        seen.add(cls);
+        const id = declModule.get(cls)?.get(member);
+        if (id) return id;
+      }
+      return null;
     };
     /** One target for a callee that names a declaration; null for locals, gaps and ambiguity. */
     const single = (fact: { callee: string; bound?: string; receiver?: string; opaque?: true }, cls: Module | null, isStatic: boolean): string | null => {
