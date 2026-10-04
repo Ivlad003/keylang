@@ -860,7 +860,12 @@ function cmdNew(args: readonly string[], layer: string | undefined): number {
   } else {
     const layers = [...config.layers.keys()].join(", ");
     if (layer === undefined) throw new Error(`new module: --layer <layer> is required; layers in ${CONFIG_FILE}: ${layers}`);
-    if (!config.layers.has(layer)) throw new Error(`new module: unknown layer \`${layer}\`; layers in ${CONFIG_FILE}: ${layers}`);
+    if (!config.layers.has(layer)) {
+      // Without the file the guessed layers are not the user's to name; with it but without layers the list would be empty.
+      if (!existsSync(join(root, CONFIG_FILE))) throw new Error(`new module: no ${CONFIG_FILE} here; add "layers" to ${CONFIG_FILE} (or run \`keylang init\` once there is code)`);
+      if (config.guessed) throw new Error(`new module: no layers in ${CONFIG_FILE}`);
+      throw new Error(`new module: unknown layer \`${layer}\`; layers in ${CONFIG_FILE}: ${layers}`);
+    }
     path = `${defaultSpecPath("feature", config.dir)}${name}.md`;
     text = plannedModuleTemplate(layer, name);
   }

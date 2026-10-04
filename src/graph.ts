@@ -271,7 +271,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // 1. Files → modules.
   const byFile = new Map<string, FileEntry>();
   /** Module id → the path its first file stands for; a file standing for another path is an ID collision. */
-  const stems = new Map<string, { stem: string; file: string }>();
+  const stems = new Map<string, { stem: string; file: string; glob: string | null }>();
   const collided = new Set<Module>();
   for (const f of files) {
     const placed = placeFile(config, f.path);
@@ -283,11 +283,13 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     const m = ensureModule(id, layer, f.path, 1, false, stem);
     const first = stems.get(id);
     if (!first) {
-      stems.set(id, { stem, file: f.path });
+      stems.set(id, { stem, file: f.path, glob: placed?.glob ?? null });
       representative(m, f);
     } else if (first.stem !== stem) {
       // `foo.bar.ts` and `foo_bar.ts`, `2fa/` and `_2fa/`: two paths that sanitize to one ID. Their members cannot be told apart.
-      const reason = `module ID collision: same module ID as \`${first.file}\` (\`${id}\`) from another path; the module is opaque until one of them is renamed`;
+      // Two globs of one layer can strip different prefixes to one path (`app/core/__init__.py`, `app/db/__init__.py`); renaming may be impossible, splitting the layer is not.
+      const globs = placed?.glob && first.glob && placed.glob !== first.glob ? `; or split layer \`${layer}\` so \`${first.glob}\` and \`${placed.glob}\` are separate layers` : "";
+      const reason = `module ID collision: same module ID as \`${first.file}\` (\`${id}\`) from another path; the module is opaque until one of them is renamed${globs}`;
       warnings.push(`${f.path}: ${reason}`);
       gaps.push({ kind: "unsupported", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason, source: m.id });
       collided.add(m);
@@ -1097,11 +1099,12 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
  * `src/a/b/index.ts`), or its directory in `dir` mode. Two files of one ID
  * and one stem are one module; two stems of one ID are a collision.
  */
-export function placeFile(config: Config, file: string): { layer: string; segments: string[]; stem: string } | null {
+/** Where `file` lands: its layer, module ID segments and path stem, and the layer glob that placed it (none for `outside`). */
+export function placeFile(config: Config, file: string): { layer: string; segments: string[]; stem: string; glob: string | null } | null {
   // `outside` wins over the layers: such a file is not part of the architecture. Its ID follows its path, as in `unassigned`.
   if (isOutside(file, config.outside)) {
     const stem = file.replace(/\.[^./]+$/, "");
-    return { layer: OUTSIDE_LAYER, segments: stem.split("/").map(layerName), stem };
+    return { layer: OUTSIDE_LAYER, segments: stem.split("/").map(layerName), stem, glob: null };
   }
   for (const [layer, globs] of config.layers) {
     for (const g of globs) {
@@ -1114,7 +1117,7 @@ export function placeFile(config: Config, file: string): { layer: string; segmen
       if (config.module === "dir" && segments.length > 1) segments = segments.slice(0, -1);
       // The index file of a directory (`index.ts`, `mod.rs`, `__init__.py`) is its module; in `dir` mode the file name is gone already, and a directory named `index` is a module of its own.
       else if (segments.length > 1 && language !== undefined && LANGUAGES[language].index.includes(segments.at(-1)!)) segments = segments.slice(0, -1);
-      return { layer, segments: segments.map(layerName), stem: [...(under ? [prefix] : []), ...segments].join("/") };
+      return { layer, segments: segments.map(layerName), stem: [...(under ? [prefix] : []), ...segments].join("/"), glob: g };
     }
   }
   return null;

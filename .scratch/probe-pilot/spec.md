@@ -48,7 +48,7 @@ keylang/flows/pilot.md:7:4: static ok domain.order.total: called from domain.ord
 | 08 | [Hover на ключових словах і рядках без ID](issues/08-hover-keyword-role.md) | ready-for-agent |
 | 09 | [`new module` пише `# flow <name>` у `features/`](issues/09-new-module-flow-heading.md) | needs-triage |
 | 10 | [`init` на Python-пакеті вгадує один шар](issues/10-init-python-package-layers.md) | resolved |
-| 11 | [Два неточні повідомлення розкладки: `new module` без `keylang.json`, колізія module ID](issues/11-layout-messages.md) | ready-for-agent |
+| 11 | [Два неточні повідомлення розкладки: `new module` без `keylang.json`, колізія module ID](issues/11-layout-messages.md) | resolved |
 | 12 | [Підсумок `check` не відділяє baseline від ручних специфікацій](issues/12-check-summary-by-origin.md) | needs-triage |
 
 Порядок: 05, 06, 07, 11 — лише тексти повідомлень, їх можна злити до проби з людьми. 01–04 і 09 змінюють вердикти чи шаблон і чекають рішення; 03 — це Р-9, яке протокол відкладає до проби з людьми.

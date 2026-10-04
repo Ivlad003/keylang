@@ -2339,3 +2339,34 @@ test("new flow and new module write a skeleton that check accepts and never over
   assert.deepEqual(treeBytes(dir), before);
 });
 
+test("new module names the missing keylang.json or its missing layers instead of an empty layer list, and writes nothing", (t) => {
+  const empty = tempDir(t, "keylang-new-empty-");
+  const none = keylang(empty, ["new", "module", "orders", "--layer", "domain"]);
+  assert.equal(none.status, 2);
+  assert.equal(none.stderr, 'keylang: new module: no keylang.json here; add "layers" to keylang.json (or run `keylang init` once there is code)\n');
+  assert.deepEqual(readdirSync(empty), []);
+
+  const noLayers = tempDir(t, "keylang-new-nolayers-");
+  writeTree(noLayers, { "keylang.json": '{ "format": 2 }\n' });
+  const before = treeBytes(noLayers);
+  const o = keylang(noLayers, ["new", "module", "orders", "--layer", "domain"]);
+  assert.equal(o.status, 2);
+  assert.equal(o.stderr, "keylang: new module: no layers in keylang.json\n");
+  assert.deepEqual(treeBytes(noLayers), before);
+});
+
+test("a module ID collision from two globs of one layer suggests splitting the layer; one within a glob keeps the old text", (t) => {
+  const dir = tempDir(t, "keylang-collision-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["python", "typescript"], layers: { core: ["app/core/**", "app/db/**"], web: ["web/**"] } })}\n`,
+    "app/__init__.py": "",
+    "app/core/__init__.py": "x = 1\n",
+    "app/db/__init__.py": "y = 2\n",
+    "web/foo.bar.ts": "export const a = 1;\n",
+    "web/foo_bar.ts": "export const b = 2;\n",
+  });
+  const o = keylang(dir, ["map"]);
+  assert.match(o.stderr, /warning: app\/db\/__init__\.py: module ID collision: same module ID as `app\/core\/__init__\.py` \(`core\.__init__`\) from another path; the module is opaque until one of them is renamed; or split layer `core` so `app\/core\/\*\*` and `app\/db\/\*\*` are separate layers\n/);
+  assert.match(o.stderr, /warning: web\/foo_bar\.ts: module ID collision: same module ID as `web\/foo\.bar\.ts` \(`web\.foo_bar`\) from another path; the module is opaque until one of them is renamed\n/);
+});
+

@@ -984,7 +984,7 @@
     - type [Reply](../../src/tui/background.ts#L18) <!-- internal -->
       <a id="tui.background.Reply"></a><br>Message shape sent back from the background worker to the TUI, carrying a request `id` plus either a `MapResult` payload or an `error` string so the caller can match the response to its pending request. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - module [SnapshotWorker](../../src/tui/background.ts#L24)
-      <a id="tui.background.SnapshotWorker"></a><br>Runs map generation on a lazily spawned worker thread so the terminal and web UIs stay responsive, matching replies to pending promises by id and falling back to in-process `generateMap` if the worker cannot start. Errors or a non-zero exit reject all pending requests and mark… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="tui.background.SnapshotWorker"></a><br>Runs map generation on a lazily spawned worker thread so the terminal and web UIs stay responsive, matching replies to pending promises by id and falling back to in-process `generateMap` if the worker cannot start. Errors or a non-zero exit reject all pending requests and mark… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - fn [constructor](../../src/tui/background.ts#L28)
         <a id="tui.background.SnapshotWorker.constructor"></a><br>Initializes a per-request registry keyed by numeric id, holding the resolve and reject callbacks of pending promises so background map results can later be matched back to their awaiting callers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [generate](../../src/tui/background.ts#L31) (config: Config, options: { overlay: ReadonlyMap<string, string> }) → Promise<MapResult>

@@ -132,22 +132,22 @@
       - calls cli.cli.packageVersion, features.git-hook.gitHooksDir, base.config.toPosix, features.git-hook.preCommitState, features.git-hook.preCommitCommand, base.safe-write.writeAtomic, features.git-hook.preCommitText
     - fn [cmdNew](../../src/cli.ts#L845) (args: readonly string[], layer: string | undefined) → number <!-- internal -->
       - calls tui.new-spec.flowNameProblem, map.analyze.findRoot, base.config.loadConfig, tui.new-spec.defaultSpecPath, tui.new-spec.specTemplate, cli.cli.plannedModuleTemplate, base.config.toPosix, tui.new-spec.newSpecProblem, base.safe-write.safeWrite
-    - fn [plannedModuleTemplate](../../src/cli.ts#L881) (layer: string, name: string) → string <!-- internal -->
-    - fn [cmdCompletions](../../src/cli.ts#L889) (shell: string | undefined) → number <!-- internal -->
+    - fn [plannedModuleTemplate](../../src/cli.ts#L886) (layer: string, name: string) → string <!-- internal -->
+    - fn [cmdCompletions](../../src/cli.ts#L894) (shell: string | undefined) → number <!-- internal -->
       - calls cli.completions.isShell, cli.completions.completionScript, cli.completions.helpCommands
-    - fn [packageVersion](../../src/cli.ts#L896) () → string <!-- internal -->
-    - fn [readStdin](../../src/cli.ts#L900) () → Promise<string> <!-- internal -->
-    - fn [cmdMap](../../src/cli.ts#L906) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [packageVersion](../../src/cli.ts#L901) () → string <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L905) () → Promise<string> <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L911) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, operations.operations.mapCheckLines, base.config.toPosix, cli.cli.printMap
-    - fn [printMap](../../src/cli.ts#L924) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [printMap](../../src/cli.ts#L929) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       - calls base.config.toPosix, operations.operations.mapConflictLines, operations.operations.mapStepLines, operations.operations.mapSummary
-    - fn [cmdParse](../../src/cli.ts#L955) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdParse](../../src/cli.ts#L960) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot, base.diag.formatDiagnostic
-    - fn [cmdCheck](../../src/cli.ts#L966) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L971) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
       - calls cli.cli.cmdCheckStale, features.check-format.isCheckFormat, map.analyze.findRoot, base.config.loadConfig, operations.operations.runOperation, operations.operations.checkSkipNote, features.check-format.checkReportText, operations.operations.checkSummary
-    - fn [cmdCheckStale](../../src/cli.ts#L1023) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheckStale](../../src/cli.ts#L1028) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
       - calls features.stale.runStaleCheck, map.analyze.findRoot, features.stale.staleLine, features.stale.staleSummary
-    - fn [cmdFmt](../../src/cli.ts#L1042) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdFmt](../../src/cli.ts#L1047) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       - calls operations.operations.runOperation, map.analyze.findRoot
   - module [completions](../../src/completions.ts#L1)
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]
