@@ -867,10 +867,14 @@ function cmdNew(args: readonly string[], layer: string | undefined): number {
 
 /**
  * A module that has no code yet is an intention: `planned module` at the top
- * of a flow section (format §5), in a feature file named after it.
+ * of a flow section (format §5), in a feature file named after it. The prose
+ * says why a module request gets a flow heading; it is not part of the grammar.
  */
 function plannedModuleTemplate(layer: string, name: string): string {
-  return `# flow ${name}\n\n- planned module ${layer}.${name}\n`;
+  const note =
+    `A feature file: the planned declarations below are what to build; \`keylang feature ${name}\` says what is still missing. ` +
+    "Add `- trigger` and `- step` lines to describe the flow.";
+  return `# flow ${name}\n\n${note}\n\n- planned module ${layer}.${name}\n`;
 }
 
 /** `completions <shell>`: commands from the help text, flags from the parser's table. */

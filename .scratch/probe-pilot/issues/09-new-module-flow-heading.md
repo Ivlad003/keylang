@@ -1,6 +1,6 @@
 # 09: `new module` пише `# flow <name>` у `features/`
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** design
 
@@ -36,11 +36,12 @@ keylang/features/billing.md:3:1: planned users.billing: planned `users.billing` 
 
 **Рекомендація:** 1 зараз (до проби з людьми), 2 — лише якщо проба покаже, що `# flow` у файлі фічі плутає людей так само, як AI.
 
-- [ ] рішення записане тут; для 2 або 3 — у format.md / `docs/tools.md` і `--help`
-- [ ] тест CLI: вміст файла `new module` за рішенням; `check` і `feature` на ньому не змінились (для 1)
+- [x] рішення записане тут; для 2 або 3 — у format.md / `docs/tools.md` і `--help`
+- [x] тест CLI: вміст файла `new module` за рішенням; `check` і `feature` на ньому не змінились (для 1)
 
 Ключові файли: `src/cli.ts` (`new`), `docs/tools.md`, `tests/cli.test.ts`
 
 ## Comments
 
 - 2026-10-04 — рішення людини: варіант 1 — пояснювальний абзац у шаблоні `new module` під `# flow <name>`, граматика без змін. `# feature` — лише якщо проба з людьми покаже ту саму плутанину. Закриває й відкрите питання design-v0.2/27.
+- 2026-10-04 — реалізовано варіант 1: `plannedModuleTemplate` (`src/cli.ts`) пише під `# flow <name>` абзац «A feature file: the planned declarations below are what to build; `keylang feature <name>` says what is still missing. Add `- trigger` and `- step` lines to describe the flow.» Граматика без змін. `docs/tools.md` (агенти) описує абзац. CLI-тест «new flow and new module…» перевіряє вміст файла і що `check <файл>` та `feature <name>` дають той самий код, stdout (з точністю до номера рядка) і stderr, що й файл без абзацу; `fmt --check` проходить. Нотатку про закрите питання додано в design-v0.2/27.

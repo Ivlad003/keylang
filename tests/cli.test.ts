@@ -2138,7 +2138,16 @@ test("new flow and new module write a skeleton that check accepts and never over
   assert.equal(module.status, 0, module.stderr);
   assert.match(module.stdout, /keylang\/features\/payments\.md/);
   const moduleText = readFileSync(join(dir, "keylang/features/payments.md"), "utf8");
-  assert.match(moduleText, /^- planned module app\.payments$/m);
+  assert.match(moduleText, /^# flow payments\n\nA feature file: .*`keylang feature payments` says what is still missing\. .*`- trigger` and `- step`.*\n\n- planned module app\.payments\n$/);
+  // The explanatory paragraph is prose only: check and feature see the same file without it.
+  const withNote = [keylang(dir, ["check", "keylang/features/payments.md"]), keylang(dir, ["feature", "payments"])];
+  writeFileSync(join(dir, "keylang/features/payments.md"), "# flow payments\n\n- planned module app.payments\n");
+  const withoutNote = [keylang(dir, ["check", "keylang/features/payments.md"]), keylang(dir, ["feature", "payments"])];
+  writeFileSync(join(dir, "keylang/features/payments.md"), moduleText);
+  const outcome = (runs: typeof withNote) =>
+    runs.map((run) => ({ status: run.status, stdout: run.stdout.replace(/payments\.md:\d+:/g, "payments.md:N:"), stderr: run.stderr }));
+  assert.deepEqual(outcome(withNote), outcome(withoutNote));
+  assert.match(withNote[1]!.stdout, /planned `app\.payments` is not implemented/);
 
   const checked = keylang(dir, ["check"]);
   assert.equal(checked.status, 0, checked.stdout);
