@@ -178,7 +178,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
       out.push(fact);
       // `jsx(Cart)` is the same call as `<Cart />` when `jsx` is React's. The factory call and its `passes` stay.
       if (!call) continue;
-      const component = componentOfFactory(call, c.node, body, cls, reactFactories());
+      const component = componentOfFactory(call, c.node, body, cls, react);
       if (!component) continue;
       if (insideClosure(c.node, body)) component.closure = true;
       out.push(component);
@@ -300,32 +300,8 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
     }
   };
 
+  // Imports hoist, so a wrapper or factory may sit above its import. Read once.
   const react = reactBindings(root);
-  // Imports hoist, so a factory call may sit above its import. Read once.
-  let factories: ReactFactories | null = null;
-  const reactFactories = (): ReactFactories => {
-    if (factories === null) {
-      const names = new Set<string>();
-      const members = new Map<string, Set<string>>();
-      for (const stmt of root.namedChildren) {
-        if (stmt.type !== "import_statement") continue;
-        for (const fact of importStatement(stmt)) {
-          if (!REACT_FACTORY_SOURCES.has(fact.source)) continue;
-          for (const b of fact.bindings) {
-            if (b.kind === "named") {
-              if (REACT_FACTORIES.has(b.imported)) names.add(b.local);
-            } else {
-              const props = members.get(b.local) ?? new Set<string>();
-              for (const name of REACT_FACTORIES) props.add(name);
-              members.set(b.local, props);
-            }
-          }
-        }
-      }
-      factories = { names, members };
-    }
-    return factories;
-  };
 
   // Declarations exported later by name: `function a() {}; export { a }`.
   const localExports = new Set<string>();
@@ -442,32 +418,57 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
   return facts;
 }
 
-/** Local names a value import from `react` binds to a wrapper, and default or namespace objects (`React.memo`). */
+/** The React exports keylang reads, per module: wrappers from `react`, factories from `react` and its JSX runtimes. */
+const REACT_EXPORTS = new Map<string, ReadonlySet<string>>([
+  ["react", new Set(["memo", "forwardRef", "lazy", "createElement", "jsx", "jsxs", "jsxDEV"])],
+  ["react/jsx-runtime", new Set(["createElement", "jsx", "jsxs", "jsxDEV"])],
+  ["react/jsx-dev-runtime", new Set(["createElement", "jsx", "jsxs", "jsxDEV"])],
+]);
+
+/** What value imports from React bind in one file. */
 interface ReactBindings {
-  names: Set<string>;
-  objects: Set<string>;
+  /** Local name → the React export it binds: `h` → `createElement`. */
+  names: Map<string, string>;
+  /** Default or namespace object → the React exports read as its members (`React.memo`). */
+  objects: Map<string, ReadonlySet<string>>;
 }
 
 /**
- * Wrapper bindings of one file. Imports hoist, so a `const` above its import
- * still counts; `require("react")` binds only below itself and is not read.
- * `import type` and `import { type memo }` bind no value.
+ * React bindings of one file: the single source for wrappers and factories,
+ * so both follow one type-only rule. Imports hoist, so a `const` above its
+ * import still counts; `require("react")` binds only below itself and is not
+ * read. `import type`, `import type * as React` and `import { type memo }`
+ * bind no value.
  */
 function reactBindings(root: Node): ReactBindings {
-  const names = new Set<string>();
-  const objects = new Set<string>();
+  const names = new Map<string, string>();
+  const objects = new Map<string, ReadonlySet<string>>();
   for (const stmt of root.namedChildren) {
     if (stmt.type !== "import_statement" || typeKeyword(stmt)) continue;
     for (const fact of importStatement(stmt)) {
-      if (fact.source !== "react") continue;
+      const exported = REACT_EXPORTS.get(fact.source);
+      if (!exported) continue;
       for (const b of fact.bindings) {
         if (b.kind === "named") {
-          if (REACT_WRAPPERS.has(b.imported) && !typeOnlySpecifier(stmt, b.local)) names.add(b.local);
-        } else if (b.kind === "default" || b.kind === "module") objects.add(b.local);
+          if (exported.has(b.imported) && !typeOnlySpecifier(stmt, b.local)) names.set(b.local, b.imported);
+        } else objects.set(b.local, exported);
       }
     }
   }
   return { names, objects };
+}
+
+/** The React export a callee names through a binding of the file (`memo`, `h`, `React.memo`), with the local it goes through. Shadowing is the caller's. */
+function reactExportOf(callee: Node, react: ReactBindings): { name: string; local: string } | null {
+  if (callee.type === "identifier") {
+    const name = react.names.get(callee.text);
+    return name ? { name, local: callee.text } : null;
+  }
+  if (callee.type !== "member_expression") return null;
+  const object = callee.childForFieldName("object");
+  const prop = callee.childForFieldName("property")?.text;
+  if (object?.type !== "identifier" || !prop) return null;
+  return react.objects.get(object.text)?.has(prop) ? { name: prop, local: object.text } : null;
 }
 
 /** The `type` keyword of `import type` or `import { type name }` — an unnamed child, not an identifier. */
@@ -569,17 +570,8 @@ function componentOfTag(name: Node, body: Node, cls: ClassScope | null): CallFac
   return text.length < MAX_CALLEE ? callFact(text, name) : opaqueCall(name);
 }
 
-/** `react`, `react/jsx-runtime`, `react/jsx-dev-runtime`: the modules whose factories are component calls. */
-const REACT_FACTORY_SOURCES = new Set(["react", "react/jsx-runtime", "react/jsx-dev-runtime"]);
-
 /** The factory names. Which module bound the callee decides, not the spelling at the call. */
 const REACT_FACTORIES = new Set(["createElement", "jsx", "jsxs", "jsxDEV"]);
-
-/** Named factory imports, and default or namespace imports whose members may be factories. */
-interface ReactFactories {
-  names: Set<string>;
-  members: Map<string, Set<string>>;
-}
 
 /**
  * The component call hidden in a React factory: `createElement(Cart)`,
@@ -593,23 +585,18 @@ interface ReactFactories {
  * identifier or a member. A string (`"div"`) or a lowercase identifier is
  * not a call.
  */
-function componentOfFactory(call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, factories: ReactFactories): CallFact | null {
-  if (call.type !== "call_expression" || !factoryCallee(calleeNode, body, factories)) return null;
+function componentOfFactory(call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, react: ReactBindings): CallFact | null {
+  if (call.type !== "call_expression" || !factoryCallee(calleeNode, body, react)) return null;
   const arg = call.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
   return arg ? componentOfTag(unwrapValue(arg), body, cls) : null;
 }
 
 /** The callee node is a React factory binding, and nothing between here and the body shadows it. */
-function factoryCallee(node: Node, body: Node, factories: ReactFactories): boolean {
+function factoryCallee(node: Node, body: Node, react: ReactBindings): boolean {
   let n = unwrapValue(node);
   while (n.type === "sequence_expression" && n.namedChildren.length > 0) n = unwrapValue(n.namedChildren.at(-1)!);
-  if (n.type === "identifier") return bindingOf(n, n.text, body) === null && factories.names.has(n.text);
-  if (n.type !== "member_expression") return false;
-  const obj = n.childForFieldName("object");
-  const prop = n.childForFieldName("property");
-  if (obj?.type !== "identifier" || !prop) return false;
-  const allowed = factories.members.get(obj.text);
-  return allowed !== undefined && allowed.has(prop.text) && bindingOf(n, obj.text, body) === null;
+  const bound = reactExportOf(n, react);
+  return bound !== null && REACT_FACTORIES.has(bound.name) && bindingOf(n, bound.local, body) === null;
 }
 
 /**
@@ -793,11 +780,8 @@ const REACT_WRAPPERS = new Set(["memo", "forwardRef", "lazy"]);
 function reactWrapperFn(value: Node, react: ReactBindings): Node | null {
   if (value.type !== "call_expression") return null;
   const callee = value.childForFieldName("function");
-  const object = callee?.type === "member_expression" ? callee.childForFieldName("object") : null;
-  const wrapped =
-    (callee?.type === "identifier" && react.names.has(callee.text)) ||
-    (object?.type === "identifier" && react.objects.has(object.text) && REACT_WRAPPERS.has(callee?.childForFieldName("property")?.text ?? ""));
-  if (!wrapped) return null;
+  const bound = callee ? reactExportOf(callee, react) : null;
+  if (!bound || !REACT_WRAPPERS.has(bound.name)) return null;
   const arg = value.childForFieldName("arguments")?.namedChildren.find((c) => c.type !== "comment");
   const fn = arg ? unwrapValue(arg) : null;
   return fn && FUNCTION_VALUES.has(fn.type) ? fn : null;

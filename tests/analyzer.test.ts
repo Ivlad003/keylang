@@ -823,6 +823,13 @@ test("jsx: `memo` / `forwardRef` / `lazy` from `react` unwrap a `const` into the
     "ui.wrapped.Named: fetchCart → ui.api.fetchCart",
     "ui.wrapped.Ns: price → ui.api.price",
   ]);
+  const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { moduleCalls: { callee: string }[] } }> };
+  const moduleCalls = (file: string) => facts.files[file]!.facts.moduleCalls.map((c) => c.callee);
+  // The wrapper call itself stays a module-level call; the wrapped body moves into the fn.
+  assert.deepEqual(moduleCalls("src/ui/wrapped.tsx"), ["memo", "forwardRef", "lazy", "React.memo", "ReactNS.memo", "ref", "React.memo", "memo", "price"]);
+  // A wrapper that unwraps nothing keeps its body's calls at module level.
+  assert.deepEqual(moduleCalls("src/ui/typed.tsx"), ["React.memo", "price", "memo", "price", "forwardRef"]);
+  assert.deepEqual(moduleCalls("src/cats/cats.module.ts"), ["forwardRef"]);
 });
 
 test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call the component; a string or a lowercase name does not", (t) => {
@@ -883,6 +890,31 @@ test("jsx: `createElement` / `jsx` / `jsxs` / `jsxDEV` imported from React call 
   const shadow = facts.files["src/app/page.ts"]!.facts.decls.find((d) => d.name === "Shadow")!;
   assert.deepEqual(shadow.calls.map((c) => c.callee), ["createElement"]);
   assert.deepEqual(shadow.calls[0]!.passes?.map((p) => `${p.arg}:${p.callee}`), ["0:Cart"]);
+});
+
+test("jsx: a type-only import from React binds no factory: `import type React`, `{ type createElement }`, `import type * as React` keep one ordinary call", (t) => {
+  const dir = repo(t, {
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+    "src/ui/cart.ts": "export function Cart() { return null; }\n",
+    "src/app/default.ts": ['import type React from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { return React.createElement(Cart); }", ""].join("\n"),
+    "src/app/named.ts": ['import { type createElement, type createElement as h } from "react";', 'import { type jsx } from "react/jsx-runtime";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); h(Cart); return jsx(Cart, {}); }", ""].join("\n"),
+    "src/app/ns.ts": ['import type * as React from "react";', 'import type * as Runtime from "react/jsx-runtime";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { Runtime.jsx(Cart, {}); return React.createElement(Cart); }", ""].join("\n"),
+    "src/app/value.ts": ['import React, { type memo, createElement } from "react";', 'import { Cart } from "../ui/cart.ts";', "export function Page() { createElement(Cart); return React.createElement(Cart); }", ""].join("\n"),
+  });
+  const snap = snapshot(dir);
+  const calls = snap.edges.filter((e) => e.kind === "call").map((e) => `${e.source}: ${e.text} → ${e.target}`).sort();
+  // The factory call goes into the `react` package (no edge); only a value import adds the component call.
+  assert.deepEqual(calls, ["app.value.Page: Cart → ui.cart.Cart"]);
+  const facts = JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as {
+    files: Record<string, { facts: { decls: { name: string; calls: { callee: string; passes?: { arg: number; callee: string }[] }[] }[] } }>;
+  };
+  const pageCalls = (file: string) => facts.files[file]!.facts.decls.find((d) => d.name === "Page")!.calls;
+  assert.deepEqual(pageCalls("src/app/default.ts").map((c) => c.callee), ["React.createElement"]);
+  assert.deepEqual(pageCalls("src/app/named.ts").map((c) => c.callee), ["createElement", "h", "jsx"]);
+  assert.deepEqual(pageCalls("src/app/ns.ts").map((c) => c.callee), ["Runtime.jsx", "React.createElement"]);
+  assert.deepEqual(pageCalls("src/app/value.ts").map((c) => c.callee), ["createElement", "Cart", "React.createElement", "Cart"]);
+  // A type-only factory call still passes its component, as any ordinary call does.
+  assert.deepEqual(pageCalls("src/app/default.ts")[0]!.passes?.map((p) => `${p.arg}:${p.callee}`), ["0:Cart"]);
 });
 
 test("jsx: a local `createElement` or one imported from another module does not call its first argument", (t) => {

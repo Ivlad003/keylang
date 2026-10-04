@@ -10,16 +10,23 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
 **Verify:** `npm run typecheck` · `npm test` · `node bin/keylang.js map --check` · `node bin/keylang.js check`
 
-- [ ] `import type React` / `{ type createElement }` / `import type * as React` з `react` — `React.createElement(Cart)` і `createElement(Cart)` не дають ребра `call` (тест)
-- [ ] звичайний імпорт і далі дає ребро (регресія)
-- [ ] один шлях збору прив'язок `react` для обгорток і фабрик
-- [ ] перевірки `moduleCalls` з тестів до 05 повернуто
-- [ ] `tests/fixtures/repo.expected` не змінився без причини; `EXTRACTOR_VERSION` не піднято без потреби; карта перегенерована через `node bin/keylang.js map`
+- [x] `import type React` / `{ type createElement }` / `import type * as React` з `react` — `React.createElement(Cart)` і `createElement(Cart)` не дають ребра `call` (тест)
+- [x] звичайний імпорт і далі дає ребро (регресія)
+- [x] один шлях збору прив'язок `react` для обгорток і фабрик
+- [x] перевірки `moduleCalls` з тестів до 05 повернуто
+- [x] `tests/fixtures/repo.expected` не змінився без причини; `EXTRACTOR_VERSION` не піднято без потреби; карта перегенерована через `node bin/keylang.js map`
 
 ## Comments
+
+### 2026-10-04 — реалізація (Claude Opus 5.5)
+- `reactBindings(root)` у `src/extract/ts.ts` — єдиний збір прив'язок `react` / `react/jsx-runtime` / `react/jsx-dev-runtime`: `names` (локальне ім'я → експорт React) і `objects` (default / namespace → експорти, доступні як члени). `reactExportOf` називає експорт за callee; `reactWrapperFn` і `factoryCallee` фільтрують його через `REACT_WRAPPERS` / `REACT_FACTORIES`. Лінивий `reactFactories` і тип `ReactFactories` прибрано. `import type …`, `import type * as React` і `import { type X }` відкидаються одним правилом для обгорток і фабрик.
+- Тест із WIP очікував ребра `→ null` для type-only фабрик і два однакові ребра `Cart`; насправді виклик у пакет `react` — зовнішній (ребра немає), а однакові ребра зливаються. Тест переписано: ребро `Cart` лише у value-файлі, плюс перевірка фактів (`calls` без доданого `Cart`, `passes` лишаються). На старому екстракторі тест червоний (зайві ребра `Cart` з default / named / ns).
+- Повернуто перевірки `moduleCalls` (wrapped / typed / Nest) у тест обгорток.
+- `docs/format.md`: фабрика відкривається лише value-імпортом; type-only — звичайний виклик.
+- `EXTRACTOR_VERSION` не піднято (як у 01–05: кеш фактів інвалідується хешем коду екстрактора; `snapshotId` ребер не хешує). `tests/fixtures/repo.expected` не змінився. Карту перегенеровано (`keylang/map/extract.md`, `keylang/map-explained/extract.md`).
