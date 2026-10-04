@@ -924,3 +924,21 @@ test("web: the edges view of the zoom screen over the real transport: c, then En
   screen.input(KEY.enter);
   await waitFor(() => /system › domain +edges/.test(screen.text()) && /in +application\.purchase → order/.test(screen.text()), "the edges of the domain");
 });
+
+test("web: a flow laid over the zoom levels over the real transport: f picks it, + keeps it on the next level (c4-zoom/09)", async (t) => {
+  const root = checkoutRepo(t);
+  const { url } = await startWeb(t, root);
+  const client = new Client(url, "session-zoom-flow", 130, 30);
+  t.after(() => client.close());
+  await client.opened;
+  const screen = clientScreen(client);
+  await waitFor(() => analysed(screen), "the first analysis");
+  palette(screen, "zoom");
+  await waitFor(() => / ZOOM $/.test(screen.lines()[0] ?? ""), "the zoom screen");
+  screen.input("f");
+  typeInto(screen, "checkout");
+  screen.input(KEY.enter);
+  await waitFor(() => /flow checkout: presentation ① → application ② → domain ③ → infrastructure ④/.test(screen.text()), "the layers the flow walks");
+  screen.input("+");
+  await waitFor(() => /system › domain/.test(screen.text()) && /module +order ③/.test(screen.text()), "the step on the domain's module");
+});

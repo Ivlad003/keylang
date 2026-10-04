@@ -31,7 +31,7 @@ import type { Gap } from "../feature-status.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
 import { formatSummary, summarizeNode } from "../explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, savedAnswerMiss, unknownIdMessage, type SavedAnswer } from "../explain-offline.ts";
-import { MAX_DEPTH, zoomContainer, zoomEdges, zoomLevel, zoomParent, zoomSelectKey, zoomTarget, ZOOM_ROOT, type ZoomEdge, type ZoomRow } from "./zoom.ts";
+import { flowOverlay, flowsThrough, MAX_DEPTH, zoomContainer, zoomEdges, zoomLevel, zoomParent, zoomSelectKey, zoomTarget, ZOOM_ROOT, type FlowOverlay, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { readExplanation } from "../explain-llm.ts";
 import { selectedAgent } from "../agent-cli.ts";
 import { defaultBriefJobs, positiveIntegerProblem } from "../explain-inventory.ts";
@@ -1817,7 +1817,7 @@ export class App {
       return;
     }
     const target = (id === null ? null : zoomTarget(analysis, id)) ?? { focus: ZOOM_ROOT, select: null };
-    this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0, view: "nodes", from: null };
+    this.state.zoom ??= { focus: ZOOM_ROOT, depth: 1, selected: new Map(), top: 0, view: "nodes", from: null, flow: null };
     this.state.mode = "zoom";
     this.state.focus = "editor";
     this.state.hover = null;
@@ -1970,6 +1970,53 @@ export class App {
     this.state.hover = { x: editor.x + 2, y, lines: this.explainLines(row.id, found), source: "key" };
   }
 
+  /** `f`: the flow picker, the flows through this level first; with a flow laid over the levels, `f` takes it off. */
+  private zoomFlowKey(): void {
+    const zoom = this.state.zoom!;
+    if (zoom.flow !== null) {
+      this.state.message = `flow ${zoom.flow} taken off`;
+      zoom.flow = null;
+      return;
+    }
+    this.state.prompt = { kind: "flow", text: "", items: [], ids: [], index: 0 };
+    this.findFlows();
+  }
+
+  /** The flow picker's list: every flow whose name has the typed text, those through the level first. */
+  private findFlows(): void {
+    const prompt = this.state.prompt;
+    const analysis = this.state.analysis;
+    if (prompt?.kind !== "flow" || !analysis) return;
+    const through = new Set(flowsThrough(analysis, this.state.zoom?.focus ?? ZOOM_ROOT));
+    const query = prompt.text.trim().toLowerCase();
+    const names = [...new Set(analysis.spec.flows.map((flow) => flow.name))].filter((name) => name.toLowerCase().includes(query));
+    names.sort((a, b) => Number(through.has(b)) - Number(through.has(a)) || (a < b ? -1 : a > b ? 1 : 0));
+    prompt.ids = names;
+    prompt.items = names.map((name) => `${name}${through.has(name) ? " · through this level" : ""}`);
+    prompt.index = Math.min(prompt.index, Math.max(0, names.length - 1));
+  }
+
+  /** `F`: the next flow through the level, after the one laid over it. */
+  private zoomNextFlow(): void {
+    const zoom = this.state.zoom!;
+    const through = flowsThrough(this.state.analysis!, zoom.focus);
+    if (through.length === 0) {
+      this.state.message = "no flow goes through this level";
+      return;
+    }
+    const at = zoom.flow === null ? -1 : through.indexOf(zoom.flow);
+    zoom.flow = through[(at + 1) % through.length]!;
+    this.state.message = `flow ${zoom.flow} (${((at + 1) % through.length) + 1} of ${through.length} through this level)`;
+  }
+
+  /** The flow laid over the shown level, numbered on its units. */
+  private zoomOverlay(): FlowOverlay | null {
+    const analysis = this.state.analysis;
+    const zoom = this.state.zoom;
+    if (!analysis || !zoom || zoom.flow === null) return null;
+    return flowOverlay(analysis, zoom.flow, zoom.focus, (file, line) => evidenceOf(analysis, file).get(line)?.mark ?? null);
+  }
+
   /** `c`: the level's edges as rows, or back to its nodes. */
   private zoomToggleView(): void {
     const zoom = this.state.zoom!;
@@ -2035,7 +2082,12 @@ export class App {
     if (event.alt && event.name === "enter") {
       const id = zoom.view === "edges" ? edge?.other : row && row.kind !== "more" ? row.id : undefined;
       if (id === undefined) return;
+      // With a flow laid over the level, a step of it goes to its line in the flow.
+      const overlay = this.zoomOverlay();
+      const step = overlay?.steps.get(id)?.[0];
+      const line = step === undefined ? undefined : overlay!.marks.get(step)?.line;
       this.closeZoom(false);
+      if (overlay && line !== undefined) return this.open(overlay.file, { line: line - 1, col: 0 });
       return this.goToSpec(id);
     }
     if (event.ctrl || event.alt) return;
@@ -2088,6 +2140,10 @@ export class App {
         return zoom.view === "edges" ? this.zoomExplain(edge ? this.zoomRows().find((item) => item.id === edge.other) : undefined) : this.zoomExplain(row);
       case "c":
         return this.zoomToggleView();
+      case "f":
+        return this.zoomFlowKey();
+      case "F":
+        return this.zoomNextFlow();
       case "x":
         return this.zoomExplainEdge(row, edge);
       case ":":
@@ -5115,6 +5171,7 @@ export class App {
     if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
     if (prompt.kind === "palette") this.refreshPalette();
     if (prompt.kind === "node") this.findNodes();
+    if (prompt.kind === "flow") this.findFlows();
     if (prompt.kind === "feature") this.refreshFeaturePrompt();
     if (prompt.kind === "proposal") this.refreshProposalPrompt();
     if (prompt.kind === "new-spec") this.refreshNewSpec();
@@ -5170,6 +5227,7 @@ export class App {
       if (prompt.kind === "export" && prompt.exportForm) prompt.exportForm.custom = true;
       if (prompt.kind === "palette") this.refreshPalette();
       if (prompt.kind === "node") this.findNodes();
+      if (prompt.kind === "flow") this.findFlows();
       if (prompt.kind === "feature") this.refreshFeaturePrompt();
       if (prompt.kind === "proposal") this.refreshProposalPrompt();
       if (prompt.kind === "new-spec") this.refreshNewSpec();
@@ -5198,7 +5256,7 @@ export class App {
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "flow" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -5240,6 +5298,9 @@ export class App {
         this.findNext();
       } else if (prompt.kind === "context") {
         this.addToContext(prompt.text.trim().replace(/^@/, ""));
+      } else if (prompt.kind === "flow") {
+        const name = prompt.ids?.[prompt.index];
+        if (name && this.state.zoom) this.state.zoom.flow = name;
       } else if (prompt.kind === "node") {
         const id = prompt.ids?.[prompt.index];
         if (id && this.state.mode === "zoom") this.openZoom(id);

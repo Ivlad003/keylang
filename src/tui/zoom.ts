@@ -8,6 +8,7 @@ import type { Analysis } from "../analyze.ts";
 import { SYSTEM_ID } from "../explanations.ts";
 import { EXTERNAL } from "../graph.ts";
 import type { AnalysisSnapshot } from "../snapshot.ts";
+import { walkFlow, type FlowItem, type Trigger } from "../spec-ir.ts";
 import { compareText } from "../span.ts";
 import { worse, type Mark } from "./evidence.ts";
 import { codeTree } from "./nav.ts";
@@ -288,4 +289,77 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
 /** The key a level's selected row is kept under: one per focus and view. */
 export function zoomSelectKey(zoom: { focus: string; view: "nodes" | "edges" }): string {
   return zoom.view === "edges" ? `edges\0${zoom.focus}` : zoom.focus;
+}
+
+/**
+ * A flow over one zoom level (c4-zoom/09): its `trigger`, `step` and `calls`
+ * numbered in the order they are written (a walk in depth, not the order they
+ * run: only a trace confirms that), placed on the level's units, each number
+ * with the gutter mark of its line.
+ */
+export interface FlowOverlay {
+  flow: string;
+  file: string;
+  /** The numbers of the steps on each unit of the level. */
+  steps: Map<string, number[]>;
+  /** Each step by its number: its ID, its line in the spec, and the gutter mark there. */
+  marks: Map<number, { id: string; line: number; mark: Mark | null }>;
+  /** The layers the flow walks, consecutive steps of one layer as one range: `cli ① → map ②–④`. */
+  sequence: { layer: string; first: number; last: number }[];
+  /** `from\0to` of the level's units a step goes between (its parent to it), for the edges view. */
+  pairs: Set<string>;
+}
+
+/** Flows that name `id` or something inside it, by name; all flows for the repository. */
+export function flowsThrough(analysis: Analysis, id: string): string[] {
+  const out = new Set<string>();
+  for (const flow of analysis.spec.flows) {
+    let hit = id === ZOOM_ROOT;
+    walkFlow(flow, (item) => {
+      if (hit) return;
+      const targets = item.kind === "trigger" || item.kind === "step" ? [item.target.target] : item.kind === "calls" ? item.targets.map((ref) => ref.target) : [];
+      if (targets.some((target) => inside(target, id))) hit = true;
+    });
+    if (hit) out.add(flow.name);
+  }
+  return [...out].sort(compareText);
+}
+
+export function flowOverlay(analysis: Analysis, name: string, focus: string, lineMark: (file: string, line: number) => Mark | null): FlowOverlay | null {
+  const flow = analysis.spec.flows.find((item) => item.name === name);
+  const snapshot = analysis.snapshot;
+  if (!flow || !snapshot) return null;
+  const index = indexOf(analysis);
+  const children = focus === ZOOM_ROOT ? index.layers : (index.children.get(focus) ?? []);
+  const focusIsLayer = snapshot.nodes[focus]?.kind === "layer";
+  const unit = (id: string): string => (inside(id, focus) ? (children.find((child) => inside(id, child)) ?? focus) : unitOf(index, focusIsLayer, id));
+  const layerOf = (id: string): string => snapshot.nodes[id]?.layer ?? id.split(".")[0]!;
+  const overlay: FlowOverlay = { flow: flow.name, file: flow.file, steps: new Map(), marks: new Map(), sequence: [], pairs: new Set() };
+  let n = 0;
+  const place = (id: string, line: number, parent: string | null): void => {
+    n++;
+    const at = unit(id);
+    overlay.steps.set(at, [...(overlay.steps.get(at) ?? []), n]);
+    overlay.marks.set(n, { id, line, mark: lineMark(flow.file, line) });
+    const layer = layerOf(id);
+    const last = overlay.sequence.at(-1);
+    if (last?.layer === layer) last.last = n;
+    else overlay.sequence.push({ layer, first: n, last: n });
+    if (parent !== null && unit(parent) !== at) overlay.pairs.add(`${unit(parent)}\0${at}`);
+  };
+  const visit = (item: Trigger | FlowItem, parent: string | null): void => {
+    if (item.kind === "trigger" || item.kind === "step") place(item.target.target, item.span.start.line, parent);
+    if (item.kind === "calls") for (const ref of item.targets) place(ref.target, ref.span.start.line, parent);
+    if (item.kind === "test") return;
+    const next = item.kind === "trigger" || item.kind === "step" ? item.target.target : parent;
+    for (const child of item.children) visit(child, next);
+  };
+  const first = flow.triggers[0]?.target.target ?? null;
+  for (const item of flow.top) visit(item, item.kind === "trigger" ? null : first);
+  return overlay;
+}
+
+/** `①` for 1 up to `⑳` for 20, then the number in parentheses. */
+export function circled(n: number): string {
+  return n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : `(${n})`;
 }

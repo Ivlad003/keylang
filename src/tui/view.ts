@@ -11,12 +11,12 @@ import type { SavedAnswer } from "../explain-offline.ts";
 import { explanationOf, modelName, type NodeExplanation } from "../explanations.ts";
 import { ACTIONS, actionKey, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { highlightCode } from "./code-highlight.ts";
-import { CHANNELS, evidenceOf, MARK_GLYPH, totals, type LineEvidence } from "./evidence.ts";
+import { CHANNELS, evidenceOf, MARK_GLYPH, totals, worse, type LineEvidence, type Mark } from "./evidence.ts";
 import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
 import { renderMarkdown, type ReadRow } from "./markdown.ts";
 import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
-import { zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type ZoomEdge, type ZoomRow } from "./zoom.ts";
+import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type FlowOverlay, type ZoomEdge, type ZoomRow } from "./zoom.ts";
 import { Grid, type Style } from "./screen.ts";
 import type { FeatureInfo } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
@@ -343,10 +343,12 @@ export function fitCrumbs(labels: readonly string[], width: number): string {
 }
 
 /** The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room. */
-export function zoomRowText(state: State, row: ZoomRow, width: number): { text: string; right: string } {
+export function zoomRowText(state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null): { text: string; right: string } {
   if (row.kind === "more") return { text: `  … ${row.more} more at depth ${row.distance}: > shows them`, right: "" };
-  const away = row.distance > 0 ? ` ·${row.distance}` : "";
-  const right = `${row.mark ? MARK_GLYPH[row.mark] : " "} ↔ ${row.edges}`;
+  const steps = overlay?.steps.get(row.id) ?? [];
+  const away = `${row.distance > 0 ? ` ·${row.distance}` : ""}${steps.length > 0 ? ` ${steps.map(circled).join("")}` : ""}`;
+  const mark = overlay ? stepsMark(overlay, steps) : row.mark;
+  const right = `${mark ? MARK_GLYPH[mark] : " "} ↔ ${row.edges}`;
   const head = `${row.container ? "▸" : " "} ${ZOOM_KIND[row.kind].padEnd(6)} ${row.label}${away}`;
   const e = state.analysis?.snapshot ? explanationOf(state.analysis.snapshot, state.briefs, row.id) : null;
   if (state.cols < ZOOM_BRIEF_COLS) return { text: head, right };
@@ -363,13 +365,25 @@ function endLabel(focus: string, id: string): string {
 }
 
 /** The text of an edges-view row: group, `from → to`, the kinds with counts, and the count. */
-export function zoomEdgeText(focus: string, edge: ZoomEdge): { text: string; right: string } {
+export function zoomEdgeText(focus: string, edge: ZoomEdge, walked = false): { text: string; right: string } {
   if (edge.group === "unresolved") {
     const reasons = (edge.reasons ?? []).map((item) => `${item.reason} ×${item.count}`).join(", ");
     return { text: `◌ unresolved inside: ${reasons}`, right: `${edge.count}` };
   }
   const kinds = edge.kinds.map((item) => `${item.kind} ×${item.count}`).join(", ");
-  return { text: `  ${EDGE_GROUP[edge.group].padEnd(8)} ${endLabel(focus, edge.from)} → ${endLabel(focus, edge.to)} · ${kinds}`, right: `${edge.count}` };
+  return { text: `${walked ? "▶" : " "} ${EDGE_GROUP[edge.group].padEnd(8)} ${endLabel(focus, edge.from)} → ${endLabel(focus, edge.to)} · ${kinds}`, right: `${edge.count}` };
+}
+
+/** The worst gutter mark of the steps a row stands for: the same marks the flow's lines have. */
+function stepsMark(overlay: FlowOverlay, steps: readonly number[]): Mark | null {
+  let mark: Mark | null = null;
+  for (const step of steps) mark = worse(mark, overlay.marks.get(step)?.mark ?? null);
+  return mark;
+}
+
+/** The layers a flow walks, in the order its steps are written: `cli ① → map ②–④`. */
+export function flowSequence(overlay: FlowOverlay): string {
+  return overlay.sequence.map((part) => `${part.layer} ${part.first === part.last ? circled(part.first) : `${circled(part.first)}–${circled(part.last)}`}`).join(" → ");
 }
 
 /**
@@ -383,12 +397,17 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   if (!analysis?.snapshot || !zoom) return;
   const level = zoomLevel(analysis, zoom.focus, zoom.depth);
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.panelTitle);
-  const right = zoom.view === "edges" ? " edges " : ` depth ${zoom.depth} `;
+  const overlay = zoom.flow === null ? null : flowOverlay(analysis, zoom.flow, zoom.focus, (file, line) => evidenceOf(analysis, file).get(line)?.mark ?? null);
+  const right = `${overlay ? ` flow ${overlay.flow} ·` : ""}${zoom.view === "edges" ? " edges " : ` depth ${zoom.depth} `}`;
   grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), rect.width - stringWidth(right) - 2), THEME.panelTitle, rect.width - stringWidth(right) - 2);
   grid.write(rect.x + rect.width - stringWidth(right), rect.y, right, THEME.panelTitle);
   const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
   const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wrapWords(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
-  about.forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
+  // A flow over the level takes the second row: its layers in the order written at the top and on a layer, else its steps here.
+  const atLayers = zoom.focus === ZOOM_ROOT || analysis.snapshot.nodes[zoom.focus]?.kind === "layer";
+  const flowRow = overlay === null ? null : atLayers ? `flow ${overlay.flow}: ${flowSequence(overlay)}` : `flow ${overlay.flow}: ${[...overlay.steps.values()].flat().length} step(s) on this level; numbers are the order written, a trace confirms the order run`;
+  (flowRow === null ? about : [about[0]!]).forEach((line, i) => grid.write(rect.x + 2, rect.y + 1 + i, line, { ...THEME.hint, ...(e === null ? {} : { fg: 250 }) }, rect.width - 3));
+  if (flowRow !== null) grid.write(rect.x + 2, rect.y + 2, flowRow, { ...THEME.hint, fg: 75 }, rect.width - 3);
   const height = zoomListHeight(state, rect);
   if (zoom.view === "edges") {
     const edges = zoomEdges(analysis, zoom.focus);
@@ -398,9 +417,10 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
       const edge = edges[zoom.top + i];
       if (!edge) break;
       const y = rect.y + ZOOM_HEAD + i;
-      const style = zoom.top + i === at ? THEME.selected : edge.group === "unresolved" ? { ...THEME.text, fg: 179 } : THEME.text;
+      const walked = overlay?.pairs.has(`${edge.from}\0${edge.to}`) === true;
+      const style = zoom.top + i === at ? THEME.selected : edge.group === "unresolved" ? { ...THEME.text, fg: 179 } : overlay && !walked ? { ...THEME.text, fg: 240 } : THEME.text;
       grid.fill(rect.x, y, rect.width, 1, style);
-      const { text, right } = zoomEdgeText(zoom.focus, edge);
+      const { text, right } = zoomEdgeText(zoom.focus, edge, walked);
       grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
       grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right, style);
     }
@@ -413,12 +433,14 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
     const row = level.rows[index];
     if (!row) break;
     const y = rect.y + ZOOM_HEAD + i;
-    const style = index === selected ? THEME.selected : row.kind === "more" || row.distance > 0 ? { ...THEME.text, fg: 245 } : THEME.text;
+    const off = overlay !== null && row.kind !== "more" && !overlay.steps.has(row.id);
+    const style = index === selected ? THEME.selected : off ? { ...THEME.text, fg: 240 } : row.kind === "more" || row.distance > 0 ? { ...THEME.text, fg: 245 } : THEME.text;
     grid.fill(rect.x, y, rect.width, 1, style);
-    const { text, right } = zoomRowText(state, row, rect.width);
+    const { text, right } = zoomRowText(state, row, rect.width, overlay);
     grid.write(rect.x + 1, y, text, style, rect.width - stringWidth(right) - 3);
     if (right !== "") {
-      const markStyle = row.mark ? { ...style, ...MARK_STYLE[row.mark], bg: style.bg ?? THEME.text.bg! } : style;
+      const mark = overlay ? stepsMark(overlay, overlay.steps.get(row.id) ?? []) : row.mark;
+      const markStyle = mark ? { ...style, ...MARK_STYLE[mark], bg: style.bg ?? THEME.text.bg! } : style;
       grid.write(rect.x + rect.width - stringWidth(right) - 1, y, right.slice(0, 1), markStyle);
       grid.write(rect.x + rect.width - stringWidth(right) - 1 + 1, y, right.slice(1), style);
     }
@@ -1740,6 +1762,8 @@ const HELP: Record<string, [string, string][]> = {
     ["s", "find a node and zoom to its level"],
     ["e / K", "explain the node"],
     ["c", "the level's edges as rows: in, out, packages, inside, unresolved"],
+    ["f", "lay a flow over the levels: its steps numbered in the order written; f again takes it off"],
+    ["F", "the next flow through this level"],
     ["x", "explain an edge: on an edge row its edges; on nodes, x then x on another"],
     ["Alt+Enter", "go to its declaration"],
     ["q", "back to the view at the node"],
@@ -1893,7 +1917,7 @@ function drawHelp(grid: Grid, state: State): void {
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : prompt.explainPlan ? "explain " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "flow" ? "flow: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : prompt.explainPlan ? "explain " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "spec-to-code" && prompt.specCode ? prompt.specCode.id || "?" : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
@@ -1920,7 +1944,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = [...noteRows, ...(prompt.details ?? [])].slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "flow" ? `${prompt.items.length} flow(s) · Enter lays it over the levels` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: i < noteRows.length ? 179 : 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }
@@ -1941,7 +1965,7 @@ const HINTS: Record<string, { keys: string[]; tail: string }> = {
   read: { keys: ["Enter code", "v raw", "F5 check"], tail: "? keys · Ctrl+P actions" },
   code: { keys: ["Esc back", "↑↓ scroll"], tail: "? keys · Ctrl+P actions" },
   merge: { keys: ["a accept", "r reject", "u undo", "n next", "w write"], tail: "Esc cancel · ? keys" },
-  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "c edges", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
+  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "c edges", "f flow", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
 };
 
 /** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */
