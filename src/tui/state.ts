@@ -2,6 +2,7 @@
 // browser: a transport only feeds input and shows the frames `view.ts` draws.
 
 import type { Analysis } from "../analyze.ts";
+import type { C4Format, C4Level } from "../c4-export.ts";
 import type { StaticMode } from "../config.ts";
 import type { ExplanationDetail, StoredExplanation } from "../explanations.ts";
 import type { Stage } from "../feature-status.ts";
@@ -132,8 +133,9 @@ export interface Prompt {
    * `draft-layout`: the layer layout draft, `layoutDraft` (the rows `mode`, run; ←→ change the mode; `text` is unused).
    * `code-to-spec`: flows from code, `codeDraft` (the rows `source`, then `file`, the source files matching it as `src:<path>` and `line` for a file, or `since` for a git change, then `into`, `mode`, `output`, run; typing edits the selected field, the line takes digits only; ←→ change the source, the mode or the output; `text` is unused).
    * `spec-to-code`: code from a planned fn, `specCode` (the rows `id`, the planned fns matching it as `planned:<id>`, `into`, `mode`, `output`, run; typing edits the selected field, ←→ change the mode or the output; `text` is unused).
+   * `export-c4`: a C4 diagram of the map, `c4` (the rows `format`, `level`, `layer`, `out`, run; ←→ change the format, the level or the layer; typing edits the file to write, `text`: empty shows the diagram in F6 only).
    */
-  kind: "search" | "palette" | "context" | "node" | "flow" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "explain" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code";
+  kind: "search" | "palette" | "context" | "node" | "flow" | "feature" | "proposal" | "new-spec" | "baseline" | "agents" | "init" | "fmt" | "wire" | "full-check" | "explain-edge" | "export" | "parse" | "trace-plan" | "explain" | "draft-flow" | "draft-rules" | "draft-layout" | "code-to-spec" | "spec-to-code" | "export-c4";
   text: string;
   /** Palette entries or found nodes matching `text`, and the selected one. */
   items: string[];
@@ -168,6 +170,18 @@ export interface Prompt {
   explainModel?: { detail: ExplanationDetail };
   /** `explain` as the inventory (`explain --stale`, `explain --missing|--stale [--limit] [--jobs] --dry-run`): the fields as typed. */
   explainPlan?: ExplainPlanForm;
+  /** `export-c4`: the choices of `export c4`; the file to write is `text`. */
+  c4?: C4Form;
+}
+
+/** The choices of `export c4 [--format] [--level] [--layer]` (c4-zoom/12). */
+export interface C4Form {
+  format: C4Format;
+  level: C4Level;
+  /** The one layer of a component diagram; null: every layer. */
+  layer: string | null;
+  /** The layers of the session's configuration, which ←→ go through. */
+  layers: readonly string[];
 }
 
 /**

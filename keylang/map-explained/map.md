@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -34,6 +34,35 @@
       - calls [map.analyze.within](map.md#map.analyze.within)
     - fn [within](../../src/analyze.ts#L132) (abs: string, dir: string) → boolean
       <a id="map.analyze.within"></a><br>Reports whether an absolute path lies inside a directory by taking the relative path and rejecting results that climb out via `..` or resolve to a different root. Used as the boundary check by callers like [`map.analyze.repositoryFile`](map.md#map.analyze.repositoryFile) and [`tui.disk.leavesBoundary`](tui.md#tui.disk.leavesBoundary). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  - module [c4-export](../../src/c4-export.ts#L1)
+    <a id="map.c4-export"></a><br>C4 diagrams of the snapshot (.scratch/c4-zoom/issues/12): a view of the map for the tools that draw C4 (ADR 0014), in C4-PlantUML or Mermaid. A layer is a boundary, not a container: in C4 a container is an application or a store that runs on its own, and a layer of one program…
+    - explanations [map.explanations](map.md#map.explanations)
+    - graph [map.graph](map.md#map.graph)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - span [base.span](base.md#base.span)
+    - type [C4Format](../../src/c4-export.ts#L14) = (typeof C4_FORMATS)[number]
+      <a id="map.c4-export.C4Format"></a>
+    - type [C4Level](../../src/c4-export.ts#L16) = (typeof C4_LEVELS)[number]
+      <a id="map.c4-export.C4Level"></a>
+    - type [C4Request](../../src/c4-export.ts#L18)
+      <a id="map.c4-export.C4Request"></a>
+    - fn [c4Marker](../../src/c4-export.ts#L29) (format: C4Format) → string
+      <a id="map.c4-export.c4Marker"></a><br>The first line of a written diagram: `export c4 --out` replaces only a file that starts with it.
+    - fn [isC4Diagram](../../src/c4-export.ts#L34) (text: string) → boolean
+      <a id="map.c4-export.isC4Diagram"></a><br>The text is a diagram `export c4` wrote: its first non-empty line is the marker of either format.
+      - calls [map.c4-export.c4Marker](map.md#map.c4-export.c4Marker)
+    - fn [quoted](../../src/c4-export.ts#L40) (text: string) → string <!-- internal -->
+      <a id="map.c4-export.quoted"></a><br>Text in the double quotes of a C4 macro: one line, its double quotes made single.
+    - fn [aliases](../../src/c4-export.ts#L45) () → (id: string) => string <!-- internal -->
+      <a id="map.c4-export.aliases"></a><br>Aliases a diagram can use for IDs: letters, digits and `_`, distinct even where two IDs map to one.
+    - type [Rel](../../src/c4-export.ts#L61) <!-- internal -->
+      <a id="map.c4-export.Rel"></a><br>Edges between two drawn units, by kind.
+    - fn [relLabel](../../src/c4-export.ts#L68) (rel: Rel) → string <!-- internal -->
+      <a id="map.c4-export.relLabel"></a><br>`call ×3, import ×1`: the kinds of the edges a relation sums up, by name.
+      - calls [base.span.compareText](base.md#base.span.compareText)
+    - fn [renderC4](../../src/c4-export.ts#L88) (snapshot: AnalysisSnapshot, brief: (id: string) => string | null, request: C4Request) → string
+      <a id="map.c4-export.renderC4"></a><br>The diagram of `request` over the snapshot. `brief` gives the text of a node, a layer or the repository (`@system`), or null without one. Throws on a layer the snapshot does not have, naming the layers it has.
+      - calls [map.c4-export.aliases](map.md#map.c4-export.aliases), [map.c4-export.c4Marker](map.md#map.c4-export.c4Marker), [map.c4-export.quoted](map.md#map.c4-export.quoted), [base.span.compareText](base.md#base.span.compareText), [map.c4-export.relLabel](map.md#map.c4-export.relLabel)
   - module [declared-packages](../../src/declared-packages.ts#L1)
     <a id="map.declared-packages"></a><br>Packages a repository declares, with their original names and version ranges. A rule or a flow may name one (`external.<segment>`) before any file imports it.
     - node [external.node](external.md#external.node)

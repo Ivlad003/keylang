@@ -21,7 +21,7 @@ import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, t
 import { Grid, type Style } from "./screen.ts";
 import { STAGES, type FeatureInfo, type FeatureReport, type Gap, type Hint } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type FeatureQuestionsPayload, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { exportFormatOf, WIRE_OUT, type ExportC4Payload, type FeatureQuestionsPayload, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -655,6 +655,7 @@ function recordLabel(record: OperationRecord): string {
   if (record.params.kind === "code-to-spec") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "spec-to-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.output} · ${record.params.id}${record.params.into !== undefined ? ` · ${record.params.into}` : ""}`;
   if (record.params.kind === "apply-code") return `${label} · ${record.params.mode ?? "algo"} · ${record.params.candidate.targets.length} file(s)`;
+  if (record.params.kind === "export-c4") return `${label} · ${record.params.format} · ${record.params.level}${record.params.layer !== undefined ? ` · ${record.params.layer}` : ""}${record.params.out !== undefined ? ` · ${record.params.out}` : ""}`;
   return record.params.kind === "feature" || record.params.kind === "feature-questions" ? `${label} · ${record.params.slug}` : label;
 }
 
@@ -681,6 +682,7 @@ export function operationLabel(request: OperationRequest): string {
   if (request.kind === "draft-layout") return `draft map${request.mode !== undefined && request.mode !== "algo" ? ` --mode ${request.mode}` : ""}`;
   if (request.kind === "check") return ["check", ...(request.strict ? ["--strict"] : []), ...(request.changed === true ? ["--changed"] : []), ...(request.changed === true && request.since !== undefined ? ["--since", request.since] : [])].join(" ");
   if (request.kind === "feature-questions") return `feature ${request.slug} questions`;
+  if (request.kind === "export-c4") return ["export c4", `--format ${request.format}`, `--level ${request.level}`, ...(request.layer !== undefined ? [`--layer ${request.layer}`] : []), ...(request.out !== undefined ? [`--out ${request.out}`] : [])].join(" ");
   return request.kind === "feature" ? `feature ${request.slug}` : request.kind === "map-check" ? "map check" : request.kind === "map" ? "map write" : request.kind;
 }
 
@@ -705,6 +707,7 @@ export function recordSummary(record: OperationRecord): string {
     return `${report.done ? "done" : `${report.gaps.length} gap(s)`} · code ${result.exitCode}`;
   }
   if (result?.kind === "feature-questions" && result.payload !== null) return `${questionsOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "export-c4" && result.payload !== null) return `${c4Outcome(result.payload, result.exitCode)} · code ${result.exitCode}`;
   if (result?.kind === "map-check" && result.payload !== null) return `${mapCheckOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "map" && result.payload !== null) return `${mapOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "baseline" && result.payload !== null) return `${baselineOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -823,6 +826,12 @@ function tracePlanOutcome(payload: TracePlanPayload): string {
 }
 
 /** `3 step(s), preview, nothing written`, `3 step(s) proposed for <target>`, `refused, nothing written`, `write failed`. */
+/** `written docs/c4.puml`, or the size of a diagram only shown. */
+function c4Outcome(payload: ExportC4Payload, exitCode: 0 | 1 | 2 | null): string {
+  if (payload.out !== null) return `written ${payload.out}`;
+  return exitCode === 0 ? `${payload.text.split("\n").length - 1} line(s), nothing written` : "nothing written";
+}
+
 /** `3 question(s) proposed`, with the answer's lines left out when there were any. */
 function questionsOutcome(payload: FeatureQuestionsPayload): string {
   const asked = payload.proposal !== null ? `${payload.questions.length} question(s) proposed` : payload.questions.length === 0 ? "no question asked" : `${payload.questions.length} question(s), nothing written`;
@@ -1393,6 +1402,18 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     const lines = payload.text.split("\n");
     if (lines.at(-1) === "") lines.pop();
     for (const line of lines) rows.push({ text: line, style: THEME.panel });
+  } else if (result?.kind === "export-c4" && result.payload !== null) {
+    // The diagram as the CLI prints it; written, only where it went (c4-zoom/12).
+    const { payload } = result;
+    rows.push({ text: `C4 diagram · ${payload.format} · ${payload.level}${payload.layer !== null ? ` · layer ${payload.layer}` : ""} · ${payload.out !== null ? `written to ${payload.out}` : "shown here, nothing written"}`, style: { ...THEME.panel, bold: true } });
+    rows.push({ text: `${c4Outcome(payload, result.exitCode)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    for (const message of result.messages) rows.push({ text: `  ${message.text}`, style: message.level === "error" ? { ...THEME.panel, ...THEME.error } : THEME.panel });
+    if (payload.out === null && result.exitCode === 0) {
+      rows.push({ text: `── keylang ${operationLabel(record.params)} · stdout ──`, style: { ...THEME.panel, fg: 243 } });
+      const lines = payload.text.split("\n");
+      if (lines.at(-1) === "") lines.pop();
+      for (const line of lines) rows.push({ text: line, style: THEME.panel });
+    }
   } else if (result?.kind === "feature-questions" && result.payload !== null) {
     // The model's questions as proposed: the feature file itself is written only through MERGE (c4-zoom/11).
     const { payload } = result;
@@ -2013,12 +2034,12 @@ function drawHelp(grid: Grid, state: State): void {
 function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const prompt = state.prompt!;
   grid.fill(rect.x, rect.y, rect.width, 1, THEME.status);
-  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "flow" ? "flow: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : prompt.explainPlan ? "explain " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : ":";
+  const label = prompt.kind === "new-spec" ? newSpecLabel(prompt.form?.field) : prompt.kind === "search" ? "/" : prompt.kind === "context" ? "@" : prompt.kind === "node" ? "node: " : prompt.kind === "flow" ? "flow: " : prompt.kind === "feature" ? "feature slug: " : prompt.kind === "proposal" ? "proposal: " : prompt.kind === "baseline" ? "baseline: " : prompt.kind === "agents" ? "agents (auto, none, claude,codex…): " : prompt.kind === "init" ? "init harnesses (auto, none, claude,codex…): " : prompt.kind === "fmt" ? "fmt paths: " : prompt.kind === "parse" ? "parse paths: " : prompt.kind === "trace-plan" ? "trace-plan flow: " : prompt.kind === "explain" ? (prompt.explainModel ? "explain --llm: " : prompt.explainPlan ? "explain " : "explain: ") : prompt.kind === "wire" ? "wire out: " : prompt.kind === "full-check" ? "check paths: " : prompt.kind === "explain-edge" ? "explain edge: " : prompt.kind === "export" ? "export to: " : prompt.kind === "draft-flow" ? "draft flow: " : prompt.kind === "draft-rules" ? "draft rules: " : prompt.kind === "draft-layout" ? "draft map: " : prompt.kind === "code-to-spec" ? "code to spec: " : prompt.kind === "spec-to-code" ? "spec to code: " : prompt.kind === "export-c4" ? "export c4: " : ":";
   // The edge form types into its selected row; the status line shows both ids.
   const typed = prompt.kind === "explain-edge" && prompt.edge ? `${prompt.edge.from || "?"} ↔ ${prompt.edge.to || "?"}` : prompt.kind === "draft-flow" && prompt.draft ? prompt.draft.trigger || "?" : prompt.kind === "draft-rules" && prompt.rulesDraft ? prompt.rulesDraft.into || "(default target)" : prompt.kind === "draft-layout" && prompt.layoutDraft ? `--mode ${prompt.layoutDraft.mode}` : prompt.kind === "spec-to-code" && prompt.specCode ? prompt.specCode.id || "?" : prompt.kind === "code-to-spec" && prompt.codeDraft ? (prompt.codeDraft.source === "since" ? `--since ${prompt.codeDraft.since || "?"}` : `${prompt.codeDraft.file || "?"}${prompt.codeDraft.line.trim() !== "" ? `:${prompt.codeDraft.line.trim()}` : ""}`) : prompt.text;
   grid.write(rect.x, rect.y, `${label}${typed}`, THEME.statusKey);
   grid.cursor = { x: Math.min(rect.width - 1, stringWidth(label) + stringWidth(typed)), y: rect.y };
-  const kinded = (prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code");
+  const kinded = (prompt.kind === "palette" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code" || prompt.kind === "export-c4");
   // A message (a refused Run: which field and why) wins over the note: the prompt covers the message line.
   const noteText = state.message ?? (kinded ? prompt.note : undefined) ?? "";
   const noted = noteText !== "";
@@ -2040,7 +2061,7 @@ function drawPrompt(grid: Grid, state: State, rect: Rect, editor: Rect): void {
   const details = [...noteRows, ...(prompt.details ?? [])].slice(0, Math.max(0, editor.height - items.length - 3));
   const width = Math.min(editor.width, Math.max(...[...items, ...details].map((item) => stringWidth(item))) + 6);
   const y = editor.y + editor.height - items.length - details.length - 2;
-  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "flow" ? `${prompt.items.length} flow(s) · Enter lays it over the levels` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
+  drawBox(grid, { x: editor.x, y, width, height: items.length + details.length + 2 }, prompt.kind === "node" ? `${prompt.items.length} node(s)` : prompt.kind === "flow" ? `${prompt.items.length} flow(s) · Enter lays it over the levels` : prompt.kind === "feature" ? `${prompt.items.length} feature file(s)` : prompt.kind === "proposal" ? `${prompt.items.length} proposal(s)` : prompt.kind === "new-spec" ? "kind of the new spec" : prompt.kind === "baseline" ? "baseline rules" : prompt.kind === "agents" ? "harness integrations" : prompt.kind === "init" ? "set up keylang" : prompt.kind === "fmt" ? "format specifications" : prompt.kind === "parse" ? "parse specifications: Text IR" : prompt.kind === "trace-plan" ? `${prompt.items.length} flow(s): trace plan` : prompt.kind === "explain" ? (prompt.explainModel ? `${prompt.items.length} id(s): explain with the model · ${prompt.explainModel.detail}` : prompt.explainPlan ? "explanations to do · only the batch row asks the model and writes" : `${prompt.items.length} match(es): explain offline`) : prompt.kind === "wire" ? "wiring container" : prompt.kind === "full-check" ? "check options" : prompt.kind === "explain-edge" ? "edge between two ids" : prompt.kind === "export" ? "export the report" : prompt.kind === "draft-flow" ? `draft flow · ${prompt.draft?.mode ?? "algo"}` : prompt.kind === "draft-rules" ? `draft rules · ${prompt.rulesDraft?.mode ?? "algo"}` : prompt.kind === "draft-layout" ? `draft map · ${prompt.layoutDraft?.mode ?? "algo"}` : prompt.kind === "code-to-spec" ? `code to spec · ${prompt.codeDraft?.mode ?? "algo"}` : prompt.kind === "spec-to-code" ? `spec to code · ${prompt.specCode?.mode === "llm" ? "llm" : "template"}` : prompt.kind === "export-c4" ? "C4 diagram of the map · no model" : `${prompt.items.length} action(s)`, THEME.popup, THEME.popupTitle);
   details.forEach((row, i) => grid.write(editor.x + 1, y + 1 + i, padWidth(` ${row}`, width - 2), { ...THEME.popup, fg: i < noteRows.length ? 179 : 243 }, width - 2));
   items.forEach((item, i) => grid.write(editor.x + 1, y + 1 + details.length + i, padWidth(` ${item}`, width - 2), first + i === prompt.index ? THEME.selected : THEME.popup, width - 2));
 }

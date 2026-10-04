@@ -102,10 +102,14 @@ export function writeAtomic(abs: string, text: string, options: { exact?: boolea
   }
 }
 
-/** The first non-empty line is a `keylang:generated` marker (`<!-- … -->` of a map file, `// …` of `keylang wire`). */
+/**
+ * The first non-empty line is a `keylang:generated` marker: `<!-- … -->` of a
+ * map file, `// …` of `keylang wire`, `' …` or `%% …` of a PlantUML or
+ * Mermaid diagram of `keylang export c4`.
+ */
 export function isGeneratedText(text: string): boolean {
   const first = text.replace(/^﻿/, "").split(/\r?\n/).find((line) => line.trim() !== "");
-  return first !== undefined && /^\s*(?:<!--|\/\/).*keylang:generated/.test(first);
+  return first !== undefined && /^\s*(?:<!--|\/\/|'|%%).*keylang:generated/.test(first);
 }
 
 /** Every line ends with CRLF (at least one does): the file keeps them when it is rewritten. */

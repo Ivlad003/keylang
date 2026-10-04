@@ -211,6 +211,14 @@ export const ACTIONS: readonly Action[] = [
     when: (ctx) => mergeOnly(ctx) ?? (ctx.operation ? "an operation is already running" : null),
   },
   {
+    id: "export-c4",
+    label: "Export C4 diagram",
+    group: "Map",
+    aliases: ["export c4", "c4 diagram", "diagram", "plantuml", "mermaid", "c4-plantuml"],
+    // A form picks the format, the level, a layer and the file; without a file the diagram shows in F6 and nothing is written.
+    when: (ctx) => mergeOnly(ctx) ?? running(ctx) ?? ctx.noSnapshot,
+  },
+  {
     id: "baseline",
     label: "Baseline: write or check",
     group: "Rules",

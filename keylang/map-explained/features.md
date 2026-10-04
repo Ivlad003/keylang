@@ -1215,7 +1215,7 @@
     - fn [readStats](../../src/stats.ts#L25) (root: string) → Stats
       <a id="features.stats.readStats"></a><br>Loads the stats JSON file from the given root, returning a default empty record when the file is missing, unparsable, or fails the schema-1 shape check. Used by [`features.stats.updateStats`](features.md#features.stats.updateStats) as the baseline before applying a change. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [updateStats](../../src/stats.ts#L38) (root: string, change: (stats: Stats) => void) → void
-      <a id="features.stats.updateStats"></a><br>Loads the current stats via [`features.stats.readStats`](features.md#features.stats.readStats), applies the caller's mutation to the object, then persists it as pretty-printed JSON under `.keylang` through [`base.safe-write.safeWrite`](base.md#base.safe-write.safeWrite). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.stats.updateStats"></a><br>Loads the current stats via [`features.stats.readStats`](features.md#features.stats.readStats), applies the caller's mutation to the object, then persists it as pretty-printed JSON under `.keylang` through [`base.safe-write.safeWrite`](base.md#base.safe-write.safeWrite). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.stats.readStats](features.md#features.stats.readStats), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
     - fn [statusesIn](../../src/stats.ts#L45) (lines: readonly string[]) → Record<string, number>
       <a id="features.stats.statusesIn"></a><br>`status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines.

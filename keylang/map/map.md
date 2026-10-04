@@ -24,6 +24,24 @@
     - fn [repositoryFile](../../src/analyze.ts#L122) (root: string, path: string) → boolean <!-- internal -->
       - calls map.analyze.within
     - fn [within](../../src/analyze.ts#L132) (abs: string, dir: string) → boolean
+  - module [c4-export](../../src/c4-export.ts#L1)
+    - explanations map.explanations
+    - graph map.graph
+    - snapshot map.snapshot
+    - span base.span
+    - type [C4Format](../../src/c4-export.ts#L14) = (typeof C4_FORMATS)[number]
+    - type [C4Level](../../src/c4-export.ts#L16) = (typeof C4_LEVELS)[number]
+    - type [C4Request](../../src/c4-export.ts#L18)
+    - fn [c4Marker](../../src/c4-export.ts#L29) (format: C4Format) → string
+    - fn [isC4Diagram](../../src/c4-export.ts#L34) (text: string) → boolean
+      - calls map.c4-export.c4Marker
+    - fn [quoted](../../src/c4-export.ts#L40) (text: string) → string <!-- internal -->
+    - fn [aliases](../../src/c4-export.ts#L45) () → (id: string) => string <!-- internal -->
+    - type [Rel](../../src/c4-export.ts#L61) <!-- internal -->
+    - fn [relLabel](../../src/c4-export.ts#L68) (rel: Rel) → string <!-- internal -->
+      - calls base.span.compareText
+    - fn [renderC4](../../src/c4-export.ts#L88) (snapshot: AnalysisSnapshot, brief: (id: string) => string | null, request: C4Request) → string
+      - calls map.c4-export.aliases, map.c4-export.c4Marker, map.c4-export.quoted, base.span.compareText, map.c4-export.relLabel
   - module [declared-packages](../../src/declared-packages.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

@@ -130,13 +130,13 @@
       - calls base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
     - fn [writeAtomic](../../src/safe-write.ts#L88) (abs: string, text: string, options: { exact?: boolean } = {}) → void
       - calls base.safe-write.statOrNull, base.safe-write.allCrlf
-    - fn [isGeneratedText](../../src/safe-write.ts#L106) (text: string) → boolean
-    - fn [allCrlf](../../src/safe-write.ts#L112) (text: string) → boolean
-    - fn [landing](../../src/safe-write.ts#L122) (abs: string, hops = 0) → string | null
+    - fn [isGeneratedText](../../src/safe-write.ts#L110) (text: string) → boolean
+    - fn [allCrlf](../../src/safe-write.ts#L116) (text: string) → boolean
+    - fn [landing](../../src/safe-write.ts#L126) (abs: string, hops = 0) → string | null
       - calls base.safe-write.lstatOrNull
-    - fn [inside](../../src/safe-write.ts#L136) (abs: string, dir: string) → boolean <!-- internal -->
-    - fn [lstatOrNull](../../src/safe-write.ts#L141) (abs: string) → Stats | null <!-- internal -->
-    - fn [statOrNull](../../src/safe-write.ts#L149) (abs: string) → Stats | null <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L140) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L145) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L153) (abs: string) → Stats | null <!-- internal -->
   - module [span](../../src/span.ts#L1)
     - type [Pos](../../src/span.ts#L9)
     - type [Span](../../src/span.ts#L16)

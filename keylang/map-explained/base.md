@@ -219,18 +219,18 @@
     - fn [writeAtomic](../../src/safe-write.ts#L88) (abs: string, text: string, options: { exact?: boolean } = {}) → void
       <a id="base.safe-write.writeAtomic"></a><br>A temporary file in the target's directory renamed over the target, so a crash never leaves half a file; missing directories are created. The new file keeps the permissions of the one it replaces, and CRLF when that one has CRLF on every line — unless `exact`: a generated…
       - calls [base.safe-write.statOrNull](base.md#base.safe-write.statOrNull), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf)
-    - fn [isGeneratedText](../../src/safe-write.ts#L106) (text: string) → boolean
-      <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker (`<!-- … -->` of a map file, `// …` of `keylang wire`).
-    - fn [allCrlf](../../src/safe-write.ts#L112) (text: string) → boolean
+    - fn [isGeneratedText](../../src/safe-write.ts#L110) (text: string) → boolean
+      <a id="base.safe-write.isGeneratedText"></a><br>The first non-empty line is a `keylang:generated` marker: `<!-- … -->` of a map file, `// …` of `keylang wire`, `' …` or `%% …` of a PlantUML or Mermaid diagram of `keylang export c4`.
+    - fn [allCrlf](../../src/safe-write.ts#L116) (text: string) → boolean
       <a id="base.safe-write.allCrlf"></a><br>Every line ends with CRLF (at least one does): the file keeps them when it is rewritten.
-    - fn [landing](../../src/safe-write.ts#L122) (abs: string, hops = 0) → string | null
+    - fn [landing](../../src/safe-write.ts#L126) (abs: string, hops = 0) → string | null
       <a id="base.safe-write.landing"></a><br>Where bytes written to `abs` land: the longest prefix that exists is resolved through links, and a link on the way is followed even when its target does not exist yet. Null for a loop of links.
       - calls [base.safe-write.lstatOrNull](base.md#base.safe-write.lstatOrNull)
-    - fn [inside](../../src/safe-write.ts#L136) (abs: string, dir: string) → boolean <!-- internal -->
+    - fn [inside](../../src/safe-write.ts#L140) (abs: string, dir: string) → boolean <!-- internal -->
       <a id="base.safe-write.inside"></a><br>Returns true when an absolute path is the directory itself or lies under it: the path relative to the directory is empty, or is not `..`, does not start with `..` plus a separator, and is not absolute (another drive on Windows). _(llm · claude · 2026-10-04)_
-    - fn [lstatOrNull](../../src/safe-write.ts#L141) (abs: string) → Stats | null <!-- internal -->
+    - fn [lstatOrNull](../../src/safe-write.ts#L145) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.lstatOrNull"></a><br>Wraps `lstatSync` on a path, returning the stat result (without following symlinks) or `null` when the call throws for any reason, such as the path not existing. It is only used by [`base.safe-write.landing`](base.md#base.safe-write.landing), which relies on the null return to detect missing paths while walking… _(llm · claude · 2026-10-04)_
-    - fn [statOrNull](../../src/safe-write.ts#L149) (abs: string) → Stats | null <!-- internal -->
+    - fn [statOrNull](../../src/safe-write.ts#L153) (abs: string) → Stats | null <!-- internal -->
       <a id="base.safe-write.statOrNull"></a><br>Wraps a synchronous filesystem stat call so that any failure (missing path, permission error, etc.) yields `null` instead of throwing, giving [`base.safe-write.writeAtomic`](base.md#base.safe-write.writeAtomic) and [`base.safe-write.writeProblem`](base.md#base.safe-write.writeProblem) a non-throwing way to check whether a target path exists and inspect… _(llm · claude · 2026-10-04)_
   - module [span](../../src/span.ts#L1)
     <a id="base.span"></a><br>Source positions. Every node, name, link and reference carries a Span so that diagnostics and the future LSP (hover, definition) can point at it.

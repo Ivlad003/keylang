@@ -16,7 +16,8 @@ export interface CompletionWords {
   flags: readonly { long: string; short?: string }[];
 }
 
-const WORD = /^[a-z][a-z-]*$/;
+/** A command or subcommand: a letter, then letters, digits and `-` (`export c4`). */
+const WORD = /^[a-z][a-z0-9-]*$/;
 
 /**
  * Commands of the `Commands:` block of the help: a line indented by exactly

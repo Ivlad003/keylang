@@ -45,7 +45,8 @@ import { searchNodes } from "../node-search.ts";
 import { codeToSpecTriggers } from "../draft.ts";
 import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
+import { C4_FORMATS, C4_LEVELS, isC4Diagram } from "../c4-export.ts";
+import { exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportC4Request, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -62,7 +63,7 @@ import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } 
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
-import type { Buffer, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
+import type { Buffer, C4Form, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { batchState, contextTop, edgeItems, editorRows, featureItems, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
@@ -2333,6 +2334,14 @@ export class App {
       const writes = this.dirtyInputs().some(isInput) ? { writes: [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")] } : {};
       return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
     }
+    if (request.kind === "export-c4") {
+      // The diagram reads the saved code, keylang.json and the saved briefs under the spec directory: those
+      // dirty buffers are saved first; the step names the file it writes, when there is one.
+      const dir = `${this.specDir()}/`;
+      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+      const writes = request.out !== undefined && this.dirtyInputs().some(isInput) ? { writes: [request.out] } : {};
+      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
+    }
     if (request.kind === "feature-questions") {
       // The questions read the saved feature file, the specs around it, keylang.json and the code: those dirty
       // buffers are saved first; the step names the proposal the answer becomes.
@@ -2596,6 +2605,14 @@ export class App {
         return buffer !== undefined && isDirty(buffer);
       });
       return edited.length > 0 ? { refused: edited.map((target) => `${target}: edited in this session while the model answered; save or undo the edits, then ask again`) } : undefined;
+    }
+    if (request.kind === "export-c4") {
+      // A diagram open with unsaved edits is never written under.
+      const edited = (plan?.targets ?? []).filter((target) => {
+        const buffer = this.state.buffers.get(target);
+        return buffer !== undefined && isDirty(buffer);
+      });
+      return edited.length > 0 ? { refused: edited.map((target) => `${target}: open with unsaved edits; save or undo them, then export again`) } : undefined;
     }
     if (request.kind === "feature-questions") {
       // The feature file edited while the model answered keeps its text: the proposal would be judged against the disk under unsaved edits.
@@ -4658,6 +4675,81 @@ export class App {
     this.startOperation("export", { kind: "export", root: this.state.root, path, expect: form.expect, source });
   }
 
+  // ---------- export c4 ----------
+
+  /**
+   * The C4 form (c4-zoom/12): the format, the level, one layer or all, and
+   * the file to write. Without a file the diagram shows in F6 and nothing is
+   * written. Nothing runs before Enter; Esc runs nothing.
+   */
+  private openC4Prompt(): void {
+    const layers = this.state.analysis ? [...this.state.analysis.config.layers.keys()] : [];
+    this.state.prompt = { kind: "export-c4", text: "", items: [], ids: ["format", "level", "layer", "out", "run"], index: 4, c4: { format: "plantuml", level: "component", layer: null, layers } };
+    this.refreshC4Prompt();
+  }
+
+  /** The request the form would run: the CLI's flags, a layer only at the component level. */
+  private c4Request(form: C4Form, out: string): ExportC4Request {
+    return {
+      kind: "export-c4",
+      root: this.state.root,
+      format: form.format,
+      level: form.level,
+      ...(form.level === "component" && form.layer !== null ? { layer: form.layer } : {}),
+      ...(out !== "" ? { out: toPosix(out) } : {}),
+    };
+  }
+
+  /** The rows of the form, and what Enter would do with the file as it is now. Reading only. */
+  private refreshC4Prompt(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.c4;
+    if (prompt?.kind !== "export-c4" || !form) return;
+    const out = prompt.text.trim();
+    prompt.items = [
+      `format: ${form.format} · ←→ ${C4_FORMATS.join(" / ")}`,
+      `level: ${form.level} · ←→ ${C4_LEVELS.join(" / ")}`,
+      form.level === "component" ? `layer: ${form.layer ?? "all"} · ←→ all / ${form.layers.join(" / ")}` : "layer: — the container level draws the repository as one container",
+      `out: ${prompt.text}▏`,
+      `Run ${operationLabel(this.c4Request(form, out))}`,
+    ];
+    if (out === "") {
+      prompt.note = "no file: the diagram shows in F6 and nothing is written · type a path to write it";
+      return;
+    }
+    const current = readText(resolve(this.state.root, out));
+    prompt.note =
+      current === null
+        ? `${out}: a new file, written on Enter`
+        : isC4Diagram(current)
+          ? `${out}: a diagram export c4 wrote: replaced on Enter`
+          : `${out}: not a diagram export c4 wrote: Enter refuses it, nothing is written`;
+  }
+
+  /** ←→ on the format, the level or the layer row: the next choice. */
+  private changeC4Choice(delta: 1 | -1): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.c4;
+    if (!prompt || !form) return;
+    const row = prompt.ids?.[prompt.index];
+    const next = <T>(list: readonly T[], value: T): T => list[(list.indexOf(value) + delta + list.length) % list.length]!;
+    if (row === "format") form.format = next(C4_FORMATS, form.format);
+    else if (row === "level") form.level = next(C4_LEVELS, form.level);
+    else if (row === "layer" && form.level === "component") form.layer = next([null, ...form.layers], form.layer);
+    else return;
+    this.refreshC4Prompt();
+  }
+
+  /** Enter on any row: the export as the form shows it; the operation checks the file again before it writes. */
+  private submitC4(): void {
+    const prompt = this.state.prompt;
+    const form = prompt?.c4;
+    if (prompt?.kind !== "export-c4" || !form) return;
+    const request = this.c4Request(form, prompt.text.trim());
+    this.state.prompt = null;
+    this.requestOperation("export-c4", request);
+  }
+
   // ---------- new specification ----------
 
   /** The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S. */
@@ -5316,6 +5408,7 @@ export class App {
     if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
     if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
     if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
+    if (prompt.kind === "export-c4") this.refreshC4Prompt();
   }
 
   /** The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations. */
@@ -5372,8 +5465,10 @@ export class App {
       if (prompt.kind === "draft-rules") this.refreshRulesDraftPrompt();
       if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
       if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
+      if (prompt.kind === "export-c4") this.refreshC4Prompt();
       return;
     }
+    if ((event.name === "left" || event.name === "right") && prompt.kind === "export-c4") return this.changeC4Choice(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "spec-to-code") return this.changeSpecCodeOutput();
     if ((event.name === "left" || event.name === "right") && prompt.kind === "explain" && prompt.explainPlan) return this.changeExplainPlanList(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "explain" && prompt.explainModel) return this.changeExplainDetail(event.name === "left" ? -1 : 1);
@@ -5383,7 +5478,7 @@ export class App {
     if ((event.name === "left" || event.name === "right") && prompt.kind === "draft-layout") return this.changeLayoutDraftMode(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "full-check") return this.changeCheckOption(event.name === "left" ? -1 : 1);
     if ((event.name === "left" || event.name === "right") && prompt.kind === "export") return this.changeExportFormat(event.name === "left" ? -1 : 1);
-    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "flow" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code") && prompt.items.length > 0) {
+    if ((event.name === "up" || event.name === "down") && (prompt.kind === "palette" || prompt.kind === "node" || prompt.kind === "flow" || prompt.kind === "feature" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "agents" || prompt.kind === "init" || prompt.kind === "fmt" || prompt.kind === "parse" || prompt.kind === "trace-plan" || prompt.kind === "explain" || prompt.kind === "wire" || prompt.kind === "full-check" || prompt.kind === "explain-edge" || prompt.kind === "export" || prompt.kind === "draft-flow" || prompt.kind === "draft-rules" || prompt.kind === "draft-layout" || prompt.kind === "code-to-spec" || prompt.kind === "spec-to-code" || prompt.kind === "export-c4") && prompt.items.length > 0) {
       prompt.index = (prompt.index + (event.name === "up" ? -1 : 1) + prompt.items.length) % prompt.items.length;
       if (prompt.kind === "palette" || prompt.kind === "proposal" || prompt.kind === "new-spec" || prompt.kind === "baseline" || prompt.kind === "init") prompt.note = prompt.notes?.[prompt.index] ?? "";
       if (prompt.kind === "feature") this.featureNote();
@@ -5397,8 +5492,10 @@ export class App {
       if (prompt.kind === "draft-layout") this.refreshLayoutDraftPrompt();
       if (prompt.kind === "code-to-spec") this.refreshCodeDraftPrompt();
       if (prompt.kind === "spec-to-code") this.refreshSpecCodePrompt();
+      if (prompt.kind === "export-c4") this.refreshC4Prompt();
       return;
     }
+    if (event.name === "enter" && prompt.kind === "export-c4") return this.submitC4();
     if (event.name === "enter" && prompt.kind === "feature") return this.submitFeature();
     if (event.name === "enter" && prompt.kind === "baseline") return this.submitBaseline();
     if (event.name === "enter" && prompt.kind === "agents") return this.submitAgents();
@@ -5492,6 +5589,8 @@ export class App {
         return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
         return this.openFeaturePrompt();
+      case "export-c4":
+        return this.openC4Prompt();
       case "feature-questions": {
         const slug = this.state.current === null ? null : featureSlugOf(this.state.current, this.specDir());
         if (slug !== null) this.askFeatureQuestions(slug);

@@ -11,6 +11,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { contextForIds, contextText } from "./agent-context.ts";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
+import { C4_FORMATS, C4_LEVELS, isC4Diagram, renderC4, type C4Format, type C4Level } from "./c4-export.ts";
 import { filterChanged } from "./changed.ts";
 import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
@@ -22,7 +23,7 @@ import { cliVersion, probeAgentClis, resolveAgent, selectedAgent, type AgentCliP
 import { briefPlan, briefPlanText, defaultBriefJobs, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
-import { explainDir, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, SYSTEM_ID, systemBaseline, type ExplanationDetail } from "./explanations.ts";
+import { explainDir, explanationOf, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, SYSTEM_ID, systemBaseline, type ExplanationDetail } from "./explanations.ts";
 import { collectMdFiles } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
@@ -41,7 +42,7 @@ import type { DraftStatus } from "./draft-llm.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan, type SourceInputs } from "./map.ts";
 import { stronglyConnected } from "./scc.ts";
-import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
+import { landing, safeWrite, writeAtomic, writeProblem } from "./safe-write.ts";
 import { sha256, type CoverageItem } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
@@ -523,6 +524,25 @@ export interface ExportRequest {
 }
 
 /**
+ * `keylang export c4` (c4-zoom/12): a C4 diagram of the saved code, as text
+ * or written to `out`. `format` and `level` come as typed and are checked
+ * here, so the CLI and the TUI refuse the same values with the same message.
+ */
+export interface ExportC4Request {
+  kind: "export-c4";
+  /** Repository root (absolute). */
+  root: string;
+  /** `plantuml` or `mermaid`. */
+  format: string;
+  /** `component` or `container`. */
+  level: string;
+  /** `component` only: the one layer to draw. */
+  layer?: string;
+  /** The file to write, relative to the root; left out, the diagram is only the result. */
+  out?: string;
+}
+
+/**
  * Sets a repository up (`keylang init [dir] [--agents=LIST]`): keylang.json
  * (an existing one is kept), the map, the baseline and the harness files, in
  * that order. With `check` it runs exactly `init --check`: the harness files
@@ -540,10 +560,10 @@ export interface InitRequest {
   label?: string;
 }
 
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
-export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
+export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
 
 /** What an operation may use besides its request. No UI state, no shell. */
 export interface OperationContext {
@@ -662,6 +682,16 @@ export interface FeatureQuestionsPayload {
   dropped: number;
   /** The proposal written, or null (nothing to propose, or nothing written). */
   proposal: string | null;
+}
+
+/** A C4 diagram (c4-zoom/12): its text and, with `--out`, the file it went to. */
+export interface ExportC4Payload {
+  text: string;
+  format: C4Format;
+  level: C4Level;
+  layer: string | null;
+  /** The file written, relative to the root and POSIX; null when only printed (or refused). */
+  out: string | null;
 }
 
 /** The feature status the CLI prints (`report`), with the file and the snapshot it was computed on. */
@@ -1300,6 +1330,7 @@ export interface OperationPayloads {
   doctor: DoctorPayload;
   feature: FeaturePayload;
   "feature-questions": FeatureQuestionsPayload;
+  "export-c4": ExportC4Payload;
   "map-check": MapCheckPayload;
   map: MapPayload;
   baseline: BaselinePayload;
@@ -1373,6 +1404,7 @@ export function runOperation(request: CodeToSpecRequest, context?: OperationCont
 export function runOperation(request: SpecToCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"spec-to-code">>;
 export function runOperation(request: ApplyCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"apply-code">>;
 export function runOperation(request: FeatureQuestionsRequest, context?: OperationContext): Promise<OperationEnvelope<"feature-questions">>;
+export function runOperation(request: ExportC4Request, context?: OperationContext): Promise<OperationEnvelope<"export-c4">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -1382,6 +1414,8 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runFeature(request, context);
     case "feature-questions":
       return runFeatureQuestions(request, context);
+    case "export-c4":
+      return runExportC4(request, context);
     case "map-check":
       return runMapCheck(request, context);
     case "map":
@@ -1441,6 +1475,8 @@ export function resultWithout(kind: OperationRequest["kind"], status: OperationS
     case "feature":
       return { kind, ...base };
     case "feature-questions":
+      return { kind, ...base };
+    case "export-c4":
       return { kind, ...base };
     case "map-check":
       return { kind, ...base };
@@ -4185,6 +4221,74 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
     messages: [...droppedNote, { level: "info", text: `${committed.proposal}: ${questions.length} open question(s) proposed for ${file}; MERGE accepts them hunk by hunk` }],
     proposals: [committed.proposal],
   };
+}
+
+function emptyExportC4(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export-c4"> {
+  return { kind: "export-c4", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+}
+
+/**
+ * `keylang export c4` (c4-zoom/12): the diagram of the saved code and the
+ * saved briefs, no model. With `out` it is written to that file, which must
+ * be new or a diagram this command wrote (its marker line); any other file
+ * is 2 with nothing written. An unknown format, level or layer is 2.
+ */
+async function runExportC4(request: ExportC4Request, context: OperationContext): Promise<OperationEnvelope<"export-c4">> {
+  const { root } = request;
+  if (!isAbsolute(root)) return emptyExportC4("failed", 2, "export c4: root must be an absolute path");
+  const format = C4_FORMATS.find((item) => item === request.format);
+  if (format === undefined) return emptyExportC4("failed", 2, `export c4: unknown --format \`${request.format}\`; expected ${C4_FORMATS.join(", ")}`);
+  const level = C4_LEVELS.find((item) => item === request.level);
+  if (level === undefined) return emptyExportC4("failed", 2, `export c4: unknown --level \`${request.level}\`; expected ${C4_LEVELS.join(", ")}`);
+  if (request.layer !== undefined && level !== "component") return emptyExportC4("failed", 2, "export c4: --layer draws the components of one layer: use it with --level component");
+  if (request.out !== undefined && request.out.trim() === "") return emptyExportC4("failed", 2, "export c4: --out needs a file path");
+  if (context.signal?.aborted) return emptyExportC4("cancelled", null);
+  let analyzed: Analysis;
+  try {
+    analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
+  } catch (error) {
+    return emptyExportC4("failed", 2, messageOf(error));
+  }
+  if (context.signal?.aborted) return emptyExportC4("cancelled", null);
+  const snapshot = analyzed.snapshot;
+  if (!snapshot) return emptyExportC4("failed", 2, "export c4: no supported source files to draw");
+  const briefs = loadBriefs(analyzed.config);
+  // A brief made for older code would describe what is no longer there: only current ones are drawn.
+  const brief = (id: string): string | null => {
+    const explained = explanationOf(snapshot, briefs, id);
+    return explained !== null && !explained.stale ? explained.text : null;
+  };
+  let text: string;
+  try {
+    text = renderC4(snapshot, brief, { format, level, ...(request.layer !== undefined ? { layer: request.layer } : {}) });
+  } catch (error) {
+    return emptyExportC4("failed", 2, messageOf(error));
+  }
+  const payload: ExportC4Payload = { text, format, level, layer: request.layer ?? null, out: null };
+  if (request.out === undefined) return { ...emptyExportC4("completed", 0), payload };
+  const out = toPosix(relative(root, resolve(root, request.out)));
+  let current: string | null;
+  try {
+    current = existingText(resolve(root, out));
+  } catch (error) {
+    return { ...emptyExportC4("failed", 2, `${out}: ${messageOf(error)}`), payload };
+  }
+  if (current !== null && !isC4Diagram(current)) return { ...emptyExportC4("failed", 2, `${out}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written`), payload };
+  context.onProgress?.({ text: "waiting to write" });
+  let gate: CommitGate;
+  try {
+    gate = await context.beforeCommit?.({ targets: [out] });
+  } catch (error) {
+    return { ...emptyExportC4("failed", 2, messageOf(error)), payload };
+  }
+  if (context.signal?.aborted) return { ...emptyExportC4("cancelled", null), payload };
+  if (gate && gate.refused.length > 0) return { ...emptyExportC4("failed", 2), payload, messages: gate.refused.map((line) => ({ level: "error" as const, text: line })) };
+  try {
+    safeWrite(root, out, text, { generated: true, expect: current });
+  } catch (error) {
+    return { ...emptyExportC4("failed", 2, messageOf(error)), payload };
+  }
+  return { ...emptyExportC4("completed", 0), payload: { ...payload, out }, written: [out], messages: [{ level: "info", text: `${out}: written` }] };
 }
 
 /** One gap as the CLI prints it: `file:line:col: kind id: reason`. */

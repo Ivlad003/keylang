@@ -131,6 +131,13 @@ Commands:
                             (--check: fail if the file is stale; writes nothing)
   trace-plan <flow>         Print JSON: the flow's functions a trace adapter instruments
                             (Python, Rust), with the snapshot id and file hashes
+  export c4 [--format plantuml|mermaid] [--level component|container] [--layer <name>] [--out f]
+                            Print a C4 diagram of the map, no model: layers as boundaries,
+                            their modules as components, packages as external systems
+                            (--level container: the repository as one container;
+                            --layer: one layer's components and what they touch;
+                            --out: write f, relative to the root, only when it is new or
+                            a diagram this command wrote; stdout stays empty)
   check [paths…] [--changed] [--since <ref>]
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
@@ -212,6 +219,7 @@ const OPTIONS = {
   agents: { type: "string" },
   changed: { type: "boolean" },
   layer: { type: "string" },
+  level: { type: "string" },
 } as const satisfies ParseArgsOptionsConfig;
 
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
@@ -308,6 +316,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdWire(values.out ?? "keylang.gen.ts", values.check === true);
     case "trace-plan":
       return cmdTracePlan(paths[0]);
+    case "export":
+      return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
     case "web":
       return cmdWeb(values.port ?? "7070", values.host ?? "127.0.0.1");
     case "parse":
@@ -650,6 +660,27 @@ async function draftRulesPrinter(root: string, mode: "algo" | "llm" | "hybrid", 
 }
 
 /** `keylang wire [--check]`: the CLI is a printer over the shared wire operation. */
+/**
+ * `keylang export c4` (c4-zoom/12): the diagram on stdout, or written to
+ * `--out` with a note on stderr and nothing on stdout. Exit code 0 or 2.
+ */
+async function cmdExport(args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }): Promise<number> {
+  const [what, ...rest] = args;
+  if (what !== "c4") throw new Error("export: expected `c4`; see --help");
+  if (rest.length > 0) throw new Error(`export c4: unexpected argument \`${rest[0]}\``);
+  const result = await runOperation({
+    kind: "export-c4",
+    root: findRoot(process.cwd()),
+    format: options.format ?? "plantuml",
+    level: options.level ?? "component",
+    ...(options.layer !== undefined ? { layer: options.layer } : {}),
+    ...(options.out !== undefined ? { out: toPosix(options.out) } : {}),
+  });
+  for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
+  if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
+  return result.exitCode ?? 2;
+}
+
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   const result = await runOperation({ kind: "wire", root: findRoot(process.cwd()), out: toPosix(out), check: checkOnly });
   const payload = result.payload;
