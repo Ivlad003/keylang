@@ -1,10 +1,15 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
 
+import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
+import { SHELLS, completionScript, helpCommands, isShell } from "./completions.ts";
+import { gitHooksDir, preCommitCommand, preCommitState, preCommitText } from "./git-hook.ts";
+import { safeWrite, writeAtomic } from "./safe-write.ts";
+import { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } from "./tui/new-spec.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
-import { parseArgs } from "node:util";
+import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
@@ -49,6 +54,17 @@ Commands:
                             2 missing file or bad invocation
   hook stop                 Read a harness Stop event (JSON) from stdin, run
                             check --changed, and print a JSON decision. Writes nothing
+  hook install [--check]    Write the git pre-commit hook that runs check --changed, in
+                            git's hooks directory (core.hooksPath is honoured); rerun to
+                            update it. A pre-commit hook keylang did not write is left
+                            as is (exit 2). --check: fail when the hook is missing or
+                            stale; writes nothing
+  new flow <name>           Create <dir>/flows/<name>.md with the heading \`# flow <name>\`
+  new module <name> --layer <layer>
+                            Create <dir>/features/<name>.md declaring
+                            \`planned module <layer>.<name>\`; the layer must be in
+                            keylang.json. Never overwrites a file (exit 2)
+  completions <shell>       Print a completion script for bash, zsh or fish
   map [dir] [--check]       Generate <dir>/keylang/map/*.md and .keylang/index.json;
                             with "explain": {"map": true} in keylang.json also the
                             explained map keylang/map-explained/ (a brief under each
@@ -134,6 +150,40 @@ Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict)
 or a stale map with --check, 2 usage or I/O error.
 `;
 
+/** The flags of every command; `completions` completes this same table. */
+const OPTIONS = {
+  help: { type: "boolean", short: "h" },
+  version: { type: "boolean", short: "V" },
+  json: { type: "boolean" },
+  check: { type: "boolean" },
+  out: { type: "string" },
+  llm: { type: "boolean" },
+  mode: { type: "string" },
+  name: { type: "string" },
+  into: { type: "string" },
+  print: { type: "boolean" },
+  apply: { type: "boolean" },
+  full: { type: "boolean" },
+  brief: { type: "boolean" },
+  missing: { type: "boolean" },
+  "dry-run": { type: "boolean" },
+  limit: { type: "string" },
+  jobs: { type: "string" },
+  stale: { type: "boolean" },
+  strict: { type: "boolean" },
+  format: { type: "string" },
+  static: { type: "string" },
+  "explain-edge": { type: "boolean" },
+  // Language clients pass `--stdio` to name the transport; stdio is the only one.
+  stdio: { type: "boolean" },
+  port: { type: "string" },
+  host: { type: "string" },
+  since: { type: "string" },
+  agents: { type: "string" },
+  changed: { type: "boolean" },
+  layer: { type: "string" },
+} as const satisfies ParseArgsOptionsConfig;
+
 /** Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error. */
 export async function main(argv: readonly string[]): Promise<number> {
   try {
@@ -149,37 +199,7 @@ async function run(argv: readonly string[]): Promise<number> {
     args: [...argv],
     allowPositionals: true,
     strict: true,
-    options: {
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "V" },
-      json: { type: "boolean" },
-      check: { type: "boolean" },
-      out: { type: "string" },
-      llm: { type: "boolean" },
-      mode: { type: "string" },
-      name: { type: "string" },
-      into: { type: "string" },
-      print: { type: "boolean" },
-      apply: { type: "boolean" },
-      full: { type: "boolean" },
-      brief: { type: "boolean" },
-      missing: { type: "boolean" },
-      "dry-run": { type: "boolean" },
-      limit: { type: "string" },
-      jobs: { type: "string" },
-      stale: { type: "boolean" },
-      strict: { type: "boolean" },
-      format: { type: "string" },
-      static: { type: "string" },
-      "explain-edge": { type: "boolean" },
-      // Language clients pass `--stdio` to name the transport; stdio is the only one.
-      stdio: { type: "boolean" },
-      port: { type: "string" },
-      host: { type: "string" },
-      since: { type: "string" },
-      agents: { type: "string" },
-      changed: { type: "boolean" },
-    },
+    options: OPTIONS,
   });
   if (values.help) {
     process.stdout.write(USAGE);
@@ -209,7 +229,11 @@ async function run(argv: readonly string[]): Promise<number> {
     case "feature":
       return cmdFeature(paths[0], values.format ?? "human");
     case "hook":
-      return cmdHook(paths[0]);
+      return cmdHook(paths[0], values.check === true);
+    case "new":
+      return cmdNew(paths, values.layer);
+    case "completions":
+      return cmdCompletions(paths[0]);
     case "map":
       return cmdMap(paths[0] ?? ".", values.check === true);
     case "check":
@@ -736,8 +760,9 @@ async function cmdFeature(slug: string | undefined, format: string): Promise<num
   return result.exitCode ?? 2;
 }
 
-async function cmdHook(name: string | undefined): Promise<number> {
-  if (name !== "stop") throw new Error("hook: expected `stop`");
+async function cmdHook(name: string | undefined, checkOnly: boolean): Promise<number> {
+  if (name === "install") return cmdHookInstall(checkOnly);
+  if (name !== "stop") throw new Error("hook: expected `stop` or `install`");
   const event = parseHookEvent(await readStdin());
   if (event.stop_hook_active === true) {
     process.stdout.write(hookDecision(event, []));
@@ -754,6 +779,90 @@ async function cmdHook(name: string | undefined): Promise<number> {
   );
   process.stdout.write(hookDecision(event, hookFails(filtered)));
   return 0;
+}
+
+/**
+ * `hook install [--check]`: keylang's pre-commit hook in git's hooks
+ * directory. A hook without keylang's marker is someone else's: install
+ * refuses with 2 and names the line to add; --check counts it as not installed.
+ */
+function cmdHookInstall(checkOnly: boolean): number {
+  const version = packageVersion();
+  const file = join(gitHooksDir(process.cwd()), "pre-commit");
+  const shown = toPosix(relative(process.cwd(), file));
+  const entry = existsSync(file) ? statSync(file) : null;
+  if (entry !== null && !entry.isFile()) throw new Error(`hook install: ${shown}: not a file`);
+  const current = entry === null ? null : readFileSync(file, "utf8");
+  const state = preCommitState(current, entry !== null && (entry.mode & 0o111) !== 0, version);
+  const foreign = `${shown}: a pre-commit hook keylang did not write; add \`${preCommitCommand(version)}\` to it`;
+  if (checkOnly) {
+    if (state === "current") {
+      process.stdout.write(`${shown}: up to date\n`);
+      return 0;
+    }
+    if (state === "foreign") process.stderr.write(`keylang: ${foreign}\n`);
+    else process.stderr.write(`keylang: ${shown}: ${state === "missing" ? "no pre-commit hook" : "stale pre-commit hook"}; run \`keylang hook install\`\n`);
+    return 1;
+  }
+  if (state === "foreign") throw new Error(`hook install: ${foreign}`);
+  if (state !== "current") {
+    writeAtomic(file, preCommitText(version), { exact: true });
+    chmodSync(file, 0o755);
+  }
+  process.stdout.write(`${shown}: ${state === "current" ? "up to date" : "written"}; runs \`${preCommitCommand(version)}\`\n`);
+  return 0;
+}
+
+/** `new flow <name>`, `new module <name> --layer <layer>`: a skeleton spec, never over an existing file. */
+function cmdNew(args: readonly string[], layer: string | undefined): number {
+  const [what, name, ...rest] = args;
+  if (what !== "flow" && what !== "module") throw new Error("new: expected `new flow <name>` or `new module <name> --layer <layer>`");
+  if (name === undefined) throw new Error(`new ${what}: a name is required`);
+  if (rest.length > 0) throw new Error(`new ${what}: unexpected \`${rest.join(" ")}\``);
+  const problem = flowNameProblem(name);
+  if (problem !== null) throw new Error(`new ${what}: ${problem.replace("a flow name", `a ${what} name`)}`);
+  const root = findRoot(process.cwd());
+  const config = loadConfig(root);
+  let path: string;
+  let text: string;
+  if (what === "flow") {
+    if (layer !== undefined) throw new Error("new flow: --layer is for `new module`");
+    path = `${defaultSpecPath("flow", config.dir)}${name}.md`;
+    text = specTemplate("flow", name);
+  } else {
+    const layers = [...config.layers.keys()].join(", ");
+    if (layer === undefined) throw new Error(`new module: --layer <layer> is required; layers in ${CONFIG_FILE}: ${layers}`);
+    if (!config.layers.has(layer)) throw new Error(`new module: unknown layer \`${layer}\`; layers in ${CONFIG_FILE}: ${layers}`);
+    path = `${defaultSpecPath("feature", config.dir)}${name}.md`;
+    text = plannedModuleTemplate(layer, name);
+  }
+  const shown = toPosix(relative(process.cwd(), join(root, path)));
+  if (existsSync(join(root, path))) throw new Error(`new ${what}: ${shown} exists; new never overwrites a file`);
+  const refused = newSpecProblem(root, config.dir, path);
+  if (refused !== null) throw new Error(`new ${what}: ${shown}: ${refused}`);
+  safeWrite(root, path, text, { expect: null });
+  process.stdout.write(`${shown}: created\n`);
+  return 0;
+}
+
+/**
+ * A module that has no code yet is an intention: `planned module` at the top
+ * of a flow section (format §5), in a feature file named after it.
+ */
+function plannedModuleTemplate(layer: string, name: string): string {
+  return `# flow ${name}\n\n- planned module ${layer}.${name}\n`;
+}
+
+/** `completions <shell>`: commands from the help text, flags from the parser's table. */
+function cmdCompletions(shell: string | undefined): number {
+  if (shell === undefined || !isShell(shell)) throw new Error(`completions: expected a shell: ${SHELLS.join(", ")}${shell === undefined ? "" : `; got \`${shell}\``}`);
+  const flags = Object.entries(OPTIONS).map(([long, option]) => ("short" in option ? { long, short: option.short } : { long }));
+  process.stdout.write(completionScript(shell, { commands: helpCommands(USAGE), flags }));
+  return 0;
+}
+
+function packageVersion(): string {
+  return (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 }
 
 async function readStdin(): Promise<string> {

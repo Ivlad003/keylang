@@ -8,15 +8,15 @@ The tree of the map with a brief under each node: the documentation comment from
 |---|---|---|---|---|---|
 | [base](base.md) |  | 51 | 0 | 0 | 32 |
 | [check](check.md) |  | 89 | 0 | 0 | 81 |
-| [cli](cli.md) |  | 39 | 0 | 0 | 49 |
+| [cli](cli.md) |  | 46 | 0 | 0 | 58 |
 | [external](external.md) |  | | | | |
 | [extract](extract.md) |  | 118 | 0 | 0 | 64 |
-| [features](features.md) |  | 220 | 0 | 0 | 136 |
+| [features](features.md) |  | 225 | 0 | 0 | 138 |
 | [lang](lang.md) |  | 45 | 0 | 0 | 89 |
 | [map](map.md) |  | 119 | 0 | 0 | 131 |
 | [operations](operations.md) |  | 146 | 0 | 0 | 33 |
 | [tui](tui.md) |  | 437 | 0 | 0 | 209 |
-| **all** | | 1264 | 0 | 0 | 824 |
+| **all** | | 1276 | 0 | 0 | 835 |
 
 ## Index
 
@@ -26,7 +26,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **B** · [background](tui.md#tui.background) (tui) · [baseline](features.md#features.baseline) (features) · [bodies](extract.md#extract.bodies) (extract) · [brief](base.md#base.brief) (base) · [buffer](tui.md#tui.buffer) (tui)
 
-**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [config](base.md#base.config) (base)
+**C** · [changed](features.md#features.changed) (features) · [check-format](features.md#features.check-format) (features) · [check-results](features.md#features.check-results) (features) · [cli](cli.md#cli.cli) (cli) · [code-highlight](tui.md#tui.code-highlight) (tui) · [completions](cli.md#cli.completions) (cli) · [config](base.md#base.config) (base)
 
 **D** · [declared-packages](map.md#map.declared-packages) (map) · [diag](base.md#base.diag) (base) · [disk](tui.md#tui.disk) (tui) · [doc-comments](extract.md#extract.doc-comments) (extract) · [draft](features.md#features.draft) (features) · [draft-llm](features.md#features.draft-llm) (features)
 
@@ -34,7 +34,7 @@ Modules and classes by name; the parent ID follows each one.
 
 **F** · [fact-cache](map.md#map.fact-cache) (map) · [FactCache](map.md#map.fact-cache.FactCache) (map.fact-cache) · [facts](extract.md#extract.facts) (extract) · [feature-status](features.md#features.feature-status) (features) · [files](lang.md#lang.files) (lang) · [findings](tui.md#tui.findings) (tui) · [flows](check.md#check.flows) (check) · [fmt](lang.md#lang.fmt) (lang) · [frontends](map.md#map.frontends) (map)
 
-**G** · [ghost](features.md#features.ghost) (features) · [git-changes](features.md#features.git-changes) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
+**G** · [ghost](features.md#features.ghost) (features) · [git-changes](features.md#features.git-changes) (features) · [git-hook](features.md#features.git-hook) (features) · [glob](base.md#base.glob) (base) · [grammars](extract.md#extract.grammars) (extract) · [graph](map.md#map.graph) (map) · [Grid](tui.md#tui.screen.Grid) (tui.screen)
 
 **H** · [harness](features.md#features.harness) (features)
 
