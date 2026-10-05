@@ -3,12 +3,12 @@
 // transport. Each case is the smallest repository that showed the bug.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -412,4 +412,172 @@ test("php: a generator whose body has an arrow function before its `yield` is st
   // Instrumented, the generator's suspended frames would interleave the spans and leave the run incomplete.
   assert.equal(run?.complete, true);
   assert.deepEqual(run?.instrumented, ["domain.Order.Order.total"]);
+});
+
+// ---------- the language server ----------
+
+interface Message {
+  id?: number | string | null;
+  method?: string;
+  params?: { uri?: string; diagnostics?: { code?: string; message: string }[] };
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+class Session {
+  private readonly child: ChildProcessWithoutNullStreams;
+  private buffer = Buffer.alloc(0);
+  readonly messages: Message[] = [];
+  private next = 1;
+  readonly exited: Promise<number | null>;
+  stderr = "";
+
+  constructor(cwd: string, node: string[] = [], env: Record<string, string> = {}) {
+    this.child = spawn(process.execPath, [...node, bin, "lsp", "--stdio"], { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, ...env } });
+    this.exited = new Promise((done) => this.child.on("exit", (code) => done(code)));
+    this.child.stderr.on("data", (chunk: Buffer) => (this.stderr += chunk.toString()));
+    this.child.stdout.on("data", (chunk: Buffer) => {
+      this.buffer = Buffer.concat([this.buffer, chunk]);
+      for (;;) {
+        const end = this.buffer.indexOf("\r\n\r\n");
+        if (end === -1) return;
+        const length = Number(/Content-Length: (\d+)/i.exec(this.buffer.subarray(0, end).toString())?.[1]);
+        if (this.buffer.length < end + 4 + length) return;
+        this.messages.push(JSON.parse(this.buffer.subarray(end + 4, end + 4 + length).toString()) as Message);
+        this.buffer = this.buffer.subarray(end + 4 + length);
+      }
+    });
+  }
+
+  /** Several messages in one write: the server reads them before it answers any. */
+  write(...messages: object[]): void {
+    this.child.stdin.write(messages.map((message) => {
+      const json = JSON.stringify({ jsonrpc: "2.0", ...message });
+      return `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`;
+    }).join(""));
+  }
+
+  notify(method: string, params: unknown): void {
+    this.write({ method, params });
+  }
+
+  send(method: string, params: unknown): number {
+    const id = this.next++;
+    this.write({ id, method, params });
+    return id;
+  }
+
+  /** The next id `send` would use, for a request written with `write`. */
+  nextId(): number {
+    return this.next++;
+  }
+
+  async request<T>(method: string, params: unknown): Promise<T> {
+    const response = await this.response(this.send(method, params));
+    if (response.error) throw new Error(`${method}: ${response.error.message}`);
+    return response.result as T;
+  }
+
+  async response(id: number | string): Promise<Message> {
+    return this.until(() => this.messages.find((m) => m.id === id && m.method === undefined));
+  }
+
+  async until<T>(find: () => T | undefined, ms = 60000): Promise<T> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+      const found = find();
+      if (found !== undefined) return found;
+      if (Date.now() > deadline) throw new Error(`timeout; got ${JSON.stringify(this.messages).slice(0, 2000)}`);
+      await new Promise((done) => setTimeout(done, 25));
+    }
+  }
+
+  close(): void {
+    this.child.kill();
+  }
+}
+
+function lspRepo(t: Context): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-evidence-lsp-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(join(root, "tests/fixtures/repo"), dir, { recursive: true });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  return dir;
+}
+
+const uri = (dir: string, path: string): string => pathToFileURL(join(dir, path)).href;
+
+test("lsp: an object with an id and no method is an invalid request; initialize is accepted once, and only when it succeeds", async (t) => {
+  const dir = lspRepo(t);
+  const s = new Session(dir);
+  t.after(() => s.close());
+  // Neither a request nor a response: JSON-RPC answers -32600 with its id.
+  s.write({ id: 41 }, { id: "x", method: 7 });
+  assert.equal((await s.response(41)).error?.code, -32600);
+  assert.equal((await s.response("x")).error?.code, -32600);
+  // A root URI on another host is no local path: initialize fails, and the server is still not initialized.
+  const failed = await s.response(s.send("initialize", { rootUri: "file://elsewhere/repo", capabilities: {} }));
+  assert.equal(failed.error?.code, -32603, JSON.stringify(failed));
+  const early = await s.response(s.send("textDocument/documentSymbol", { textDocument: { uri: uri(dir, "keylang/rules.md") } }));
+  assert.equal(early.error?.code, -32002);
+  await s.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  const again = await s.response(s.send("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} }));
+  assert.equal(again.error?.code, -32600);
+  const symbols = await s.request<{ name: string }[]>("textDocument/documentSymbol", { textDocument: { uri: uri(dir, "keylang/rules.md") } });
+  assert.ok(symbols.length > 0, JSON.stringify(symbols));
+});
+
+test("lsp: a ranged didChange from a client that ignores full sync is applied, with a note in stderr once", async (t) => {
+  const dir = lspRepo(t);
+  const s = new Session(dir);
+  t.after(() => s.close());
+  await s.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: { textDocument: { diagnostic: {} } } });
+  s.notify("initialized", {});
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  const text = "# flow draft\n\n- step domain.order.total\n";
+  s.notify("textDocument/didOpen", { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text } });
+  // `total` → `missingFn` on line 2, then a second edit appends a line: both are ranges, in UTF-16 characters.
+  const range = (line: number, from: number, to: number): object => ({ start: { line, character: from }, end: { line, character: to } });
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 2 }, contentChanges: [{ range: range(2, 20, 25), text: "missingFn" }] });
+  s.notify("textDocument/didChange", { textDocument: { uri: flowUri, version: 3 }, contentChanges: [{ range: range(3, 0, 0), text: "- step domain.order.ghost\n" }] });
+  const items = (await s.request<{ items: { code?: string; message: string }[] }>("textDocument/diagnostic", { textDocument: { uri: flowUri } })).items;
+  assert.ok(items.some((item) => item.code === "K001" && /missingFn/.test(item.message)), JSON.stringify(items));
+  assert.ok(items.some((item) => item.code === "K001" && /ghost/.test(item.message)), JSON.stringify(items));
+  assert.ok(!items.some((item) => /domain\.order\.total\b/.test(item.message) && item.code === "K001"), JSON.stringify(items));
+  assert.equal(s.stderr.match(/didChange sent a range/g)?.length, 1, s.stderr);
+});
+
+test("lsp: one analysis runs at a time, and the changes made meanwhile are analysed together", async (t) => {
+  const dir = lspRepo(t);
+  const trace = join(dir, "lsp.jsonl");
+  // keylang's own `check` flow has `map.analyze.analyze` as a step: the adapter records each analysis as a span.
+  const s = new Session(dir, ["--import", adapter], { KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "check", KEYLANG_TRACE_TEST: "lsp", KEYLANG_TRACE_ROOT: root });
+  t.after(() => s.close());
+  await s.request("initialize", { rootUri: pathToFileURL(dir).href, capabilities: {} });
+  s.notify("initialized", {});
+  const flowUri = uri(dir, "keylang/flows/draft.md");
+  const version = (n: number): string => `# flow draft\n\n- step domain.order.total\n${"- step domain.order.createOrder\n".repeat(n)}`;
+  // Six edits, each followed by a request, in one write: every request needs a newer generation than the last.
+  const messages: object[] = [{ method: "textDocument/didOpen", params: { textDocument: { uri: flowUri, languageId: "markdown", version: 1, text: version(0) } } }];
+  const ids: number[] = [];
+  for (let n = 1; n <= 6; n++) {
+    const id = s.nextId();
+    ids.push(id);
+    if (n > 1) messages.push({ method: "textDocument/didChange", params: { textDocument: { uri: flowUri, version: n }, contentChanges: [{ text: version(n) }] } });
+    messages.push({ id, method: "textDocument/hover", params: { textDocument: { uri: flowUri }, position: { line: 2, character: 22 } } });
+  }
+  s.write(...messages);
+  for (const id of ids) assert.equal((await s.response(id)).error, undefined);
+  await s.request("shutdown", null);
+  s.notify("exit", null);
+  assert.equal(await s.exited, 0, s.stderr);
+  const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; spanId?: string; symbolId?: string; seq?: number; clockId?: string });
+  const starts = events.filter((e) => e.event === "start" && e.symbolId === "map.analyze.analyze");
+  const ends = new Map(events.filter((e) => e.event === "end").map((e) => [e.spanId, e]));
+  // The first request starts an analysis; the five that wait for it share the next one.
+  assert.ok(starts.length >= 2 && starts.length <= 3, `${starts.length} analyses`);
+  for (let i = 1; i < starts.length; i++) {
+    const before = ends.get(starts[i - 1]!.spanId);
+    assert.ok(before && before.clockId === starts[i]!.clockId && before.seq! < starts[i]!.seq!, "an analysis starts after the one before it ended");
+  }
 });
