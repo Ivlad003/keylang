@@ -124,3 +124,22 @@ test("export c4 --out: a link out of the repository and an absolute path outside
   assert.equal(fresh.status, 0, fresh.stderr);
   assert.equal(fresh.stderr, "docs/c4.puml: written\n");
 });
+
+// ---------- 4. export target: the spec directory as the config reads it ----------
+
+test("export: with `dir: ./keylang` the map and the explained map under keylang/ are the generator's, as `keylang map` reads the same config; a spec directory `.` owns map/", async (t) => {
+  const dir = copy(t, { dir: "./keylang" });
+  for (const path of ["keylang/map/notes.md", "keylang/map-explained/notes.md", "keylang/map/app.md"]) {
+    assert.equal(exportTargetProblem(dir, path), "a generated artifact: only its generator writes it", path);
+    const exported = await runOperation({ kind: "export", root: dir, path, expect: null, source: { kind: "explain-edge", lines: ["a line"] } });
+    assert.deepEqual([exported.status, exported.exitCode, exported.written], ["failed", 1, []], path);
+    assert.deepEqual(exported.payload?.refused, [`${path}: a generated artifact: only its generator writes it`]);
+    assert.ok(!existsSync(join(dir, path)), `${path} is not written`);
+  }
+  assert.equal(exportTargetProblem(dir, "keylang/notes.md"), null, "a spec file is the person's");
+  // The caller's loaded config wins over the saved file.
+  assert.equal(exportTargetProblem(dir, "specs/map/x.md", "specs"), "a generated artifact: only its generator writes it");
+  const flat = copy(t, { dir: "." });
+  assert.equal(exportTargetProblem(flat, "map/app.md"), "a generated artifact: only its generator writes it");
+  assert.equal(exportTargetProblem(flat, "map-explained/README.md"), "a generated artifact: only its generator writes it");
+});

@@ -7,7 +7,7 @@
 
 import { closeSync, existsSync, openSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { contextForIds, contextText } from "./agent-context.ts";
 import { analyze, within, type Analysis, type AnalysisRequest } from "./analyze.ts";
 import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan } from "./baseline.ts";
@@ -15,7 +15,7 @@ import { C4_FORMATS, C4_LEVELS, isC4Diagram, renderC4, type C4Format, type C4Lev
 import { filterChanged } from "./changed.ts";
 import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
 import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
-import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
+import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, parseConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { briefRequest, briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
@@ -2842,26 +2842,31 @@ export function exportText(source: ExportSource): string {
  * repository write (plain, relative, inside through links, no directory, no
  * file with a generation marker) and the artifacts generators own — the map,
  * the explained map, the index, the fact cache and the proposals — even
- * before they exist. Reads only; a form may call it as the path is typed.
+ * before they exist. `dir` is the spec directory of the caller's loaded
+ * config (`Config.dir`); left out, the one the saved keylang.json names.
+ * Reads only; a form may call it as the path is typed.
  */
-export function exportTargetProblem(root: string, path: string): string | null {
+export function exportTargetProblem(root: string, path: string, dir: string = savedSpecDir(root)): string | null {
   const problem = writeProblem(root, path);
   if (problem !== null) return problem;
   const target = landing(join(root, path));
   if (target === null) return "leads through a loop of links";
   const rel = toPosix(relative(realpathSync(root), target));
-  const dir = specDirOf(root);
-  const owned = [`${dir}/map/`, `${dir}/${EXPLAINED_MAP_DIR}/`, `${PROPOSALS_DIR}/`];
+  // `posix.join`: a spec directory `.` owns `map/`, not `./map/`.
+  const owned = [posix.join(dir, "map"), posix.join(dir, EXPLAINED_MAP_DIR), PROPOSALS_DIR].map((prefix) => `${prefix}/`);
   if (rel === ".keylang/index.json" || rel === FACT_CACHE_FILE || owned.some((prefix) => rel.startsWith(prefix))) return "a generated artifact: only its generator writes it";
   return null;
 }
 
-/** The spec directory of keylang.json without the rest of the config (a broken one included): `keylang` unless it says otherwise. */
-function specDirOf(root: string): string {
+/**
+ * The spec directory of the saved keylang.json as `loadConfig` reads it — the
+ * same parser, so `./keylang` and `keylang/` are `keylang` — and `keylang`
+ * without the file or with one that does not validate (as the TUI's own).
+ */
+function savedSpecDir(root: string): string {
+  const file = join(root, CONFIG_FILE);
   try {
-    const raw: unknown = JSON.parse(readFileSync(join(root, CONFIG_FILE), "utf8"));
-    const dir = typeof raw === "object" && raw !== null && "dir" in raw ? raw.dir : undefined;
-    return typeof dir === "string" && dir !== "" ? dir.replace(/\/+$/, "") : "keylang";
+    return parseConfig(file, readFileSync(file, "utf8")).dir ?? "keylang";
   } catch {
     return "keylang";
   }
