@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
-import { classifySources, CONFIG_FILE, isAnalysed, sourceTree, toPosix, type Config } from "./config.ts";
+import { classifySources, CONFIG_FILE, isAnalysed, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
@@ -89,6 +89,8 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
+  // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
+  if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded]));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
     for (const p of files) {
       const module = graph.byPath.get(p);

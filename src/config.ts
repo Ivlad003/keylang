@@ -443,6 +443,53 @@ function matchesAny(rel: string, globs: readonly string[]): boolean {
 }
 
 /**
+ * Layer globs of keylang.json that likely do not say what was meant: files
+ * the globs of two layers both match — the layer listed first takes them —
+ * and a glob that matches no source file. `files` are the files layers place:
+ * read or excluded. Warnings, not errors: the layout works as written. One
+ * line per pair of layers and the glob that won, then per unmatched glob, in
+ * the order of keylang.json.
+ */
+export function layerGlobWarnings(c: Pick<Config, "layers">, files: readonly string[]): string[] {
+  const layers = [...c.layers];
+  const matched = new Set<string>();
+  const overlaps = new Map<string, { winner: number; glob: number; other: number; count: number; example: string }>();
+  for (const file of files) {
+    let winner: { layer: number; glob: number } | null = null;
+    for (const [layer, [, globs]] of layers.entries()) {
+      let first = -1;
+      for (const [i, glob] of globs.entries()) {
+        if (!matchesGlob(file, glob)) continue;
+        matched.add(`${layer}/${i}`);
+        if (first === -1) first = i;
+      }
+      if (first === -1) continue;
+      if (winner === null) {
+        winner = { layer, glob: first };
+        continue;
+      }
+      const key = `${winner.layer}/${winner.glob}/${layer}`;
+      const known = overlaps.get(key);
+      if (known) known.count++;
+      else overlaps.set(key, { winner: winner.layer, glob: winner.glob, other: layer, count: 1, example: file });
+    }
+  }
+  const name = (layer: number): string => layers[layer]![0];
+  const warnings = [...overlaps.values()]
+    .sort((a, b) => a.winner - b.winner || a.glob - b.glob || a.other - b.other)
+    .map(
+      (o) =>
+        `${CONFIG_FILE}: ${o.count} file(s) match the globs of both \`layers.${name(o.winner)}\` and \`layers.${name(o.other)}\` (e.g. \`${o.example}\`); the layer listed first takes them: \`${name(o.winner)}\` by \`${layers[o.winner]![1][o.glob]}\``,
+    );
+  layers.forEach(([layer, globs], i) => {
+    globs.forEach((glob, j) => {
+      if (!matched.has(`${i}/${j}`)) warnings.push(`${CONFIG_FILE}: \`layers.${layer}\`: \`${glob}\` matches no source file`);
+    });
+  });
+  return warnings;
+}
+
+/**
  * Source files of the configured languages under the root, depth first with
  * names in code-unit order; the spec directory, hidden and build directories
  * and nested repositories are skipped. A subdirectory that cannot be listed

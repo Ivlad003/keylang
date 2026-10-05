@@ -141,3 +141,49 @@ test("IDs from file and directory names are NFC, whatever normalization the disk
   assert.equal(twice.status, 2);
   assert.ok(twice.stderr.includes(`keylang.json: \`layers.${nfc}s\` is the layer \`layers.${nfd}s\` written in another Unicode normalization`), twice.stderr);
 });
+
+test("map warns about layer globs that overlap or match nothing, and keeps its exit codes", (t) => {
+  const warnings = (stderr: string): string[] => stderr.split("\n").filter((line) => line.startsWith("warning: "));
+  const overlap = repo(t, {
+    "keylang.json": json({ format: 2, languages: ["typescript"], layers: { app: ["src/**"], core: ["src/**", "src/core/**"] } }),
+    "src/a.ts": "export function a(): void {}\n",
+    "src/b.ts": "export function b(): void {}\n",
+  });
+  const run = keylang(overlap, ["map"]);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(warnings(run.stderr), [
+    "warning: keylang.json: 2 file(s) match the globs of both `layers.app` and `layers.core` (e.g. `src/a.ts`); the layer listed first takes them: `app` by `src/**`",
+    "warning: keylang.json: `layers.core`: `src/core/**` matches no source file",
+  ]);
+  const again = keylang(overlap, ["map", "--check"]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(warnings(again.stderr), warnings(run.stderr));
+  assert.equal(keylang(overlap, ["check"]).status, 0);
+
+  const ghost = repo(t, {
+    "keylang.json": json({ format: 2, languages: ["typescript"], layers: { app: ["src/**"], ghost: ["lib/**"] } }),
+    "src/a.ts": "export function a(): void {}\n",
+  });
+  const nomatch = keylang(ghost, ["map"]);
+  assert.equal(nomatch.status, 0, nomatch.stderr);
+  assert.deepEqual(warnings(nomatch.stderr), ["warning: keylang.json: `layers.ghost`: `lib/**` matches no source file"]);
+
+  // `[` is a literal, as in a Next.js route: `src/[id]/**` matches that directory, and `lib/[**` nothing.
+  const next = repo(t, {
+    "keylang.json": json({ format: 2, languages: ["typescript"], layers: { page: ["src/[id]/**"], typo: ["lib/[**"], rest: ["src/**"] } }),
+    "src/[id]/page.ts": "export function page(): void {}\n",
+    "src/shell.ts": "export function shell(): void {}\n",
+    "lib/x.ts": "export function x(): void {}\n",
+  });
+  const literal = keylang(next, ["map"]);
+  assert.equal(literal.status, 0, literal.stderr);
+  assert.deepEqual(warnings(literal.stderr), [
+    "warning: keylang.json: 1 file(s) match the globs of both `layers.page` and `layers.rest` (e.g. `src/[id]/page.ts`); the layer listed first takes them: `page` by `src/[id]/**`",
+    "warning: keylang.json: `layers.typo`: `lib/[**` matches no source file",
+  ]);
+  assert.ok(index(next).nodes["page.page.page"], Object.keys(index(next).nodes).join(", "));
+
+  // A guessed layout warns about nothing: keylang wrote it from the tree.
+  const guessed = repo(t, { "src/domain/a.ts": "export function a(): void {}\n", "src/app/b.ts": "export function b(): void {}\n" });
+  assert.deepEqual(warnings(keylang(guessed, ["map"]).stderr), []);
+});
