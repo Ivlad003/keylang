@@ -3,7 +3,9 @@
 // `generated` is wall-clock metadata and is not part of `snapshotId`.
 
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
@@ -491,18 +493,58 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** Where prepack writes the version of the grammars it copies into `dist/wasm` (scripts/copy-wasm.mjs). */
+export const GRAMMARS_MANIFEST = "grammars.json";
+
+/**
+ * What parses the code, in `snapshotId` and the fact-cache key: the
+ * web-tree-sitter runtime as Node resolves it, and the grammars as the
+ * extractor loads them — from `dist/wasm` in the package, whose version
+ * prepack writes beside them, else from the installed
+ * `@vscode/tree-sitter-wasm` of a checkout. `unknown` when neither is found.
+ */
 export function grammarVersions(): Record<string, string> {
-  const require = createRequire(import.meta.url);
   // Literal specifiers: the import graph sees which packages the snapshot id depends on.
-  const version = (load: () => unknown): string => {
-    try {
-      return (load() as { version?: string }).version ?? "unknown";
-    } catch {
-      return "unknown";
-    }
-  };
   return {
-    "web-tree-sitter": version(() => require("web-tree-sitter/package.json")),
-    "@vscode/tree-sitter-wasm": version(() => require("@vscode/tree-sitter-wasm/package.json")),
+    "web-tree-sitter": installedVersion("web-tree-sitter", () => import.meta.resolve("web-tree-sitter")) ?? "unknown",
+    "@vscode/tree-sitter-wasm":
+      bundledGrammarsVersion() ?? installedVersion("@vscode/tree-sitter-wasm", () => import.meta.resolve("@vscode/tree-sitter-wasm/package.json")) ?? "unknown",
   };
+}
+
+/** The version prepack recorded beside the grammars in `dist/wasm`; null in a checkout. */
+function bundledGrammarsVersion(): string | null {
+  const manifest = readJson(join(dirname(fileURLToPath(import.meta.url)), "wasm", GRAMMARS_MANIFEST));
+  return typeof manifest?.version === "string" ? manifest.version : null;
+}
+
+/**
+ * The version in the nearest `package.json` of that name above the resolved
+ * module: a package's `exports` may not list `./package.json`
+ * (web-tree-sitter does not), so reading it by name fails. Null when the
+ * package is not installed.
+ */
+function installedVersion(name: string, resolve: () => string): string | null {
+  let dir: string;
+  try {
+    dir = dirname(fileURLToPath(resolve()));
+  } catch {
+    return null;
+  }
+  for (;;) {
+    const manifest = readJson(join(dir, "package.json"));
+    if (manifest?.name === name) return typeof manifest.version === "string" ? manifest.version : null;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }

@@ -61,3 +61,19 @@ test("the map lists modules in code-unit order, whatever the ICU of the Node bui
     .flatMap((line) => /^ {2}- module \[([^\]]+)\]/.exec(line)?.slice(1) ?? []);
   assert.deepEqual(modules, ["Zeta", "a-b", "a_b", "alpha"]);
 });
+
+test("the snapshot records the real versions of the tree-sitter runtime and grammars", (t) => {
+  const dir = repo(t, {
+    "keylang.json": json({ languages: ["typescript"], layers: { app: ["src/**"] } }),
+    "src/a.ts": "export function a(): void {}\n",
+  });
+  const run = keylang(dir, ["map"]);
+  assert.equal(run.status, 0, run.stderr);
+  const grammars = index(dir).manifest.grammars;
+  assert.deepEqual(Object.keys(grammars).sort(), ["@vscode/tree-sitter-wasm", "web-tree-sitter"]);
+  // `web-tree-sitter` does not export `./package.json`: reading it by name gave "unknown", and an upgrade changed no snapshot id.
+  for (const [name, version] of Object.entries(grammars)) assert.match(version, /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/, name);
+  const installed = (name: string): string => (JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")) as { version: string }).version;
+  assert.equal(grammars["web-tree-sitter"], installed("web-tree-sitter"));
+  assert.equal(grammars["@vscode/tree-sitter-wasm"], installed("@vscode/tree-sitter-wasm"));
+});
