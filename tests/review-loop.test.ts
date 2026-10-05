@@ -394,3 +394,26 @@ test("feature: a committed rule fail on an id the feature names blocks; without 
   );
   assert.equal(bare.body.hints.some((item) => item.kind === "rule"), false);
 });
+
+// ---------- validate_spec ----------
+
+test("validate_spec takes a spec directory whose name starts with two dots; a path out of the repository is still refused", async (t) => {
+  const dir = repoCopy(t);
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")), dir: "..specs" })}\n`);
+  cpSync(join(dir, "keylang"), join(dir, "..specs"), { recursive: true });
+  rmSync(join(dir, "keylang"), { recursive: true, force: true });
+  const call = await mcpClient(t, dir);
+  const r = await call("validate_spec", { path: "..specs/flows/x.md", text: "# flow x\n\n- trigger app.checkout.nope\n" });
+  assert.equal(r.isError, false, r.text);
+  const body = JSON.parse(r.text) as { file: string; diagnostics: { code: string; line: number }[] };
+  assert.equal(body.file, "..specs/flows/x.md");
+  assert.deepEqual(body.diagnostics.map((diag) => [diag.code, diag.line]), [["K001", 3]]);
+  for (const path of ["../x.md", "..", "/etc/x.md"]) {
+    const out = await call("validate_spec", { path, text: "# flow y\n" });
+    assert.equal(out.isError, true, path);
+    assert.match(out.text, /outside the repository/, path);
+  }
+  // apply_diff reads the same directory as specs.
+  const proposed = await call("apply_diff", { path: "..specs/flows/checkout.md", text: `${CHECKOUT}  - invariant x\n` });
+  assert.equal(proposed.isError, false, proposed.text);
+});
