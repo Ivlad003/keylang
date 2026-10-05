@@ -14,12 +14,12 @@ invariants stay `unverified` until `npm test` has run on the current code.
 - trigger tui.app.App.input
   - step tui.input.InputDecoder.feed
     - invariant keys, the mouse and paste are decoded even when a sequence is split across chunks
-      - test tests/tui.test.ts "input: keys, modifiers, SGR mouse, paste, and sequences split across chunks"
+      - test tests/tui-session.test.ts "input: keys, modifiers, SGR mouse, paste, and sequences split across chunks"
   - step tui.app.App.handle
     - step tui.app.App.reanalyze
       - step map.analyze.analyze
         - step tui.background.SnapshotWorker.generate
       - invariant F5 reindexes in the background and the keys keep working
-        - test tests/tui.test.ts "tui: F5 reindexes in the background; old marks are dimmed and keys still work"
+        - test tests/tui-session.test.ts "tui: F5 reindexes in the background; old marks are dimmed and keys still work"
       - invariant the result of a superseded analysis is dropped
-        - test tests/tui.test.ts "tui: a superseded analysis is dropped"
+        - test tests/tui-session.test.ts "tui: a superseded analysis is dropped"
