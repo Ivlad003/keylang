@@ -63,7 +63,7 @@ function extractTree(path: string, root: Node): FileFacts {
   }
   const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
-  facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names)].sort((a, b) => a.line - b.line || a.col - b.col);
+  facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names, facts.imports.some((imp) => imp.glob))].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
   const doc = docstring(root);
   if (doc !== undefined) facts.doc = doc;
@@ -432,9 +432,10 @@ function moduleCalls(root: Node): CallFact[] {
 /**
  * Functions read as values: `later(hit)`, `{"save": save}`, `callback=self.save`,
  * `mod.save` without a call. Code holding the value may call it. Names bound
- * in an enclosing `def` are locals, not the module's.
+ * in an enclosing `def` are locals, not the module's. `glob`: a `from m import *`
+ * may bind any name, so every free name read is noted.
  */
-function valueRefs(root: Node, names: ReadonlySet<string>): ValueRefFact[] {
+function valueRefs(root: Node, names: ReadonlySet<string>, glob: boolean): ValueRefFact[] {
   const first = new Map<string, ValueRefFact>();
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
@@ -444,7 +445,7 @@ function valueRefs(root: Node, names: ReadonlySet<string>): ValueRefFact[] {
     if (node.type === "import_statement" || node.type === "import_from_statement" || node.type === "future_import_statement" || node.type === "type") return;
     if (node.type === "function_definition" || node.type === "lambda") bound = new Set([...bound, ...boundNames(node).keys()]);
     const parent = node.parent;
-    if (node.type === "identifier" && parent && names.has(node.text) && !bound.has(node.text) && !bindsOrCalls(node, parent)) note(node.text, node, false);
+    if (node.type === "identifier" && parent && (glob || names.has(node.text)) && !bound.has(node.text) && !bindsOrCalls(node, parent)) note(node.text, node, false);
     // `@app.route` is called with the function, not read.
     if (node.type === "attribute" && parent && parent.type !== "decorator" && !(parent.type === "call" && parent.childForFieldName("function")?.id === node.id) && !assigned(node, parent)) {
       const member = node.childForFieldName("attribute")?.text;
@@ -572,7 +573,7 @@ function importsOf(node: Node, reexported: (local: string | null) => boolean): I
     // Nodes are fresh wrappers on every access: compare ids, not objects.
     if (item.id === moduleNode?.id) continue;
     if (item.type === "wildcard_import") {
-      out.push(at(from, [], reexported(null)));
+      out.push({ ...at(from, [], reexported(null)), glob: true });
       named = true;
     } else if (item.type === "dotted_name") {
       out.push(at(join(item.text), [{ kind: "named", local: item.text, imported: item.text }], reexported(item.text)));

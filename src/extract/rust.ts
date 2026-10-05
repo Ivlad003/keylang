@@ -471,8 +471,10 @@ function pathSegments(node: Node): string[] | null {
  * Functions read as values: `later(hit)`, `.map(Order::total)`,
  * `Handler { run: crate::a::go }`. Code holding the value may call it, so
  * such a fn escapes. Names bound in the enclosing fn are locals, not the item.
+ * A `use m::*` may bind any name, so then every free name read is noted.
  */
 function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts): ValueRefFact[] {
+  const glob = facts.imports.some((imp) => imp.glob);
   const first = new Map<string, ValueRefFact>();
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
@@ -482,7 +484,7 @@ function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts):
     if (node.type === "use_declaration" || node.type === "attribute_item" || node.type === "macro_definition" || node.type === "lifetime" || node.type === "label" || testOnly(node)) return;
     if (node.type === "function_item" || node.type === "closure_expression") scope = { ...scope, bound: new Map([...scope.bound, ...boundNames(node)]) };
     if (node.type === "mod_item") scope = { ...scope, imports: false };
-    if (node.type === "identifier" && !bindsOrCalls(node) && /^[a-z_]/.test(node.text) && !scope.bound.has(node.text) && names.has(node.text)) note(node.text, node, false);
+    if (node.type === "identifier" && !bindsOrCalls(node) && /^[a-z_]/.test(node.text) && !scope.bound.has(node.text) && (glob || names.has(node.text))) note(node.text, node, false);
     if (node.type === "scoped_identifier") {
       if (!calledPath(node)) {
         const callee = pathCall(node, scope, facts);
@@ -570,7 +572,7 @@ function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFact
   const source = leaf.path.join("::");
   if (leaf.glob) {
     if (exported) facts.reexportsAll.push(source);
-    return importAt(node, source, [], exported);
+    return { ...importAt(node, source, [], exported), glob: true };
   }
   const imported = leaf.path.at(-1)!;
   const local = leaf.alias ?? imported;

@@ -70,6 +70,8 @@ export interface ImportFact {
   bindings: ImportBinding[];
   /** `export … from`: the import is re-exported. */
   reexport: boolean;
+  /** `use a::*`, `from a import *`: every public name of the source is in scope in this file, with no binding of its own. */
+  glob?: true;
   /**
    * The specifier may name a module or another file: `new URL("./worker", import.meta.url)`
    * without an extension. An edge when it resolves to a source file, nothing otherwise.

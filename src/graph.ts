@@ -5,7 +5,7 @@
 import { posix } from "node:path";
 import { isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
-import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
+import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
@@ -366,12 +366,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
   /** File → its `export * from` sources, as export-table keys: another file of its own module too. */
   const fileStars = new Map<string, { target: string | null; reason: string }[]>();
+  /** File → what its glob imports (`use m::*`, `from m import *`) bring into scope. */
+  const fileGlobs = new Map<string, GlobSource[]>();
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
     const bind = (b: ImportBinding, target: ImportTarget): void => {
       locals.set(b.local, [...(locals.get(b.local) ?? []), target]);
     };
+    const globs: GlobSource[] = [];
+    fileGlobs.set(facts.path, globs);
     const stars: { target: string | null; reason: string }[] = [];
     fileStars.set(facts.path, stars);
     const starFrom = (source: { target: string | null; reason: string }): void => {
@@ -387,6 +391,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     for (const imp of facts.imports) {
       const r = resolve(facts.path, imp.source);
       const star = imp.reexport && imp.bindings.length === 0;
+      /**
+       * What a glob import of this source brings into scope: a module's table, or names keylang
+       * cannot list — a path that is no whole module too (`use Kind::*` of an enum's variants,
+       * Python `from .missing import *` that only the package resolves).
+       */
+      const globFrom = (unit: string | null, external: boolean): void => {
+        if (imp.glob) globs.push({ unit, external });
+      };
       let target: Module | null = null;
       if (r.kind === "internal") {
         target = byFile.get(r.file)?.module ?? null;
@@ -394,6 +406,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           // A workspace package's entry (`dist/index.js`), a file of a language
           // keylang.json does not list, a file in a build directory or one that
           // appeared after the sources were read: the dependency is there, its target unknown.
+          globFrom(null, false);
           const why = r.workspace ? `workspace package entry \`${r.file}\` is not indexed` : notIndexed(config, r.file);
           if (why === null || imp.optional) {
             // Left out on purpose: tests, declaration files, `exclude`, files outside guessed layers, non-source files.
@@ -408,6 +421,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         // another file of this module is no dependency, but what the import names is bound here.
         if (target === module && r.file !== facts.path) {
           const unit = unitOf(r.file);
+          globFrom(r.whole === true && !r.nested ? unit : null, false);
           for (const b of r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.whole === true));
           if (star) stars.push({ target: unit, reason: "" });
           continue;
@@ -418,10 +432,12 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         continue;
       } else if (r.kind === "stdlib") {
         // Bound to a module outside the graph: calls through the name stay external, and no node or edge appears.
+        globFrom(null, true);
         for (const b of imp.bindings) bind(b, importTarget(STDLIB_MODULE, STDLIB_MODULE.id, b, false));
         if (star) starFrom({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
         continue;
       } else if (r.kind === "generated") {
+        globFrom(null, false);
         if (star) starFrom({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
       } else if (r.kind === "external" || r.kind === "builtin") {
@@ -432,11 +448,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       } else {
         // `new URL("./worker", import.meta.url)` without a source file behind it names no module.
         if (imp.optional) continue;
+        globFrom(null, false);
         hole(imp, `unresolved import \`${imp.source}\``);
         if (star) starFrom({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
         continue;
       }
       const unit = r.kind === "internal" ? unitOf(r.file) : target.id;
+      if (target.layer === EXTERNAL) globFrom(null, true);
+      else if (r.kind === "internal" && r.file !== facts.path) globFrom(r.whole === true && !r.nested ? unit : null, false);
       if (star) starFrom(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: unit, reason: "" });
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
       for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
@@ -582,7 +601,30 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
      * of `module.exports`. An ESM namespace object stands for no symbol: it is no function.
      */
     const importedSymbol = (imp: ImportTarget): string | null => (imp.namespace ? null : exportOf(imp.unit, imp.imported ?? "default"));
-    /** A class by the name this file uses for it: a local declaration or an import. */
+    const globs = fileGlobs.get(facts.path) ?? [];
+    /**
+     * What a name the file neither declares nor imports stands for through its glob imports
+     * (`use m::*`, `from m import *`): the public name of each source that has it; two may.
+     */
+    const globbed = (name: string): string[] => {
+      if (globs.length === 0 || localDecls.has(name) || locals.has(name)) return [];
+      const out = new Set<string>();
+      for (const g of globs) {
+        const symbol = g.unit === null ? null : (exportTables.lookup(g.unit, name)?.symbol ?? null);
+        if (symbol) out.add(symbol);
+      }
+      return [...out];
+    };
+    /**
+     * Where a name no declaration or import binds may come from, when the glob imports do not
+     * list it: `unknown` — a source whose names keylang cannot list; `external` — only a package
+     * or the standard library can bind it; null — no glob import can.
+     */
+    const globOrigin = (): "unknown" | "external" | null => {
+      if (globs.some((g) => (g.unit === null ? !g.external : exportInputs.get(g.unit)?.opaque === true || exportTables.lookup(g.unit, UNKNOWN_EXPORT) !== null))) return "unknown";
+      return globs.some((g) => g.external) ? "external" : null;
+    };
+    /** A class by the name this file uses for it: a local declaration, an import or a glob import. */
     const classNamed = (name: string): string | null => {
       const ids = new Set<string>();
       const local = localDecls.get(name);
@@ -591,6 +633,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const id = importedSymbol(imp);
         if (id) ids.add(id);
       }
+      for (const id of globbed(name)) ids.add(id);
       // Only a class has members of its own; a fn or a type does not.
       const classes = [...ids].filter((id) => decls.classes.has(id));
       return classes.length === 1 ? classes[0]! : null;
@@ -618,6 +661,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           const id = importedSymbol(imp);
           if (id && callable(id)) found.add(id);
         }
+        for (const id of globbed(head)) if (callable(id)) found.add(id);
         return [...found];
       }
       if (rest.length === 1) {
@@ -647,6 +691,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         }
         const id = staticOf(localDecls.get(head) ?? null);
         if (id) found.add(id);
+        // `Order::new()` with `use other::*`: a class or a namespace a glob import brings in.
+        for (const symbol of globbed(head)) {
+          const viaGlob = staticOf(symbol);
+          if (viaGlob) found.add(viaGlob);
+          const ns = namespaceUnit(symbol);
+          const nsId = ns ? exportOf(ns, member) : null;
+          if (nsId) found.add(nsId);
+        }
         return [...found];
       }
       return [];
@@ -671,7 +723,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     };
     /** A name of the language or of a package: calls through it are external. */
     const external = (head: string): boolean => globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module.layer === EXTERNAL);
-    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external };
+    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external, globOrigin };
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
   for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
@@ -703,7 +755,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return { target: found.target, last: found.last ?? base };
   };
   for (const { facts, module } of byFile.values()) {
-    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external } = scopes.get(facts.path)!;
+    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
         if (d.kind === "class") {
@@ -802,8 +854,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             // `this.setState()` in a class over a package's base: the package's member, as `super.setState()` is.
             else if (head === "this" && cls && c.callee.split(".").length === 2 && unreadBase(cls.id)?.external === true) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
-              stats.callsDynamic++;
-              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
+              // A name no table of the file's glob imports lists: a package's, or one keylang cannot see.
+              const glob = globOrigin();
+              if (glob === "external") stats.callsExternal++;
+              else {
+                stats.callsDynamic++;
+                const reason = glob === "unknown" && !c.hook ? `call through \`${c.callee}\`, a name from a glob import keylang does not follow` : holeReason(c);
+                gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
+              }
             } else {
               stats.callsUnresolved++;
               // `ns()` with `import * as ns`: a TypeError at run time, and no edge to the default export.
@@ -965,6 +1023,14 @@ const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
  * beside `x/index.ts`): `file:<path>`. No module ID has a `:`, so the keys never meet.
  */
 const FILE_UNIT = "file:";
+
+/** What one glob import (`use m::*`, `from m import *`) brings into a file's scope. */
+interface GlobSource {
+  /** The export table of the source; null when keylang cannot list its names. */
+  unit: string | null;
+  /** A package or the standard library: a name only it can bind is called outside the graph. */
+  external: boolean;
+}
 
 /** A class's `extends`: the base keylang has read, or the text of one it has not, and whether that names a package's or the language's class. */
 interface BaseLink {

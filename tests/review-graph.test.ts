@@ -300,3 +300,38 @@ test("php: `$this->m()` finds a method of a `use`d trait and of the base class; 
   ]);
   assert.deepEqual(holes(snapshot, "app.Service."), []);
 });
+
+test("rust: a name from `use m::*` resolves through that module's public items; two globs that both have it are ambiguous; a glob of a crate keeps it external", (t) => {
+  const dir = repo(
+    t,
+    {
+      "Cargo.toml": '[package]\nname = "demo"\nversion = "0.1.0"\n',
+      "src/main.rs": "mod other;\nmod third;\nuse other::*;\nuse third::*;\nuse std::collections::*;\nfn main() {\n    from_glob();\n    both();\n    Order::new();\n    from_std();\n}\n",
+      "src/other.rs": "pub fn from_glob() {}\npub fn both() {}\npub struct Order;\nimpl Order { pub fn new() -> Self { Order } }\n",
+      "src/third.rs": "pub fn both() {}\n",
+    },
+    { languages: ["rust"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.main."), ["app.main.main → app.other.Order.new", "app.main.main → app.other.from_glob"]);
+  const ambiguous = snapshot.edges.filter((e) => e.resolution === "ambiguous").map((e) => `${e.text}: ${e.candidates?.join(", ")}`);
+  assert.deepEqual(ambiguous, ["both: app.other.both, app.third.both"]);
+  assert.deepEqual(holes(snapshot, "app.main."), []);
+});
+
+test("python: a name from `from m import *` resolves through `m`'s public names, a class base too; a glob keylang cannot read says so", (t) => {
+  const dir = repo(
+    t,
+    {
+      "pkg/__init__.py": "",
+      "pkg/a.py": "def fa(): pass\nclass Base:\n    def greet(self): pass\n",
+      "pkg/m.py": "from .a import *\ndef run(keep):\n    fa()\n    Base()\n    keep(fa)\nclass Child(Base):\n    def go(self): self.greet()\n",
+      "pkg/n.py": "from .missing import *\ndef run(): gone()\n",
+    },
+    { languages: ["python"], layers: { app: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.m."), ["app.m.Child.go → app.a.Base.greet", "app.m.run → app.a.Base", "app.m.run → app.a.fa"]);
+  assert.equal(snapshot.nodes["app.a.fa"]?.escapes?.reason, "`fa` is read as a value");
+  assert.deepEqual(holes(snapshot, "app.n."), ["app.n.run: dynamic-call call through `gone`, a name from a glob import keylang does not follow"]);
+});
