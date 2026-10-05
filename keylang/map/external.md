@@ -10,7 +10,6 @@
   - module modelcontextprotocol-sdk <!-- @modelcontextprotocol/sdk -->
   - module node
   - module smol-toml
-  - module vscode-tree-sitter-wasm <!-- @vscode/tree-sitter-wasm -->
   - module web-tree-sitter
   - module ws
   - module zod

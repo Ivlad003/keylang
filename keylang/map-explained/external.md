@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [node](#external.node) · [smol-toml](#external.smol-toml) · [vscode-tree-sitter-wasm](#external.vscode-tree-sitter-wasm) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [zod](#external.zod)
+[README](README.md) · modules: [anthropic-ai-sdk](#external.anthropic-ai-sdk) · [decibri](#external.decibri) · [eventsource-parser](#external.eventsource-parser) · [fugood-whisper_node](#external.fugood-whisper_node) · [modelcontextprotocol-sdk](#external.modelcontextprotocol-sdk) · [node](#external.node) · [smol-toml](#external.smol-toml) · [web-tree-sitter](#external.web-tree-sitter) · [ws](#external.ws) · [zod](#external.zod)
 
 # map
 
@@ -20,8 +20,6 @@
     <a id="external.node"></a>
   - module smol-toml
     <a id="external.smol-toml"></a>
-  - module vscode-tree-sitter-wasm <!-- @vscode/tree-sitter-wasm -->
-    <a id="external.vscode-tree-sitter-wasm"></a>
   - module web-tree-sitter
     <a id="external.web-tree-sitter"></a>
   - module ws

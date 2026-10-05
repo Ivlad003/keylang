@@ -165,6 +165,7 @@
     <a id="features.baseline"></a><br>`keylang/rules.baseline.md`: deny rules for the dependencies the current graph does not have, so a new edge between layers or a new package is K102. The grammar is the ordinary `deny` / `allow`.
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
+    - files [lang.files](lang.md#lang.files)
     - map [map.map](map.md#map.map)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
@@ -180,7 +181,7 @@
       <a id="features.baseline.BaselinePlan"></a><br>What `keylang baseline` would do, computed before anything is written. Internal to one operation — not a stored format.
     - fn [planBaseline](../../src/baseline.ts#L103) (config: Config, snapshot: AnalysisSnapshot) → BaselinePlan
       <a id="features.baseline.planBaseline"></a><br>Plans the baseline of `snapshot` against the file on disk. Reads, writes nothing.
-      - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [features.baseline.baselineText](features.md#features.baseline.baselineText), [features.baseline.readOrNull](features.md#features.baseline.readOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.baseline.ruleLines](features.md#features.baseline.ruleLines), [map.map.sourceInputs](map.md#map.map.sourceInputs)
+      - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [features.baseline.baselineText](features.md#features.baseline.baselineText), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.baseline.ruleLines](features.md#features.baseline.ruleLines), [map.map.sourceInputs](map.md#map.map.sourceInputs)
     - fn [baselinePlanProblems](../../src/baseline.ts#L128) (plan: BaselinePlan) → string[]
       <a id="features.baseline.baselinePlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): the target must pass the repository's write rules and still hold the bytes the plan saw, and `keylang.json` and the sources must be the ones the baseline was computed from.
       - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [map.map.sourceInputProblems](map.md#map.map.sourceInputProblems)
@@ -189,8 +190,6 @@
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
     - fn [ruleLines](../../src/baseline.ts#L144) (text: string) → string[] <!-- internal -->
       <a id="features.baseline.ruleLines"></a><br>The `- deny` / `- allow` lines of a rules text, in order.
-    - fn [readOrNull](../../src/baseline.ts#L148) (abs: string) → string | null <!-- internal -->
-      <a id="features.baseline.readOrNull"></a><br>Reads the file at the given absolute path as UTF-8 and returns its contents, or `null` if reading throws for any reason. [`features.baseline.planBaseline`](features.md#features.baseline.planBaseline) uses it to load an existing baseline without failing when the file is absent. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [changed](../../src/changed.ts#L1)
     <a id="features.changed"></a><br>`check --changed` keeps the full analysis and drops findings that do not touch the changed files: a changed spec (every finding in that file), a rule whose scope contains a changed module, and a flow with a step whose code is in a changed file. `hook stop` maps the fails that…
     - assess [check.assess](check.md#check.assess)
@@ -231,7 +230,7 @@
     - type [CheckReportData](../../src/check-format.ts#L14)
       <a id="features.check-format.CheckReportData"></a><br>What a format shows: the `--format json` data and the human lines of the same report.
     - fn [isCheckFormat](../../src/check-format.ts#L21) (name: string) → name is CheckFormat
-      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and [`tui.app.exportSourceOf`](tui.md#tui.app.exportSourceOf) to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="features.check-format.isCheckFormat"></a><br>Type guard that returns true when the given string is one of the names listed in the `CHECK_FORMATS` constant. Used by [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) and `tui.app.exportSourceOf` to validate user-supplied format options before narrowing them. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [checkReportText](../../src/check-format.ts#L26) (format: CheckFormat, report: CheckReportData) → string
       <a id="features.check-format.checkReportText"></a><br>The stdout of `keylang check --format <format>` for `report`, every line ending with `\n`.
       - calls [features.check-format.githubText](features.md#features.check-format.githubText), [features.check-format.sarifLog](features.md#features.check-format.sarifLog)
@@ -260,16 +259,18 @@
     - type [Provenance](../../src/check-results.ts#L11) = NonNullable<Verdict["evidence"]>["provenance"] <!-- internal -->
       <a id="features.check-results.Provenance"></a><br>Extracts the type of the `provenance` field from a verdict's evidence object, after stripping null and undefined from the evidence type. It lets check-result code reference that nested shape without redeclaring it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [CheckResult](../../src/check-results.ts#L13)
-      <a id="features.check-results.CheckResult"></a><br>Record of a single check outcome: the criterion and area it covers, a verdict (`ok`, `fail`, `unverified`, or non-failing `warning`), evidence text, and the source file/line/column it points at. Also carries the spec line's SHA-256, a `Provenance` marker, optional test run/test… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [checkResults](../../src/check-results.ts#L35) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
+      <a id="features.check-results.CheckResult"></a><br>Record of a single check outcome: the criterion and area it covers, a verdict (`ok`, `fail`, `unverified`, or non-failing `warning`), evidence text, and the source file/line/column it points at. Also carries the spec line's SHA-256, a `Provenance` marker, optional test run/test… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [checkResults](../../src/check-results.ts#L37) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckResult[]
       <a id="features.check-results.checkResults"></a><br>Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance.
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [base.diag.isError](base.md#base.diag.isError)
-    - type [CheckReport](../../src/check-results.ts#L72)
+    - type [CheckReport](../../src/check-results.ts#L75)
       <a id="features.check-results.CheckReport"></a><br>What `keylang check` reports, whatever the format: the verdicts decide it, the format only shows it.
-    - fn [checkReport](../../src/check-results.ts#L84) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
-      <a id="features.check-results.checkReport"></a><br>Builds the full check report by combining diagnostics with verdicts not already covered by [`check.assess.sameFinding`](check.md#check.assess.sameFinding), producing structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), formatted lines, and fail/unverified/ok counts. Passing verdicts are only listed as… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - type [CheckCounts](../../src/check-results.ts#L84)
+      <a id="features.check-results.CheckCounts"></a><br>The summary on stderr: errors and failed verdicts, unverified and ok verdicts.
+    - fn [checkReport](../../src/check-results.ts#L98) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
+      <a id="features.check-results.checkReport"></a><br>Builds the full check report by combining diagnostics with verdicts not already covered by [`check.assess.sameFinding`](check.md#check.assess.sameFinding), producing structured results via [`features.check-results.checkResults`](features.md#features.check-results.checkResults), formatted lines, and fail/unverified/ok counts. Passing verdicts are only listed as… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults)
-    - fn [checkExitCode](../../src/check-results.ts#L98) (counts: CheckReport["counts"], strict: boolean) → 0 | 1
+    - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
       <a id="features.check-results.checkExitCode"></a><br>The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible.
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
@@ -321,9 +322,16 @@
     - fn [judgeRule](../../src/draft-llm.ts#L317) (analysis: Analysis, others: readonly Document[], target: string, rule: string, conflicts: string[]) → DraftStatus <!-- internal -->
       <a id="features.draft-llm.judgeRule"></a><br>One rule, checked alone against the snapshot: what it adds to a check without it.
       - calls [lang.parser.parse](lang.md#lang.parser.parse), [base.config.resolveStatic](base.md#base.config.resolveStatic), [check.assess.assess](check.md#check.assess.assess)
-    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L352) (analysis: Analysis, client: LlmClient, files: readonly string[], options: LlmCallOptions = {}) → Promise<Record<string, string[]>>
+    - fn [draftLayoutWithModel](../../src/draft-llm.ts#L353) (analysis: Analysis, client: LlmClient, files: readonly string[], options: LlmCallOptions = {}) → Promise<Record<string, string[]>>
       <a id="features.draft-llm.draftLayoutWithModel"></a><br>`draft map --mode llm|hybrid`: the model proposes layers (name → globs), validated as `keylang.json` would be. Never written: layers are never assigned without a person (design §5.1 p.4) — the CLI prints them, the TUI moves them into the config buffer on an explicit action.
-      - calls [base.config.parseConfig](base.md#base.config.parseConfig)
+      - calls [features.draft-llm.answerObject](features.md#features.draft-llm.answerObject), [base.config.parseConfig](base.md#base.config.parseConfig)
+    - fn [answerObject](../../src/draft-llm.ts#L372) (answer: string) → Record<string, unknown> | null
+      <a id="features.draft-llm.answerObject"></a><br>The JSON object a model answered with: the first ```json block that holds one, else the first balanced `{…}` of the answer that parses as one (a brace in a JSON string does not count); null when there is none. Prose around it and a second object after it are left out.
+      - calls [features.draft-llm.jsonObject](features.md#features.draft-llm.jsonObject), [features.draft-llm.balancedEnd](features.md#features.draft-llm.balancedEnd)
+    - fn [jsonObject](../../src/draft-llm.ts#L386) (text: string) → Record<string, unknown> | null <!-- internal -->
+      <a id="features.draft-llm.jsonObject"></a><br>`text` as a JSON object, or null: not JSON, or JSON of another shape.
+    - fn [balancedEnd](../../src/draft-llm.ts#L397) (text: string, start: number) → number | null <!-- internal -->
+      <a id="features.draft-llm.balancedEnd"></a><br>Where the `{` at `start` closes (the index after its `}`), skipping JSON strings; null when it never does.
   - module [draft](../../src/draft.ts#L1)
     <a id="features.draft"></a><br>`keylang draft flow <trigger> --mode algo`: the deterministic projection of a flow from the snapshot's call edges (design §5, §5.3). Each resolved call to a function of the repository becomes a nested `step`, in the order the code writes them; a function already listed is not…
     - config [base.config](base.md#base.config)
@@ -384,7 +392,7 @@
       <a id="features.explain-edge.under"></a><br>Checks whether a dotted node ID is the given scope itself or nested beneath it by testing for an exact match or a `scope.` prefix. Used by [`features.explain-edge.explainEdge`](features.md#features.explain-edge.explainEdge) to decide which side of an edge a node belongs to. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [explainEdge](../../src/explain-edge.ts#L40) (snapshot: AnalysisSnapshot, from: string, to: string) → EdgeExplanation
       <a id="features.explain-edge.explainEdge"></a><br>The edges and the coverage between two known ids (see `edgeIdKnown`).
-      - calls [features.explain-edge.under](features.md#features.explain-edge.under), [base.span.compareText](base.md#base.span.compareText)
+      - calls [features.explain-edge.under](features.md#features.explain-edge.under), [base.span.compareText](base.md#base.span.compareText), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
     - fn [edgeLine](../../src/explain-edge.ts#L59) (edge: SnapshotEdge) → string
       <a id="features.explain-edge.edgeLine"></a><br>One edge as the CLI prints it: kind, resolution, provenance, range, fragment, `source → target`, candidates, hook, reason.
     - fn [holeLine](../../src/explain-edge.ts#L67) (hole: CoverageItem) → string
@@ -399,7 +407,7 @@
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
-    - lsp-features [features.lsp-features](features.md#features.lsp-features)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - fn [defaultBriefJobs](../../src/explain-inventory.ts#L18) (agent: string | null) → number
       <a id="features.explain-inventory.defaultBriefJobs"></a><br>The default `--jobs` for an agent: 2 for an agent CLI (each request is a whole CLI process on this machine), else 4.
       - calls [base.config.isCliAgent](base.md#base.config.isCliAgent)
@@ -416,8 +424,8 @@
     - type [BriefPlan](../../src/explain-inventory.ts#L72)
       <a id="features.explain-inventory.BriefPlan"></a><br>A brief batch as it would run, computed before any request: the nodes bottom-up (`wave`), counts by level and, when asked, an approximate size in tokens. A preview: a batch plans again on its own analysis.
     - fn [nodePlace](../../src/explain-inventory.ts#L93) (analysis: Analysis, id: string) → NodePlace | null <!-- internal -->
-      <a id="features.explain-inventory.nodePlace"></a><br>Resolves a node ID to a file position, preferring the snapshot's recorded file/line/col (defaulting line and col to 1) and returning null for snapshot nodes without a file. When the snapshot has no such node, it falls back to the declaration location that… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
+      <a id="features.explain-inventory.nodePlace"></a><br>Resolves a node ID to a file position, preferring the snapshot's recorded file/line/col (defaulting line and col to 1) and returning null for snapshot nodes without a file. When the snapshot has no such node, it falls back to the declaration location that… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
     - fn [staleInventory](../../src/explain-inventory.ts#L102) (analysis: Analysis) → StaleInventory
       <a id="features.explain-inventory.staleInventory"></a><br>The saved answers and briefs that are stale or gone, in the CLI's order.
       - calls [features.explain-llm.explainedIds](features.md#features.explain-llm.explainedIds), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [features.explain-inventory.againCommand](features.md#features.explain-inventory.againCommand), [features.explain-inventory.nodePlace](features.md#features.explain-inventory.nodePlace)
@@ -444,76 +452,94 @@
     - explanations [map.explanations](map.md#map.explanations)
     - graph [map.graph](map.md#map.graph)
     - llm [features.llm](features.md#features.llm)
-    - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - span [base.span](base.md#base.span)
-    - type [Explanation](../../src/explain-llm.ts#L20) = StoredExplanation
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [Explanation](../../src/explain-llm.ts#L21) = StoredExplanation
       <a id="features.explain-llm.Explanation"></a><br>A type alias that re-exports the stored explanation record shape under a feature-level name, so callers of the explain feature depend on this alias rather than the persistence type directly. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readExplanation](../../src/explain-llm.ts#L23) (config: Config, id: string, detail: ExplanationDetail = "short") → Explanation | null
+    - fn [readExplanation](../../src/explain-llm.ts#L24) (config: Config, id: string, detail: ExplanationDetail = "short") → Explanation | null
       <a id="features.explain-llm.readExplanation"></a><br>The saved explanation of `id` at this detail: `short` and `full` share `<id>.md`, a brief has its own file.
       - calls [map.explanations.readStoredExplanation](map.md#map.explanations.readStoredExplanation), [map.explanations.explanationPath](map.md#map.explanations.explanationPath)
-    - fn [explainedIds](../../src/explain-llm.ts#L29) (config: Config, kind: "answers" | "briefs") → string[]
+    - fn [explainedIds](../../src/explain-llm.ts#L30) (config: Config, kind: "answers" | "briefs") → string[]
       <a id="features.explain-llm.explainedIds"></a><br>IDs of every saved explanation (`answers`) or brief, sorted.
       - calls [map.explanations.storedIds](map.md#map.explanations.storedIds), [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [oldExplanations](../../src/explain-llm.ts#L34) (root: string) → number
+    - fn [oldExplanations](../../src/explain-llm.ts#L35) (root: string) → number
       <a id="features.explain-llm.oldExplanations"></a><br>Explanation files in the store of keylang 0.1, which is not read any more.
-    - fn [moveHint](../../src/explain-llm.ts#L40) (config: Config, count: number) → string
+    - fn [moveHint](../../src/explain-llm.ts#L41) (config: Config, count: number) → string
       <a id="features.explain-llm.moveHint"></a><br>How to move the store of keylang 0.1 to where explanations live now.
       - calls [map.explanations.explainDir](map.md#map.explanations.explainDir)
-    - fn [currentBaseline](../../src/explain-llm.ts#L48) (analysis: Analysis, id: string) → string | null
+    - fn [currentBaseline](../../src/explain-llm.ts#L49) (analysis: Analysis, id: string) → string | null
       <a id="features.explain-llm.currentBaseline"></a><br>The baseline an explanation of `id` is compared with now (`snapshotBaseline`): "" for a planned node, which has no code yet; null when the id is gone.
-      - calls [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [isStale](../../src/explain-llm.ts#L54) (analysis: Analysis, id: string, e: Explanation) → boolean
+      - calls [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
+    - fn [isStale](../../src/explain-llm.ts#L55) (analysis: Analysis, id: string, e: Explanation) → boolean
       <a id="features.explain-llm.isStale"></a><br>Reports whether a saved explanation no longer matches the node's current closure hash by comparing [`features.explain-llm.currentBaseline`](features.md#features.explain-llm.currentBaseline) against `e.closure`. Used to decide when cached answers must be regenerated. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.explain-llm.currentBaseline](features.md#features.explain-llm.currentBaseline)
-    - fn [briefText](../../src/explain-llm.ts#L59) (answer: string) → string
-      <a id="features.explain-llm.briefText"></a><br>A model's brief as saved: one or two sentences in one paragraph, cut by the rule doc comments follow.
-      - calls [base.brief.briefOf](base.md#base.brief.briefOf)
-    - fn [unknownIds](../../src/explain-llm.ts#L67) (analysis: Analysis, text: string) → string[]
+    - fn [briefText](../../src/explain-llm.ts#L60) (answer: string) → string
+      <a id="features.explain-llm.briefText"></a><br>A model's brief as saved: one or two sentences in one paragraph of `answerText`, cut by the rule doc comments follow.
+      - calls [features.explain-llm.answerText](features.md#features.explain-llm.answerText), [base.brief.briefOf](base.md#base.brief.briefOf)
+    - fn [answerText](../../src/explain-llm.ts#L74) (answer: string) → string
+      <a id="features.explain-llm.answerText"></a><br>A model's explanation as saved (`short`, `full`, and the text a brief is cut from): without the wrappers a chatty answer puts around it — a leading remark paragraph that ends with `:` or has fewer than four words («Sure, here is the brief:», «Certainly!») while more follows…
+      - calls [features.explain-llm.withoutRemark](features.md#features.explain-llm.withoutRemark), [features.explain-llm.unfenced](features.md#features.explain-llm.unfenced)
+    - fn [unfenced](../../src/explain-llm.ts#L84) (text: string) → string <!-- internal -->
+      <a id="features.explain-llm.unfenced"></a><br>The inside of one fenced block of Markdown or plain text that is the whole of `text`; `text` itself otherwise.
+    - fn [withoutRemark](../../src/explain-llm.ts#L96) (text: string) → string <!-- internal -->
+      <a id="features.explain-llm.withoutRemark"></a><br>`text` without its first paragraph when that is a remark before the answer and another paragraph follows.
+    - fn [unknownIds](../../src/explain-llm.ts#L110) (analysis: Analysis, text: string) → string[]
       <a id="features.explain-llm.unknownIds"></a><br>`` `a.b.c` `` in the answer that are neither snapshot IDs nor declared `planned`. Only a path that starts with a layer is an ID at all: `` `process.env` `` is code.
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [explanationRequest](../../src/explain-llm.ts#L82) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+      - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
+    - fn [explanationRequest](../../src/explain-llm.ts#L125) (analysis: Analysis, summary: NodeSummary, options: { lang: string; detail: ExplanationDetail; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.explanationRequest"></a><br>The request: the node's summary, its code, the signatures around it, and the words of the specs that mention it (layer, flows, rules). Not the repository.
       - calls [features.agent-context.snapshotSource](features.md#features.agent-context.snapshotSource), [features.explain-llm.sourceLines](features.md#features.explain-llm.sourceLines), [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-llm.members](features.md#features.explain-llm.members), [features.explain-llm.unresolved](features.md#features.explain-llm.unresolved)
-    - fn [unresolved](../../src/explain-llm.ts#L132) (analysis: Analysis, id: string) → string[] <!-- internal -->
-      <a id="features.explain-llm.unresolved"></a><br>The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`.
-    - fn [members](../../src/explain-llm.ts#L151) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
+    - fn [unresolved](../../src/explain-llm.ts#L179) (analysis: Analysis, id: string) → string[] <!-- internal -->
+      <a id="features.explain-llm.unresolved"></a><br>The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`. An import of a file `assume` names is no such construct: the architecture leaves it unread.
+      - calls [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
+    - fn [members](../../src/explain-llm.ts#L198) (analysis: Analysis, id: string, briefs: ReadonlyMap<string, StoredExplanation>) → string[] <!-- internal -->
       <a id="features.explain-llm.members"></a><br>The members right under a module, class or layer with their explanations (doc comments, briefs): a layer is explained through its modules, a module through its functions and types.
       - calls [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [sourceLines](../../src/explain-llm.ts#L167) (text: string, from: number, to: number) → string <!-- internal -->
+    - fn [sourceLines](../../src/explain-llm.ts#L214) (text: string, from: number, to: number) → string <!-- internal -->
       <a id="features.explain-llm.sourceLines"></a><br>Extracts the 1-based inclusive line range `from`–`to` from `text` and returns it joined with newlines. If the slice exceeds 200 lines, only the first 200 are kept, followed by a note stating how many lines were omitted; used by [`features.explain-llm.explanationRequest`](features.md#features.explain-llm.explanationRequest) to embed… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BriefBatch](../../src/explain-llm.ts#L174) = "missing" | "stale"
+    - type [BriefBatch](../../src/explain-llm.ts#L221) = "missing" | "stale"
       <a id="features.explain-llm.BriefBatch"></a><br>Which briefs a batch writes: nodes with no explanation or a stale brief (`missing`), or only stale briefs (`stale`).
-    - type [BriefLevel](../../src/explain-llm.ts#L177) = "fn/type" | "class/module" | "layer" | "system"
+    - type [BriefLevel](../../src/explain-llm.ts#L224) = "fn/type" | "class/module" | "layer" | "system"
       <a id="features.explain-llm.BriefLevel"></a><br>Levels of the explained map, explained bottom-up: a parent's prompt carries its members' briefs.
-    - type [PlannedBrief](../../src/explain-llm.ts#L179)
+    - type [PlannedBrief](../../src/explain-llm.ts#L226)
       <a id="features.explain-llm.PlannedBrief"></a><br>Records a single brief-generation task: a node id, its `BriefLevel`, and a wave index that orders generation so each node only depends on briefs produced in earlier waves (functions and types first, then modules deepest-first, then layers). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planBriefs](../../src/explain-llm.ts#L193) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
+    - fn [planBriefs](../../src/explain-llm.ts#L240) (analysis: Analysis, batch: BriefBatch, briefs: ReadonlyMap<string, StoredExplanation>) → PlannedBrief[]
       <a id="features.explain-llm.planBriefs"></a><br>The nodes a batch explains, in the order it asks: fn and types, then classes and modules from the deepest up, then layers, then the repository itself (`SYSTEM_ID`). A node with a doc comment is never asked about: the code already says what it does; nor is the repository when…
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [map.explanations.systemBaseline](map.md#map.explanations.systemBaseline), [base.span.compareText](base.md#base.span.compareText)
-    - fn [systemRequest](../../src/explain-llm.ts#L223) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
+    - fn [systemRequest](../../src/explain-llm.ts#L270) (analysis: Analysis, options: { lang: string; briefs: ReadonlyMap<string, StoredExplanation> }) → LlmRequest
       <a id="features.explain-llm.systemRequest"></a><br>The request for the repository's brief: its name, its layers with what the explained map says about them, its flows and the packages it uses. The README and manifests had nothing to say, or no model is asked at all.
       - calls [map.explanations.ownLayers](map.md#map.explanations.ownLayers), [map.explanations.explanationOf](map.md#map.explanations.explanationOf)
-    - fn [estimateTokens](../../src/explain-llm.ts#L248) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
+    - fn [estimateTokens](../../src/explain-llm.ts#L295) (analysis: Analysis, plan: readonly PlannedBrief[], briefs: ReadonlyMap<string, StoredExplanation>) → { input: number; output: number }
       <a id="features.explain-llm.estimateTokens"></a><br>A rough size of the batch for `--dry-run`: about four characters a token, and a brief of about 80 tokens out.
       - calls [features.explain-llm.briefRequest](features.md#features.explain-llm.briefRequest)
-    - fn [briefRequest](../../src/explain-llm.ts#L258) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
+    - fn [briefRequest](../../src/explain-llm.ts#L305) (analysis: Analysis, id: string, lang: string, briefs: ReadonlyMap<string, StoredExplanation>) → LlmRequest | null
       <a id="features.explain-llm.briefRequest"></a><br>The request for the brief of `id`: the repository's or a node's; null when the id is gone from the snapshot.
       - calls [features.explain-llm.systemRequest](features.md#features.explain-llm.systemRequest), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [features.explain-llm.explanationRequest](features.md#features.explain-llm.explanationRequest)
   - module [explain-node](../../src/explain-node.ts#L1)
-    <a id="features.explain-node"></a><br>`keylang explain <id>` without a model: what the snapshot and the specs say about one node. Deterministic and offline; the LLM explanation (§5.4) builds on it and falls back to it.
+    <a id="features.explain-node"></a><br>`keylang explain <id>` without a model: what the snapshot and the specs say about one node. Deterministic and offline; the LLM explanation (§5.4) builds on it and falls back to it. `nodeFacts` is also what hover says a node is (`lsp-features.ts`): one source for kind…
     - analyze [map.analyze](map.md#map.analyze)
     - ir [lang.ir](lang.md#lang.ir)
-    - lsp-features [features.lsp-features](features.md#features.lsp-features)
-    - type [NodeSummary](../../src/explain-node.ts#L9)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - snapshot [map.snapshot](map.md#map.snapshot)
+    - type [NodeFacts](../../src/explain-node.ts#L12)
+      <a id="features.explain-node.NodeFacts"></a><br>What a node is by the snapshot and the specs, before any view of it shows it.
+    - fn [nodeFacts](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → NodeFacts | null
+      <a id="features.explain-node.nodeFacts"></a><br>The facts of `id`: from the snapshot, else from its `planned` line, else from the spec line that declares it; null when nothing does.
+      - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
+    - type [NodeSummary](../../src/explain-node.ts#L47)
       <a id="features.explain-node.NodeSummary"></a><br>Data shape bundling everything gathered about one graph node for explanation: its kind, signature, doc brief, location, export status, call/dependency/flow neighbours, matching rules, and fingerprints. Also counts unresolved constructs per kind in `holes` and flags… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ExplainResult](../../src/explain-node.ts#L32)
+    - type [ExplainResult](../../src/explain-node.ts#L70)
       <a id="features.explain-node.ExplainResult"></a><br>Union returned when explaining a node: either a successful `summary` holding a `NodeSummary`, or a failure carrying the `unknown` identifier that was not found plus an optional `suggestion` for a close match. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [summarizeNode](../../src/explain-node.ts#L34) (analysis: Analysis, id: string) → ExplainResult
-      <a id="features.explain-node.summarizeNode"></a><br>Builds an explanation record for one ID by combining its snapshot node (kind, signature, callers, deps, coverage holes, fingerprint) with spec rule lines that reference it, flows from [`features.lsp-features.flowsUsing`](features.md#features.lsp-features.flowsUsing), and any planned declaration from… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.explain-node.nodeHolding](features.md#features.explain-node.nodeHolding), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing)
-    - fn [nodeHolding](../../src/explain-node.ts#L95) (root: Node, ref: Ref) → Node | null <!-- internal -->
+    - fn [summarizeNode](../../src/explain-node.ts#L72) (analysis: Analysis, id: string) → ExplainResult
+      <a id="features.explain-node.summarizeNode"></a><br>Builds an explanation record for one ID by combining its snapshot node (kind, signature, callers, deps, coverage holes, fingerprint) with spec rule lines that reference it, flows from `features.lsp-features.flowsUsing`, and any planned declaration from… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.explain-node.nodeFacts](features.md#features.explain-node.nodeFacts), [features.explain-node.rulesNaming](features.md#features.explain-node.rulesNaming), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [map.snapshot.leavesUnresolved](map.md#map.snapshot.leavesUnresolved)
+    - fn [rulesNaming](../../src/explain-node.ts#L109) (analysis: Analysis, id: string) → string[] <!-- internal -->
+      <a id="features.explain-node.rulesNaming"></a><br>`file:line: rule text` of the rule and module lines that name `id` or a scope around it, sorted; the generated map's are left out.
+      - calls [features.explain-node.nodeHolding](features.md#features.explain-node.nodeHolding)
+    - fn [nodeHolding](../../src/explain-node.ts#L138) (root: Node, ref: Ref) → Node | null <!-- internal -->
       <a id="features.explain-node.nodeHolding"></a><br>The allow, deny, entry item, nested layer, or module line that holds `ref`.
-    - fn [formatSummary](../../src/explain-node.ts#L105) (s: NodeSummary) → string
+    - fn [formatSummary](../../src/explain-node.ts#L148) (s: NodeSummary) → string
       <a id="features.explain-node.formatSummary"></a><br>The summary as text: one line per fact, empty facts left out.
   - module [explain-offline](../../src/explain-offline.ts#L1)
     <a id="features.explain-offline"></a><br>`keylang explain <code|id>` without a model: the help of a diagnostic code, or what the snapshot and the specs say about a node with the explanations saved for it. One result for the CLI, the TUI palette and `e`: the doc comment of the code (in the summary), the saved…
@@ -522,7 +548,7 @@
     - explain-node [features.explain-node](features.md#features.explain-node)
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explanations [map.explanations](map.md#map.explanations)
-    - lsp-features [features.lsp-features](features.md#features.lsp-features)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - fn [isDiagnosticCode](../../src/explain-offline.ts#L15) (subject: string) → boolean
       <a id="features.explain-offline.isDiagnosticCode"></a><br>`K001`, `k104`: a diagnostic code, whatever its case, as the CLI tells it from an ID.
     - type [SavedAnswer](../../src/explain-offline.ts#L20)
@@ -558,15 +584,16 @@
       - calls [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [features.explain-offline.savedAnswerText](features.md#features.explain-offline.savedAnswerText)
     - fn [summaryLinks](../../src/explain-offline.ts#L128) (analysis: Analysis, summary: NodeSummary) → ExplainLink[] <!-- internal -->
       <a id="features.explain-offline.summaryLinks"></a><br>The places the summary names, in its order; a related ID is a place only where the snapshot or a `planned` declares it.
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
+      - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration)
   - module [explain](../../src/explain.ts#L1)
     <a id="features.explain"></a><br>Short explanations for diagnostic codes. Every code in `diag.ts` has an entry.
     - diag [base.diag](base.md#base.diag)
     - fn [explainCode](../../src/explain.ts#L115) (code: string) → string | null
       <a id="features.explain.explainCode"></a><br>Looks up a diagnostic code (case-insensitively) in the `EXPLANATIONS` table and formats its cause, example, and fix as a multi-line string, returning null for unknown codes. For `K005` it appends extra reason lines from `K005_REASON_LINES`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [feature-status](../../src/feature-status.ts#L1)
-    <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail exists in any spec, and the plan was not weakened since the base…
+    <a id="features.feature-status"></a><br>Whether a feature file is done: it declares something to check, keylang reads it without errors, every `planned` in it is implemented (K202, not K201), every flow step and `calls` in it is static ok, no rule fail of this change remains (ADR 0005 §2: no new violations), and the…
     - assess [check.assess](check.md#check.assess)
+    - changed [features.changed](features.md#features.changed)
     - config [base.config](base.md#base.config)
     - diag [base.diag](base.md#base.diag)
     - flows [check.flows](check.md#check.flows)
@@ -576,44 +603,54 @@
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Stage](../../src/feature-status.ts#L27) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - type [Stage](../../src/feature-status.ts#L32) = "idea" | "behavior" | "structure" | "ready" | "done"
       <a id="features.feature-status.Stage"></a><br>How far a feature file got, the first that holds: `done` (no gaps), `idea` (no `# flow` yet), `behavior` (a flow without a trigger or steps), `structure` (the spec itself has gaps: errors, open questions, a predicted deny, a planned id outside the layers, a planned fn without a…
-    - type [Gap](../../src/feature-status.ts#L33)
+    - type [Gap](../../src/feature-status.ts#L38)
       <a id="features.feature-status.Gap"></a><br>What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed.
-    - type [Hint](../../src/feature-status.ts#L44)
-      <a id="features.feature-status.Hint"></a><br>What the spec still lacks that does not keep the feature from done: the next step of a stage.
-    - type [FeatureInfo](../../src/feature-status.ts#L54)
+    - type [Hint](../../src/feature-status.ts#L52)
+      <a id="features.feature-status.Hint"></a><br>What does not keep the feature from done: the next step of a stage the spec still lacks, or a rule fail elsewhere that is not this change's (`rule`).
+    - type [FeatureInfo](../../src/feature-status.ts#L62)
       <a id="features.feature-status.FeatureInfo"></a><br>A record describing a single feature's status entry: an identifier, the source location (file, line, column) where it is declared, and a verdict string paired with a free-text reason explaining it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [FeatureBase](../../src/feature-status.ts#L68)
-      <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit (`HEAD` or `--since`). `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet); `unavailable`: the history could not be read, so the plan is not compared.
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L74)
+    - type [BaseChanges](../../src/feature-status.ts#L76)
+      <a id="features.feature-status.BaseChanges"></a><br>What git reports changed in the working tree since the base ref, as `check --changed` reads it: changed, added, deleted and untracked files, and the deleted ones. POSIX, relative to the root, sorted.
+    - type [FeatureBase](../../src/feature-status.ts#L87)
+      <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit (`HEAD` or `--since`) and what changed since. `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet: then every file is changed); `unavailable`: the history could not be read, so the plan is not compared and…
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L93)
       <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it.
-    - type [FeatureReport](../../src/feature-status.ts#L76)
+    - type [FeatureReport](../../src/feature-status.ts#L95)
       <a id="features.feature-status.FeatureReport"></a><br>Shape of the result produced when checking a feature's status: a completion flag, a list of `Gap` entries describing what is missing, and the collected `FeatureInfo` records for tests and trace plus an optional `FeatureBaseInfo`. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - type [FeatureInput](../../src/feature-status.ts#L84)
+    - type [FeatureInput](../../src/feature-status.ts#L113)
       <a id="features.feature-status.FeatureInput"></a><br>Bundles everything needed to assess one feature: its directory, parsed documents, spec IR, diagnostics, and verdicts. Optional `nodes` and `base` fields enable checking removed `planned` items against the snapshot and diffing the plan against its base commit. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [idsIn](../../src/feature-status.ts#L109) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L147) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L126) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L164) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
-    - fn [stageOf](../../src/feature-status.ts#L241) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
+    - type [RuleFail](../../src/feature-status.ts#L276) <!-- internal -->
+      <a id="features.feature-status.RuleFail"></a><br>A rule fail: an error diagnostic of a rule (K101, K102, K104, K105, K107), or a failed rule verdict that repeats none.
+    - fn [ruleFails](../../src/feature-status.ts#L287) (input: FeatureInput) → RuleFail[] <!-- internal -->
+      <a id="features.feature-status.ruleFails"></a><br>Every rule fail of the analysis, in the order of its diagnostics, then its verdicts.
+      - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
+    - fn [thisChange](../../src/feature-status.ts#L306) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+      <a id="features.feature-status.thisChange"></a><br>Whether a rule fail is this change's. Without what changed since the base, every one is.
+      - calls [features.changed.filterChanged](features.md#features.changed.filterChanged)
+    - fn [stageOf](../../src/feature-status.ts#L334) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
       <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
-    - fn [denyGaps](../../src/feature-status.ts#L261) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L354) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       <a id="features.feature-status.denyGaps"></a><br>Edges a flow of the feature asks for that a rule would deny once they are code: a `step` or `calls` target under its parent `trigger` or `step` (a top-level one under the first trigger), while one end is still `planned` and not implemented. Once both ends are code, `check`…
       - calls [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.denyingRule](check.md#check.rules.denyingRule)
-    - fn [claimsOf](../../src/feature-status.ts#L303) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L396) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [planGaps](../../src/feature-status.ts#L320) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [planGaps](../../src/feature-status.ts#L413) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
       <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in a commit, never by deleting it.…
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L352) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L445) = Trigger | FlowStep | QuestionItem <!-- internal -->
       <a id="features.feature-status.PlanItem"></a><br>Union type naming a single element of a feature's execution plan, which is either a `Trigger` or a `FlowStep`. It lets plan-building and status code handle both kinds of entries in one list without separate collections. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [planItems](../../src/feature-status.ts#L355) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L448) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
       <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L369) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L462) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
@@ -629,42 +666,45 @@
       <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs. `signal` cancels the request (`LlmCancelled`) once the line it was asked for is gone.
       - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.parse](lang.md#lang.parser.parse)
   - module [git-changes](../../src/git-changes.ts#L1)
-    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`, and the feature file at its base commit for `feature`. Git runs as an argument array in the given root, never through a shell; a ref that looks like…
+    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`, and for `feature` the feature file at its base commit with the files changed since. Git runs as an argument array in the given root, never through a…
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
     - draft [features.draft](features.md#features.draft)
     - feature-status [features.feature-status](features.md#features.feature-status)
     - graph [map.graph](map.md#map.graph)
     - parser [lang.parser](lang.md#lang.parser)
-    - type [ChangedFiles](../../src/git-changes.ts#L18)
+    - span [base.span](base.md#base.span)
+    - type [ChangedFiles](../../src/git-changes.ts#L19)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - fn [gitIn](../../src/git-changes.ts#L28) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L29) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [gitUnavailable](../../src/git-changes.ts#L44) (label: string, error: Error & { code?: string }) → string
+    - fn [gitUnavailable](../../src/git-changes.ts#L45) (label: string, error: Error & { code?: string }) → string
       <a id="features.git-changes.gitUnavailable"></a><br>Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works.
-    - fn [assertRef](../../src/git-changes.ts#L51) (ref: string, label: string) → void <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L52) (ref: string, label: string) → void <!-- internal -->
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L57) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L58) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a><br>Builds the fixed argument list for a `git diff` against a base ref: relative paths, no renames, zero context lines, no color or external diff, and `a/`/`b/` prefixes. Shared by [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) so both parse… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [untracked](../../src/git-changes.ts#L59) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L60) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a><br>Lists files in the working tree that git does not track and that are not ignored, by running `ls-files` with NUL-separated output and splitting it into a path array. Both [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) fold these into their… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [gitChangedFiles](../../src/git-changes.ts#L65) (root: string, ref: string, label = "check --changed") → ChangedFiles
-      <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet.
-      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [gitChangedLines](../../src/git-changes.ts#L80) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [ownState](../../src/git-changes.ts#L70) (path: string) → boolean <!-- internal -->
+      <a id="features.git-changes.ownState"></a><br>keylang's own local state under `.keylang/` — the index, the fact cache an analysis saves, proposals, reports — is never a source or a spec, so it is never a change, tracked or not, gitignored or not.
+    - fn [gitChangedFiles](../../src/git-changes.ts#L73) (root: string, ref: string, label = "check --changed") → ChangedFiles
+      <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out.
+      - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked), [features.git-changes.ownState](features.md#features.git-changes.ownState)
+    - fn [gitChangedLines](../../src/git-changes.ts#L88) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L89) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L97) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitFileAt](../../src/git-changes.ts#L103) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L111) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [readFeatureBase](../../src/git-changes.ts#L122) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
-      <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit (`since`, else `HEAD`). Without an explicit `since`, a failure to read git is an informational state, not an error; with it, the error is thrown.
-      - calls [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L136) (config: Config, files: readonly string[]) → string[]
+    - fn [readFeatureBase](../../src/git-changes.ts#L132) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+      <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit (`since`, else `HEAD`), and the files changed since that commit as `check --changed` reads them: a rule fail of this change is one that touches them. Without an explicit `since`, a failure to read git is an informational state, not an error…
+      - calls [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [deletedModuleIds](../../src/git-changes.ts#L149) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)
@@ -689,125 +729,131 @@
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON and TOML replace only the `keylang` key.
     - node [external.node](external.md#external.node)
     - smol-toml [external.smol-toml](external.md#external.smol-toml)
+    - config [base.config](base.md#base.config)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - fn [skillFile](../../src/harness.ts#L30) () → string
+    - fn [skillFile](../../src/harness.ts#L31) () → string
       <a id="features.harness.skillFile"></a><br>The skill shipped in the package. The same relative path works from `src` and from `dist`.
-    - type [HarnessName](../../src/harness.ts#L35) = (typeof HARNESS_NAMES)[number]
+    - type [HarnessName](../../src/harness.ts#L36) = (typeof HARNESS_NAMES)[number]
       <a id="features.harness.HarnessName"></a><br>A string union type derived from the entries of the `HARNESS_NAMES` array, so values are constrained to the harness identifiers listed there. Used to type-check which harness a feature refers to without duplicating the list. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessSelection](../../src/harness.ts#L48)
+    - fn [denyRules](../../src/harness.ts#L55) (dir: string) → string[] <!-- internal -->
+      <a id="features.harness.denyRules"></a><br>Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal.
+    - fn [specDir](../../src/harness.ts#L60) (root: string) → string <!-- internal -->
+      <a id="features.harness.specDir"></a><br>The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field.
+      - calls [base.config.parseConfig](base.md#base.config.parseConfig)
+    - type [HarnessSelection](../../src/harness.ts#L69)
       <a id="features.harness.HarnessSelection"></a><br>Carries the resolved set of agent harnesses chosen by the user as `HarnessName` values, plus a flag that disables the instruction block and adapter file emission when `--agents=none` is given. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessFile](../../src/harness.ts#L54)
+    - type [HarnessFile](../../src/harness.ts#L75)
       <a id="features.harness.HarnessFile"></a><br>Describes one file in a test harness as a path plus its full contents, where a null `text` marks a file that must not exist. Used to declare or verify the expected state of files on disk. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessPlan](../../src/harness.ts#L60)
+    - type [HarnessPlan](../../src/harness.ts#L81)
       <a id="features.harness.HarnessPlan"></a><br>Describes the outcome of assembling a harness: the list of `HarnessFile` entries to write, plus either `null` or a single failure record naming the offending file and the reason it could not be prepared. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [parseAgents](../../src/harness.ts#L66) (value: string) → HarnessSelection
+    - fn [parseAgents](../../src/harness.ts#L87) (value: string) → HarnessSelection
       <a id="features.harness.parseAgents"></a><br>`--agents=<list>`. `none` is the empty selection. An unknown name throws and lists the allowed names.
-    - type [HarnessProbe](../../src/harness.ts#L80)
+    - type [HarnessProbe](../../src/harness.ts#L101)
       <a id="features.harness.HarnessProbe"></a><br>What is on disk for harness detection. `list` returns child names, or null when the path is not a directory.
-    - fn [detectHarnesses](../../src/harness.ts#L90) (probe: HarnessProbe) → HarnessName[]
+    - fn [detectHarnesses](../../src/harness.ts#L111) (probe: HarnessProbe) → HarnessName[]
       <a id="features.harness.detectHarnesses"></a><br>Directories and files that mean a harness is already in use. Order matches `HARNESS_NAMES`. `.claude/skills/keylang-feature` is the copy `agents` writes for every harness, so that tree alone is not Claude.
       - calls [features.harness.claudePresent](features.md#features.harness.claudePresent)
-    - fn [claudePresent](../../src/harness.ts#L101) (probe: HarnessProbe) → boolean <!-- internal -->
+    - fn [claudePresent](../../src/harness.ts#L122) (probe: HarnessProbe) → boolean <!-- internal -->
       <a id="features.harness.claudePresent"></a><br>Decides whether the Claude harness is in use by listing the `.claude` directory via the probe: missing means no, empty means yes, otherwise it defers to [`features.harness.claudeHasUserFile`](features.md#features.harness.claudeHasUserFile) to check for user-authored files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.claudeHasUserFile](features.md#features.harness.claudeHasUserFile)
-    - fn [claudeHasUserFile](../../src/harness.ts#L109) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
+    - fn [claudeHasUserFile](../../src/harness.ts#L130) (probe: HarnessProbe, dir: string) → boolean <!-- internal -->
       <a id="features.harness.claudeHasUserFile"></a><br>A file under `.claude` that is not the keylang skill copy.
-    - fn [agentsBody](../../src/harness.ts#L123) (version: string) → string
-      <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`.
+    - fn [agentsBody](../../src/harness.ts#L144) (version: string, dir: string) → string
+      <a id="features.harness.agentsBody"></a><br>The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [mcpCommand](../../src/harness.ts#L146) (version: string) → { command: string; args: string[] }
+    - fn [mcpCommand](../../src/harness.ts#L180) (version: string) → { command: string; args: string[] }
       <a id="features.harness.mcpCommand"></a><br>`npx -y keylang@<version> mcp`, split the way MCP configs store a command.
-    - fn [cliCommand](../../src/harness.ts#L151) (version: string) → string
+    - fn [cliCommand](../../src/harness.ts#L185) (version: string) → string
       <a id="features.harness.cliCommand"></a><br>The pinned CLI the fallback names: the same package and version as the MCP server, so it needs no global `keylang`.
-    - fn [pinSkill](../../src/harness.ts#L156) (skill: string, version: string) → string
-      <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>`; the copy a harness gets pins the running version.
-    - fn [hookCommand](../../src/harness.ts#L161) (version: string) → string
+    - fn [pinSkill](../../src/harness.ts#L194) (skill: string, version: string, dir: string) → string
+      <a id="features.harness.pinSkill"></a><br>The skill resource names the CLI as `npx -y keylang@<version>` and the spec directory as `<dir>/`; the copy a harness gets pins the running version and the repository's `dir`.
+    - fn [hookCommand](../../src/harness.ts#L199) (version: string) → string
       <a id="features.harness.hookCommand"></a><br>What the Stop hook runs.
       - calls [features.harness.cliCommand](features.md#features.harness.cliCommand)
-    - fn [planHarness](../../src/harness.ts#L170) (input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
-      <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent. The first broken marker or invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
+    - fn [planHarness](../../src/harness.ts#L209) (input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }) → HarnessPlan
+      <a id="features.harness.planHarness"></a><br>Desired text of every harness file this selection owns. `files` holds the current text, null when the file is absent; `dir` is the spec directory the instructions, the skill and the deny rules name. The first broken marker or invalid JSON/TOML is `error` and `files` is empty…
       - calls [features.harness.agentsBody](features.md#features.harness.agentsBody), [features.harness.mergeMarked](features.md#features.harness.mergeMarked), [features.harness.mergeClaude](features.md#features.harness.mergeClaude), [features.harness.mergeMcpJson](features.md#features.harness.mergeMcpJson), [features.harness.mergeCodexToml](features.md#features.harness.mergeCodexToml), [features.harness.opencodeFile](features.md#features.harness.opencodeFile), [features.harness.mergeOpencode](features.md#features.harness.mergeOpencode), [features.harness.pinSkill](features.md#features.harness.pinSkill), [features.harness.mergeSettings](features.md#features.harness.mergeSettings), [features.harness.mergeHooksFile](features.md#features.harness.mergeHooksFile)
-    - fn [mergeMarked](../../src/harness.ts#L254) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
+    - fn [mergeMarked](../../src/harness.ts#L293) (existing: string | null, body: string | null) → { text: string | null } | { error: string }
       <a id="features.harness.mergeMarked"></a><br>Splice `body` between the markers. Text outside them is copied byte for byte. `body` null removes the block.
       - calls [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [features.harness.marked](features.md#features.harness.marked)
-    - fn [marked](../../src/harness.ts#L279) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
+    - fn [marked](../../src/harness.ts#L318) (body: string, nl: "\n" | "\r\n") → string <!-- internal -->
       <a id="features.harness.marked"></a><br>Normalizes every line break in the body to the requested newline style, then wraps the result between the begin and end marker constants on their own lines, so [`features.harness.mergeMarked`](features.md#features.harness.mergeMarked) can splice a consistently delimited block into existing text. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeClaude](../../src/harness.ts#L288) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeClaude](../../src/harness.ts#L327) (existing: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeClaude"></a><br>`@AGENTS.md` lives in the managed block. A file that already says it outside the block is left without a second copy (the block is removed).
       - calls [features.harness.outsideMarkers](features.md#features.harness.outsideMarkers), [features.harness.mergeMarked](features.md#features.harness.mergeMarked)
-    - fn [outsideMarkers](../../src/harness.ts#L295) (existing: string | null) → string | { error: string } <!-- internal -->
+    - fn [outsideMarkers](../../src/harness.ts#L334) (existing: string | null) → string | { error: string } <!-- internal -->
       <a id="features.harness.outsideMarkers"></a><br>Strips the block between the begin/end marker constants out of an existing file's text, returning the surrounding content (or an empty string for null input). Reports an error object when only one marker is present or the end precedes the begin, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeMcpJson](../../src/harness.ts#L305) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeMcpJson](../../src/harness.ts#L344) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeMcpJson"></a><br>Rewrites an `.mcp.json` document so its `mcpServers` key holds the launch entry built by [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand) for the given version, or removes it when the version is null, via [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey). Returns the updated text or a parse error for… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeOpencode](../../src/harness.ts#L309) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeOpencode](../../src/harness.ts#L348) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeOpencode"></a><br>Builds a local MCP server entry that runs `npx -y keylang@<version> mcp` (or null when no version is given) and delegates to [`features.harness.mergeJsonKey`](features.md#features.harness.mergeJsonKey) to write it under the `mcp` key of an opencode JSON config, returning the merged text or an error. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.mergeJsonKey](features.md#features.harness.mergeJsonKey)
-    - fn [mergeCodexToml](../../src/harness.ts#L321) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeCodexToml](../../src/harness.ts#L360) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeCodexToml"></a><br>Parses an existing TOML config, then adds or removes the `keylang` entry under `mcp_servers` (built via [`features.harness.mcpCommand`](features.md#features.harness.mcpCommand)), and re-serializes the result with a trailing newline. Returns `text: null` when nothing remains, or an error for malformed TOML or a non-table… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.mcpCommand](features.md#features.harness.mcpCommand)
-    - fn [mergeSettings](../../src/harness.ts#L346) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeSettings](../../src/harness.ts#L385) (existing: string | null, version: string | null, dir: string) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeSettings"></a><br>Parses a settings JSON text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then rewrites its `permissions` and `hooks` keys using [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue), deleting each key when the merge yields nothing. Serializes the result with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeDeny](features.md#features.harness.mergeDeny), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeHooksFile](../../src/harness.ts#L361) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeHooksFile](../../src/harness.ts#L400) (existing: string | null, version: string | null) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksFile"></a><br>Parses a settings file's JSON object via [`features.harness.parseObject`](features.md#features.harness.parseObject), rewrites or removes its `hooks` key through [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) for the given version, and reserializes it with [`features.harness.finishJson`](features.md#features.harness.finishJson). Any parse or merge failure is returned as an… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.mergeHooksValue](features.md#features.harness.mergeHooksValue), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [mergeDeny](../../src/harness.ts#L371) (permissions: unknown, install: boolean) → { value: unknown } | { error: string } <!-- internal -->
-      <a id="features.harness.mergeDeny"></a><br>Validates a settings `permissions` object (via [`features.harness.isRecord`](features.md#features.harness.isRecord)) and rewrites its `deny` list to add the fixed DENY_RULES when installing or strip them otherwise. Returns an error for malformed input, and `undefined` when nothing remains. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [mergeHooksValue](../../src/harness.ts#L385) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
+    - fn [mergeDeny](../../src/harness.ts#L416) (permissions: unknown, install: boolean, dir: string) → { value: unknown } | { error: string } <!-- internal -->
+      <a id="features.harness.mergeDeny"></a><br>keylang's deny entries for the spec directory `dir` are added (`install`) or removed. Its entries for the default directory are keylang's too: they go once `dir` is another one, so a changed `dir` leaves no stale entry behind.
+      - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.denyRules](features.md#features.harness.denyRules)
+    - fn [mergeHooksValue](../../src/harness.ts#L432) (hooks: unknown, version: string | null) → { value: unknown } | { error: string } <!-- internal -->
       <a id="features.harness.mergeHooksValue"></a><br>Validates a hooks object and rewrites its `Stop` groups via [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup), appending a command group from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) when the version is missing. Drops groups that [`features.harness.emptyGroup`](features.md#features.harness.emptyGroup) flags, removes `Stop` when nothing remains… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.rewriteGroup](features.md#features.harness.rewriteGroup), [features.harness.hookCommand](features.md#features.harness.hookCommand), [features.harness.emptyGroup](features.md#features.harness.emptyGroup)
-    - fn [rewriteGroup](../../src/harness.ts#L404) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
+    - fn [rewriteGroup](../../src/harness.ts#L451) (group: unknown, version: string | null) → Record<string, unknown> | { error: string } <!-- internal -->
       <a id="features.harness.rewriteGroup"></a><br>Validates one hooks.Stop group and rebuilds its hooks list, replacing any entry recognized by [`features.harness.isOurHook`](features.md#features.harness.isOurHook) with the command from [`features.harness.hookCommand`](features.md#features.harness.hookCommand) or dropping it when version is null. Returns an error object for malformed input. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.isOurHook](features.md#features.harness.isOurHook), [features.harness.hookCommand](features.md#features.harness.hookCommand)
-    - fn [emptyGroup](../../src/harness.ts#L420) (group: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [emptyGroup](../../src/harness.ts#L467) (group: Record<string, unknown>) → boolean <!-- internal -->
       <a id="features.harness.emptyGroup"></a><br>Returns true when the object's `hooks` is an empty array and it has no keys besides `hooks` and `matcher`. [`features.harness.mergeHooksValue`](features.md#features.harness.mergeHooksValue) uses it to detect hook groups that carry no handlers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isOurHook](../../src/harness.ts#L424) (command: string) → boolean <!-- internal -->
+    - fn [isOurHook](../../src/harness.ts#L471) (command: string) → boolean <!-- internal -->
       <a id="features.harness.isOurHook"></a><br>Tests a hook command string against a regex matching `keylang hook stop` with an optional `@version` suffix, returning whether it is one of our own stop hooks; [`features.harness.rewriteGroup`](features.md#features.harness.rewriteGroup) uses it to filter hook entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeJsonKey](../../src/harness.ts#L428) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
+    - fn [mergeJsonKey](../../src/harness.ts#L475) (existing: string | null, path: readonly string[], server: unknown) → { text: string | null } | { error: string } <!-- internal -->
       <a id="features.harness.mergeJsonKey"></a><br>Parses the config text via [`features.harness.parseObject`](features.md#features.harness.parseObject), then sets or removes the `keylang` entry inside the nested object at the first path key, dropping that key when it becomes empty. Rejects a non-object value there and re-serializes with [`features.harness.finishJson`](features.md#features.harness.finishJson). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.parseObject](features.md#features.harness.parseObject), [features.harness.isRecord](features.md#features.harness.isRecord), [features.harness.finishJson](features.md#features.harness.finishJson)
-    - fn [parseObject](../../src/harness.ts#L442) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
+    - fn [parseObject](../../src/harness.ts#L489) (existing: string | null) → { value: Record<string, unknown> } | { error: string } <!-- internal -->
       <a id="features.harness.parseObject"></a><br>Turns a possibly missing config file body into a shallow-copied object: null or blank input yields `{}`, otherwise it `JSON.parse`s and checks the result with [`features.harness.isRecord`](features.md#features.harness.isRecord). Non-object values or parse failures come back as an error string instead of throwing, so… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.harness.isRecord](features.md#features.harness.isRecord)
-    - fn [finishJson](../../src/harness.ts#L453) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
+    - fn [finishJson](../../src/harness.ts#L500) (data: Record<string, unknown>) → { text: string | null } <!-- internal -->
       <a id="features.harness.finishJson"></a><br>Serializes a merged config object into pretty-printed JSON with a trailing newline, or yields `null` when the object is empty so callers like [`features.harness.mergeSettings`](features.md#features.harness.mergeSettings) can skip writing the file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [opencodeFile](../../src/harness.ts#L458) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
+    - fn [opencodeFile](../../src/harness.ts#L505) (files: ReadonlyMap<string, string | null>) → string <!-- internal -->
       <a id="features.harness.opencodeFile"></a><br>Picks which OpenCode config filename to target: returns `opencode.json` if that entry exists with non-null content in the map, else `opencode.jsonc` if that one does, otherwise defaults to `opencode.json`. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/harness.ts#L464) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/harness.ts#L511) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.harness.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`features.harness.parseObject`](features.md#features.harness.parseObject), [`features.harness.mergeDeny`](features.md#features.harness.mergeDeny) and the other merge helpers to validate parsed config shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HarnessChoice](../../src/harness.ts#L471) = "auto" | "none" | readonly HarnessName[]
+    - type [HarnessChoice](../../src/harness.ts#L518) = "auto" | "none" | readonly HarnessName[]
       <a id="features.harness.HarnessChoice"></a><br>Which harnesses: detected from the disk, none (strip keylang's files), or a named, non-empty list.
-    - fn [harnessChoice](../../src/harness.ts#L474) (flag: string | undefined) → HarnessChoice
+    - fn [harnessChoice](../../src/harness.ts#L521) (flag: string | undefined) → HarnessChoice
       <a id="features.harness.harnessChoice"></a><br>`--agents=<list>` as a choice; left out, the harnesses are detected. Throws as `parseAgents` does.
       - calls [features.harness.parseAgents](features.md#features.harness.parseAgents)
-    - fn [keylangVersion](../../src/harness.ts#L481) () → string
+    - fn [keylangVersion](../../src/harness.ts#L528) () → string
       <a id="features.harness.keylangVersion"></a><br>The version the MCP command and the Stop hook pin: the running keylang's `package.json`, from `src` and from `dist`.
-    - type [HarnessCategory](../../src/harness.ts#L486) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
+    - type [HarnessCategory](../../src/harness.ts#L533) = "instructions" | "mcp" | "skill" | "settings" | "hooks"
       <a id="features.harness.HarnessCategory"></a><br>What a harness file is for, as a step before the write names it.
-    - fn [harnessCategory](../../src/harness.ts#L488) (path: string) → HarnessCategory
+    - fn [harnessCategory](../../src/harness.ts#L535) (path: string) → HarnessCategory
       <a id="features.harness.harnessCategory"></a><br>Maps a harness file path to its category: root `AGENTS.md`/`CLAUDE.md` become instructions, the skill constants map to skill, specific `.claude`/`.codex` files map to settings or hooks, and anything else falls back to mcp. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) to group planned… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diskProbe](../../src/harness.ts#L497) (root: string) → HarnessProbe
+    - fn [diskProbe](../../src/harness.ts#L544) (root: string) → HarnessProbe
       <a id="features.harness.diskProbe"></a><br>The probe of the real disk: `.claude` and the other harness directories are directories; opencode is a file.
-    - fn [resolveChoice](../../src/harness.ts#L518) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
+    - fn [resolveChoice](../../src/harness.ts#L565) (choice: HarnessChoice, probe: HarnessProbe) → HarnessSelection
       <a id="features.harness.resolveChoice"></a><br>The selection a choice resolves to on this disk: `auto` keeps the instruction block even when nothing is detected; `none` has none.
       - calls [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses)
-    - type [HarnessTarget](../../src/harness.ts#L528)
+    - type [HarnessTarget](../../src/harness.ts#L575)
       <a id="features.harness.HarnessTarget"></a><br>One file of the plan: the text it should hold (null: absent) against what is there now.
-    - type [AgentsPlan](../../src/harness.ts#L540)
+    - type [AgentsPlan](../../src/harness.ts#L587)
       <a id="features.harness.AgentsPlan"></a><br>What `keylang agents` would do, computed before anything is written. Internal to one operation — not a stored format.
-    - fn [planAgents](../../src/harness.ts#L554) (root: string, choice: HarnessChoice) → AgentsPlan
-      <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error.
-      - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
-    - fn [readInputs](../../src/harness.ts#L569) (root: string) → Map<string, string | null> <!-- internal -->
+    - fn [planAgents](../../src/harness.ts#L603) (root: string, choice: HarnessChoice) → AgentsPlan
+      <a id="features.harness.planAgents"></a><br>Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json.
+      - calls [features.harness.resolveChoice](features.md#features.harness.resolveChoice), [features.harness.diskProbe](features.md#features.harness.diskProbe), [features.harness.specDir](features.md#features.harness.specDir), [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.skillFile](features.md#features.harness.skillFile), [features.harness.keylangVersion](features.md#features.harness.keylangVersion), [features.harness.planHarness](features.md#features.harness.planHarness), [features.harness.harnessCategory](features.md#features.harness.harnessCategory)
+    - fn [readInputs](../../src/harness.ts#L619) (root: string) → Map<string, string | null> <!-- internal -->
       <a id="features.harness.readInputs"></a><br>Reads every file listed in `HARNESS_PATHS` relative to the given root, mapping each path to its UTF-8 contents or null when the file is absent. Used by [`features.harness.planAgents`](features.md#features.harness.planAgents) and [`features.harness.agentsPlanProblems`](features.md#features.harness.agentsPlanProblems) to inspect existing harness files. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [agentsPlanProblems](../../src/harness.ts#L579) (plan: AgentsPlan) → string[]
-      <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, a target must pass the repository's write rules, and `auto` must still detect the same harnesses.
-      - calls [features.harness.readInputs](features.md#features.harness.readInputs), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
-    - type [HarnessStep](../../src/harness.ts#L604)
+    - fn [agentsPlanProblems](../../src/harness.ts#L630) (plan: AgentsPlan) → string[]
+      <a id="features.harness.agentsPlanProblems"></a><br>Why the plan may not be committed now (`path: reason` lines; empty when it may): every harness path must still hold the bytes the plan read, keylang.json must still name the same spec directory, a target must pass the repository's write rules, and `auto` must still detect the…
+      - calls [features.harness.readInputs](features.md#features.harness.readInputs), [features.harness.specDir](features.md#features.harness.specDir), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [features.harness.detectHarnesses](features.md#features.harness.detectHarnesses), [features.harness.diskProbe](features.md#features.harness.diskProbe)
+    - type [HarnessStep](../../src/harness.ts#L657)
       <a id="features.harness.HarnessStep"></a><br>One file step of a commit, with what became of it.
-    - fn [commitAgents](../../src/harness.ts#L619) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
+    - fn [commitAgents](../../src/harness.ts#L672) ( plan: AgentsPlan, options: { signal?: AbortSignal; onStep?: (step: { path: string; action: "write" | "remove" }) => void } = {}, ) → Promise<{ steps: HarnessStep[]; outcome: "completed" | "failed" | "cancelled" }>
       <a id="features.harness.commitAgents"></a><br>Writes and removes the changed targets one by one, in plan order. A write is atomic at the target (a link inside the repository is followed; CRLF of the old file kept); a removal removes the entry itself.
       - calls [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [keys](../../src/keys.ts#L1)
@@ -873,7 +919,9 @@
     - diag [base.diag](base.md#base.diag)
     - emit [map.emit](map.md#map.emit)
     - brief [base.brief](base.md#base.brief)
+    - explain-node [features.explain-node](features.md#features.explain-node)
     - explanations [map.explanations](map.md#map.explanations)
+    - files [lang.files](lang.md#lang.files)
     - ir [lang.ir](lang.md#lang.ir)
     - map [map.map](map.md#map.map)
     - node-search [features.node-search](features.md#features.node-search)
@@ -882,129 +930,138 @@
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - span [base.span](base.md#base.span)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [LspPosition](../../src/lsp-features.ts#L24)
+    - type [LspPosition](../../src/lsp-features.ts#L25)
       <a id="features.lsp-features.LspPosition"></a><br>Describes a location in a text document as a zero-based line index paired with a character offset within that line, mirroring the position shape used in LSP requests and responses. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [LspRange](../../src/lsp-features.ts#L29)
+    - type [LspRange](../../src/lsp-features.ts#L30)
       <a id="features.lsp-features.LspRange"></a><br>Describes a span of text in a document as a pair of positions, each holding a line and character offset, marking where the span begins and ends. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Location](../../src/lsp-features.ts#L34)
+    - type [Location](../../src/lsp-features.ts#L35)
       <a id="features.lsp-features.Location"></a><br>Pairs a document `uri` string with an `LspRange` to pinpoint a span of text in a specific file, used as the result shape for navigation features like go-to-definition and find-references. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Workspace](../../src/lsp-features.ts#L40)
+    - type [Workspace](../../src/lsp-features.ts#L41)
       <a id="features.lsp-features.Workspace"></a><br>What features read: the analysis, the root, and the text of any document.
-    - fn [workspace](../../src/lsp-features.ts#L47) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
+    - fn [workspace](../../src/lsp-features.ts#L48) (root: string, analysis: Analysis, buffers: ReadonlyMap<string, string>) → Workspace
       <a id="features.lsp-features.workspace"></a><br>Wraps an analysis for editor use, re-parsing generated map docs under `${analysis.config.dir}/map/` via [`lang.parser.parse`](lang.md#lang.parser.parse) when an open buffer differs from the fresh render. Its `text` resolver prefers open buffers, then rendered explained/generated maps (checked with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [lang.parser.parse](lang.md#lang.parser.parse), [features.lsp-features.readOrNull](features.md#features.lsp-features.readOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
-    - fn [lineStarts](../../src/lsp-features.ts#L86) (text: string) → number[] <!-- internal -->
+      - calls [lang.parser.parse](lang.md#lang.parser.parse), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [map.emit.isGeneratedMap](map.md#map.emit.isGeneratedMap)
+    - fn [lineStarts](../../src/lsp-features.ts#L83) (text: string) → number[] <!-- internal -->
       <a id="features.lsp-features.lineStarts"></a><br>Scans the text once and returns the character offsets at which each line begins, treating only `\n` (code 10) as a line break and always including offset 0. [`features.lsp-features.toOffset`](features.md#features.lsp-features.toOffset) uses this table to convert an LSP line/character position into a flat string index. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [lspPoint](../../src/lsp-features.ts#L96) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
+    - fn [lspPoint](../../src/lsp-features.ts#L93) (text: string | null, line: number, col: number) → LspPosition <!-- internal -->
       <a id="features.lsp-features.lspPoint"></a><br>A 1-based line and column in code points — the unit of IR spans and of snapshot positions in code alike — as an LSP position (UTF-16).
-    - fn [fromPos](../../src/lsp-features.ts#L102) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
+    - fn [fromPos](../../src/lsp-features.ts#L99) (text: string | null, pos: Pos) → LspPosition <!-- internal -->
       <a id="features.lsp-features.fromPos"></a><br>Converts a keylang position (1-based line, column in code points) into a 0-based LSP position by delegating to [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint), which turns the column into UTF-16 units using the line's text when the document text is known. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - fn [fromSpan](../../src/lsp-features.ts#L106) (text: string | null, span: Span) → LspRange <!-- internal -->
+    - fn [fromSpan](../../src/lsp-features.ts#L103) (text: string | null, span: Span) → LspRange <!-- internal -->
       <a id="features.lsp-features.fromSpan"></a><br>Converts a source span into an LSP range by mapping its start and end offsets through [`features.lsp-features.fromPos`](features.md#features.lsp-features.fromPos), using the document text for line/column resolution. Shared by diagnostics, symbols, hover, and references. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos)
-    - fn [lineRange](../../src/lsp-features.ts#L111) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
+    - fn [lineRange](../../src/lsp-features.ts#L108) (text: string | null, line: number, col: number) → LspRange <!-- internal -->
       <a id="features.lsp-features.lineRange"></a><br>A 1-based line and a column in code points, to the end of that line.
-    - fn [toOffset](../../src/lsp-features.ts#L117) (text: string, position: LspPosition) → number <!-- internal -->
+    - fn [toOffset](../../src/lsp-features.ts#L114) (text: string, position: LspPosition) → number <!-- internal -->
       <a id="features.lsp-features.toOffset"></a><br>Converts an LSP line/character position into an absolute character offset by looking up the line's start in [`features.lsp-features.lineStarts`](features.md#features.lsp-features.lineStarts) and adding the character index; a line past the end falls back to the text length. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.lineStarts](features.md#features.lsp-features.lineStarts)
-    - fn [uriOf](../../src/lsp-features.ts#L121) (root: string, path: string) → string <!-- internal -->
+    - fn [uriOf](../../src/lsp-features.ts#L118) (root: string, path: string) → string <!-- internal -->
       <a id="features.lsp-features.uriOf"></a><br>Resolves a workspace-relative path against the root directory and converts the absolute result into a `file://` URL string. Used by [`features.lsp-features.definition`](features.md#features.lsp-features.definition), [`features.lsp-features.references`](features.md#features.lsp-features.references), and [`features.lsp-features.symbolLocation`](features.md#features.lsp-features.symbolLocation) to build LSP location URIs. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Target](../../src/lsp-features.ts#L127) <!-- internal -->
+    - type [Target](../../src/lsp-features.ts#L124) <!-- internal -->
       <a id="features.lsp-features.Target"></a><br>Discriminated union naming what sits under the cursor: either a symbol reference carrying an identifier string, or a file link carrying a path and line number, each with the source `Span` it occupies. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [nodesOf](../../src/lsp-features.ts#L129) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
+    - fn [nodesOf](../../src/lsp-features.ts#L126) (doc: Document) → { node: Node; section: Section; parent: Node | null }[] <!-- internal -->
       <a id="features.lsp-features.nodesOf"></a><br>Flattens a document into a pre-order list of every node across all sections, pairing each with its section and immediate parent, with top-level nodes obtained via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes). Shared traversal backing [`features.lsp-features.ancestors`](features.md#features.lsp-features.ancestors)… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [targetAt](../../src/lsp-features.ts#L142) (doc: Document, offset: number) → Target | null
+    - fn [targetAt](../../src/lsp-features.ts#L139) (doc: Document, offset: number) → Target | null
       <a id="features.lsp-features.targetAt"></a><br>The id, reference, or code link at an offset of a document. Spans are half-open: the offset after an id is not in it.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains)
-    - fn [docOf](../../src/lsp-features.ts#L157) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [docOf](../../src/lsp-features.ts#L154) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.docOf"></a><br>Looks up a document by path in the workspace's analysed docs, falling back to [`features.lsp-features.readingDoc`](features.md#features.lsp-features.readingDoc) when it isn't there. Shared lookup used by [`features.lsp-features.at`](features.md#features.lsp-features.at), [`features.lsp-features.completions`](features.md#features.lsp-features.completions), and [`features.lsp-features.documentSymbols`](features.md#features.lsp-features.documentSymbols). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.readingDoc](features.md#features.lsp-features.readingDoc)
-    - fn [readOrNull](../../src/lsp-features.ts#L161) (abs: string) → string | null <!-- internal -->
-      <a id="features.lsp-features.readOrNull"></a><br>Reads a file at an absolute path as UTF-8 and returns its contents, or `null` if reading fails for any reason. Used by [`features.lsp-features.workspace`](features.md#features.lsp-features.workspace) to load files from disk without raising errors. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readingDoc](../../src/lsp-features.ts#L177) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
+    - fn [readingDoc](../../src/lsp-features.ts#L166) (ws: Workspace, path: string) → Document | undefined <!-- internal -->
       <a id="features.lsp-features.readingDoc"></a><br>A file of the explained map. The analysis does not check it (it is no spec), but its IDs and code links lead where the map's do: hover, definition and Enter in the TUI work there too.
       - calls [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [at](../../src/lsp-features.ts#L188) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
+    - fn [at](../../src/lsp-features.ts#L177) (ws: Workspace, path: string, position: LspPosition) → Target | null <!-- internal -->
       <a id="features.lsp-features.at"></a><br>Resolves an LSP line/character position in a workspace file to the semantic target under the cursor, returning null if the document or its text is unavailable. It looks up the document via [`features.lsp-features.docOf`](features.md#features.lsp-features.docOf), converts the position with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset)
-    - type [LspDiagnostic](../../src/lsp-features.ts#L197)
+    - type [LspDiagnostic](../../src/lsp-features.ts#L186)
       <a id="features.lsp-features.LspDiagnostic"></a><br>Shape of a single diagnostic emitted to the editor: a source `LspRange`, numeric severity 1–4, message, optional code, fixed source "keylang", and a `data` payload carrying the verdict plus an optional reason. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [diagnosticsFor](../../src/lsp-features.ts#L207) (ws: Workspace, path: string) → LspDiagnostic[]
+    - fn [diagnosticsFor](../../src/lsp-features.ts#L196) (ws: Workspace, path: string) → LspDiagnostic[]
       <a id="features.lsp-features.diagnosticsFor"></a><br>Diagnostics and verdicts of one document, as `check --format json` reports them.
       - calls [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange)
-    - type [Described](../../src/lsp-features.ts#L232) <!-- internal -->
-      <a id="features.lsp-features.Described"></a><br>Shapes a record of a code node for LSP features: its kind and ID, optional signature and file path, position as line and column, and a list of state labels attached to it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [describe](../../src/lsp-features.ts#L242) (ws: Workspace, id: string) → Described | null <!-- internal -->
-      <a id="features.lsp-features.describe"></a><br>Builds a location/kind/signature record for a symbol by checking the analysis snapshot first, then a planned declaration via [`features.lsp-features.plannedDecl`](features.md#features.lsp-features.plannedDecl), then the declaration index, returning null if none match. Attaches state tags like "opaque" or planned/implemented… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl)
-    - fn [plannedDecl](../../src/lsp-features.ts#L256) (docs: readonly Document[], id: string) → { kind: string; signature: string | null; file: string; line: number; col: number } | null
-      <a id="features.lsp-features.plannedDecl"></a><br>Scans every document via [`features.lsp-features.nodesOf`](features.md#features.lsp-features.nodesOf) for the first "planned" node with the given id and returns its label as kind (defaulting to "fn"), its text as signature, and the file plus start line and column. Returns null when no such planned node exists. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [flowsUsing](../../src/lsp-features.ts#L265) (spec: SpecIR, id: string) → string[]
-      <a id="features.lsp-features.flowsUsing"></a><br>Walks every flow in the spec via [`lang.spec-ir.walkFlow`](lang.md#lang.spec-ir.walkFlow) and collects the names of flows whose steps or triggers target the given id. Returns those names deduplicated and sorted, serving [`features.lsp-features.hover`](features.md#features.lsp-features.hover), [`features.lsp-features.codeLenses`](features.md#features.lsp-features.codeLenses) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - type [HoverResult](../../src/lsp-features.ts#L275) <!-- internal -->
+    - fn [describe](../../src/lsp-features.ts#L222) (ws: Workspace, id: string) → (NodeFacts & { state: string[] }) | null <!-- internal -->
+      <a id="features.lsp-features.describe"></a><br>The facts of an ID (`explain-node.ts`) with the state hover names: opaque, and a plan with or without code.
+      - calls [features.explain-node.nodeFacts](features.md#features.explain-node.nodeFacts)
+    - type [HoverRun](../../src/lsp-features.ts#L230)
+      <a id="features.lsp-features.HoverRun"></a><br>A piece of hover text: code (an ID, a keyword, a signature, a message's code span) is in backticks in Markdown, `strong` in bold.
+    - type [HoverContent](../../src/lsp-features.ts#L240)
+      <a id="features.lsp-features.HoverContent"></a><br>A hover before it is Markdown: `hover()` renders it for an LSP client, and the TUI draws its parts as they are, so neither parses the other's text.
+    - type [HoverResult](../../src/lsp-features.ts#L257) <!-- internal -->
       <a id="features.lsp-features.HoverResult"></a>
-    - fn [hover](../../src/lsp-features.ts#L277) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null
-      <a id="features.lsp-features.hover"></a><br>Resolves the identifier under a cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at), then builds a markdown summary from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), matching analysis verdicts, and [`features.lsp-features.flowsUsing`](features.md#features.lsp-features.flowsUsing). Returns null when nothing describable is there, otherwise pairs the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [roleHover](../../src/lsp-features.ts#L305) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null <!-- internal -->
+    - fn [hover](../../src/lsp-features.ts#L259) (ws: Workspace, path: string, position: LspPosition) → HoverResult | null
+      <a id="features.lsp-features.hover"></a><br>Resolves the identifier under a cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at), then builds a markdown summary from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), matching analysis verdicts, and `features.lsp-features.flowsUsing`. Returns null when nothing describable is there, otherwise pairs the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.lsp-features.hoverContent](features.md#features.lsp-features.hoverContent), [features.lsp-features.hoverMarkdown](features.md#features.lsp-features.hoverMarkdown)
+    - fn [hoverMarkdown](../../src/lsp-features.ts#L265) (content: HoverContent) → string
+      <a id="features.lsp-features.hoverMarkdown"></a><br>The hover as LSP Markdown: title, place, a `- ` line per evidence, the flows; a blank line between them.
+      - calls [features.lsp-features.runsMarkdown](features.md#features.lsp-features.runsMarkdown)
+    - fn [runsMarkdown](../../src/lsp-features.ts#L270) (runs: readonly HoverRun[]) → string <!-- internal -->
+      <a id="features.lsp-features.runsMarkdown"></a>
+    - fn [runsText](../../src/lsp-features.ts#L280) (runs: readonly HoverRun[]) → string
+      <a id="features.lsp-features.runsText"></a><br>The text of runs without the Markdown: what a terminal shows.
+    - fn [inlineRuns](../../src/lsp-features.ts#L288) (text: string) → HoverRun[] <!-- internal -->
+      <a id="features.lsp-features.inlineRuns"></a><br>Text as keylang writes roles and messages — `code spans` in backticks — as runs; an unpaired backtick stays text. Rendered back, it is the same text.
+    - fn [evidenceLine](../../src/lsp-features.ts#L301) (label: string, message: string) → HoverRun[] <!-- internal -->
+      <a id="features.lsp-features.evidenceLine"></a><br>An evidence line: the criterion (or the diagnostic's code), then the message.
+      - calls [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns)
+    - fn [hoverContent](../../src/lsp-features.ts#L306) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null
+      <a id="features.lsp-features.hoverContent"></a><br>What hover says at a position: the ID under it (kind, signature, place, evidence, flows), else the role of the line.
+      - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - fn [roleHover](../../src/lsp-features.ts#L331) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null <!-- internal -->
       <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (format.md §5), then the diagnostics and verdicts of that line.
-      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - fn [definition](../../src/lsp-features.ts#L334) (ws: Workspace, path: string, position: LspPosition) → Location | null
+      - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
+    - fn [definition](../../src/lsp-features.ts#L361) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a><br>Resolves what sits under a cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at): a link becomes a file URL pointing at its line, otherwise the symbol is looked up with [`features.lsp-features.describe`](features.md#features.lsp-features.describe) and its source position converted through [`features.lsp-features.lspPoint`](features.md#features.lsp-features.lspPoint). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf)
-    - fn [signatureHelp](../../src/lsp-features.ts#L348) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
-      <a id="features.lsp-features.signatureHelp"></a><br>Reads the line at the cursor from `ws`, takes the last dotted identifier before the cursor, and resolves it via [`features.lsp-features.describe`](features.md#features.lsp-features.describe). Returns one signature labelled with the id and signature, with file:line as documentation, or null if nothing resolves. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [signatureHelp](../../src/lsp-features.ts#L375) (ws: Workspace, path: string, position: LspPosition) → { signatures: { label: string; documentation?: string }[]; activeSignature: 0; activeParameter: 0 } | null
+      <a id="features.lsp-features.signatureHelp"></a><br>Reads the line at the cursor from `ws`, takes the last dotted identifier before the cursor, and resolves it via [`features.lsp-features.describe`](features.md#features.lsp-features.describe). Returns one signature labelled with the id and signature, with file:line as documentation, or null if nothing resolves. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.describe](features.md#features.lsp-features.describe)
-    - fn [references](../../src/lsp-features.ts#L362) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
+    - fn [references](../../src/lsp-features.ts#L389) (ws: Workspace, path: string, position: LspPosition, includeDeclaration = true) → Location[]
       <a id="features.lsp-features.references"></a><br>Declarations and uses of the id under the cursor; `includeDeclaration: false` (LSP's `context`) leaves out the declarations.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [SymbolInformation](../../src/lsp-features.ts#L378)
+    - type [SymbolInformation](../../src/lsp-features.ts#L405)
       <a id="features.lsp-features.SymbolInformation"></a><br>Shape of a workspace/document symbol result sent to LSP clients: a display name, a numeric symbol-kind code, the `Location` where it is defined, and an optional enclosing container name. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [workspaceSymbols](../../src/lsp-features.ts#L398) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
+    - fn [workspaceSymbols](../../src/lsp-features.ts#L425) (ws: Workspace, briefs: ReadonlyMap<string, StoredExplanation>, query: string) → SymbolInformation[]
       <a id="features.lsp-features.workspaceSymbols"></a><br>Nodes of the snapshot and planned intentions matching `query` (`searchNodes`, fuzzy): by name and ID first, then by the text of their explanation. Each points at its code, a planned one at its declaration in the spec, a layer at its line in `keylang.json`; `containerName` is…
       - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [features.lsp-features.symbolLocation](features.md#features.lsp-features.symbolLocation), [base.brief.capText](base.md#base.brief.capText), [features.lsp-features.symbolKind](features.md#features.lsp-features.symbolKind)
-    - fn [symbolKind](../../src/lsp-features.ts#L414) (kind: string) → number <!-- internal -->
+    - fn [symbolKind](../../src/lsp-features.ts#L441) (kind: string) → number <!-- internal -->
       <a id="features.lsp-features.symbolKind"></a><br>Maps a keylang node kind string (after stripping a leading "planned " prefix) to an LSP SymbolKind number: class, fn, type, and event get their own codes, anything else falls back to module. Used by [`features.lsp-features.workspaceSymbols`](features.md#features.lsp-features.workspaceSymbols) to tag workspace symbol results. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [symbolLocation](../../src/lsp-features.ts#L423) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
-      <a id="features.lsp-features.symbolLocation"></a><br>Converts a search hit into an LSP location: for layers it scans keylang.json for the matching key line via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), otherwise it resolves the declaration column from the snapshot or [`features.lsp-features.plannedDecl`](features.md#features.lsp-features.plannedDecl) and builds a zero-width range with… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
-    - type [DocumentSymbol](../../src/lsp-features.ts#L443)
+    - fn [symbolLocation](../../src/lsp-features.ts#L450) (ws: Workspace, hit: NodeHit) → Location | null <!-- internal -->
+      <a id="features.lsp-features.symbolLocation"></a><br>Converts a search hit into an LSP location: for layers it scans keylang.json for the matching key line via [`features.lsp-features.lineRange`](features.md#features.lsp-features.lineRange), otherwise it resolves the declaration column from the snapshot or `features.lsp-features.plannedDecl` and builds a zero-width range with… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.lsp-features.uriOf](features.md#features.lsp-features.uriOf), [features.lsp-features.lineRange](features.md#features.lsp-features.lineRange), [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
+    - type [DocumentSymbol](../../src/lsp-features.ts#L470)
       <a id="features.lsp-features.DocumentSymbol"></a><br>Describes a hierarchical outline entry in the LSP document-symbol shape: a name, optional detail, numeric kind, full and selection `LspRange`s, and nested children of the same shape. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [statusOf](../../src/lsp-features.ts#L456) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
+    - fn [statusOf](../../src/lsp-features.ts#L483) (verdicts: readonly Verdict[], diagnostics: readonly Diagnostic[], path: string, line: number) → string | undefined <!-- internal -->
       <a id="features.lsp-features.statusOf"></a><br>Worst verdict on a line of this document: `fail` > `unverified` > `ok`.
-    - fn [flowPhrases](../../src/lsp-features.ts#L466) (spec: SpecIR) → Map<Node, string> <!-- internal -->
+    - fn [flowPhrases](../../src/lsp-features.ts#L493) (spec: SpecIR) → Map<Node, string> <!-- internal -->
       <a id="features.lsp-features.flowPhrases"></a><br>Written phrase of a trigger, step, when, or then, keyed by its text-IR node.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.lsp-features.itemPhrase](features.md#features.lsp-features.itemPhrase)
-    - fn [itemPhrase](../../src/lsp-features.ts#L477) (item: Trigger | FlowItem) → string | null <!-- internal -->
+    - fn [itemPhrase](../../src/lsp-features.ts#L504) (item: Trigger | FlowItem) → string | null <!-- internal -->
       <a id="features.lsp-features.itemPhrase"></a><br>Extracts the human-readable text from a flow element by kind: the target string for triggers, steps, and ref-form `then` items, the condition for `when`, and the prose for non-ref `then`. Returns null for any other kind, which [`features.lsp-features.flowPhrases`](features.md#features.lsp-features.flowPhrases) uses to skip… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [documentSymbols](../../src/lsp-features.ts#L484) (ws: Workspace, path: string) → DocumentSymbol[]
+    - fn [documentSymbols](../../src/lsp-features.ts#L511) (ws: Workspace, path: string) → DocumentSymbol[]
       <a id="features.lsp-features.documentSymbols"></a><br>Builds the LSP outline for a document by converting each section's IR nodes (via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes)) into nested symbols, grouping flow and rules sections under a heading symbol. Each symbol's detail carries the worst verdict status among the node and its children, computed… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.flowPhrases](features.md#features.lsp-features.flowPhrases), [lang.ir.walk](lang.md#lang.ir.walk), [features.lsp-features.statusOf](features.md#features.lsp-features.statusOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [features.lsp-features.fromPos](features.md#features.lsp-features.fromPos), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
-    - type [CompletionItem](../../src/lsp-features.ts#L571)
+    - type [CompletionItem](../../src/lsp-features.ts#L598)
       <a id="features.lsp-features.CompletionItem"></a><br>Shape of one entry the completion provider returns: a label with an LSP kind code, optional detail, description, sort key, and a `filterText`/`textEdit` pair that lets the dotted label replace the whole typed path rather than just the last segment after a dot. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [completions](../../src/lsp-features.ts#L598) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
+    - fn [completions](../../src/lsp-features.ts#L625) (ws: Workspace, path: string, position: LspPosition) → CompletionItem[]
       <a id="features.lsp-features.completions"></a><br>Keywords by position at the start of an item; after `step`/`trigger` only functions and planned functions; after other reference keywords, ids that the enclosing module may depend on (`deny` removes the rest).
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.enclosing](features.md#features.lsp-features.enclosing), [features.lsp-features.sectionAt](features.md#features.lsp-features.sectionAt), [lang.parser.keywordsAt](lang.md#lang.parser.keywordsAt), [features.lsp-features.moduleAround](features.md#features.lsp-features.moduleAround), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.blocksDependency](check.md#check.rules.blocksDependency)
-    - fn [sectionAt](../../src/lsp-features.ts#L646) (doc: Document, line: number) → Section | undefined <!-- internal -->
+    - fn [sectionAt](../../src/lsp-features.ts#L673) (doc: Document, line: number) → Section | undefined <!-- internal -->
       <a id="features.lsp-features.sectionAt"></a><br>Walks the document's sections in order and returns the last one whose heading starts on or before the given line, defaulting to the first section (headingless sections count as starting at line 1). Used by [`features.lsp-features.completions`](features.md#features.lsp-features.completions) to know which section the cursor is… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [enclosing](../../src/lsp-features.ts#L656) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
+    - fn [enclosing](../../src/lsp-features.ts#L683) (doc: Document, line: number, col: number) → Node | undefined <!-- internal -->
       <a id="features.lsp-features.enclosing"></a><br>The nearest item above `line` that starts left of `col`: the parent of a new item there.
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [ancestors](../../src/lsp-features.ts#L665) (doc: Document, node: Node) → Node[] <!-- internal -->
+    - fn [ancestors](../../src/lsp-features.ts#L692) (doc: Document, node: Node) → Node[] <!-- internal -->
       <a id="features.lsp-features.ancestors"></a><br>Walks up the parent links from [`features.lsp-features.nodesOf`](features.md#features.lsp-features.nodesOf) to return the given node followed by each enclosing node out to the root. Each step is a linear scan of the flattened node list, so the chain costs O(depth × nodes). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf)
-    - fn [moduleAround](../../src/lsp-features.ts#L678) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
+    - fn [moduleAround](../../src/lsp-features.ts#L705) (ws: Workspace, doc: Document, parent: Node | undefined) → string | null <!-- internal -->
       <a id="features.lsp-features.moduleAround"></a><br>The module a completion is written in: the nearest enclosing module or fn declaration.
       - calls [features.lsp-features.ancestors](features.md#features.lsp-features.ancestors)
-    - type [CodeLens](../../src/lsp-features.ts#L693) <!-- internal -->
+    - type [CodeLens](../../src/lsp-features.ts#L720) <!-- internal -->
       <a id="features.lsp-features.CodeLens"></a><br>Shape of a single code lens entry returned to the LSP client: a document range plus the command to run when clicked, carrying a title, command identifier, and a list of string-array arguments. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [codeLenses](../../src/lsp-features.ts#L699) (ws: Workspace, path: string) → CodeLens[]
+    - fn [codeLenses](../../src/lsp-features.ts#L726) (ws: Workspace, path: string) → CodeLens[]
       <a id="features.lsp-features.codeLenses"></a><br>`flows: checkout, pay` above each function of a source file that a flow names. The command `keylang.flows` (registered by the editor client) gets the flow names.
-      - calls [features.lsp-features.flowsUsing](features.md#features.lsp-features.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
+      - calls [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.lspPoint](features.md#features.lsp-features.lspPoint)
   - module [node-search](../../src/node-search.ts#L1)
     <a id="features.node-search"></a><br>Finding nodes by name, ID or what their explanation says (ADR 0004): the TUI's node search, MCP `search` and LSP workspace symbols share one ranking.
     - analyze [map.analyze](map.md#map.analyze)
@@ -1027,41 +1084,97 @@
     - fn [subsequence](../../src/node-search.ts#L91) (query: string, text: string) → boolean <!-- internal -->
       <a id="features.node-search.subsequence"></a><br>Every code point of `query` appears in `text` in order.
   - module [proposals](../../src/proposals.ts#L1)
-    <a id="features.proposals"></a><br>Proposals (CONTEXT.md): the full proposed text of one hand-written spec or source file, kept in `.keylang/proposals/<path>` until a person merges it hunk by hunk. `draft`, `code-to-spec` and MCP `apply_diff` propose specs, `spec-to-code` proposes code and its tests; only the…
+    <a id="features.proposals"></a><br>Proposals (CONTEXT.md): the full proposed text of one hand-written spec or source file, kept in `.keylang/proposals/<path>` until a person takes it: hunk by hunk in the TUI's MERGE, or whole with `keylang proposals accept`. `draft`, `code-to-spec` and MCP `apply_diff` propose…
     - node [external.node](external.md#external.node)
     - analyze [map.analyze](map.md#map.analyze)
+    - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
+    - files [lang.files](lang.md#lang.files)
     - languages [base.languages](base.md#base.languages)
+    - map [map.map](map.md#map.map)
     - parser [lang.parser](lang.md#lang.parser)
     - safe-write [base.safe-write](base.md#base.safe-write)
+    - span [base.span](base.md#base.span)
+    - stats [features.stats](features.md#features.stats)
     - wire-gen [map.wire-gen](map.md#map.wire-gen)
-    - fn [proposalProblem](../../src/proposals.ts#L24) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
-      <a id="features.proposals.proposalProblem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A proposal replaces one hand-written spec: a Markdown file under the spec directory, not a generated map file, and not reached through a link that leads out. `specDir` is relative to the root, POSIX; `generated` says…
-      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [lang.parser.parse](lang.md#lang.parser.parse), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
-    - fn [generatedSpecProblem](../../src/proposals.ts#L46) (marker: string | null, specDir: string) → string <!-- internal -->
+    - fn [notPlain](../../src/proposals.ts#L28) (path: string) → boolean <!-- internal -->
+      <a id="features.proposals.notPlain"></a><br>The write protocol's first test (`writeProblem`): a plain relative POSIX path, before anything on disk is looked at.
+    - fn [unreadDirectory](../../src/proposals.ts#L33) (dirs: readonly string[]) → boolean <!-- internal -->
+      <a id="features.proposals.unreadDirectory"></a><br>A directory below the spec directory, or the root for code, that `check` and the map do not read: hidden, `node_modules`, `target`.
+    - fn [proposalProblem](../../src/proposals.ts#L46) (root: string, specDir: string, path: string, generated: (path: string) => boolean = () => false) → string | null
+      <a id="features.proposals.proposalProblem"></a><br>Why `.keylang/proposals/<path>` may not be merged, or null. A proposal replaces one hand-written spec: a Markdown file under the spec directory, not one keylang generates (the map, the explained map, a saved model explanation, a file with the generated marker), and not reached…
+      - calls [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [lang.parser.parse](lang.md#lang.parser.parse), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText), [features.proposals.generatedSpecProblem](features.md#features.proposals.generatedSpecProblem)
+    - fn [generatedSpecProblem](../../src/proposals.ts#L74) (marker: string | null, specDir: string) → string <!-- internal -->
       <a id="features.proposals.generatedSpecProblem"></a><br>The refusal for a generated spec, naming the command its marker names (`keylang baseline` for the baseline; `keylang map` otherwise).
-    - fn [codeProposalProblem](../../src/proposals.ts#L58) (root: string, path: string) → string | null
-      <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, inside the repository (links included), outside the directories sources are not read from, and not one keylang generates (`keylang wire`).
-      - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
-    - type [ProposalBasis](../../src/proposals.ts#L74)
+    - fn [codeProposalProblem](../../src/proposals.ts#L88) (root: string, path: string) → string | null
+      <a id="features.proposals.codeProposalProblem"></a><br>Why a proposal for the source file `path` may not be merged, or null: a file of a language keylang reads, a plain relative path inside the repository (links included, one whose target does not exist yet too), outside the directories sources are not read from, and not one…
+      - calls [base.languages.languageOf](base.md#base.languages.languageOf), [features.proposals.notPlain](features.md#features.proposals.notPlain), [features.proposals.unreadDirectory](features.md#features.proposals.unreadDirectory), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.isGeneratedText](base.md#base.safe-write.isGeneratedText)
+    - fn [targetProblem](../../src/proposals.ts#L102) (root: string, specDir: string, path: string, generated?: (path: string) => boolean) → string | null
+      <a id="features.proposals.targetProblem"></a><br>The gate of a proposal's target: a Markdown file is a spec, any other a source file.
+      - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
+    - type [ProposalBasis](../../src/proposals.ts#L111)
       <a id="features.proposals.ProposalBasis"></a><br>What a proposal was built from: the target on disk and the proposal already waiting for it (null: no file). A write that carries it lands only while both are still so.
-    - fn [proposalWriteProblem](../../src/proposals.ts#L84) (root: string, path: string, basis: ProposalBasis) → string | null
+    - fn [proposalWriteProblem](../../src/proposals.ts#L121) (root: string, path: string, basis: ProposalBasis) → string | null
       <a id="features.proposals.proposalWriteProblem"></a><br>Why the proposal of `path` built from `basis` may not be written now, or null: the target or the waiting proposal changed, appeared or went away since, or the store breaks the write policy. Each reason names its file.
-      - calls [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
-    - fn [writeProposal](../../src/proposals.ts#L100) (root: string, path: string, text: string, basis?: ProposalBasis) → string
+      - calls [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem)
+    - fn [writeProposal](../../src/proposals.ts#L137) (root: string, path: string, text: string, basis?: ProposalBasis) → string
       <a id="features.proposals.writeProposal"></a><br>Writes the proposal for `path` (relative, POSIX) atomically and returns its file; `.keylang/proposals/` is keylang's own store, so a link there that leads elsewhere is refused like any other. With `basis` nothing is written unless the target and the waiting proposal are still…
       - calls [features.proposals.proposalWriteProblem](features.md#features.proposals.proposalWriteProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [lineDiff](../../src/proposals.ts#L109) (before: string, after: string) → string
+    - fn [lineDiff](../../src/proposals.ts#L146) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
+    - type [PendingProposal](../../src/proposals.ts#L163)
+      <a id="features.proposals.PendingProposal"></a><br>One pending proposal as `keylang proposals` lists it.
+    - fn [proposalTarget](../../src/proposals.ts#L180) (name: string) → string | null
+      <a id="features.proposals.proposalTarget"></a><br>The target of a proposal as a person names it: as `keylang proposals` lists it, or as its store path `.keylang/proposals/<target>`; POSIX. Null when it is no plain relative path.
+      - calls [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.notPlain](features.md#features.proposals.notPlain)
+    - fn [pendingTargets](../../src/proposals.ts#L191) (root: string) → string[]
+      <a id="features.proposals.pendingTargets"></a><br>Every target with a file or a link under `.keylang/proposals/`, sorted. The store is listed only while it stays inside the repository; a link in it is listed, never followed.
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within), [base.config.toPosix](base.md#base.config.toPosix)
+    - fn [storeEntry](../../src/proposals.ts#L206) (root: string, target: string) → { abs: string; link: boolean } | { problem: string } | null <!-- internal -->
+      <a id="features.proposals.storeEntry"></a><br>The store entry of `target` where its directory lands: null when there is none, else the entry and whether it is a link. A store whose directory leads out of the repository is a problem, and nothing there is looked at.
+      - calls [base.safe-write.landing](base.md#base.safe-write.landing), [map.analyze.within](map.md#map.analyze.within)
+    - type [ReadProposal](../../src/proposals.ts#L220) <!-- internal -->
+      <a id="features.proposals.ReadProposal"></a><br>A proposal that may be accepted: its text and the target's (null: no file).
+    - fn [readProposal](../../src/proposals.ts#L230) (root: string, specDir: string, target: string) → ReadProposal | { problem: string } | null <!-- internal -->
+      <a id="features.proposals.readProposal"></a><br>The proposal of `target` read after both gates — a plain file in the store, a target a proposal may change — or why it cannot be accepted; null when none is pending.
+      - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [lang.files.existingText](lang.md#lang.files.existingText)
+    - fn [lineCounts](../../src/proposals.ts#L241) (before: string, after: string) → { added: number; removed: number } <!-- internal -->
+      <a id="features.proposals.lineCounts"></a><br>`+` and `-` lines `lineDiff` prints.
+      - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
+    - fn [listProposals](../../src/proposals.ts#L247) (root: string, specDir: string) → PendingProposal[]
+      <a id="features.proposals.listProposals"></a><br>Every pending proposal with its target, line counts and why it cannot be accepted. Reads only.
+      - calls [features.proposals.pendingTargets](features.md#features.proposals.pendingTargets), [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
+    - type [ProposalDiff](../../src/proposals.ts#L256)
+      <a id="features.proposals.ProposalDiff"></a><br>What `keylang proposals show <target>` prints, or why not. Reads only.
+    - fn [proposalDiff](../../src/proposals.ts#L258) (root: string, specDir: string, target: string) → ProposalDiff
+      <a id="features.proposals.proposalDiff"></a>
+      - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
+    - type [AcceptResult](../../src/proposals.ts#L265)
+      <a id="features.proposals.AcceptResult"></a>
+    - fn [acceptProposal](../../src/proposals.ts#L283) (root: string, specDir: string, target: string) → AcceptResult
+      <a id="features.proposals.acceptProposal"></a><br>`keylang proposals accept <target>`: the proposal's full text replaces the target, as MERGE does with every hunk accepted. The same gates as MERGE (the target's, a plain file in the store), a target that is not writable (a person's `chmod a-w`) is refused, and the write follows…
+      - calls [features.proposals.readProposal](features.md#features.proposals.readProposal), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.dropProposal](features.md#features.proposals.dropProposal), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [features.proposals.countDecision](features.md#features.proposals.countDecision), [features.proposals.lineCounts](features.md#features.proposals.lineCounts)
+    - type [RejectResult](../../src/proposals.ts#L306)
+      <a id="features.proposals.RejectResult"></a>
+    - fn [rejectProposal](../../src/proposals.ts#L313) (root: string, specDir: string, target: string) → RejectResult
+      <a id="features.proposals.rejectProposal"></a><br>`keylang proposals reject <target>`: the proposal is removed and the target stays as it is. A proposal no gate admits is still the person's to drop; a link in the store is removed itself, never followed.
+      - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [features.proposals.targetProblem](features.md#features.proposals.targetProblem), [base.safe-write.landing](base.md#base.safe-write.landing), [features.proposals.countDecision](features.md#features.proposals.countDecision), [lang.files.existingText](lang.md#lang.files.existingText)
+    - fn [dropProposal](../../src/proposals.ts#L326) (root: string, target: string, text: string) → string | null <!-- internal -->
+      <a id="features.proposals.dropProposal"></a><br>Removes the proposal while it still holds `text`: null, or why it stays.
+      - calls [features.proposals.storeEntry](features.md#features.proposals.storeEntry), [base.diag.errorText](base.md#base.diag.errorText)
+    - fn [countDecision](../../src/proposals.ts#L338) (root: string, before: string, after: string, decision: "accepted" | "rejected") → void <!-- internal -->
+      <a id="features.proposals.countDecision"></a><br>The model lines a decision took or dropped, as MERGE counts them (design §5.1 p.7); a count that cannot be written is lost, never the decision.
+      - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.stats.statusesIn](features.md#features.stats.statusesIn), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts)
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
     <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a test that fails until…
     - node [external.node](external.md#external.node)
     - analyze [map.analyze](map.md#map.analyze)
     - config [base.config](base.md#base.config)
     - diag [base.diag](base.md#base.diag)
+    - files [lang.files](lang.md#lang.files)
     - glob [base.glob](base.md#base.glob)
     - languages [base.languages](base.md#base.languages)
     - graph [map.graph](map.md#map.graph)
-    - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - proposals [features.proposals](features.md#features.proposals)
     - assess [check.assess](check.md#check.assess)
     - rules [check.rules](check.md#check.rules)
@@ -1075,12 +1188,12 @@
       <a id="features.spec-to-code.CodeCandidate"></a><br>A generated source file for one feature ID, bundled with the e2e test files it adds, the `test` entries it couldn't automate (with reasons), and the `check` verdicts and diagnostics it introduces versus the codebase without it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [specToCode](../../src/spec-to-code.ts#L55) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
       <a id="features.spec-to-code.specToCode"></a><br>`model`: the body comes from the model instead of the stub — the whole function with the declared signature, in one fenced block — and is analyzed the same way before anything is written. `options.signal` cancels the model's requests (`LlmCancelled`); the file is read before…
-      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
+      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [lang.files.existingText](lang.md#lang.files.existingText), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
     - type [CodeTarget](../../src/spec-to-code.ts#L74)
       <a id="features.spec-to-code.CodeTarget"></a><br>Where the code of a planned fn goes: the file, and the class it is a method of.
     - fn [plannedCodeTarget](../../src/spec-to-code.ts#L98) (analysis: Analysis, id: string, into?: string) → CodeTarget | { error: string; field: "id" | "into" }
       <a id="features.spec-to-code.plannedCodeTarget"></a><br>Where the code of the planned fn `id` goes, or why spec-to-code builds none — the checks it makes before any file is read: not planned (with a suggestion), not a fn, already implemented (with the place), a `deny` its flow would break (`field: "id"`); a file not of its module, a…
-      - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [features.spec-to-code.placeCode](features.md#features.spec-to-code.placeCode), [features.spec-to-code.parentId](features.md#features.spec-to-code.parentId), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
+      - calls [lang.spec-ir.plannedDeclaration](lang.md#lang.spec-ir.plannedDeclaration), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [features.spec-to-code.placeCode](features.md#features.spec-to-code.placeCode), [features.spec-to-code.parentId](features.md#features.spec-to-code.parentId), [base.diag.errorText](base.md#base.diag.errorText), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
     - type [Placement](../../src/spec-to-code.ts#L134) <!-- internal -->
       <a id="features.spec-to-code.Placement"></a><br>The file and owner of a planned fn under `ownerId`; `moduleId`: the module the file must be (null: the code says where the class is).
     - fn [parentId](../../src/spec-to-code.ts#L140) (id: string) → string <!-- internal -->
@@ -1169,63 +1282,69 @@
     - fn [dedent](../../src/spec-to-code.ts#L615) (code: string) → string <!-- internal -->
       <a id="features.spec-to-code.dedent"></a><br>`code` without the indentation all its non-blank lines share.
       - calls [features.spec-to-code.leadingSpace](features.md#features.spec-to-code.leadingSpace)
-    - fn [modelBody](../../src/spec-to-code.ts#L622) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [fileExcerpt](../../src/spec-to-code.ts#L634) (text: string, owner: CodeTarget["owner"], firstDeclaration: number | null) → string <!-- internal -->
+      <a id="features.spec-to-code.fileExcerpt"></a><br>What the model is shown of the file the code goes into, never more than about `HEAD_LINES + EXCERPT_LINES` lines: a file of up to `EXCERPT_LINES` lines whole; a longer one as its head up to the first declaration (the imports, at most `HEAD_LINES` lines), then the class the…
+    - fn [firstDeclarationLine](../../src/spec-to-code.ts#L648) (analysis: Analysis, file: string) → number | null <!-- internal -->
+      <a id="features.spec-to-code.firstDeclarationLine"></a><br>The first line of a declaration in `file` the snapshot knows: a fn, a type or a class; null without one.
+    - fn [modelBody](../../src/spec-to-code.ts#L658) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped.
-      - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [features.spec-to-code.dedent](features.md#features.spec-to-code.dedent)
+      - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [features.spec-to-code.fileExcerpt](features.md#features.spec-to-code.fileExcerpt), [features.spec-to-code.firstDeclarationLine](features.md#features.spec-to-code.firstDeclarationLine), [features.spec-to-code.dedent](features.md#features.spec-to-code.dedent)
   - module [stale](../../src/stale.ts#L1)
     <a id="features.stale"></a><br>Staleness of prose in specs (design §4.4): every node description and every flow `when` / `then` / `invariant` gets the fingerprint of the code it talks about — the closure fingerprints of the snapshot, so a change in a callee, a cycle included, reaches it. The accepted…
     - node [external.node](external.md#external.node)
     - analyze [map.analyze](map.md#map.analyze)
     - config [base.config](base.md#base.config)
+    - diag [base.diag](base.md#base.diag)
     - explanations [map.explanations](map.md#map.explanations)
+    - files [lang.files](lang.md#lang.files)
     - ir [lang.ir](lang.md#lang.ir)
     - safe-write [base.safe-write](base.md#base.safe-write)
     - snapshot [map.snapshot](map.md#map.snapshot)
     - span [base.span](base.md#base.span)
-    - type [StaleBaseline](../../src/stale.ts#L21) = ReadonlyMap<string, ReadonlyMap<string, string>>
+    - type [StaleBaseline](../../src/stale.ts#L23) = ReadonlyMap<string, ReadonlyMap<string, string>>
       <a id="features.stale.StaleBaseline"></a><br>Accepted fingerprints: spec file (relative to the root, POSIX) → statement key → fingerprint.
-    - type [Statement](../../src/stale.ts#L24)
+    - type [Statement](../../src/stale.ts#L26)
       <a id="features.stale.Statement"></a><br>One piece of prose bound to code.
-    - type [StaleFinding](../../src/stale.ts#L41) extends Statement
+    - type [StaleFinding](../../src/stale.ts#L43) extends Statement
       <a id="features.stale.StaleFinding"></a><br>Represents one architecture statement's freshness result: whether its code fingerprint is new, still accepted, or changed since acceptance. Also lists any subjects or unresolved references that could make that check incomplete. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [StaleReport](../../src/stale.ts#L53)
+    - type [StaleReport](../../src/stale.ts#L55)
       <a id="features.stale.StaleReport"></a><br>Groups the output of a staleness check: a list of findings sorted by file then position, plus baseline entries whose statement no longer exists in the checked files because its text changed or was removed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [staleBaselinePath](../../src/stale.ts#L61) (config: Pick<Config, "dir">) → string
+    - fn [staleBaselinePath](../../src/stale.ts#L63) (config: Pick<Config, "dir">) → string
       <a id="features.stale.staleBaselinePath"></a><br>Where the accepted fingerprints live, relative to the root, POSIX.
-    - fn [specStatements](../../src/stale.ts#L70) (docs: readonly Document[]) → Statement[]
+    - fn [specStatements](../../src/stale.ts#L72) (docs: readonly Document[]) → Statement[]
       <a id="features.stale.specStatements"></a><br>The statements of hand-written specs: descriptions of nodes in map and flow sections, and every flow `when`, `then` and `invariant`. Generated map files are skipped: their text is the code's own.
       - calls [features.stale.sectionRefs](features.md#features.stale.sectionRefs), [features.stale.subtreeRefs](features.md#features.stale.subtreeRefs), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [subtreeRefs](../../src/stale.ts#L105) (node: Node) → string[] <!-- internal -->
+    - fn [subtreeRefs](../../src/stale.ts#L107) (node: Node) → string[] <!-- internal -->
       <a id="features.stale.subtreeRefs"></a><br>Collects the target strings of every ref on a node and, recursively, on all of its descendants, returning them as one flat list; [`features.stale.specStatements`](features.md#features.stale.specStatements) uses it to gather the references a document subtree points at. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [sectionRefs](../../src/stale.ts#L109) (section: Section) → string[] <!-- internal -->
+    - fn [sectionRefs](../../src/stale.ts#L111) (section: Section) → string[] <!-- internal -->
       <a id="features.stale.sectionRefs"></a><br>Collects every reference ID found anywhere in a document section by expanding its nodes via [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes) and flattening each node's subtree references into one list. Used by [`features.stale.specStatements`](features.md#features.stale.specStatements) to tie spec statements to the code they mention. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes)
-    - fn [statementPrint](../../src/stale.ts#L118) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
+    - fn [statementPrint](../../src/stale.ts#L120) (snapshot: AnalysisSnapshot, subjects: readonly string[]) → { fingerprint: string; incomplete: string[] }
       <a id="features.stale.statementPrint"></a><br>The fingerprint of a statement's subjects in the snapshot, and what makes it incomplete. A subject the snapshot lacks hashes as `?`, so it turning up later is a change too.
       - calls [map.explanations.snapshotBaseline](map.md#map.explanations.snapshotBaseline), [features.stale.closureComplete](features.md#features.stale.closureComplete)
-    - fn [closureComplete](../../src/stale.ts#L131) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
+    - fn [closureComplete](../../src/stale.ts#L133) (snapshot: AnalysisSnapshot, id: string) → boolean <!-- internal -->
       <a id="features.stale.closureComplete"></a><br>A fn or type: its closure; a module or layer: every fn and type under it.
-    - fn [staleReport](../../src/stale.ts#L148) (docs: readonly Document[], snapshot: AnalysisSnapshot, baseline: StaleBaseline, whole = false) → StaleReport
+    - fn [staleReport](../../src/stale.ts#L150) (docs: readonly Document[], snapshot: AnalysisSnapshot, baseline: StaleBaseline, whole = false) → StaleReport
       <a id="features.stale.staleReport"></a><br>The statements of `docs` against the snapshot and the accepted baseline. Entries of the checked (hand-written) files can be obsolete; with `whole` (every spec of the repository was read) so can those of a file that is gone.
       - calls [features.stale.specStatements](features.md#features.stale.specStatements), [features.stale.statementPrint](features.md#features.stale.statementPrint), [base.span.compareText](base.md#base.span.compareText)
-    - fn [acceptBaseline](../../src/stale.ts#L170) (baseline: StaleBaseline, report: StaleReport, checked: readonly string[]) → StaleBaseline
+    - fn [acceptBaseline](../../src/stale.ts#L172) (baseline: StaleBaseline, report: StaleReport, checked: readonly string[]) → StaleBaseline
       <a id="features.stale.acceptBaseline"></a><br>The baseline after accepting `report`: the checked files' entries are replaced by the current fingerprints (a file with no statement left is dropped); other files keep theirs.
-    - fn [baselineJson](../../src/stale.ts#L183) (baseline: StaleBaseline) → string
+    - fn [baselineJson](../../src/stale.ts#L185) (baseline: StaleBaseline) → string
       <a id="features.stale.baselineJson"></a><br>The baseline as committed: files, then keys in code-unit order; two-space JSON with a final newline.
-    - fn [parseBaseline](../../src/stale.ts#L198) (text: string, path: string) → StaleBaseline
+    - fn [parseBaseline](../../src/stale.ts#L200) (text: string, path: string) → StaleBaseline
       <a id="features.stale.parseBaseline"></a><br>Reads a committed baseline; throws `path: problem` naming the field when it is not one.
-      - calls [features.stale.isRecord](features.md#features.stale.isRecord)
-    - fn [isRecord](../../src/stale.ts#L219) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      - calls [base.diag.errorText](base.md#base.diag.errorText), [features.stale.isRecord](features.md#features.stale.isRecord)
+    - fn [isRecord](../../src/stale.ts#L221) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="features.stale.isRecord"></a><br>Type guard that narrows an unknown value to a plain object by checking it is a non-null `object` and not an array. Used by [`features.stale.parseBaseline`](features.md#features.stale.parseBaseline) to validate the shape of parsed baseline JSON before reading its fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [staleLine](../../src/stale.ts#L224) (f: StaleFinding) → string
+    - fn [staleLine](../../src/stale.ts#L226) (f: StaleFinding) → string
       <a id="features.stale.staleLine"></a><br>One report line: `file:line:col: stale invariant `…`: …`.
-    - fn [staleSummary](../../src/stale.ts#L237) (report: StaleReport) → string
+    - fn [staleSummary](../../src/stale.ts#L239) (report: StaleReport) → string
       <a id="features.stale.staleSummary"></a><br>The stderr summary: counts by state, incomplete and obsolete.
-    - type [StaleCheck](../../src/stale.ts#L245)
+    - type [StaleCheck](../../src/stale.ts#L247)
       <a id="features.stale.StaleCheck"></a><br>Bundles the outcome of a staleness check: the comparison result, the baseline file location, and how many fingerprints were persisted when accepting, or null if the baseline was left untouched. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [runStaleCheck](../../src/stale.ts#L259) (request: { root: string; base: string; paths: readonly string[]; accept: boolean }) → Promise<StaleCheck>
+    - fn [runStaleCheck](../../src/stale.ts#L261) (request: { root: string; base: string; paths: readonly string[]; accept: boolean }) → Promise<StaleCheck>
       <a id="features.stale.runStaleCheck"></a><br>`check --stale [paths…] [--accept]`: analyses the repository (nothing of it is written), compares its specs with the committed baseline, and with `accept` writes the current fingerprints of the checked files. Throws on a usage or I/O problem, naming the file.
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.within](map.md#map.analyze.within), [features.stale.staleBaselinePath](features.md#features.stale.staleBaselinePath), [features.stale.parseBaseline](features.md#features.stale.parseBaseline), [map.analyze.analyze](map.md#map.analyze.analyze), [features.stale.staleReport](features.md#features.stale.staleReport), [features.stale.acceptBaseline](features.md#features.stale.acceptBaseline), [features.stale.baselineJson](features.md#features.stale.baselineJson), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.within](map.md#map.analyze.within), [features.stale.staleBaselinePath](features.md#features.stale.staleBaselinePath), [lang.files.existingText](lang.md#lang.files.existingText), [features.stale.parseBaseline](features.md#features.stale.parseBaseline), [map.analyze.analyze](map.md#map.analyze.analyze), [features.stale.staleReport](features.md#features.stale.staleReport), [features.stale.acceptBaseline](features.md#features.stale.acceptBaseline), [features.stale.baselineJson](features.md#features.stale.baselineJson), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
   - module [stats](../../src/stats.ts#L1)
     <a id="features.stats"></a><br>`.keylang/stats.json`: how often people accept what a model proposed (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines, and per kind of suggestion; local, never a verdict.
     - node [external.node](external.md#external.node)
@@ -1235,57 +1354,60 @@
     - type [Stats](../../src/stats.ts#L15)
       <a id="features.stats.Stats"></a><br>Shape of the persisted usage counters: tallies of draft lines keyed by agreement status between LLM and algorithm, plus tallies of editor suggestions keyed by source with accumulated decision latency in ms. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [readStats](../../src/stats.ts#L25) (root: string) → Stats
-      <a id="features.stats.readStats"></a><br>Loads the stats JSON file from the given root, returning a default empty record when the file is missing, unparsable, or fails the schema-1 shape check. Used by [`features.stats.updateStats`](features.md#features.stats.updateStats) as the baseline before applying a change. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [updateStats](../../src/stats.ts#L38) (root: string, change: (stats: Stats) => void) → void
-      <a id="features.stats.updateStats"></a><br>Loads the current stats via [`features.stats.readStats`](features.md#features.stats.readStats), applies the caller's mutation to the object, then persists it as pretty-printed JSON under `.keylang` through [`base.safe-write.safeWrite`](base.md#base.safe-write.safeWrite). _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [features.stats.readStats](features.md#features.stats.readStats), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [statusesIn](../../src/stats.ts#L45) (lines: readonly string[]) → Record<string, number>
+      <a id="features.stats.readStats"></a><br>Loads the stats JSON file from the given root, returning a default empty record when the file is missing, unparsable, or fails the schema-1 shape check. Used by [`features.stats.updateStats`](features.md#features.stats.updateStats) as the baseline before applying a change. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - calls [features.stats.readStatsFile](features.md#features.stats.readStatsFile)
+    - fn [readStatsFile](../../src/stats.ts#L30) (root: string) → { text: string | null; stats: Stats } <!-- internal -->
+      <a id="features.stats.readStatsFile"></a><br>The file as read — its text, null when there is none (or it cannot be read) — and the counts it holds.
+    - fn [updateStats](../../src/stats.ts#L53) (root: string, change: (stats: Stats) => void) → void
+      <a id="features.stats.updateStats"></a><br>Applies `change` to the counts on disk. Another writer (`keylang draft` in a shell beside a MERGE in the TUI) may write between the read and the write: the write lands only over the text it read, and a lost race reads again and applies `change` once more, so neither update is…
+      - calls [features.stats.readStatsFile](features.md#features.stats.readStatsFile), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+    - fn [statusesIn](../../src/stats.ts#L68) (lines: readonly string[]) → Record<string, number>
       <a id="features.stats.statusesIn"></a><br>`status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines.
-    - fn [addDrafts](../../src/stats.ts#L54) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
-      <a id="features.stats.addDrafts"></a><br>Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by [`operations.operations.countProposed`](operations.md#operations.operations.countProposed) and [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) to accumulate draft totals. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [addDrafts](../../src/stats.ts#L77) (stats: Stats, counts: Record<string, number>, field: keyof Tally) → void
+      <a id="features.stats.addDrafts"></a><br>Adds each per-status count into the matching tally of `stats.drafts`, creating a zeroed tally for statuses not yet present and incrementing only the given field. Used by `operations.operations.countProposed` and [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) to accumulate draft totals. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [voice-local](../../src/voice-local.ts#L1)
-    <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are loaded only when present; without them voice uses the browser's microphone (`keylang web`) and…
+    <a id="features.voice-local"></a><br>The optional native parts of voice (design §7.4): `decibri` for the microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition. Both ship prebuilt binaries and are optional peer dependencies: npm installs them only when the user adds them next to keylang, and…
     - node [external.node](external.md#external.node)
     - voice [features.voice](features.md#features.voice)
     - fugood-whisper_node [external.fugood-whisper_node](external.md#external.fugood-whisper_node)
     - decibri [external.decibri](external.md#external.decibri)
-    - type [Microphone](../../src/voice-local.ts#L17) = { chunks: AsyncIterable<Int16Array>; stop: () => void } <!-- internal -->
+    - type [Microphone](../../src/voice-local.ts#L19) = { chunks: AsyncIterable<Int16Array>; stop: () => void } <!-- internal -->
       <a id="features.voice-local.Microphone"></a><br>Shapes an open audio capture as an async stream of 16-bit PCM sample buffers plus a callback that ends the capture. Local voice code in [`features.voice-local`](features.md#features.voice-local) consumes the stream and invokes the callback to release the device. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ModuleStatus](../../src/voice-local.ts#L20)
+    - type [ModuleStatus](../../src/voice-local.ts#L22)
       <a id="features.voice-local.ModuleStatus"></a><br>Whether an optional package can be used here: `missing` when it is not installed, `unavailable` with the reason when it is there but does not load.
-    - type [WhisperContext](../../src/voice-local.ts#L22) <!-- internal -->
+    - type [WhisperContext](../../src/voice-local.ts#L24) <!-- internal -->
       <a id="features.voice-local.WhisperContext"></a><br>Describes the contract a local Whisper engine instance must satisfy: start transcription of raw audio bytes with an optional prompt, returning a cancellable handle and a promise for the text, plus a method to free the model. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Whisper](../../src/voice-local.ts#L27) <!-- internal -->
+    - type [Whisper](../../src/voice-local.ts#L29) <!-- internal -->
       <a id="features.voice-local.Whisper"></a><br>Describes the shape of the local speech-recognition backend: a function that creates a `WhisperContext` from a model file path with an optional GPU flag, and a loader that asynchronously initializes the underlying Whisper module. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MicrophoneClass](../../src/voice-local.ts#L32) <!-- internal -->
+    - type [MicrophoneClass](../../src/voice-local.ts#L34) <!-- internal -->
       <a id="features.voice-local.MicrophoneClass"></a><br>Describes a constructor shape taking `sampleRate` and `channels` and returning an opaque instance, so the voice feature can hold a dynamically loaded microphone library without a hard type dependency on it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [loadWhisper](../../src/voice-local.ts#L39) () → Promise<{ module: Whisper } | Exclude<ModuleStatus, { status: "ok" }>> <!-- internal -->
+    - fn [loadWhisper](../../src/voice-local.ts#L41) () → Promise<{ module: Whisper } | Exclude<ModuleStatus, { status: "ok" }>> <!-- internal -->
       <a id="features.voice-local.loadWhisper"></a><br>`@fugood/whisper.node` with its platform binary: the package itself loads the binary only on first use, so the check loads it, and a package without a working binary is not reported as installed.
       - calls [features.voice-local.optional](features.md#features.voice-local.optional), [features.voice-local.quietly](features.md#features.voice-local.quietly)
-    - fn [localStatus](../../src/voice-local.ts#L56) () → Promise<ModuleStatus>
+    - fn [localStatus](../../src/voice-local.ts#L58) () → Promise<ModuleStatus>
       <a id="features.voice-local.localStatus"></a><br>What `@fugood/whisper.node` can do on this machine.
       - calls [features.voice-local.loadWhisper](features.md#features.voice-local.loadWhisper)
-    - fn [localAvailable](../../src/voice-local.ts#L62) () → Promise<boolean>
+    - fn [localAvailable](../../src/voice-local.ts#L64) () → Promise<boolean>
       <a id="features.voice-local.localAvailable"></a><br>Whether `@fugood/whisper.node` and its binary load on this machine.
       - calls [features.voice-local.localStatus](features.md#features.voice-local.localStatus)
-    - fn [loadDecibri](../../src/voice-local.ts#L66) () → { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
+    - fn [loadDecibri](../../src/voice-local.ts#L68) () → { module: { Microphone: MicrophoneClass } } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
       <a id="features.voice-local.loadDecibri"></a><br>Loads the `decibri` package through [`features.voice-local.optional`](features.md#features.voice-local.optional) and checks that it exports a `Microphone` function. Returns the typed module on success, otherwise the load failure or an "unavailable" status. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.voice-local.optional](features.md#features.voice-local.optional)
-    - fn [microphoneStatus](../../src/voice-local.ts#L75) () → Promise<ModuleStatus>
+    - fn [microphoneStatus](../../src/voice-local.ts#L77) () → Promise<ModuleStatus>
       <a id="features.voice-local.microphoneStatus"></a><br>What `decibri` can do on this machine.
       - calls [features.voice-local.loadDecibri](features.md#features.voice-local.loadDecibri)
-    - fn [microphoneAvailable](../../src/voice-local.ts#L81) () → Promise<boolean>
+    - fn [microphoneAvailable](../../src/voice-local.ts#L83) () → Promise<boolean>
       <a id="features.voice-local.microphoneAvailable"></a><br>Whether `decibri` loads on this machine.
       - calls [features.voice-local.microphoneStatus](features.md#features.voice-local.microphoneStatus)
-    - fn [defaultMicrophone](../../src/voice-local.ts#L86) () → Promise<Microphone | null>
+    - fn [defaultMicrophone](../../src/voice-local.ts#L88) () → Promise<Microphone | null>
       <a id="features.voice-local.defaultMicrophone"></a><br>The system microphone through `decibri` (16 kHz, mono, s16le); null when it is not installed.
       - calls [features.voice-local.loadDecibri](features.md#features.voice-local.loadDecibri)
-    - fn [transcribeLocal](../../src/voice-local.ts#L108) (modelFile: string, pcm: Int16Array, terms: readonly string[]) → Promise<string>
+    - fn [transcribeLocal](../../src/voice-local.ts#L110) (modelFile: string, pcm: Int16Array, terms: readonly string[]) → Promise<string>
       <a id="features.voice-local.transcribeLocal"></a><br>whisper.cpp on this machine, window by window, with the glossary as the initial prompt.
       - calls [features.voice-local.loadWhisper](features.md#features.voice-local.loadWhisper), [features.voice-local.quietly](features.md#features.voice-local.quietly), [features.voice.windows](features.md#features.voice.windows), [features.voice.joinWindows](features.md#features.voice.joinWindows)
-    - fn [optional](../../src/voice-local.ts#L133) (name: string, load: () => unknown) → { module: unknown } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
+    - fn [optional](../../src/voice-local.ts#L135) (name: string, load: () => unknown) → { module: unknown } | Exclude<ModuleStatus, { status: "ok" }> <!-- internal -->
       <a id="features.voice-local.optional"></a><br>A package that may be absent or fail to load (a native binding without a prebuilt binary for this platform throws on `require`). Literal specifiers, so the map sees which packages voice may load.
-    - fn [quietly](../../src/voice-local.ts#L153) (load: () => Promise<T>) → Promise<({ value: T } | { error: string }) & { warnings: string[] }> <!-- internal -->
+    - fn [quietly](../../src/voice-local.ts#L155) (load: () => Promise<T>) → Promise<({ value: T } | { error: string }) & { warnings: string[] }> <!-- internal -->
       <a id="features.voice-local.quietly"></a><br>Runs `load` with `console.warn` captured: whisper.node warns while it looks for a platform binary, which would draw over the TUI. The warnings become part of a failure's reason.
   - module [voice](../../src/voice.ts#L1)
     <a id="features.voice"></a><br>Voice input (design §7.3 «Голосовий ввід»): PCM (16 kHz, mono, s16le) → text, by a local whisper.cpp model or OpenRouter's audio input. Speech goes into free text by default; a tiny command grammar («крок …», «коли … тоді …», «емітить …») turns into list items with IDs matched…
