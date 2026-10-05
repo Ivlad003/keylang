@@ -4595,6 +4595,9 @@ function doctorLines(payload: DoctorPayload): string[] {
       : voice.microphone.status === "missing"
         ? "not installed (optional; keylang web uses the browser's microphone)"
         : `unavailable: ${voice.microphone.reason} (keylang web uses the browser's microphone)`;
+  // Optional peer dependencies: npm installs them only when the user asks, next to keylang.
+  const missing = [voice.native.status === "missing" ? "@fugood/whisper.node" : null, voice.microphone.status === "missing" ? "decibri" : null].filter((name) => name !== null).join(" ");
+  const install = missing === "" ? [] : [`local voice: npm i -g ${missing} (beside a global keylang) or npm i -D ${missing} (in a project with keylang)`];
   return [
     `languages: ${payload.languages.join(", ") || "none found"}${payload.configFile ? "" : ` (guessed; no ${CONFIG_FILE})`}`,
     `agent: ${agent.configured === null ? agent.detail : `${agent.configured}${agent.source === null || agent.source === "keylang.json" ? "" : ` (from ${agent.source})`}: ${agent.detail}`}`,
@@ -4604,6 +4607,7 @@ function doctorLines(payload: DoctorPayload): string[] {
     `voice model: ${voice.model ?? `none in ${voice.modelsDir}`}`,
     `@fugood/whisper.node: ${native}`,
     `microphone (decibri): ${microphone}`,
+    ...install,
   ];
 }
 

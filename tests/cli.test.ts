@@ -592,6 +592,8 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
     encoding: "utf8",
   });
   assert.equal(install.status, 0, install.stderr);
+  // The grammars ship in dist/wasm, and local voice is an optional peer the user adds: a plain install pulls in neither.
+  for (const name of ["@vscode/tree-sitter-wasm", "@fugood/whisper.node", "decibri"]) assert.equal(existsSync(join(tmp, "node_modules", name)), false, name);
   const installedBin = join(tmp, "node_modules/keylang/bin/keylang.js");
   const version = spawnSync(process.execPath, [installedBin, "--version"], { cwd: tmp, encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
@@ -614,6 +616,7 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
     assert.equal(doctor.status, 0, doctor.stderr);
     assert.match(doctor.stdout, /^@fugood\/whisper\.node: not installed \(optional\)$/m);
     assert.match(doctor.stdout, /^microphone \(decibri\): not installed/m);
+    assert.match(doctor.stdout, /^local voice: npm i -g @fugood\/whisper\.node decibri \(beside a global keylang\) or npm i -D @fugood\/whisper\.node decibri \(in a project with keylang\)$/m);
     // Installed but not loadable (no prebuilt binary for the platform): unavailable with the reason, still code 0,
     // and whisper.node's console.warn while it looks for a binary does not reach the output.
     mkdirSync(join(bare, "node_modules/decibri"), { recursive: true });
@@ -671,8 +674,11 @@ test("packed tarball runs the CLI from node_modules", async (t) => {
   const packedIndex = JSON.parse(readFileSync(join(packedRepo, ".keylang/index.json"), "utf8"));
   assert.equal(packedIndex.snapshotId, localIndex.snapshotId);
   assert.equal(packedIndex.schema, localIndex.schema);
-  // Rust and Python parse with the package's own grammars too: the same map and snapshot as the checkout.
-  for (const fixture of ["rust-shop", "py-shop"]) {
+  // The package names its grammars from dist/wasm/grammars.json and its runtime from web-tree-sitter's own package.json.
+  assert.deepEqual(packedIndex.manifest.grammars, localIndex.manifest.grammars);
+  for (const version of Object.values(packedIndex.manifest.grammars as Record<string, string>)) assert.match(version, /^\d+\.\d+\.\d+/);
+  // Rust, Python and PHP parse with the package's own grammars too: the same map and snapshot as the checkout.
+  for (const fixture of ["rust-shop", "py-shop", "php-shop"]) {
     const local = mkdtempSync(join(tmpdir(), `keylang-${fixture}-`));
     const packedCopy = mkdtempSync(join(tmpdir(), `keylang-${fixture}-packed-`));
     t.after(() => {
