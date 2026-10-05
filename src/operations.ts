@@ -4228,10 +4228,30 @@ function emptyExportC4(status: OperationStatus, exitCode: 0 | 1 | 2 | null, erro
 }
 
 /**
+ * Why `out` (as typed: relative to the root, or absolute) cannot receive a
+ * diagram, the CLI's message, or null. The path policy of every write —
+ * plain, relative, inside the repository through links, not a directory —
+ * is checked before the target is read, as `wireOutProblem` does: a file
+ * outside is never opened. A file there passes only as a diagram this
+ * command wrote, which the operation checks once the path passes. Reads
+ * nothing outside the repository; a form may call it as the path is typed.
+ */
+export function c4OutProblem(root: string, out: string): string | null {
+  const path = toPosix(relative(root, resolve(root, out)));
+  try {
+    const problem = writeProblem(root, path, { generated: true });
+    return problem === null ? null : `export c4: --out ${out}: ${problem}; nothing written`;
+  } catch (error) {
+    return `export c4: --out ${out}: ${messageOf(error)}`;
+  }
+}
+
+/**
  * `keylang export c4` (c4-zoom/12): the diagram of the saved code and the
  * saved briefs, no model. With `out` it is written to that file, which must
- * be new or a diagram this command wrote (its marker line); any other file
- * is 2 with nothing written. An unknown format, level or layer is 2.
+ * pass the write policy (`c4OutProblem`, checked before the file is read)
+ * and be new or a diagram this command wrote (its marker line); any other
+ * file is 2 with nothing written. An unknown format, level or layer is 2.
  */
 async function runExportC4(request: ExportC4Request, context: OperationContext): Promise<OperationEnvelope<"export-c4">> {
   const { root } = request;
@@ -4242,6 +4262,9 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   if (level === undefined) return emptyExportC4("failed", 2, `export c4: unknown --level \`${request.level}\`; expected ${C4_LEVELS.join(", ")}`);
   if (request.layer !== undefined && level !== "component") return emptyExportC4("failed", 2, "export c4: --layer draws the components of one layer: use it with --level component");
   if (request.out !== undefined && request.out.trim() === "") return emptyExportC4("failed", 2, "export c4: --out needs a file path");
+  // Before the analysis, as `wire` does: a path the policy refuses costs nothing and is never read.
+  const outProblem = request.out === undefined ? null : c4OutProblem(root, request.out);
+  if (outProblem !== null) return emptyExportC4("failed", 2, outProblem);
   if (context.signal?.aborted) return emptyExportC4("cancelled", null);
   let analyzed: Analysis;
   try {
@@ -4267,6 +4290,9 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   const payload: ExportC4Payload = { text, format, level, layer: request.layer ?? null, out: null };
   if (request.out === undefined) return { ...emptyExportC4("completed", 0), payload };
   const out = toPosix(relative(root, resolve(root, request.out)));
+  // Checked again right before the read: a link may have changed during the analysis.
+  const problem = c4OutProblem(root, request.out);
+  if (problem !== null) return { ...emptyExportC4("failed", 2, problem), payload };
   let current: string | null;
   try {
     current = existingText(resolve(root, out));
