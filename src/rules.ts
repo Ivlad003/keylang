@@ -439,12 +439,13 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
     // Only the module's own table: `purchase.ts` does not export what `purchase/buy.ts` does.
     const actual = snapshot.exports.filter((row) => row.module === rule.module);
-    const names = new Set(actual.map((row) => row.name));
+    // The table keeps a name as the code writes it, maybe in NFD (`cafe` + U+0301); names compare in NFC.
+    const names = new Set(actual.map((row) => row.name.normalize("NFC")));
     // An `export *` from an unknown module may supply any listed name.
     const unknown = actual.find((row) => row.name === "*");
     let failed = false;
     for (const row of actual) {
-      if (row.name === "*" || rule.names.has(row.name)) continue;
+      if (row.name === "*" || rule.names.has(row.name.normalize("NFC"))) continue;
       failed = true;
       const how = row.form === "reexport" && row.from ? `${row.kind}, re-exported from \`${row.from}\`` : row.form && row.form !== "reexport" ? `${row.kind}, ${row.form}` : row.kind;
       pushFail("K104", ...at, `divergence: \`${rule.module}\` exports \`${row.name}\` (${how}), which is not listed in \`exports\``, criterion, rule.module, spec);
@@ -883,7 +884,7 @@ function collectRules(spec: SpecIR, kindOf: (id: string) => string | undefined):
     } else if (rule.kind === "no-cycles") {
       noCycles.push({ under: rule.under?.target ?? null, file: rule.file, span: rule.span });
     } else {
-      exportsRules.push({ module: rule.module.target, names: new Set(rule.names.map((ref) => ref.text)), file: rule.file, span: rule.span });
+      exportsRules.push({ module: rule.module.target, names: new Set(rule.names.map((ref) => ref.text.normalize("NFC"))), file: rule.file, span: rule.span });
     }
   }
   for (const line of spec.rejectedLayers) takeNested(line.file, line.nested);

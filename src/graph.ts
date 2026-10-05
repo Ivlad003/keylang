@@ -382,8 +382,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
+    // Keyed in NFC, as IDs are: code may write a name in NFD (`cafe` + U+0301).
     const bind = (b: ImportBinding, target: ImportTarget): void => {
-      locals.set(b.local, [...(locals.get(b.local) ?? []), target]);
+      const key = b.local.normalize("NFC");
+      locals.set(key, [...(locals.get(key) ?? []), target]);
     };
     const globs: GlobSource[] = [];
     fileGlobs.set(facts.path, globs);
@@ -627,8 +629,12 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   };
   /** Per file: how its names resolve to symbols. The file is the scope: its own declarations and its imports. */
   const scopeOf = (facts: FileFacts) => {
-    const locals = importTargets.get(facts.path)!;
-    const localDecls = fileDecls.get(facts.path)!;
+    // A name as the code writes it, which may be NFD (`cafe` + U+0301): IDs are NFC, so the file's
+    // declarations are keyed by their ID segment and its imports by their NFC name.
+    const imports = importTargets.get(facts.path)!;
+    const locals = { get: (name: string) => imports.get(name.normalize("NFC")), has: (name: string) => imports.has(name.normalize("NFC")) };
+    const declared = fileDecls.get(facts.path)!;
+    const localDecls = { get: (name: string) => declared.get(layerName(name)), has: (name: string) => declared.has(layerName(name)) };
     /**
      * The symbol an import binds: the named export, or the default export of a default binding or
      * of `module.exports`. An ESM namespace object stands for no symbol: it is no function.
@@ -924,12 +930,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (targets.length > 0 || !c.callee.includes(".")) continue;
       if (external(head)) continue;
       const member = c.callee.slice(c.callee.lastIndexOf(".") + 1).replace(/^#/, "");
-      if (IDENTIFIER.test(member) && !calledNames.has(member)) calledNames.set(member, escape);
+      const key = member.normalize("NFC");
+      if (IDENTIFIER.test(member) && !calledNames.has(key)) calledNames.set(key, escape);
     }
     for (const ref of facts.valueRefs ?? []) {
       const escape = { file: facts.path, line: ref.line, col: ref.col, reason: `\`${ref.name}\` is read as a value` };
       if (ref.member) {
-        if (!readMembers.has(ref.name)) readMembers.set(ref.name, escape);
+        const key = ref.name.normalize("NFC");
+        if (!readMembers.has(key)) readMembers.set(key, escape);
         continue;
       }
       // A namespace object read as a value (`keep(ns)`) hands on every export of its module.
@@ -1132,7 +1140,7 @@ function exportInput(row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string
   const reexported = facts.imports.some((imp) => imp.reexport && imp.bindings.some((b) => b.local === name));
   const local = row.local ?? name;
   const declared = reexported ? undefined : scope.get(layerName(local));
-  const found = declared === undefined ? imported.get(reexported ? name : local)?.[0] : undefined;
+  const found = declared === undefined ? imported.get((reexported ? name : local).normalize("NFC"))?.[0] : undefined;
   // The standard library and an assumed file are no nodes: such a name comes from no module of the snapshot.
   const from = found?.module.synthetic ? undefined : found?.module.id;
   let target: ExportTarget = { kind: "none" };
@@ -1196,15 +1204,16 @@ function holeReason(c: CallFact): string {
  * Functions that code may reach without naming them in a call: read as a value
  * (`later(save)` names the declaration `save` resolves to; `obj.save` any
  * method `save`), called implicitly, or the constructor of a class read as a
- * value (`extends A` runs `A`'s constructor).
+ * value (`extends A` runs `A`'s constructor). Names read and called are keyed in NFC.
  */
 function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]): void {
   const visit = (m: Module, isClass: boolean): void => {
     for (const fn of m.fns) {
       if (fn.escapes) continue;
       // A member is named in code as written (`go`), whatever suffix its ID has (`go-private`).
-      const name = members.get(fn.id)?.name ?? fn.name;
-      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(fn.file ?? m.path) ? readMembers.get(name) : undefined) ?? calledNames.get(name);
+      const name = members.get(fn.id)?.name ?? fn.written ?? fn.name;
+      const key = name.normalize("NFC");
+      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(fn.file ?? m.path) ? readMembers.get(key) : undefined) ?? calledNames.get(key);
       if (ref) fn.escapes = ref;
       else if (isClass && !members.get(fn.id)?.hash && implicitMember(fn.file ?? m.path, name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
     }

@@ -116,6 +116,36 @@ test("module of several files: an import of one file gets that file's exports, `
   assert.deepEqual(calls(snapshot), ["ui.page.page → ui.parts.card", "ui.page.page → ui.parts.make", "ui.page.page → ui.parts.make-2"]);
 });
 
+test("an identifier written in NFD in code has the NFC ID a spec writes and keeps its name as written; the code's own references to it resolve", (t) => {
+  const nfd = `cafe${String.fromCodePoint(0x301)}`; // `e` and a combining acute accent
+  const nfc = `caf${String.fromCodePoint(0xe9)}`; // one precomposed `é`
+  const dir = repo(
+    t,
+    {
+      "src/a.ts": `export class Big${nfd} {}\nexport function ${nfd}(): void {\n  ${nfd}2();\n  new Big${nfd}();\n}\nfunction ${nfd}2(): void {}\n`,
+      "pkg/__init__.py": "",
+      "pkg/m.py": `def ${nfd}():\n    pass\ndef run():\n    ${nfd}()\n`,
+      // Python reads identifiers normalized: the NFC name imports the NFD declaration.
+      "pkg/u.py": `from .m import ${nfc}\ndef go():\n    ${nfc}()\n`,
+      "keylang/flows/order.md": `# flow order\n\n- trigger app.a.${nfc}\n  - calls app.a.${nfc}2\n`,
+      "keylang/flows/go.md": `# flow go\n\n- trigger py.u.go\n  - calls py.m.${nfc}\n`,
+      "keylang/rules.md": `# rules\n\n- module app.a\n  - exports Big${nfc}, ${nfc}\n- module py.m\n  - exports ${nfc}, run\n`,
+    },
+    { languages: ["typescript", "python"], layers: { app: ["src/**"], py: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.equal(Object.keys(snapshot.nodes).some((id) => id !== id.normalize("NFC")), false, Object.keys(snapshot.nodes).join(", "));
+  assert.equal(snapshot.nodes[`app.a.${nfc}`]?.name, nfd);
+  assert.equal(snapshot.nodes[`py.m.${nfc}`]?.name, nfd);
+  assert.deepEqual(calls(snapshot), [`app.a.${nfc} → app.a.Big${nfc}`, `app.a.${nfc} → app.a.${nfc}2`, `py.m.run → py.m.${nfc}`, `py.u.go → py.m.${nfc}`]);
+  assert.deepEqual(holes(snapshot), []);
+  // The export table keeps the names as the code writes them; `exports` compares them in NFC.
+  assert.ok(snapshot.exports.some((row) => row.module === "app.a" && row.name === nfd));
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 0, o.stdout);
+  assert.doesNotMatch(o.stdout, /K104|fail/);
+});
+
 test("rust: a name bound by `for`, `if let`, `while let` or a `match` arm shadows the module's fn; a `match` guard does not bind", (t) => {
   const dir = repo(
     t,
