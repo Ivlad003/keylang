@@ -74,6 +74,8 @@ export class ExportForms {
     }
   }
 
+  // ---------- export of a report ----------
+
   /**
    * The export form of the report `exportRecord` picks (design §2.6): the
    * format, the path (a default per format under `.keylang/export/`) and the
@@ -199,6 +201,8 @@ export class ExportForms {
     this.state.prompt = null;
     this.host.startOperation("export", { kind: "export", root: this.state.root, path, expect: form.expect, source });
   }
+
+  // ---------- export c4 ----------
 
   /**
    * The C4 form (c4-zoom/12): the format, the level, one layer or all, and

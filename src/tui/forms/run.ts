@@ -78,6 +78,8 @@ export class RunForms {
     }
   }
 
+  // ---------- feature readiness ----------
+
   /** The feature form: the slug of the current feature file, else typed or chosen from the feature files. */
   openFeaturePrompt(): void {
     const prefix = `${this.host.specDir()}/features/`;
@@ -130,6 +132,8 @@ export class RunForms {
     this.host.requestOperation("feature", { kind: "feature", root: this.state.root, slug });
   }
 
+  // ---------- baseline ----------
+
   /** The baseline form: the mode (write or check) and the target from the saved config's spec directory. */
   openBaselinePrompt(): void {
     const target = baselinePath({ dir: this.host.specDir() });
@@ -154,6 +158,8 @@ export class RunForms {
     this.state.prompt = null;
     this.host.requestOperation("baseline", { kind: "baseline", root: this.state.root, check });
   }
+
+  // ---------- agents (harness integrations) ----------
 
   /**
    * The agents form: the typed selection (empty is auto, `none`, or names as
@@ -222,6 +228,8 @@ export class RunForms {
     this.host.requestOperation("agents", { kind: "agents", root: this.state.root, harnesses: choice, check });
   }
 
+  // ---------- init ----------
+
   /**
    * The init form: the harness selection as in the agents form (empty is
    * auto), then write or check. Its notes name the root, the languages and
@@ -274,6 +282,8 @@ export class RunForms {
     this.state.prompt = null;
     this.host.requestOperation("init", { kind: "init", root: this.state.root, harnesses: choice, check });
   }
+
+  // ---------- fmt ----------
 
   /** The fmt form: the current spec file by default — a directory only when typed — then the mode. */
   openFmtPrompt(): void {
@@ -340,6 +350,8 @@ export class RunForms {
     this.host.requestOperation("fmt", { kind: "fmt", root: this.state.root, paths, check });
   }
 
+  // ---------- parse ----------
+
   /** The parse form: the current spec file by default — a directory only when typed — then the view. */
   openParsePrompt(): void {
     const current = this.state.current;
@@ -371,6 +383,8 @@ export class RunForms {
     this.state.prompt = null;
     this.host.requestOperation("parse", { kind: "parse", root: this.state.root, paths, format });
   }
+
+  // ---------- wire ----------
 
   /** The wire form: the generated file (the CLI's default), then the mode. */
   openWirePrompt(): void {
@@ -415,6 +429,8 @@ export class RunForms {
     this.state.prompt = null;
     this.host.requestOperation("wire", { kind: "wire", root: this.state.root, out, check });
   }
+
+  // ---------- full check ----------
 
   /** The check form: the spec directory by default, not strict, the static mode of keylang.json. */
   openCheckPrompt(): void {
@@ -498,6 +514,8 @@ export class RunForms {
     this.host.requestOperation("full-check", { kind: "check", root: this.state.root, paths, strict: options.strict, ...(options.static !== null ? { static: options.static } : {}), ...slice });
   }
 
+  // ---------- explain edge ----------
+
   /** The edge form: the id under the cursor fills only the first field; the second is typed. */
   openEdgePrompt(): void {
     const from = this.state.mode === "merge" || this.state.start !== null ? null : this.host.idAtCursor();
@@ -540,6 +558,8 @@ export class RunForms {
     this.state.prompt = null;
     this.host.requestOperation("explain-edge", { kind: "explain-edge", root: this.state.root, from, to });
   }
+
+  // ---------- trace plan ----------
 
   /** The trace-plan form: the flow under the cursor is the visible default; the list is the flows of the current documents. */
   openTracePlanPrompt(): void {
