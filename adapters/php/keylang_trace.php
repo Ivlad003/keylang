@@ -101,6 +101,8 @@ if (!class_exists('KeylangTrace', false)) {
             $test = getenv('KEYLANG_TRACE_TEST');
             $run = getenv('KEYLANG_TRACE_RUN');
             $run = $run !== false && $run !== '' ? $run : dechex((int) (microtime(true) * 1000)) . '-' . getmypid();
+            // Child processes inherit the id, so the processes of one test are one run.
+            putenv("KEYLANG_TRACE_RUN={$run}");
             $trace = new self($output, $plan['flow'], $plan['snapshotId'], $run, 'php-' . getmypid() . '-' . bin2hex(random_bytes(4)), $test !== false && $test !== '' ? $test : null);
             $trace->prepare($plan['symbols'], $root);
             self::$active = $trace;

@@ -36,6 +36,9 @@ function record(file: string): void {
   const missing = [flow ? null : "KEYLANG_TRACE_FLOW", testId ? null : "KEYLANG_TRACE_TEST"].filter((name) => name !== null);
   if (!flow || !testId) throw new Error(`keylang trace: KEYLANG_TRACE is set, so ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} required too`);
   const run = runId();
+  // Workers and child processes inherit the id, so the processes of one test are one run:
+  // a step one of them ran is never missing from another's own run.
+  process.env.KEYLANG_TRACE_RUN = run;
   const root = resolve(process.env.KEYLANG_TRACE_ROOT ?? process.cwd());
 
   const { port1, port2 } = new MessageChannel();

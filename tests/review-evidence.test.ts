@@ -245,22 +245,20 @@ test("tests: a JUnit file attribute with the absolute path under the root matche
 
 const JS_LAYERS = { languages: ["typescript", "javascript"], layers: { app: "src/app/**" }, exclude: ["run.mjs"], check: { trace: ".keylang/trace/*.jsonl" } };
 
-/** `script` (an ES module, a file so that a worker can inherit the flags) under the adapter, recording flow `flow`. */
+/** `script` (an ES module, a file so that a worker can inherit the flags) under the adapter, recording flow `flow`; no run id is given. */
 function traced(dir: string, script: string, flow = "f"): { status: number | null; stderr: string } {
   writeFileSync(join(dir, "run.mjs"), script);
-  const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], {
-    cwd: dir,
-    encoding: "utf8",
-    env: { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t", KEYLANG_TRACE_RUN: "run1" },
-  });
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t" };
+  delete env.KEYLANG_TRACE_RUN;
+  const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], { cwd: dir, encoding: "utf8", env });
   return { status: r.status, stderr: r.stderr };
 }
 
-function runEvents(dir: string): { instrumented: string[]; complete: boolean }[] {
+function runEvents(dir: string): { runId: string; instrumented: string[]; complete: boolean }[] {
   return readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8")
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as { event: string; instrumented: string[]; complete: boolean })
+    .map((line) => JSON.parse(line) as { event: string; runId: string; instrumented: string[]; complete: boolean })
     .filter((event) => event.event === "run");
 }
 
@@ -295,6 +293,8 @@ test("trace adapter: a worker that loads one file leaves the plan instrumented, 
   assert.equal(r.status, 0, r.stderr);
   const events = runEvents(dir);
   assert.equal(events.length, 2, "the process and its worker");
+  // Without KEYLANG_TRACE_RUN the worker inherits the process's run id: a step it ran is not missing from a run of its own.
+  assert.equal(events[0]!.runId, events[1]!.runId);
   for (const event of events) assert.deepEqual(event.instrumented, ["app.main.helper", "app.main.main", "app.main.never", "app.w.inWorker"]);
   const rows = results(dir);
   assert.equal(traceOf(rows, "app.main.helper"), "ok: ok app.main.helper: observed in t");
@@ -314,7 +314,31 @@ test("trace adapter: without KEYLANG_TRACE it does nothing; with it, a missing f
   assert.match(partial.stderr, /keylang trace: KEYLANG_TRACE is set, so KEYLANG_TRACE_FLOW is required too/);
 });
 
-// ---------- the Rust and PHP adapters ----------
+// ---------- the Python, Rust and PHP adapters ----------
+
+const python3 = spawnSync("python3", ["--version"], { encoding: "utf8" }).status === 0;
+
+test("python: a child process under the adapter shares the run id, so a step it ran is not missing", { skip: python3 ? false : "python3 is not installed" }, (t) => {
+  const python = join(root, "adapters/python/keylang_trace.py");
+  const dir = repo(t, { languages: ["python"], layers: { app: ["app/**"] }, exclude: ["run.py", "child.py"], check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "app/__init__.py": "",
+    "app/main.py": "import subprocess\nimport sys\n\n\ndef work():\n    pass\n\n\ndef main(adapter):\n    subprocess.run([sys.executable, adapter, \"child.py\"], check=True)\n",
+    "run.py": "import sys\nfrom app.main import main\n\nmain(sys.argv[1])\n",
+    "child.py": "from app.main import work\n\nwork()\n",
+    "keylang/flows.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.work\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "f"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const env: Record<string, string | undefined> = { ...process.env, KEYLANG_TRACE: ".keylang/trace/f.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.py > @flow f" };
+  delete env.KEYLANG_TRACE_RUN;
+  const r = spawnSync("python3", [python, "run.py", python], { cwd: dir, encoding: "utf8", env });
+  assert.equal(r.status, 0, r.stderr);
+  const runs = readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; runId: string }).filter((e) => e.event === "run");
+  assert.equal(new Set(runs.map((e) => e.runId)).size, 1, JSON.stringify(runs));
+  // In its own run the child's `work` would leave the parent's run without it: a missing step.
+  assert.match(traceOf(results(dir), "app.main.work"), /^unverified: unverified app\.main\.work: observed outside `app\.main\.main` in another call tree/);
+});
 
 const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status === 0;
 

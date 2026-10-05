@@ -212,6 +212,8 @@ def main():
         fail(f"{plan_path}: not a plan of schema 1 from `keylang trace-plan`")
     root = os.path.realpath(os.environ.get("KEYLANG_TRACE_ROOT") or os.getcwd())
     run = os.environ.get("KEYLANG_TRACE_RUN") or f"{int(time.time() * 1000):x}-{os.getpid()}"
+    # Child processes under the adapter inherit the id, so the processes of one test are one run.
+    os.environ["KEYLANG_TRACE_RUN"] = run
     tracer = Tracer(plan, root, test, run)
     atexit.register(tracer.finish, path)
     script = sys.argv[1]
