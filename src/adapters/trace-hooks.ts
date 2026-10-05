@@ -5,7 +5,7 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { MessagePort } from "node:worker_threads";
 import { loadConfig } from "../config.ts";
 import { functionBodies, parsesCleanly, type FunctionBody } from "../extract/bodies.ts";
@@ -21,13 +21,15 @@ export interface TraceHooksData {
 
 /**
  * Hooks → adapter. `plan` once from `initialize`: the flow's functions a
- * wrapper was planned for. `loaded` from `load` for each file the plan was
- * actually applied to: only those symbols are instrumented, so a file that
- * loaded under another URL or with other content never counts as observed.
+ * wrapper was planned for, and the real path of each file that holds them.
+ * `loaded` from `load` for each file the plan was applied to (`commonjs` when
+ * Node compiles it as CommonJS); `skipped` for a planned file that loaded with
+ * other content than the snapshot saw: its functions ran without spans.
  */
 export type TracePlanMessage =
-  | { kind: "plan"; snapshotId: string; planned: string[]; error?: string }
-  | { kind: "loaded"; ids: string[] };
+  | { kind: "plan"; snapshotId: string; planned: string[]; files: { path: string; ids: string[] }[]; error?: string }
+  | { kind: "loaded"; ids: string[]; commonjs: boolean }
+  | { kind: "skipped"; ids: string[] };
 
 interface FilePlan {
   /** The file the snapshot saw, and the same file with the wrappers in place. */
@@ -54,6 +56,7 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       byFile.set(node.file, list);
     }
     const instrumented: string[] = [];
+    const files: { path: string; ids: string[] }[] = [];
     for (const [file, fns] of byFile) {
       const src = readFileSync(join(data.root, file), "utf8");
       const bodies = await functionBodies(file, src);
@@ -70,11 +73,13 @@ export async function initialize(data: TraceHooksData): Promise<void> {
       if (ids.length === 0 || !(await parsesCleanly(file, source))) continue;
       instrumented.push(...ids);
       // Node loads a module by its real path; a root reached through a link must match that URL.
-      plans.set(pathToFileURL(realpathSync(join(data.root, file))).href, { sha256: sha256(src), source, ids });
+      const path = realpathSync(join(data.root, file));
+      plans.set(pathToFileURL(path).href, { sha256: sha256(src), source, ids });
+      files.push({ path, ids });
     }
-    data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort() } satisfies TracePlanMessage);
+    data.port.postMessage({ kind: "plan", snapshotId: index.snapshotId, planned: instrumented.sort(), files } satisfies TracePlanMessage);
   } catch (e) {
-    data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
+    data.port.postMessage({ kind: "plan", snapshotId: "", planned: [], files: [], error: e instanceof Error ? e.message : String(e) } satisfies TracePlanMessage);
   }
 }
 
@@ -112,11 +117,22 @@ type LoadResult = { format?: string | null; source?: string | ArrayBuffer | Uint
 
 export async function load(url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>): Promise<LoadResult> {
   const result = await nextLoad(url, context);
-  const plan = plans.get(url);
-  if (!plan || result.source === null || result.source === undefined) return result;
-  const source = typeof result.source === "string" ? result.source : Buffer.from(result.source as Uint8Array).toString("utf8");
+  // `?query` and `#hash` load the same file as another module instance: it gets the wrappers too.
+  const plan = plans.get(url.replace(/[?#].*$/s, ""));
+  if (!plan) return result;
+  const commonjs = result.format === "commonjs" || result.format === "commonjs-typescript";
+  // Node leaves a CommonJS file to its CommonJS loader (no source here), which would read it past the wrappers.
+  const original = result.source ?? (commonjs ? readFileSync(fileURLToPath(url)) : null);
+  const source = original === null ? null : typeof original === "string" ? original : Buffer.from(original as Uint8Array).toString("utf8");
   // The plan was made for the snapshot's copy of the file; a different file is left alone.
-  if (sha256(source) !== plan.sha256) return result;
-  port?.postMessage({ kind: "loaded", ids: plan.ids } satisfies TracePlanMessage);
-  return { ...result, source: plan.source };
+  if (source === null || sha256(source) !== plan.sha256) {
+    port?.postMessage({ kind: "skipped", ids: plan.ids } satisfies TracePlanMessage);
+    return result;
+  }
+  port?.postMessage({ kind: "loaded", ids: plan.ids, commonjs } satisfies TracePlanMessage);
+  if (!commonjs) return { ...result, source: plan.source };
+  // Node compiles a CommonJS source given here as it is and routes its `require` calls through these hooks,
+  // unless the CommonJS loader cached a copy of the file first. The appended line (after the last one, so
+  // no line moves) names the module object this source made, so the adapter can tell its copy from that one.
+  return { ...result, source: `${plan.source}\n;globalThis.__keylangTrace.own(module);\n` };
 }

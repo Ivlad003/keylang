@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
+const adapter = join(root, "src/adapters/trace.ts");
 
 type Context = { after: (f: () => void) => void };
 
@@ -238,4 +239,77 @@ test("tests: a JUnit file attribute with the absolute path under the root matche
   // pytest's default xunit2 and jest-junit without addFileAttribute write no `file`.
   writeReport(dir, "junit.xml", junit('classname="tests.purchase_test"'));
   assert.match(testsOf(results(dir)), /^unverified: .*: no report: \.keylang\/reports\/junit\.xml has the test without a `file` attribute/);
+});
+
+// ---------- the TS/JS trace adapter ----------
+
+const JS_LAYERS = { languages: ["typescript", "javascript"], layers: { app: "src/app/**" }, exclude: ["run.mjs"], check: { trace: ".keylang/trace/*.jsonl" } };
+
+/** `script` (an ES module, a file so that a worker can inherit the flags) under the adapter, recording flow `flow`. */
+function traced(dir: string, script: string, flow = "f"): { status: number | null; stderr: string } {
+  writeFileSync(join(dir, "run.mjs"), script);
+  const r = spawnSync(process.execPath, ["--import", adapter, "run.mjs"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, KEYLANG_TRACE: join(dir, `.keylang/trace/${flow}.jsonl`), KEYLANG_TRACE_FLOW: flow, KEYLANG_TRACE_TEST: "t", KEYLANG_TRACE_RUN: "run1" },
+  });
+  return { status: r.status, stderr: r.stderr };
+}
+
+function runEvents(dir: string): { instrumented: string[]; complete: boolean }[] {
+  return readFileSync(join(dir, ".keylang/trace/f.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { event: string; instrumented: string[]; complete: boolean })
+    .filter((event) => event.event === "run");
+}
+
+test("trace adapter: a planned CommonJS file is instrumented; one a CommonJS module requires past the hooks is not", (t) => {
+  const dir = repo(t, JS_LAYERS, {
+    "src/app/main.ts": 'import { leg } from "./legacy.cjs";\nimport { far } from "./bridge.cjs";\nexport function main(): number {\n  return leg();\n}\nexport function viaBridge(): number {\n  return far();\n}\n',
+    "src/app/legacy.cjs": "function leg() {\n  return 3;\n}\nmodule.exports = { leg };\n",
+    "src/app/bridge.cjs": 'const { far } = require("./far.cjs");\nmodule.exports = { far };\n',
+    "src/app/far.cjs": "function far() {\n  return 4;\n}\nmodule.exports = { far };\n",
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.legacy.leg\n\n# flow g\n\n- trigger app.main.viaBridge\n  - step app.far.far\n",
+  });
+  snapshotOf(dir);
+  const r = traced(dir, "const m = await import('./src/app/main.ts'); m.main();");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(traceOf(results(dir), "app.legacy.leg"), "ok: ok app.legacy.leg: observed in t");
+  // `far.cjs` loads through `require` in a module the CommonJS loader read: no wrapper, so no claim it was instrumented.
+  rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
+  const g = traced(dir, "const m = await import('./src/app/main.ts'); m.viaBridge();", "g");
+  assert.equal(g.status, 0, g.stderr);
+  assert.equal(traceOf(results(dir), "app.far.far"), "unverified: unverified app.far.far: `app.far.far` is not instrumented");
+});
+
+test("trace adapter: a worker that loads one file leaves the plan instrumented, so an uncalled step is still missing", (t) => {
+  const dir = repo(t, JS_LAYERS, {
+    "src/app/main.ts":
+      'import { Worker } from "node:worker_threads";\nexport function helper(): number {\n  return 1;\n}\nexport function never(): void {}\nexport async function main(): Promise<void> {\n  helper();\n  const worker = new Worker(new URL("./w.ts", import.meta.url));\n  await new Promise((done) => worker.on("exit", done));\n}\n',
+    "src/app/w.ts": "export function inWorker(): number {\n  return 2;\n}\ninWorker();\n",
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n  - step app.main.helper\n  - step app.main.never\n  - step app.w.inWorker\n",
+  });
+  snapshotOf(dir);
+  const r = traced(dir, "const m = await import('./src/app/main.ts'); await m.main();");
+  assert.equal(r.status, 0, r.stderr);
+  const events = runEvents(dir);
+  assert.equal(events.length, 2, "the process and its worker");
+  for (const event of events) assert.deepEqual(event.instrumented, ["app.main.helper", "app.main.main", "app.main.never", "app.w.inWorker"]);
+  const rows = results(dir);
+  assert.equal(traceOf(rows, "app.main.helper"), "ok: ok app.main.helper: observed in t");
+  assert.equal(traceOf(rows, "app.main.never"), "fail: fail app.main.never: missing step in t");
+  assert.match(traceOf(rows, "app.w.inWorker"), /^unverified: unverified app\.w\.inWorker: observed outside `app\.main\.main` in another call tree/);
+});
+
+test("trace adapter: without KEYLANG_TRACE it does nothing; with it, a missing flow or test is named", () => {
+  const env = { ...process.env };
+  for (const name of ["KEYLANG_TRACE", "KEYLANG_TRACE_FLOW", "KEYLANG_TRACE_TEST"]) delete env[name];
+  const quiet = spawnSync(process.execPath, ["--import", adapter, "-e", "console.log('ran')"], { encoding: "utf8", env });
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.equal(quiet.stdout, "ran\n");
+  const partial = spawnSync(process.execPath, ["--import", adapter, "-e", "console.log('ran')"], { encoding: "utf8", env: { ...env, KEYLANG_TRACE: join(tmpdir(), "keylang-unused.jsonl"), KEYLANG_TRACE_TEST: "t" } });
+  assert.notEqual(partial.status, 0);
+  assert.equal(partial.stdout, "");
+  assert.match(partial.stderr, /keylang trace: KEYLANG_TRACE is set, so KEYLANG_TRACE_FLOW is required too/);
 });
