@@ -19,6 +19,7 @@ import { join, relative, sep } from "node:path";
 import { posix } from "node:path";
 import { toPosix } from "./config.ts";
 import { isNodeBuiltin } from "./extract/ts.ts";
+import { languageOf } from "./languages.ts";
 
 export type Resolution =
   /** `workspace`: the package that names the file, when a workspace package resolved it. */
@@ -38,6 +39,27 @@ export interface SourceResolver {
   resolve(fromFile: string, spec: string): Resolution;
   /** Config files read, with their text (null: absent); the snapshot id depends on them. */
   readonly inputs: ReadonlyMap<string, string | null>;
+  /**
+   * The source paths the specifier would name, whether or not they exist, in
+   * the order resolution tries them; empty for a package. A language whose
+   * resolver does not say finds only the files that exist (`resolve`).
+   */
+  wouldName?(fromFile: string, spec: string): string[];
+}
+
+/**
+ * The path an import names when `assumed` holds for it (`assume` in
+ * keylang.json): the file it resolves to, or — when no file answers, as in a
+ * checkout without the generated or untracked file — a path the specifier
+ * would name with the usual extension candidates. Null otherwise.
+ */
+export function assumedTarget(resolver: SourceResolver, fromFile: string, spec: string, assumed: (path: string) => boolean): string | null {
+  const r = resolver.resolve(fromFile, spec);
+  if (r.kind === "internal") return assumed(r.file) ? r.file : null;
+  if (r.kind !== "unresolved") return null;
+  // `src/gen/**` also matches the extensionless `src/gen/x`: the source file is the better name for it.
+  const matches = (resolver.wouldName?.(fromFile, spec) ?? []).filter(assumed);
+  return matches.find((path) => languageOf(path) !== undefined) ?? matches[0] ?? null;
 }
 
 const EXTS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
@@ -285,29 +307,58 @@ export class ImportResolver {
 
   /** Candidate file (POSIX, relative to root) → existing source file, or null. */
   private probe(candidate: string): string | null {
-    const c = posix.normalize(candidate);
-    if (c.startsWith("../")) return null;
-    const tryFile = (p: string): string | null => {
+    for (const p of probeCandidates(candidate)) {
       if (this.sources.has(p)) return p;
       const abs = join(this.root, p);
-      return existsSync(abs) && statSync(abs).isFile() ? p : null;
-    };
-    // NodeNext style: `./x.js` written for `./x.ts` (or `.tsx`, `.jsx`), `./x.jsx` for `./x.tsx`.
-    const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];
-    for (const p of [c, ...swapped]) {
-      const f = tryFile(p);
-      if (f) return f;
-    }
-    for (const e of EXTS) {
-      const f = tryFile(c + e);
-      if (f) return f;
-    }
-    for (const e of EXTS) {
-      const f = tryFile(posix.join(c, `index${e}`));
-      if (f) return f;
+      if (existsSync(abs) && statSync(abs).isFile()) return p;
     }
     return null;
   }
+
+  /**
+   * The paths a relative specifier, the `imports` of the nearest
+   * `package.json`, the most specific `paths` pattern or `baseUrl` would name,
+   * each with the candidates `probe` tries, whether they exist or not.
+   */
+  wouldName(fromFile: string, spec: string): string[] {
+    if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") return probeCandidates(posix.join(posix.dirname(fromFile), spec));
+    const out: string[] = [];
+    if (spec.startsWith("#")) {
+      for (let dir = posix.dirname(fromFile); ; dir = posix.dirname(dir)) {
+        const scope = dir === "." || dir === "" ? "" : dir;
+        const rules = this.scopeImports(scope);
+        if (rules !== null) {
+          // Only relative targets name files; a target that is a package is not this repository's.
+          const matched = bestMatch(rules, spec);
+          if (matched) {
+            for (const t of matched.rule.targets) {
+              const target = toPosix(t).replaceAll("*", matched.star);
+              if (target.startsWith(".")) out.push(...probeCandidates(posix.join(scope, target)));
+            }
+          }
+          return out;
+        }
+        if (scope === "") return out;
+      }
+    }
+    const matched = bestMatch(this.paths, spec);
+    if (matched) for (const t of matched.rule.targets) out.push(...probeCandidates(t.replace("*", matched.star)));
+    if (this.baseUrl) out.push(...probeCandidates(posix.join(this.baseUrl, spec)));
+    return out;
+  }
+}
+
+/**
+ * The files a candidate path may be, in the order resolution tries them: as
+ * written, the NodeNext swaps (`./x.js` written for `./x.ts`, `.tsx` or
+ * `.jsx`; `./x.jsx` for `./x.tsx`), with each extension, then its index
+ * file. None for a path that leaves the root.
+ */
+function probeCandidates(candidate: string): string[] {
+  const c = posix.normalize(candidate);
+  if (c.startsWith("../")) return [];
+  const swapped = /\.[cm]?js$/.test(c) ? [c.replace(/\.js$/, ".ts").replace(/\.mjs$/, ".mts").replace(/\.cjs$/, ".cts"), c.replace(/\.js$/, ".tsx"), c.replace(/\.js$/, ".jsx")] : /\.jsx$/.test(c) ? [c.replace(/\.jsx$/, ".tsx")] : [];
+  return [c, ...swapped, ...EXTS.map((e) => c + e), ...EXTS.map((e) => posix.join(c, `index${e}`))];
 }
 
 type Located = { kind: "workspace"; dir: string } | { kind: "installed" } | null;

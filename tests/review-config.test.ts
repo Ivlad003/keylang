@@ -187,3 +187,114 @@ test("map warns about layer globs that overlap or match nothing, and keeps its e
   const guessed = repo(t, { "src/domain/a.ts": "export function a(): void {}\n", "src/app/b.ts": "export function b(): void {}\n" });
   assert.deepEqual(warnings(keylang(guessed, ["map"]).stderr), []);
 });
+
+// The shop of the review: `src/infra/store.ts` imports `src/config.ts`, which git ignores,
+// so CI has no such file while a developer's checkout does.
+const SHOP_LAYERS = { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"], ui: ["src/ui/**"] };
+const SHOP = {
+  "src/domain/order.ts": "export interface Order { total: number }\nexport function create(total: number): Order {\n  return { total };\n}\n",
+  "src/infra/store.ts": 'import { settings } from "../config";\nimport type { Order } from "../domain/order.ts";\nconst db: Order[] = [];\nexport function save(order: Order): void {\n  if (settings.persist) db.push(order);\n}\n',
+  "src/app/purchase.ts": 'import { create, type Order } from "../domain/order.ts";\nimport { save } from "../infra/store.ts";\nexport function buy(total: number): Order {\n  const order = create(total);\n  save(order);\n  return order;\n}\n',
+  "src/ui/cli.ts": 'import { buy } from "../app/purchase.ts";\nexport function main(): void {\n  buy(3);\n}\n',
+  "keylang/rules.md": "# rules\n\n- layers domain < infra < app < ui\n- deny app external, unassigned\n- deny domain app, external, infra, ui, unassigned\n- deny infra app, external, ui, unassigned\n- no-cycles\n",
+};
+const CONFIG_TS = "export const settings = { persist: true };\n";
+
+interface Row {
+  criterion: string;
+  verdict: string;
+  evidence: string;
+  code: string | null;
+}
+
+function verdicts(dir: string): { status: number | null; rows: Row[]; stdout: string } {
+  const run = keylang(dir, ["check", "--format", "json"]);
+  return { status: run.status, stdout: run.stdout, rows: (JSON.parse(run.stdout) as { results: Row[] }).results };
+}
+
+test("assume: an import of a file keylang neither reads nor requires is no edge and no hole, present or absent", (t) => {
+  const config = (extra: Record<string, unknown> = {}): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
+  // Without `assume` the missing file is a dependency hole: `deny infra …` cannot say ok.
+  const ci = repo(t, { ...SHOP, "keylang.json": config() });
+  const hole = verdicts(ci);
+  assert.equal(hole.rows.find((row) => row.criterion === "deny infra app external ui unassigned")?.verdict, "unverified", hole.stdout);
+
+  for (const present of [false, true]) {
+    const dir = repo(t, { ...SHOP, ...(present ? { "src/config.ts": CONFIG_TS } : {}), "keylang.json": config({ assume: ["src/config.ts"] }) });
+    const map = keylang(dir, ["map"]);
+    assert.equal(map.status, 0, map.stderr);
+    assert.doesNotMatch(map.stderr, /unresolved import|config/, `present: ${present}`);
+    const snapshot = index(dir);
+    // Never indexed, even when present: no module, no manifest entry, no edge.
+    assert.equal(Object.keys(snapshot.nodes).some((id) => id.endsWith(".config")), false, Object.keys(snapshot.nodes).join(", "));
+    assert.equal(JSON.stringify(snapshot.manifest).includes("src/config.ts\",\"sha256"), false);
+    assert.deepEqual(snapshot.manifest.config.assume, ["src/config.ts"]);
+    assert.equal(snapshot.edges.some((edge) => edge.source === "infra.store" && edge.kind === "import" && edge.target === null), false, JSON.stringify(snapshot.edges));
+    const entries = snapshot.coverage.filter((item) => item.kind === "assumed-import");
+    assert.deepEqual(
+      entries.map(({ file, line, col, text, reason, source }) => ({ file, line, col, text, reason, source })),
+      [{ file: "src/infra/store.ts", line: 1, col: 1, text: 'import { settings } from "../config";', reason: "assumed import `../config` → `src/config.ts` (`assume` in keylang.json)", source: "infra.store" }],
+      `present: ${present}`,
+    );
+    assert.equal(snapshot.coverage.some((item) => item.kind === "unresolved-import"), false);
+    // Rules see no hole: the same verdicts in CI and in a checkout that has the file.
+    const run = verdicts(dir);
+    assert.equal(run.status, 0, run.stdout);
+    for (const row of run.rows) assert.notEqual(row.verdict, "unverified", `present: ${present}: ${row.criterion}: ${row.evidence}`);
+    assert.equal(keylang(dir, ["check", "--strict"]).status, 0);
+  }
+});
+
+test("assume: a path-mapped specifier names the path it would resolve to; `assume` is in the snapshot id and wins over `outside`", (t) => {
+  const store = 'import { settings } from "@/generated/settings";\nexport function save(): boolean {\n  return settings.persist;\n}\n';
+  const files = {
+    ...SHOP,
+    "src/infra/store.ts": store,
+    "tsconfig.json": json({ compilerOptions: { baseUrl: ".", paths: { "@/*": ["src/*"] } } }),
+  };
+  const config = (extra: Record<string, unknown>): string => json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, ...extra });
+  const dir = repo(t, { ...files, "keylang.json": config({ assume: ["src/generated/**"] }) });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const assumed = index(dir);
+  assert.deepEqual(
+    assumed.coverage.filter((item) => item.kind === "assumed-import").map((item) => item.reason),
+    ["assumed import `@/generated/settings` → `src/generated/settings.ts` (`assume` in keylang.json)"],
+  );
+  const run = verdicts(dir);
+  for (const row of run.rows) assert.notEqual(row.verdict, "unverified", `${row.criterion}: ${row.evidence}`);
+
+  // The same file `outside` names too: `assume` wins, so the import is no K107.
+  write(dir, "src/generated/settings.ts", "export const settings = { persist: true };\n");
+  write(dir, "keylang.json", config({ assume: ["src/generated/**"], outside: ["src/generated/**"] }));
+  const both = verdicts(dir);
+  assert.equal(both.status, 0, both.stdout);
+  assert.equal(both.rows.some((row) => row.code === "K107"), false, both.stdout);
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.equal(Object.keys(index(dir).nodes).some((id) => id.startsWith("outside.")), false);
+
+  // Without `assume` the snapshot is another one.
+  write(dir, "keylang.json", config({ outside: ["src/generated/**"] }));
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  assert.notEqual(index(dir).snapshotId, assumed.snapshotId);
+  assert.ok(verdicts(dir).rows.some((row) => row.code === "K107"));
+});
+
+test("assume is validated like exclude, and init and draft map do not write it", (t) => {
+  const dir = repo(t, { ...SHOP });
+  for (const [assume, error] of [
+    ["src/config.ts", '`assume` must be an array of globs, got "src/config.ts"'],
+    [["src/config.ts", 3], "`assume` must be an array of globs, got [\"src/config.ts\",3]"],
+  ] as const) {
+    write(dir, "keylang.json", json({ languages: ["typescript"], layers: SHOP_LAYERS, assume }));
+    const run = keylang(dir, ["map", "--check"]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.ok(run.stderr.includes(`keylang.json: ${error}`), run.stderr);
+  }
+  write(dir, "keylang.json", json({ languages: ["typescript"], layers: SHOP_LAYERS, assume: ["src/config.ts"] }));
+  const draft = keylang(dir, ["draft", "map"]);
+  assert.equal(draft.status, 0, draft.stderr);
+  assert.doesNotMatch(draft.stdout, /assume/);
+  const fresh = repo(t, { ...SHOP, "src/config.ts": CONFIG_TS });
+  assert.equal(keylang(fresh, ["init", "--agents=none"]).status, 0);
+  assert.doesNotMatch(readFileSync(join(fresh, "keylang.json"), "utf8"), /assume/);
+});

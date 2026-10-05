@@ -56,6 +56,12 @@ export interface Config {
    * Architecture code must not depend on them (K107).
    */
   outside: string[];
+  /**
+   * Globs of files the architecture imports but keylang neither reads nor
+   * requires (generated code, configuration outside git): never indexed, even
+   * when present; an import of one is no edge and no hole (`assumed-import`).
+   */
+  assume: string[];
   check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>`, `openrouter:<model>` or `cli:<name>[:<model>]` (an agent CLI); null: no model is configured. */
   agent: string | null;
@@ -152,6 +158,7 @@ export interface RawConfig {
   layers?: Record<string, string | string[]>;
   exclude?: string[];
   outside?: string[];
+  assume?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number | null };
@@ -167,12 +174,13 @@ export function loadConfig(root: string): Config {
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
   const outside = raw.outside ?? [];
+  const assume = raw.assume ?? [];
   let layers: Map<string, string[]>;
   let guessed = false;
   if (raw.layers) {
     layers = new Map(Object.entries(raw.layers).map(([k, v]) => [k, Array.isArray(v) ? v : [v]]));
   } else {
-    layers = guessLayers(root, [...exclude, ...outside]);
+    layers = guessLayers(root, [...exclude, ...outside, ...assume]);
     guessed = true;
   }
   return {
@@ -184,6 +192,7 @@ export function loadConfig(root: string): Config {
     layers,
     exclude,
     outside,
+    assume,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? null },
@@ -219,7 +228,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "check", "agent", "explain", "ghost", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -266,6 +275,10 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.outside !== undefined) {
     if (!Array.isArray(value.outside) || !value.outside.every((glob) => typeof glob === "string")) return fail("outside", "an array of globs", value.outside);
     raw.outside = (value.outside as string[]).map((glob, i) => validGlob(`outside[${i}]`, glob));
+  }
+  if (value.assume !== undefined) {
+    if (!Array.isArray(value.assume) || !value.assume.every((glob) => typeof glob === "string")) return fail("assume", "an array of globs", value.assume);
+    raw.assume = (value.assume as string[]).map((glob, i) => validGlob(`assume[${i}]`, glob));
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
@@ -404,13 +417,15 @@ export interface SourceClasses {
   excluded: string[];
   /** Put outside the architecture by `outside`: opaque modules of the layer `outside`, no hole. */
   outside: string[];
+  /** Named by `assume`: never indexed, and an import of one is no hole. */
+  assumed: string[];
   /** Directories that could not be listed (no permission): their files are unknown, a hole, not an absence. */
   unreadable: { dir: string; reason: string }[];
 }
 
 /** The source files by class, from one walk of the tree. */
 export function classifySources(c: Config): SourceClasses {
-  const sources: SourceClasses = { analysed: [], excluded: [], outside: [], unreadable: [] };
+  const sources: SourceClasses = { analysed: [], excluded: [], outside: [], assumed: [], unreadable: [] };
   for (const rel of walkSources(c, sources.unreadable)) {
     const kind = sourceClass(rel, c);
     if (kind !== null) sources[kind].push(rel);
@@ -420,18 +435,24 @@ export function classifySources(c: Config): SourceClasses {
 
 /**
  * What keylang does with a source file; null when the built-in list leaves it
- * out (tests, declaration files). The built-in list wins over `outside`, and
- * `outside` over `exclude`.
+ * out (tests, declaration files). The built-in list wins over `assume`,
+ * `assume` over `outside`, and `outside` over `exclude`.
  */
-export function sourceClass(rel: string, c: Pick<Config, "exclude" | "outside">): "analysed" | "excluded" | "outside" | null {
+export function sourceClass(rel: string, c: Pick<Config, "exclude" | "outside" | "assume">): "analysed" | "excluded" | "outside" | "assumed" | null {
   if (matchesAny(rel, DEFAULT_EXCLUDE)) return null;
+  if (matchesAny(rel, c.assume)) return "assumed";
   if (matchesAny(rel, c.outside)) return "outside";
   return matchesAny(rel, c.exclude) ? "excluded" : "analysed";
 }
 
-/** A source file keylang reads: not left out by the built-in list, `exclude` or `outside`. */
-export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside">): boolean {
+/** A source file keylang reads: not left out by the built-in list, `assume`, `exclude` or `outside`. */
+export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside" | "assume">): boolean {
   return sourceClass(rel, c) === "analysed";
+}
+
+/** A path `assume` names: keylang neither reads nor requires it. */
+export function isAssumed(rel: string, c: Pick<Config, "assume">): boolean {
+  return matchesAny(rel, c.assume);
 }
 
 export function isOutside(rel: string, outside: readonly string[]): boolean {

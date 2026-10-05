@@ -87,8 +87,11 @@ export interface SnapshotExport {
 }
 
 export interface CoverageItem {
-  /** `outside-file`: a file `outside` puts outside the architecture; listed, but no hole. */
-  kind: Gap["kind"] | "skipped-file" | "outside-file";
+  /**
+   * `outside-file`: a file `outside` puts outside the architecture; listed, but no hole.
+   * `assumed-import`: an import of a file `assume` lists — no edge, and no hole either.
+   */
+  kind: Gap["kind"] | "skipped-file" | "outside-file" | "assumed-import";
   file: string;
   line: number;
   col: number;
@@ -181,6 +184,7 @@ export interface AnalysisSnapshot {
       layers: Record<string, string[]>;
       exclude: string[];
       outside: string[];
+      assume: string[];
       guessed: boolean;
     };
     files: { path: string; sha256: string }[];
@@ -203,6 +207,8 @@ export function buildSnapshot(
   /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */
   skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[],
   docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() },
+  /** Imports of files `assume` lists, taken out of the graph's holes (`assumed-import`). */
+  assumed: readonly CoverageItem[] = [],
 ): AnalysisSnapshot {
   const manifestFiles = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const grammars = grammarVersions();
@@ -213,6 +219,7 @@ export function buildSnapshot(
     layers: Object.fromEntries(config.layers),
     exclude: [...config.exclude],
     outside: [...config.outside],
+    assume: [...config.assume],
     guessed: config.guessed,
   };
   const snapshotId = sha256(
@@ -385,6 +392,7 @@ export function buildSnapshot(
   for (const { file, reason, source, kind } of skipped) {
     coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
+  coverage.push(...assumed);
   coverage.sort(compareCoverage);
   closures(ordered, coverage);
 
