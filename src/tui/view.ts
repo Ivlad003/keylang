@@ -1585,14 +1585,15 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       formatted: "formatted",
       invalid: "invalid",
       explanation: "skipped",
+      generated: "skipped",
       unreadable: "unreadable",
       failed: "not written",
       "not-attempted": "not written",
     };
     for (const file of payload.files) {
-      const why = file.state === "explanation" ? ": a saved explanation, not keylang Markdown" : file.state === "not-attempted" ? ": cancelled before it" : file.error === undefined ? "" : `: ${file.error}`;
+      const why = file.state === "explanation" ? ": a saved explanation, not keylang Markdown" : file.state === "generated" ? ": a generated file, its generator writes it" : file.state === "not-attempted" ? ": cancelled before it" : file.error === undefined ? "" : `: ${file.error}`;
       const bad = file.state === "failed" || file.state === "unreadable" || file.state === "invalid";
-      rows.push({ text: `  ${label[file.state].padEnd(13)} ${file.path}${why}`, style: bad ? { ...THEME.panel, ...THEME.error } : file.state === "current" || file.state === "explanation" ? { ...THEME.panel, fg: 243 } : THEME.panel });
+      rows.push({ text: `  ${label[file.state].padEnd(13)} ${file.path}${why}`, style: bad ? { ...THEME.panel, ...THEME.error } : file.state === "current" || file.state === "explanation" || file.state === "generated" ? { ...THEME.panel, fg: 243 } : THEME.panel });
       for (const d of file.diagnostics ?? []) rows.push({ text: `    ${d.span.start.line}:${d.span.start.col} ${d.code} ${d.message}`, style: { ...THEME.panel, ...THEME.error } });
     }
     // A message about no one file (the commit could not start) is shown as it is.

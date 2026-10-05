@@ -21,7 +21,7 @@ import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -1132,7 +1132,8 @@ async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean):
  * does not stop the rest: every such failure is reported, and the code is 2;
  * otherwise 1 for diagnostics or, with `--check`, an unformatted file. The
  * CLI is a printer over the shared fmt operation: stdout for what changed,
- * stderr for diagnostics and failures; a saved explanation passes silently.
+ * stderr for diagnostics and failures and a note per generated file it
+ * leaves; a saved explanation passes silently.
  */
 async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
   const cwd = process.cwd();
@@ -1145,6 +1146,7 @@ async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
     if (message.level === "info") process.stdout.write(`${message.text}\n`);
     else if (message.level === "error") process.stderr.write(`${message.text}\n`);
   }
+  for (const file of result.payload.files) if (file.state === "generated") process.stderr.write(`keylang: note: ${fmtGeneratedNote(file)}\n`);
   return result.exitCode ?? 2;
 }
 

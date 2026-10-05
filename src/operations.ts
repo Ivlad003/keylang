@@ -42,7 +42,7 @@ import type { DraftStatus } from "./draft-llm.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan, type SourceInputs } from "./map.ts";
 import { stronglyConnected } from "./scc.ts";
-import { allCrlf, landing, safeWrite, writeAtomic, writeProblem } from "./safe-write.ts";
+import { allCrlf, isGeneratedText, landing, safeWrite, writeAtomic, writeProblem } from "./safe-write.ts";
 import { sha256, type CoverageItem } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
@@ -793,7 +793,9 @@ export interface AgentsPayload {
  * check, or a write stopped before it); `formatted`: written by this run;
  * `invalid`: the tree shape is ambiguous (K003), never rewritten;
  * `explanation`: a saved explanation, the model's text, left as it is;
- * `unreadable`, `failed`: the file could not be read or written (`error`);
+ * `generated`: a file with a `keylang:generated` marker, its generator's, left as it is;
+ * `unreadable`, `failed`: the file could not be read or written (`error`),
+ * a target outside the repository included;
  * `not-attempted`: the write was cancelled before this file.
  */
 export interface FmtFile {
@@ -801,11 +803,13 @@ export interface FmtFile {
   shown: string;
   /** POSIX, relative to the root. */
   path: string;
-  state: "current" | "stale" | "formatted" | "invalid" | "explanation" | "unreadable" | "failed" | "not-attempted";
+  state: "current" | "stale" | "formatted" | "invalid" | "explanation" | "generated" | "unreadable" | "failed" | "not-attempted";
   /** `unreadable`, `failed`: why. */
   error?: string;
   /** `invalid`: the structural diagnostics, as `formatSource` gives them. */
   diagnostics?: Diagnostic[];
+  /** `generated`: the command its marker names (`keylang map`), when it names one. */
+  generator?: string;
 }
 
 /** What `keylang fmt [--check]` found and did, file by file. */
@@ -2110,13 +2114,16 @@ function emptyFmt(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: s
  * `keylang fmt [--check]` in two phases. Compute: every file is read and
  * formatted by `formatSource`; one that cannot be read, or whose tree shape
  * is ambiguous (K003), is reported and the rest go on; a saved explanation
- * is skipped. Check stops here: code 1 for an unformatted or invalid file,
- * 2 when one cannot be read; nothing is written. Write, after
- * `beforeCommit`: each unformatted file in turn is written atomically with
- * the formatter's bytes, only while it still holds the text it was formatted
- * from — a file changed meanwhile, or one that cannot be written, fails on
- * its own and the rest are still written. Code 2 over 1 over 0, as the CLI
- * has it; null when cancelled (the files written by then are named).
+ * and a generated file are skipped. A file with CRLF on every line is
+ * canonical when its LF form is. Check stops here: code 1 for an unformatted
+ * or invalid file, 2 when one cannot be read; nothing is written. Write,
+ * after `beforeCommit`: each unformatted file in turn is written atomically
+ * with the formatter's bytes (CRLF kept on a CRLF file), only inside the
+ * repository with links followed and only while it still holds the text it
+ * was formatted from — a target outside, a file changed meanwhile, or one
+ * that cannot be written, fails on its own and the rest are still written.
+ * Code 2 over 1 over 0, as the CLI has it; null when cancelled (the files
+ * written by then are named).
  */
 async function runFmt(request: FmtRequest, context: OperationContext): Promise<OperationEnvelope<"fmt">> {
   if (!isAbsolute(request.root)) return emptyFmt("failed", 2, "fmt: root must be an absolute path");
@@ -2148,11 +2155,18 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
         file.state = "explanation";
         continue;
       }
+      // A generated file is its generator's, as for every writer of keylang: named, never rewritten.
+      if (isGeneratedText(source)) {
+        file.state = "generated";
+        const generator = generatorCommand(source);
+        if (generator !== null) file.generator = generator;
+        continue;
+      }
       const formatted = formatSource(shown, source);
       if (!formatted.ok) {
         file.state = "invalid";
         file.diagnostics = formatted.diagnostics;
-      } else if (formatted.text !== source) {
+      } else if (formatted.text !== source && !(allCrlf(source) && formatted.text === source.replace(/\r\n/g, "\n"))) {
         file.state = "stale";
         planned.push({ file, abs, source, text: formatted.text });
       }
@@ -2187,7 +2201,7 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
     }
     context.onProgress?.({ text: `writing ${step.file.path}` });
     try {
-      commitFormatted(step.abs, step.source, step.text);
+      commitFormatted(request.root, step.abs, step.source, step.text);
       step.file.state = "formatted";
       written.push(step.file.path);
     } catch (error) {
@@ -2199,22 +2213,38 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
 }
 
 /**
- * Writes one formatted file: atomically at the file a link names, with the
- * formatter's bytes (`fmt` turns CRLF into LF, as it always did), and only
- * when the file still holds `source`. A file that cannot be written in place
- * (read-only) is not replaced by the rename either.
+ * Writes one formatted file under the write policy of every writer
+ * (`safe-write.ts`): only where the bytes land inside the repository with
+ * every link followed, atomically at that target, with the formatter's
+ * bytes in the file's own line ends (CRLF on every line stays CRLF), and
+ * only when the file still holds `source`. A file that cannot be written in
+ * place (read-only) is not replaced by the rename either.
  */
-function commitFormatted(abs: string, source: string, text: string): void {
-  const target = landing(abs) ?? abs;
+function commitFormatted(root: string, abs: string, source: string, text: string): void {
+  const target = landing(abs);
+  if (target === null) throw new Error("leads through a loop of links");
+  if (!within(target, realpathSync(root))) throw new Error(within(abs, root) ? "leads out of the repository through a link" : "outside the repository");
   if (readFileSync(target, "utf8") !== source) throw new Error("changed on disk while it was formatted; nothing written");
   closeSync(openSync(target, "r+"));
-  writeAtomic(target, text, { exact: true });
+  writeAtomic(target, text);
+}
+
+/** The command a generation marker names (`keylang map`), or null. */
+function generatorCommand(source: string): string | null {
+  const marker = source.replace(/^\uFEFF/, "").split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
+  return /`(keylang [^`]+)`/.exec(marker)?.[1] ?? null;
+}
+
+/** `keylang/map/app.md: a generated file, not formatted; \`keylang map\` writes it`: how fmt names a generated file it leaves. */
+export function fmtGeneratedNote(file: FmtFile): string {
+  return `${file.shown}: a generated file, not formatted; ${file.generator === undefined ? "only its generator writes it" : `\`${file.generator}\` writes it`}`;
 }
 
 /**
  * The report, file by file in path order: `info` is what `keylang fmt`
  * prints to stdout, `error` what it prints to stderr; a `warning` names a
- * skipped explanation, which the CLI passes over silently.
+ * skipped explanation, which the CLI passes over silently, or a skipped
+ * generated file, which the CLI notes on stderr.
  */
 export function fmtMessages(payload: FmtPayload): OperationMessage[] {
   const out: OperationMessage[] = [];
@@ -2226,6 +2256,7 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
     else if (file.state === "failed") out.push({ level: "error", text: `${file.shown}: cannot write: ${file.error}` });
     else if (file.state === "not-attempted") out.push({ level: "warning", text: `${file.shown}: not written (cancelled)` });
     else if (file.state === "explanation") out.push({ level: "warning", text: `${file.shown}: a saved explanation, not keylang Markdown; skipped` });
+    else if (file.state === "generated") out.push({ level: "warning", text: fmtGeneratedNote(file) });
   }
   return out;
 }

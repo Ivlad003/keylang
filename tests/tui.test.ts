@@ -4585,7 +4585,7 @@ test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explan
   const s = session(root);
   t.after(() => s.app.close());
   await s.app.idle();
-  // A clean CRLF buffer takes the LF bytes fmt writes, so a later save keeps them.
+  // A clean CRLF buffer keeps CRLF: fmt writes a CRLF file in CRLF, so a later save keeps them.
   s.send(KEY.ctrlP);
   for (const ch of "open keylang/notes/d-crlf.md") s.send(ch);
   s.send(KEY.enter);
@@ -4608,14 +4608,15 @@ test("tui: fmt over a directory with valid, invalid, unreadable, CRLF and explan
   assert.equal(states["keylang/notes/d-crlf.md"], "formatted");
   assert.equal(states["keylang/explain/x.md"], "explanation");
   assert.deepEqual(result.written, ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md"], "the failures do not hide the written files");
-  // The bytes are the CLI's: CRLF becomes LF, Unicode stays; invalid and explanation files are untouched.
+  // The bytes are the CLI's: CRLF stays CRLF, Unicode stays; invalid and explanation files are untouched.
   for (const path of ["keylang/notes/a-messy.md", "keylang/notes/d-crlf.md", "keylang/notes/b-indent.md", "keylang/explain/x.md"]) {
     assert.equal(readFileSync(join(root, path), "utf8"), readFileSync(join(twin, path), "utf8"), path);
   }
   const crlfOut = readFileSync(join(root, "keylang/notes/d-crlf.md"), "utf8");
-  assert.ok(!crlfOut.includes("\r") && crlfOut.includes("порядок 𝒳"), crlfOut);
+  assert.ok(crlfOut.split("\r\n").length === crlfOut.split("\n").length && crlfOut.includes("порядок 𝒳"), crlfOut);
   const crlfBuffer = s.app.state.buffers.get("keylang/notes/d-crlf.md")!;
-  assert.deepEqual([crlfBuffer.text, crlfBuffer.eol, crlfBuffer.saved], [crlfOut, "\n", crlfOut]);
+  const crlfText = crlfOut.replace(/\r\n/g, "\n");
+  assert.deepEqual([crlfBuffer.text, crlfBuffer.eol, crlfBuffer.saved], [crlfText, "\r\n", crlfText]);
   assert.equal(readFileSync(join(root, "keylang/explain/x.md"), "utf8"), explanation);
   assert.equal(readFileSync(join(root, "keylang/notes/b-indent.md"), "utf8"), INDENT);
   // A repeat: nothing more to write, the same failures; check writes nothing.
