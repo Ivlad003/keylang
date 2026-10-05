@@ -1785,11 +1785,15 @@ function drawResults(grid: Grid, state: State, rect: Rect): void {
   }
 }
 
-/** Cells the widest report row exceeds `width` by: how far ←→ can scroll it. */
+/**
+ * How far ←→ can scroll the report: until the widest row ends in view. A
+ * scrolled row starts with `…` in a cell of its own (`sliceCells`), so that
+ * is one cell more than the row exceeds `width` by; 0 when every row fits.
+ */
 export function reportOverflow(rows: readonly { text: string }[], width: number): number {
   let widest = 0;
   for (const row of rows) widest = Math.max(widest, stringWidth(row.text));
-  return Math.max(0, widest - width);
+  return widest > width ? widest - width + 1 : 0;
 }
 
 /** The full findings report of the current analysis: counts, filters, the selected finding's details, and the list. */

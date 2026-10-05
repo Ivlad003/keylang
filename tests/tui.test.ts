@@ -10235,7 +10235,7 @@ test("tui: below 100 columns one side panel is shown — the focused one, else t
 test("width: sliceCells keeps whole clusters, blanks a wide one cut by the edge and marks hidden text", () => {
   assert.equal(sliceCells("abcdef", 0, 6), "abcdef");
   assert.equal(sliceCells("abcdefgh", 0, 6), "abcde…");
-  assert.equal(sliceCells("abcdefgh", 2, 4), "…de…");
+  assert.equal(sliceCells("abcdefgh", 2, 4), "…cd…");
   assert.equal(sliceCells("a支付b", 2, 4), "…付b");
   assert.equal(sliceCells("支付支付支付", 1, 5), "…付…");
   assert.equal(sliceCells("👨‍👩‍👧 done", 0, 3), "👨‍👩‍👧…");

@@ -11,6 +11,9 @@ import { readStats, updateStats } from "../src/stats.ts";
 import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
 import type { OperationWorker } from "../src/tui/background.ts";
 import { InputDecoder, type InputEvent } from "../src/tui/input.ts";
+import { Grid } from "../src/tui/screen.ts";
+import { reportOverflow } from "../src/tui/view.ts";
+import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -173,17 +176,17 @@ const names = (events: readonly InputEvent[]): string[] => events.map((event) =>
 test("review-tui: input keeps a cluster whole at a chunk's end, folds CRLF and drops reports the terminal sends", () => {
   const decoder = new InputDecoder();
   // A decomposed é alone in its chunk may still go on: it waits, then is one key.
-  assert.deepEqual(names(decoder.feed("é")), []);
+  assert.deepEqual(names(decoder.feed("e\u0301")), []);
   assert.equal(decoder.waiting, true);
-  assert.deepEqual(names(decoder.flush()), ["é"]);
+  assert.deepEqual(names(decoder.flush()), ["e\u0301"]);
   // A ZWJ sequence cut by the chunk's end is one key once the next chunk ends it.
-  assert.deepEqual(names(decoder.feed("👨‍👩")), []);
-  assert.deepEqual(names(decoder.feed("‍👧x")), ["👨‍👩‍👧", "x"]);
-  assert.deepEqual(names(decoder.feed("👨‍👩‍👧")), []);
-  assert.deepEqual(names(decoder.flush()), ["👨‍👩‍👧"]);
+  assert.deepEqual(names(decoder.feed("👨\u200d👩")), []);
+  assert.deepEqual(names(decoder.feed("\u200d👧x")), ["👨\u200d👩\u200d👧", "x"]);
+  assert.deepEqual(names(decoder.feed("👨\u200d👩\u200d👧")), []);
+  assert.deepEqual(names(decoder.flush()), ["👨\u200d👩\u200d👧"]);
   // Alt with a waiting cluster.
-  assert.deepEqual(names(decoder.feed("\x1bé")), []);
-  assert.deepEqual(names(decoder.flush()), ["alt+é"]);
+  assert.deepEqual(names(decoder.feed("\x1be\u0301")), []);
+  assert.deepEqual(names(decoder.flush()), ["alt+e\u0301"]);
   // A letter typed alone is a key at once.
   assert.deepEqual(names(decoder.feed("ї")), ["ї"]);
   assert.deepEqual(names(decoder.feed("a\r\nb")), ["a", "enter", "b"]);
@@ -199,10 +202,39 @@ test("review-tui: a decomposed letter arriving alone in the view is one key, not
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());
   await s.app.idle();
-  s.send("é");
+  s.send("e\u0301");
   await new Promise((done) => setTimeout(done, 60));
   assert.equal(s.app.state.hover, null);
   assert.equal(s.app.state.message, null, "e did not run");
+});
+
+// ---------- 11, 12: widths and slices ----------
+
+test("review-tui: a keycap takes two cells; invisible format characters and Hangul vowels and finals take none and are not drawn", () => {
+  assert.equal(graphemeWidth("1\ufe0f\u20e3"), 2);
+  assert.equal(graphemeWidth("#\u20e3"), 2);
+  for (const ch of ["\u200b", "\u00ad", "\u2060", "\u200d", "\ufe0f", "\u1161", "\u11a8", "\ud7b0"]) assert.equal(graphemeWidth(ch), 0, `U+${ch.codePointAt(0)!.toString(16)}`);
+  assert.equal(stringWidth("\u1100\u1161\u11a8"), 2, "a syllable written in jamo is one wide cluster");
+  assert.equal(stringWidth("a\u200bb\u00adc"), 3);
+  const grid = new Grid(8, 1);
+  grid.write(0, 0, "1\ufe0f\u20e3a\u200bb");
+  assert.equal(grid.lines()[0], "1\ufe0f\u20e3ab    ", "the keycap in two cells, the ZWSP in none");
+});
+
+test("review-tui: clusterAt maps a column inside a cluster to that cluster; sliceCells never hides a cluster in view behind the left …", () => {
+  assert.equal(clusterAt("e\u0301x", 0), 0);
+  assert.equal(clusterAt("e\u0301x", 1), 0, "inside é");
+  assert.equal(clusterAt("e\u0301x", 2), 1);
+  assert.equal(clusterAt("e\u0301x", 3), 2);
+  assert.equal(sliceCells("abcdef", 2, 10), "…cdef");
+  assert.equal(sliceCells("abcdefgh", 2, 4), "…cd…");
+  assert.equal(sliceCells("a支付b", 2, 4), "…付b", "the cut half of a wide cluster is the marker's cell");
+  assert.equal(sliceCells("abc", 5, 4), "", "scrolled past its end");
+  // Scrolled as far as the report allows, the widest row ends in view.
+  const rows = [{ text: `${"x".repeat(29)}y` }, { text: "short" }];
+  const max = reportOverflow(rows, 20);
+  assert.equal(sliceCells(rows[0]!.text, max, 20), `…${"x".repeat(18)}y`);
+  assert.equal(sliceCells(rows[1]!.text, max, 20), "");
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
