@@ -111,8 +111,8 @@ test("every provider's model follows the rule that keeps the explanation header 
 });
 
 test("IDs from file and directory names are NFC, whatever normalization the disk keeps", (t) => {
-  const nfd = "café"; // as macOS stores `café`
-  const nfc = "café"; // as a person types it
+  const nfd = `cafe${String.fromCodePoint(0x301)}`; // as macOS stores it: `e` and a combining acute accent
+  const nfc = `caf${String.fromCodePoint(0xe9)}`; // as a person types it: one precomposed `é`
   const dir = repo(t, {
     // The layer name typed in NFD too: one layer with the spec's spelling.
     "keylang.json": json({ languages: ["typescript"], layers: { [`${nfd}s`]: ["src/**"] } }),

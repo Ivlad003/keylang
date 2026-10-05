@@ -502,11 +502,11 @@ export function layerGlobWarnings(c: Pick<Config, "layers">, files: readonly str
       (o) =>
         `${CONFIG_FILE}: ${o.count} file(s) match the globs of both \`layers.${name(o.winner)}\` and \`layers.${name(o.other)}\` (e.g. \`${o.example}\`); the layer listed first takes them: \`${name(o.winner)}\` by \`${layers[o.winner]![1][o.glob]}\``,
     );
-  layers.forEach(([layer, globs], i) => {
-    globs.forEach((glob, j) => {
+  for (const [i, [layer, globs]] of layers.entries()) {
+    for (const [j, glob] of globs.entries()) {
       if (!matched.has(`${i}/${j}`)) warnings.push(`${CONFIG_FILE}: \`layers.${layer}\`: \`${glob}\` matches no source file`);
-    });
-  });
+    }
+  }
   return warnings;
 }
 
