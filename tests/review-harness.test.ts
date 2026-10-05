@@ -131,6 +131,62 @@ test("hook: a bad invocation is still code 2, with nothing on stdout", (t) => {
   }
 });
 
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+test("the harness files follow `dir` of keylang.json: deny rules, the AGENTS.md block and the skill name <dir>/; a dir change is stale and moves only keylang's deny entries", (t) => {
+  const dir = tempDir(t, "keylang-specdir-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(LAYERS)}\n`,
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    ".claude/settings.json": `${JSON.stringify({ permissions: { deny: ["Read(secret)"] } }, null, 2)}\n`,
+  });
+  const read = (path: string): string => readFileSync(join(dir, path), "utf8");
+  const deny = (): string[] => (JSON.parse(read(".claude/settings.json")) as { permissions?: { deny?: string[] } }).permissions?.deny ?? [];
+  const own = (spec: string): string[] => [`Edit(${spec}/rules.md)`, `Write(${spec}/rules.md)`, `Edit(${spec}/rules.baseline.md)`, `Write(${spec}/rules.baseline.md)`];
+  const skills = [".agents/skills/keylang-feature/SKILL.md", ".claude/skills/keylang-feature/SKILL.md"];
+  const init = keylang(dir, ["init"]);
+  assert.equal(init.status, 0, init.stderr);
+  assert.deepEqual(deny(), ["Read(secret)", ...own("keylang")]);
+
+  writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...LAYERS, dir: "spec" })}\n`);
+  const before = treeBytes(dir);
+  const stale = keylang(dir, ["agents", "--check"]);
+  assert.equal(stale.status, 1, stale.stdout + stale.stderr);
+  for (const path of ["AGENTS.md", ...skills, ".claude/settings.json"]) assert.match(stale.stdout, new RegExp(`^${escaped(path)}: stale`, "m"), path);
+  assert.deepEqual(treeBytes(dir), before, "agents --check writes nothing");
+
+  const agents = keylang(dir, ["agents"]);
+  assert.equal(agents.status, 0, agents.stderr);
+  assert.deepEqual(deny(), ["Read(secret)", ...own("spec")], "keylang's entries for the old default dir go; the user's stays");
+  for (const path of ["AGENTS.md", ...skills]) {
+    const text = read(path);
+    for (const named of ["spec/features/<slug>.md", "spec/rules.md", "spec/rules.baseline.md"]) assert.ok(text.includes(`\`${named}\``), `${path}: ${named}`);
+    assert.doesNotMatch(text, /keylang\/(features|rules|map)/, path);
+    assert.doesNotMatch(text, /<dir>/, path);
+  }
+  assert.equal(read(skills[0]!), read(skills[1]!));
+  assert.equal(keylang(dir, ["agents", "--check"]).status, 0);
+  const baseline = keylang(dir, ["baseline"]);
+  assert.equal(baseline.status, 0, baseline.stderr);
+  assert.ok(existsSync(join(dir, "spec/rules.baseline.md")), "the baseline the deny rules protect is where `dir` says");
+
+  const none = keylang(dir, ["agents", "--agents=none"]);
+  assert.equal(none.status, 0, none.stderr);
+  assert.deepEqual(deny(), ["Read(secret)"]);
+});
+
+test("agents names a broken keylang.json (code 2) and writes nothing: the harness files depend on its `dir`", (t) => {
+  const dir = tempDir(t, "keylang-specdir-broken-");
+  writeTree(dir, { "keylang.json": "{ broken\n", "src/app/pay.ts": PAY });
+  mkdirSync(join(dir, ".claude"));
+  const before = treeBytes(dir);
+  const agents = keylang(dir, ["agents"]);
+  assert.equal(agents.status, 2, agents.stdout);
+  assert.match(agents.stderr, /keylang\.json: invalid JSON/);
+  assert.deepEqual(treeBytes(dir), before);
+});
+
 const IGNORED = "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n";
 
 test("init lists .keylang/ in the root .gitignore: created when missing, appended once in the file's line ends, kept when listed", (t) => {

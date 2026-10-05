@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { CONFIG_FILE, parseConfig } from "./config.ts";
 import { allCrlf, landing, writeAtomic, writeProblem } from "./safe-write.ts";
 
 /** Files `init` / `agents` may create or edit. The plan reads each one before it is computed. */
@@ -40,7 +41,20 @@ export const MARK_END = "<!-- keylang:end -->";
 /** Codex's per-file instruction budget is 32 KiB; this block stays under 4 KiB. */
 const BLOCK_LIMIT = 4096;
 
-const DENY_RULES = ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)"];
+/** The spec directory when `keylang.json` names none (`dir`). */
+const DEFAULT_SPEC_DIR = "keylang";
+
+/** Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`. */
+function denyRules(dir: string): string[] {
+  return [`Edit(${dir}/rules.md)`, `Write(${dir}/rules.md)`, `Edit(${dir}/rules.baseline.md)`, `Write(${dir}/rules.baseline.md)`];
+}
+
+/** The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field. */
+export function specDir(root: string): string {
+  const file = join(root, CONFIG_FILE);
+  if (!existsSync(file)) return DEFAULT_SPEC_DIR;
+  return parseConfig(file, readFileSync(file, "utf8")).dir ?? DEFAULT_SPEC_DIR;
+}
 
 const SKILL_AGENTS = ".agents/skills/keylang-feature/SKILL.md";
 const SKILL_CLAUDE = ".claude/skills/keylang-feature/SKILL.md";
@@ -119,14 +133,14 @@ function claudeHasUserFile(probe: HarnessProbe, dir: string): boolean {
   return false;
 }
 
-/** The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`. */
-export function agentsBody(version: string): string {
+/** The instruction body between the markers, without a trailing newline. The CLI fallback pins `version`; paths are under the spec directory `dir`. */
+export function agentsBody(version: string, dir: string): string {
   const cli = cliCommand(version);
   return [
     "keylang is the spec; you write the code.",
     "",
     "Feature cycle:",
-    "1. Write `keylang/features/<slug>.md` with `planned` declarations and flows.",
+    `1. Write \`${dir}/features/<slug>.md\` with \`planned\` declarations and flows.`,
     "2. Call `validate_spec` on that text, then `scaffold` for each planned fn (template only).",
     "3. Implement the code with your own edits.",
     "4. Call `feature_status` (or the CLI `feature` below) until done, then drop `planned` when K202 says it is implemented.",
@@ -134,7 +148,7 @@ export function agentsBody(version: string): string {
     "",
     "MCP: `context`, `validate_spec`, `scaffold`, `feature_status`, `search`, `node`, `code`, `flows`, `check`, `explain`. Only `apply_diff` writes, and only a proposal.",
     "",
-    "Change `keylang/rules.md` and `keylang/rules.baseline.md` only through a proposal (`apply_diff`).",
+    `Change \`${dir}/rules.md\` and \`${dir}/rules.baseline.md\` only through a proposal (\`apply_diff\`).`,
     "",
     `CLI when MCP is off, pinned like the MCP server: \`${cli} feature <slug> --format json\`, \`${cli} check\`, \`${cli} spec-to-code <id> --print\`, \`${cli} baseline\`.`,
     "",
@@ -152,9 +166,13 @@ export function cliCommand(version: string): string {
   return `npx -y keylang@${version}`;
 }
 
-/** The skill resource names the CLI as `npx -y keylang@<version>`; the copy a harness gets pins the running version. */
-export function pinSkill(skill: string, version: string): string {
-  return skill.replaceAll("keylang@<version>", `keylang@${version}`);
+/**
+ * The skill resource names the CLI as `npx -y keylang@<version>` and the
+ * spec directory as `<dir>/`; the copy a harness gets pins the running
+ * version and the repository's `dir`.
+ */
+export function pinSkill(skill: string, version: string, dir: string): string {
+  return skill.replaceAll("keylang@<version>", `keylang@${version}`).replaceAll("<dir>/", `${dir}/`);
 }
 
 /** What the Stop hook runs. */
@@ -164,11 +182,12 @@ export function hookCommand(version: string): string {
 
 /**
  * Desired text of every harness file this selection owns. `files` holds the
- * current text, null when the file is absent. The first broken marker or
+ * current text, null when the file is absent; `dir` is the spec directory the
+ * instructions, the skill and the deny rules name. The first broken marker or
  * invalid JSON/TOML is `error` and `files` is empty: the caller writes nothing.
  */
-export function planHarness(input: { selection: HarnessSelection; version: string; skill: string; files: ReadonlyMap<string, string | null> }): HarnessPlan {
-  const body = agentsBody(input.version);
+export function planHarness(input: { selection: HarnessSelection; version: string; dir: string; skill: string; files: ReadonlyMap<string, string | null> }): HarnessPlan {
+  const body = agentsBody(input.version, input.dir);
   const block = `${MARK_BEGIN}\n${body}\n${MARK_END}\n`;
   if (Buffer.byteLength(block) > BLOCK_LIMIT) throw new Error(`AGENTS.md block is ${Buffer.byteLength(block)} bytes; the limit is ${BLOCK_LIMIT}`);
   const files: HarnessFile[] = [];
@@ -225,7 +244,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
   }
 
   if (owned) {
-    const pinned = pinSkill(input.skill, input.version);
+    const pinned = pinSkill(input.skill, input.version, input.dir);
     const skill = pinned.endsWith("\n") ? pinned : `${pinned}\n`;
     files.push({ path: SKILL_AGENTS, text: skill }, { path: SKILL_CLAUDE, text: skill });
   } else if (!input.selection.instructions) {
@@ -234,7 +253,7 @@ export function planHarness(input: { selection: HarnessSelection; version: strin
   }
 
   if (want("claude", ".claude/settings.json")) {
-    const settings = mergeSettings(input.files.get(".claude/settings.json") ?? null, input.selection.instructions && selected.has("claude") ? input.version : null);
+    const settings = mergeSettings(input.files.get(".claude/settings.json") ?? null, input.selection.instructions && selected.has("claude") ? input.version : null, input.dir);
     const stoppedSettings = push(".claude/settings.json", settings);
     if (stoppedSettings) return stoppedSettings;
   }
@@ -343,11 +362,11 @@ function mergeCodexToml(existing: string | null, version: string | null): { text
   return { text: text.endsWith("\n") ? text : `${text}\n` };
 }
 
-function mergeSettings(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+function mergeSettings(existing: string | null, version: string | null, dir: string): { text: string | null } | { error: string } {
   const parsed = parseObject(existing);
   if ("error" in parsed) return parsed;
   const data = parsed.value;
-  const denied = mergeDeny(data.permissions, version !== null);
+  const denied = mergeDeny(data.permissions, version !== null, dir);
   if ("error" in denied) return denied;
   if (denied.value === undefined) delete data.permissions;
   else data.permissions = denied.value;
@@ -368,15 +387,23 @@ function mergeHooksFile(existing: string | null, version: string | null): { text
   return finishJson(parsed.value);
 }
 
-function mergeDeny(permissions: unknown, install: boolean): { value: unknown } | { error: string } {
+/**
+ * keylang's deny entries for the spec directory `dir` are added (`install`)
+ * or removed. Its entries for the default directory are keylang's too: they
+ * go once `dir` is another one, so a changed `dir` leaves no stale entry
+ * behind. Any other entry is the person's and stays where it is.
+ */
+function mergeDeny(permissions: unknown, install: boolean, dir: string): { value: unknown } | { error: string } {
   if (permissions === undefined && !install) return { value: undefined };
   if (permissions !== undefined && !isRecord(permissions)) return { error: "permissions is not an object" };
   const perms: Record<string, unknown> = { ...(permissions ?? {}) };
   const deny = perms.deny;
   if (deny !== undefined && !Array.isArray(deny)) return { error: "permissions.deny is not an array" };
   if (deny !== undefined && deny.some((item) => typeof item !== "string")) return { error: "permissions.deny must be strings" };
-  const list = ((deny ?? []) as string[]).filter((item) => install || !DENY_RULES.includes(item));
-  if (install) for (const rule of DENY_RULES) if (!list.includes(rule)) list.push(rule);
+  const own = denyRules(dir);
+  const old = new Set([...own, ...denyRules(DEFAULT_SPEC_DIR)].filter((rule) => !install || !own.includes(rule)));
+  const list = ((deny ?? []) as string[]).filter((item) => !old.has(item));
+  if (install) for (const rule of own) if (!list.includes(rule)) list.push(rule);
   if (list.length === 0) delete perms.deny;
   else perms.deny = list;
   return { value: Object.keys(perms).length === 0 ? undefined : perms };
@@ -542,6 +569,8 @@ export interface AgentsPlan {
   choice: HarnessChoice;
   selection: HarnessSelection;
   version: string;
+  /** The spec directory (`dir` of keylang.json) the instructions, the skill and the deny rules name. */
+  dir: string;
   /** Every file the selection owns, in the adapter's order; empty with `error`. */
   targets: HarnessTarget[];
   /** A broken marker or invalid JSON/TOML: nothing may be written. */
@@ -550,20 +579,21 @@ export interface AgentsPlan {
   inputs: ReadonlyMap<string, string | null>;
 }
 
-/** Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error. */
+/** Plans the harness files of `choice` against the disk under `root`. Reads, writes nothing; throws on a read error or a broken keylang.json. */
 export function planAgents(root: string, choice: HarnessChoice): AgentsPlan {
   const selection = resolveChoice(choice, diskProbe(root));
+  const dir = specDir(root);
   const inputs = readInputs(root);
   const skill = selection.instructions && selection.harnesses.length > 0 ? readFileSync(skillFile(), "utf8") : "";
   const version = keylangVersion();
-  const plan = planHarness({ selection, version, skill, files: inputs });
+  const plan = planHarness({ selection, version, dir, skill, files: inputs });
   const targets: HarnessTarget[] = [];
   for (const file of plan.files) {
     const current = inputs.get(file.path) ?? null;
     const same = current === null ? file.text === null : file.text !== null && current.replace(/\r\n/g, "\n") === file.text.replace(/\r\n/g, "\n");
     targets.push({ path: file.path, category: harnessCategory(file.path), action: same ? "keep" : file.text === null ? "remove" : "write", text: file.text });
   }
-  return { root, choice, selection, version, targets, error: plan.error, inputs };
+  return { root, choice, selection, version, dir, targets, error: plan.error, inputs };
 }
 
 function readInputs(root: string): Map<string, string | null> {
@@ -572,9 +602,10 @@ function readInputs(root: string): Map<string, string | null> {
 
 /**
  * Why the plan may not be committed now (`path: reason` lines; empty when it
- * may): every harness path must still hold the bytes the plan read, a target
- * must pass the repository's write rules, and `auto` must still detect the
- * same harnesses.
+ * may): every harness path must still hold the bytes the plan read,
+ * keylang.json must still name the same spec directory, a target must pass
+ * the repository's write rules, and `auto` must still detect the same
+ * harnesses.
  */
 export function agentsPlanProblems(plan: AgentsPlan): string[] {
   const problems: string[] = [];
@@ -585,6 +616,8 @@ export function agentsPlanProblems(plan: AgentsPlan): string[] {
     if (before === after) continue;
     problems.push(`${path}: ${before === null ? "created" : after === null ? "removed" : "changed"} on disk while the integrations were planned; nothing written`);
   }
+  const dir = specDir(plan.root);
+  if (dir !== plan.dir) problems.push(`${CONFIG_FILE}: \`dir\` changed on disk while the integrations were planned (${plan.dir} → ${dir}); nothing written`);
   if (problems.length > 0) return problems;
   for (const target of plan.targets) {
     if (target.action !== "write") continue;

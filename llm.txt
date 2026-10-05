@@ -101,6 +101,8 @@ If the bug the person cares about never shows up as an import or a call, say so.
 
 The person writes the spec: `keylang/rules.md`, flows, and feature files. You write the program from that spec.
 
+This file names the default spec directory, `keylang/`. When `keylang.json` sets `dir` (for example `"dir": "spec"`), every `keylang/…` path here is under that directory instead. The `AGENTS.md` block, the skill and the deny rules that `agents` writes already name it.
+
 When the person asks you to add a feature, you may create `keylang/features/<slug>.md` yourself. The slug matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. You still do not hand-edit the rules.
 
 Do not edit these by hand:
