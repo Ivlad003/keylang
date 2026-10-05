@@ -1891,6 +1891,7 @@ const HELP: Record<string, [string, string][]> = {
     ["q", "back to the view at the node"],
     [": / Ctrl+P", "actions"],
     ["F6", "results"],
+    ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   view: [
     ["↑↓ PgUp PgDn g G", "move"],
@@ -1917,6 +1918,7 @@ const HELP: Record<string, [string, string][]> = {
     ["s", "find a node"],
     ["Ctrl+Space", "agent draft as MERGE"],
     ["in context", "@ add id · x drop · Esc close"],
+    ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   edit: [
     ["type", "edit"],
@@ -1946,11 +1948,13 @@ const HELP: Record<string, [string, string][]> = {
     ["Esc / Ctrl+O / q", "back"],
     ["Ctrl+P", "action palette"],
     ["F6", "results"],
+    ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   read: [
     ["↑↓", "move"],
     ["Enter", "go to code"],
     ["v / Esc", "raw Markdown"],
+    ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
 };
 

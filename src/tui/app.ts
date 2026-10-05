@@ -1,9 +1,10 @@
 // One TUI session: state, input handling, and the analysis behind it. A
 // transport (terminal or WebSocket) attaches a `Surface`, feeds raw input and
 // sizes, and gets ANSI frames back; the session does not know which one it is,
-// except that only a terminal can hand the screen to `$EDITOR`. While the
-// screen is handed away the transport detaches the surface: nothing is drawn
-// until it attaches again, which repaints the whole frame.
+// except that only a terminal can hand the screen to `$EDITOR` or stop the
+// process on Ctrl+Z. While the screen is handed away the transport detaches
+// the surface: nothing is drawn until it attaches again, which repaints the
+// whole frame.
 //
 // Analysis is the shared `analyze()` with the unsaved buffers as an overlay.
 // It runs in the background: the UI keeps answering, shows "updating" and
@@ -74,6 +75,8 @@ export interface Surface {
   write(ansi: string): void;
   /** Terminal only: open a file in `$EDITOR`, handing it the screen. */
   openEditor?: (abs: string, line: number) => Promise<void>;
+  /** Terminal only: stop the process as a shell's Ctrl+Z does; the screen is restored first and repainted when it continues. */
+  suspend?: () => void;
 }
 
 export type Analyzer = (request: AnalysisRequest) => Promise<Analysis>;
@@ -1133,6 +1136,9 @@ export class App {
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
+    // In raw mode the terminal sends Ctrl+Z as a key, not SIGTSTP: outside the editor (where it undoes) and
+    // MERGE (where `u` does), it stops keylang as in any shell. A surface that cannot stop (web) ignores it.
+    if (event.ctrl && event.name === "z" && this.state.mode !== "edit" && this.state.mode !== "merge") return this.surface?.suspend?.();
     if (this.state.results.open) {
       if (this.state.results.viewing) {
         // The panel is hidden while the finding's target is shown; the keys go to the editor or the

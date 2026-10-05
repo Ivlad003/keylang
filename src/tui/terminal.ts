@@ -89,6 +89,9 @@ export interface TerminalHost {
   suspend(): void;
 }
 
+/** Whether the platform has job control: a stopped process the shell resumes with `fg`. */
+const JOB_CONTROL = process.platform !== "win32";
+
 const SIGNALS: readonly TerminalSignal[] = ["SIGTERM", "SIGHUP", "SIGINT", "SIGQUIT", "SIGTSTP", "SIGCONT"];
 
 export function processHost(): TerminalHost {
@@ -107,7 +110,9 @@ export function processHost(): TerminalHost {
         process.off("unhandledRejection", onCrash);
       };
     },
-    suspend: () => process.kill(process.pid, "SIGSTOP"),
+    // The whole process group stops, as a shell's Ctrl+Z stops a job: under `npx` the parent stops too, so
+    // the shell sees the job stopped and offers `fg`, instead of waiting on a parent that still runs.
+    suspend: () => process.kill(0, "SIGSTOP"),
   };
 }
 
@@ -182,15 +187,16 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     if (finished || away !== "editor") return;
     takeBack();
   };
-  const surface: Surface = { write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}) };
+  /** Ctrl+Z (a key in raw mode) or SIGTSTP: the screen goes back to the shell and keylang stops until SIGCONT. */
+  const stop = (): void => {
+    // With the editor in front, it stops along with keylang and the screen is the editor's to restore.
+    if (away === null) handOver("stopped");
+    host.suspend();
+  };
+  const surface: Surface = { write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}), ...(JOB_CONTROL ? { suspend: stop } : {}) };
 
   const onSignal = (signal: TerminalSignal): void => {
-    if (signal === "SIGTSTP") {
-      // With the editor in front, it stops along with keylang and the screen is the editor's to restore.
-      if (away === null) handOver("stopped");
-      host.suspend();
-      return;
-    }
+    if (signal === "SIGTSTP") return stop();
     if (signal === "SIGCONT") {
       if (away === "stopped" && !finished) takeBack();
       return;

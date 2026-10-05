@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -12,7 +13,8 @@ import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
 import type { OperationWorker } from "../src/tui/background.ts";
 import { InputDecoder, type InputEvent } from "../src/tui/input.ts";
 import { mergeRows } from "../src/tui/merge.ts";
-import { Grid } from "../src/tui/screen.ts";
+import { ENTER, Grid, LEAVE } from "../src/tui/screen.ts";
+import { runTerminal, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
 import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
 import { checkoutRepo, click, KEY } from "./tui-fixture.ts";
@@ -52,6 +54,39 @@ function lineOf(lines: readonly string[], text: string): string {
   const found = lines.find((line) => line.includes(text));
   assert.ok(found, `no line with ${text}:\n${lines.join("\n")}`);
   return found;
+}
+
+async function waitUntil(ready: () => boolean, what: string): Promise<void> {
+  for (let waited = 0; !ready(); waited += 10) {
+    if (waited > 15000) throw new Error(`timed out waiting for ${what}`);
+    await sleep(10);
+  }
+}
+
+/** A terminal and a process for `runTerminal`: what it writes, and a way to type and send signals. */
+function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost; out: string[]; screen: () => string; suspended: () => number; type: (keys: string) => void; signal: (signal: TerminalSignal) => void } {
+  const out: string[] = [];
+  let suspended = 0;
+  const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode: () => {}, setEncoding: () => {}, pause: () => {}, resume: () => {} });
+  const stdout = Object.assign(new EventEmitter(), { columns: 100, rows: 30, write: (text: string) => void out.push(text) });
+  let onSignal: ((signal: TerminalSignal) => void) | null = null;
+  const host: TerminalHost = {
+    stdin,
+    stdout,
+    stderr: () => {},
+    env,
+    listen: (listener) => {
+      onSignal = listener;
+      return () => (onSignal = null);
+    },
+    suspend: () => void suspended++,
+  };
+  const screen = (): string => {
+    const vt = new VirtualTerminal(100, 30);
+    vt.feed(out.join(""));
+    return vt.text();
+  };
+  return { host, out, screen, suspended: () => suspended, type: (keys) => void stdin.emit("data", keys), signal: (signal) => onSignal?.(signal) };
 }
 
 /** A file in the repository, with its directories. */
@@ -353,6 +388,42 @@ test("review-tui: the wheel stops at the last row in MERGE and over the navigati
   const nav = layout(s.app.state).nav!;
   for (let i = 0; i < 40; i++) s.send(`\x1b[<65;${nav.x + 5};10M`);
   assert.equal(s.app.state.navTop, navEntries(s.app.state).length - 1);
+});
+
+// ---------- 14: Ctrl+Z ----------
+
+test("review-tui: Ctrl+Z in the view gives the screen back and stops keylang; SIGCONT repaints; in the editor it still undoes", async (t) => {
+  const term = fakeTerminal();
+  const running = runTerminal(checkoutRepo(t), term.host);
+  t.after(() => term.signal("SIGTERM"));
+  await waitUntil(() => /✗ 0/.test(term.out.join("")), "the first analysis");
+  // A terminal in raw mode sends Ctrl+Z as a byte, not as SIGTSTP.
+  term.type("\x1a");
+  assert.equal(term.suspended(), 1);
+  assert.equal(term.out.at(-1), LEAVE, "the screen is restored before the stop");
+  const stopped = term.out.length;
+  term.signal("SIGCONT");
+  assert.equal(term.out[stopped], ENTER);
+  assert.match(term.out.slice(stopped).join(""), /\x1b\[2J/, "a full repaint");
+  term.type("i");
+  term.type("x");
+  await waitUntil(() => /x# flow checkout/.test(term.screen()), "the typed x");
+  term.type("\x1a");
+  assert.equal(term.suspended(), 1, "no stop while editing");
+  await waitUntil(() => !/x# flow checkout/.test(term.screen()), "the undo");
+  term.signal("SIGTERM");
+  assert.equal(await running, 0);
+});
+
+test("review-tui: Ctrl+Z where the surface cannot stop (keylang web) does nothing", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("j");
+  s.send("\x1a");
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.cursor.line, 1);
+  assert.equal(s.app.state.message, null);
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
