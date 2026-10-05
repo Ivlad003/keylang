@@ -57,10 +57,14 @@ interface Recording {
   mic: { stop: () => void } | null;
 }
 
-/** Counts for design §7.3: ghost measured against the deterministic completion; an unwritable `.keylang/` only loses the count. */
-export function countSuggestion(root: string, source: "ghost" | "completion", field: "proposed" | "accepted" | "rejected", shown: number | null | undefined): void {
+/**
+ * Counts for design §7.3: ghost measured against the deterministic completion; an unwritable `.keylang/` only loses the count.
+ * Browse (no `keylang.json`) counts nothing: it writes no file, `.keylang/` included.
+ */
+export function countSuggestion(state: Pick<State, "root" | "config">, source: "ghost" | "completion", field: "proposed" | "accepted" | "rejected", shown: number | null | undefined): void {
+  if (state.config.kind === "missing-config") return;
   try {
-    updateStats(root, (stats) => {
+    updateStats(state.root, (stats) => {
       const tally = (stats.suggestions[source] ??= { proposed: 0, accepted: 0, rejected: 0, ms: 0 });
       tally[field]++;
       if (field !== "proposed" && typeof shown === "number") tally.ms += Date.now() - shown;
@@ -176,7 +180,7 @@ export class Assist {
         // The person typed on, moved, or a newer request was made meanwhile: a suggestion for older text is not shown.
         if (request !== this.ghostRequest || this.state.activeOperation !== null || !this.at(spot) || this.state.cursor.line !== line || variants.length === 0) return;
         this.state.ghost = { path: spot.path, version: spot.version, line, variants, index: 0, shown: Date.now() };
-        countSuggestion(this.state.root, "ghost", "proposed", null);
+        countSuggestion(this.state, "ghost", "proposed", null);
       })()
         .catch((error: unknown) => {
           this.state.message = `agent: ${errorText(error)}`;
@@ -193,7 +197,7 @@ export class Assist {
   acceptGhost(ghost: NonNullable<State["ghost"]>): void {
     const buffer = this.host.buffer();
     if (!buffer || buffer.path !== ghost.path || buffer.version !== ghost.version || this.state.mode !== "edit") {
-      countSuggestion(this.state.root, "ghost", "rejected", ghost.shown);
+      countSuggestion(this.state, "ghost", "rejected", ghost.shown);
       return;
     }
     const text = ghost.variants[ghost.index]!;
@@ -202,7 +206,7 @@ export class Assist {
       cursor.line = ghost.line;
       cursor.col = graphemes(text).length;
     });
-    countSuggestion(this.state.root, "ghost", "accepted", ghost.shown);
+    countSuggestion(this.state, "ghost", "accepted", ghost.shown);
   }
 
   /** Anything but `Tab` and `Alt+]` drops a shown ghost line. */
@@ -210,7 +214,7 @@ export class Assist {
     const ghost = this.state.ghost;
     if (!ghost) return;
     this.state.ghost = null;
-    countSuggestion(this.state.root, "ghost", "rejected", ghost.shown);
+    countSuggestion(this.state, "ghost", "rejected", ghost.shown);
   }
 
   // ---------- voice ----------

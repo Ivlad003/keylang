@@ -1435,7 +1435,7 @@ export class App {
       }
       if (event.name === "tab" || event.name === "enter") return this.acceptCompletion();
       if (event.name === "escape") {
-        countSuggestion(this.state.root, "completion", "rejected", completion.shown);
+        countSuggestion(this.state, "completion", "rejected", completion.shown);
         this.state.completion = null;
         return;
       }
@@ -1571,7 +1571,7 @@ export class App {
     const items = [...starts, ...contains];
     const open = items.length > 0 && !(items.length === 1 && items[0]!.label.toLowerCase() === prefix);
     const shown = this.state.completion?.shown;
-    if (open && shown === undefined) countSuggestion(this.state.root, "completion", "proposed", null);
+    if (open && shown === undefined) countSuggestion(this.state, "completion", "proposed", null);
     this.state.completion = open ? { items, index: 0, from, shown: shown ?? Date.now() } : null;
   }
 
@@ -1580,7 +1580,7 @@ export class App {
     if (!completion) return;
     const item = completion.items[completion.index]!;
     this.state.completion = null;
-    countSuggestion(this.state.root, "completion", "accepted", completion.shown);
+    countSuggestion(this.state, "completion", "accepted", completion.shown);
     // The list belongs to the word it was opened on; text moved under it since is not replaced.
     if (completion.from > this.state.cursor.col) return;
     this.edit((lines, cursor) => {
