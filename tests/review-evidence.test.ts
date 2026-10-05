@@ -180,3 +180,62 @@ test("trace: a snapshotId of another type is an error naming the line; a byte or
   writeTrace(dir, "t.jsonl", traceRun(snapshot, nested()).replaceAll(`"snapshotId":"${snapshot}"`, '"snapshotId":null'));
   assert.match(traceOf(results(dir), SAVE), /unverified: .* is not bound to a snapshot/);
 });
+
+// ---------- test reports ----------
+
+function writeReport(dir: string, name: string, text: string): void {
+  mkdirSync(join(dir, ".keylang/reports"), { recursive: true });
+  writeFileSync(join(dir, ".keylang/reports", name), text);
+}
+
+const testsOf = (rows: JsonResult[]): string => {
+  const r = row(rows, "tests", AREA);
+  return r ? `${r.verdict}: ${r.evidence}` : "none";
+};
+
+test("tests: snapshotId and runId of another type are errors naming the field; missing or null is unbound", (t) => {
+  const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
+  const report = (fields: object, row: object = {}): string => JSON.stringify({ schemaVersion: 1, runId: "r", ...fields, tests: [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass", ...row }] });
+  for (const [fields, rowFields, message] of [
+    [{ snapshotId: 123 }, {}, /\.keylang\/reports\/r\.json: `snapshotId` must be a string or null, got 123/],
+    [{ snapshotId: snapshot, runId: 5 }, {}, /\.keylang\/reports\/r\.json: `runId` must be a string or null, got 5/],
+    [{ snapshotId: snapshot }, { snapshotId: false }, /\.keylang\/reports\/r\.json: tests\[0\]\.snapshotId must be a string or null, got false/],
+  ] as const) {
+    writeReport(dir, "r.json", report(fields, rowFields));
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 2, o.stdout);
+    assert.match(o.stderr, message);
+  }
+  writeReport(dir, "r.json", report({ snapshotId: null, runId: null }));
+  assert.match(testsOf(results(dir)), /unverified: .*report \.keylang\/reports\/r\.json is not bound to a snapshot/);
+  writeReport(dir, "r.json", report({ snapshotId: snapshot }));
+  assert.match(testsOf(results(dir)), /^ok: /);
+});
+
+test("tests: a JSON report with a byte order mark is read like one without", (t) => {
+  const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
+  writeReport(dir, "r.json", `\uFEFF${JSON.stringify({ schemaVersion: 1, snapshotId: snapshot, runId: "r", tests: [{ file: "tests/purchase.test.ts", name: "computes total", status: "pass" }] })}`);
+  assert.match(testsOf(results(dir)), /^ok: .*passed in \.keylang\/reports\/r\.json/);
+});
+
+test("tests: two results of other snapshots are a stale report, not ambiguous", (t) => {
+  const { dir } = checkout(t, { tests: ".keylang/reports/*" });
+  const old = "0".repeat(64);
+  writeReport(dir, "r.json", JSON.stringify({ schemaVersion: 1, snapshotId: old, runId: "r", tests: ["A", "B"].map((suite) => ({ file: "tests/purchase.test.ts", suite, name: "computes total", status: "pass" })) }));
+  assert.match(testsOf(results(dir)), /^unverified: .*stale report \.keylang\/reports\/r\.json \(snapshot 000000000000\)/);
+});
+
+test("tests: a JUnit file attribute with the absolute path under the root matches; a testcase without one says so", (t) => {
+  const { dir, snapshot } = checkout(t, { tests: ".keylang/reports/*" });
+  const junit = (attributes: string): string =>
+    `<?xml version="1.0"?>\n<testsuites><testsuite name="purchase"><properties><property name="keylang.snapshotId" value="${snapshot}"/></properties><testcase ${attributes} name="computes total"/></testsuite></testsuites>\n`;
+  // PHPUnit and jest-junit write the absolute path.
+  writeReport(dir, "junit.xml", junit(`file="${join(dir, "tests/purchase.test.ts")}" classname="PurchaseTest"`));
+  assert.match(testsOf(results(dir)), /^ok: .*passed in \.keylang\/reports\/junit\.xml/);
+  // Outside the root the path stays as it is, and names no file of the repository.
+  writeReport(dir, "junit.xml", junit(`file="/elsewhere/tests/purchase.test.ts" classname="PurchaseTest"`));
+  assert.match(testsOf(results(dir)), /^unverified: .*: no report \(tests\/purchase\.test\.ts "computes total"\)/);
+  // pytest's default xunit2 and jest-junit without addFileAttribute write no `file`.
+  writeReport(dir, "junit.xml", junit('classname="tests.purchase_test"'));
+  assert.match(testsOf(results(dir)), /^unverified: .*: no report: \.keylang\/reports\/junit\.xml has the test without a `file` attribute/);
+});
