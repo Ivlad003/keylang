@@ -57,9 +57,10 @@ Commands:
                             file, unreadable --since ref, or bad invocation
   hook stop                 Read a harness Stop event (JSON) from stdin, run
                             check --changed, and print a JSON decision; writes
-                            nothing. Exit 0 once started: a turn it cannot check
-                            (stdin not JSON, no git, a broken keylang.json) prints
-                            {} and the reason on stderr
+                            only the fact cache .keylang/cache/. Exit 0 once
+                            started: a turn it cannot check (stdin not JSON, no
+                            git, a broken keylang.json) prints {} and the reason
+                            on stderr
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
                             git's hooks directory (core.hooksPath is honoured); rerun to
                             update it. A pre-commit hook keylang did not write is left
@@ -133,7 +134,8 @@ Commands:
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, apply_diff (proposals only; nothing else is written)
+                            feature_status, apply_diff (proposals only; no spec is
+                            written, the fact cache .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
@@ -151,7 +153,8 @@ Commands:
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
                             files only (e.g. check keylang/flows/buy.md)
-                            Rebuilds the analysis in memory; does not write the map.
+                            Rebuilds the analysis in memory; does not write the map
+                            (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed
                             since <ref> (default HEAD) plus untracked files
   check --stale [paths…] [--accept | --strict]
@@ -956,7 +959,8 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
   const event = parseHookEvent(input);
   if (event.stop_hook_active === true) return hookDecision(event, []);
   const root = findRoot(cwd);
-  const analyzed = await analyze({ root });
+  // The next turn's hook parses only what changed: the fact cache is saved best-effort.
+  const analyzed = await analyze({ root, saveFacts: true });
   const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
   const changed = changedPathSet(root, gitChanged.paths, cwd);
   const filtered = filterChanged(

@@ -39,11 +39,13 @@ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string;
   };
 }
 
+/** Every file and its bytes but the local fact cache, which every analysis may save (tools.md, MCP). */
 function treeBytes(dir: string): string {
   const out: string[] = [];
   const walk = (rel: string): void => {
     for (const name of readdirSync(join(dir, rel))) {
       const path = rel === "" ? name : `${rel}/${name}`;
+      if (path === ".keylang/cache") continue;
       if (statSync(join(dir, path)).isDirectory()) walk(path);
       else out.push(`${path}\0${readFileSync(join(dir, path))}`);
     }

@@ -61,7 +61,14 @@ const untracked = (git: (args: string[]) => string): string[] =>
     .split("\0")
     .filter((file) => file !== "");
 
-/** Files changed since `ref` in the working tree, plus files git does not track yet. */
+/**
+ * keylang's own local state under `.keylang/` — the index, the fact cache an
+ * analysis saves, proposals, reports — is never a source or a spec, so it is
+ * never a change, tracked or not, gitignored or not.
+ */
+const ownState = (path: string): boolean => path === ".keylang" || path.startsWith(".keylang/");
+
+/** Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out. */
 export function gitChangedFiles(root: string, ref: string, label = "check --changed"): ChangedFiles {
   assertRef(ref, label);
   const { run, git } = gitIn(root, label);
@@ -70,9 +77,9 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   // `--stdin` reads the null device: the empty tree of this repository's hash.
   const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"]).trim() : ref;
   const diff = git(diffArgs(base));
-  const deleted = deletedDiffPaths(diff);
-  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
-  for (const file of untracked(git)) paths.add(file);
+  const deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
+  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
+  for (const file of untracked(git)) if (!ownState(file)) paths.add(file);
   return { paths, deleted, unborn };
 }
 

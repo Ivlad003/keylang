@@ -4,7 +4,8 @@
 // (a saved explanation or the offline summary) and `apply_diff`, which only
 // writes a proposal a person merges. Every call answers for the current
 // inputs (`currentAnalysis`), so an answer never describes code that changed
-// since. stdout carries the protocol only.
+// since; the local fact cache follows the snapshot, best-effort, as for
+// `check`. No spec is written. stdout carries the protocol only.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -15,6 +16,7 @@ import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
 import { analyze, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
+import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { featureStatus, idsIn, type FeatureBase } from "./feature-status.ts";
 import { readFeatureBase } from "./git-changes.ts";
 import { specToCode } from "./spec-to-code.ts";
@@ -41,6 +43,8 @@ const failure = (message: string): ToolResult => ({ content: [{ type: "text", te
  * reused while the snapshot id, keylang.json, the specs and the evidence
  * files are those of the last call. Each part of the key is read before the
  * analysis reads it, so a change in between only costs a rebuild next time.
+ * The fact cache is saved best-effort whenever the facts differ from it, so
+ * the next process (a Stop hook, `check`) parses only what changed.
  */
 export function currentAnalysis(root: string): () => Promise<Analysis> {
   let last: { key: string; analysis: Analysis } | null = null;
@@ -48,7 +52,8 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
     const configFile = join(root, CONFIG_FILE);
     const raw = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
     const config = loadConfig(root);
-    const map = config.languages.length > 0 ? await generateMap(config) : null;
+    const map = config.languages.length > 0 ? await generateMap(config, keepsFactCache(root) ? { persist: "changed" } : {}) : null;
+    if (map?.factCache) saveFactCache(root, map.factCache);
     const specDir = join(root, config.dir);
     const specs = existsSync(specDir) ? collectMdFiles([specDir]) : [];
     const evidence = [...(evidenceFiles(config, "tests") ?? []), ...(evidenceFiles(config, "trace") ?? [])].map((file) => join(root, file));

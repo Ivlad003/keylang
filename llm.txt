@@ -190,7 +190,7 @@ A route or a controller that calls the database directly never makes a flow `ok`
 
 ## MCP tools
 
-Server name: `keylang`. Only `apply_diff` writes, and only a proposal.
+Server name: `keylang`. Only `apply_diff` writes to the repository, and only a proposal. Besides that, the server keeps the local fact cache `.keylang/cache/facts.json` current. It writes no spec.
 
 | Tool | Use |
 |---|---|

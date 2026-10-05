@@ -2480,9 +2480,12 @@ test("tui: t with the explained map off says how to turn it on and changes nothi
 /** Every file under `root` with its bytes: a session that must write nothing leaves this unchanged. */
 function treeBytes(root: string): Map<string, string> {
   const out = new Map<string, string>();
+  // The local fact cache is left out: the check and feature operations save it for the next run (tools.md).
+  const cache = join(root, ".keylang/cache");
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const abs = join(dir, entry.name);
+      if (abs === cache) continue;
       if (entry.isDirectory()) walk(abs);
       else out.set(abs.slice(root.length + 1), readFileSync(abs, "latin1"));
     }

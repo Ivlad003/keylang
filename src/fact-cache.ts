@@ -4,13 +4,17 @@
 // resolution of importers consistent when an export changes.
 //
 // In-process entries serve the language server. `.keylang/cache/facts.json`
-// is written by `keylang map` only (`check` writes nothing) and read by every
-// command; a cache of another schema, extractor, or grammar is ignored. The
-// cache prepares its text; the map's commit step writes it with the map.
+// is read by every command; a cache of another schema, extractor, or grammar
+// is ignored. The cache prepares its text: `keylang map` writes it with the
+// map, and `check`, `feature`, `hook stop` and MCP save it best-effort when
+// their facts differ from it (`saveFactCache`), so an agent's loop parses
+// only what changed. A `--check` mode never writes it.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CONFIG_FILE } from "./config.ts";
 import type { FileFacts } from "./extract/facts.ts";
+import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import { compareText } from "./span.ts";
 
 const CACHE_SCHEMA = 1;
@@ -216,6 +220,17 @@ export class FactCache {
     return facts;
   }
 
+  /**
+   * Whether the facts of this run differ from the cache on disk: a file the
+   * disk has no entry for or holds for other content, or an entry of a file
+   * this run did not read. Unchanged, a write would put back the same facts.
+   */
+  changed(): boolean {
+    if (Object.keys(this.disk).length !== this.used.size) return true;
+    for (const [path, entry] of this.used) if (this.disk[path]?.sha256 !== entry.sha256) return true;
+    return false;
+  }
+
   /** The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process. */
   serialize(): string {
     const files: Stored["files"] = {};
@@ -223,5 +238,30 @@ export class FactCache {
       files[path] = { sha256: entry.sha256, facts: { ...entry.facts, exports: [...entry.facts.exports].sort() } };
     }
     return `${JSON.stringify({ schema: CACHE_SCHEMA, version: this.version, files } satisfies Stored)}\n`;
+  }
+}
+
+/**
+ * A repository keylang was set up in (`keylang.json`) keeps the fact cache
+ * from every analysis of the saved files; one only browsed gets nothing written.
+ */
+export function keepsFactCache(root: string): boolean {
+  return existsSync(join(root, CONFIG_FILE));
+}
+
+/**
+ * Writes the fact cache for the next process, best-effort: the cache only
+ * saves time, so a write the protocol refuses (a link out of `.keylang/`) or
+ * the file system refuses (read-only, a sandbox, EACCES) leaves the old cache,
+ * or none, and is no error. The generator's bytes, as `keylang map` writes
+ * them. True when it was written.
+ */
+export function saveFactCache(root: string, text: string): boolean {
+  try {
+    if (writeProblem(root, FACT_CACHE_FILE, { under: ".keylang", generated: true }) !== null) return false;
+    writeAtomic(landing(join(root, FACT_CACHE_FILE))!, text, { exact: true });
+    return true;
+  } catch {
+    return false;
   }
 }

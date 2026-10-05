@@ -13,6 +13,7 @@ import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { runOperation } from "../src/operations.ts";
 import { codeProposalProblem, proposalProblem } from "../src/proposals.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -210,4 +211,63 @@ test("the code gate is the write protocol's: a Windows path or a backslash is no
   for (const path of ["C:\\x.ts", "src\\app\\x.ts", "/abs/x.ts", "src/../x.ts"]) assert.equal(codeProposalProblem(root, path), "not a plain relative path", path);
   for (const path of ["C:\\x.md", "keylang\\flows\\x.md"]) assert.equal(proposalProblem(root, "keylang", path), "not a plain relative path", path);
   assert.equal(codeProposalProblem(root, "src/new-file-of-the-test.ts"), null);
+});
+
+// ---------- the fact cache ----------
+
+test("check, feature and hook stop leave the fact cache for the next run; map --check does not; a cache that cannot be written changes nothing", async (t) => {
+  const dir = repoCopy(t);
+  writeTree(dir, { "keylang/features/pay.md": "# flow pay\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n" });
+  const cache = join(dir, CACHE);
+  assert.equal(keylang(dir, ["map", "--check"]).status, 1);
+  assert.equal(existsSync(cache), false, "map --check writes no cache");
+  const json = keylang(dir, ["check", "--format", "json"]);
+  assert.equal(json.status, 0, json.stdout);
+  JSON.parse(json.stdout);
+  assert.equal(json.stderr.includes("cache"), false);
+  const stored = JSON.parse(readFileSync(cache, "utf8")) as { files: Record<string, unknown> };
+  assert.deepEqual(Object.keys(stored.files).sort(), ["src/app/checkout.ts", "src/domain/order.ts", "src/infra/db.ts"]);
+  // Nothing changed: the next run reads the cache and leaves the file as it is.
+  const mtime = statSync(cache).mtimeMs;
+  assert.equal(keylang(dir, ["check"]).status, 0);
+  assert.equal(statSync(cache).mtimeMs, mtime);
+  // A changed source is extracted again and the cache follows it.
+  writeFileSync(join(dir, "src/infra/db.ts"), `${readFileSync(join(dir, "src/infra/db.ts"), "utf8")}export function count(): number {\n  return 0;\n}\n`);
+  assert.equal(keylang(dir, ["feature", "pay"]).status, 0);
+  assert.match(readFileSync(cache, "utf8"), /"count"/);
+  rmSync(cache);
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  const hook = keylang(dir, ["hook", "stop"], JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }));
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.equal(hook.stdout, "{}\n");
+  assert.equal(existsSync(cache), true, "hook stop leaves the cache");
+  // The cache is keylang's own state, untracked here: no change for the next `--changed`.
+  const changed = await runOperation({ kind: "check", root: dir, paths: [], strict: false, changed: true });
+  assert.deepEqual(changed.payload?.changed?.files, []);
+
+  // A file where the cache directory belongs (a read-only tree, a sandbox): the same answers, no note.
+  rmSync(join(dir, ".keylang"), { recursive: true, force: true });
+  writeTree(dir, { ".keylang/cache": "not a directory\n" });
+  const blocked = keylang(dir, ["check", "--format", "json"]);
+  assert.equal(blocked.status, 0, blocked.stderr);
+  JSON.parse(blocked.stdout);
+  assert.match(blocked.stderr, /^\d+ fail, \d+ unverified, \d+ ok\n$/, "the summary only: no note about the cache");
+  assert.equal(keylang(dir, ["feature", "pay"]).status, 0);
+  assert.equal(readFileSync(join(dir, ".keylang/cache"), "utf8"), "not a directory\n");
+});
+
+test("MCP saves the fact cache when its facts differ from it, and only then", async (t) => {
+  const dir = repoCopy(t);
+  const call = await mcpClient(t, dir);
+  const cache = join(dir, CACHE);
+  assert.equal((await call("search", { query: "order" })).isError, false);
+  assert.equal(existsSync(cache), true, "the first answer leaves the cache");
+  const mtime = statSync(cache).mtimeMs;
+  await call("node", { id: "domain.order.total" });
+  assert.equal(statSync(cache).mtimeMs, mtime, "the same snapshot: the cache is not written again");
+  writeFileSync(join(dir, "src/domain/order.ts"), `${readFileSync(join(dir, "src/domain/order.ts"), "utf8")}export function discount(): number {\n  return 0;\n}\n`);
+  await call("search", { query: "discount" });
+  assert.match(readFileSync(cache, "utf8"), /"discount"/);
 });

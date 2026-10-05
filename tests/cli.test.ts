@@ -738,12 +738,13 @@ test("an incompatible index is rebuilt without a diagnostic", (t) => {
 
 // RV04: a hand-written map file has no generator marker. `map` must refuse
 // before writing or deleting anything, and `--check` must not call that "stale".
-test("map leaves a fact cache that check reads but never writes; a foreign cache is rebuilt", (t) => {
+test("map and check leave a fact cache the next run reads; map --check writes none; a foreign cache is rebuilt", (t) => {
   const dir = repoCopy();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cache = join(dir, ".keylang/cache/facts.json");
   assert.equal(keylang(dir, ["check"]).status, 0);
-  assert.equal(existsSync(cache), false, "check writes no cache");
+  assert.equal(existsSync(cache), true, "check leaves the cache for the next run");
+  rmSync(cache);
   assert.equal(keylang(dir, ["map", "--check"]).status, 1);
   assert.equal(existsSync(cache), false, "map --check writes no cache");
   assert.equal(keylang(dir, ["map"]).status, 0);
@@ -755,7 +756,8 @@ test("map leaves a fact cache that check reads but never writes; a foreign cache
   const checked = keylang(dir, ["check"]);
   assert.equal(checked.status, 1);
   assert.match(checked.stdout, /K102/);
-  assert.equal(readFileSync(cache, "utf8"), before);
+  assert.notEqual(readFileSync(cache, "utf8"), before, "the changed file's facts replace its entry");
+  assert.match(readFileSync(cache, "utf8"), /"again"/);
   writeFileSync(cache, JSON.stringify({ schema: 1, version: "other", files: { "src/infra/db.ts": { sha256: "x", facts: {} } } }));
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.notEqual(JSON.parse(readFileSync(cache, "utf8")).version, "other");

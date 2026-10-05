@@ -177,8 +177,9 @@ export interface WireRequest {
 
 /**
  * Checks the saved specs against the code (`keylang check [paths…]
- * [--strict] [--static <mode>]`). Read-only. The output format is not part
- * of the request: it only shows the result.
+ * [--strict] [--static <mode>]`). Read-only but for the local fact cache,
+ * saved best-effort for the next run. The output format is not part of the
+ * request: it only shows the result.
  */
 export interface CheckRequest {
   kind: "check";
@@ -2450,7 +2451,9 @@ function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?:
  * report. Code 2 for a broken config or a missing path. With `changed` the
  * report is the git slice of the full analysis (`check --changed`); without
  * git, outside a repository or with an unknown ref it is code 2. It writes
- * nothing, not even the fact cache.
+ * nothing but the local fact cache (`saveFacts`: best-effort, only when the
+ * facts changed, never named in `written`), so the next run parses only
+ * what changed.
  */
 async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
   if (!isAbsolute(request.root)) return emptyCheck("failed", 2, "check: root must be an absolute path");
@@ -2490,6 +2493,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
       root: request.root,
       specs,
       display,
+      saveFacts: true,
       ...(request.static ? { static: request.static } : {}),
       ...(withoutCode ? { withoutCode: true } : {}),
     });
@@ -4242,7 +4246,8 @@ function emptyFeature(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error
  * The feature status of the saved files. It never takes unsaved text: a
  * caller with dirty buffers saves them first, explicitly. A missing file, an
  * invalid slug or config, or a failed analysis is a failure with code 2, not
- * a gap; gaps are code 1. Nothing is written.
+ * a gap; gaps are code 1. Nothing is written but the local fact cache
+ * (best-effort, as `check`).
  */
 async function runFeature(request: FeatureRequest, context: OperationContext): Promise<OperationEnvelope<"feature">> {
   if (!isAbsolute(request.root)) return emptyFeature("failed", 2, "feature: root must be an absolute path");
@@ -4259,7 +4264,7 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
   if (!existsSync(join(request.root, file))) return emptyFeature("failed", 2, `feature: ${file}: not found`);
   let analyzed: Analysis;
   try {
-    analyzed = await (context.analyze ?? analyze)({ root: request.root });
+    analyzed = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true });
   } catch (error) {
     return emptyFeature("failed", 2, messageOf(error));
   }
