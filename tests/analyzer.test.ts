@@ -564,6 +564,7 @@ test("robustness: a file nested thousands deep is opaque, not a crash; a fact ca
   const dir = repo(t, {
     "src/lib/deep.ts": `export const x = ${Array.from({ length: 5000 }, (_, i) => `a${i}`).join(" + ")};\n`,
     "src/lib/ok.ts": "export function f(): void { g(); }\nexport function g(): void {}\n",
+    "src/lib/box.ts": "export class Box { open(): void {} }\n",
     "src/app/a.ts": 'import { f } from "../lib/ok.ts";\nexport function main(): void { f(); }\n',
     "keylang/rules.md": "# rules\n\n- deny app lib\n",
   });
@@ -577,6 +578,8 @@ test("robustness: a file nested thousands deep is opaque, not a crash; a fact ca
   cache.files["src/app/a.ts"].facts.imports[0].bindings = [{ kind: "weird", local: 1 }];
   cache.files["src/app/a.ts"].facts.valueRefs = [{ name: "f", line: "1", col: 1 }];
   cache.files["src/lib/deep.ts"].facts.exportRows = [{ name: "x", kind: "nope", local: null }];
+  // A field the checks once missed: the graph maps a class's traits, which a string is not.
+  cache.files["src/lib/box.ts"].facts.decls[0].traits = "Logs";
   writeFileSync(file, JSON.stringify(cache));
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stderr);

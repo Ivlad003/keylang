@@ -73,7 +73,9 @@ function isImport(value: unknown): boolean {
     typeof value.text === "string" &&
     typeof value.reexport === "boolean" &&
     optionalTrue(value.optional) &&
-    every(value.bindings, (b) => isRecord(b) && typeof b.local === "string" && (b.kind === "module" || b.kind === "default" || (b.kind === "named" && typeof b.imported === "string")))
+    optionalTrue(value.glob) &&
+    optionalTrue(value.typeOnly) &&
+    every(value.bindings, (b) => isRecord(b) && typeof b.local === "string" && ((b.kind === "module" && optionalTrue(b.namespace)) || b.kind === "default" || (b.kind === "named" && typeof b.imported === "string")))
   );
 }
 
@@ -94,6 +96,7 @@ function isDecl(value: unknown): boolean {
     optionalTrue(value.hash) &&
     optionalTrue(value.implicit) &&
     optional(value.base, isString) &&
+    optional(value.traits, (traits) => every(traits, isString)) &&
     optional(value.doc, isString)
   );
 }
