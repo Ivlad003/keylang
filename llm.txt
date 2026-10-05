@@ -37,7 +37,7 @@ The first `npx` needs a network. Later `check` and `map` do not.
 
 `init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone. It also adds `.keylang/` to the root `.gitignore` when that file does not list it yet.
 
-3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude.
+3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude. When it finds none, `init` writes only the `AGENTS.md` block and says so on stderr.
 
 ```sh
 npx -y keylang agents --agents=claude

@@ -771,6 +771,13 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
   if (payload.map) printMap(payload.map, root);
   if (payload.baseline) printBaseline(payload.baseline);
   if (payload.agents) printAgents(payload.agents);
+  // Auto found no harness: only the AGENTS.md block was written, and a person would not learn what else there is.
+  const agents = payload.agents?.payload;
+  if (payload.agents?.status === "completed" && agents?.choice === "auto" && agents.harnesses.length === 0) {
+    process.stderr.write(
+      "keylang: no harness detected (.claude/, .codex/, .cursor/, opencode.json), so only the AGENTS.md block was written; for MCP, the skill, deny rules and the Stop hook run `keylang agents --agents=claude,codex,cursor,opencode` with the ones you use\n",
+    );
+  }
   return result.exitCode ?? 2;
 }
 

@@ -187,6 +187,32 @@ test("agents names a broken keylang.json (code 2) and writes nothing: the harnes
   assert.deepEqual(treeBytes(dir), before);
 });
 
+test("init without a detected harness names `keylang agents --agents=…` once on stderr; not with a harness, --agents=none or --check", (t) => {
+  const hint = /keylang agents --agents=claude,codex,cursor,opencode/;
+  const bare = tempDir(t, "keylang-hint-");
+  writeTree(bare, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  const init = keylang(bare, ["init"]);
+  assert.equal(init.status, 0, init.stderr);
+  assert.equal(init.stderr.split("\n").filter((line) => hint.test(line)).length, 1, init.stderr);
+  assert.match(init.stderr, /^keylang: no harness detected .*only the AGENTS\.md block was written; for MCP, the skill, deny rules and the Stop hook run `keylang agents --agents=claude,codex,cursor,opencode`/m);
+  assert.doesNotMatch(init.stdout, hint);
+  assert.ok(existsSync(join(bare, "AGENTS.md")));
+  assert.doesNotMatch(keylang(bare, ["init", "--check"]).stderr, hint);
+
+  const none = tempDir(t, "keylang-hint-none-");
+  writeTree(none, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  const stripped = keylang(none, ["init", "--agents=none"]);
+  assert.equal(stripped.status, 0, stripped.stderr);
+  assert.doesNotMatch(stripped.stderr, hint);
+
+  const claude = tempDir(t, "keylang-hint-claude-");
+  writeTree(claude, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  mkdirSync(join(claude, ".claude"));
+  const detected = keylang(claude, ["init"]);
+  assert.equal(detected.status, 0, detected.stderr);
+  assert.doesNotMatch(detected.stderr, hint);
+});
+
 const IGNORED = "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n";
 
 test("init lists .keylang/ in the root .gitignore: created when missing, appended once in the file's line ends, kept when listed", (t) => {
