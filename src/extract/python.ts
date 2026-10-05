@@ -529,7 +529,8 @@ function enclosingFn(node: Node): string | null {
 /**
  * Every import of the file, in source order, wherever it is written.
  * `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a`
- * plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`.
+ * plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`;
+ * `from .m import *` → `.m.*`, which binds no name of its own.
  * `reexported(local)`: the name (null for `*`) is part of this module's public API.
  */
 function importsIn(root: Node, reexported: (local: string | null) => boolean): ImportFact[] {
@@ -573,7 +574,7 @@ function importsOf(node: Node, reexported: (local: string | null) => boolean): I
     // Nodes are fresh wrappers on every access: compare ids, not objects.
     if (item.id === moduleNode?.id) continue;
     if (item.type === "wildcard_import") {
-      out.push({ ...at(from, [], reexported(null)), glob: true });
+      out.push({ ...at(join("*"), [], reexported(null)), glob: true });
       named = true;
     } else if (item.type === "dotted_name") {
       out.push(at(join(item.text), [{ kind: "named", local: item.text, imported: item.text }], reexported(item.text)));

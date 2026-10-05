@@ -338,6 +338,21 @@ test("python: a name from `from m import *` resolves through `m`'s public names,
   assert.deepEqual(holes(snapshot, "app.n."), ["app.n.run: dynamic-call call through `gone`, a name from a glob import keylang does not follow"]);
 });
 
+test("python: an import from a module that does not exist is an unresolved import, not a dependency on the package above it", (t) => {
+  const dir = repo(
+    t,
+    {
+      "pkg/__init__.py": "",
+      "pkg/m.py": "def f(): pass\n",
+      "pkg/n.py": "from .missing import *\nfrom .absent import f\nfrom pkg.absent2 import g\nfrom . import m\nfrom .m import *\nfrom . import *\n",
+    },
+    { languages: ["python"], layers: { app: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  const imports = snapshot.edges.filter((e) => e.kind === "import" && e.source === "app.n").map((e) => `${e.line} ${e.target ?? e.reason}`);
+  assert.deepEqual(imports, ["4 app.m", "6 app.__init__", "1 unresolved import `.missing.*`", "2 unresolved import `.absent.f`", "3 unresolved import `pkg.absent2.g`"]);
+});
+
 test("typescript: `import type` and `export type … from` are import edges marked `typeOnly`: `no-cycles` skips them, while `deny`, the map, `deps` and `explain` see them; an inline `{ type A }` is an ordinary import", (t) => {
   const dir = repo(
     t,
