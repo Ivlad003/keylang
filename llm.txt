@@ -220,7 +220,7 @@ npx -y keylang baseline
 ## Exit codes and answers
 
 - `0` — no blocking finding. `unverified` is still allowed, except `map --check` on a stale map, and `check --strict`.
-- `1` — a real break, a feature that is not done, or a stale generated file under `--check`.
+- `1` — a real break, a feature that is not done, or a stale generated file under `--check`. From `draft`, `code-to-spec` and `spec-to-code`: a file changed while the proposal was prepared, and nothing was written; run it again.
 - `2` — bad invocation or I/O. The message names the file and the field.
 
 On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202. A warning is not a failed verdict.
