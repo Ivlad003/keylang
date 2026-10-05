@@ -234,7 +234,8 @@ function warnBareThen(index: Index, doc: Document, node: Node, diags: Diagnostic
     span = linkTextSpan(token);
   } else return;
   if (word.includes(".") || !isSegment(word)) return;
-  const ids = thenCandidates(index, word);
+  // IDs are NFC; the word is as written.
+  const ids = thenCandidates(index, word.normalize("NFC"));
   if (ids.length === 0) return;
   const listed = ids.map((id) => `\`then ${id}\``).join(", ");
   diags.push(diagnostic("K008", doc.path, span, `\`then ${word}\` is read as text, not a reference (did you mean ${listed}?)`));

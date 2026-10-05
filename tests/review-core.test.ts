@@ -138,3 +138,70 @@ test("fmt keeps CRLF: an all-CRLF file is written with CRLF and --check accepts 
   assert.deepEqual([again.status, again.stdout], [0, ""]);
   assert.deepEqual([keylang(dir, ["fmt", "keylang/flows"]).stdout], [""], "nothing left to write");
 });
+
+// ---------- 2. a link destination with balanced parentheses ----------
+
+test("a link destination may hold balanced parentheses; an unbalanced one is a malformed link", (t) => {
+  const flow = "# flow a\n\n- trigger [x.y.z](https://e.com/wiki/Foo_(bar))\n- step [x.y.z](a(b(c))d)\n- step [x.y.z](a(b)\n";
+  const dir = repo(t, { "map.md": "- layer x\n  - module y\n    - fn z\n", "flow.md": flow });
+  const items = parseJson(dir, ["flow.md"])[0]!.sections[0]!.items;
+  const [trigger, step] = items;
+  assert.equal(trigger!.refs[0]!.target, "x.y.z");
+  assert.equal(trigger!.refs[0]!.link?.target, "https://e.com/wiki/Foo_(bar)");
+  assert.deepEqual(trigger!.refs[0]!.span, { start: { offset: 21, line: 3, col: 12 }, end: { offset: 26, line: 3, col: 17 } });
+  assert.equal(trigger!.tokens.at(-1)!.text, "[x.y.z](https://e.com/wiki/Foo_(bar))");
+  assert.equal(step!.refs[0]!.link?.target, "a(b(c))d");
+  const o = keylang(dir, ["check", "."]);
+  assert.deepEqual(o.stdout.split("\n").filter((line) => / K\d{3} /.test(line)), ["flow.md:5:8: K005 malformed link, expected `[id](href)`"]);
+  assert.equal(keylang(dir, ["fmt", "--check", "flow.md"]).status, 0, "fmt keeps the link as written");
+});
+
+// ---------- 7. CommonMark headings: a closing sequence, a tab after `#` ----------
+
+test("a heading may end with a closing `#` sequence and may have a tab after `#`, as in CommonMark", (t) => {
+  const dir = repo(t, {
+    "a.md": "# flow a #\n\n- step x.y\n",
+    "c.md": "#\tflow c\n\n- step x.y\n",
+    "d.md": "# flow d ##   \n",
+    "e.md": "# #\n",
+    "f.md": "# flow f#\n",
+    "g.md": "# flow g <!-- note --> #\n",
+  });
+  const docs = parseJson(dir, ["a.md", "c.md", "d.md", "e.md", "f.md", "g.md"]);
+  assert.deepEqual(
+    docs.map((doc) => [doc.path, doc.sections[0]?.kind, doc.sections[0]?.name?.value ?? null, doc.diagnostics.map((d) => d.code)]),
+    [
+      ["a.md", "flow", "a", []],
+      ["c.md", "flow", "c", []],
+      ["d.md", "flow", "d", []],
+      ["e.md", "map", null, ["K006"]],
+      ["f.md", "flow", null, ["K005"]],
+      ["g.md", "flow", "g", []],
+    ],
+  );
+  assert.equal(docs[5]!.sections[0]!.comment?.value, "<!-- note -->");
+  assert.equal(keylang(dir, ["fmt", "a.md", "c.md", "g.md"]).status, 0);
+  assert.equal(readFileSync(join(dir, "a.md"), "utf8"), "# flow a\n\n- step x.y\n");
+  assert.equal(readFileSync(join(dir, "c.md"), "utf8"), "# flow c\n\n- step x.y\n");
+  assert.equal(readFileSync(join(dir, "g.md"), "utf8"), "# flow g <!-- note -->\n");
+});
+
+// ---------- 8. ids are NFC ----------
+
+test("an id is NFC: a decomposed and a composed name are one id, while the file keeps what was written", (t) => {
+  const nfc = "café";
+  const nfd = "café";
+  const map = `- layer app\n  - module ${nfc}\n    - fn go\n  - module ${nfd}\n`;
+  const flow = `# flow f\n\n- step app.${nfd}.go\n`;
+  const dir = repo(t, { "map.md": map, "flow.md": flow });
+  const o = keylang(dir, ["check", "."]);
+  assert.deepEqual(o.stdout.split("\n").filter((line) => / K\d{3} /.test(line)), [`map.md:4:12: K002 duplicate ID \`app.${nfc}\` (first declared at map.md:2:12)`]);
+  const [mapDoc, flowDoc] = parseJson(dir, ["map.md", "flow.md"]);
+  const second = mapDoc!.sections[0]!.items[0]!.children[1]!;
+  assert.equal(second.id, `app.${nfc}`);
+  assert.equal(second.tokens[1]!.text, nfd, "tokens stay as written");
+  assert.equal(second.name!.span.end.col - second.name!.span.start.col, [...nfd].length, "the span covers the written name");
+  const ref = flowDoc!.sections[0]!.items[0]!.refs[0]!;
+  assert.deepEqual([ref.text, ref.target], [`app.${nfd}.go`, `app.${nfc}.go`]);
+  assert.equal(keylang(dir, ["fmt", "--check", "map.md", "flow.md"]).status, 0, "fmt does not normalize the text");
+});

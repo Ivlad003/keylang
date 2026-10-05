@@ -281,7 +281,8 @@ test("items: tabs matter only where they decide the tree, free text is canonical
   assert.match(keylang(dir, ["parse", "rules.md"]).stderr, /rules\.md:4:3: K005 `exports` needs at least one name/);
   const nfd = keylang(dir, ["parse", "nfd.md"]);
   assert.equal(nfd.status, 0, nfd.stderr);
-  assert.match(nfd.stdout, new RegExp(`module ${decomposed}\\.order`));
+  // A decomposed letter is a letter; the ID is its NFC form (format.md §4).
+  assert.match(nfd.stdout, new RegExp(`module ${decomposed.normalize("NFC")}\\.order`));
 });
 
 test("a duplicate planned ID is K002 with or without code", (t) => {

@@ -415,7 +415,7 @@ class Parser {
       }
     }
 
-    if (indent === 0 && (rest === "#" || rest.startsWith("# "))) {
+    if (indent === 0 && (rest === "#" || rest.startsWith("# ") || rest.startsWith("#\t"))) {
       this.heading(l);
     } else if (opensFence(text, this.stack.length > 0)) {
       this.flushProse();
@@ -441,7 +441,8 @@ class Parser {
   private heading(l: Line): void {
     this.flushProse();
     this.closeList(0);
-    const { tokens, comment } = lex(l, 1, []);
+    // The words end before an optional closing sequence of `#` (CommonMark), which fmt does not keep.
+    const { tokens, comment } = lex(new Line(l.no, l.start, l.text.slice(0, headingEnd(l.text))), 1, []);
     const title = renderTokens(tokens);
     const full = l.span(0, l.text.trimEnd().length);
     const first = tokens[0]?.text;
@@ -458,7 +459,7 @@ class Parser {
       const named = kind === "flow";
       const t = tokens[1];
       if (named && t) {
-        if (isSegment(t.text)) name = { value: t.text, span: t.span };
+        if (isSegment(t.text)) name = { value: nfc(t.text), span: t.span };
         else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
         this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`", "arguments");
@@ -558,7 +559,7 @@ class Parser {
         for (const t of rest) {
           if (t.kind === "comma") continue;
           if (t.kind === "word" && isSegment(t.text)) {
-            n.refs.push({ text: t.text, target: base === null ? t.text : `${base}.${t.text}`, span: t.span });
+            n.refs.push({ text: t.text, target: base === null ? nfc(t.text) : `${base}.${nfc(t.text)}`, span: t.span });
           } else {
             this.err("K005", t.span, `expected a name, found \`${t.text}\``, "id");
           }
@@ -641,7 +642,7 @@ class Parser {
           this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
           break;
         }
-        n.id = idTok.text;
+        n.id = nfc(idTok.text);
         n.label = { value: kindTok.text, span: kindTok.span };
         const sig = rest.slice(2);
         const sigStart = sig[0];
@@ -690,8 +691,8 @@ class Parser {
         n.kind = ctx === "module" ? "dep" : "wire-dep";
         const [alias, target] = tokens;
         if (tokens.length === 2 && alias && target && alias.kind === "word" && isSegment(alias.text)) {
-          n.name = spanned(alias);
-          if (ctx === "module") n.id = parentId === null ? null : `${parentId}.${alias.text}`;
+          n.name = { value: nfc(alias.text), span: alias.span };
+          if (ctx === "module") n.id = parentId === null ? null : `${parentId}.${n.name.value}`;
           this.oneRef(n, [target]);
         } else {
           n.kind = "unknown";
@@ -743,8 +744,8 @@ class Parser {
       return;
     }
     const nameSpan = link ? linkTextSpan(t) : t.span;
-    n.id = n.kind === "layer" ? name : parentId === null ? null : `${parentId}.${name}`;
-    n.name = { value: name, span: nameSpan };
+    n.name = { value: nfc(name), span: nameSpan };
+    n.id = n.kind === "layer" ? n.name.value : parentId === null ? null : `${parentId}.${n.name.value}`;
     n.link = link;
     const tail = rest.slice(1);
     const first = tail[0];
@@ -762,11 +763,11 @@ class Parser {
   /** A bare ID, or `[id](href)`: the link text is the ID, the target is kept and never checked. */
   private makeRef(t: Token): Ref | null {
     if (t.kind === "word" && isId(t.text)) {
-      return { text: t.text, target: t.text, span: t.span };
+      return { text: t.text, target: nfc(t.text), span: t.span };
     }
     if (t.kind === "link") {
       const link = parseLink(t);
-      if (isId(link.text)) return { text: link.text, target: link.text, span: linkTextSpan(t), link };
+      if (isId(link.text)) return { text: link.text, target: nfc(link.text), span: linkTextSpan(t), link };
       this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``, "id");
       return null;
     }
@@ -960,10 +961,30 @@ function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null
   return null;
 }
 
+/**
+ * Where the words of a `#` heading line end: before an optional closing
+ * sequence of `#` that follows a space or a tab and has only spaces or tabs
+ * after it (CommonMark). `# flow a #` has the words `flow a`; in `# flow a#`
+ * the `#` is part of a word.
+ */
+function headingEnd(text: string): number {
+  const content = text.replace(/[ \t]+$/, "");
+  const closing = /[ \t]+#+$/.exec(content);
+  return closing ? closing.index : content.length;
+}
+
 function isBullet(rest: string): boolean {
   const c0 = rest[0];
   const c1 = rest[1];
   return (c0 === "-" || c0 === "*" || c0 === "+") && (c1 === undefined || c1 === " ");
+}
+
+/**
+ * An ID in Unicode normal form C: a composed `café` and a decomposed one are
+ * one ID. Tokens and spans keep the text as written, so `fmt` changes nothing.
+ */
+function nfc(text: string): string {
+  return text.normalize("NFC");
 }
 
 /** A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`. */
@@ -1077,13 +1098,26 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
   return { tokens, comment };
 }
 
+/**
+ * The end of `[text](destination)` opened at `i`, or null. As in CommonMark,
+ * the destination has no whitespace and holds parentheses only in balanced
+ * pairs or escaped (`\(`), so `(https://e.com/Foo_(bar))` ends at the last `)`.
+ */
 function linkEnd(s: string, i: number): number | null {
   const close = s.indexOf("]", i);
-  if (close === -1 || s[close + 1] !== "(") return null;
-  const end = s.indexOf(")", close + 1);
-  if (end === -1) return null;
-  const target = s.slice(close + 2, end);
-  return close > i + 1 && target.length > 0 && !/\s/.test(target) ? end + 1 : null;
+  if (close <= i + 1 || s[close + 1] !== "(") return null;
+  let depth = 0;
+  for (let k = close + 2; k < s.length; k++) {
+    const c = s[k]!;
+    if (/\s/.test(c)) return null;
+    if (c === "\\" && (s[k + 1] === "(" || s[k + 1] === ")")) k++;
+    else if (c === "(") depth++;
+    else if (c === ")") {
+      if (depth === 0) return k > close + 2 ? k + 1 : null;
+      depth--;
+    }
+  }
+  return null;
 }
 
 /**
