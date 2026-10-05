@@ -304,17 +304,37 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason: "outside any layer", source: m.id });
   }
 
-  // 2. Declarations.
-  // Module id → name → node id; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
+  // 2. Declarations. A file is a scope of its own: in a module of several files (`module: "dir"`,
+  // `x.ts` beside `x/index.ts`) a name one file declares is not in scope in another, and the same
+  // name declared by two files is two symbols.
+  const moduleFiles = new Map<string, FileEntry[]>();
+  for (const entry of byFile.values()) moduleFiles.set(entry.module.id, [...(moduleFiles.get(entry.module.id) ?? []), entry]);
+  // Module id → name → the node that keeps the name; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
   const declModule = new Map<string, Map<string, string>>();
+  /** File → name → node id: the file's own top-level declarations, the only ones its code names without an import. */
+  const fileDecls = new Map<string, Map<string, string>>();
   const decls: Decls = { ids: new Map(), fns: new Map(), classes: new Map(), types: new Set(), members: new Map() };
+  const segments = new Map<DeclFact, string>();
+  for (const [id, entries] of moduleFiles) {
+    declModule.set(id, new Map());
+    for (const [d, segment] of topSegments(entries[0]!.module, entries.map((e) => e.facts), warnings)) segments.set(d, segment);
+  }
   for (const { facts, module } of byFile.values()) {
-    const names = declModule.get(module.id) ?? new Map<string, string>();
-    declModule.set(module.id, names);
-    for (const d of facts.decls) addDecl(module, d, names, declModule, decls, stats, facts.path);
+    const scope = new Map<string, string>();
+    fileDecls.set(facts.path, scope);
+    const names = declModule.get(module.id)!;
+    for (const d of facts.decls) {
+      const key = layerName(d.name);
+      const segment = segments.get(d) ?? key;
+      addDecl(module, d, scope, declModule, decls, stats, facts.path, { key, segment });
+      const id = decls.ids.get(d);
+      if (segment === key && id !== undefined && !names.has(key)) names.set(key, id);
+    }
     for (const hole of facts.unsupported) {
       // A hole in one declaration (a Python decorator that may replace a fn) belongs to that declaration.
-      const own = hole.symbol === undefined ? null : [module.id, ...hole.symbol.split(".").map(layerName)].join(".");
+      const [head = "", ...rest] = hole.symbol === undefined ? [] : hole.symbol.split(".").map(layerName);
+      const top = scope.get(head);
+      const own = top === undefined ? null : [top, ...rest].join(".");
       const source = own !== null && (decls.fns.has(own) || decls.classes.has(own)) ? own : module.id;
       gaps.push({ kind: "unsupported", file: facts.path, line: hole.line, col: hole.col, endLine: hole.endLine, endCol: hole.endCol, text: hole.text, reason: hole.reason, source });
     }
@@ -337,10 +357,27 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const externalIds = assigned.ids;
   warnings.push(...assigned.warnings);
   const packages = manifests.packages.map((p) => ({ ...p, id: externalIds.get(p.name)! })).sort((a, b) => compareText(a.id, b.id));
+  /** The export-table key of a file's names: its module, or the file itself in a module of several files. */
+  const unitOf = (path: string): string => {
+    const module = byFile.get(path)?.module;
+    if (!module) return path;
+    return (moduleFiles.get(module.id)?.length ?? 0) > 1 ? `${FILE_UNIT}${path}` : module.id;
+  };
   const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
+  /** File → its `export * from` sources, as export-table keys: another file of its own module too. */
+  const fileStars = new Map<string, { target: string | null; reason: string }[]>();
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
+    const bind = (b: ImportBinding, target: ImportTarget): void => {
+      locals.set(b.local, [...(locals.get(b.local) ?? []), target]);
+    };
+    const stars: { target: string | null; reason: string }[] = [];
+    fileStars.set(facts.path, stars);
+    const starFrom = (source: { target: string | null; reason: string }): void => {
+      stars.push(source);
+      module.starSources.push(source);
+    };
     const aliases = new Map<string, string>();
     const hole = (imp: FileFacts["imports"][number], reason: string): void => {
       stats.importsUnresolved++;
@@ -360,26 +397,32 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           const why = r.workspace ? `workspace package entry \`${r.file}\` is not indexed` : notIndexed(config, r.file);
           if (why === null || imp.optional) {
             // Left out on purpose: tests, declaration files, `exclude`, files outside guessed layers, non-source files.
-            if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
+            if (star) starFrom({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
             continue;
           }
           hole(imp, `unresolved import \`${imp.source}\` (${why})`);
-          if (star) module.starSources.push({ target: null, reason: `re-export from unindexed \`${imp.source}\`` });
+          if (star) starFrom({ target: null, reason: `re-export from unindexed \`${imp.source}\`` });
           continue;
         }
-        // A file that imports itself is a self-loop; two files merged into one module are not.
-        if (target === module && r.file !== facts.path) continue;
+        // A file that imports itself is a self-loop; two files merged into one module are not:
+        // another file of this module is no dependency, but what the import names is bound here.
+        if (target === module && r.file !== facts.path) {
+          const unit = unitOf(r.file);
+          for (const b of r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.whole === true));
+          if (star) stars.push({ target: unit, reason: "" });
+          continue;
+        }
       } else if (r.kind === "local") {
         // `crate::run()` or `self::X` in the file that declares them: the name is this module's own.
-        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(module, b, false)]);
+        for (const b of imp.bindings) bind(b, importTarget(module, unitOf(facts.path), b, false));
         continue;
       } else if (r.kind === "stdlib") {
         // Bound to a module outside the graph: calls through the name stay external, and no node or edge appears.
-        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(STDLIB_MODULE, b, false)]);
-        if (star) module.starSources.push({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
+        for (const b of imp.bindings) bind(b, importTarget(STDLIB_MODULE, STDLIB_MODULE.id, b, false));
+        if (star) starFrom({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
         continue;
       } else if (r.kind === "generated") {
-        if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
+        if (star) starFrom({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
       } else if (r.kind === "external" || r.kind === "builtin") {
         const pkg = r.kind === "builtin" ? "node" : r.pkg;
@@ -390,16 +433,13 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         // `new URL("./worker", import.meta.url)` without a source file behind it names no module.
         if (imp.optional) continue;
         hole(imp, `unresolved import \`${imp.source}\``);
-        if (star) module.starSources.push({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
+        if (star) starFrom({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
         continue;
       }
-      if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
+      const unit = r.kind === "internal" ? unitOf(r.file) : target.id;
+      if (star) starFrom(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: unit, reason: "" });
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
-      for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) {
-        const list = locals.get(b.local) ?? [];
-        list.push(importTarget(target, b, r.kind === "internal" && r.whole === true));
-        locals.set(b.local, list);
-      }
+      for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
       if (same.length > 0) {
@@ -428,24 +468,25 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   }
 
   // 3b. Export tables: what each public name stands for, through aliases, re-exports and `export *`.
-  const moduleFiles = new Map<string, FileEntry[]>();
-  for (const entry of byFile.values()) {
-    const list = moduleFiles.get(entry.module.id) ?? [];
-    list.push(entry);
-    moduleFiles.set(entry.module.id, list);
-  }
+  // A module of several files has a table of every file's names, and each file one of its own: an
+  // import names one file, so it reads that file's table (two files may export `default`).
   const exportInputs = new Map<string, ModuleExportsInput>();
   for (const [id, entries] of moduleFiles) {
     const module = entries[0]!.module;
+    const opaque = module.members === "opaque";
     const rows: ExportRowInput[] = [];
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
-      for (const row of listed) if (row.name !== "*") rows.push(exportInput(row, facts, module, importTargets.get(facts.path)!, declModule));
+      const own = listed.filter((row) => row.name !== "*").map((row) => exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!));
+      rows.push(...own);
+      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque });
     }
-    exportInputs.set(id, { rows, stars: module.starSources, opaque: module.members === "opaque" });
+    exportInputs.set(id, { rows, stars: module.starSources, opaque });
   }
   const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
-  const exportTables = resolveExports(exportInputs, symbolKind, (module, name) => declModule.get(module)?.get(layerName(name)) ?? null);
+  const exportTables = resolveExports(exportInputs, symbolKind, (unit, name) => (unit.startsWith(FILE_UNIT) ? fileDecls.get(unit.slice(FILE_UNIT.length)) : declModule.get(unit))?.get(layerName(name)) ?? null);
+  /** A module ID for an export-table key: the module of a file's own table. */
+  const moduleOfUnit = (unit: string): string => (unit.startsWith(FILE_UNIT) ? (byFile.get(unit.slice(FILE_UNIT.length))?.module.id ?? unit) : unit);
 
   // 4. Calls. Hook calls and the values callers pass are collected for step 5.
   /** What a call of the class runs: `constructor` in JS, `__init__` in Python. */
@@ -460,26 +501,28 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const classBase = new Map<string, { internal: string | null; text: string }>();
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
   /**
-   * The symbol a public name of a module stands for: `export { a as b }`,
-   * `export default f`, `export { x } from`, `export { x as y } from`, an
-   * imported name exported again, `export * as ns from` (the module), and
-   * `export * from`. A name without an export row (CommonJS, an unexported
-   * helper) is the declaration of that name.
+   * The symbol a public name stands for in an export table (`unit`: a module, or one file of a
+   * module of several files): `export { a as b }`, `export default f`, `export { x } from`,
+   * `export { x as y } from`, an imported name exported again, `export * as ns from` (the
+   * module), and `export * from`. A name without an export row (CommonJS, an unexported helper)
+   * is the declaration of that name.
    */
-  const resolveExport = (target: Module, name: string): string | null => exportTables.symbolOf(target.id, name);
-  /** A module that a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
-  const namespaceModule = (id: string | null): Module | null => {
-    const m = id === null ? undefined : modules.get(id);
-    return m && !m.class && m.layer !== EXTERNAL ? m : null;
+  const exportOf = (unit: string, name: string): string | null => exportTables.symbolOf(unit, name);
+  /** The export table of what a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
+  const namespaceUnit = (id: string | null): string | null => {
+    if (id === null) return null;
+    if (id.startsWith(FILE_UNIT)) return id;
+    const m = modules.get(id);
+    return m && !m.class && m.layer !== EXTERNAL ? id : null;
   };
   /** A symbol a call can run: a fn, or a class (its constructor). */
   const callable = (id: string): boolean => decls.fns.has(id) || decls.classes.has(id);
-  /** Per file: how its names resolve to symbols. */
-  const scopeOf = (facts: FileFacts, module: Module) => {
+  /** Per file: how its names resolve to symbols. The file is the scope: its own declarations and its imports. */
+  const scopeOf = (facts: FileFacts) => {
     const locals = importTargets.get(facts.path)!;
-    const localDecls = declModule.get(module.id)!;
+    const localDecls = fileDecls.get(facts.path)!;
     /** The symbol an import binds: the named export, or the default export of a default or whole-module binding. */
-    const importedSymbol = (imp: ImportTarget): string | null => resolveExport(imp.module, imp.imported ?? "default");
+    const importedSymbol = (imp: ImportTarget): string | null => exportOf(imp.unit, imp.imported ?? "default");
     /** A class by the name this file uses for it: a local declaration or an import. */
     const classNamed = (name: string): string | null => {
       const ids = new Set<string>();
@@ -524,21 +567,21 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         for (const imp of locals.get(head) ?? []) {
           if (imp.kind === "module") {
             // `import * as ns`, `require()`: a named export; for `require`, also a static member of `module.exports`.
-            const id = resolveExport(imp.module, member) ?? staticOf(resolveExport(imp.module, "default"));
+            const id = exportOf(imp.unit, member) ?? staticOf(exportOf(imp.unit, "default"));
             if (id) found.add(id);
             continue;
           }
           const name = imp.imported ?? "default";
-          const symbol = resolveExport(imp.module, name);
+          const symbol = exportOf(imp.unit, name);
           const id = staticOf(symbol);
           if (id) found.add(id);
           // `import { ns } from "./barrel"` with `export * as ns from "./x"`.
-          const ns = namespaceModule(symbol);
-          const nsId = ns ? resolveExport(ns, member) : null;
+          const ns = namespaceUnit(symbol);
+          const nsId = ns ? exportOf(ns, member) : null;
           if (nsId) found.add(nsId);
           // A default import of a module without `export default` (CommonJS) is its `module.exports`.
-          if (imp.kind === "default" && symbol === null && exportTables.lookup(imp.module.id, "default") === null) {
-            const cjs = resolveExport(imp.module, member);
+          if (imp.kind === "default" && symbol === null && exportTables.lookup(imp.unit, "default") === null) {
+            const cjs = exportOf(imp.unit, member);
             if (cjs) found.add(cjs);
           }
         }
@@ -577,7 +620,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external };
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
-  for (const { facts, module } of byFile.values()) scopes.set(facts.path, scopeOf(facts, module));
+  for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
   // Every class's base first: `super()` in one file may run the constructor of a base in another.
   for (const { facts } of byFile.values()) {
     const { resolveCallees, classNamed } = scopes.get(facts.path)!;
@@ -760,7 +803,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       for (const imp of locals.get(head) ?? []) {
         // `NS.Id` with `import * as NS`: the named export `Id`, not a member of the default export.
         if (imp.kind === "module" && segments.length === 2) {
-          const id = resolveExport(imp.module, member);
+          const id = exportOf(imp.unit, member);
           if (id) narrowed.add(id);
           continue;
         }
@@ -768,11 +811,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (id) found.add(id);
       }
       // A namespace (`export * as T`) is not a type.
-      if (!member) return [...found].filter((id) => namespaceModule(id) === null);
+      if (!member) return [...found].filter((id) => namespaceUnit(id) === null);
       for (const id of found) {
-        const ns = namespaceModule(id);
+        const ns = namespaceUnit(id);
         // `T.Id` with `import { T }` of `export * as T from "./t"`.
-        const child = ns ? (segments.length === 2 ? resolveExport(ns, member) : null) : declModule.get(id)?.get(layerName(member));
+        const child = ns ? (segments.length === 2 ? exportOf(ns, member) : null) : declModule.get(id)?.get(layerName(member));
         if (child) narrowed.add(child);
       }
       return [...narrowed];
@@ -849,16 +892,28 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     openEdges,
     // Manifests are inputs too: the snapshot id (and the MCP cache keyed on it) covers them.
     resolverInputs: new Map([...manifests.inputs, ...resolverInputs()]),
-    exports: exportTables.entries(),
+    // A file's own table is how imports resolve; the snapshot lists the modules' tables, by module IDs.
+    exports: exportTables
+      .entries()
+      .filter((e) => !e.module.startsWith(FILE_UNIT))
+      .map((e) => ({ ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol), ...(e.from !== undefined ? { from: moduleOfUnit(e.from) } : {}) })),
     packages,
   };
 }
 
 const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
 
+/**
+ * The export-table key of one file of a module made of several files (`module: "dir"`, `x.ts`
+ * beside `x/index.ts`): `file:<path>`. No module ID has a `:`, so the keys never meet.
+ */
+const FILE_UNIT = "file:";
+
 /** What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself. */
 interface ImportTarget {
   module: Module;
+  /** The export table the binding's names resolve in: the module's, or the imported file's in a module of several files. */
+  unit: string;
   kind: ImportBinding["kind"];
   /** The export the binding names: its name, `default`, or null for the whole module. */
   imported: string | null;
@@ -890,19 +945,19 @@ const STDLIB_MODULE: Module = {
 };
 
 /** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
-function importTarget(module: Module, binding: ImportBinding, whole: boolean): ImportTarget {
-  if (whole || binding.kind === "module") return { module, kind: "module", imported: null };
-  return binding.kind === "default" ? { module, kind: "default", imported: "default" } : { module, kind: "named", imported: binding.imported };
+function importTarget(module: Module, unit: string, binding: ImportBinding, whole: boolean): ImportTarget {
+  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null };
+  return binding.kind === "default" ? { module, unit, kind: "default", imported: "default" } : { module, unit, kind: "named", imported: binding.imported };
 }
 
 /**
  * One export row of a file, with what it stands for: a declaration of the
- * module, a name or the namespace of the module an import binds, or nothing
- * keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes
- * through its own import; any other name through a declaration of the module
- * or an import of the file.
+ * file (`scope`), a name or the namespace of the module an import binds, or
+ * nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`)
+ * goes through its own import; any other name through a declaration of the
+ * file or an import of the file.
  */
-function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>): ExportRowInput {
+function exportInput(row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>): ExportRowInput {
   const name = row.name;
   // Rows of frontends that say how a name is exported in `kind`.
   const legacy: ExportForm | undefined = row.kind === "default" || (row.kind === "alias" && name === "default") ? "default" : row.kind === "alias" && row.local !== null && row.local !== name ? "alias" : row.kind === "reexport" ? "reexport" : undefined;
@@ -910,12 +965,12 @@ function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported:
   const kind: ExportKind = row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value";
   const reexported = facts.imports.some((imp) => imp.reexport && imp.bindings.some((b) => b.local === name));
   const local = row.local ?? name;
-  const declared = reexported ? undefined : declModule.get(module.id)?.get(layerName(local));
+  const declared = reexported ? undefined : scope.get(layerName(local));
   const found = declared === undefined ? imported.get(reexported ? name : local)?.[0] : undefined;
   const from = found?.module.id;
   let target: ExportTarget = { kind: "none" };
   if (declared !== undefined) target = { kind: "symbol", id: declared };
-  else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.module.id } : { kind: "name", module: found.module.id, name: found.imported ?? "default" };
+  else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.unit } : { kind: "name", module: found.unit, name: found.imported ?? "default" };
   if (target.kind === "namespace" && form !== "default") form = "namespace";
   return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
 }
@@ -1041,6 +1096,41 @@ function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: stri
   return out;
 }
 
+/**
+ * ID segments of a module's top-level declarations. One file's declarations
+ * of a name share a node (overloads, a class merged with its interface); the
+ * same name in another file of the module (`module: "dir"`, `x.ts` beside
+ * `x/index.ts`) is another symbol, whose segment gets `-2`, `-3`… (no
+ * declaration name has a `-`): an exported declaration keeps the plain
+ * segment before an internal one, then the first file by path.
+ */
+function topSegments(module: Module, files: readonly FileFacts[], warnings: string[]): Map<DeclFact, string> {
+  const groups = new Map<string, { file: string; decls: DeclFact[]; exported: boolean }[]>();
+  for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
+    const own = new Map<string, DeclFact[]>();
+    for (const d of f.decls) own.set(layerName(d.name), [...(own.get(layerName(d.name)) ?? []), d]);
+    for (const [key, list] of own) groups.set(key, [...(groups.get(key) ?? []), { file: f.path, decls: list, exported: list.some((d) => d.exported) }]);
+  }
+  const taken = new Set([...groups.keys(), ...module.children.map((c) => c.name)]);
+  const out = new Map<DeclFact, string>();
+  for (const [key, list] of groups) {
+    // A stable sort: files keep their path order among exported and among internal declarations.
+    const ordered = [...list].sort((a, b) => Number(b.exported) - Number(a.exported));
+    ordered.forEach((group, i) => {
+      let segment = key;
+      if (i > 0) {
+        let n = 2;
+        while (taken.has(`${key}-${n}`)) n++;
+        segment = `${key}-${n}`;
+        taken.add(segment);
+        warnings.push(`${group.file}: \`${group.decls[0]!.name}\` is also declared in \`${ordered[0]!.file}\`, another file of module \`${module.id}\`; its ID here is \`${module.id}.${segment}\``);
+      }
+      for (const d of group.decls) out.set(d, segment);
+    });
+  }
+  return out;
+}
+
 /** The key the last declaration of each scope (`names`) went under: overloads follow one another. */
 const lastKeys = new WeakMap<Map<string, string>, string>();
 
@@ -1051,7 +1141,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   lastKeys.set(names, key);
   const existing = names.get(key);
   if (existing !== undefined) {
-    // Overloads and duplicate declarations: the implementation's calls join the first node.
+    // Overloads and duplicate declarations of one scope (a file, a class): the implementation's calls join the first node.
     if (d.kind === "fn" && decls.fns.has(existing)) {
       decls.ids.set(d, existing);
       const fn = decls.fns.get(existing)!;
