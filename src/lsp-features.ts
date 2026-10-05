@@ -2,7 +2,6 @@
 // document, and a position to LSP results. Positions are LSP's: 0-based line,
 // UTF-16 character. The server (`lsp.ts`) owns buffers, freshness, and I/O.
 
-import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Analysis } from "./analyze.ts";
@@ -13,6 +12,7 @@ import { isGeneratedMap } from "./emit.ts";
 import { capText } from "./brief.ts";
 import { nodeFacts, type NodeFacts } from "./explain-node.ts";
 import type { StoredExplanation } from "./explanations.ts";
+import { readTextOrNull } from "./files.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node, type Section, type SectionKind } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
@@ -66,18 +66,14 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
       // The explained map as this analysis renders it, unless a hand-written file stands there.
       const rendered = path.startsWith(explainedDir) ? analysis.map?.explained?.get(path.slice(explainedDir.length)) : undefined;
       if (rendered !== undefined) {
-        const disk = readOrNull(abs);
+        const disk = readTextOrNull(abs);
         return disk === null || isGeneratedMap(disk) ? rendered : disk;
       }
       if (path.startsWith(mapDir) && analysis.map?.files.has(path.slice(mapDir.length))) {
         const doc = analysis.docs.find((d) => d.path === path);
         if (doc && doc.generated !== null) return analysis.map.files.get(path.slice(mapDir.length)) ?? null;
       }
-      try {
-        return readFileSync(abs, "utf8");
-      } catch {
-        return null;
-      }
+      return readTextOrNull(abs);
     },
   };
 }
@@ -157,14 +153,6 @@ export function targetAt(doc: Document, offset: number): Target | null {
 
 function docOf(ws: Workspace, path: string): Document | undefined {
   return ws.analysis.docs.find((doc) => doc.path === path) ?? readingDoc(ws, path);
-}
-
-function readOrNull(abs: string): string | null {
-  try {
-    return readFileSync(abs, "utf8");
-  } catch {
-    return null;
-  }
 }
 
 /** The last parse of each explained map file: a frame asks for it many times over one text. */
