@@ -422,6 +422,33 @@ test("typescript: `import type` and `export type … from` are import edges mark
   for (const m of ["b\\.b", "b\\.c", "b\\.d", "b\\.e"]) assert.match(o.stdout, new RegExp(`K102 divergence: \`${m}\` depends on \`a\\.a\``));
 });
 
+test("typescript: a name a generic binds — a type parameter, a mapped type's key, an `infer` — is no type reference in its scope", (t) => {
+  const dir = repo(t, {
+    "src/a.ts": [
+      "export interface Box<T> { value: T }",
+      "export type Pair<K, V extends K = K> = { k: K; v: V };",
+      "export type Keys<T> = { readonly [K in keyof T]: T[K] };",
+      "export type Item<T> = T extends Array<infer U extends Box<number>> ? U : never;",
+      "export function f<T>(x: T): T { return x; }",
+      "export class C<T, U extends Box<T>> {",
+      "  m(x: T): U | undefined { return undefined; }",
+      "  g<V>(v: V, t: T): Box<V> { return { value: v }; }",
+      "}",
+      "export class D<T> extends C<T, Box<T>> {}",
+      "export const h = <R,>(r: R): R => r;",
+      "export function outer<Q>(q: Q): void {",
+      "  const arrow = <S,>(y: Q, s: S): Q => y;",
+      "}",
+      "export function free(x: T): void {}",
+      "",
+    ].join("\n"),
+  });
+  const { snapshot } = map(dir);
+  const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text} → ${e.target ?? e.resolution}`);
+  // `T` outside any generic is still a type keylang does not know.
+  assert.deepEqual(types.sort(), ["app.a.C.g Box → app.a.Box", "app.a.D Box → app.a.Box", "app.a.Item Box → app.a.Box", "app.a.free T → unresolved"]);
+});
+
 test("typescript: `export type * from` and `export type * as NS from` are read as type-only re-exports, not a syntax error", (t) => {
   const dir = repo(t, {
     "src/t.ts": "export type T = 1;\nexport interface U { u: T }\n",

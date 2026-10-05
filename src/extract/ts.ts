@@ -705,24 +705,63 @@ function walkNamed(root: Node, enter: (node: Node) => boolean | void): void {
   }
 }
 
-/** Type names used by `node`, excluding its own declared name and nested declarations. */
-function collectTypeRefs(node: Node): TypeRefFact[] {
+const NO_NAMES: ReadonlySet<string> = new Set();
+
+/**
+ * Type names used by `node`, excluding its own declared name, nested
+ * declarations and the names a generic binds in its scope: a type parameter
+ * (`<T>`), a mapped type's key (`[K in keyof T]`), an `infer U`. `bound`: the
+ * type parameters already in scope, a class's for its members.
+ */
+function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): TypeRefFact[] {
   const skip = node.childForFieldName("name");
   const out: TypeRefFact[] = [];
-  walkNamed(node, (current) => {
-    if (current.id !== node.id && NESTED_DECL.has(current.type)) return false;
+  // An explicit stack, as in `walkNamed`, with the names bound at each node.
+  const stack: { node: Node; bound: ReadonlySet<string> }[] = [{ node, bound }];
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    const current = item.node;
+    if (current.id !== node.id && NESTED_DECL.has(current.type)) continue;
     if (current.type === "nested_type_identifier") {
       const at = located(current);
       out.push({ name: at.text.replace(/\s+/g, ""), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
-      return false;
+      continue;
     }
-    if (current.type === "type_identifier" && current.id !== skip?.id) {
+    const scope = typeNamesBound(current, item.bound);
+    if (current.type === "type_identifier" && current.id !== skip?.id && !scope.has(current.text)) {
       const at = located(current);
       out.push({ name: at.text, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
     }
-    return true;
-  });
+    const children = current.namedChildren;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child) stack.push({ node: child, bound: scope });
+    }
+  }
   return out;
+}
+
+/** `bound` and the type names `node` binds for its subtree: its type parameters, a mapped type's key, the `infer` names of a conditional type. */
+function typeNamesBound(node: Node, bound: ReadonlySet<string>): ReadonlySet<string> {
+  const names: string[] = [];
+  for (const param of node.childForFieldName("type_parameters")?.namedChildren ?? []) {
+    const name = param.type === "type_parameter" ? param.childForFieldName("name") : null;
+    if (name) names.push(name.text);
+  }
+  if (node.type === "index_signature") {
+    for (const clause of node.namedChildren) {
+      const name = clause.type === "mapped_type_clause" ? clause.childForFieldName("name") : null;
+      if (name) names.push(name.text);
+    }
+  }
+  // `T extends Array<infer U> ? U : never`: `U` is bound in the whole conditional type.
+  const tested = node.type === "conditional_type" ? node.childForFieldName("right") : null;
+  if (tested) {
+    walkNamed(tested, (n) => {
+      const name = n.type === "infer_type" ? n.namedChildren[0] : undefined;
+      if (name?.type === "type_identifier") names.push(name.text);
+    });
+  }
+  return names.length === 0 ? bound : new Set([...bound, ...names]);
 }
 
 /**
@@ -738,6 +777,8 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const body = cls.childForFieldName("body");
   const items = body?.namedChildren ?? [];
   const scope = classScope(items);
+  // `class C<T>`: `T` is no type reference in its heritage or its members.
+  const typeParams = typeNamesBound(cls, NO_NAMES);
   const members: DeclFact[] = [];
   const instance: { node: Node; calls: CallFact[] }[] = [];
   const statics: { node: Node; calls: CallFact[] }[] = [];
@@ -764,7 +805,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       return member;
     };
     if (!isField) {
-      const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m), []));
+      const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m, typeParams), []));
       if (m.children.some((c) => c.type === "get" || c.type === "set")) member.accessor = true;
       members.push(member);
       continue;
@@ -773,7 +814,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     const value = written ? unwrapValue(written) : null;
     if (!value) continue;
     if (FUNCTION_VALUES.has(value.type)) {
-      members.push(flag(decl("fn", mname, m, signature(value), !isPrivate, declCalls(value, scope), collectTypeRefs(m), [])));
+      members.push(flag(decl("fn", mname, m, signature(value), !isPrivate, declCalls(value, scope), collectTypeRefs(m, typeParams), [])));
       continue;
     }
     const calls = declCalls(value, scope);
@@ -790,7 +831,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     else members.push(initializer("static", statics));
   }
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
-  const out = decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode) : [], members);
+  const out = decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode, typeParams) : [], members);
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
   return out;
