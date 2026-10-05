@@ -31,7 +31,7 @@ function repo(t: TestContext, files: Record<string, string>, config: Record<stri
 
 interface Snapshot {
   nodes: Record<string, { kind: string; name?: string; file: string | null; members?: string; escapes?: { reason: string }; deps?: string[]; dependents?: string[] }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; line: number; candidates?: string[]; alias?: string; reason?: string; typeOnly?: true }[];
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; line: number; col: number; candidates?: string[]; alias?: string; reason?: string; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
 }
@@ -497,8 +497,8 @@ test("typescript: a name a generic binds — a type parameter, a mapped type's k
   });
   const { snapshot } = map(dir);
   const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text} → ${e.target ?? e.resolution}`);
-  // `T` outside any generic is still a type keylang does not know.
-  assert.deepEqual(types.sort(), ["app.a.C.g Box → app.a.Box", "app.a.D Box → app.a.Box", "app.a.Item Box → app.a.Box", "app.a.free T → unresolved"]);
+  // A constraint names a type (`U extends Box<T>`: `Box`, not `T`); `T` outside any generic is still a type keylang does not know.
+  assert.deepEqual(types.sort(), ["app.a.C Box → app.a.Box", "app.a.C.g Box → app.a.Box", "app.a.D Box → app.a.Box", "app.a.Item Box → app.a.Box", "app.a.free T → unresolved"]);
 });
 
 test("typescript: `export type * from` and `export type * as NS from` are read as type-only re-exports, not a syntax error", (t) => {
@@ -587,5 +587,30 @@ test("typescript: a step to a package is proved by an import from the parent's m
     "keylang/flows/f.md:4:3: static unverified external.zod: no import of `external.zod` from `app.a`; the type-only import at src/a.ts:1:1 is erased from the code that runs",
     "keylang/flows/f.md:5:3: static unverified external.yup: no import of `external.yup` from `app.a`; the type-only import at src/a.ts:2:1 is erased from the code that runs",
     "keylang/flows/g.md:4:3: static ok external.zod: imported by `app.c`",
+  ]);
+});
+
+test("typescript: a class's type-parameter constraint and default, and a method signature of an interface or an object type, are type references of their declaration", (t) => {
+  const dir = repo(t, {
+    "src/order.ts": "export class Order {}\nexport interface Item {}\nexport class Base<T> {}\n",
+    "src/c.ts": [
+      'import { Order, Item, Base } from "./order";',
+      "export class C<T extends Order, U = Item> extends Base<T> {}",
+      "export interface Repo<Q> { save(o: Order): void; find<T extends Item>(x: T): Q; }",
+      "export type R = { load(): Order };",
+      "export const E = class<V extends Order> {};",
+      "",
+    ].join("\n"),
+  });
+  const { snapshot } = map(dir);
+  const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text}:${e.line}:${e.col} → ${e.target}`);
+  // A type parameter's own name (`T`, `Q`, `V`) is no reference.
+  assert.deepEqual(types.sort(), [
+    "app.c.C Item:2:37 → app.order.Item",
+    "app.c.C Order:2:26 → app.order.Order",
+    "app.c.E Order:5:34 → app.order.Order",
+    "app.c.R Order:4:27 → app.order.Order",
+    "app.c.Repo Item:3:65 → app.order.Item",
+    "app.c.Repo Order:3:36 → app.order.Order",
   ]);
 });

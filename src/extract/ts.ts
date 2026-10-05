@@ -666,7 +666,16 @@ function importAt(node: Node, source: string, bindings: ImportBinding[], reexpor
   return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
-const NESTED_DECL = new Set(["function_declaration", "generator_function_declaration", "function_signature", "class_declaration", "abstract_class_declaration", "method_definition", "method_signature", "interface_declaration", "type_alias_declaration", "enum_declaration", "internal_module"]);
+const NESTED_DECL = new Set(["function_declaration", "generator_function_declaration", "function_signature", "class_declaration", "abstract_class_declaration", "method_definition", "interface_declaration", "type_alias_declaration", "enum_declaration", "internal_module"]);
+
+/**
+ * A declaration of its own below the one whose type names are collected. A method signature
+ * is one in a class body (an overload of a member); in an interface or an object type
+ * (`{ save(o: Order): void }`) it is part of that type.
+ */
+function nestedDeclaration(node: Node): boolean {
+  return NESTED_DECL.has(node.type) || (node.type === "method_signature" && node.parent?.type === "class_body");
+}
 
 /** 1-based line of the first node nested deeper than `limit` below `root`; null when none is. */
 function lineDeeperThan(root: Node, limit: number): number | null {
@@ -720,7 +729,7 @@ function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): Typ
   const stack: { node: Node; bound: ReadonlySet<string> }[] = [{ node, bound }];
   for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
     const current = item.node;
-    if (current.id !== node.id && NESTED_DECL.has(current.type)) continue;
+    if (current.id !== node.id && nestedDeclaration(current)) continue;
     if (current.type === "nested_type_identifier") {
       const at = located(current);
       out.push({ name: at.text.replace(/\s+/g, ""), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
@@ -831,7 +840,10 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     else members.push(initializer("static", statics));
   }
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
-  const out = decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode, typeParams) : [], members);
+  // `class C<T extends Order, U = Item>`: a constraint and a default name types; the parameters themselves do not.
+  const typeParamsNode = cls.childForFieldName("type_parameters");
+  const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : [])];
+  const out = decl("class", name, at, heritage(cls), exported, [], types, members);
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
   return out;
