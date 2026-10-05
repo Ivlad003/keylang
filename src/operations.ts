@@ -281,8 +281,10 @@ export type ExplainPlanRequest =
  * requests are in flight; a parent's prompt carries the briefs its members
  * got in earlier waves. Each brief is written on its own as soon as it is
  * answered, after the commit check: its file must still hold the bytes the
- * plan read, and keylang.json, the sources and the specs must be the ones
- * the plan was made from. The dry run is `explain-plan` with `estimate`.
+ * plan read. That keylang.json, the sources and the specs are the ones the
+ * plan was made from is checked once per wave — before it asks (from the
+ * second wave on) and before its first write — not before every brief. The
+ * dry run is `explain-plan` with `estimate`.
  */
 export interface ExplainBatchRequest {
   kind: "explain-batch";
@@ -1248,8 +1250,9 @@ export type ExplainPlanPayload = (({ list: "stale-saved" } & StaleInventory) | (
  * What a brief batch planned, wrote and left. `stopped`: null — the batch
  * ran to the end of its plan (failed nodes are named, code 1); `cancelled`
  * — Cancel, no new request was started and the ones in flight were closed;
- * `outdated` — keylang.json, a source or a spec changed while it ran, so no
- * further brief was written or asked for (`refused` names the changes);
+ * `outdated` — keylang.json, a source or a spec changed while it ran (or the
+ * sources could not be read again), found at a wave's check, so no further
+ * brief was written or asked for (`refused` names the changes);
  * `refused` — the session refused the commit (`refused`). Briefs written
  * before the stop stay: there is no rollback.
  */
@@ -2667,7 +2670,11 @@ function explainBatchText(payload: Pick<ExplainBatchPayload, "done" | "failed" |
  * changed, a write error) is named and the others go on. `beforeCommit` is
  * asked once, before the first write; after it Cancel closes the requests in
  * flight and starts none, and what was written stays. A changed input stops
- * the batch: no brief is written or asked for after it. Ran to the end: 0,
+ * the batch: no brief is written or asked for after it is found — the
+ * inputs are checked before each wave asks (from the second on) and before
+ * its first write; within a wave a write checks only its own file, so a
+ * change after a wave's first write is found before the next wave. The
+ * briefs written before the stop stay. Ran to the end: 0,
  * or 1 with failed nodes (the CLI's batch exception: a failed write of one
  * brief is 1 too); stopped by a change or a refusal: 1; cancelled: null.
  */
@@ -2717,9 +2724,18 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   if ("missing" in setup) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
   const client = setup.client;
   payload.agent = client.agent;
-  // What every brief is computed from: each write checks these are still the files on disk.
+  // What every brief is computed from. Checking them reads and hashes every source again, so it
+  // runs once per wave, not before each brief; each write still checks its own file (`expect`).
   const inputs = sourceInputs(config, analyzed.snapshot.manifest.files);
   const specs = specHashes(root, analyzed.docs);
+  /** How keylang.json, the sources and the specs differ from the ones the plan read; a tree that cannot be read again is a reason too. */
+  const inputsChanged = (): string[] => {
+    try {
+      return [...sourceInputProblems(config, inputs, "the batch"), ...specProblems(root, specs, "the batch")];
+    } catch (error) {
+      return [`the sources could not be read again: ${messageOf(error)}`];
+    }
+  };
   const files = new Map(plan.map((entry) => [entry.id, explanationPath(config, entry.id, "brief")]));
   const expected = new Map([...files.values()].map((file) => [file, readTextOrNull(resolve(root, file))]));
   const briefs = loadBriefs(config);
@@ -2736,14 +2752,16 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   const notStarted = new Set<string>();
   const written: string[] = [];
   let gate: Promise<CommitGate> | null = null;
+  /** The wave whose inputs were found unchanged before its first write. */
+  let checkedWave: number | null = null;
   let finished = 0;
   const finish = (id: string, failed: string | null): void => {
     if (failed !== null) payload.failed.push({ id, reason: failed });
     finished++;
     context.onProgress?.({ text: `${finished}/${plan.length} · ${id}${failed === null ? "" : `: failed: ${failed}`}`, step: { done: finished, total: plan.length, id, failed } });
   };
-  /** The brief of one node: asked, checked, written; a stop leaves it not started. */
-  const one = async (id: string): Promise<void> => {
+  /** The brief of one node of `wave`: asked, checked, written; a stop leaves it not started. */
+  const one = async (id: string, wave: number): Promise<void> => {
     if (cancelled()) stop("cancelled");
     if (payload.stopped !== null) return void notStarted.add(id);
     const request = briefRequest(analyzed, id, lang, briefs);
@@ -2769,18 +2787,21 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     if (cancelled()) stop("cancelled");
     if (answered && answered.refused.length > 0) stop("refused", answered.refused);
     if (payload.stopped !== null) return void notStarted.add(id);
+    // The wave's first write checks the inputs (synchronously: no other brief writes in between).
+    if (checkedWave !== wave) {
+      const changed = inputsChanged();
+      if (changed.length > 0) {
+        stop("outdated", changed);
+        return void notStarted.add(id);
+      }
+      checkedWave = wave;
+    }
     const file = files.get(id)!;
     let target: string | null;
-    let changed: string[];
     try {
       target = writeProblem(root, file, { under: explainDir(config), expect: expected.get(file) ?? null });
-      changed = [...sourceInputProblems(config, inputs, "the batch"), ...specProblems(root, specs, "the batch")];
     } catch (error) {
       return finish(id, messageOf(error));
-    }
-    if (changed.length > 0) {
-      stop("outdated", changed);
-      return void notStarted.add(id);
     }
     if (target !== null) return finish(id, `${file}: ${target}`);
     // The repository's baseline reads the layer briefs this batch just wrote.
@@ -2799,10 +2820,15 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   };
   context.onProgress?.({ text: `asking ${client.agent}: ${plan.length} brief(s), ${jobs} at a time` });
   const waves = [...new Set(plan.map((entry) => entry.wave))];
-  for (const wave of waves) {
+  for (const [index, wave] of waves.entries()) {
+    // From the second wave on, the inputs are checked before it asks: a change made during the last wave costs no request.
+    if (index > 0 && payload.stopped === null && !cancelled()) {
+      const changed = inputsChanged();
+      if (changed.length > 0) stop("outdated", changed);
+    }
     const queue = plan.filter((entry) => entry.wave === wave).map((entry) => entry.id);
     const workers = Array.from({ length: Math.min(jobs, queue.length) }, async () => {
-      for (let id = queue.shift(); id !== undefined; id = queue.shift()) await one(id);
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) await one(id, wave);
     });
     await Promise.all(workers);
   }

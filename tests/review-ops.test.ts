@@ -125,6 +125,91 @@ test("export c4 --out: a link out of the repository and an absolute path outside
   assert.equal(fresh.stderr, "docs/c4.puml: written\n");
 });
 
+// ---------- 2. explain --missing --llm: the inputs once per wave ----------
+
+/** A preload for `node --import`: counts the reads of files whose path ends with COUNT_READS_OF and writes the count to COUNT_READS_TO at exit. */
+const COUNT_READS = `import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const suffix = process.env.COUNT_READS_OF;
+const original = fs.readFileSync;
+let reads = 0;
+fs.readFileSync = function (path, ...rest) {
+  if (String(path).endsWith(suffix)) reads++;
+  return original.call(this, path, ...rest);
+};
+syncBuiltinESMExports();
+process.on("exit", () => fs.writeFileSync(process.env.COUNT_READS_TO, String(reads)));
+`;
+
+/**
+ * `count` functions without a doc comment in `src/app/many.ts` (the briefs:
+ * each fn, the module, the layer), and `src/lib/util.ts`, which no brief is
+ * about: its own doc comments, a README for its layer and one for the repository.
+ */
+function manyRepo(t: TestContext, count: number): string {
+  const dir = tempDir(t, "keylang-review-batch-");
+  mkdirSync(join(dir, ".home"));
+  write(dir, {
+    "keylang.json": JSON.stringify({ languages: ["typescript"], layers: { app: ["src/app/**"], lib: ["src/lib/**"] }, agent: "cli:claude" }),
+    "README.md": "# Many\n\nMany is a fixture with many small functions in one file.\n",
+    "src/lib/README.md": "# lib\n\nHelpers the app layer uses, kept apart from it.\n",
+    "src/lib/util.ts": "/** Small helpers. */\n\n/** Doubles a number. */\nexport function twice(n: number): number {\n  return n * 2;\n}\n",
+    "src/app/many.ts": `import { twice } from "../lib/util.ts";\n\n${Array.from({ length: count }, (_, i) => `export function f${i}(n: number): number {\n  return twice(n) + ${i};\n}\n`).join("\n")}`,
+  });
+  return dir;
+}
+
+function briefFiles(dir: string): string[] {
+  const at = join(dir, "keylang/explain/brief");
+  return existsSync(at) ? readdirSync(at).sort() : [];
+}
+
+test("explain --missing --llm reads every source once per wave, not once per brief: 32 briefs in 3 waves read a file no brief is about at most 6 times", async (t) => {
+  const dir = manyRepo(t, 30);
+  const tools = tempDir(t, "keylang-review-reads-");
+  writeFileSync(join(tools, "count-reads.mjs"), COUNT_READS);
+  const fake = fakeAgents(t, ["claude"], { reply: "Adds a number to twice the input." });
+  const counted = join(tools, "reads.txt");
+  const o = await keylang(dir, ["explain", "--missing", "--llm", "--jobs", "4"], fake, { COUNT_READS_OF: "/src/lib/util.ts", COUNT_READS_TO: counted }, ["--import", pathToFileURL(join(tools, "count-reads.mjs")).href]);
+  assert.equal(o.status, 0, o.stderr);
+  assert.equal(o.stdout, "explained 32 of 32 node(s)\n");
+  assert.equal(briefFiles(dir).length, 32);
+  // The analysis reads it once; then wave 0 checks before its first write, waves 1 and 2 before they ask and before their first write.
+  // Before, each of the 32 writes read the whole tree again: 33 reads.
+  const reads = Number(readFileSync(counted, "utf8"));
+  assert.ok(reads >= 1 && reads <= 6, `${reads} reads of src/lib/util.ts`);
+});
+
+test("explain --missing --llm: a source changed while a wave's first answer comes in stops the batch with nothing written; a change later in the wave stops it before the next wave asks, and the wave's briefs stay", async (t) => {
+  const plan = ["app.many.f0", "app.many.f1", "app.many.f2", "app.many", "app"];
+  // During the first answer: the wave's first write finds it.
+  const first = manyRepo(t, 3);
+  const firstFake = fakeAgents(t, ["claude"], { reply: "Adds a number." });
+  editBeforeAnswer(firstFake);
+  const stopped = await keylang(first, ["explain", "--missing", "--llm", "--jobs", "1"], firstFake, { EDIT_FILE: join(first, "src/lib/util.ts"), EDIT_TEXT: EDITED, EDIT_ON_CALL: "1" });
+  assert.equal(stopped.status, 1, stopped.stderr);
+  assert.equal(stopped.stdout, "explained 0 of 5 node(s)\n");
+  assert.match(stopped.stderr, /^keylang: src\/lib\/util\.ts: changed on disk while the batch was computed$/m);
+  assert.equal(firstFake.calls().length, 1, "no request after the change is found");
+  assert.deepEqual(briefFiles(first), []);
+  assert.ok(readFileSync(join(first, "src/lib/util.ts"), "utf8").endsWith(EDITED), "the new bytes stay");
+
+  // During the second answer of wave 0: the wave goes on, the next wave asks nothing.
+  const later = manyRepo(t, 3);
+  const laterFake = fakeAgents(t, ["claude"], { reply: "Adds a number." });
+  editBeforeAnswer(laterFake);
+  const outdated = await keylang(later, ["explain", "--missing", "--llm", "--jobs", "1"], laterFake, { EDIT_FILE: join(later, "src/lib/util.ts"), EDIT_TEXT: EDITED, EDIT_ON_CALL: "2" });
+  assert.equal(outdated.status, 1, outdated.stderr);
+  assert.equal(outdated.stdout, "explained 3 of 5 node(s)\n");
+  assert.match(outdated.stderr, /^keylang: src\/lib\/util\.ts: changed on disk while the batch was computed$/m);
+  assert.deepEqual(laterFake.calls().length, 3, "wave 1 starts no request");
+  assert.deepEqual(briefFiles(later), plan.slice(0, 3).map((id) => `${id}.md`));
+  // A rerun asks only for what is left.
+  const rerun = await keylang(later, ["explain", "--missing", "--llm", "--jobs", "1"], laterFake);
+  assert.equal(rerun.status, 0, rerun.stderr);
+  assert.equal(rerun.stdout, "explained 2 of 2 node(s)\n");
+});
+
 // ---------- 4. export target: the spec directory as the config reads it ----------
 
 test("export: with `dir: ./keylang` the map and the explained map under keylang/ are the generator's, as `keylang map` reads the same config; a spec directory `.` owns map/", async (t) => {
