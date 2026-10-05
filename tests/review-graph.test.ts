@@ -236,3 +236,67 @@ test("typescript: a namespace object read as a value hands on every export of it
     .sort();
   assert.deepEqual(escaping, ["app.b.Box.constructor", "app.b.defFn", "app.b.helper"]);
 });
+
+test("typescript: `this.m()` follows the base classes as `super.m()` does; through a package's base it is external, through an unknown one a hole", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"dependencies":{"react":"18"}}',
+    "src/base.ts": "export class Base { greet(): void {} }\n",
+    "src/a.ts": [
+      'import { Component } from "react";',
+      'import { Base } from "./base";',
+      "export class C extends Component { m(): void { this.setState({}); super.setState({}); this.render(); } render(): null { return null; } }",
+      "export class D extends Base { m(): void { this.greet(); super.greet(); } }",
+      "export class E extends D { n(): void { this.greet(); this.m(); } }",
+      "export class F extends Unknown { k(): void { this.zz(); } }",
+      "",
+    ].join("\n"),
+  });
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.a."), ["app.a.C.m → app.a.C.render", "app.a.D.m → app.base.Base.greet", "app.a.E.n → app.a.D.m", "app.a.E.n → app.base.Base.greet"]);
+  assert.deepEqual(holes(snapshot, "app.a."), ["app.a.F.k: unresolved-call unresolved call `this.zz`"]);
+});
+
+test("python: `self.m()` follows the base classes; a static or class method is found through an instance too", (t) => {
+  const dir = repo(
+    t,
+    {
+      "pkg/__init__.py": "",
+      "pkg/a.py": "class Base:\n    def greet(self): pass\n    @staticmethod\n    def make(): pass\n",
+      "pkg/m.py": "from .a import Base\nclass Child(Base):\n    def go(self):\n        self.greet()\n        self.make()\ndef use():\n    s = Base()\n    s.make()\n",
+    },
+    { languages: ["python"], layers: { app: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.m."), ["app.m.Child.go → app.a.Base.greet", "app.m.Child.go → app.a.Base.make", "app.m.use → app.a.Base", "app.m.use → app.a.Base.make"]);
+  assert.deepEqual(holes(snapshot, "app.m."), []);
+});
+
+test("php: `$this->m()` finds a method of a `use`d trait and of the base class; a static method is found through an instance too", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/Service.php": [
+        "<?php",
+        "namespace App;",
+        "trait Logs { public function log(): void {} }",
+        "class Base { public function greet(): void {} public static function make(): void {} }",
+        "class Service extends Base {",
+        "    use Logs;",
+        "    public function run(): void { $this->log(); $this->greet(); $this->make(); }",
+        "}",
+        "function useIt(Service $s): void { $s->make(); $s->log(); }",
+        "",
+      ].join("\n"),
+    },
+    { languages: ["php"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.Service."), [
+    "app.Service.Service.run → app.Service.Base.greet",
+    "app.Service.Service.run → app.Service.Base.make",
+    "app.Service.Service.run → app.Service.Logs.log",
+    "app.Service.useIt → app.Service.Base.make",
+    "app.Service.useIt → app.Service.Logs.log",
+  ]);
+  assert.deepEqual(holes(snapshot, "app.Service."), []);
+});

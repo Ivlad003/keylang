@@ -120,6 +120,8 @@ export interface DeclFact {
   hash?: true;
   /** Classes: the `extends` expression as written (`Readable`, `React.Component`). */
   base?: string;
+  /** Classes: the traits the class uses, as written (PHP `use Logs;`): their methods are the class's own. */
+  traits?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
 }

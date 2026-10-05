@@ -306,6 +306,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const methods = items.filter((item) => item.type === "method_declaration");
   const statics = new Set(methods.filter((m) => m.namedChildren.some((c) => c.type === "static_modifier")).map((m) => m.childForFieldName("name")?.text.toLowerCase() ?? ""));
   const fields = new Map<string, string>();
+  const traits: string[] = [];
   for (const item of items) {
     if (item.type === "property_declaration") {
       const type = singleClass(item.childForFieldName("type"));
@@ -315,10 +316,13 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
       }
       for (const named of namedTypes(item.childForFieldName("type"))) types.push(typeRef(collector.klass(named.text, named.node, names), named.node));
     } else if (item.type === "use_declaration") {
-      // `use SomeTrait;` in a class: its methods become the class's own, which keylang does not copy; the trait is a dependency.
+      // `use SomeTrait;` in a class: its methods become the class's own (`$this->log()`); the trait is a dependency.
       for (const traitNode of item.namedChildren) {
         const written = classNameOf(traitNode);
-        if (written) types.push(typeRef(collector.klass(written, traitNode, names), traitNode));
+        if (!written) continue;
+        const local = collector.klass(written, traitNode, names);
+        types.push(typeRef(local, traitNode));
+        traits.push(local);
       }
     }
   }
@@ -343,7 +347,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     if (statics.has(member.toLowerCase())) decl.static = true;
     members.push(decl);
   }
-  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(doc !== undefined ? { doc } : {}) };
+  return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(doc !== undefined ? { doc } : {}) };
 }
 
 /** The one class a type names: `Store`, `?Store`; null for a union, an intersection, a built-in type or none. */

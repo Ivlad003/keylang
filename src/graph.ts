@@ -498,7 +498,53 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // `x.run()` in module-level code with a receiver keylang does not know: any fn named `run`.
   const calledNames = new Map<string, Escape>();
   // Class → its internal base class, or the `extends` text when keylang has not read the base.
-  const classBase = new Map<string, { internal: string | null; text: string }>();
+  const classBase = new Map<string, BaseLink>();
+  /** Class → the traits it uses (PHP `use Logs;`), resolved in its file. */
+  const classTraits = new Map<string, string[]>();
+  /**
+   * A member of a class by name: its own, then a used trait's (PHP), then its
+   * bases' — as the language looks a method up. `staticToo`: an instance may
+   * reach a static member (Python, PHP). `last`: the base link the chain
+   * ended at, null when the class has no base; an unread base may declare it.
+   */
+  const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic), ...(staticToo && !isStatic ? [memberKey(member, true)] : [])];
+    const seen = new Set<string>();
+    const inClass = (id: string): string | null => {
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const members = declModule.get(id);
+      for (const key of keys) {
+        const hit = members?.get(key);
+        if (hit) return hit;
+      }
+      for (const trait of classTraits.get(id) ?? []) {
+        const hit = inClass(trait);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    let last: BaseLink | null = null;
+    for (let at: string | null = start; at !== null && !seen.has(at); ) {
+      const hit = inClass(at);
+      if (hit) return { target: hit, last };
+      const base = classBase.get(at);
+      if (!base) break;
+      last = base;
+      at = base.internal;
+    }
+    return { target: null, last };
+  };
+  /** The base a class's chain of bases ends at when keylang has not read it (a package's, a global, an unknown name); null when it has read them all. */
+  const unreadBase = (id: string): BaseLink | null => {
+    const seen = new Set<string>();
+    for (let at = classBase.get(id); at; at = at.internal ? classBase.get(at.internal) : undefined) {
+      if (!at.internal) return at;
+      if (seen.has(at.internal)) return null;
+      seen.add(at.internal);
+    }
+    return null;
+  };
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
   /**
    * The symbol a public name stands for in an export table (`unit`: a module, or one file of a
@@ -559,9 +605,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (!head) return [];
       const found = new Set<string>();
       if (head === "this") {
+        // `this.m()`: the class's member, a used trait's, or one of a base, as `super.m()` finds it.
         const member = rest[0];
         if (!cls || !member || rest.length !== 1) return [];
-        const id = declModule.get(cls.id)?.get(memberKey(member, isStatic));
+        const id = findMember(cls.id, member, isStatic, staticThroughInstance(facts.path)).target;
         return id ? [id] : [];
       }
       if (rest.length === 0) {
@@ -575,8 +622,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       }
       if (rest.length === 1) {
         const member = rest[0]!;
-        // `X.m()` on a class names its static member.
-        const staticOf = (clsId: string | null): string | undefined => (clsId && decls.classes.has(clsId) ? declModule.get(clsId)?.get(memberKey(member, true)) : undefined);
+        // `X.m()` on a class names its static member, its own or a base's.
+        const staticOf = (clsId: string | null): string | undefined => (clsId && decls.classes.has(clsId) ? (findMember(clsId, member, true, false).target ?? undefined) : undefined);
         for (const imp of locals.get(head) ?? []) {
           if (imp.kind === "module") {
             // `import * as ns`, `require()`: a named export; for `require`, also a static member of `module.exports`.
@@ -606,18 +653,12 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     };
     /**
      * `this.decoder.feed` with `decoder: InputDecoder` → `InputDecoder.feed`,
-     * when that class or a base keylang has read declares the member.
+     * when that class, a trait it uses or a base keylang has read declares the
+     * member. In Python and PHP an instance reaches a static member too.
      */
     const receiverTarget = (callee: string, receiver: string | undefined): string | null => {
-      if (!receiver) return null;
-      const member = memberKey(callee.slice(callee.lastIndexOf(".") + 1), false);
-      const seen = new Set<string>();
-      for (let cls = classNamed(receiver); cls && !seen.has(cls); cls = classBase.get(cls)?.internal ?? null) {
-        seen.add(cls);
-        const id = declModule.get(cls)?.get(member);
-        if (id) return id;
-      }
-      return null;
+      const cls = receiver ? classNamed(receiver) : null;
+      return cls ? findMember(cls, callee.slice(callee.lastIndexOf(".") + 1), false, staticThroughInstance(facts.path)).target : null;
     };
     /** One target for a callee that names a declaration; null for locals, gaps and ambiguity. */
     const single = (fact: { callee: string; bound?: string; receiver?: string; opaque?: true }, cls: Module | null, isStatic: boolean): string | null => {
@@ -634,35 +675,32 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
   for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
-  // Every class's base first: `super()` in one file may run the constructor of a base in another.
+  // Every class's base and traits first: `super()` in one file may run the constructor of a base in another.
   for (const { facts } of byFile.values()) {
-    const { resolveCallees, classNamed } = scopes.get(facts.path)!;
+    const { resolveCallees, classNamed, external } = scopes.get(facts.path)!;
     const visit = (factDecls: readonly DeclFact[]): void => {
       for (const d of factDecls) {
         const id = d.kind === "class" ? decls.ids.get(d) : undefined;
-        if (!id || !d.base) continue;
+        if (!id) continue;
+        if (d.traits) classTraits.set(id, d.traits.map(classNamed).filter((t): t is string => t !== null));
+        if (!d.base) continue;
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
-        classBase.set(id, { internal: internal.length === 1 ? internal[0]! : null, text: d.base });
+        // Whether an unread base is a package's or the language's is known in the class's own file.
+        classBase.set(id, internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!) });
       }
     };
     visit(facts.decls);
   }
   /**
    * `super()` / `super.m()` in a class: the base's member, looked up through
-   * bases that do not declare it. `last`: the last base on that chain, null
-   * when the class has none.
+   * its traits and the bases that do not declare it. `last`: the last base on
+   * that chain, null when the class has none.
    */
-  const superTarget = (cls: Module, member: string, isStatic: boolean): { target: string | null; last: { internal: string | null; text: string } | null } => {
-    const seen = new Set<string>();
-    let last: { internal: string | null; text: string } | null = null;
-    for (let at = classBase.get(cls.id); at; at = at.internal ? classBase.get(at.internal) : undefined) {
-      last = at;
-      if (!at.internal || seen.has(at.internal)) break;
-      seen.add(at.internal);
-      const id = declModule.get(at.internal)?.get(member === "constructor" ? "constructor" : memberKey(member, isStatic));
-      if (id) return { target: id, last };
-    }
-    return { target: null, last };
+  const superTarget = (cls: Module, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+    const base = classBase.get(cls.id);
+    if (!base?.internal) return { target: null, last: base ?? null };
+    const found = findMember(base.internal, member, isStatic, staticToo);
+    return { target: found.target, last: found.last ?? base };
   };
   for (const { facts, module } of byFile.values()) {
     const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external } = scopes.get(facts.path)!;
@@ -701,11 +739,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (head === "super" && cls && c.callee.split(".").length <= 2) {
             // `super()` runs the base constructor; `super.m()` the base's `m`.
             const member = c.callee === "super" ? "constructor" : c.callee.slice("super.".length);
-            const { target, last } = superTarget(cls, member, isStatic);
+            const { target, last } = superTarget(cls, member, isStatic, staticThroughInstance(facts.path));
             if (target) push(target, c);
             // Bases of this repository without a constructor of their own: the implicit ones run nothing keylang indexes.
             else if (last?.internal && member === "constructor") continue;
-            else if (last && !last.internal && external(last.text.split(".")[0]!)) stats.callsExternal++;
+            else if (last && !last.internal && last.external) stats.callsExternal++;
             else dynamic(c, `call through \`super\` of ${last ? `\`${last.text}\`` : "a class without a base keylang resolved"}`);
             continue;
           }
@@ -761,6 +799,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (!target) {
             const imported = (locals.get(head) ?? [])[0];
             if (imported?.module.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
+            // `this.setState()` in a class over a package's base: the package's member, as `super.setState()` is.
+            else if (head === "this" && cls && c.callee.split(".").length === 2 && unreadBase(cls.id)?.external === true) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
               stats.callsDynamic++;
               gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
@@ -887,14 +927,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // A method of a class whose base keylang has not read (a package, a global,
   // an unresolved name) may be called by that base: `_read` of a `Readable`,
   // `render` of a component, `connectedCallback` of an element.
-  const unknownBase = (id: string, seen: Set<string>): string | null => {
-    const base = classBase.get(id);
-    if (!base || seen.has(id)) return null;
-    seen.add(id);
-    return base.internal === null ? base.text : unknownBase(base.internal, seen);
-  };
   for (const id of classBase.keys()) {
-    const base = unknownBase(id, new Set());
+    const base = unreadBase(id)?.text;
     const cls = decls.classes.get(id);
     if (!base || !cls) continue;
     for (const fn of cls.fns) if (fn.name !== constructorName(fn.file ?? cls.path)) fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
@@ -931,6 +965,19 @@ const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
  * beside `x/index.ts`): `file:<path>`. No module ID has a `:`, so the keys never meet.
  */
 const FILE_UNIT = "file:";
+
+/** A class's `extends`: the base keylang has read, or the text of one it has not, and whether that names a package's or the language's class. */
+interface BaseLink {
+  internal: string | null;
+  text: string;
+  external: boolean;
+}
+
+/** Python and PHP reach a static member through an instance (`s.make()`, `$this->make()`); JavaScript does not. */
+function staticThroughInstance(file: string): boolean {
+  const language = languageOf(file);
+  return language === "python" || language === "php";
+}
 
 /** What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself. */
 interface ImportTarget {
