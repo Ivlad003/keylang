@@ -1274,7 +1274,7 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
     if (node.type === "shorthand_property_identifier_pattern" || (node.type === "property_identifier" && parent?.type === "pair_pattern" && parent.childForFieldName("key")?.id === node.id)) note(node.text, node, true);
     if ((node.type === "property_identifier" || node.type === "private_property_identifier") && parent?.type === "member_expression" && parent.childForFieldName("property")?.id === node.id) {
       const grand = parentOf(parent);
-      const called = (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === parent.id);
+      const called = calledMember(parent);
       const written = grand?.type === "assignment_expression" && grand.childForFieldName("left")?.id === parent.id;
       const object = parent.childForFieldName("object");
       // `mod.save` of an imported module reads the module function itself.
@@ -1299,9 +1299,13 @@ function memberObject(node: Node, parent: Node | null, facts: FileFacts): boolea
   if (parent?.type !== "member_expression" || parent.childForFieldName("object")?.id !== node.id) return false;
   const property = parent.childForFieldName("property")?.text;
   if (property === "call" || property === "apply" || property === "bind") return false;
-  const grand = parentOf(parent);
-  const called = (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === parent.id);
-  return called || moduleSource(facts, node.text, true) !== null;
+  return calledMember(parent) || moduleSource(facts, node.text, true) !== null;
+}
+
+/** The member expression is what a call or `new` runs: `a.b()`, `new a.B()`. */
+function calledMember(member: Node): boolean {
+  const grand = parentOf(member);
+  return (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === member.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === member.id);
 }
 
 /**
