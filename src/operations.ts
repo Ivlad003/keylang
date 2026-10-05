@@ -1496,65 +1496,21 @@ export async function runOperation(request: OperationRequest, context: Operation
  * transport that could not run it) or a cancellation.
  */
 export function resultWithout(kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationResult {
-  const base = { status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error" as const, text: error }], written: [], removed: [], proposals: [] };
-  switch (kind) {
-    case "doctor":
-      return { kind, ...base };
-    case "feature":
-      return { kind, ...base };
-    case "feature-questions":
-      return { kind, ...base };
-    case "export-c4":
-      return { kind, ...base };
-    case "map-check":
-      return { kind, ...base };
-    case "map":
-      return { kind, ...base };
-    case "baseline":
-      return { kind, ...base };
-    case "agents":
-      return { kind, ...base };
-    case "fmt":
-      return { kind, ...base };
-    case "wire":
-      return { kind, ...base };
-    case "check":
-      return { kind, ...base };
-    case "explain-edge":
-      return { kind, ...base };
-    case "explain":
-      return { kind, ...base };
-    case "explain-llm":
-      return { kind, ...base };
-    case "explain-plan":
-      return { kind, ...base };
-    case "explain-batch":
-      return { kind, ...base };
-    case "init":
-      return { kind, ...base };
-    case "export":
-      return { kind, ...base };
-    case "parse":
-      return { kind, ...base };
-    case "trace-plan":
-      return { kind, ...base };
-    case "draft-flow":
-      return { kind, ...base };
-    case "draft-rules":
-      return { kind, ...base };
-    case "draft-layout":
-      return { kind, ...base };
-    case "code-to-spec":
-      return { kind, ...base };
-    case "spec-to-code":
-      return { kind, ...base };
-    case "apply-code":
-      return { kind, ...base };
-  }
+  return empty(kind, status, exitCode, error);
 }
 
-function emptyMapCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"map-check"> {
-  return { kind: "map-check", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+/** Each kind's envelope: indexed with a union of kinds, the union of their envelopes (as `OperationResult`). */
+type EnvelopeOf = { [K in OperationRequest["kind"]]: OperationEnvelope<K> };
+
+/**
+ * The envelope of `kind` without a payload and with nothing written; `error`
+ * becomes its one message. TypeScript cannot carry a kind that is a union
+ * into `OperationEnvelope<K>` per member, so the generic signature states it
+ * and the implementation builds the one shape every kind shares.
+ */
+function empty<K extends OperationRequest["kind"]>(kind: K, status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): EnvelopeOf[K];
+function empty(kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<OperationRequest["kind"]> {
+  return { kind, status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -1564,18 +1520,18 @@ function emptyMapCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, erro
  * for no supported sources, a broken config or a failed analysis.
  */
 async function runMapCheck(request: MapCheckRequest, context: OperationContext): Promise<OperationEnvelope<"map-check">> {
-  if (!isAbsolute(request.root)) return emptyMapCheck("failed", 2, "map: root must be an absolute path");
-  if (context.signal?.aborted) return emptyMapCheck("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("map-check", "failed", 2, "map: root must be an absolute path");
+  if (context.signal?.aborted) return empty("map-check", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyMapCheck("failed", 2, errorText(error));
+    return empty("map-check", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyMapCheck("cancelled", null);
+  if (context.signal?.aborted) return empty("map-check", "cancelled", null);
   const map = analyzed.map;
-  if (map === null) return emptyMapCheck("failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
+  if (map === null) return empty("map-check", "failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
   context.onProgress?.({ text: "comparing with the files on disk" });
   const diff = diffMap(analyzed.config, map);
   const rel = (abs: string): string => toPosix(relative(request.root, abs));
@@ -1592,11 +1548,7 @@ async function runMapCheck(request: MapCheckRequest, context: OperationContext):
   ];
   const clean = payload.conflicts.length === 0 && payload.stale.length === 0;
   if (clean) messages.push({ level: "info", text: "the map is up to date" });
-  return { ...emptyMapCheck("completed", clean ? 0 : 1), payload, messages };
-}
-
-function emptyMap(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"map"> {
-  return { kind: "map", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("map-check", "completed", clean ? 0 : 1), payload, messages };
 }
 
 /**
@@ -1611,18 +1563,18 @@ function emptyMap(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: s
  * it the current step finishes and the rest is not attempted.
  */
 async function runMap(request: MapRequest, context: OperationContext): Promise<OperationEnvelope<"map">> {
-  if (!isAbsolute(request.root)) return emptyMap("failed", 2, "map: root must be an absolute path");
-  if (context.signal?.aborted) return emptyMap("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("map", "failed", 2, "map: root must be an absolute path");
+  if (context.signal?.aborted) return empty("map", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: true });
   } catch (error) {
-    return emptyMap("failed", 2, errorText(error));
+    return empty("map", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyMap("cancelled", null);
+  if (context.signal?.aborted) return empty("map", "cancelled", null);
   const map = analyzed.map;
-  if (map === null) return emptyMap("failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
+  if (map === null) return empty("map", "failed", 2, `no supported source files under ${request.label ?? "."}; run \`keylang init\``);
   const payload: MapPayload = {
     conflicts: [],
     refused: [],
@@ -1638,29 +1590,29 @@ async function runMap(request: MapRequest, context: OperationContext): Promise<O
   try {
     plan = planMap(analyzed.config, map);
   } catch (error) {
-    return { ...emptyMap("failed", 2, errorText(error)), payload };
+    return { ...empty("map", "failed", 2, errorText(error)), payload };
   }
   if (plan.conflicts.length > 0) {
     payload.conflicts = plan.conflicts;
-    return { ...emptyMap("completed", 1), payload, messages: [...warnings, ...mapConflictLines(plan.conflicts).map((text) => ({ level: "info" as const, text }))] };
+    return { ...empty("map", "completed", 1), payload, messages: [...warnings, ...mapConflictLines(plan.conflicts).map((text) => ({ level: "info" as const, text }))] };
   }
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyMap("failed", 2, errorText(error)), payload };
+    return { ...empty("map", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyMap("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("map", "cancelled", null), payload };
   let problems: string[];
   try {
     problems = mapPlanProblems(plan);
   } catch (error) {
-    return { ...emptyMap("failed", 2, errorText(error)), payload };
+    return { ...empty("map", "failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
     return {
-      ...emptyMap("failed", 1),
+      ...empty("map", "failed", 1),
       payload,
       messages: [...warnings, ...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run the map again to compute it from the files on disk" }],
     };
@@ -1682,7 +1634,7 @@ async function runMap(request: MapRequest, context: OperationContext): Promise<O
     messages.push({ level: commit.outcome === "failed" ? "error" : "warning", text: `${done.length} of ${commit.steps.length} step(s) done; not attempted: ${untried.length === 0 ? "none" : untried.map((step) => step.path).join(", ")}` });
   }
   const status = commit.outcome;
-  return { ...emptyMap(status, status === "completed" ? 0 : status === "failed" ? 2 : null), payload, messages, written, removed };
+  return { ...empty("map", status, status === "completed" ? 0 : status === "failed" ? 2 : null), payload, messages, written, removed };
 }
 
 /** The conflict lines `keylang map` prints: nothing is written while any exists. */
@@ -1724,10 +1676,6 @@ export function mapCheckLines(diff: { conflicts: readonly string[]; stale: reado
   return lines;
 }
 
-function emptyBaseline(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"baseline"> {
-  return { kind: "baseline", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
-}
-
 /**
  * `keylang baseline [--check]`: the rules of the current layer graph (the
  * rule algorithm of `baselineText`) against `<dir>/rules.baseline.md`. The
@@ -1741,22 +1689,22 @@ function emptyBaseline(status: OperationStatus, exitCode: 0 | 1 | 2 | null, erro
  * 2, never empty rules. Cancelled: null, nothing written.
  */
 async function runBaseline(request: BaselineRequest, context: OperationContext): Promise<OperationEnvelope<"baseline">> {
-  if (!isAbsolute(request.root)) return emptyBaseline("failed", 2, "baseline: root must be an absolute path");
-  if (context.signal?.aborted) return emptyBaseline("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("baseline", "failed", 2, "baseline: root must be an absolute path");
+  if (context.signal?.aborted) return empty("baseline", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyBaseline("failed", 2, errorText(error));
+    return empty("baseline", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyBaseline("cancelled", null);
-  if (!analyzed.snapshot) return emptyBaseline("failed", 2, "baseline: no supported source files; run `keylang init`");
+  if (context.signal?.aborted) return empty("baseline", "cancelled", null);
+  if (!analyzed.snapshot) return empty("baseline", "failed", 2, "baseline: no supported source files; run `keylang init`");
   let plan: BaselinePlan;
   try {
     plan = planBaseline(analyzed.config, analyzed.snapshot);
   } catch (error) {
-    return emptyBaseline("failed", 2, errorText(error));
+    return empty("baseline", "failed", 2, errorText(error));
   }
   const payload: BaselinePayload = {
     file: plan.path,
@@ -1770,28 +1718,28 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
     snapshot: analyzed.snapshot.snapshotId,
   };
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
-  if (plan.state === "manual") return { ...emptyBaseline("completed", 1), payload, messages: lines([`${plan.path}: manual file without keylang:generated marker`]) };
+  if (plan.state === "manual") return { ...empty("baseline", "completed", 1), payload, messages: lines([`${plan.path}: manual file without keylang:generated marker`]) };
   if (request.check || plan.state === "current") {
     const current = plan.state === "current";
-    return { ...emptyBaseline("completed", current ? 0 : 1), payload, messages: lines(current ? [] : [`${plan.path}: stale, run \`keylang baseline\``]) };
+    return { ...empty("baseline", "completed", current ? 0 : 1), payload, messages: lines(current ? [] : [`${plan.path}: stale, run \`keylang baseline\``]) };
   }
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyBaseline("failed", 2, errorText(error)), payload };
+    return { ...empty("baseline", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyBaseline("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("baseline", "cancelled", null), payload };
   let problems: string[];
   try {
     problems = baselinePlanProblems(plan);
   } catch (error) {
-    return { ...emptyBaseline("failed", 2, errorText(error)), payload };
+    return { ...empty("baseline", "failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
     return {
-      ...emptyBaseline("failed", 1),
+      ...empty("baseline", "failed", 1),
       payload,
       messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run the baseline again to compute it from the files on disk" }],
     };
@@ -1801,14 +1749,10 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
     commitBaseline(plan);
   } catch (error) {
     payload.error = errorText(error);
-    return { ...emptyBaseline("failed", 2), payload, messages: [{ level: "error", text: `${plan.path}: ${payload.error}` }] };
+    return { ...empty("baseline", "failed", 2), payload, messages: [{ level: "error", text: `${plan.path}: ${payload.error}` }] };
   }
   payload.written = true;
-  return { ...emptyBaseline("completed", 0), payload, messages: lines([`${plan.path}: written`]), written: [plan.path] };
-}
-
-function emptyAgents(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"agents"> {
-  return { kind: "agents", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("baseline", "completed", 0), payload, messages: lines([`${plan.path}: written`]), written: [plan.path] };
 }
 
 /**
@@ -1824,14 +1768,14 @@ function emptyAgents(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?
  * attempted). Cancelled: null. No harness is started.
  */
 async function runAgents(request: AgentsRequest, context: OperationContext): Promise<OperationEnvelope<"agents">> {
-  if (!isAbsolute(request.root)) return emptyAgents("failed", 2, "agents: root must be an absolute path");
-  if (context.signal?.aborted) return emptyAgents("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("agents", "failed", 2, "agents: root must be an absolute path");
+  if (context.signal?.aborted) return empty("agents", "cancelled", null);
   context.onProgress?.({ text: "reading the harness files" });
   let plan: AgentsPlan;
   try {
     plan = planAgents(request.root, request.harnesses);
   } catch (error) {
-    return emptyAgents("failed", 2, errorText(error));
+    return empty("agents", "failed", 2, errorText(error));
   }
   const payload: AgentsPayload = {
     check: request.check,
@@ -1843,28 +1787,28 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
     refused: [],
     steps: [],
   };
-  if (plan.error !== null) return { ...emptyAgents("failed", 2, `${plan.error.file}: ${plan.error.message}`), payload };
+  if (plan.error !== null) return { ...empty("agents", "failed", 2, `${plan.error.file}: ${plan.error.message}`), payload };
   const changed = payload.files.filter((file) => file.action !== "keep");
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
-  if (request.check) return { ...emptyAgents("completed", changed.length === 0 ? 0 : 1), payload, messages: lines(changed.map((file) => `${file.path}: stale, run \`keylang agents\``)) };
-  if (changed.length === 0) return { ...emptyAgents("completed", 0), payload };
+  if (request.check) return { ...empty("agents", "completed", changed.length === 0 ? 0 : 1), payload, messages: lines(changed.map((file) => `${file.path}: stale, run \`keylang agents\``)) };
+  if (changed.length === 0) return { ...empty("agents", "completed", 0), payload };
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyAgents("failed", 2, errorText(error)), payload };
+    return { ...empty("agents", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyAgents("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("agents", "cancelled", null), payload };
   let problems: string[];
   try {
     problems = agentsPlanProblems(plan);
   } catch (error) {
-    return { ...emptyAgents("failed", 2, errorText(error)), payload };
+    return { ...empty("agents", "failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
     return {
-      ...emptyAgents("failed", 1),
+      ...empty("agents", "failed", 1),
       payload,
       messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run agents again to plan from the files on disk" }],
     };
@@ -1882,16 +1826,12 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
   }
   const status = commit.outcome;
   return {
-    ...emptyAgents(status, status === "completed" ? 0 : status === "failed" ? 2 : null),
+    ...empty("agents", status, status === "completed" ? 0 : status === "failed" ? 2 : null),
     payload,
     messages,
     written: done.filter((step) => step.action === "write").map((step) => step.path),
     removed: done.filter((step) => step.action === "remove").map((step) => step.path),
   };
-}
-
-function emptyInit(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"init"> {
-  return { kind: "init", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -2004,11 +1944,11 @@ export function gitignoreMessage(stage: GitignoreStage): OperationMessage | null
  * way names what it wrote; the rest are not run (null).
  */
 async function runInit(request: InitRequest, context: OperationContext): Promise<OperationEnvelope<"init">> {
-  if (!isAbsolute(request.root)) return emptyInit("failed", 2, "init: root must be an absolute path");
-  if (context.signal?.aborted) return emptyInit("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("init", "failed", 2, "init: root must be an absolute path");
+  if (context.signal?.aborted) return empty("init", "cancelled", null);
   const root = request.root;
   const sources = initSources(root, request.label);
-  if ("error" in sources) return emptyInit("failed", 2, sources.error);
+  if ("error" in sources) return empty("init", "failed", 2, sources.error);
   const { config } = sources;
   const existed = existsSync(join(root, CONFIG_FILE));
   // The same guess `loadConfig` made, with a note for every directory whose layer name had to change.
@@ -2031,29 +1971,29 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
   });
   if (request.check) {
     payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
-    if (payload.agents.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
-    if (payload.agents.exitCode === 2) return { ...emptyInit("failed", 2), payload, messages: payload.agents.messages };
+    if (payload.agents.status === "cancelled") return { ...empty("init", "cancelled", null), payload };
+    if (payload.agents.exitCode === 2) return { ...empty("init", "failed", 2), payload, messages: payload.agents.messages };
     payload.baseline = await runBaseline({ kind: "baseline", root, check: true }, stage("baseline"));
-    if (payload.baseline.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
+    if (payload.baseline.status === "cancelled") return { ...empty("init", "cancelled", null), payload };
     payload.gitignore = planGitignore(root).stage;
     const ignore = gitignoreMessage(payload.gitignore);
     // `init --check` has always reported a failed baseline check as a difference, code 1; an unreadable `.gitignore` is I/O, 2.
     const ignored = gitignoreCode(payload.gitignore);
     const code = ignored === 2 ? 2 : payload.agents.exitCode === 0 && payload.baseline.exitCode === 0 && ignored === 0 ? 0 : 1;
-    return { ...emptyInit(code === 2 ? "failed" : "completed", code), payload, messages: [...payload.agents.messages, ...payload.baseline.messages, ...(ignore ? [ignore] : [])] };
+    return { ...empty("init", code === 2 ? "failed" : "completed", code), payload, messages: [...payload.agents.messages, ...payload.baseline.messages, ...(ignore ? [ignore] : [])] };
   }
   // An unknown name or a broken harness file fails before any write, including keylang.json.
   payload.preflight = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
-  if (payload.preflight.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
-  if (payload.preflight.status === "failed") return { ...emptyInit("failed", payload.preflight.exitCode ?? 2), payload, messages: payload.preflight.messages };
+  if (payload.preflight.status === "cancelled") return { ...empty("init", "cancelled", null), payload };
+  if (payload.preflight.status === "failed") return { ...empty("init", "failed", payload.preflight.exitCode ?? 2), payload, messages: payload.preflight.messages };
   const ignore = planGitignore(root);
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyInit("failed", 2, errorText(error)), payload };
+    return { ...empty("init", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyInit("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("init", "cancelled", null), payload };
   const messages: OperationMessage[] = [];
   const written: string[] = [];
   const removed: string[] = [];
@@ -2068,7 +2008,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
       writeAtomic(join(root, CONFIG_FILE), configToJson({ ...config, layers: layout.layers }));
     } catch (error) {
       payload.config.error = errorText(error);
-      return { ...emptyInit("failed", 2), payload, messages: [...messages, { level: "error", text: `${CONFIG_FILE}: ${payload.config.error}; nothing else was written` }] };
+      return { ...empty("init", "failed", 2), payload, messages: [...messages, { level: "error", text: `${CONFIG_FILE}: ${payload.config.error}; nothing else was written` }] };
     }
     payload.config.written = true;
     written.push(CONFIG_FILE);
@@ -2093,7 +2033,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
     written.push(...result.written);
     removed.push(...result.removed);
   };
-  const stopped = (): OperationEnvelope<"init"> => ({ ...emptyInit("cancelled", null), payload, messages, written, removed });
+  const stopped = (): OperationEnvelope<"init"> => ({ ...empty("init", "cancelled", null), payload, messages, written, removed });
   payload.map = await runMap({ kind: "map", root, ...(request.label !== undefined ? { label: request.label } : {}) }, stage("map"));
   collect(payload.map);
   if (payload.map.status === "cancelled" || context.signal?.aborted) return stopped();
@@ -2104,11 +2044,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
   collect(payload.agents);
   if (payload.agents.status === "cancelled") return stopped();
   const code = [gitignoreCode(payload.gitignore), payload.map.exitCode, payload.baseline.exitCode, payload.agents.exitCode].find((exit) => exit !== 0) ?? 0;
-  return { ...emptyInit(code === 0 ? "completed" : "failed", code), payload, messages, written, removed };
-}
-
-function emptyFmt(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"fmt"> {
-  return { kind: "fmt", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("init", code === 0 ? "completed" : "failed", code), payload, messages, written, removed };
 }
 
 /**
@@ -2127,11 +2063,11 @@ function emptyFmt(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: s
  * written by then are named).
  */
 async function runFmt(request: FmtRequest, context: OperationContext): Promise<OperationEnvelope<"fmt">> {
-  if (!isAbsolute(request.root)) return emptyFmt("failed", 2, "fmt: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("fmt", "failed", 2, "fmt: root must be an absolute path");
   const base = request.base ?? request.root;
-  if (!isAbsolute(base)) return emptyFmt("failed", 2, "fmt: base must be an absolute path");
-  if (request.paths.length === 0) return emptyFmt("failed", 2, "fmt: needs at least one path");
-  if (context.signal?.aborted) return emptyFmt("cancelled", null);
+  if (!isAbsolute(base)) return empty("fmt", "failed", 2, "fmt: base must be an absolute path");
+  if (request.paths.length === 0) return empty("fmt", "failed", 2, "fmt: needs at least one path");
+  if (context.signal?.aborted) return empty("fmt", "cancelled", null);
   const planned: { file: FmtFile; abs: string; source: string; text: string }[] = [];
   const files: FmtFile[] = [];
   try {
@@ -2173,14 +2109,14 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
       }
     }
   } catch (error) {
-    return emptyFmt("failed", 2, errorText(error));
+    return empty("fmt", "failed", 2, errorText(error));
   }
   const payload: FmtPayload = { check: request.check, files };
   const finish = (status: OperationStatus, written: string[]): OperationEnvelope<"fmt"> => {
     const failed = files.some((file) => file.state === "unreadable" || file.state === "failed");
     const findings = files.some((file) => file.state === "invalid" || file.state === "stale");
     const code = failed ? 2 : findings ? 1 : 0;
-    return { ...emptyFmt(status === "completed" && failed ? "failed" : status, status === "cancelled" ? null : code), payload, messages: fmtMessages(payload), written };
+    return { ...empty("fmt", status === "completed" && failed ? "failed" : status, status === "cancelled" ? null : code), payload, messages: fmtMessages(payload), written };
   };
   if (context.signal?.aborted) return finish("cancelled", []);
   if (request.check || planned.length === 0) return finish("completed", []);
@@ -2262,10 +2198,6 @@ export function fmtMessages(payload: FmtPayload): OperationMessage[] {
   return out;
 }
 
-function emptyWire(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"wire"> {
-  return { kind: "wire", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
-}
-
 /**
  * `keylang wire [--check]` in two phases. The path policy of `out` is checked
  * before anything is read: a plain relative TypeScript path that stays inside
@@ -2282,11 +2214,11 @@ function emptyWire(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: 
  * error). Cancelled: null, nothing written.
  */
 async function runWire(request: WireRequest, context: OperationContext): Promise<OperationEnvelope<"wire">> {
-  if (!isAbsolute(request.root)) return emptyWire("failed", 2, "wire: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("wire", "failed", 2, "wire: root must be an absolute path");
   const out = request.out ?? WIRE_OUT;
   const problem = wireOutProblem(request.root, out);
-  if (problem !== null) return emptyWire("failed", 2, problem);
-  if (context.signal?.aborted) return emptyWire("cancelled", null);
+  if (problem !== null) return empty("wire", "failed", 2, problem);
+  if (context.signal?.aborted) return empty("wire", "cancelled", null);
   context.onProgress?.({ text: "reading the specs and the sources" });
   let analyzed: Analysis;
   let specs: WireSpecInputs;
@@ -2295,21 +2227,21 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     specs = wireSpecInputs(loadConfig(request.root));
     analyzed = await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyWire("failed", 2, errorText(error));
+    return empty("wire", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyWire("cancelled", null);
+  if (context.signal?.aborted) return empty("wire", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptyWire("failed", 2, "wire: no supported source files; run `keylang init`");
+  if (!snapshot) return empty("wire", "failed", 2, "wire: no supported source files; run `keylang init`");
   const payload: WirePayload = { file: out, check: request.check, state: "stale", diagnostics: [], written: false, refused: [], error: null, snapshot: snapshot.snapshotId };
   const lines = (texts: string[]): OperationMessage[] => texts.map((text) => ({ level: "info" as const, text }));
   const blocking = wiringErrors(analyzed);
   if (blocking.length > 0) {
     payload.state = "blocked";
     payload.diagnostics = blocking;
-    return { ...emptyWire("completed", 1), payload, messages: [...lines(blocking.map(formatDiagnostic)), { level: "error", text: `wire: ${blocking.length} error(s) in wiring; nothing written` }] };
+    return { ...empty("wire", "completed", 1), payload, messages: [...lines(blocking.map(formatDiagnostic)), { level: "error", text: `wire: ${blocking.length} error(s) in wiring; nothing written` }] };
   }
   const wires = analyzed.spec.wires;
-  if (wires.length === 0) return { ...emptyWire("failed", 2, `wire: no \`# wiring\` section under ${analyzed.config.dir}/`), payload };
+  if (wires.length === 0) return { ...empty("wire", "failed", 2, `wire: no \`# wiring\` section under ${analyzed.config.dir}/`), payload };
   let text: string;
   let current: string | null;
   try {
@@ -2317,24 +2249,24 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     const abs = landing(join(request.root, out));
     current = abs === null ? null : existingText(abs);
   } catch (error) {
-    return { ...emptyWire("failed", 2, errorText(error)), payload };
+    return { ...empty("wire", "failed", 2, errorText(error)), payload };
   }
   if (current !== null && !current.startsWith(WIRE_MARKER)) {
     payload.state = "manual";
-    return { ...emptyWire("completed", 1), payload, messages: lines([`${out}: manual file without keylang:generated marker`]) };
+    return { ...empty("wire", "completed", 1), payload, messages: lines([`${out}: manual file without keylang:generated marker`]) };
   }
   // A checkout that turned LF into CRLF holds the same file.
   if (current !== null && current.replace(/\r\n/g, "\n") === text) payload.state = "current";
-  if (request.check) return { ...emptyWire("completed", payload.state === "current" ? 0 : 1), payload, messages: lines(payload.state === "current" ? [] : [`${out}: stale, run \`keylang wire\``]) };
-  if (payload.state === "current") return { ...emptyWire("completed", 0), payload };
+  if (request.check) return { ...empty("wire", "completed", payload.state === "current" ? 0 : 1), payload, messages: lines(payload.state === "current" ? [] : [`${out}: stale, run \`keylang wire\``]) };
+  if (payload.state === "current") return { ...empty("wire", "completed", 0), payload };
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyWire("failed", 2, errorText(error)), payload };
+    return { ...empty("wire", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyWire("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("wire", "cancelled", null), payload };
   let problems: string[];
   try {
     const target = writeProblem(request.root, out, { generated: true, expect: current });
@@ -2342,12 +2274,12 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     const sources = sourceInputProblems(analyzed.config, inputs, "the wiring").filter((line) => !line.startsWith(`${out}: `));
     problems = [...(target === null ? [] : [`${out}: ${target}`]), ...wireSpecProblems(analyzed.config, specs), ...sources];
   } catch (error) {
-    return { ...emptyWire("failed", 2, errorText(error)), payload };
+    return { ...empty("wire", "failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
     return {
-      ...emptyWire("failed", 1),
+      ...empty("wire", "failed", 1),
       payload,
       messages: [...problems.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; run wire again to generate it from the files on disk" }],
     };
@@ -2360,10 +2292,10 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     writeAtomic(abs, text);
   } catch (error) {
     payload.error = errorText(error);
-    return { ...emptyWire("failed", 2), payload, messages: [{ level: "error", text: `${out}: ${payload.error}` }] };
+    return { ...empty("wire", "failed", 2), payload, messages: [{ level: "error", text: `${out}: ${payload.error}` }] };
   }
   payload.written = true;
-  return { ...emptyWire("completed", 0), payload, messages: lines([`${out}: written`]), written: [out] };
+  return { ...empty("wire", "completed", 0), payload, messages: lines([`${out}: written`]), written: [out] };
 }
 
 /**
@@ -2431,10 +2363,6 @@ function wireSpecProblems(config: Config, before: WireSpecInputs): string[] {
   return problems;
 }
 
-function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"check"> {
-  return { kind: "check", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
-}
-
 /**
  * `keylang check` on the saved files: the paths (the spec directory by
  * default), the static mode (request, then keylang.json, then `behavior`)
@@ -2448,21 +2376,21 @@ function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?:
  * what changed.
  */
 async function runCheck(request: CheckRequest, context: OperationContext): Promise<OperationEnvelope<"check">> {
-  if (!isAbsolute(request.root)) return emptyCheck("failed", 2, "check: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("check", "failed", 2, "check: root must be an absolute path");
   const base = request.base ?? request.root;
-  if (!isAbsolute(base)) return emptyCheck("failed", 2, "check: base must be an absolute path");
-  if (context.signal?.aborted) return emptyCheck("cancelled", null);
+  if (!isAbsolute(base)) return empty("check", "failed", 2, "check: base must be an absolute path");
+  if (context.signal?.aborted) return empty("check", "cancelled", null);
   let config: Config;
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return emptyCheck("failed", 2, errorText(error));
+    return empty("check", "failed", 2, errorText(error));
   }
   const specDir = join(request.root, config.dir);
-  if (request.paths.length === 0 && !existsSync(specDir)) return emptyCheck("failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
+  if (request.paths.length === 0 && !existsSync(specDir)) return empty("check", "failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
   const specs = request.paths.length > 0 ? request.paths.map((path) => resolve(base, path)) : [specDir];
-  for (const spec of specs) if (!existsSync(spec)) return emptyCheck("failed", 2, `${relative(base, spec) || spec}: not found`);
-  if (request.since !== undefined && request.changed !== true) return emptyCheck("failed", 2, "check: --since requires --changed");
+  for (const spec of specs) if (!existsSync(spec)) return empty("check", "failed", 2, `${relative(base, spec) || spec}: not found`);
+  if (request.since !== undefined && request.changed !== true) return empty("check", "failed", 2, "check: --since requires --changed");
   // The git slice is read before the analysis: without git or with an unknown ref the check fails, it never falls back to a full one.
   const since = request.since ?? "HEAD";
   let git: ChangedFiles | null = null;
@@ -2470,7 +2398,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
     try {
       git = gitChangedFiles(request.root, since);
     } catch (error) {
-      return emptyCheck("failed", 2, errorText(error));
+      return empty("check", "failed", 2, errorText(error));
     }
   }
   // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
@@ -2490,9 +2418,9 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
       ...(withoutCode ? { withoutCode: true } : {}),
     });
   } catch (error) {
-    return emptyCheck("failed", 2, errorText(error));
+    return empty("check", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyCheck("cancelled", null);
+  if (context.signal?.aborted) return empty("check", "cancelled", null);
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
   const full = checkReport(analyzed.verdicts, snapshotId, analyzed.diagnostics);
   let report = full;
@@ -2526,11 +2454,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
     ...payload.lines.map((text) => ({ level: "info" as const, text })),
     { level: "info", text: checkSummary(payload.counts) },
   ];
-  return { ...emptyCheck("completed", checkExitCode(payload.counts, request.strict)), payload, messages };
-}
-
-function emptyExplainEdge(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-edge"> {
-  return { kind: "explain-edge", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("check", "completed", checkExitCode(payload.counts, request.strict)), payload, messages };
 }
 
 /**
@@ -2542,32 +2466,28 @@ function emptyExplainEdge(status: OperationStatus, exitCode: 0 | 1 | 2 | null, e
  * nothing, not even the fact cache.
  */
 async function runExplainEdge(request: ExplainEdgeRequest, context: OperationContext): Promise<OperationEnvelope<"explain-edge">> {
-  if (!isAbsolute(request.root)) return emptyExplainEdge("failed", 2, "check --explain-edge: root must be an absolute path");
-  if (context.signal?.aborted) return emptyExplainEdge("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("explain-edge", "failed", 2, "check --explain-edge: root must be an absolute path");
+  if (context.signal?.aborted) return empty("explain-edge", "cancelled", null);
   context.onProgress?.({ text: "reading the edges of the saved code" });
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
   try {
     analyzed = await analyzeSaved({ root: request.root, specs: [] });
   } catch (error) {
-    return emptyExplainEdge("failed", 2, errorText(error));
+    return empty("explain-edge", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExplainEdge("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-edge", "cancelled", null);
   const { snapshot } = analyzed;
-  if (!snapshot) return emptyExplainEdge("failed", 2, "no snapshot; run inside a repository with sources");
+  if (!snapshot) return empty("explain-edge", "failed", 2, "no snapshot; run inside a repository with sources");
   for (const id of [request.from, request.to]) {
     if (edgeIdKnown(snapshot, id)) continue;
     const near = analyzed.index.suggest(id);
-    const failed = emptyExplainEdge("failed", 2, `unknown id \`${id}\``);
+    const failed = empty("explain-edge", "failed", 2, `unknown id \`${id}\``);
     return near === undefined ? failed : { ...failed, messages: [...failed.messages, { level: "info", text: `did you mean \`${near}\`?` }] };
   }
   const explanation = explainEdge(snapshot, request.from, request.to);
   const payload: ExplainEdgePayload = { ...explanation, snapshotId: snapshot.snapshotId, lines: edgeExplanationLines(explanation) };
-  return { ...emptyExplainEdge("completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
-}
-
-function emptyExplain(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain"> {
-  return { kind: "explain", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("explain-edge", "completed", 0), payload, messages: payload.lines.map((text) => ({ level: "info" as const, text })) };
 }
 
 /**
@@ -2579,15 +2499,15 @@ function emptyExplain(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error
  * Code 0 with a payload. Nothing is written and no model is asked.
  */
 async function runExplain(request: ExplainRequest, context: OperationContext): Promise<OperationEnvelope<"explain">> {
-  if (!isAbsolute(request.root)) return emptyExplain("failed", 2, "explain: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("explain", "failed", 2, "explain: root must be an absolute path");
   const subject = request.subject;
-  if (subject === "") return emptyExplain("failed", 2, "explain: a code or an id is required");
-  if (context.signal?.aborted) return emptyExplain("cancelled", null);
+  if (subject === "") return empty("explain", "failed", 2, "explain: a code or an id is required");
+  if (context.signal?.aborted) return empty("explain", "cancelled", null);
   if (isDiagnosticCode(subject)) {
     const found = codeExplanation(subject);
-    if (found === null) return emptyExplain("failed", 2, `unknown code \`${subject}\``);
+    if (found === null) return empty("explain", "failed", 2, `unknown code \`${subject}\``);
     const payload: ExplainPayload = { ...found, snapshotId: null, text: offlineExplanationText(found) };
-    return { ...emptyExplain("completed", 0), payload, messages: [{ level: "info", text: `${found.code}: offline help` }] };
+    return { ...empty("explain", "completed", 0), payload, messages: [{ level: "info", text: `${found.code}: offline help` }] };
   }
   context.onProgress?.({ text: "reading the saved code and specs" });
   const analyzeSaved = context.analyze ?? analyze;
@@ -2595,23 +2515,19 @@ async function runExplain(request: ExplainRequest, context: OperationContext): P
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplain("failed", 2, errorText(error));
+    return empty("explain", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExplain("cancelled", null);
+  if (context.signal?.aborted) return empty("explain", "cancelled", null);
   const old = oldExplanations(analyzed.config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const found = nodeExplanation(analyzed, subject, request.detail ?? analyzed.config.explain.detail);
   if ("unknown" in found) {
-    const failed = emptyExplain("failed", 2);
+    const failed = empty("explain", "failed", 2);
     return { ...failed, messages: [...notes, { level: "error", text: unknownIdMessage(subject, found.suggestion) }] };
   }
   const payload: ExplainPayload = { ...found, snapshotId: analyzed.snapshot?.snapshotId ?? null, text: offlineExplanationText(found) };
   const answer = found.saved === null ? "no saved answer" : `saved answer ${found.saved.fresh ? "fresh" : "stale"}`;
-  return { ...emptyExplain("completed", 0), payload, messages: [...notes, { level: "info", text: `${found.summary.kind} ${found.id}: ${answer}` }] };
-}
-
-function emptyExplainLlm(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-llm"> {
-  return { kind: "explain-llm", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("explain", "completed", 0), payload, messages: [...notes, { level: "info", text: `${found.summary.kind} ${found.id}: ${answer}` }] };
 }
 
 /**
@@ -2632,24 +2548,24 @@ function emptyExplainLlm(status: OperationStatus, exitCode: 0 | 1 | 2 | null, er
  */
 async function runExplainLlm(request: ExplainLlmRequest, context: OperationContext): Promise<OperationEnvelope<"explain-llm">> {
   const { root, id } = request;
-  if (!isAbsolute(root)) return emptyExplainLlm("failed", 2, "explain: root must be an absolute path");
-  if (id === "") return emptyExplainLlm("failed", 2, "explain: a code or an id is required");
-  if (isDiagnosticCode(id)) return emptyExplainLlm("failed", 2, `explain --llm: \`${id}\` is a diagnostic code: its help is offline (explain ${id})`);
-  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  if (!isAbsolute(root)) return empty("explain-llm", "failed", 2, "explain: root must be an absolute path");
+  if (id === "") return empty("explain-llm", "failed", 2, "explain: a code or an id is required");
+  if (isDiagnosticCode(id)) return empty("explain-llm", "failed", 2, `explain --llm: \`${id}\` is a diagnostic code: its help is offline (explain ${id})`);
+  if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code and specs" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainLlm("failed", 2, errorText(error));
+    return empty("explain-llm", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   const config = analyzed.config;
   const old = oldExplanations(config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
   const detail = request.detail ?? config.explain.detail;
   const found = nodeExplanation(analyzed, id, detail);
-  if ("unknown" in found) return { ...emptyExplainLlm("failed", 2), messages: [...notes, { level: "error", text: unknownIdMessage(id, found.suggestion) }] };
+  if ("unknown" in found) return { ...empty("explain-llm", "failed", 2), messages: [...notes, { level: "error", text: unknownIdMessage(id, found.suggestion) }] };
   const { lang } = config.explain;
   const file = explanationPath(config, id, detail);
   // The saved file as read: the commit writes only over these bytes.
@@ -2678,7 +2594,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   const what = `${found.summary.kind} ${id}`;
   if (reason === null && previous !== null) {
     payload.text = savedAnswerText(previous);
-    return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
+    return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: the saved ${detail} answer is fresh; read, no request` }] };
   }
   const { answeringAgent, llmClient, LlmCancelled } = await import("./llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
@@ -2686,7 +2602,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     payload.source = "offline";
     payload.unavailable = setup.missing;
     payload.text = `${formatSummary(found.summary)}\n${previous === null ? "" : `\n${savedAnswerText(previous)}`}`;
-    return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "warning", text: `${setup.missing}; showing what the snapshot says` }] };
+    return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "warning", text: `${setup.missing}; showing what the snapshot says` }] };
   }
   const client = setup.client;
   payload.source = "model";
@@ -2694,18 +2610,18 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   // What the answer is computed from: a commit checks these are still the files on disk.
   const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
   const specs = specHashes(root, analyzed.docs);
-  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"explain-llm"> => ({ ...emptyExplainLlm("failed", exitCode), payload, messages: [...notes, ...messages] });
+  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"explain-llm"> => ({ ...empty("explain-llm", "failed", exitCode), payload, messages: [...notes, ...messages] });
   context.onProgress?.({ text: `asking ${client.agent}` });
   let answer: string;
   let reported: string | null = null;
   try {
     answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
   } catch (error) {
-    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+    if (error instanceof LlmCancelled || context.signal?.aborted) return empty("explain-llm", "cancelled", null);
     payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
-  if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-llm", "cancelled", null);
   const text = detail === "brief" ? briefText(answer) : answerText(answer);
   if (text === "") {
     payload.error = `${client.agent} answered without text; nothing written`;
@@ -2722,7 +2638,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
-  if (context.signal?.aborted) return { ...emptyExplainLlm("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("explain-llm", "cancelled", null), payload };
   const refuse = (reasons: string[]): OperationEnvelope<"explain-llm"> => {
     payload.refused = reasons;
     return failed(1, [...reasons.map((reason) => ({ level: "error" as const, text: reason })), keep]);
@@ -2746,11 +2662,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   }
   payload.written = file;
   payload.text = savedAnswerText(payload.answer);
-  return { ...emptyExplainLlm("completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: ${client.agent} wrote the ${detail} answer to ${file}` }], written: [file] };
-}
-
-function emptyExplainPlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-plan"> {
-  return { kind: "explain-plan", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("explain-llm", "completed", 0), payload, messages: [...notes, { level: "info", text: `${what}: ${client.agent} wrote the ${detail} answer to ${file}` }], written: [file] };
 }
 
 /**
@@ -2761,22 +2673,22 @@ function emptyExplainPlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, e
  * work). A store of keylang 0.1 is a warning note. No model, nothing written.
  */
 async function runExplainPlan(request: ExplainPlanRequest, context: OperationContext): Promise<OperationEnvelope<"explain-plan">> {
-  if (!isAbsolute(request.root)) return emptyExplainPlan("failed", 2, "explain: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("explain-plan", "failed", 2, "explain: root must be an absolute path");
   if (request.list === "briefs") {
     for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
-      if (value !== undefined && (!Number.isInteger(value) || value < 1)) return emptyExplainPlan("failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
+      if (value !== undefined && (!Number.isInteger(value) || value < 1)) return empty("explain-plan", "failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
     }
   }
-  if (context.signal?.aborted) return emptyExplainPlan("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-plan", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code, specs and explanations" });
   const analyzeSaved = context.analyze ?? analyze;
   let analyzed: Analysis;
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainPlan("failed", 2, errorText(error));
+    return empty("explain-plan", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExplainPlan("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-plan", "cancelled", null);
   const old = oldExplanations(analyzed.config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(analyzed.config, old)}` }] : [];
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
@@ -2784,17 +2696,13 @@ async function runExplainPlan(request: ExplainPlanRequest, context: OperationCon
     const inventory = staleInventory(analyzed);
     const payload: ExplainPlanPayload = { list: "stale-saved", ...inventory, snapshotId, text: staleInventoryText(inventory) };
     const stale = inventory.entries.filter((entry) => entry.state === "stale").length;
-    return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: `${stale} stale, ${inventory.entries.length - stale} gone of ${inventory.saved} saved explanation(s)` }] };
+    return { ...empty("explain-plan", "completed", 0), payload, messages: [...notes, { level: "info", text: `${stale} stale, ${inventory.entries.length - stale} gone of ${inventory.saved} saved explanation(s)` }] };
   }
-  if (!analyzed.snapshot) return { ...emptyExplainPlan("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
+  if (!analyzed.snapshot) return { ...empty("explain-plan", "failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
   const plan = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs: request.jobs ?? defaultBriefJobs(selectedAgent(analyzed.config.agent)), estimate: request.estimate === true });
   const payload: ExplainPlanPayload = { list: "briefs", ...plan, snapshotId, text: briefPlanText(plan) };
   const summary = plan.plan.length === 0 ? "nothing to explain" : `${plan.plan.length} brief(s) planned${plan.estimate === null ? "" : `, ~${plan.estimate.input} in, ~${plan.estimate.output} out (approximate)`}`;
-  return { ...emptyExplainPlan("completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
-}
-
-function emptyExplainBatch(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"explain-batch"> {
-  return { kind: "explain-batch", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("explain-plan", "completed", 0), payload, messages: [...notes, { level: "info", text: summary }] };
 }
 
 /** `explained 5 of 6 node(s)` and `failed: <id>: <reason>` lines: the CLI's stdout of a batch. */
@@ -2823,23 +2731,23 @@ function explainBatchText(payload: Pick<ExplainBatchPayload, "done" | "failed" |
  */
 async function runExplainBatch(request: ExplainBatchRequest, context: OperationContext): Promise<OperationEnvelope<"explain-batch">> {
   const { root } = request;
-  if (!isAbsolute(root)) return emptyExplainBatch("failed", 2, "explain: root must be an absolute path");
+  if (!isAbsolute(root)) return empty("explain-batch", "failed", 2, "explain: root must be an absolute path");
   for (const [flag, value] of [["--limit", request.limit], ["--jobs", request.jobs]] as const) {
-    if (value !== undefined && (!Number.isInteger(value) || value < 1)) return emptyExplainBatch("failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
+    if (value !== undefined && (!Number.isInteger(value) || value < 1)) return empty("explain-batch", "failed", 2, `${flag} must be a positive whole number, got \`${value}\``);
   }
-  if (context.signal?.aborted) return emptyExplainBatch("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-batch", "cancelled", null);
   context.onProgress?.({ text: "reading the saved code, specs and briefs" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainBatch("failed", 2, errorText(error));
+    return empty("explain-batch", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExplainBatch("cancelled", null);
+  if (context.signal?.aborted) return empty("explain-batch", "cancelled", null);
   const config = analyzed.config;
   const old = oldExplanations(config.root);
   const notes: OperationMessage[] = old > 0 ? [{ level: "warning", text: `note: ${moveHint(config, old)}` }] : [];
-  if (!analyzed.snapshot) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
+  if (!analyzed.snapshot) return { ...empty("explain-batch", "failed", 2), messages: [...notes, { level: "error", text: "no snapshot: explain --missing needs a repository with sources" }] };
   const jobs = request.jobs ?? defaultBriefJobs(selectedAgent(config.agent));
   const { plan } = briefPlan(analyzed, { batch: request.batch, limit: request.limit ?? null, jobs, estimate: false });
   const { lang } = config.explain;
@@ -2860,11 +2768,11 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   };
   if (plan.length === 0) {
     payload.text = "nothing to explain\n";
-    return { ...emptyExplainBatch("completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
+    return { ...empty("explain-batch", "completed", 0), payload, messages: [...notes, { level: "info", text: "nothing to explain: zero work, no request" }] };
   }
   const { answeringAgent, llmClient, LlmCancelled } = await import("./llm.ts");
   const setup = llmClient(config.agent, { root: config.root });
-  if ("missing" in setup) return { ...emptyExplainBatch("failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
+  if ("missing" in setup) return { ...empty("explain-batch", "failed", 2), messages: [...notes, { level: "error", text: setup.missing }] };
   const client = setup.client;
   payload.agent = client.agent;
   // What every brief is computed from. Checking them reads and hashes every source again, so it
@@ -2980,17 +2888,13 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   payload.text = explainBatchText(payload);
   const counts = `${payload.done.length} of ${plan.length} brief(s) written${payload.failed.length > 0 ? `, ${payload.failed.length} failed` : ""}${payload.notStarted.length > 0 ? `, ${payload.notStarted.length} not started` : ""}`;
   const failures = payload.failed.map((f) => ({ level: "error" as const, text: `${f.id}: ${f.reason}` }));
-  const result = (status: OperationStatus, exitCode: 0 | 1 | null, messages: OperationMessage[]): OperationEnvelope<"explain-batch"> => ({ ...emptyExplainBatch(status, exitCode), payload, messages: [...notes, ...messages], written });
+  const result = (status: OperationStatus, exitCode: 0 | 1 | null, messages: OperationMessage[]): OperationEnvelope<"explain-batch"> => ({ ...empty("explain-batch", status, exitCode), payload, messages: [...notes, ...messages], written });
   if (payload.stopped === "cancelled") return result("cancelled", null, [...failures, { level: "info", text: `cancelled: ${counts}; the written briefs stay` }]);
   if (payload.stopped !== null) {
     const why = payload.stopped === "outdated" ? "the inputs changed while the batch ran: no further brief was asked for or written" : "the session refused the write";
     return result("failed", 1, [...payload.refused.map((text) => ({ level: "error" as const, text })), ...failures, { level: "info", text: `${why}; ${counts}; the written briefs stay` }]);
   }
   return result("completed", payload.failed.length > 0 ? 1 : 0, [...failures, { level: "info", text: counts }]);
-}
-
-function emptyExport(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export"> {
-  return { kind: "export", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /** The format of an export: an explained edge has only the human lines, a trace plan only its JSON. */
@@ -3050,8 +2954,8 @@ function savedSpecDir(root: string): string {
  * an I/O error). Cancelled: null, nothing written.
  */
 async function runExport(request: ExportRequest, context: OperationContext): Promise<OperationEnvelope<"export">> {
-  if (!isAbsolute(request.root)) return emptyExport("failed", 2, "export: root must be an absolute path");
-  if (context.signal?.aborted) return emptyExport("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("export", "failed", 2, "export: root must be an absolute path");
+  if (context.signal?.aborted) return empty("export", "cancelled", null);
   const text = exportText(request.source);
   const payload: ExportPayload = {
     path: request.path,
@@ -3067,18 +2971,18 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyExport("failed", 2, errorText(error)), payload };
+    return { ...empty("export", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyExport("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("export", "cancelled", null), payload };
   let problem: string | null;
   try {
     problem = exportTargetProblem(request.root, request.path) ?? writeProblem(request.root, request.path, { expect: request.expect });
   } catch (error) {
-    return { ...emptyExport("failed", 2, errorText(error)), payload };
+    return { ...empty("export", "failed", 2, errorText(error)), payload };
   }
   if (problem !== null) {
     payload.refused = [`${request.path}: ${problem}`];
-    return { ...emptyExport("failed", 1), payload, messages: [{ level: "error", text: payload.refused[0]! }, { level: "info", text: "nothing was written; export the report again to see the file as it is now" }] };
+    return { ...empty("export", "failed", 1), payload, messages: [{ level: "error", text: payload.refused[0]! }, { level: "info", text: "nothing was written; export the report again to see the file as it is now" }] };
   }
   context.onProgress?.({ text: `writing ${request.path}` });
   try {
@@ -3088,14 +2992,10 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
     writeAtomic(abs, text, { exact: true });
   } catch (error) {
     payload.error = errorText(error);
-    return { ...emptyExport("failed", 2), payload, messages: [{ level: "error", text: `${request.path}: ${payload.error}` }] };
+    return { ...empty("export", "failed", 2), payload, messages: [{ level: "error", text: `${request.path}: ${payload.error}` }] };
   }
   payload.written = true;
-  return { ...emptyExport("completed", 0), payload, messages: [{ level: "info", text: `${request.path}: written` }], written: [request.path] };
-}
-
-function emptyParse(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"parse"> {
-  return { kind: "parse", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("export", "completed", 0), payload, messages: [{ level: "info", text: `${request.path}: written` }], written: [request.path] };
 }
 
 /**
@@ -3107,11 +3007,11 @@ function emptyParse(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?:
  * read, with no payload.
  */
 async function runParse(request: ParseRequest, context: OperationContext): Promise<OperationEnvelope<"parse">> {
-  if (!isAbsolute(request.root)) return emptyParse("failed", 2, "parse: root must be an absolute path");
+  if (!isAbsolute(request.root)) return empty("parse", "failed", 2, "parse: root must be an absolute path");
   const base = request.base ?? request.root;
-  if (!isAbsolute(base)) return emptyParse("failed", 2, "parse: base must be an absolute path");
-  if (request.paths.length === 0) return emptyParse("failed", 2, "parse: at least one path is required");
-  if (context.signal?.aborted) return emptyParse("cancelled", null);
+  if (!isAbsolute(base)) return empty("parse", "failed", 2, "parse: base must be an absolute path");
+  if (request.paths.length === 0) return empty("parse", "failed", 2, "parse: at least one path is required");
+  if (context.signal?.aborted) return empty("parse", "cancelled", null);
   const documents: Document[] = [];
   const skipped: string[] = [];
   const unreadable: string[] = [];
@@ -3135,17 +3035,13 @@ async function runParse(request: ParseRequest, context: OperationContext): Promi
       } else documents.push(parse(file, text));
     }
   } catch (error) {
-    return emptyParse("failed", 2, errorText(error));
+    return empty("parse", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyParse("cancelled", null);
+  if (context.signal?.aborted) return empty("parse", "cancelled", null);
   const diagnostics = documents.flatMap((doc) => doc.diagnostics);
   for (const d of diagnostics) messages.push({ level: isError(d) ? "error" : "warning", text: formatDiagnostic(d) });
   const payload: ParsePayload = { format: request.format, documents, skipped, unreadable, diagnostics, text: parseReportText(request.format, documents) };
-  return { ...emptyParse("completed", diagnostics.some(isError) ? 1 : 0), payload, messages };
-}
-
-function emptyTracePlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"trace-plan"> {
-  return { kind: "trace-plan", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("parse", "completed", diagnostics.some(isError) ? 1 : 0), payload, messages };
 }
 
 /**
@@ -3156,25 +3052,20 @@ function emptyTracePlan(status: OperationStatus, exitCode: 0 | 1 | 2 | null, err
  * keylang.json, with the CLI's message.
  */
 async function runTracePlan(request: TracePlanRequest, context: OperationContext): Promise<OperationEnvelope<"trace-plan">> {
-  if (!isAbsolute(request.root)) return emptyTracePlan("failed", 2, "trace-plan: root must be an absolute path");
-  if (request.flow === "") return emptyTracePlan("failed", 2, "trace-plan: a flow name is required");
-  if (context.signal?.aborted) return emptyTracePlan("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("trace-plan", "failed", 2, "trace-plan: root must be an absolute path");
+  if (request.flow === "") return empty("trace-plan", "failed", 2, "trace-plan: a flow name is required");
+  if (context.signal?.aborted) return empty("trace-plan", "cancelled", null);
   context.onProgress?.({ text: "reading the flow and a fresh snapshot of the saved code" });
   let found: Awaited<ReturnType<typeof tracePlan>>;
   try {
     found = await tracePlan(loadConfig(request.root), request.flow);
   } catch (error) {
-    return emptyTracePlan("failed", 2, errorText(error));
+    return empty("trace-plan", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyTracePlan("cancelled", null);
+  if (context.signal?.aborted) return empty("trace-plan", "cancelled", null);
   const { plan, omitted } = found;
   const payload: TracePlanPayload = { plan, omitted, text: tracePlanText(plan) };
-  return { ...emptyTracePlan("completed", 0), payload, messages: [{ level: "info", text: `flow ${plan.flow}: ${plan.symbols.length} function(s) to instrument on snapshot ${plan.snapshotId}` }] };
-}
-
-/** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */
-function emptyDraftFlow(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"draft-flow"> {
-  return { kind: "draft-flow", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("trace-plan", "completed", 0), payload, messages: [{ level: "info", text: `flow ${plan.flow}: ${plan.symbols.length} function(s) to instrument on snapshot ${plan.snapshotId}` }] };
 }
 
 /**
@@ -3212,28 +3103,28 @@ export function flowCandidate(root: string, specDir: string, generated: (path: s
 async function runDraftFlow(request: DraftFlowRequest, context: OperationContext): Promise<OperationEnvelope<"draft-flow">> {
   const { root, trigger } = request;
   const mode = request.mode ?? "algo";
-  if (!isAbsolute(root)) return emptyDraftFlow("failed", 2, "draft flow: root must be an absolute path");
-  if (trigger === "") return emptyDraftFlow("failed", 2, "draft flow: a trigger id is required");
-  if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
+  if (!isAbsolute(root)) return empty("draft-flow", "failed", 2, "draft flow: root must be an absolute path");
+  if (trigger === "") return empty("draft-flow", "failed", 2, "draft flow: a trigger id is required");
+  if (context.signal?.aborted) return empty("draft-flow", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftFlow("failed", 2, errorText(error));
+    return empty("draft-flow", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
+  if (context.signal?.aborted) return empty("draft-flow", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptyDraftFlow("failed", 2, "draft: no supported source files; run `keylang init`");
+  if (!snapshot) return empty("draft-flow", "failed", 2, "draft: no supported source files; run `keylang init`");
   if (snapshot.nodes[trigger]?.kind !== "fn") {
     const hint = analyzed.index.suggest(trigger);
-    return emptyDraftFlow("failed", 2, `draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
+    return empty("draft-flow", "failed", 2, `draft flow: \`${trigger}\` is not a fn of the snapshot${hint ? ` (did you mean \`${hint}\`?)` : ""}`);
   }
   // What the draft was computed from: a commit checks that keylang.json and the sources are still these.
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
   const setup = await modelSetup(mode, analyzed.config);
-  if ("error" in setup) return emptyDraftFlow("failed", 2, setup.error);
+  if ("error" in setup) return empty("draft-flow", "failed", 2, setup.error);
   const specDir = rootRelative(root, analyzed.config.dir);
   const generated = generatedIn(analyzed.docs);
   // The target and its waiting proposal as they are now, before the model answers: the basis of the write.
@@ -3241,11 +3132,11 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   try {
     basis = flowCandidate(root, specDir, generated, algo, request.into);
   } catch (error) {
-    return emptyDraftFlow("failed", 2, errorText(error));
+    return empty("draft-flow", "failed", 2, errorText(error));
   }
   // A refusal before the model is asked: the payload is the algo candidate, so the target's state stays visible.
   const early = (exitCode: 1 | 2, error: string, refused: string[] = []): OperationEnvelope<"draft-flow"> => ({
-    ...emptyDraftFlow("failed", exitCode),
+    ...empty("draft-flow", "failed", exitCode),
     payload: { output: request.output, mode: setup.client === null ? "algo" : mode, candidate: basis, summary: `${algo.steps.length} step(s)`, model: null, fallback: setup.fallback, statsError: null, proposal: null, refused, error: null },
     messages: [
       ...(setup.fallback === null ? [] : [{ level: "warning" as const, text: setup.fallback }]),
@@ -3262,8 +3153,8 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   let model: DraftModelInfo | null = null;
   if (setup.client !== null) {
     const drafted = await modelDraft(request, mode === "llm" ? "llm" : "hybrid", analyzed, setup.client, context);
-    if ("cancelled" in drafted) return emptyDraftFlow("cancelled", null);
-    if ("error" in drafted) return emptyDraftFlow("failed", 2, drafted.error);
+    if ("cancelled" in drafted) return empty("draft-flow", "cancelled", null);
+    if ("error" in drafted) return empty("draft-flow", "failed", 2, drafted.error);
     ({ draft, model } = drafted);
   }
   const candidate: FlowCandidate = model === null ? basis : { ...basis, flow: draft.text, steps: draft.steps, text: basis.problem === null ? withFlow(basis.before, draft) : null };
@@ -3271,15 +3162,15 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   const payload: DraftFlowPayload = { output: request.output, mode: model === null ? "algo" : mode, candidate, summary, model, fallback: setup.fallback, statsError: null, proposal: null, refused: [], error: null };
   const notes = draftNotes(payload);
   if (request.output === "preview") {
-    return { ...emptyDraftFlow("completed", 0), payload, messages: [...notes, { level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
+    return { ...empty("draft-flow", "completed", 0), payload, messages: [...notes, { level: "info", text: `flow \`${draft.name}\` for ${candidate.target} (${payload.summary}); a preview, nothing written` }] };
   }
-  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"draft-flow"> => ({ ...emptyDraftFlow("failed", exitCode), payload, messages: [...notes, ...messages] });
+  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"draft-flow"> => ({ ...empty("draft-flow", "failed", exitCode), payload, messages: [...notes, ...messages] });
   const refuse = (reasons: string[]): OperationEnvelope<"draft-flow"> => {
     payload.refused = reasons;
     return failed(1, [...reasons.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" }]);
   };
   const committed = await commitProposal({ root, specDir, generated, target: candidate.target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: analyzed.config, inputs }, context);
-  if ("cancelled" in committed) return { ...emptyDraftFlow("cancelled", null), payload };
+  if ("cancelled" in committed) return { ...empty("draft-flow", "cancelled", null), payload };
   if ("refused" in committed) return refuse(committed.refused);
   if ("failed" in committed) {
     if (committed.writing) payload.error = committed.failed;
@@ -3289,7 +3180,7 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   payload.proposal = store;
   if (model !== null) payload.statsError = countProposed(root, model.counts);
   return {
-    ...emptyDraftFlow("completed", 0),
+    ...empty("draft-flow", "completed", 0),
     payload,
     messages: [
       ...notes,
@@ -3298,10 +3189,6 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
     ],
     proposals: [store],
   };
-}
-
-function emptyDraftRules(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"draft-rules"> {
-  return { kind: "draft-rules", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -3334,18 +3221,18 @@ export function rulesCandidate(root: string, specDir: string, generated: (path: 
 async function runDraftRules(request: DraftRulesRequest, context: OperationContext): Promise<OperationEnvelope<"draft-rules">> {
   const { root } = request;
   const mode = request.mode ?? "algo";
-  if (!isAbsolute(root)) return emptyDraftRules("failed", 2, "draft rules: root must be an absolute path");
-  if (context.signal?.aborted) return emptyDraftRules("cancelled", null);
+  if (!isAbsolute(root)) return empty("draft-rules", "failed", 2, "draft rules: root must be an absolute path");
+  if (context.signal?.aborted) return empty("draft-rules", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftRules("failed", 2, errorText(error));
+    return empty("draft-rules", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyDraftRules("cancelled", null);
+  if (context.signal?.aborted) return empty("draft-rules", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptyDraftRules("failed", 2, "draft: no supported source files; run `keylang init`");
+  if (!snapshot) return empty("draft-rules", "failed", 2, "draft: no supported source files; run `keylang init`");
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   // Module dependencies inside the repository: a cycle among them keeps `no-cycles` out of the draft.
   const modules = new Map<string, Set<string>>();
@@ -3353,7 +3240,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   const cyclic = stronglyConnected(modules).length > 0;
   const algo = draftRules(snapshot, cyclic);
   const setup = await modelSetup(mode, analyzed.config, "draft rules");
-  if ("error" in setup) return emptyDraftRules("failed", 2, setup.error);
+  if ("error" in setup) return empty("draft-rules", "failed", 2, setup.error);
   const specDir = rootRelative(root, analyzed.config.dir);
   const generated = generatedIn(analyzed.docs);
   let basis: RulesCandidate;
@@ -3361,7 +3248,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
     basis = rulesCandidate(root, specDir, generated, algo, request.into);
   } catch (error) {
     // A target that cannot be read (a directory) fails a proposal; a preview, like `--print`, never needs it.
-    if (request.output === "proposal") return emptyDraftRules("failed", 2, errorText(error));
+    if (request.output === "proposal") return empty("draft-rules", "failed", 2, errorText(error));
     basis = { rules: algo, target: toPosix(request.into ?? `${specDir}/rules.md`), problem: errorText(error), before: null, pending: null, text: null };
   }
   const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
@@ -3370,7 +3257,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
     const refusal = proposalRefusal(root, basis, request.pending);
     if (refusal !== null) {
       return {
-        ...emptyDraftRules("failed", refusal.exitCode),
+        ...empty("draft-rules", "failed", refusal.exitCode),
         payload: { output: request.output, mode: setup.client === null ? "algo" : mode, candidate: basis, cyclic, summary: rulesCountText(algo), model: null, fallback: setup.fallback, statsError: null, proposal: null, refused: refusal.refused, error: null },
         messages: [...fallbackNote, { level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])],
       };
@@ -3385,12 +3272,12 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
     const { draftRulesWithModel } = await import("./draft-llm.ts");
     try {
       const drafted = await draftRulesWithModel(analyzed, client, mode === "llm" ? "llm" : "hybrid", algo, basis.target, context.signal ? { signal: context.signal } : {});
-      if (context.signal?.aborted) return emptyDraftRules("cancelled", null);
+      if (context.signal?.aborted) return empty("draft-rules", "cancelled", null);
       rules = drafted.text;
       model = { agent: client.agent, counts: drafted.counts, conflicts: drafted.conflicts };
     } catch (error) {
-      if (error instanceof LlmCancelled || context.signal?.aborted) return emptyDraftRules("cancelled", null);
-      return emptyDraftRules("failed", 2, errorText(error));
+      if (error instanceof LlmCancelled || context.signal?.aborted) return empty("draft-rules", "cancelled", null);
+      return empty("draft-rules", "failed", 2, errorText(error));
     }
   }
   const candidate: RulesCandidate = { ...basis, rules, text: basis.problem === null ? withRules(basis.before, rules) : null };
@@ -3399,11 +3286,11 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   // The CLI's stderr notes: the fallback, then each conflict with its evidence.
   const notes: OperationMessage[] = [...fallbackNote, ...(model?.conflicts ?? []).map((conflict) => ({ level: "warning" as const, text: `conflict: ${conflict}` }))];
   if (request.output === "preview") {
-    return { ...emptyDraftRules("completed", 0), payload, messages: [...notes, { level: "info", text: `rules for ${candidate.target} (${summary}); a preview, nothing written` }] };
+    return { ...empty("draft-rules", "completed", 0), payload, messages: [...notes, { level: "info", text: `rules for ${candidate.target} (${summary}); a preview, nothing written` }] };
   }
-  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"draft-rules"> => ({ ...emptyDraftRules("failed", exitCode), payload, messages: [...notes, ...messages] });
+  const failed = (exitCode: 1 | 2, messages: OperationMessage[]): OperationEnvelope<"draft-rules"> => ({ ...empty("draft-rules", "failed", exitCode), payload, messages: [...notes, ...messages] });
   const committed = await commitProposal({ root, specDir, generated, target: candidate.target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: analyzed.config, inputs }, context);
-  if ("cancelled" in committed) return { ...emptyDraftRules("cancelled", null), payload };
+  if ("cancelled" in committed) return { ...empty("draft-rules", "cancelled", null), payload };
   if ("refused" in committed) {
     payload.refused = committed.refused;
     return failed(1, [...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten]);
@@ -3415,7 +3302,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   payload.proposal = committed.proposal;
   if (model !== null) payload.statsError = countProposed(root, model.counts);
   return {
-    ...emptyDraftRules("completed", 0),
+    ...empty("draft-rules", "completed", 0),
     payload,
     messages: [
       ...notes,
@@ -3424,10 +3311,6 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
     ],
     proposals: [committed.proposal],
   };
-}
-
-function emptyDraftLayout(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"draft-layout"> {
-  return { kind: "draft-layout", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -3442,24 +3325,24 @@ function emptyDraftLayout(status: OperationStatus, exitCode: 0 | 1 | 2 | null, e
 async function runDraftLayout(request: DraftLayoutRequest, context: OperationContext): Promise<OperationEnvelope<"draft-layout">> {
   const { root } = request;
   const mode = request.mode ?? "algo";
-  if (!isAbsolute(root)) return emptyDraftLayout("failed", 2, "draft map: root must be an absolute path");
-  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  if (!isAbsolute(root)) return empty("draft-layout", "failed", 2, "draft map: root must be an absolute path");
+  if (context.signal?.aborted) return empty("draft-layout", "cancelled", null);
   let config: Config;
   try {
     config = loadConfig(root);
   } catch (error) {
-    return emptyDraftLayout("failed", 2, errorText(error));
+    return empty("draft-layout", "failed", 2, errorText(error));
   }
   const configExists = existsSync(join(root, CONFIG_FILE));
   const setup = await modelSetup(mode, config, "draft map");
-  if ("error" in setup) return emptyDraftLayout("failed", 2, setup.error);
+  if ("error" in setup) return empty("draft-layout", "failed", 2, setup.error);
   const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
   if (setup.client === null) {
     const layers = guessLayout(root, config.exclude).layers;
     const payload: DraftLayoutPayload = { mode: "algo", layers: Object.fromEntries(layers), preview: configToJson({ ...config, layers, guessed: true }), configExists, agent: null, fallback: setup.fallback };
     // The CLI's closing note on stderr.
     const note = configExists ? `printed only; ${CONFIG_FILE} is unchanged` : `no ${CONFIG_FILE}; \`keylang init\` writes this layout`;
-    return { ...emptyDraftLayout("completed", 0), payload, messages: [...fallbackNote, { level: "info", text: note }] };
+    return { ...empty("draft-layout", "completed", 0), payload, messages: [...fallbackNote, { level: "info", text: note }] };
   }
   const client = setup.client;
   context.onProgress?.({ text: "reading the sources" });
@@ -3467,9 +3350,9 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftLayout("failed", 2, errorText(error));
+    return empty("draft-layout", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  if (context.signal?.aborted) return empty("draft-layout", "cancelled", null);
   context.onProgress?.({ text: `asking ${client.agent}` });
   const { LlmCancelled } = await import("./llm.ts");
   const { draftLayoutWithModel } = await import("./draft-llm.ts");
@@ -3477,17 +3360,13 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
   try {
     layers = await draftLayoutWithModel(analyzed, client, analyzed.snapshot?.manifest.files.map((file) => file.path) ?? [], context.signal ? { signal: context.signal } : {});
   } catch (error) {
-    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyDraftLayout("cancelled", null);
-    return emptyDraftLayout("failed", 2, errorText(error));
+    if (error instanceof LlmCancelled || context.signal?.aborted) return empty("draft-layout", "cancelled", null);
+    return empty("draft-layout", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
+  if (context.signal?.aborted) return empty("draft-layout", "cancelled", null);
   const preview = configToJson({ ...analyzed.config, layers: new Map(Object.entries(layers)), guessed: false });
   const payload: DraftLayoutPayload = { mode, layers, preview, configExists, agent: client.agent, fallback: null };
-  return { ...emptyDraftLayout("completed", 0), payload, messages: [{ level: "info", text: `proposed by ${client.agent}; printed only; ${CONFIG_FILE} is unchanged` }] };
-}
-
-function emptyCodeToSpec(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"code-to-spec"> {
-  return { kind: "code-to-spec", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
+  return { ...empty("draft-layout", "completed", 0), payload, messages: [{ level: "info", text: `proposed by ${client.agent}; printed only; ${CONFIG_FILE} is unchanged` }] };
 }
 
 /** What code-to-spec drafted from its source, before the target is read. */
@@ -3567,21 +3446,21 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   const file = request.file;
   const since = request.since;
   const line = request.line ?? null;
-  if (!isAbsolute(root)) return emptyCodeToSpec("failed", 2, "code-to-spec: root must be an absolute path");
-  if (file !== undefined && since !== undefined) return emptyCodeToSpec("failed", 2, "code-to-spec: give a path or --since, not both");
-  if (file === undefined && since === undefined) return emptyCodeToSpec("failed", 2, "code-to-spec: a path, optionally with :line, or --since <git-ref> is required");
-  if (line !== null && !(Number.isInteger(line) && line >= 0)) return emptyCodeToSpec("failed", 2, `code-to-spec: ${file}:${line}: a line is a whole number`);
-  if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
+  if (!isAbsolute(root)) return empty("code-to-spec", "failed", 2, "code-to-spec: root must be an absolute path");
+  if (file !== undefined && since !== undefined) return empty("code-to-spec", "failed", 2, "code-to-spec: give a path or --since, not both");
+  if (file === undefined && since === undefined) return empty("code-to-spec", "failed", 2, "code-to-spec: a path, optionally with :line, or --since <git-ref> is required");
+  if (line !== null && !(Number.isInteger(line) && line >= 0)) return empty("code-to-spec", "failed", 2, `code-to-spec: ${file}:${line}: a line is a whole number`);
+  if (context.signal?.aborted) return empty("code-to-spec", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyCodeToSpec("failed", 2, errorText(error));
+    return empty("code-to-spec", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
+  if (context.signal?.aborted) return empty("code-to-spec", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptyCodeToSpec("failed", 2, "code-to-spec: no supported source files; run `keylang init`");
+  if (!snapshot) return empty("code-to-spec", "failed", 2, "code-to-spec: no supported source files; run `keylang init`");
   const inputs = sourceInputs(analyzed.config, snapshot.manifest.files);
   // What the text does not show, in the order the CLI says it on stderr.
   const notes: OperationMessage[] = [];
@@ -3593,13 +3472,13 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
     try {
       changes = changedFlows(snapshot, gitChangedLines(root, since), describedIds(analyzed.docs));
     } catch (error) {
-      return emptyCodeToSpec("failed", 2, errorText(error));
+      return empty("code-to-spec", "failed", 2, errorText(error));
     }
     described = changes.named;
     if (described.length > 0) notes.push({ level: "warning", text: `changed and already in flows (review those): ${described.join(", ")}` });
     if (changes.drafts.length === 0) {
       const payload: CodeToSpecPayload = { output: request.output, mode: "algo", since, described, candidate: null, summary: "nothing to draft", model: null, fallback: null, statsError: null, proposal: null, refused: [], error: null };
-      return { ...emptyCodeToSpec("completed", 0), payload, messages: [...notes, { level: "info", text: `no fn outside the flows changed since ${since}; nothing proposed` }] };
+      return { ...empty("code-to-spec", "completed", 0), payload, messages: [...notes, { level: "info", text: `no fn outside the flows changed since ${since}; nothing proposed` }] };
     }
     drafted = { file: null, line: null, since, name: "changes", drafts: changes.drafts };
   } else {
@@ -3607,11 +3486,11 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
       const position = codeToSpec(snapshot, file!, line);
       drafted = { file: file!, line, since: null, name: position.name, drafts: position.drafts };
     } catch (error) {
-      return emptyCodeToSpec("failed", 2, errorText(error));
+      return empty("code-to-spec", "failed", 2, errorText(error));
     }
   }
   const setup = await modelSetup(mode, analyzed.config, "code-to-spec");
-  if ("error" in setup) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: setup.error }] };
+  if ("error" in setup) return { ...empty("code-to-spec", "failed", 2), messages: [...notes, { level: "error", text: setup.error }] };
   if (setup.fallback !== null) notes.push({ level: "warning", text: setup.fallback });
   const specDir = rootRelative(root, analyzed.config.dir);
   const generated = generatedIn(analyzed.docs);
@@ -3630,19 +3509,19 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" };
   if (request.output === "proposal") {
     // A target that cannot be read (a directory) fails a proposal with the read's error, as the CLI did; a preview, like `--print`, never needs it.
-    if (unreadable !== null) return { ...emptyCodeToSpec("failed", 2), payload, messages: [...notes, { level: "error", text: unreadable }] };
+    if (unreadable !== null) return { ...empty("code-to-spec", "failed", 2), payload, messages: [...notes, { level: "error", text: unreadable }] };
     // Checked before the model is asked: a target that cannot take the proposal costs no request.
     const refusal = proposalRefusal(root, basis, request.pending, "code-to-spec");
     if (refusal !== null) {
       payload.refused = refusal.refused;
-      return { ...emptyCodeToSpec("failed", refusal.exitCode), payload, messages: [...notes, { level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])] };
+      return { ...empty("code-to-spec", "failed", refusal.exitCode), payload, messages: [...notes, { level: "error", text: refusal.error }, ...(refusal.refused.length > 0 ? [nothingWritten] : [])] };
     }
   }
   let candidate = basis;
   if (setup.client !== null) {
     const drafts = await modelFlows(request, mode === "llm" ? "llm" : "hybrid", analyzed, setup.client, drafted.drafts, notes, context);
-    if ("cancelled" in drafts) return emptyCodeToSpec("cancelled", null);
-    if ("error" in drafts) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: drafts.error }] };
+    if ("cancelled" in drafts) return empty("code-to-spec", "cancelled", null);
+    if ("error" in drafts) return { ...empty("code-to-spec", "failed", 2), messages: [...notes, { level: "error", text: drafts.error }] };
     const modelled = { ...drafted, drafts: drafts.drafts };
     candidate = { ...basis, ...codePosition(modelled, target), text: basis.problem === null ? mergedFlows(basis.before, drafts.drafts) : null };
     payload.model = drafts.model;
@@ -3651,22 +3530,22 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   payload.summary = codeSummary(candidate.flows, payload.model);
   const names = candidate.flows.map((flow) => `\`${flow.name}\``).join(", ");
   if (request.output === "preview") {
-    return { ...emptyCodeToSpec("completed", 0), payload, messages: [...notes, { level: "info", text: `${names} for ${target} (${payload.summary}); a preview, nothing written` }] };
+    return { ...empty("code-to-spec", "completed", 0), payload, messages: [...notes, { level: "info", text: `${names} for ${target} (${payload.summary}); a preview, nothing written` }] };
   }
   const committed = await commitProposal({ root, specDir, generated, target, text: candidate.text!, expected: { target: candidate.before, proposal: candidate.pending }, config: analyzed.config, inputs }, context);
-  if ("cancelled" in committed) return { ...emptyCodeToSpec("cancelled", null), payload };
+  if ("cancelled" in committed) return { ...empty("code-to-spec", "cancelled", null), payload };
   if ("refused" in committed) {
     payload.refused = committed.refused;
-    return { ...emptyCodeToSpec("failed", 1), payload, messages: [...notes, ...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    return { ...empty("code-to-spec", "failed", 1), payload, messages: [...notes, ...committed.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
   }
   if ("failed" in committed) {
     if (committed.writing) payload.error = committed.failed;
-    return { ...emptyCodeToSpec("failed", 2), payload, messages: [...notes, { level: "error", text: committed.failed }] };
+    return { ...empty("code-to-spec", "failed", 2), payload, messages: [...notes, { level: "error", text: committed.failed }] };
   }
   payload.proposal = committed.proposal;
   if (payload.model !== null) payload.statsError = countProposed(root, payload.model.counts);
   return {
-    ...emptyCodeToSpec("completed", 0),
+    ...empty("code-to-spec", "completed", 0),
     payload,
     messages: [
       ...notes,
@@ -3675,10 +3554,6 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
     ],
     proposals: [committed.proposal],
   };
-}
-
-function emptySpecToCode(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"spec-to-code"> {
-  return { kind: "spec-to-code", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /** The candidate as the operation reports it: each file with the proposal waiting for it now (read only when the store passes the write policy). */
@@ -3742,25 +3617,25 @@ function specProblems(root: string, specs: CandidateBasis["specs"], subject = "t
  */
 async function runSpecToCode(request: SpecToCodeRequest, context: OperationContext): Promise<OperationEnvelope<"spec-to-code">> {
   const { root } = request;
-  if (!isAbsolute(root)) return emptySpecToCode("failed", 2, "spec-to-code: root must be an absolute path");
-  if (request.id.trim() === "") return emptySpecToCode("failed", 2, "spec-to-code: a planned id is required");
+  if (!isAbsolute(root)) return empty("spec-to-code", "failed", 2, "spec-to-code: root must be an absolute path");
+  if (request.id.trim() === "") return empty("spec-to-code", "failed", 2, "spec-to-code: a planned id is required");
   const mode = request.mode ?? "algo";
-  if (mode !== "algo" && mode !== "llm") return emptySpecToCode("failed", 2, `spec-to-code: --mode must be algo or llm, got \`${String(mode)}\``);
-  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  if (mode !== "algo" && mode !== "llm") return empty("spec-to-code", "failed", 2, `spec-to-code: --mode must be algo or llm, got \`${String(mode)}\``);
+  if (context.signal?.aborted) return empty("spec-to-code", "cancelled", null);
   context.onProgress?.({ text: "reading the sources" });
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptySpecToCode("failed", 2, errorText(error));
+    return empty("spec-to-code", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  if (context.signal?.aborted) return empty("spec-to-code", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptySpecToCode("failed", 2, "spec-to-code: no supported source files; run `keylang init`");
+  if (!snapshot) return empty("spec-to-code", "failed", 2, "spec-to-code: no supported source files; run `keylang init`");
   const basis: CandidateBasis = { ...sourceInputs(analyzed.config, snapshot.manifest.files), specs: specHashes(root, analyzed.docs) };
   const into = request.into === undefined ? undefined : toPosix(request.into);
   const setup = await modelSetup(mode, analyzed.config, "spec-to-code");
-  if ("error" in setup) return emptySpecToCode("failed", 2, setup.error);
+  if ("error" in setup) return empty("spec-to-code", "failed", 2, setup.error);
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
   const model = setup.client;
   if (model !== null && request.output === "proposal") {
@@ -3769,9 +3644,9 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
     if (!("error" in placed)) {
       const store = `${PROPOSALS_DIR}/${placed.file}`;
       const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
-      if (storeProblem !== null) return emptySpecToCode("failed", 2, `${store}: ${storeProblem}`);
+      if (storeProblem !== null) return empty("spec-to-code", "failed", 2, `${store}: ${storeProblem}`);
       if ((request.pending ?? "refuse") === "refuse" && existingText(join(root, store)) !== null) {
-        return { ...emptySpecToCode("failed", 1), messages: [{ level: "error", text: `${store}: a proposal for ${placed.file} is waiting; merge it (m) or remove it before a new candidate` }, nothingWritten] };
+        return { ...empty("spec-to-code", "failed", 1), messages: [{ level: "error", text: `${store}: a proposal for ${placed.file} is waiting; merge it (m) or remove it before a new candidate` }, nothingWritten] };
       }
     }
   }
@@ -3794,10 +3669,10 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   try {
     candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, into, counted, context.signal ? { signal: context.signal } : {}), basis);
   } catch (error) {
-    if (error instanceof LlmCancelled || context.signal?.aborted) return emptySpecToCode("cancelled", null);
-    return emptySpecToCode("failed", 2, errorText(error));
+    if (error instanceof LlmCancelled || context.signal?.aborted) return empty("spec-to-code", "cancelled", null);
+    return empty("spec-to-code", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
+  if (context.signal?.aborted) return empty("spec-to-code", "cancelled", null);
   const tests = candidate.targets.length - 1;
   const payload: SpecToCodePayload = {
     output: request.output,
@@ -3811,20 +3686,20 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   };
   // The test entries left to the person, as the CLI says them on stderr.
   const notes: OperationMessage[] = candidate.testNotes.map((text) => ({ level: "warning", text }));
-  if (request.output === "preview") return { ...emptySpecToCode("completed", 0), payload, messages: [...notes, { level: "info", text: `${payload.summary} for ${candidate.id}; a preview, nothing written` }] };
+  if (request.output === "preview") return { ...empty("spec-to-code", "completed", 0), payload, messages: [...notes, { level: "info", text: `${payload.summary} for ${candidate.id}; a preview, nothing written` }] };
   // The whole set is checked before the first write.
   for (const target of candidate.targets) {
     const problem = codeProposalProblem(root, target.file);
-    if (problem !== null) return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: `spec-to-code: ${target.file}: ${problem}` }] };
+    if (problem !== null) return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: `spec-to-code: ${target.file}: ${problem}` }] };
     const store = `${PROPOSALS_DIR}/${target.file}`;
     const storeProblem = writeProblem(root, store, { under: PROPOSALS_DIR, generated: true });
-    if (storeProblem !== null) return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: `${store}: ${storeProblem}` }] };
+    if (storeProblem !== null) return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: `${store}: ${storeProblem}` }] };
   }
   if ((request.pending ?? "refuse") === "refuse") {
     const waiting = candidate.targets.filter((target) => target.pending !== null).map((target) => `${PROPOSALS_DIR}/${target.file}: a proposal for ${target.file} is waiting; merge it (m) or remove it before a new candidate`);
     if (waiting.length > 0) {
       payload.refused = waiting;
-      return { ...emptySpecToCode("failed", 1), payload, messages: [...notes, ...waiting.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+      return { ...empty("spec-to-code", "failed", 1), payload, messages: [...notes, ...waiting.map((text) => ({ level: "error" as const, text })), nothingWritten] };
     }
   }
   context.onProgress?.({ text: "waiting to write" });
@@ -3832,9 +3707,9 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   try {
     gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
   } catch (error) {
-    return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
+    return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
   }
-  if (context.signal?.aborted) return { ...emptySpecToCode("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("spec-to-code", "cancelled", null), payload };
   const refused: string[] = gate ? [...gate.refused] : [];
   if (refused.length === 0) {
     try {
@@ -3846,12 +3721,12 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
       refused.push(...sourceInputProblems(analyzed.config, basis, "the candidate"));
       refused.push(...specProblems(root, basis.specs));
     } catch (error) {
-      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
+      return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
     }
   }
   if (refused.length > 0) {
     payload.refused = refused;
-    return { ...emptySpecToCode("failed", 1), payload, messages: [...notes, ...refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    return { ...empty("spec-to-code", "failed", 1), payload, messages: [...notes, ...refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
   }
   // One file at a time, each atomic: what was written before a Cancel or an error is named, never undone behind the person's back.
   const written: string[] = [];
@@ -3859,7 +3734,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   for (const target of candidate.targets) {
     if (written.length > 0 && context.signal?.aborted) {
       payload.proposals = [...written];
-      return { ...emptySpecToCode("cancelled", null), payload, messages: [...notes, ...sofar()], proposals: [...written] };
+      return { ...empty("spec-to-code", "cancelled", null), payload, messages: [...notes, ...sofar()], proposals: [...written] };
     }
     const store = `${PROPOSALS_DIR}/${target.file}`;
     context.onProgress?.({ text: `writing ${store}` });
@@ -3868,21 +3743,17 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
     } catch (error) {
       payload.proposals = [...written];
       payload.error = errorText(error);
-      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: payload.error }, ...sofar()], proposals: [...written] };
+      return { ...empty("spec-to-code", "failed", 2), payload, messages: [...notes, { level: "error", text: payload.error }, ...sofar()], proposals: [...written] };
     }
     written.push(store);
   }
   payload.proposals = written;
   return {
-    ...emptySpecToCode("completed", 0),
+    ...empty("spec-to-code", "completed", 0),
     payload,
     messages: [...notes, { level: "info", text: `proposed ${written.join(", ")} for ${candidate.id}; each merges on its own in MERGE` }],
     proposals: [...written],
   };
-}
-
-function emptyApplyCode(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"apply-code"> {
-  return { kind: "apply-code", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -3936,9 +3807,9 @@ function applyProblems(request: ApplyCodeRequest): { policy: string | null; refu
  */
 async function runApplyCode(request: ApplyCodeRequest, context: OperationContext): Promise<OperationEnvelope<"apply-code">> {
   const { root, candidate } = request;
-  if (!isAbsolute(root)) return emptyApplyCode("failed", 2, "spec-to-code: root must be an absolute path");
-  if (candidate.targets.length === 0) return emptyApplyCode("failed", 2, "spec-to-code: the candidate has no file to apply");
-  if (context.signal?.aborted) return emptyApplyCode("cancelled", null);
+  if (!isAbsolute(root)) return empty("apply-code", "failed", 2, "spec-to-code: root must be an absolute path");
+  if (candidate.targets.length === 0) return empty("apply-code", "failed", 2, "spec-to-code: the candidate has no file to apply");
+  if (context.signal?.aborted) return empty("apply-code", "cancelled", null);
   const payload: ApplyCodePayload = { id: candidate.id, files: candidate.targets.map((target) => ({ role: target.role, file: target.file, state: "not-attempted" })), refused: [], error: null };
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the files and any proposal waiting for them are kept" };
   const check = (): OperationEnvelope<"apply-code"> | null => {
@@ -3946,12 +3817,12 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
     try {
       problems = applyProblems(request);
     } catch (error) {
-      return { ...emptyApplyCode("failed", 2, errorText(error)), payload };
+      return { ...empty("apply-code", "failed", 2, errorText(error)), payload };
     }
-    if (problems.policy !== null) return { ...emptyApplyCode("failed", 2, problems.policy), payload };
+    if (problems.policy !== null) return { ...empty("apply-code", "failed", 2, problems.policy), payload };
     if (problems.refused.length === 0) return null;
     payload.refused = problems.refused;
-    return { ...emptyApplyCode("failed", 1), payload, messages: [...problems.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    return { ...empty("apply-code", "failed", 1), payload, messages: [...problems.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
   };
   context.onProgress?.({ text: "checking the candidate's files" });
   const before = check();
@@ -3961,12 +3832,12 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
   try {
     gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
   } catch (error) {
-    return { ...emptyApplyCode("failed", 2, errorText(error)), payload };
+    return { ...empty("apply-code", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyApplyCode("cancelled", null), payload };
+  if (context.signal?.aborted) return { ...empty("apply-code", "cancelled", null), payload };
   if (gate && gate.refused.length > 0) {
     payload.refused = [...gate.refused];
-    return { ...emptyApplyCode("failed", 1), payload, messages: [...gate.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
+    return { ...empty("apply-code", "failed", 1), payload, messages: [...gate.refused.map((text) => ({ level: "error" as const, text })), nothingWritten] };
   }
   const again = check();
   if (again !== null) return again;
@@ -3979,7 +3850,7 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
       ...(written.length === 0 ? [] : [{ level: "info" as const, text: `written before it stopped: ${written.join(", ")}` }]),
       ...(rest.length === 0 ? [] : [{ level: "info" as const, text: `not written: ${rest.join(", ")}` }]),
     ];
-    return { ...emptyApplyCode(status, status === "failed" ? 2 : null), payload, messages, written: [...written] };
+    return { ...empty("apply-code", status, status === "failed" ? 2 : null), payload, messages, written: [...written] };
   };
   for (const [i, target] of candidate.targets.entries()) {
     const step = payload.files[i]!;
@@ -4003,7 +3874,7 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
     written.push(target.file);
   }
   return {
-    ...emptyApplyCode("completed", 0),
+    ...empty("apply-code", "completed", 0),
     payload,
     messages: [{ level: "info", text: `${written.join(", ")} written for ${candidate.id}; no test was run` }],
     written: [...written],
@@ -4208,6 +4079,7 @@ function generatedIn(docs: readonly Document[]): (path: string) => boolean {
   return (path) => docs.some((doc) => doc.path === path && doc.generated !== null);
 }
 
+/** The note on a path that holds no specs, as the CLI writes it after `keylang: `. */
 export function checkSkipNote(path: string): string {
   return `note: ${path}: the explained map and saved explanations are not specs; skipped`;
 }
@@ -4235,10 +4107,6 @@ export function featureSlugOf(path: string, dir: string): string | null {
   return FEATURE_SLUG.test(slug) ? slug : null;
 }
 
-function emptyFeature(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"feature"> {
-  return { kind: "feature", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
-}
-
 /**
  * The feature status of the saved files. It never takes unsaved text: a
  * caller with dirty buffers saves them first, explicitly. A missing file, an
@@ -4247,40 +4115,40 @@ function emptyFeature(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error
  * (best-effort, as `check`).
  */
 async function runFeature(request: FeatureRequest, context: OperationContext): Promise<OperationEnvelope<"feature">> {
-  if (!isAbsolute(request.root)) return emptyFeature("failed", 2, "feature: root must be an absolute path");
-  if (request.slug === "") return emptyFeature("failed", 2, "feature: a slug is required");
-  if (!FEATURE_SLUG.test(request.slug)) return emptyFeature("failed", 2, `feature: invalid slug \`${request.slug}\``);
-  if (context.signal?.aborted) return emptyFeature("cancelled", null);
+  if (!isAbsolute(request.root)) return empty("feature", "failed", 2, "feature: root must be an absolute path");
+  if (request.slug === "") return empty("feature", "failed", 2, "feature: a slug is required");
+  if (!FEATURE_SLUG.test(request.slug)) return empty("feature", "failed", 2, `feature: invalid slug \`${request.slug}\``);
+  if (context.signal?.aborted) return empty("feature", "cancelled", null);
   let config: Config;
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return emptyFeature("failed", 2, errorText(error));
+    return empty("feature", "failed", 2, errorText(error));
   }
   const file = `${config.dir}/features/${request.slug}.md`;
-  if (!existsSync(join(request.root, file))) return emptyFeature("failed", 2, `feature: ${file}: not found`);
+  if (!existsSync(join(request.root, file))) return empty("feature", "failed", 2, `feature: ${file}: not found`);
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true });
   } catch (error) {
-    return emptyFeature("failed", 2, errorText(error));
+    return empty("feature", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyFeature("cancelled", null);
+  if (context.signal?.aborted) return empty("feature", "cancelled", null);
   let base: FeatureBase;
   try {
     base = readFeatureBase(request.root, file, request.since, "feature");
   } catch (error) {
-    return emptyFeature("failed", 2, errorText(error));
+    return empty("feature", "failed", 2, errorText(error));
   }
   const report = featureReportOf(analyzed, request.slug, base);
-  if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
+  if (report === null) return empty("feature", "failed", 2, `feature: ${file}: not a spec keylang read`);
   const messages: OperationMessage[] = [
     ...report.gaps.map((gap) => ({ level: "info" as const, text: gapLine(gap) })),
     ...report.hints.map((hint) => ({ level: "info" as const, text: hintLine(hint) })),
     { level: report.done ? "info" : "warning", text: featureSummary(report) },
   ];
   return {
-    ...emptyFeature("completed", report.done ? 0 : 1),
+    ...empty("feature", "completed", report.done ? 0 : 1),
     payload: { slug: request.slug, file, snapshot: analyzed.snapshot?.snapshotId ?? null, report },
     messages,
   };
@@ -4316,10 +4184,6 @@ export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureB
 
 /** Most questions one request proposes: a person answers them in one sitting. */
 const MAX_QUESTIONS = 5;
-
-function emptyFeatureQuestions(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"feature-questions"> {
-  return { kind: "feature-questions", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
-}
 
 /** The model's answer as questions: its `- ? <text>` lines, at most `MAX_QUESTIONS`, and how many other lines were left out. */
 export function questionLines(answer: string): { questions: string[]; dropped: number } {
@@ -4361,22 +4225,22 @@ export function withQuestions(text: string, questions: readonly string[], slug: 
  */
 async function runFeatureQuestions(request: FeatureQuestionsRequest, context: OperationContext): Promise<OperationEnvelope<"feature-questions">> {
   const { root, slug } = request;
-  if (!isAbsolute(root)) return emptyFeatureQuestions("failed", 2, "feature questions: root must be an absolute path");
-  if (!FEATURE_SLUG.test(slug)) return emptyFeatureQuestions("failed", 2, `feature questions: invalid slug \`${slug}\``);
-  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  if (!isAbsolute(root)) return empty("feature-questions", "failed", 2, "feature questions: root must be an absolute path");
+  if (!FEATURE_SLUG.test(slug)) return empty("feature-questions", "failed", 2, `feature questions: invalid slug \`${slug}\``);
+  if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyFeatureQuestions("failed", 2, errorText(error));
+    return empty("feature-questions", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   const config = analyzed.config;
   const file = `${config.dir}/features/${slug}.md`;
   const doc = analyzed.docs.find((item) => item.path === file);
-  if (!doc) return emptyFeatureQuestions("failed", 2, `feature questions: ${file}: not found`);
+  if (!doc) return empty("feature-questions", "failed", 2, `feature questions: ${file}: not found`);
   const setup = await modelSetup("llm", config, "feature questions");
-  if ("error" in setup) return emptyFeatureQuestions("failed", 2, setup.error.replace(" --mode llm", ""));
+  if ("error" in setup) return empty("feature-questions", "failed", 2, setup.error.replace(" --mode llm", ""));
   const client = setup.client!;
   const specDir = rootRelative(root, config.dir);
   const generated = generatedIn(analyzed.docs);
@@ -4385,7 +4249,7 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
   const before = problem === null ? existingText(join(root, file)) : null;
   const pending = problem === null && writeProblem(root, store, { under: PROPOSALS_DIR, generated: true }) === null ? existingText(join(root, store)) : null;
   const refusal = proposalRefusal(root, { target: file, problem, pending }, "refuse", "feature questions");
-  if (refusal !== null) return { ...emptyFeatureQuestions("failed", refusal.exitCode, refusal.error) };
+  if (refusal !== null) return { ...empty("feature-questions", "failed", refusal.exitCode, refusal.error) };
   const inputs = sourceInputs(config, analyzed.snapshot?.manifest.files ?? []);
   const text = before ?? "";
   const around = analyzed.snapshot ? contextText(contextForIds(analyzed, idsIn(doc))) : "(no code snapshot)";
@@ -4408,29 +4272,25 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
       context.signal ? { signal: context.signal } : {},
     );
   } catch (error) {
-    if (error instanceof LlmCancelled || context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
-    return emptyFeatureQuestions("failed", 2, errorText(error));
+    if (error instanceof LlmCancelled || context.signal?.aborted) return empty("feature-questions", "cancelled", null);
+    return empty("feature-questions", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
+  if (context.signal?.aborted) return empty("feature-questions", "cancelled", null);
   const { questions, dropped } = questionLines(answer);
   const payload: FeatureQuestionsPayload = { file, agent: client.agent, questions, dropped, proposal: null };
   const droppedNote = dropped > 0 ? [{ level: "info" as const, text: `${dropped} line(s) of the answer were no \`- ? …\` question or past the fifth: left out` }] : [];
-  if (questions.length === 0) return { ...emptyFeatureQuestions("completed", 0), payload, messages: [...droppedNote, { level: "info", text: `${client.agent} asked no question: nothing proposed` }] };
+  if (questions.length === 0) return { ...empty("feature-questions", "completed", 0), payload, messages: [...droppedNote, { level: "info", text: `${client.agent} asked no question: nothing proposed` }] };
   const committed = await commitProposal({ root, specDir, generated, target: file, text: withQuestions(text, questions, slug), expected: { target: before, proposal: pending }, config, inputs }, context);
-  if ("cancelled" in committed) return { ...emptyFeatureQuestions("cancelled", null), payload };
-  if ("refused" in committed) return { ...emptyFeatureQuestions("failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written" }] };
-  if ("failed" in committed) return { ...emptyFeatureQuestions("failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
+  if ("cancelled" in committed) return { ...empty("feature-questions", "cancelled", null), payload };
+  if ("refused" in committed) return { ...empty("feature-questions", "failed", 1), payload, messages: [...committed.refused.map((text) => ({ level: "error" as const, text })), { level: "info", text: "nothing was written" }] };
+  if ("failed" in committed) return { ...empty("feature-questions", "failed", 2), payload, messages: [{ level: "error", text: committed.failed }] };
   payload.proposal = committed.proposal;
   return {
-    ...emptyFeatureQuestions("completed", 0),
+    ...empty("feature-questions", "completed", 0),
     payload,
     messages: [...droppedNote, { level: "info", text: `${committed.proposal}: ${questions.length} open question(s) proposed for ${file}; MERGE accepts them hunk by hunk` }],
     proposals: [committed.proposal],
   };
-}
-
-function emptyExportC4(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"export-c4"> {
-  return { kind: "export-c4", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
 
 /**
@@ -4461,26 +4321,26 @@ export function c4OutProblem(root: string, out: string): string | null {
  */
 async function runExportC4(request: ExportC4Request, context: OperationContext): Promise<OperationEnvelope<"export-c4">> {
   const { root } = request;
-  if (!isAbsolute(root)) return emptyExportC4("failed", 2, "export c4: root must be an absolute path");
+  if (!isAbsolute(root)) return empty("export-c4", "failed", 2, "export c4: root must be an absolute path");
   const format = C4_FORMATS.find((item) => item === request.format);
-  if (format === undefined) return emptyExportC4("failed", 2, `export c4: unknown --format \`${request.format}\`; expected ${C4_FORMATS.join(", ")}`);
+  if (format === undefined) return empty("export-c4", "failed", 2, `export c4: unknown --format \`${request.format}\`; expected ${C4_FORMATS.join(", ")}`);
   const level = C4_LEVELS.find((item) => item === request.level);
-  if (level === undefined) return emptyExportC4("failed", 2, `export c4: unknown --level \`${request.level}\`; expected ${C4_LEVELS.join(", ")}`);
-  if (request.layer !== undefined && level !== "component") return emptyExportC4("failed", 2, "export c4: --layer draws the components of one layer: use it with --level component");
-  if (request.out !== undefined && request.out.trim() === "") return emptyExportC4("failed", 2, "export c4: --out needs a file path");
+  if (level === undefined) return empty("export-c4", "failed", 2, `export c4: unknown --level \`${request.level}\`; expected ${C4_LEVELS.join(", ")}`);
+  if (request.layer !== undefined && level !== "component") return empty("export-c4", "failed", 2, "export c4: --layer draws the components of one layer: use it with --level component");
+  if (request.out !== undefined && request.out.trim() === "") return empty("export-c4", "failed", 2, "export c4: --out needs a file path");
   // Before the analysis, as `wire` does: a path the policy refuses costs nothing and is never read.
   const outProblem = request.out === undefined ? null : c4OutProblem(root, request.out);
-  if (outProblem !== null) return emptyExportC4("failed", 2, outProblem);
-  if (context.signal?.aborted) return emptyExportC4("cancelled", null);
+  if (outProblem !== null) return empty("export-c4", "failed", 2, outProblem);
+  if (context.signal?.aborted) return empty("export-c4", "cancelled", null);
   let analyzed: Analysis;
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExportC4("failed", 2, errorText(error));
+    return empty("export-c4", "failed", 2, errorText(error));
   }
-  if (context.signal?.aborted) return emptyExportC4("cancelled", null);
+  if (context.signal?.aborted) return empty("export-c4", "cancelled", null);
   const snapshot = analyzed.snapshot;
-  if (!snapshot) return emptyExportC4("failed", 2, "export c4: no supported source files to draw");
+  if (!snapshot) return empty("export-c4", "failed", 2, "export c4: no supported source files to draw");
   const briefs = loadBriefs(analyzed.config);
   // A brief made for older code would describe what is no longer there: only current ones are drawn.
   const brief = (id: string): string | null => {
@@ -4491,36 +4351,36 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   try {
     text = renderC4(snapshot, brief, { format, level, ...(request.layer !== undefined ? { layer: request.layer } : {}) });
   } catch (error) {
-    return emptyExportC4("failed", 2, errorText(error));
+    return empty("export-c4", "failed", 2, errorText(error));
   }
   const payload: ExportC4Payload = { text, format, level, layer: request.layer ?? null, out: null };
-  if (request.out === undefined) return { ...emptyExportC4("completed", 0), payload };
+  if (request.out === undefined) return { ...empty("export-c4", "completed", 0), payload };
   const out = rootRelative(root, request.out);
   // Checked again right before the read: a link may have changed during the analysis.
   const problem = c4OutProblem(root, request.out);
-  if (problem !== null) return { ...emptyExportC4("failed", 2, problem), payload };
+  if (problem !== null) return { ...empty("export-c4", "failed", 2, problem), payload };
   let current: string | null;
   try {
     current = existingText(resolve(root, out));
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, `${out}: ${errorText(error)}`), payload };
+    return { ...empty("export-c4", "failed", 2, `${out}: ${errorText(error)}`), payload };
   }
-  if (current !== null && !isC4Diagram(current)) return { ...emptyExportC4("failed", 2, `${out}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written`), payload };
+  if (current !== null && !isC4Diagram(current)) return { ...empty("export-c4", "failed", 2, `${out}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written`), payload };
   context.onProgress?.({ text: "waiting to write" });
   let gate: CommitGate;
   try {
     gate = await context.beforeCommit?.({ targets: [out] });
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, errorText(error)), payload };
+    return { ...empty("export-c4", "failed", 2, errorText(error)), payload };
   }
-  if (context.signal?.aborted) return { ...emptyExportC4("cancelled", null), payload };
-  if (gate && gate.refused.length > 0) return { ...emptyExportC4("failed", 2), payload, messages: gate.refused.map((line) => ({ level: "error" as const, text: line })) };
+  if (context.signal?.aborted) return { ...empty("export-c4", "cancelled", null), payload };
+  if (gate && gate.refused.length > 0) return { ...empty("export-c4", "failed", 2), payload, messages: gate.refused.map((line) => ({ level: "error" as const, text: line })) };
   try {
     safeWrite(root, out, text, { generated: true, expect: current });
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, errorText(error)), payload };
+    return { ...empty("export-c4", "failed", 2, errorText(error)), payload };
   }
-  return { ...emptyExportC4("completed", 0), payload: { ...payload, out }, written: [out], messages: [{ level: "info", text: `${out}: written` }] };
+  return { ...empty("export-c4", "completed", 0), payload: { ...payload, out }, written: [out], messages: [{ level: "info", text: `${out}: written` }] };
 }
 
 /** One gap as the CLI prints it: `file:line:col: kind id: reason`. */
@@ -4538,35 +4398,31 @@ export function featureSummary(report: FeatureReport): string {
   return report.done ? "done" : `${report.gaps.length} gap(s) · stage ${report.stage}`;
 }
 
-function emptyDoctor(status: OperationStatus, exitCode: 0 | 1 | 2 | null): OperationEnvelope<"doctor"> {
-  return { kind: "doctor", status, exitCode, payload: null, messages: [], written: [], removed: [], proposals: [] };
-}
-
 async function runDoctor(request: DoctorRequest, context: OperationContext): Promise<OperationEnvelope<"doctor">> {
   // The root is absolute by contract: otherwise path resolution would fall
   // back on the working directory, which the operation must never read.
   if (!isAbsolute(request.root)) {
-    return { ...emptyDoctor("failed", 2), messages: [{ level: "error", text: "doctor: root must be an absolute path" }] };
+    return empty("doctor", "failed", 2, "doctor: root must be an absolute path");
   }
-  if (context.signal?.aborted) return emptyDoctor("cancelled", null);
+  if (context.signal?.aborted) return empty("doctor", "cancelled", null);
   // A broken keylang.json is an error naming the file and field, not a
   // "nothing is configured" report; loadConfig already throws that way.
   let config: Config;
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return { ...emptyDoctor("failed", 2), messages: [{ level: "error", text: errorText(error) }] };
+    return empty("doctor", "failed", 2, errorText(error));
   }
   // The heavy adapters load only for this operation, as they did in the CLI.
   const { llmClient } = await import("./llm.ts");
   const { localStatus, microphoneStatus } = await import("./voice-local.ts");
   const { localModel, modelsDir, voiceEngine } = await import("./voice.ts");
-  if (context.signal?.aborted) return emptyDoctor("cancelled", null);
+  if (context.signal?.aborted) return empty("doctor", "cancelled", null);
   const native = await localStatus();
-  if (context.signal?.aborted) return emptyDoctor("cancelled", null);
+  if (context.signal?.aborted) return empty("doctor", "cancelled", null);
   const microphone = await microphoneStatus();
   const [agent, agentClis] = await Promise.all([agentState(config, llmClient), probeAgentClis()]);
-  if (context.signal?.aborted) return emptyDoctor("cancelled", null);
+  if (context.signal?.aborted) return empty("doctor", "cancelled", null);
   const engine = engineState(config, native.status === "ok", voiceEngine);
   const old = oldExplanations(request.root);
   const payload: DoctorPayload = {
@@ -4593,7 +4449,7 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
     },
   };
   const report = doctorLines(payload);
-  return { ...emptyDoctor("completed", 0), payload, messages: report.map((text) => ({ level: "info" as const, text })) };
+  return { ...empty("doctor", "completed", 0), payload, messages: report.map((text) => ({ level: "info" as const, text })) };
 }
 
 /** The effective agent, its source and its credential or binary state, without the key value. */
