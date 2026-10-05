@@ -339,8 +339,10 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const ctx: ClassContext = { name, statics, fields };
   const members: DeclFact[] = [];
   for (const method of methods) {
-    const member = method.childForFieldName("name")?.text;
-    if (!member) continue;
+    const written = method.childForFieldName("name")?.text;
+    if (!written) continue;
+    // PHP names the constructor in any case; its ID is `<class>.__construct`, the name `new X()` runs.
+    const member = written.toLowerCase() === "__construct" ? "__construct" : written;
     const decl = fnDecl(method, member, names, ctx, collector, `${name}.${member}`);
     const visibility = method.namedChildren.find((c) => c.type === "visibility_modifier")?.text.toLowerCase();
     decl.exported = visibility !== "private" && visibility !== "protected";

@@ -689,3 +689,20 @@ test("typescript: a class field that holds no function names its types for the c
     "app.c.C.h Order:9:10 → app.order.Order",
   ]);
 });
+
+test("php: a constructor written `__CONSTRUCT` is the class's `__construct`, the member `new X()` runs", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/App/Order.php": "<?php\nnamespace App;\nclass Order {\n  public function __CONSTRUCT() { $this->init(); }\n  private function init(): void {}\n}\nfunction make(): Order { return new Order(); }\n",
+      "keylang/flows/make.md": "# flow make\n- trigger app.Order.make\n  - step app.Order.Order.__construct\n",
+    },
+    { languages: ["php"], layers: { app: ["src/App/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.ok(snapshot.nodes["app.Order.Order.__construct"], Object.keys(snapshot.nodes).join(", "));
+  assert.equal(snapshot.nodes["app.Order.Order.__CONSTRUCT"], undefined);
+  const check = keylang(dir, ["check", "keylang/flows/make.md"]);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.match(check.stdout, /static ok app\.Order\.Order\.__construct: called from app\.Order\.make/);
+});
