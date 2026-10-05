@@ -186,7 +186,7 @@ export function mcpServer(root: string, version: string): McpServer {
     "apply_diff",
     {
       description:
-        "Propose the full new text of one hand-written spec (a Markdown file under the spec directory). Nothing is written to the spec: the text becomes a proposal a person merges hunk by hunk in the keylang TUI (key m). Returns the proposal path, status `pending`, and the line diff.",
+        "Propose the full new text of one hand-written spec (a Markdown file under the spec directory; not the generated map, the explained map, saved explanations or the baseline). Nothing is written to the spec: the text becomes a proposal a person merges hunk by hunk in the keylang TUI (key m) or accepts whole with `keylang proposals accept <path>`; never run that command yourself. Returns the proposal path, status `pending`, and the line diff.",
       inputSchema: { path: z.string().min(1), text: z.string() },
     },
     async ({ path, text }) => {

@@ -28,7 +28,7 @@ keylang checks only what has an id. A phrase in the spec without one ("once a da
 
 ## Rules
 
-Change `<dir>/rules.md` and `<dir>/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. A new dependency the baseline does not allow is a K102 from `<dir>/rules.baseline.md`. To ask for a new edge between layers, propose `- allow <from-layer> <to-layer>` in `<dir>/rules.md`: a manual rule over the same layers overrides the baseline line. After the code has the edge, `npx -y keylang@<version> baseline` regenerates the baseline from the graph; a person runs it.
+Change `<dir>/rules.md` and `<dir>/rules.baseline.md` only by proposing the full new text through `apply_diff`. That tool writes a proposal a person merges. It does not edit the spec. The person accepts it in the TUI (`m`) or with `proposals accept <path>`. Never run `proposals accept` or `proposals reject` yourself, not even to finish a feature: you may list what waits (`proposals`) and print one (`proposals show <path>`), and then tell the person. A new dependency the baseline does not allow is a K102 from `<dir>/rules.baseline.md`. To ask for a new edge between layers, propose `- allow <from-layer> <to-layer>` in `<dir>/rules.md`: a manual rule over the same layers overrides the baseline line. After the code has the edge, `npx -y keylang@<version> baseline` regenerates the baseline from the graph; a person runs it.
 
 ## CLI fallback
 

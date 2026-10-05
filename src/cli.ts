@@ -118,6 +118,15 @@ Commands:
   draft map                 Print the layer layout keylang would guess as keylang.json;
                             writes nothing: the layout changes only when you edit it
                             (--mode llm|hybrid: the model's layout, validated, printed)
+  proposals                 List .keylang/proposals/: each target with the lines it adds
+                            and removes, or why it cannot be accepted; writes nothing
+  proposals show <target>   Print the line diff of a proposal against its target
+  proposals accept <target> For a person, never an agent: write the proposal's full text
+                            to the target with the checks of MERGE in the TUI, then
+                            remove the proposal
+  proposals reject <target> Remove the proposal; the target stays as it is. 0 done,
+                            1 nothing pending for the target or accept refused, 2 bad
+                            invocation or I/O
   lsp [--stdio]             Speak LSP over stdio (--stdio is accepted for clients)
   doctor                    What is set up: languages, the agent (its source, and its
                             credentials or its CLI binary and version), the agent CLIs
@@ -314,6 +323,8 @@ async function run(argv: readonly string[]): Promise<number> {
     }
     case "draft":
       return cmdDraft(paths, { mode: values.mode ?? "hybrid", name: values.name, into: values.into, print: values.print === true });
+    case "proposals":
+      return cmdProposals(paths);
     case "spec-to-code":
       return cmdSpecToCode(paths[0], { into: values.into, apply: values.apply === true, print: values.print === true, mode: values.mode ?? "algo" });
     case "code-to-spec":
@@ -688,6 +699,67 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   for (const message of result.messages) process.stderr.write(message.level === "error" ? `keylang: ${message.text}\n` : `${message.text}\n`);
   if (result.exitCode === 0 && result.payload !== null && result.payload.out === null) process.stdout.write(result.payload.text);
   return result.exitCode ?? 2;
+}
+
+/**
+ * `proposals [show|accept|reject <target>]`: a person takes or drops a
+ * proposal without the TUI. A printer over `src/proposals.ts`: the list, a
+ * diff and what was written to stdout; notes and refusals to stderr. 0 done;
+ * 1 nothing pending for the target, or an accept refused (nothing written);
+ * 2 a bad invocation, a broken keylang.json or an I/O error.
+ */
+async function cmdProposals(args: readonly string[]): Promise<number> {
+  const { acceptProposal, listProposals, proposalDiff, proposalTarget, PROPOSALS_DIR, rejectProposal } = await import("./proposals.ts");
+  const [action, name, ...rest] = args;
+  if (action !== undefined && action !== "show" && action !== "accept" && action !== "reject") throw new Error(`proposals: unknown \`${action}\`; expected show, accept or reject <target>`);
+  if (action !== undefined && name === undefined) throw new Error(`proposals ${action}: a target is required, as \`keylang proposals\` lists it`);
+  if (rest.length > 0) throw new Error(`proposals ${action}: unexpected \`${rest[0]}\`; one target at a time`);
+  const root = findRoot(process.cwd());
+  const specDir = toPosix(relative(root, resolve(root, loadConfig(root).dir)));
+  if (action === undefined) {
+    const pending = listProposals(root, specDir);
+    for (const item of pending) {
+      const what = item.problem !== null ? `cannot be accepted: ${item.problem}` : `+${item.added} -${item.removed}${item.newFile ? " (new file)" : ""}`;
+      process.stdout.write(`${item.target}: ${what}\n`);
+    }
+    process.stderr.write(pending.length === 0 ? `no proposals under ${PROPOSALS_DIR}/\n` : `${pending.length} proposal(s); \`keylang proposals show <target>\` prints one; a person accepts or rejects it\n`);
+    return 0;
+  }
+  const target = proposalTarget(name!);
+  if (target === null) throw new Error(`proposals ${action}: \`${name}\` is not a plain relative path`);
+  const store = `${PROPOSALS_DIR}/${target}`;
+  const none = (): number => {
+    process.stderr.write(`keylang: no proposal for ${target} under ${PROPOSALS_DIR}/\n`);
+    return 1;
+  };
+  const refused = (reason: string, written: string): number => {
+    process.stderr.write(`keylang: ${target}: cannot be accepted: ${reason}; ${written}\n`);
+    return 1;
+  };
+  if (action === "show") {
+    const diff = proposalDiff(root, specDir, target);
+    if (diff.state === "none") return none();
+    if (diff.state === "refused") return refused(diff.reason, "`keylang proposals reject` drops it");
+    process.stdout.write(diff.text);
+    return 0;
+  }
+  if (action === "reject") {
+    const result = rejectProposal(root, specDir, target);
+    if (result.state === "none") return none();
+    if (result.state === "refused") {
+      process.stderr.write(`keylang: ${result.reason}; nothing removed\n`);
+      return 1;
+    }
+    process.stdout.write(`${store}: removed; ${target} is unchanged\n`);
+    return 0;
+  }
+  const result = acceptProposal(root, specDir, target);
+  if (result.state === "none") return none();
+  if (result.state === "refused") return refused(result.reason, "nothing written");
+  if (result.state === "unchanged") process.stdout.write(`${target}: the proposal matches the file; nothing written${result.kept === null ? ", the proposal is removed" : ""}\n`);
+  else process.stdout.write(`${target}: written from ${store} (+${result.added} -${result.removed})${result.kept === null ? "; the proposal is removed" : ""}\n`);
+  if (result.kept !== null) process.stderr.write(`keylang: ${result.kept}\n`);
+  return 0;
 }
 
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
