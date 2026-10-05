@@ -775,7 +775,10 @@ function typeNamesBound(node: Node, bound: ReadonlySet<string>): ReadonlySet<str
 
 /**
  * Members of a class. Methods and function-valued fields (`handler = () => …`)
- * are fns with their own calls. Instance field initializers run on
+ * are fns with their own calls and types. Any other field is no node: the
+ * types its annotation and initializer name (`repo!: Order`,
+ * `s = new Map<string, Item>()`), and an index signature's, are the
+ * class's. Instance field initializers run on
  * construction: their calls belong to `constructor`, synthesized when the
  * class has none. Static field initializers and `static {}` blocks run once
  * when the class is evaluated: their calls belong to a synthesized `static`
@@ -789,12 +792,17 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   // `class C<T>`: `T` is no type reference in its heritage or its members.
   const typeParams = typeNamesBound(cls, NO_NAMES);
   const members: DeclFact[] = [];
+  const fieldTypes: TypeRefFact[] = [];
   const instance: { node: Node; calls: CallFact[] }[] = [];
   const statics: { node: Node; calls: CallFact[] }[] = [];
   for (const m of items) {
     const isField = m.type === "public_field_definition" || m.type === "field_definition";
     if (m.type === "class_static_block") {
       statics.push({ node: m, calls: declCalls(m, scope) });
+      continue;
+    }
+    if (m.type === "index_signature") {
+      fieldTypes.push(...collectTypeRefs(m, typeParams));
       continue;
     }
     if (!isField && m.type !== "method_definition" && m.type !== "method_signature" && m.type !== "abstract_method_signature") continue;
@@ -821,11 +829,12 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     }
     const written = m.childForFieldName("value");
     const value = written ? unwrapValue(written) : null;
-    if (!value) continue;
-    if (FUNCTION_VALUES.has(value.type)) {
+    if (value && FUNCTION_VALUES.has(value.type)) {
       members.push(flag(decl("fn", mname, m, signature(value), !isPrivate, declCalls(value, scope), collectTypeRefs(m, typeParams), [])));
       continue;
     }
+    fieldTypes.push(...collectTypeRefs(m, typeParams));
+    if (!value) continue;
     const calls = declCalls(value, scope);
     if (calls.length === 0) continue;
     (m.children.some((c) => c.type === "static") ? statics : instance).push({ node: m, calls });
@@ -842,7 +851,7 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
   // `class C<T extends Order, U = Item>`: a constraint and a default name types; the parameters themselves do not.
   const typeParamsNode = cls.childForFieldName("type_parameters");
-  const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : [])];
+  const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : []), ...fieldTypes];
   const out = decl("class", name, at, heritage(cls), exported, [], types, members);
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;

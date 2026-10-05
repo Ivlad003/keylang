@@ -659,3 +659,33 @@ test("php: a hole, a callable or a module-level call that names a method or a fu
     "keylang/flows/work.md:5:11: static unverified app.Jobs.Child.WORK: no resolved call from app.Jobs.go; `b.work` may dispatch to another `work` at src/Jobs.php:11:30",
   ]);
 });
+
+test("typescript: a class field that holds no function names its types for the class — its annotation, its initializer, an index signature; a type parameter of the class does not", (t) => {
+  const dir = repo(t, {
+    "src/order.ts": "export class Order {}\nexport interface Repo {}\nexport interface Item {}\nexport function make(): Order { return new Order(); }\n",
+    "src/c.ts": [
+      'import { Order, Repo, Item, make } from "./order";',
+      "export class C<T> {",
+      "  repo!: Order;",
+      "  x: Order = make();",
+      "  private readonly r?: Repo;",
+      "  static s = new Map<string, Item>();",
+      "  #p?: T;",
+      "  [key: string]: Item | T | undefined;",
+      "  h: (o: Order) => void = (o) => {};",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const { snapshot } = map(dir);
+  const types = snapshot.edges.filter((e) => e.kind === "type" && e.source.startsWith("app.c.")).map((e) => `${e.source} ${e.text}:${e.line}:${e.col} → ${e.target}`);
+  assert.deepEqual(types.sort(), [
+    "app.c.C Item:6:30 → app.order.Item",
+    "app.c.C Item:8:18 → app.order.Item",
+    "app.c.C Order:3:10 → app.order.Order",
+    "app.c.C Order:4:6 → app.order.Order",
+    "app.c.C Repo:5:24 → app.order.Repo",
+    // A field that holds a function is a fn of its own, with its own references.
+    "app.c.C.h Order:9:10 → app.order.Order",
+  ]);
+});
