@@ -209,7 +209,7 @@ npx -y keylang spec-to-code <id> --print
 npx -y keylang baseline
 ```
 
-`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. The Stop hook prints JSON and exits 0 either way: `{"decision":"block"}` on a new fail, otherwise `{}`.
+`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) also gets `{}`, with the reason on stderr, not a block. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
 
 ## Exit codes and answers
 

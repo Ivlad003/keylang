@@ -59,7 +59,10 @@ Commands:
                             what the spec still lacks. 0 done, 1 gaps, 2 missing
                             file, unreadable --since ref, or bad invocation
   hook stop                 Read a harness Stop event (JSON) from stdin, run
-                            check --changed, and print a JSON decision. Writes nothing
+                            check --changed, and print a JSON decision; writes
+                            nothing. Exit 0 once started: a turn it cannot check
+                            (stdin not JSON, no git, a broken keylang.json) prints
+                            {} and the reason on stderr
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
                             git's hooks directory (core.hooksPath is honoured); rerun to
                             update it. A pre-commit hook keylang did not write is left
@@ -183,7 +186,7 @@ a request (default 600000).
 
 Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict,
 or prose to review with check --stale --strict) or a stale map with --check,
-2 usage or I/O error.
+2 usage or I/O error. hook stop: 0 once started; 2 only for a bad invocation.
 `;
 
 /** The flags of every command; `completions` completes this same table. */
@@ -267,7 +270,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "feature":
       return cmdFeature(paths[0], values.format ?? "human", values.since);
     case "hook":
-      return cmdHook(paths[0], values.check === true);
+      return cmdHook(paths, values.check === true);
     case "new":
       return cmdNew(paths, values.layer);
     case "completions":
@@ -826,25 +829,49 @@ async function cmdFeature(slug: string | undefined, format: string, since: strin
   return result.exitCode ?? 2;
 }
 
-async function cmdHook(name: string | undefined, checkOnly: boolean): Promise<number> {
+/** `hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2). */
+async function cmdHook(args: readonly string[], checkOnly: boolean): Promise<number> {
+  const [name, ...rest] = args;
+  if (name !== "stop" && name !== "install") throw new Error(`hook: expected \`stop\` or \`install\`${name === undefined ? "" : `, got \`${name}\``}`);
+  if (rest.length > 0) throw new Error(`hook ${name}: unexpected argument \`${rest[0]}\``);
   if (name === "install") return cmdHookInstall(checkOnly);
-  if (name !== "stop") throw new Error("hook: expected `stop` or `install`");
-  const event = parseHookEvent(await readStdin());
-  if (event.stop_hook_active === true) {
-    process.stdout.write(hookDecision(event, []));
-    return 0;
+  return cmdHookStop();
+}
+
+/**
+ * `hook stop`: once the invocation is valid, exactly one JSON object on
+ * stdout and code 0. A harness reads code 2 of a Stop hook as a blocking
+ * error the agent cannot act on, so a failure — stdin that is not a JSON
+ * event, git missing or refused, a broken keylang.json, an analysis error —
+ * is `{}` with one stderr line saying the turn was not checked.
+ */
+async function cmdHookStop(): Promise<number> {
+  let decision: string;
+  try {
+    decision = await stopDecision(await readStdin(), process.cwd());
+  } catch (error) {
+    const reason = (error instanceof Error ? error.message : String(error)).replace(/^hook stop: /, "");
+    process.stderr.write(`keylang: hook stop: ${reason}; this turn was not checked\n`);
+    decision = "{}\n";
   }
-  const root = findRoot(process.cwd());
+  process.stdout.write(decision);
+  return 0;
+}
+
+/** The Stop decision for the event on stdin: the fails of `check --changed` in `cwd`'s repository. Throws when the turn cannot be checked. */
+async function stopDecision(input: string, cwd: string): Promise<string> {
+  const event = parseHookEvent(input);
+  if (event.stop_hook_active === true) return hookDecision(event, []);
+  const root = findRoot(cwd);
   const analyzed = await analyze({ root });
-  const gitChanged = gitChangedFiles(root, "HEAD");
-  const changed = changedPathSet(root, gitChanged.paths, process.cwd());
+  const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
+  const changed = changedPathSet(root, gitChanged.paths, cwd);
   const filtered = filterChanged(
     { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
-  process.stdout.write(hookDecision(event, hookFails(filtered)));
-  return 0;
+  return hookDecision(event, hookFails(filtered));
 }
 
 /**
