@@ -14,7 +14,7 @@ import { baselinePlanProblems, commitBaseline, planBaseline, type BaselinePlan }
 import { C4_FORMATS, C4_LEVELS, isC4Diagram, renderC4, type C4Format, type C4Level } from "./c4-export.ts";
 import { filterChanged } from "./changed.ts";
 import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
-import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts";
+import { checkExitCode, checkReport, type CheckCounts, type CheckResult } from "./check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, parseConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
@@ -1159,7 +1159,7 @@ export interface CheckPayload {
   /** Constructs of the code no confirmed edge was built from (`--format json`). */
   coverage: CoverageItem[];
   lines: string[];
-  counts: { fail: number; unverified: number; ok: number };
+  counts: CheckCounts;
   /** The options the check really ran with. */
   options: {
     /** The checked paths as reported (the spec directory when none was given). */
@@ -4211,9 +4211,16 @@ export function checkSkipNote(path: string): string {
   return `note: ${path}: the explained map and saved explanations are not specs; skipped`;
 }
 
-/** The CLI's closing line on stderr: `0 fail, 2 unverified, 5 ok`. */
-export function checkSummary(counts: CheckPayload["counts"]): string {
-  return `${counts.fail} fail, ${counts.unverified} unverified, ${counts.ok} ok`;
+/**
+ * The CLI's closing line on stderr: `0 fail, 2 unverified, 5 ok`. Once two
+ * unverified verdicts name one hole, the line says how many holes they come
+ * from: `0 fail, 8 unverified (from 2 holes), 71 ok`, and `9 unverified
+ * (8 from 2 holes)` when the others name no hole.
+ */
+export function checkSummary(counts: CheckCounts): string {
+  const holes = counts.holes;
+  const from = holes === undefined ? "" : ` (${holes.unverified === counts.unverified ? "" : `${holes.unverified} `}from ${holes.holes} hole${holes.holes === 1 ? "" : "s"})`;
+  return `${counts.fail} fail, ${counts.unverified} unverified${from}, ${counts.ok} ok`;
 }
 
 /** The slugs `keylang feature` accepts: a plain file name under `<dir>/features/`. */

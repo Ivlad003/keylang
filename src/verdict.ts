@@ -18,6 +18,8 @@ export interface Verdict {
   message: string;
   /** Where the evidence comes from: the static graph, a test report, or a trace run. */
   evidence?: { provenance: "syntactic" | "test-report" | "trace"; runId?: string; testId?: string };
+  /** An `unverified` rule verdict: `file:line:col` of the coverage entry (the hole) that left it unverified. */
+  hole?: string;
 }
 
 export function formatVerdict(v: Verdict): string {

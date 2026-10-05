@@ -577,7 +577,7 @@ test("a source directory keylang cannot read is a hole of its scope, not a crash
     assert.equal(check.status, 1, "unverified under --strict");
     assert.match(check.stdout, /rules\.md:4:1: unverified directory is not readable \(EACCES\) \(src\/domain\/locked:1:1\)/, "deny over the scope is not ok");
     assert.match(check.stdout, /rules\.md:5:1: unverified no cycle among the known imports, but directory is not readable/);
-    assert.match(check.stderr, /0 fail, 3 unverified, 0 ok/);
+    assert.match(check.stderr, /0 fail, 3 unverified \(from 1 hole\), 0 ok/, "one hole leaves three rules unverified");
   } finally {
     // Before the temporary copy is removed.
     chmodSync(locked, 0o755);

@@ -156,6 +156,23 @@ test("a link destination may hold balanced parentheses; an unbalanced one is a m
   assert.equal(keylang(dir, ["fmt", "--check", "flow.md"]).status, 0, "fmt keeps the link as written");
 });
 
+// ---------- 3. the no-snapshot verdict stands on a rule line ----------
+
+test("rules without a snapshot are unverified at the first rule line in file and line order, with the hash of every rule line", (t) => {
+  const dir = repo(t, {
+    "keylang/crlf.md": "# flow a\n\n- step x.y\n",
+    // The `module` line scopes the rule under it and is no rule itself: the first rule line is `exports`.
+    "keylang/fence.md": "# rules\n\nSome prose.\n\n- module app\n  - exports go\n- no-cycles\n",
+    "keylang/later.md": "# rules\n\n- deny infra app\n",
+  });
+  const human = keylang(dir, ["check", "keylang"]);
+  assert.match(human.stdout, /^keylang\/fence\.md:6:3: unverified no snapshot$/m, human.stdout);
+  assert.doesNotMatch(human.stdout, /crlf\.md:1:1: unverified/);
+  const row = checkJson(dir, ["keylang"]).results.find((r) => r.evidence === "no snapshot");
+  assert.deepEqual([row?.file, row?.line, row?.col, row?.area], ["keylang/fence.md", 6, 3, "keylang/fence.md"]);
+  assert.equal(row?.specHash, sha("exports app: go\nno-cycles *\ndeny infra app"));
+});
+
 // ---------- 5. a dependency alias is a member ----------
 
 test("a module whose only children are dependency aliases has members: an unknown member is K001, the alias resolves", (t) => {
@@ -235,4 +252,42 @@ test("an id is NFC: a decomposed and a composed name are one id, while the file 
   const ref = flowDoc!.sections[0]!.items[0]!.refs[0]!;
   assert.deepEqual([ref.text, ref.target], [`app.${nfd}.go`, `app.${nfc}.go`]);
   assert.equal(keylang(dir, ["fmt", "--check", "map.md", "flow.md"]).status, 0, "fmt does not normalize the text");
+});
+
+// ---------- 11. the hole of an unverified rule, and the summary ----------
+
+test("an unverified rule names its hole; the summary counts the holes once two verdicts share one", (t) => {
+  const dir = repo(t, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", infra: "src/infra/**", app: "src/app/**" } })}\n`,
+    "src/domain/order.ts": 'import { gone } from "./gone.ts";\nexport function place(): void {\n  gone();\n}\n',
+    "src/infra/db.ts": "export function save(): void {}\n",
+    "src/app/main.ts": 'import { place } from "../domain/order.ts";\nexport function main(): void {\n  place();\n}\n',
+    "keylang/rules.md": "# rules\n\n- deny domain infra\n- deny domain app\n- deny infra app\n",
+  });
+  const json = checkJson(dir);
+  const hole = json.coverage.find((item) => item.kind === "unresolved-import");
+  assert.ok(hole, JSON.stringify(json.coverage));
+  const at = `${hole.file}:${hole.line}:${hole.col}`;
+  const rows = json.results.filter((r) => r.criterion.startsWith("deny "));
+  assert.deepEqual(
+    rows.map((r) => [r.criterion, r.verdict, r.hole ?? null]),
+    [
+      ["deny domain infra", "unverified", at],
+      ["deny domain app", "unverified", at],
+      ["deny infra app", "ok", null],
+    ],
+  );
+  const human = keylang(dir, ["check"]);
+  assert.equal(human.status, 0, human.stdout);
+  assert.match(human.stderr, /^0 fail, 2 unverified \(from 1 hole\), 1 ok$/m);
+  // A planned step adds unverified verdicts without a hole: the summary says how many come from holes.
+  mkdirSync(join(dir, "keylang/flows"), { recursive: true });
+  writeFileSync(join(dir, "keylang/flows/later.md"), "# flow later\n\n- planned fn app.main.later\n- trigger app.main.main\n- step app.main.later\n");
+  const mixed = keylang(dir, ["check"]);
+  assert.match(mixed.stderr, /^0 fail, 4 unverified \(2 from 1 hole\), \d+ ok$/m, mixed.stderr);
+  // One verdict per hole: the summary is as it always was.
+  writeFileSync(join(dir, "keylang/rules.md"), "# rules\n\n- deny domain infra\n");
+  rmSync(join(dir, "keylang/flows/later.md"));
+  const single = keylang(dir, ["check"]);
+  assert.match(single.stderr, /^0 fail, 1 unverified, 0 ok$/m, single.stderr);
 });

@@ -120,7 +120,9 @@ export function evaluateRules(spec: SpecIR, index: Index, snapshot: SnapshotView
   const warnings = incomparableWarnings(rules, format);
   if (!snapshot) {
     if (!rules.any) return { diagnostics: [...rules.diagnostics, ...warnings], verdicts: [] };
-    const file = docs[0]?.path ?? spec.rules[0]?.file ?? "keylang";
+    // One verdict for every rule line, on the first of them: a flow file sorted earlier is no rule.
+    const first = firstRuleLine(spec);
+    const file = first?.file ?? docs[0]?.path ?? "keylang";
     const verdict: Verdict = {
       verdict: "unverified",
       criterion: "rules",
@@ -128,8 +130,8 @@ export function evaluateRules(spec: SpecIR, index: Index, snapshot: SnapshotView
       snapshotId: null,
       specHash: hashText(noSnapshotSpec(spec)),
       file,
-      line: 1,
-      col: 1,
+      line: first?.span.start.line ?? 1,
+      col: first?.span.start.col ?? 1,
       code: null,
       message: "no snapshot",
     };
@@ -199,34 +201,46 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const node = source === null ? undefined : snapshot.nodes[source];
     return node?.kind === "fn" || isClass(source ?? "");
   };
-  const dependencyHoleIn = (moduleId: string, ignore?: ReadonlySet<string>): string | null => {
+  // The dependency holes, indexed once in coverage order: under every ID prefix of their source, and by file.
+  // A module's hole is then the first entry of its own lists, the one the coverage scan used to find.
+  const bySource = new Map<string, IndexedHole[]>();
+  const byFile = new Map<string, IndexedHole[]>();
+  snapshot.coverage.forEach((item, order) => {
+    if (!DEPENDENCY_HOLES.has(item.kind) || item.reason === "unsupported construct `computed call`" || (item.kind === "unsupported" && inDeclaration(item.source))) return;
+    const entry = { item, order };
+    const source = item.source;
+    // `a.b.c` is under `a.b.c`, `a.b` and `a`.
+    if (source !== null) for (let end = source.length; end > 0; end = source.lastIndexOf(".", end - 1)) listAt(bySource, source.slice(0, end)).push(entry);
+    listAt(byFile, item.file).push(entry);
+  });
+  const dependencyHoleIn = (moduleId: string, ignore?: ReadonlySet<string>): Hole | null => {
     const file = snapshot.nodes[moduleId]?.file;
-    const hole = snapshot.coverage.find(
-      (item) =>
-        DEPENDENCY_HOLES.has(item.kind) &&
-        !ignore?.has(item.kind) &&
-        item.reason !== "unsupported construct `computed call`" &&
-        !(item.kind === "unsupported" && inDeclaration(item.source)) &&
-        (item.source === moduleId || item.source?.startsWith(`${moduleId}.`) || (file !== null && file !== undefined && item.file === file)),
-    );
-    return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
+    const open = (entry: IndexedHole): boolean => !ignore?.has(entry.item.kind);
+    const own = bySource.get(moduleId)?.find(open);
+    const inFile = file === null || file === undefined ? undefined : byFile.get(file)?.find(open);
+    const first = own && inFile ? (own.order <= inFile.order ? own : inFile) : (own ?? inFile);
+    return first?.item ?? null;
   };
-  const holeAmong = (ids: Iterable<string>, ignore?: ReadonlySet<string>): string | null =>
-    [...ids].sort().map((id) => dependencyHoleIn(id, ignore)).find((item) => item !== null) ?? null;
+  const holeAmong = (ids: Iterable<string>, ignore?: ReadonlySet<string>): Hole | null => {
+    for (const id of [...ids].sort()) {
+      const hole = dependencyHoleIn(id, ignore);
+      if (hole) return hole;
+    }
+    return null;
+  };
   // A hole whose scope has no node — a directory that could not be read — may hide modules of any ID under
   // that scope: it is in the area of a rule over the scope, above it or below it (null: any area).
   const orphans = snapshot.coverage.filter((item) => DEPENDENCY_HOLES.has(item.kind) && item.source !== null && snapshot.nodes[item.source] === undefined);
-  const scopeHole = (scope: string | null): string | null => {
-    const hole = orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!));
-    return hole ? `${hole.reason} (${hole.file}:${hole.line}:${hole.col})` : null;
-  };
+  const scopeHole = (scope: string | null): Hole | null => orphans.find((item) => scope === null || within(item.source!, scope) || within(scope, item.source!)) ?? null;
 
   const pushFail = (code: Exclude<Diagnostic["code"], "K005">, file: string, line: number, col: number, message: string, criterion: string, area: string, spec = criterion): void => {
     diagnostics.push(diagnostic(code, file, pointAt(line, col), message));
     verdicts.push(base(snapshot, criterion, area, "fail", file, line, col, code, message, spec));
   };
-  const pushUnverified = (file: string, line: number, col: number, criterion: string, area: string, reason: string, spec = criterion): void => {
-    verdicts.push(base(snapshot, criterion, area, "unverified", file, line, col, null, reason, spec));
+  /** `hole`: the coverage entry that leaves the rule unverified, named by its position on the verdict. */
+  const pushUnverified = (file: string, line: number, col: number, criterion: string, area: string, reason: string, spec = criterion, hole: Hole | null = null): void => {
+    const verdict = base(snapshot, criterion, area, "unverified", file, line, col, null, reason, spec);
+    verdicts.push(hole === null ? verdict : { ...verdict, hole: holeAt(hole) });
   };
   const pushOk = (file: string, span: Span, criterion: string, area: string, message: string, spec = criterion): void => {
     verdicts.push(base(snapshot, criterion, area, "ok", file, span.start.line, span.start.col, null, message, spec));
@@ -319,7 +333,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const inArea = (layer: string): boolean => component.has(layer) || !rules.ordered.has(layer);
     const orphan = orphans.find((item) => item.kind !== "unassigned-file" && inArea(layerOf(item.source!)));
     // `unassigned-file` names a file whose edges are known. Another hole in that file still counts.
-    const hole = holeAmong(area, UNASSIGNED_FILE) ?? (orphan ? `${orphan.reason} (${orphan.file}:${orphan.line}:${orphan.col})` : null);
+    const hole = holeAmong(area, UNASSIGNED_FILE) ?? orphan ?? null;
     const names = order.layers.map((layer) => `\`${layer}\``).join(", ");
     const allows = [...allowedUp.entries()]
       .filter(([key]) => {
@@ -330,7 +344,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       .sort();
     const uniqueAllows = [...new Set(allows)];
     const allowed = uniqueAllows.length > 0 ? ` or is allowed by ${uniqueAllows.map((text) => `\`${text}\``).join(", ")}` : "";
-    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${hole}`, order.text);
+    if (hole) pushUnverified(order.file, order.span.start.line, order.span.start.col, order.text, order.layers.join(","), `no dependency against the order among the known edges, but ${holeText(hole)}`, order.text, hole);
     else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, order.text);
   }
 
@@ -348,7 +362,7 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     }
     const hole = holeAmong(scope) ?? scopeHole(deny.a);
     const winners = overridden.get(deny);
-    if (hole) pushUnverified(...at, deny.text, area, hole);
+    if (hole) pushUnverified(...at, deny.text, area, holeText(hole), deny.text, hole);
     else if (scope.length === 0) pushOk(deny.file, deny.span, deny.text, area, `convergence: no module under \`${deny.a}\` yet, so no edge to ${targets}`);
     else if (winners && winners.length > 0) pushOk(deny.file, deny.span, deny.text, area, overrideEvidence(deny, targets, winners));
     else pushOk(deny.file, deny.span, deny.text, area, `convergence: no edge from \`${deny.a}\` to ${targets} and no dependency hole in the area`);
@@ -397,14 +411,14 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       const line = node?.file ? (node.line ?? 1) : (decl?.span.start.line ?? 1);
       const col = node?.file ? (node.col ?? 1) : (decl?.span.start.col ?? 1);
       if (reachableHole) {
-        pushUnverified(file, line, col, "entry", module, `not reached, but ${reachableHole} may reach it`, entrySpec);
+        pushUnverified(file, line, col, "entry", module, `not reached, but ${holeText(reachableHole)} may reach it`, entrySpec, reachableHole);
       } else {
         // A warning, not a verdict: it never fails the check, so no consumer may count it as `fail`.
         diagnostics.push({ ...diagnostic("K103", file, pointAt(line, col), `absence: module \`${module}\` is not reachable from any \`entry\``), criterion: "entry", area: module, specHash: hashText(entrySpec) });
       }
     }
     if (unreached === 0 && unknownModules !== null) {
-      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${unknownModules}`, entry.text);
+      for (const entry of rules.entryNodes) pushUnverified(entry.file, entry.span.start.line, entry.span.start.col, "entry", rules.entries.join(","), `every known module is reachable from \`entry\`, but ${holeText(unknownModules)}`, entry.text, unknownModules);
     } else if (unreached === 0) {
       for (const entry of rules.entryNodes) pushOk(entry.file, entry.span, "entry", rules.entries.join(","), `convergence: every module is reachable from \`entry\``, entry.text);
     }
@@ -493,10 +507,10 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
         relevant.length === 0
           ? under === null
             ? (holeAmong(units) ?? scopeHole(null))
-            : (holeAmong(reached, UNASSIGNED_FILE) ?? (reachedOrphan ? `${reachedOrphan.reason} (${reachedOrphan.file}:${reachedOrphan.line}:${reachedOrphan.col})` : null))
+            : (holeAmong(reached, UNASSIGNED_FILE) ?? reachedOrphan ?? null)
           : null;
       if (hole) {
-        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${hole}`, spec);
+        pushUnverified(rule.file, rule.span.start.line, rule.span.start.col, "no-cycles", rule.under ?? "*", `no cycle among the known imports, but ${holeText(hole)}`, spec, hole);
         continue;
       }
       if (relevant.length === 0) {
@@ -515,6 +529,33 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
 }
 
 const DEPENDENCY_HOLES = new Set(["unresolved-import", "parse-error", "unsupported", "unassigned-file", "skipped-file"]);
+
+/** A coverage entry of the snapshot: a hole when its kind is one of `DEPENDENCY_HOLES`. */
+type Hole = SnapshotView["coverage"][number];
+
+/** A hole and its place in the coverage list, which decides between two holes of one module. */
+interface IndexedHole {
+  item: Hole;
+  order: number;
+}
+
+function listAt<T>(map: Map<string, T[]>, key: string): T[] {
+  const list = map.get(key);
+  if (list) return list;
+  const created: T[] = [];
+  map.set(key, created);
+  return created;
+}
+
+/** `unresolved import (src/a.ts:1:19)`: the hole in a verdict's reason. */
+function holeText(hole: Hole): string {
+  return `${hole.reason} (${holeAt(hole)})`;
+}
+
+/** `src/a.ts:1:19`: where the hole is, the `hole` field of a verdict. */
+function holeAt(hole: Hole): string {
+  return `${hole.file}:${hole.line}:${hole.col}`;
+}
 /** A file outside every layer: its edges are known, so a scoped cycle or a layer order does not treat it as a hole. */
 const UNASSIGNED_FILE = new Set(["unassigned-file"]);
 
@@ -748,6 +789,15 @@ export function noSnapshotSpec(spec: SpecIR): string {
   ];
   lines.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
   return lines.map((line) => line.text).join("\n");
+}
+
+/** The first rule line in file, line and column order, a rejected `layers` line included; null without one. */
+function firstRuleLine(spec: SpecIR): { file: string; span: Span } | null {
+  let first: { file: string; span: Span } | null = null;
+  for (const line of [...spec.rules, ...spec.rejectedLayers]) {
+    if (first === null || line.file < first.file || (line.file === first.file && (line.span.start.line < first.span.start.line || (line.span.start.line === first.span.start.line && line.span.start.col < first.span.start.col)))) first = line;
+  }
+  return first;
 }
 
 /** How specific a scope is: its depth in segments (`app.purchase` is 2), not its length in characters. */
