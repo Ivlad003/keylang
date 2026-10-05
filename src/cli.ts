@@ -37,7 +37,7 @@ Commands:
                             write rules.baseline.md, and install harness files
                             (AGENTS.md, MCP, skill, hooks). --agents is
                             claude,codex,opencode,cursor or none (no harness files
-                            outside keylang/). --check writes nothing and fails when a
+                            outside <dir>/). --check writes nothing and fails when a
                             managed block, MCP command, skill, or baseline is stale,
                             or .gitignore does not list .keylang/
   agents [--agents=LIST] [--check]

@@ -50,7 +50,7 @@ function denyRules(dir: string): string[] {
 }
 
 /** The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field. */
-export function specDir(root: string): string {
+function specDir(root: string): string {
   const file = join(root, CONFIG_FILE);
   if (!existsSync(file)) return DEFAULT_SPEC_DIR;
   return parseConfig(file, readFileSync(file, "utf8")).dir ?? DEFAULT_SPEC_DIR;

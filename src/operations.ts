@@ -1913,7 +1913,7 @@ const GITIGNORE_FILE = ".gitignore";
 const GITIGNORE_LINES = ["# keylang: local cache (index, facts, proposals, traces), not the spec", ".keylang/"];
 
 /** A line that ignores the root `.keylang` directory: `.keylang`, `.keylang/`, `/.keylang` or `/.keylang/`, with trailing spaces as git ignores them. */
-export function ignoresKeylangCache(text: string): boolean {
+function ignoresKeylangCache(text: string): boolean {
   return text.split(/\r?\n/).some((line) => /^\/?\.keylang\/? *$/.test(line));
 }
 
@@ -1922,7 +1922,7 @@ export function ignoresKeylangCache(text: string): boolean {
  * one blank line. The bytes before stay as they are; the new lines end in
  * CRLF only when every line of the file does.
  */
-export function withKeylangCacheIgnored(current: string | null): string {
+function withKeylangCacheIgnored(current: string | null): string {
   const text = current ?? "";
   const nl = allCrlf(text) ? "\r\n" : "\n";
   const block = GITIGNORE_LINES.map((line) => `${line}${nl}`).join("");
