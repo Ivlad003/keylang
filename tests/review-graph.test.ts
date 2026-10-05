@@ -75,7 +75,8 @@ test("module of several files: each file keeps its own names; a same-named decla
   assert.equal(snapshot.nodes["app.a.helper"]?.file, "src/a/x.ts");
   assert.equal(snapshot.nodes["app.a.helper-2"]?.file, "src/a/y.ts");
   assert.equal(snapshot.nodes["app.a.helper-2"]?.name, "helper");
-  assert.match(stderr, /src\/a\/y\.ts: `helper` is also declared in `src\/a\/x\.ts`/);
+  // File-private helpers of one name are common in a directory: their IDs show it, without a warning.
+  assert.doesNotMatch(stderr, /helper/);
   assert.deepEqual(calls(snapshot), ["app.a.alias → app.a.other", "app.a.helper → app.a.onlyX", "app.a.other → app.a.helper-2", "app.a.run → app.a.helper"]);
   // `fetchData` is declared in another file and not imported: in TypeScript it is not in scope here.
   assert.deepEqual(holes(snapshot), ["app.a.globalUser: dynamic-call call through a local value `fetchData`"]);
@@ -107,10 +108,11 @@ test("module of several files: an import of one file gets that file's exports, `
     },
     { module: "dir", layers: { ui: ["src/ui/**"] } },
   );
-  const { snapshot } = map(dir);
-  // Both `make` are exported: the first file by path keeps the name.
+  const { snapshot, stderr } = map(dir);
+  // Both `make` are exported: the first file by path keeps the name, and the module's public name is ambiguous.
   assert.equal(snapshot.nodes["ui.parts.make"]?.file, "src/ui/parts/button.ts");
   assert.equal(snapshot.nodes["ui.parts.make-2"]?.file, "src/ui/parts/card.ts");
+  assert.match(stderr, /src\/ui\/parts\/card\.ts: `make` is also exported by `src\/ui\/parts\/button\.ts`, another file of module `ui\.parts`; its ID here is `ui\.parts\.make-2`/);
   assert.deepEqual(calls(snapshot), ["ui.page.page → ui.parts.card", "ui.page.page → ui.parts.make", "ui.page.page → ui.parts.make-2"]);
 });
 

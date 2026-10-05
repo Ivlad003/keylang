@@ -1246,7 +1246,9 @@ function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: stri
  * same name in another file of the module (`module: "dir"`, `x.ts` beside
  * `x/index.ts`) is another symbol, whose segment gets `-2`, `-3`… (no
  * declaration name has a `-`): an exported declaration keeps the plain
- * segment before an internal one, then the first file by path.
+ * segment before an internal one, then the first file by path. A second
+ * exported declaration of a name is worth a warning; file-private helpers of
+ * the same name are common in a directory, and their IDs show it.
  */
 function topSegments(module: Module, files: readonly FileFacts[], warnings: string[]): Map<DeclFact, string> {
   const groups = new Map<string, { file: string; decls: DeclFact[]; exported: boolean }[]>();
@@ -1267,7 +1269,7 @@ function topSegments(module: Module, files: readonly FileFacts[], warnings: stri
         while (taken.has(`${key}-${n}`)) n++;
         segment = `${key}-${n}`;
         taken.add(segment);
-        warnings.push(`${group.file}: \`${group.decls[0]!.name}\` is also declared in \`${ordered[0]!.file}\`, another file of module \`${module.id}\`; its ID here is \`${module.id}.${segment}\``);
+        if (group.exported) warnings.push(`${group.file}: \`${group.decls[0]!.name}\` is also exported by \`${ordered[0]!.file}\`, another file of module \`${module.id}\`; its ID here is \`${module.id}.${segment}\``);
       }
       for (const d of group.decls) out.set(d, segment);
     });
