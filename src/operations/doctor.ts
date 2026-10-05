@@ -13,6 +13,11 @@ import type { VoiceEngine } from "../voice.ts";
 import type { DoctorPayload, DoctorRequest, OperationContext, OperationEnvelope } from "./types.ts";
 import { empty } from "./shared.ts";
 
+/**
+ * `keylang doctor` on the saved keylang.json: the languages, the agent and
+ * its credentials, the agent CLIs, the saved explanations and voice (code
+ * 0). A relative root or a broken keylang.json is 2. Nothing is written.
+ */
 export async function runDoctor(request: DoctorRequest, context: OperationContext): Promise<OperationEnvelope<"doctor">> {
   // The root is absolute by contract: otherwise path resolution would fall
   // back on the working directory, which the operation must never read.

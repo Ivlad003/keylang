@@ -540,6 +540,7 @@ export interface InitRequest {
   label?: string;
 }
 
+/** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
 export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
@@ -593,8 +594,10 @@ export interface CommitPlan {
 /** The caller's answer before a commit: nothing (go ahead) or the reasons the files must stay as they are. */
 export type CommitGate = void | { refused: string[] };
 
+/** How an operation ended: `completed` (with or without findings), `failed`, or `cancelled` by the caller. */
 export type OperationStatus = "completed" | "failed" | "cancelled";
 
+/** One line of an operation's human-readable report, with its level. */
 export interface OperationMessage {
   level: "info" | "warning" | "error";
   /** Human-readable text; the payload carries the domain data. */
@@ -1363,6 +1366,7 @@ export interface OperationPayloads {
 /** The result of one operation. File paths are POSIX, relative to the request's root. */
 export type OperationResult = { [K in OperationRequest["kind"]]: OperationEnvelope<K> }[OperationRequest["kind"]];
 
+/** The result of one operation of kind `K`: how it ended, its exit code and payload, its report, and the files it wrote, removed or proposed. */
 export interface OperationEnvelope<K extends OperationRequest["kind"]> {
   kind: K;
   status: OperationStatus;

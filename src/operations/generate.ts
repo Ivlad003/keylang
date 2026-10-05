@@ -356,6 +356,7 @@ export function initSources(root: string, label = "."): { config: Config } | { e
   return { config };
 }
 
+/** The root ignore file `init` adds `.keylang/` to. */
 const GITIGNORE_FILE = ".gitignore";
 
 /** What `init` appends to `.gitignore`: a comment and the entry. */

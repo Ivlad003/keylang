@@ -52,6 +52,7 @@ export function specHashes(root: string, docs: readonly Document[]): CandidateBa
   return docs.filter((doc) => doc.generated === null).map((doc) => ({ path: doc.path, sha256: hashOrNull(readTextOrNull(resolve(root, doc.path))) }));
 }
 
+/** The SHA-256 of a spec's text; null stays null (the spec could not be read). */
 function hashOrNull(text: string | null): string | null {
   return text === null ? null : sha256(text);
 }
