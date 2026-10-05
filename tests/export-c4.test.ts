@@ -220,7 +220,7 @@ test("tui: the palette's Export C4 diagram shows the diagram in F6 without a fil
   const dir = repo(t);
   const vt = new VirtualTerminal(130, 34);
   const app = new App({ root: dir, cols: 130, rows: 34 });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 130, 34);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 34);
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();

@@ -24,7 +24,7 @@ import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { analyze } from "../analyze.ts";
-import { App, type Analyzer, type OperationRunner } from "./app.ts";
+import { App, MAX_COLS, MAX_ROWS, type Analyzer, type OperationRunner } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { ENTER } from "./screen.ts";
 
@@ -34,9 +34,6 @@ const KEEP_MS = 10 * 60 * 1000;
 const PING_MS = 30 * 1000;
 /** One message larger than this closes the connection (the client sends keys and sizes). */
 const MAX_MESSAGE = 1 << 20;
-/** A frame is a grid of cells: sizes past these are a broken or hostile client, not a screen. */
-export const MAX_COLS = 1000;
-export const MAX_ROWS = 400;
 /** Close codes the page understands: another tab took the session; the session ended. */
 export const CLOSE_TAKEN = 4000;
 export const CLOSE_ENDED = 4001;
@@ -347,7 +344,7 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     previous?.close(CLOSE_TAKEN, "session opened in another tab");
     // xterm.js follows the same modes as a terminal: SGR mouse and bracketed paste are opt-in.
     connection.send(ENTER);
-    found.app.attach({ kind: "web", write: (ansi) => connection.send(ansi) }, cols, rows);
+    found.app.attach({ write: (ansi) => connection.send(ansi) }, cols, rows);
     return found;
   };
 

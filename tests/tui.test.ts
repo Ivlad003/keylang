@@ -42,7 +42,7 @@ function session(root: string, options: { cols?: number; rows?: number; analyzer
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
 
@@ -638,7 +638,7 @@ test("tui: a failed operation is a visible record, and quitting is still code 0"
   };
   const vt = new VirtualTerminal(100, 24);
   const app = new App({ root, cols: 100, rows: 24, operations, onQuit: () => quit++ });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 100, 24);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 100, 24);
   t.after(() => app.close());
   await app.idle();
   app.input(KEY.ctrlP);
@@ -960,7 +960,7 @@ test("tui: quitting with unsaved changes asks twice", async (t) => {
   const root = checkoutRepo(t);
   const vt = new VirtualTerminal(100, 24);
   const app = new App({ root, cols: 100, rows: 24, onQuit: () => quit++ });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 100, 24);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 100, 24);
   t.after(() => app.close());
   await app.idle();
   app.input("i");
@@ -2765,7 +2765,7 @@ test("tui: feature gives the same object and code as the CLI for done, planned, 
   let quit = 0;
   const vt = new VirtualTerminal(110, 30);
   const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 110, 30);
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();
@@ -3342,7 +3342,7 @@ test("tui: an empty new file stays unsaved across file switches and asks before 
   let quit = 0;
   const vt = new VirtualTerminal(110, 30);
   const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 110, 30);
   t.after(() => app.close());
   const s = { app, vt, send: (keys: string) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
   await app.idle();
@@ -3560,7 +3560,7 @@ test("tui: a delayed map check in a real worker leaves keys and resize live; Esc
   const gated = gatedWorker();
   const vt = new VirtualTerminal(110, 30);
   const app = new App({ root, cols: 110, rows: 30, operationWorker: gated.worker });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 110, 30);
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();
@@ -3659,7 +3659,7 @@ test("tui: a worker that cannot start or dies is a code 2 failure; the next run 
   Atomics.store(new Int32Array(crashes), 0, 1);
   const vt = new VirtualTerminal(100, 24);
   const app = new App({ root, cols: 100, rows: 24, operationWorker: new OperationWorker({ entry: GATE_WORKER, workerData: { crashes } }) });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 100, 24);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 100, 24);
   t.after(() => app.close());
   await app.idle();
   mapCheck((keys) => app.input(keys));
@@ -5021,7 +5021,7 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
   let quit = 0;
   const vt = new VirtualTerminal(110, 30);
   const app = new App({ root, cols: 110, rows: 30, onQuit: () => quit++ });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 110, 30);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 110, 30);
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();
@@ -10428,7 +10428,7 @@ test("tui: on a 50-column terminal a held operation keeps x cancel, the quit ste
   const gated = gatedWorker();
   const vt = new VirtualTerminal(50, 16);
   const app = new App({ root, cols: 50, rows: 16, operationWorker: gated.worker });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 50, 16);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 50, 16);
   t.after(() => app.close());
   const send = (keys: string): void => app.input(keys);
   await app.idle();

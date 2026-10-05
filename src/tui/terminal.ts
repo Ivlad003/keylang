@@ -182,7 +182,7 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     if (finished || away !== "editor") return;
     takeBack();
   };
-  const surface: Surface = { kind: "terminal", write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}) };
+  const surface: Surface = { write: (ansi) => stdout.write(ansi), ...(editorCommand(host.env, "", 1) ? { openEditor } : {}) };
 
   const onSignal = (signal: TerminalSignal): void => {
     if (signal === "SIGTSTP") {

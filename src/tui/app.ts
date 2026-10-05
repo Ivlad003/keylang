@@ -70,7 +70,6 @@ import { batchState, contextTop, edgeItems, editorRows, featureItems, filesTop, 
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
-  kind: "terminal" | "web";
   write(ansi: string): void;
   /** Terminal only: open a file in `$EDITOR`, handing it the screen. */
   openEditor?: (abs: string, line: number) => Promise<void>;
@@ -361,12 +360,6 @@ export class App {
     const grid = render(this.state);
     this.surface.write(renderDiff(this.previous, grid));
     this.previous = grid;
-  }
-
-  /** Full repaint. */
-  redraw(): void {
-    this.previous = null;
-    this.draw();
   }
 
   // ---------- analysis ----------
@@ -5889,7 +5882,6 @@ function packageVersion(): string {
   return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
 }
 
-/** The result of an operation whose adapter threw: a failure with code 2 and the reason, nothing written. */
 /** The list text of a proposal after its path: kind, a new file, and the hunk count or that it is ignored. */
 function proposalSummary(entry: ProposalEntry): string {
   const parts: string[] = [entry.kind];
@@ -5911,7 +5903,6 @@ const DRAFT_MODES = ["algo", "hybrid", "llm"] as const;
 /** The lists of the inventory form, in ←→ order. */
 const EXPLAIN_PLAN_LISTS = ["stale-saved", "missing", "stale"] as const;
 
-/** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
 /** What a layout draft was made against: keylang.json's buffer (null: none open), the file, the code snapshot. */
 interface LayoutBasis {
   version: number | null;
@@ -5919,6 +5910,7 @@ interface LayoutBasis {
   snapshot: string | null;
 }
 
+/** Where the session was when a draft started: a proposal opens by itself only while this is still so. */
 interface DraftOrigin {
   path: string | null;
   mode: Mode;

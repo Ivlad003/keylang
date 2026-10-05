@@ -38,7 +38,7 @@ test("zoom edges model: grouped by the level's units, with kinds and counts, and
 function session(root: string): { app: App; send: (keys: string) => void; text: () => string; lines: () => string[] } {
   const vt = new VirtualTerminal(130, 30);
   const app = new App({ root, cols: 130, rows: 30 });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 130, 30);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 30);
   return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 
