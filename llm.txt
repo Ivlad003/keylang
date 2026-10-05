@@ -183,7 +183,7 @@ Put the real call in a plain function. The framework function calls that plain f
 
 A decorated function as the trigger is fine: the framework calls it, and the steps under it are judged from its body. A FastAPI `@router.post` route as the trigger gives `static ok` to the step it calls.
 
-TypeScript decorators (`@Controller`, `@Get`, `@Injectable`) are not gaps: keylang assumes the decorated method's body runs, so a NestJS controller or service method can be a trigger or a step and get `static ok`. A call inside a decorator's arguments (`@Get(route())`) runs when the module loads, not inside the method, so it is not a call from the method.
+TypeScript decorators (`@Controller`, `@Get`, `@Injectable`) are not gaps: keylang assumes the decorated method's body runs, so a NestJS controller or service method is a trigger or a step like any other function. A call inside a decorator's arguments (`@Get(route())`) runs when the module loads, not inside the method, so it is not a call from the method.
 
 A route or a controller that calls the database directly never makes a flow `ok` if the flow goes through another function. There is no static path.
 

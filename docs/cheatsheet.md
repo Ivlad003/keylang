@@ -74,7 +74,7 @@ Keywords are contextual: under a map module, `- test foo.bar` is a dependency na
 
 ## Examples
 
-The examples share one repository, so the IDs of every block are declared in the first one.
+The examples describe one repository: every ID they name is declared in the map of the first one, or is `planned`.
 
 The map, as `keylang map` writes it (shortened). The first line is the generated marker: never edit such a file. A generated map writes a layer as its bare name; `- layer ui` means the same. A dependency line is `<alias> <module id>`:
 
@@ -240,7 +240,7 @@ Wiring: `wire` builds `app.orders.place` with a `db` from `infra.db.open`, or fr
 | K103 | warning | a module that no `entry` reaches |
 | K104 | error | `exports` and the module's real public exports differ |
 | K105 | error | a dependency cycle where `no-cycles` is declared |
-| K106 | warning | an `allow` and a `deny` that cannot be ordered, with no rule on their intersection |
+| K106 | warning | an `allow` and a `deny` that cannot be ordered (each narrower on one side, the `allow` deeper in sum) and no rule on their intersection |
 | K107 | error | architecture code depends on a file that `outside` in `keylang.json` puts outside it |
 | K201 | error | a `planned` ID exists in the code with another kind or signature |
 | K202 | warning | a `planned` ID is implemented as declared: remove the `planned` line |
