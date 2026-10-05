@@ -4,8 +4,9 @@
 // from `links`, never from sorting timestamps. Only a complete run confirms or
 // refutes: absence is a failure only when the run is also sufficiently instrumented.
 
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 export const TRACE_SCHEMA = 1;
 
@@ -42,100 +43,161 @@ export interface TraceRun {
   instrumented: Set<string> | null;
 }
 
-/** A run as it is read: `run` events accumulate until every file is read. */
-interface RunDraft extends TraceRun {
+/**
+ * A run as it is read. Spans are keyed by id, so a start and the end that
+ * closes it are found without a scan; an end whose start is in a file not read
+ * yet waits for the last file. `run` events accumulate until every file is read.
+ */
+interface RunDraft {
+  files: string[];
+  runId: string;
+  testId: string;
+  flow: string;
   snapshots: Set<string | null>;
+  spans: Map<string, TraceSpan>;
+  pendingEnds: { spanId: string; end: NonNullable<TraceSpan["end"]>; at: string }[];
+  complete: boolean;
+  dropped: number | null;
+  open: Set<string>;
+  instrumented: Set<string> | null;
   runEvents: number;
 }
 
 /**
  * Read and validate trace files. A malformed line is an error naming file and
- * line. A run is `(runId, testId, flow)`, wherever its events are: processes of
- * one test may write to different files.
+ * line. A run is `(runId, testId, flow)`, wherever its events are: processes
+ * of one test may write to different files, in any order.
  */
 export function loadTraces(root: string, files: readonly string[]): TraceRun[] {
   const runs = new Map<string, RunDraft>();
   for (const file of files) {
-    const lines = readFileSync(join(root, file), "utf8").split("\n");
-    lines.forEach((text, i) => {
-      if (text.trim() === "") return;
-      const at = `${file}:${i + 1}`;
-      let value: unknown;
-      try {
-        value = JSON.parse(text);
-      } catch (e) {
-        throw new Error(`${at}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
-      }
-      if (typeof value !== "object" || value === null) throw new Error(`${at}: a trace event must be an object`);
-      const event = value as Record<string, unknown>;
-      if (event.schemaVersion !== TRACE_SCHEMA) throw new Error(`${at}: unsupported trace schemaVersion ${JSON.stringify(event.schemaVersion)}`);
-      const str = (field: string): string => {
-        const v = event[field];
-        if (typeof v !== "string" || v === "") throw new Error(`${at}: \`${field}\` must be a non-empty string`);
-        return v;
-      };
-      const num = (field: string): number => {
-        const v = event[field];
-        if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${at}: \`${field}\` must be a number`);
-        return v;
-      };
-      const ids = (field: string, what: string): string[] | undefined => {
-        const v = event[field];
-        if (v === undefined) return undefined;
-        if (!Array.isArray(v) || !v.every((id) => typeof id === "string")) throw new Error(`${at}: \`${field}\` must be an array of ${what}`);
-        return v as string[];
-      };
-      const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
-      let run = runs.get(key);
-      if (!run) {
-        run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshotId: null, spans: [], complete: true, dropped: 0, open: new Set(), instrumented: null, snapshots: new Set(), runEvents: 0 };
-        runs.set(key, run);
-      }
-      if (!run.files.includes(file)) run.files.push(file);
-      // Events of one run that disagree on the snapshot make the run unbound.
-      run.snapshots.add(typeof event.snapshotId === "string" ? event.snapshotId : null);
-      const kind = str("event");
-      if (kind === "start") {
-        const links = ids("links", "span ids") ?? [];
-        const parent = event.parentSpanId;
-        if (parent !== undefined && parent !== null && typeof parent !== "string") throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
-        const spanId = str("spanId");
-        // Two starts of one span id would let one process's steps nest under another's trigger.
-        if (run.spans.some((item) => item.spanId === spanId)) throw new Error(`${at}: span \`${spanId}\` started twice in run \`${run.runId}\``);
-        run.spans.push({ spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links, start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
-      } else if (kind === "end") {
-        const spanId = str("spanId");
-        const span = run.spans.find((item) => item.spanId === spanId);
-        if (!span) throw new Error(`${at}: end of unknown span \`${spanId}\``);
-        if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
-        span.end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
-      } else if (kind === "run") {
-        // Each process of a run writes its own `run` event: the run is complete only when all of them are.
-        if (event.complete !== undefined && typeof event.complete !== "boolean") throw new Error(`${at}: \`complete\` must be a boolean`);
-        const dropped = event.dropped;
-        if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
-        const instrumented = ids("instrumented", "symbol ids");
-        const open = ids("open", "span ids") ?? [];
-        const draft = run;
-        draft.complete &&= event.complete === true;
-        draft.dropped = draft.dropped === null || dropped === undefined ? null : draft.dropped + dropped;
-        // A symbol is instrumented in the run only when every process says so.
-        const known = draft.instrumented;
-        if (instrumented === undefined) draft.instrumented = null;
-        else if (draft.runEvents === 0) draft.instrumented = new Set(instrumented);
-        else if (known !== null) draft.instrumented = new Set(instrumented.filter((id) => known.has(id)));
-        for (const id of open) draft.open.add(id);
-        draft.runEvents++;
-      } else {
-        throw new Error(`${at}: unknown event \`${kind}\``);
-      }
+    eachLine(join(root, file), (text, line) => {
+      // An editor may save the file with a byte order mark.
+      const body = line === 1 && text.startsWith("\uFEFF") ? text.slice(1) : text;
+      if (body.trim() !== "") readEvent(runs, file, line, body);
     });
   }
-  return [...runs.values()].map(({ snapshots, runEvents, ...run }): TraceRun => {
-    for (const span of run.spans) if (span.end === null) run.open.add(span.spanId);
-    const [snapshotId] = snapshots;
-    return { ...run, complete: run.complete && runEvents > 0, dropped: runEvents > 0 ? run.dropped : null, snapshotId: snapshots.size === 1 ? (snapshotId ?? null) : null };
-  });
+  return [...runs.values()].map(finishRun);
+}
+
+/** Each line of a file (1-based), read in chunks: a trace of millions of events may not fit in one string. */
+function eachLine(path: string, visit: (text: string, line: number) => void): void {
+  const fd = openSync(path, "r");
+  try {
+    const decoder = new StringDecoder("utf8");
+    const chunk = Buffer.allocUnsafe(1 << 16);
+    let rest = "";
+    let line = 0;
+    for (let read = readSync(fd, chunk); read > 0; read = readSync(fd, chunk)) {
+      const lines = (rest + decoder.write(chunk.subarray(0, read))).split("\n");
+      rest = lines.pop() ?? "";
+      for (const text of lines) visit(text, ++line);
+    }
+    visit(rest + decoder.end(), ++line);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readEvent(runs: Map<string, RunDraft>, file: string, line: number, text: string): void {
+  const at = `${file}:${line}`;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${at}: invalid JSON: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (typeof value !== "object" || value === null) throw new Error(`${at}: a trace event must be an object`);
+  const event = value as Record<string, unknown>;
+  if (event.schemaVersion !== TRACE_SCHEMA) throw new Error(`${at}: unsupported trace schemaVersion ${JSON.stringify(event.schemaVersion)}`);
+  const str = (field: string): string => {
+    const v = event[field];
+    if (typeof v !== "string" || v === "") throw new Error(`${at}: \`${field}\` must be a non-empty string`);
+    return v;
+  };
+  const num = (field: string): number => {
+    const v = event[field];
+    if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${at}: \`${field}\` must be a number`);
+    return v;
+  };
+  const ids = (field: string, what: string): string[] | undefined => {
+    const v = event[field];
+    if (v === undefined) return undefined;
+    if (!Array.isArray(v) || !v.every((id) => typeof id === "string")) throw new Error(`${at}: \`${field}\` must be an array of ${what}`);
+    return v as string[];
+  };
+  // A missing snapshot leaves the run unbound; a value of another type is an error, not a missing one.
+  const snapshotId = event.snapshotId;
+  if (snapshotId !== undefined && snapshotId !== null && typeof snapshotId !== "string") throw new Error(`${at}: \`snapshotId\` must be a string or null`);
+  const key = JSON.stringify([str("runId"), str("testId"), str("flow")]);
+  let run = runs.get(key);
+  if (!run) {
+    run = { files: [], runId: str("runId"), testId: str("testId"), flow: str("flow"), snapshots: new Set(), spans: new Map(), pendingEnds: [], complete: true, dropped: 0, open: new Set(), instrumented: null, runEvents: 0 };
+    runs.set(key, run);
+  }
+  if (!run.files.includes(file)) run.files.push(file);
+  // Events of one run that disagree on the snapshot make the run unbound.
+  run.snapshots.add(snapshotId ?? null);
+  const kind = str("event");
+  if (kind === "start") {
+    const links = ids("links", "span ids") ?? [];
+    const parent = event.parentSpanId;
+    if (parent !== undefined && parent !== null && typeof parent !== "string") throw new Error(`${at}: \`parentSpanId\` must be a string or null`);
+    const spanId = str("spanId");
+    // Two starts of one span id would let one process's steps nest under another's trigger.
+    if (run.spans.has(spanId)) throw new Error(`${at}: span \`${spanId}\` started twice in run \`${run.runId}\``);
+    run.spans.set(spanId, { spanId, parentSpanId: parent ?? null, symbolId: str("symbolId"), links, start: { clockId: str("clockId"), seq: num("seq"), ts: num("ts") }, end: null });
+  } else if (kind === "end") {
+    const spanId = str("spanId");
+    const end = { clockId: str("clockId"), seq: num("seq"), ts: num("ts"), outcome: typeof event.outcome === "string" ? event.outcome : "ok" };
+    const span = run.spans.get(spanId);
+    if (!span) run.pendingEnds.push({ spanId, end, at });
+    else if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
+    else span.end = end;
+  } else if (kind === "run") {
+    // Each process of a run writes its own `run` event: the run is complete only when all of them are.
+    if (event.complete !== undefined && typeof event.complete !== "boolean") throw new Error(`${at}: \`complete\` must be a boolean`);
+    const dropped = event.dropped;
+    if (dropped !== undefined && (typeof dropped !== "number" || !Number.isInteger(dropped) || dropped < 0)) throw new Error(`${at}: \`dropped\` must be a non-negative integer`);
+    const instrumented = ids("instrumented", "symbol ids");
+    const open = ids("open", "span ids") ?? [];
+    run.complete &&= event.complete === true;
+    run.dropped = run.dropped === null || dropped === undefined ? null : run.dropped + dropped;
+    // A symbol is instrumented in the run only when every process says so.
+    const known = run.instrumented;
+    if (instrumented === undefined) run.instrumented = null;
+    else if (run.runEvents === 0) run.instrumented = new Set(instrumented);
+    else if (known !== null) run.instrumented = new Set(instrumented.filter((id) => known.has(id)));
+    for (const id of open) run.open.add(id);
+    run.runEvents++;
+  } else {
+    throw new Error(`${at}: unknown event \`${kind}\``);
+  }
+}
+
+/** The run once every file is read: each end closes its start, wherever the two were. */
+function finishRun(draft: RunDraft): TraceRun {
+  for (const { spanId, end, at } of draft.pendingEnds) {
+    const span = draft.spans.get(spanId);
+    if (!span) throw new Error(`${at}: end of unknown span \`${spanId}\``);
+    if (span.end !== null) throw new Error(`${at}: span \`${spanId}\` ended twice`);
+    span.end = end;
+  }
+  const spans = [...draft.spans.values()];
+  for (const span of spans) if (span.end === null) draft.open.add(span.spanId);
+  const [snapshotId] = draft.snapshots;
+  return {
+    files: draft.files,
+    runId: draft.runId,
+    testId: draft.testId,
+    flow: draft.flow,
+    snapshotId: draft.snapshots.size === 1 ? (snapshotId ?? null) : null,
+    spans,
+    complete: draft.complete && draft.runEvents > 0,
+    dropped: draft.runEvents > 0 ? draft.dropped : null,
+    open: draft.open,
+    instrumented: draft.instrumented,
+  };
 }
 
 /** A flow as trace matching sees it. `key` identifies the spec node across runs. */
@@ -152,33 +214,42 @@ type Outcome = TraceEvidence;
 
 /**
  * Trace verdicts for every step and `when` of one flow, keyed by `ShapeNode.key`.
- * The trigger (if any) must be observed; its steps are matched inside it.
+ * The trigger (if any) must be observed; its steps are matched inside it. A
+ * run that never entered the trigger ran something else (a unit test of one
+ * step): it says nothing about the flow while another run entered it.
  */
 export function traceFlow(runs: readonly TraceRun[], flow: string, trigger: { key: number; id: string } | null, shape: readonly ShapeNode[], snapshotId: string | null): Map<number, TraceEvidence> {
-  const perNode = new Map<number, Outcome[]>();
-  const note = (key: number, outcome: Outcome): void => {
-    const list = perNode.get(key) ?? [];
+  // Outcomes of runs that entered the trigger (every current run for a flow without one), and of the others.
+  const entered = new Map<number, Outcome[]>();
+  const others = new Map<number, Outcome[]>();
+  const note = (into: Map<number, Outcome[]>, key: number, outcome: Outcome): void => {
+    const list = into.get(key) ?? [];
     list.push(outcome);
-    perNode.set(key, list);
+    into.set(key, list);
   };
   const tree: ShapeNode[] = trigger ? [{ kind: "step", key: trigger.key, id: trigger.id, children: [...shape] }] : [...shape];
+  const keys = keysOf(tree);
   const mine = runs.filter((run) => run.flow === flow);
   for (const run of mine) {
     const base = { runId: run.runId, testId: run.testId };
     const where = run.files.join(", ");
     if (run.snapshotId === null) {
-      for (const key of keysOf(tree)) note(key, { verdict: "unverified", message: `trace ${where} is not bound to a snapshot`, ...base });
+      for (const key of keys) note(others, key, { verdict: "unverified", message: `trace ${where} is not bound to a snapshot`, ...base });
       continue;
     }
     if (run.snapshotId !== snapshotId) {
-      for (const key of keysOf(tree)) note(key, { verdict: "unverified", message: `stale trace ${where} (snapshot ${run.snapshotId.slice(0, 12)})`, ...base });
+      for (const key of keys) note(others, key, { verdict: "unverified", message: `stale trace ${where} (snapshot ${run.snapshotId.slice(0, 12)})`, ...base });
       continue;
     }
-    for (const [key, outcome] of new Matcher(run).match(tree, trigger !== null)) note(key, outcome);
+    if (trigger && !run.spans.some((span) => span.symbolId === trigger.id)) {
+      for (const key of keys) note(others, key, { verdict: "unverified", message: `trigger not observed in ${run.testId}`, ...base });
+      continue;
+    }
+    for (const [key, outcome] of new Matcher(run).match(tree, trigger !== null)) note(entered, key, outcome);
   }
   const out = new Map<number, TraceEvidence>();
-  for (const key of keysOf(tree)) {
-    const outcomes = perNode.get(key) ?? [];
+  for (const key of keys) {
+    const outcomes = entered.get(key) ?? others.get(key) ?? [];
     const fail = outcomes.find((item) => item.verdict === "fail");
     const ok = outcomes.find((item) => item.verdict === "ok");
     const first = outcomes[0];
