@@ -313,3 +313,103 @@ test("trace adapter: without KEYLANG_TRACE it does nothing; with it, a missing f
   assert.equal(partial.stdout, "");
   assert.match(partial.stderr, /keylang trace: KEYLANG_TRACE is set, so KEYLANG_TRACE_FLOW is required too/);
 });
+
+// ---------- the Rust and PHP adapters ----------
+
+const rustc = spawnSync("rustc", ["--version"], { encoding: "utf8" }).status === 0;
+
+test("rust: a guard in a synchronous fn that starts async code is recorded; a guard inside an async block is not", { skip: rustc ? false : "rustc is not installed" }, (t) => {
+  const rust = join(root, "adapters/rust/keylang_trace.rs");
+  const dir = repo(t, { languages: ["rust"], layers: { app: ["src/*.rs"] }, check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\nedition = "2021"\n',
+    "src/main.rs": `#[path = ${JSON.stringify(rust)}]
+mod keylang_trace;
+
+use std::future::Future;
+
+async fn work() {}
+
+fn spawner() {
+    let _span = keylang_trace::span("app.main.spawner");
+    // Started, never polled here: \`async move { … .await }\` is not this fn's own code.
+    let task = async move { work().await };
+    drop(task);
+}
+
+fn later() -> impl Future<Output = ()> {
+    async move {
+        let _span = keylang_trace::span("app.main.later");
+        work().await;
+    }
+}
+
+fn run() {
+    let _span = keylang_trace::span("app.main.run");
+    spawner();
+    drop(later());
+}
+
+fn main() {
+    run();
+    keylang_trace::finish();
+}
+`,
+    "keylang/flows.md": "# flow a\n\n- trigger app.main.run\n  - step app.main.spawner\n  - step app.main.later\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "a"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const build = spawnSync("rustc", ["--edition", "2021", "-A", "warnings", "-o", join(dir, "shop"), "src/main.rs"], { cwd: dir, encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const exec = spawnSync(join(dir, "shop"), [], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/a.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "shop > @flow a" } });
+  assert.equal(exec.status, 0, exec.stderr);
+  const events = readFileSync(join(dir, ".keylang/trace/a.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; instrumented?: string[] });
+  assert.deepEqual(events.find((e) => e.event === "run")?.instrumented, ["app.main.run", "app.main.spawner"]);
+  const rows = results(dir);
+  assert.equal(traceOf(rows, "app.main.spawner"), "ok: ok app.main.spawner: observed in shop > @flow a");
+  assert.equal(traceOf(rows, "app.main.later"), "unverified: unverified app.main.later: `app.main.later` is not instrumented");
+});
+
+const php = spawnSync("php", ["--version"], { encoding: "utf8" }).status === 0;
+
+test("php: a generator whose body has an arrow function before its `yield` is still a generator", { skip: php ? false : "php is not installed" }, (t) => {
+  const dir = repo(t, { languages: ["php"], layers: { domain: ["src/Domain/**"] }, exclude: ["run.php"], check: { trace: ".keylang/trace/*.jsonl" } }, {
+    "src/Domain/Order.php": [
+      "<?php",
+      "namespace Shop\\Domain;",
+      "",
+      "class Order",
+      "{",
+      "    public function each(): \\Generator",
+      "    {",
+      "        $double = fn (int $x): int => $x * 2;",
+      "        foreach ([1, 2] as $line) {",
+      "            yield $double($line);",
+      "        }",
+      "    }",
+      "",
+      "    public function total(): int",
+      "    {",
+      "        $sum = 0;",
+      "        foreach ($this->each() as $price) {",
+      "            $sum += $price;",
+      "        }",
+      "        return $sum;",
+      "    }",
+      "}",
+      "",
+    ].join("\n"),
+    "run.php": "<?php\nrequire __DIR__ . '/src/Domain/Order.php';\necho (new Shop\\Domain\\Order())->total(), \"\\n\";\n",
+    "keylang/flows.md": "# flow sum\n\n- trigger domain.Order.Order.total\n  - step domain.Order.Order.each\n",
+  });
+  const plan = keylang(dir, ["trace-plan", "sum"]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  const r = spawnSync("php", [join(root, "adapters/php/keylang_trace.php"), "run.php"], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/sum.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow sum" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, "6\n");
+  const run = readFileSync(join(dir, ".keylang/trace/sum.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { event: string; complete?: boolean; instrumented?: string[] }).find((e) => e.event === "run");
+  // Instrumented, the generator's suspended frames would interleave the spans and leave the run incomplete.
+  assert.equal(run?.complete, true);
+  assert.deepEqual(run?.instrumented, ["domain.Order.Order.total"]);
+});

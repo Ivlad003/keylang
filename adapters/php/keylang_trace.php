@@ -362,7 +362,10 @@ if (!class_exists('KeylangTrace', false)) {
 
         /**
          * A `yield` in the body between the brackets at `$open` and `$close`,
-         * not in a function nested in it: the function is a generator.
+         * not in a function nested in it: the function is a generator. An
+         * arrow function (`fn () => …`) has no braces to end a nested scope,
+         * so a `yield` in one counts as the body's own: the function is then
+         * left uninstrumented, which loses evidence but never interleaves spans.
          *
          * @param list<mixed> $tokens
          */
@@ -374,7 +377,7 @@ if (!class_exists('KeylangTrace', false)) {
             for ($i = $open + 1; $i < $close; $i++) {
                 $token = $tokens[$i];
                 $t = is_array($token) ? $token[1] : $token;
-                if (is_array($token) && ($token[0] === T_FUNCTION || $token[0] === T_FN)) {
+                if (is_array($token) && $token[0] === T_FUNCTION) {
                     $marks[] = $depth;
                     $nested++;
                 } elseif ($t === '{' || (is_array($token) && in_array($token[0], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true))) {
