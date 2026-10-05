@@ -257,13 +257,29 @@ function drawEditor(grid: Grid, state: State, rect: Rect, buffer: Buffer): void 
   }
 }
 
-/** Reading mode: the rendered rows, the row of the cursor line, and the first row shown. */
-function readRows(state: State, buffer: Buffer, rect: Rect): { rows: ReadRow[]; cursorRow: number; top: number } {
-  const rows = renderMarkdown(buffer.text, rect.width - 3);
+/** The rendered rows of a buffer per text and width, and the first row of each source line: a frame asks for them more than once. */
+const reading = new WeakMap<Buffer, { text: string; width: number; rows: ReadRow[]; firstRow: Map<number, number> }>();
+
+function readLayout(buffer: Buffer, width: number): { rows: ReadRow[]; firstRow: Map<number, number> } {
+  const cached = reading.get(buffer);
+  if (cached && cached.text === buffer.text && cached.width === width) return cached;
+  const rows = renderMarkdown(buffer.text, width);
+  const firstRow = new Map<number, number>();
+  rows.forEach((row, index) => {
+    if (!firstRow.has(row.source)) firstRow.set(row.source, index);
+  });
+  const entry = { text: buffer.text, width, rows, firstRow };
+  reading.set(buffer, entry);
+  return entry;
+}
+
+/** Reading mode: the rendered rows, the first row of each source line, the row of the cursor line, and the first row shown. */
+function readRows(state: State, buffer: Buffer, rect: Rect): { rows: ReadRow[]; firstRow: Map<number, number>; cursorRow: number; top: number } {
+  const { rows, firstRow } = readLayout(buffer, rect.width - 3);
   const at = rows.findIndex((row) => row.source - 1 >= state.cursor.line);
   const cursorRow = at === -1 ? rows.length - 1 : at;
   const top = Math.max(0, Math.min(cursorRow - Math.floor(rect.height / 3), rows.length - rect.height));
-  return { rows, cursorRow, top };
+  return { rows, firstRow, cursorRow, top };
 }
 
 /** The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there. */
@@ -275,15 +291,15 @@ export function readCursorRow(state: State, buffer: Buffer, rect: Rect): number 
 function drawRead(grid: Grid, state: State, rect: Rect, buffer: Buffer): void {
   const stale = state.updating || state.outdated;
   const evidence = state.analysis ? evidenceOf(state.analysis, buffer.path) : new Map<number, LineEvidence>();
-  const { rows, top } = readRows(state, buffer, rect);
+  const { rows, firstRow, top } = readRows(state, buffer, rect);
   for (let i = 0; i < rect.height && top + i < rows.length; i++) {
     const row = rows[top + i]!;
     const y = rect.y + i;
     const isCursor = row.source - 1 === state.cursor.line;
     const base = isCursor ? { ...THEME.text, ...THEME.cursorLine } : THEME.text;
     grid.fill(rect.x, y, rect.width, 1, base);
-    const first = rows.findIndex((r) => r.source === row.source) === top + i;
-    if (first) {
+    // The gutter mark goes on the first row a source line renders to.
+    if (firstRow.get(row.source) === top + i) {
       const mark = markCell(evidence.get(row.source), stale);
       grid.write(rect.x, y, mark.glyph, { ...base, ...mark.style });
     }

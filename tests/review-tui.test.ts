@@ -5,10 +5,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { analyze } from "../src/analyze.ts";
+import { nodeFacts, summarizeNode } from "../src/explain-node.ts";
+import { hover, hoverContent, hoverMarkdown, runsText, workspace } from "../src/lsp-features.ts";
 import { readStats, updateStats } from "../src/stats.ts";
 import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
 import type { OperationWorker } from "../src/tui/background.ts";
@@ -19,7 +23,7 @@ import { runTerminal, type TerminalHost, type TerminalSignal } from "../src/tui/
 import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
 import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
 import { ZOOM_ROOT } from "../src/tui/zoom.ts";
-import { checkoutRepo, click, KEY } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
@@ -44,6 +48,8 @@ function session(root: string, options: { cols?: number; rows?: number; surface?
 }
 
 const tick = (): Promise<void> => new Promise((done) => setImmediate(done));
+/** 200 moves over a long spec in reading mode: under a second with the rows cached, two minutes when every frame rendered them all. */
+const READ_BUDGET_MS = 20_000;
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 /** A lone ESC is the Escape key once the decoder's pause has passed. */
@@ -524,6 +530,141 @@ test("review-tui: Esc at the top of the zoom closes it and leaves the view where
   s.send("z");
   s.send("q");
   assert.notEqual(s.app.state.current, FLOW_PATH, "q follows the selection");
+});
+
+// ---------- 17, 18: hover as a structure, made once per target ----------
+
+test("review-tui: hover is one structure: LSP renders it as Markdown and the TUI draws its parts as they are", async (t) => {
+  const root = checkoutRepo(t);
+  const analysis = await analyze({ root });
+  const ws = workspace(root, analysis, new Map());
+  const lines = ws.text(FLOW_PATH)!.split("\n");
+  const line = lines.findIndex((text) => text.includes("- step application.purchase.buy"));
+  const position = { line, character: lines[line]!.indexOf("application") + 3 };
+  const content = hoverContent(ws, FLOW_PATH, position)!;
+  assert.equal(content.id, "application.purchase.buy");
+  assert.equal(content.title.map((run) => run.text).join(""), "fn application.purchase.buy () → void");
+  assert.equal(content.place, "src/application/purchase.ts:3");
+  assert.deepEqual(content.declaration, { file: "src/application/purchase.ts", line: 3 });
+  assert.deepEqual(content.flows, ["checkout"]);
+  // A message's code span is a run of its own: Markdown puts it back in backticks, a terminal shows the text.
+  const trace = content.evidence.find((line) => runsText(line).startsWith("trace: "))!;
+  assert.deepEqual(trace, [{ text: "trace: " }, { text: "unverified application.purchase.buy: no trace for flow " }, { text: "checkout", code: true }]);
+  assert.equal(hover(ws, FLOW_PATH, position)!.contents.value, hoverMarkdown(content));
+  assert.match(hoverMarkdown(content), /^\*\*fn\*\* `application\.purchase\.buy` `\(\) → void`\n\nsrc\/application\/purchase\.ts:3\n\n- ID: ok .*\n\n- trace: unverified application\.purchase\.buy: no trace for flow `checkout`\n\nflows: checkout$/s);
+});
+
+test("review-tui: the TUI draws the hover's parts, so a signature with ** or backticks is shown as written", async (t) => {
+  // Parsing the Markdown back stripped every ** and backtick, the signature's own too.
+  const purchase = 'import { create } from "../domain/order.ts";\nimport { save } from "../infrastructure/store.ts";\nexport function buy(/** the **whole** cart */ cart: string, tag: `a${string}`): void {\n  create();\n  save();\n}\n';
+  const s = session(checkoutRepo(t, { "src/application/purchase.ts": purchase }));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send("K");
+  const rows = s.app.state.hover!.lines.map((row) => row.text);
+  assert.equal(rows[0], "fn application.purchase.buy (/** the **whole** cart */ cart: string, tag: `a${string}`) → void");
+  assert.equal(rows[1], "src/application/purchase.ts:3");
+  assert.ok(rows.includes("• trace: unverified application.purchase.buy: no trace for flow checkout"), rows.join("\n"));
+  assert.ok(rows.includes("flows: checkout"));
+  assert.ok(rows.includes("export function buy(/** the **whole** cart */ cart: string, tag: `a${string}`): void {"), "the code at the declaration");
+});
+
+test("review-tui: explain and hover take a node's kind, place and plan from the same facts", async (t) => {
+  const root = checkoutRepo(t, { [FLOW_PATH]: `${CHECKOUT_FLOW}- planned fn application.purchase.refund (order: Order) → Refund\n- planned fn application.purchase.buy () → void\n` });
+  const analysis = await analyze({ root });
+  const ws = workspace(root, analysis, new Map());
+  const lines = ws.text(FLOW_PATH)!.split("\n");
+  const placeOf = (id: string): string | null => {
+    const line = lines.findIndex((text) => text.includes(`planned fn ${id}`));
+    return hoverContent(ws, FLOW_PATH, { line, character: lines[line]!.indexOf(id) + 1 })?.place ?? null;
+  };
+  const buy = nodeFacts(analysis, "application.purchase.buy")!;
+  assert.deepEqual({ source: buy.source, kind: buy.kind, implementsPlan: buy.implementsPlan }, { source: "code", kind: "fn", implementsPlan: true });
+  const bought = summarizeNode(analysis, "application.purchase.buy");
+  assert.ok("summary" in bought);
+  assert.deepEqual({ kind: bought.summary.kind, at: bought.summary.at, planned: bought.summary.planned }, { kind: "fn", at: "src/application/purchase.ts:3", planned: true });
+  assert.equal(placeOf("application.purchase.buy"), "src/application/purchase.ts:3 · planned, implemented");
+  const refund = nodeFacts(analysis, "application.purchase.refund")!;
+  const planLine = lines.findIndex((text) => text.includes("planned fn application.purchase.refund")) + 1;
+  assert.deepEqual({ source: refund.source, kind: refund.kind, file: refund.file, line: refund.line }, { source: "planned", kind: "planned fn", file: FLOW_PATH, line: planLine });
+  const refunded = summarizeNode(analysis, "application.purchase.refund");
+  assert.ok("summary" in refunded);
+  assert.deepEqual({ kind: refunded.summary.kind, signature: refunded.summary.signature, at: refunded.summary.at }, { kind: "planned fn", signature: "(order: Order) → Refund", at: `${FLOW_PATH}:${planLine}` });
+  assert.equal(placeOf("application.purchase.refund"), `${FLOW_PATH}:${planLine} · planned, not implemented`);
+});
+
+test("review-tui: the pointer moving along one ID reads its code once; an edit makes the hover anew", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const at = locate(s.lines(), "application.purchase.buy");
+  const fs = createRequire(import.meta.url)("node:fs") as { readFileSync: typeof readFileSync };
+  const read = fs.readFileSync;
+  const reads: string[] = [];
+  const restore = (): void => {
+    fs.readFileSync = read;
+    syncBuiltinESMExports();
+  };
+  t.after(restore);
+  fs.readFileSync = ((...args: Parameters<typeof readFileSync>) => {
+    reads.push(String(args[0]));
+    return read(...args);
+  }) as typeof readFileSync;
+  syncBuiltinESMExports();
+  const purchase = (): number => reads.filter((path) => path.endsWith(join("src", "application", "purchase.ts"))).length;
+  for (let i = 0; i < 20; i++) s.send(mouseMove(at.x + i, at.y));
+  assert.match(s.text(), /export function buy\(\): void \{/);
+  assert.equal(purchase(), 1, "one read for twenty moves over the same ID");
+  // Typing in the prose changes the buffer: the next hover is made again.
+  s.send(KEY.down);
+  s.send(KEY.down);
+  s.send("i");
+  s.send(KEY.end);
+  s.send("!");
+  s.send("\x1b");
+  await sleep(40);
+  const again = locate(s.lines(), "application.purchase.buy");
+  s.send(mouseMove(again.x + 1, again.y));
+  s.send(mouseMove(again.x + 3, again.y));
+  restore();
+  assert.equal(purchase(), 2);
+});
+
+test("review-tui: the hover of a node whose file is a directory (an outside module) shows, with no code read", async (t) => {
+  const root = checkoutRepo(t, { "tools/build.ts": "export function build(): void {}\n" });
+  const config = JSON.parse(readFileSync(join(root, "keylang.json"), "utf8")) as Record<string, unknown>;
+  put(root, "keylang.json", `${JSON.stringify({ ...config, outside: ["tools/**"] }, null, 2)}\n`);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(":");
+  s.send("outside.md");
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.current, "keylang/map/outside.md");
+  const line = s.app.state.buffers.get("keylang/map/outside.md")!.text.split("\n").findIndex((text) => text.trim() === "- module tools");
+  assert.ok(line > 0, s.app.state.buffers.get("keylang/map/outside.md")!.text);
+  for (let i = 0; i < line; i++) s.send(KEY.down);
+  s.send("K");
+  assert.equal(s.app.state.message, null, "no error from reading a directory as code");
+  assert.match(s.app.state.hover?.lines[0]?.text ?? "", /^module outside\.tools/);
+  assert.ok(s.app.state.hover!.lines.every((row) => row.kind !== "code"));
+});
+
+test("review-tui: reading mode renders a long spec once per text and width, not once per frame and row", async (t) => {
+  const paragraph = "Checkout from the terminal, step by step, with every word wrapped onto the next row. ".repeat(4);
+  const flow = `${CHECKOUT_FLOW}\n${Array.from({ length: 1500 }, (_, i) => (i % 2 === 0 ? `${paragraph}\n` : `## Part ${i}\n`)).join("\n")}`;
+  const s = session(checkoutRepo(t, { [FLOW_PATH]: flow }));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("v");
+  const started = performance.now();
+  for (let i = 0; i < 200; i++) s.send(KEY.down);
+  const elapsed = performance.now() - started;
+  assert.equal(s.app.state.cursor.line, 200);
+  assert.ok(elapsed < READ_BUDGET_MS, `200 moves in reading mode took ${Math.round(elapsed)} ms`);
+  assert.match(s.text(), /Part/, "the rendered rows are drawn");
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");

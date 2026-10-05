@@ -25,7 +25,7 @@ import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze
 import { CONFIG_FILE, guessLayout, loadConfig, parseConfig, resolveStatic, STATIC_MODES, toPosix, withLayers, type StaticMode } from "../config.ts";
 import { collectMdFiles } from "../files.ts";
 import { sectionNodes, walk, type Document, type Node } from "../ir.ts";
-import { completions, definition, hover, references, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
+import { completions, definition, hoverContent, references, runsText, targetAt, workspace, type LspPosition, type Workspace } from "../lsp-features.ts";
 import { contextPack, contextText, type ContextPack } from "../agent-context.ts";
 import type { CheckResult } from "../check-results.ts";
 import { edgeIdKnown } from "../explain-edge.ts";
@@ -171,6 +171,10 @@ export class App {
   private committingLabel = "an operation";
   /** An analysis was asked for during a commit: it runs when the commit ends. */
   private analysisAfterCommit = false;
+  /** The workspace `live()` built last, with what it was built from: the analysis and each buffer at its version. */
+  private liveWorkspace: { analysis: Analysis; buffers: Buffer[]; versions: number[]; ws: Workspace } | null = null;
+  /** The rows of the last hover, for its workspace, file and target (or position off any target). */
+  private lastHover: { ws: Workspace; path: string; key: string; lines: Hover["lines"] | null } | null = null;
 
   constructor(options: AppOptions) {
     this.analyzer = options.analyzer ?? analyze;
@@ -859,14 +863,23 @@ export class App {
 
   // ---------- positions and targets ----------
 
-  /** The workspace of the latest analysis, with this session's buffers as the documents. */
+  /**
+   * The workspace of the latest analysis, with this session's buffers as the
+   * documents. The pointer asks for it on every cell it crosses: the same
+   * analysis and the same buffers at the same versions give the one built last.
+   */
   private live(): Workspace | null {
     const analysis = this.state.analysis;
     if (!analysis) return null;
+    const buffers = [...this.state.buffers.values()];
+    const last = this.liveWorkspace;
+    if (last?.analysis === analysis && last.buffers.length === buffers.length && buffers.every((buffer, i) => last.buffers[i] === buffer && last.versions[i] === buffer.version)) return last.ws;
     const docs = analysis.docs.map((doc) => this.state.buffers.get(doc.path)?.doc ?? doc);
-    for (const buffer of this.state.buffers.values()) if (buffer.doc && !docs.some((doc) => doc.path === buffer.path)) docs.push(buffer.doc);
-    const texts = new Map([...this.state.buffers.values()].map((buffer) => [resolve(this.state.root, buffer.path), buffer.text] as const));
-    return workspace(this.state.root, { ...analysis, docs }, texts);
+    for (const buffer of buffers) if (buffer.doc && !docs.some((doc) => doc.path === buffer.path)) docs.push(buffer.doc);
+    const texts = new Map(buffers.map((buffer) => [resolve(this.state.root, buffer.path), buffer.text] as const));
+    const ws = workspace(this.state.root, { ...analysis, docs }, texts);
+    this.liveWorkspace = { analysis, buffers, versions: buffers.map((buffer) => buffer.version), ws };
+    return ws;
   }
 
   private lspPosition(cursor: Cursor): LspPosition {
@@ -915,32 +928,41 @@ export class App {
     return found;
   }
 
+  /**
+   * The hover at a cursor, anchored at a cell. The rows are made once per
+   * target (an ID or a link) and workspace — wherever on the target the
+   * pointer is, they are the same — and once per position off any target.
+   */
   private hoverAt(cursor: Cursor, x: number, y: number, source: Hover["source"]): Hover | null {
     const ws = this.live();
     const path = this.state.current;
-    if (!ws || !path || !this.buffer()?.doc) return null;
-    const position = this.lspPosition(cursor);
-    const result = hover(ws, path, position);
-    if (!result) return null;
-    const lines: Hover["lines"] = [];
-    const parts = result.contents.value.split("\n\n");
-    parts.forEach((part, index) => {
-      const text = part.replace(/\*\*/g, "").replace(/`/g, "");
-      if (index === 0) lines.push({ text, kind: "title" });
-      else if (part.startsWith("- ")) lines.push({ text: `• ${text.slice(2)}`, kind: "evidence" });
-      else lines.push({ text, kind: "text" });
-    });
-    const target = definition(ws, path, position);
-    if (target) {
-      const file = fileURLToPath(target.uri);
-      if (extname(file) !== ".md" && existsSync(file)) {
-        const code = readFileSync(file, "utf8").split("\n").slice(target.range.start.line, target.range.start.line + 4);
-        lines.push({ text: "", kind: "rule" }, ...code.map((text) => ({ text: text.replace(/\t/g, "  "), kind: "code" as const })));
-      }
+    const doc = this.buffer()?.doc;
+    if (!ws || !path || !doc) return null;
+    const target = targetAt(doc, this.offsetOf(cursor));
+    const key = target === null ? `at ${cursor.line}:${cursor.col}` : `${target.kind} ${target.span.start.offset}-${target.span.end.offset}`;
+    const last = this.lastHover;
+    const lines = last?.ws === ws && last.path === path && last.key === key ? last.lines : this.hoverRows(ws, path, this.lspPosition(cursor));
+    this.lastHover = { ws, path, key, lines };
+    return lines === null ? null : { x, y, lines, source };
+  }
+
+  /** The popup's rows of the hover at a position: the hover's parts as they are, the code at the declaration, the uses in specs. */
+  private hoverRows(ws: Workspace, path: string, position: LspPosition): Hover["lines"] | null {
+    const content = hoverContent(ws, path, position);
+    if (!content) return null;
+    const lines: Hover["lines"] = [{ text: runsText(content.title), kind: "title" }];
+    if (content.place !== null) lines.push({ text: content.place, kind: "text" });
+    for (const line of content.evidence) lines.push({ text: `• ${runsText(line)}`, kind: "evidence" });
+    if (content.flows.length > 0) lines.push({ text: `flows: ${content.flows.join(", ")}`, kind: "text" });
+    const declaration = content.declaration;
+    const code = declaration === null || extname(declaration.file) === ".md" ? null : readText(resolve(this.state.root, declaration.file));
+    if (declaration !== null && code !== null) {
+      const shown = code.split("\n").slice(declaration.line - 1, declaration.line + 3);
+      lines.push({ text: "", kind: "rule" }, ...shown.map((text) => ({ text: text.replace(/\t/g, "  "), kind: "code" as const })));
     }
     const uses = references(ws, path, position).length;
     if (uses > 0) lines.push({ text: `referenced ${uses} time(s) in specs`, kind: "text" });
-    return { x, y, lines, source };
+    return lines;
   }
 
   /** Where a popup at the cursor line is anchored: the raw line in the editor, the rendered row in reading mode. */
