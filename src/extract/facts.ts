@@ -73,6 +73,12 @@ export interface ImportFact {
   /** `use a::*`, `from a import *`: every public name of the source is in scope in this file, with no binding of its own. */
   glob?: true;
   /**
+   * TypeScript `import type …`, `export type … from`, `export type * from`: the statement names
+   * types only and is erased from the code that runs, so it is a dependency of types, not an import.
+   * An inline `import { type A }` is not: with `verbatimModuleSyntax` it stays `import {} from`.
+   */
+  typeOnly?: true;
+  /**
    * The specifier may name a module or another file: `new URL("./worker", import.meta.url)`
    * without an extension. An edge when it resolves to a source file, nothing otherwise.
    */

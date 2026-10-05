@@ -335,3 +335,45 @@ test("python: a name from `from m import *` resolves through `m`'s public names,
   assert.equal(snapshot.nodes["app.a.fa"]?.escapes?.reason, "`fa` is read as a value");
   assert.deepEqual(holes(snapshot, "app.n."), ["app.n.run: dynamic-call call through `gone`, a name from a glob import keylang does not follow"]);
 });
+
+test("typescript: `import type` and `export type … from` are `type` edges: `no-cycles` does not see them, `deny` does; an inline `{ type A }` stays an import", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/a/a.ts": 'import { b } from "../b/b";\nexport interface A { x: number }\nexport function a(): void { b(); }\n',
+      "src/b/b.ts": 'import type { A } from "../a/a";\nexport function b(x?: A): void {}\n',
+      "src/b/c.ts": 'export type { A } from "../a/a";\n',
+      "src/b/d.ts": 'import { type A } from "../a/a";\nexport function d(x?: A): void {}\n',
+      "keylang/rules.md": "# rules\n\n- no-cycles\n- deny b a\n",
+    },
+    { layers: { a: ["src/a/**"], b: ["src/b/**"] } },
+  );
+  const { snapshot } = map(dir);
+  const toA = snapshot.edges.filter((e) => e.target === "a.a").map((e) => `${e.kind} ${e.source}`).sort();
+  assert.deepEqual(toA, ["import b.d", "type b.b", "type b.c"]);
+  assert.deepEqual(snapshot.exports.filter((e) => e.module === "b.c").map((e) => `${e.name} → ${e.symbol}`), ["A → a.a.A"]);
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  assert.doesNotMatch(o.stdout, /K105/);
+  for (const m of ["b\\.b", "b\\.c", "b\\.d"]) assert.match(o.stdout, new RegExp(`K102 divergence: \`${m}\` depends on \`a\\.a\``));
+});
+
+test("typescript: `export type * from` and `export type * as NS from` are read as type-only re-exports, not a syntax error", (t) => {
+  const dir = repo(t, {
+    "src/t.ts": "export type T = 1;\nexport interface U { u: T }\n",
+    "src/a.ts": 'export type * from "./t";\nexport function keep(): void {}\n',
+    "src/b.ts": '/** Types of `t`. */\nexport type * as NS from "./t";\n',
+    "src/use.ts": 'import type { T } from "./a";\nimport type { NS } from "./b";\nexport function f(x: T, y: NS.U): void {}\n',
+  });
+  const { snapshot } = map(dir);
+  assert.deepEqual(snapshot.coverage.filter((c) => c.kind === "parse-error"), []);
+  assert.equal(snapshot.nodes["app.a"]?.members, "complete");
+  assert.equal(snapshot.nodes["app.b"]?.members, "complete");
+  const rows = snapshot.exports.filter((e) => e.module === "app.a" || e.module === "app.b").map((e) => `${e.module} ${e.name} → ${e.symbol}`);
+  assert.deepEqual(rows, ["app.a T → app.t.T", "app.a U → app.t.U", "app.a keep → app.a.keep", "app.b NS → app.t"]);
+  // The text is the statement as written, `type` included.
+  const toT = snapshot.edges.filter((e) => e.target === "app.t").map((e) => `${e.kind} ${e.source} ${e.text}`);
+  assert.deepEqual(toT, ['type app.a export type * from "./t";', 'type app.b export type * as NS from "./t";']);
+  const types = snapshot.edges.filter((e) => e.kind === "type" && e.source === "app.use.f").map((e) => `${e.text} → ${e.target}`);
+  assert.deepEqual(types, ["T → app.t.T", "NS.U → app.t.U"]);
+});

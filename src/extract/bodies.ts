@@ -2,7 +2,8 @@
 // Positions match the declaration ranges of `FileFacts` (1-based line/col of
 // the declaring node); offsets index the JS string (UTF-16 code units).
 
-import { grammarFor, startCol, withTree, type Node } from "./treesitter.ts";
+import { startCol, type Node } from "./treesitter.ts";
+import { withTsTree } from "./ts.ts";
 
 export interface FunctionBody {
   /** Offset of the body: after `{` for a block, the expression start otherwise. */
@@ -19,12 +20,15 @@ const FUNCTIONS = new Set(["function_declaration", "generator_function_declarati
 
 /** `line:col` of each declaring node → the body of its function. */
 export function functionBodies(path: string, src: string): Promise<Map<string, FunctionBody>> {
-  return withTree(grammarFor(path), src, (tree) => bodiesOf(tree.rootNode));
+  return withTsTree(path, src, (tree) => bodiesOf(tree.rootNode));
 }
 
-/** The source parses without a syntax error: an instrumented copy is checked before it replaces the original. */
+/**
+ * The source parses without a syntax error: an instrumented copy is checked before it replaces the
+ * original. `export type * from`, which the bundled grammar does not know, is no error here either.
+ */
 export function parsesCleanly(path: string, src: string): Promise<boolean> {
-  return withTree(grammarFor(path), src, (tree) => !tree.rootNode.hasError);
+  return withTsTree(path, src, (tree) => !tree.rootNode.hasError);
 }
 
 function bodiesOf(root: Node): Map<string, FunctionBody> {

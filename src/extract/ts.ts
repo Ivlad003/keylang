@@ -4,7 +4,7 @@
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
+import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
 // Every call and `new`, whatever its callee: each becomes an edge or a hole, never nothing.
 const CALLS_QUERY = `
@@ -33,7 +33,49 @@ const MAX_CALLEE = 80;
 
 export function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
-  return withTree(g, src, (tree, language) => extractTree(path, tree.rootNode, language, g));
+  return withTsTree(path, src, (tree, language, typeStars) => extractTree(path, tree.rootNode, language, g, typeStars));
+}
+
+/**
+ * Parse a TypeScript or JavaScript source and run `use` on the tree.
+ * `export type * from` and `export type * as NS from` (TypeScript 5.0) are
+ * syntax errors for the bundled grammar, while the same statement without
+ * `type` is `export * from`: such a `type` is blanked with spaces — the same
+ * length, so every position stays — and the source parsed again.
+ * `typeStars`: the start offset of each such statement → its text as written.
+ */
+export async function withTsTree<T>(path: string, src: string, use: (tree: Tree, language: Language, typeStars: ReadonlyMap<number, string>) => T): Promise<T> {
+  const g = grammarFor(path);
+  const first = await withTree(g, src, (tree, language): { done: T } | { keywords: TypeStar[] } => {
+    const keywords = typeStarKeywords(tree.rootNode);
+    return keywords.length === 0 ? { done: use(tree, language, new Map()) } : { keywords };
+  });
+  if ("done" in first) return first.done;
+  let blanked = src;
+  for (const k of first.keywords) blanked = `${blanked.slice(0, k.start)}${" ".repeat(k.end - k.start)}${blanked.slice(k.end)}`;
+  const typeStars = new Map(first.keywords.map((k) => [k.statement, k.text]));
+  return withTree(g, blanked, (tree, language) => use(tree, language, typeStars));
+}
+
+/** The `type` of an `export type * from` statement the grammar could not read: offsets in the source (UTF-16 code units). */
+interface TypeStar {
+  start: number;
+  end: number;
+  statement: number;
+  text: string;
+}
+
+/** `export type * from "./t"` read as `export`, an error node holding `type`, then `*` or `* as NS`. */
+function typeStarKeywords(root: Node): TypeStar[] {
+  if (!root.hasError) return [];
+  const out: TypeStar[] = [];
+  for (const stmt of root.namedChildren) {
+    if (stmt.type !== "export_statement") continue;
+    const [keyword, error, next] = stmt.children;
+    if (keyword?.type !== "export" || error?.type !== "ERROR" || error.text !== "type" || (next?.type !== "*" && next?.type !== "namespace_export")) continue;
+    out.push({ start: error.startIndex, end: error.endIndex, statement: stmt.startIndex, text: stmt.text });
+  }
+  return out;
 }
 
 /**
@@ -69,12 +111,12 @@ function parentIndex(root: Node): Map<number, Node> {
   return index;
 }
 
-function extractTree(path: string, root: Node, language: Language, g: Grammar): FileFacts {
+function extractTree(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   parents = parentIndex(root);
   const head = moduleHeader(root);
   header = head.nodes;
   try {
-    const facts = extractIndexed(path, root, language, g);
+    const facts = extractIndexed(path, root, language, g, typeStars);
     if (head.doc !== null) facts.doc = head.doc;
     return facts;
   } finally {
@@ -147,7 +189,7 @@ function moduleHeader(root: Node): { doc: string | null; nodes: Set<number> } {
   return { doc: null, nodes: new Set() };
 }
 
-function extractIndexed(path: string, root: Node, language: Language, g: Grammar): FileFacts {
+function extractIndexed(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null };
   const end = located(root);
   facts.endLine = end.endLine;
@@ -341,7 +383,12 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
             facts.reexportsAll.push(spec);
             facts.exportRows.push({ name: "*", kind: "reexport", local: null, form: "reexport", from: spec });
           }
-          facts.imports.push(importAt(node, spec, bindings, true));
+          // `export type { A } from`, `export type * from` (read without its blanked `type`): types only.
+          const written = typeStars.get(node.startIndex);
+          const fact = importAt(node, spec, bindings, true);
+          if (written !== undefined) fact.text = written;
+          if (written !== undefined || typeKeyword(node)) fact.typeOnly = true;
+          facts.imports.push(fact);
           break;
         }
         const declaration = node.childForFieldName("declaration");
@@ -890,7 +937,10 @@ function importStatement(node: Node): ImportFact[] {
       }
     }
   }
-  return [importAt(node, spec, bindings, false)];
+  // `import type …` is erased from the code that runs. `import { type A }` is not: it stays `import {} from` under `verbatimModuleSyntax`.
+  const fact = importAt(node, spec, bindings, false);
+  if (typeKeyword(node)) fact.typeOnly = true;
+  return [fact];
 }
 
 /** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */

@@ -459,6 +459,12 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (star) starFrom(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: unit, reason: "" });
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
       for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
+      // `import type`, `export type … from`: a dependency of types only, erased from the code that
+      // runs. A `type` edge, which `allow`, `deny`, `layers` and `entry` see, but `no-cycles` does not.
+      if (imp.typeOnly) {
+        openEdges.push({ kind: "type", source: module.id, target: target.id, candidates: [], file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, resolution: "resolved" });
+        continue;
+      }
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
       if (same.length > 0) {
