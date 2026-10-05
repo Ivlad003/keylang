@@ -5906,7 +5906,7 @@ function typedRun(events: readonly InputEvent[], from: number): KeyEvent[] {
 function pasteRefusal(state: State): string {
   if (state.start !== null) return "paste: nothing takes text here: choose Browse or Init first, then i edits a file";
   if (state.mode === "merge") return "paste: MERGE takes no text: finish it (w writes, Esc cancels), then i edits";
-  if (state.mode === "code") return "paste: the code viewer is read-only: Esc goes back to the spec, then i edits";
+  if (state.mode === "code") return "paste: the code viewer is read-only; Esc goes back to where it was opened from";
   if (state.mode === "zoom") return "paste: the zoom screen takes no text: q goes back to the view, then i edits";
   if (state.focus !== "editor") return "paste: the panel takes no text: Esc goes to the editor, then i edits";
   return "paste: press i to edit first";
