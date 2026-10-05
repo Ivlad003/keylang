@@ -898,7 +898,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
             } else {
               stats.callsUnresolved++;
               // `ns()` with `import * as ns`: a TypeError at run time, and no edge to the default export.
-              const reason = c.hook ? holeReason(c) : c.callee === head && imported?.namespace ? `call of the namespace object \`${head}\`, which is no function` : `unresolved call \`${c.callee}\``;
+              const object = languageOf(facts.path) === "typescript" || languageOf(facts.path) === "javascript" ? "namespace object" : "module object";
+              const reason = c.hook ? holeReason(c) : c.callee === head && imported?.namespace ? `call of the ${object} \`${head}\`, which is no function` : `unresolved call \`${c.callee}\``;
               gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
             }
             continue;
@@ -1106,9 +1107,12 @@ const STDLIB_MODULE = unindexedModule("stdlib");
 /** What an import of a file `assume` lists binds: code keylang deliberately leaves unread, as it leaves a package. */
 const ASSUMED_MODULE = unindexedModule("assumed");
 
-/** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
+/**
+ * A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`)
+ * binds the module object, which is no function, like an ESM namespace.
+ */
 function importTarget(module: Module, unit: string, binding: ImportBinding, whole: boolean): ImportTarget {
-  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null, namespace: binding.kind === "module" && binding.namespace === true };
+  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null, namespace: whole || (binding.kind === "module" && binding.namespace === true) };
   return binding.kind === "default" ? { module, unit, kind: "default", imported: "default", namespace: false } : { module, unit, kind: "named", imported: binding.imported, namespace: false };
 }
 

@@ -556,10 +556,11 @@ function importsOf(node: Node, reexported: (local: string | null) => boolean): I
       if (item.type === "aliased_import") {
         const name = item.childForFieldName("name")?.text;
         const alias = item.childForFieldName("alias")?.text;
-        if (name && alias) out.push(at(name, [{ kind: "module", local: alias }], reexported(alias)));
+        // A module object: `alias.f()` is its function `f`, and `alias()` no call of anything.
+        if (name && alias) out.push(at(name, [{ kind: "module", local: alias, namespace: true }], reexported(alias)));
       } else if (item.type === "dotted_name") {
         const head = item.text.split(".")[0]!;
-        out.push(at(head, [{ kind: "module", local: head }], reexported(head)));
+        out.push(at(head, [{ kind: "module", local: head, namespace: true }], reexported(head)));
         // `a.b.f()` goes through the path; the dependency alias stays the module's own name.
         if (item.text !== head) out.push(at(item.text, [{ kind: "named", local: item.text, imported: item.text.slice(item.text.lastIndexOf(".") + 1) }]));
       }

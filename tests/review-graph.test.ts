@@ -376,6 +376,28 @@ test("python: a name from `from m import *` resolves through `m`'s public names,
   assert.deepEqual(holes(snapshot, "app.n."), ["app.n.run: dynamic-call call through `gone`, a name from a glob import keylang does not follow"]);
 });
 
+test("python: a module an import binds is a module object: calling it is a hole, not its `default`; passing it on hands on its functions", (t) => {
+  const dir = repo(
+    t,
+    {
+      "pkg/__init__.py": "",
+      "pkg/m.py": "def default():\n    pass\ndef f():\n    pass\n",
+      "pkg/u.py": "import pkg.m as mm\nfrom pkg import m\nfrom . import m as m2\ndef run(register):\n    m()\n    mm()\n    m2()\n    m.f()\n    register(mm)\n",
+    },
+    { languages: ["python"], layers: { app: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.u."), ["app.u.run → app.m.f"]);
+  assert.deepEqual(holes(snapshot, "app.u."), [
+    "app.u.run: dynamic-call call through a local value `register`",
+    "app.u.run: unresolved-call call of the module object `m2`, which is no function",
+    "app.u.run: unresolved-call call of the module object `m`, which is no function",
+    "app.u.run: unresolved-call call of the module object `mm`, which is no function",
+  ]);
+  assert.equal(snapshot.nodes["app.m.default"]?.escapes?.reason, "`mm` is read as a value");
+  assert.equal(snapshot.nodes["app.m.f"]?.escapes?.reason, "`mm` is read as a value");
+});
+
 test("python: an import from a module that does not exist is an unresolved import, not a dependency on the package above it", (t) => {
   const dir = repo(
     t,
