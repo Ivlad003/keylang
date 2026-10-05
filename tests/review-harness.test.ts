@@ -213,6 +213,40 @@ test("init without a detected harness names `keylang agents --agents=…` once o
   assert.doesNotMatch(detected.stderr, hint);
 });
 
+/** The `keylang` diagnostics K001–K005 in `check` output: an example that is not valid keylang. */
+const SPEC_ERRORS = /\bK00[1-5]\b/;
+
+test("the AGENTS.md block teaches the grammar: its feature example parses and checks without K001–K005, and it says where ids come from", (t) => {
+  const dir = tempDir(t, "keylang-block-grammar-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  assert.equal(keylang(dir, ["init"]).status, 0);
+  const text = readFileSync(join(dir, "AGENTS.md"), "utf8");
+  const block = text.slice(text.indexOf("<!-- keylang:begin -->"), text.indexOf("<!-- keylang:end -->") + "<!-- keylang:end -->".length);
+  assert.ok(Buffer.byteLength(block) <= 4096, `${Buffer.byteLength(block)} bytes`);
+  const fence = /^```markdown\n([\s\S]*?)^```$/m.exec(block);
+  assert.ok(fence, block);
+  const example = fence[1]!;
+  assert.ok(example.split("\n").length - 1 <= 10, example);
+  for (const shape of [/^# flow \S+$/m, /^- planned fn \S+ \(.*\) → \S+$/m, /^- trigger \S+$/m, /^ {2}- step \S+$/m, /^- \? \S/m]) assert.match(example, shape);
+  for (const said of ["keylang/map/*.md", "`search`", "keylang@", " map` regenerates the map", "`- ? <question>`"]) assert.ok(block.includes(said), said);
+
+  const spec = tempDir(t, "keylang-block-example-");
+  const trigger = /^- trigger (\S+)$/m.exec(example)![1]!.split(".");
+  writeTree(spec, {
+    "keylang/features/example.md": example,
+    // The trigger's layer, module and fn: the planned fn needs no declaration.
+    "keylang/map/ids.md": `# map\n\n- ${trigger[0]}\n  - module ${trigger[1]}\n    - fn ${trigger[2]} () → void\n- ${/^- planned fn ([^.\s]+)\./m.exec(example)![1]}\n`,
+  });
+  const parsed = keylang(spec, ["parse", "--json", "keylang/features/example.md"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  const diagnostics = (JSON.parse(parsed.stdout) as { diagnostics: { code: string }[] }[])[0]!.diagnostics.map((d) => d.code);
+  assert.deepEqual(diagnostics.filter((code) => ["K003", "K004", "K005"].includes(code)), []);
+  const checked = keylang(spec, ["check"]);
+  assert.doesNotMatch(checked.stdout, SPEC_ERRORS, checked.stdout);
+  const feature = keylang(spec, ["feature", "example"]);
+  assert.match(feature.stdout, /question/, "the open question is a gap for a person");
+});
+
 const IGNORED = "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n";
 
 test("init lists .keylang/ in the root .gitignore: created when missing, appended once in the file's line ends, kept when listed", (t) => {
