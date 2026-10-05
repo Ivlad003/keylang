@@ -78,9 +78,11 @@ export const AGENT_CLI_PRESETS = ["claude", "codex", "opencode", "cursor"] as co
 /** What a valid `agent` looks like, for error messages. */
 export const AGENT_FORMS = '"anthropic:<model>", "openrouter:<model>" or "cli:<name>[:<model>]" (a model has no spaces, `<`, `>` or `--` and does not start with `-`)';
 
-// A model is one argv element after `--model` and a value in comment headers:
-// a leading `-` would be read as a flag, `--`/`<`/`>` would break `<!-- … -->`.
-const AGENT_PATTERN = /^(anthropic|openrouter):\S+$|^cli:[a-z][a-z0-9-]*(:(?!-)(?!.*--)[^\s<>]+)?$/;
+// A model is one argv element after `--model` and, for every provider, a value
+// in the header of a saved explanation: a leading `-` would be read as a flag,
+// `--`/`<`/`>` would break `<!-- keylang:explain agent=… -->`.
+const MODEL = String.raw`(?!-)(?!.*--)[^\s<>]+`;
+const AGENT_PATTERN = new RegExp(String.raw`^(?:anthropic|openrouter):${MODEL}$|^cli:[a-z][a-z0-9-]*(?::${MODEL})?$`);
 
 /** `agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it. */
 export function isAgent(value: string): boolean {

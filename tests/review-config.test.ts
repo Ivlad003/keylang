@@ -77,3 +77,35 @@ test("the snapshot records the real versions of the tree-sitter runtime and gram
   assert.equal(grammars["web-tree-sitter"], installed("web-tree-sitter"));
   assert.equal(grammars["@vscode/tree-sitter-wasm"], installed("@vscode/tree-sitter-wasm"));
 });
+
+test("every provider's model follows the rule that keeps the explanation header intact", (t) => {
+  const files = { "src/a.ts": "export function a(): void {}\n" };
+  const layers = { app: ["src/**"] };
+  // No key, no agent CLI: an invalid value must stop the command before any request.
+  const env = (home: string, agent?: string): NodeJS.ProcessEnv => {
+    const out: NodeJS.ProcessEnv = { ...process.env, HOME: home, PATH: "" };
+    for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENROUTER_API_KEY", "KEYLANG_AGENT"]) delete out[name];
+    if (agent !== undefined) out.KEYLANG_AGENT = agent;
+    return out;
+  };
+  for (const agent of ["anthropic:a-->b", "anthropic:-x", "openrouter:a--b", "openrouter:x<y", "anthropic:a b"]) {
+    const dir = repo(t, { ...files, "keylang.json": json({ languages: ["typescript"], layers, agent }) });
+    const run = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir));
+    assert.equal(run.status, 2, `${agent}: ${run.stderr}`);
+    assert.match(run.stderr, /keylang\.json: `agent` must be "anthropic:<model>", "openrouter:<model>" or "cli:<name>\[:<model>\]" \(a model has no spaces/, agent);
+  }
+  const dir = repo(t, { ...files, "keylang.json": json({ languages: ["typescript"], layers }) });
+  const variable = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir, "openrouter:a-->b"));
+  assert.equal(variable.status, 2, variable.stderr);
+  assert.match(variable.stderr, /KEYLANG_AGENT must be .*, got "openrouter:a-->b"/);
+  write(dir, ".config/keylang/agents.json", json({ use: "anthropic:x<y>" }));
+  const settings = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir));
+  assert.equal(settings.status, 2, settings.stderr);
+  assert.match(settings.stderr, /agents\.json: `use` must be .*, got "anthropic:x<y>"/);
+  // A model with `/`, `.` and `:` stays valid.
+  write(dir, "keylang.json", json({ languages: ["typescript"], layers, agent: "openrouter:meta-llama/llama-3.1-8b-instruct:free" }));
+  rmSync(join(dir, ".config"), { recursive: true });
+  const valid = keylang(dir, ["explain", "app.a.a", "--llm"], env(dir));
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.match(valid.stderr, /OPENROUTER_API_KEY/);
+});

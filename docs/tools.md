@@ -165,8 +165,10 @@ MCP-сервер через stdio на `@modelcontextprotocol/sdk`. SDK зава
 "cli:<name>[:<model>]"         встановлений агент-CLI, без API-ключа (підписка CLI)
   <name>  = claude | codex | opencode | cursor     пресети
           | [a-z][a-z0-9-]*                        власний CLI з agents.json
-  <model> без пробілів, `<`, `>` і `--`, не починається з `-`
-          напр. cli:claude:opus, cli:codex:gpt-5.5, cli:opencode:anthropic/claude-sonnet-5, cli:cursor:gpt-5
+  <model> будь-якого провайдера — без пробілів, `<`, `>` і `--`, не починається з `-`
+          (модель стоїть у заголовку `<!-- keylang:explain agent=… -->` і після `--model` агент-CLI)
+          напр. anthropic:claude-sonnet-5, openrouter:openai/gpt-4o:free, cli:claude:opus,
+          cli:codex:gpt-5.5, cli:opencode:anthropic/claude-sonnet-5, cli:cursor:gpt-5
 ```
 
 **Пріоритет:** змінна `KEYLANG_AGENT` > `"use"` у `~/.config/keylang/agents.json` > `agent` у `keylang.json`. Порожня змінна не діє. Невалідне значення будь-якого джерела — код 2 з назвою змінної або файла й поля. `doctor` показує значення, його джерело (`(from KEYLANG_AGENT)`, `(from agents.json)`; без позначки — `keylang.json`), для CLI — бінарник і версію, і окремий рядок `agent CLIs: claude 2.1.289 · codex 0.155.1 · opencode 2.0.20 · cursor 2026.09.28-64d2043` (`—` — не знайдено). `doctor` викликає лише `--version`, ніколи вхід чи статус: чи виконано вхід у CLI, видно на першому запиті.
