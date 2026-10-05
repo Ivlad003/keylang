@@ -234,7 +234,7 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
   const trigger = /^- trigger (\S+)$/m.exec(example)![1]!.split(".");
   writeTree(spec, {
     "keylang/features/example.md": example,
-    // The trigger's layer, module and fn: the planned fn needs no declaration.
+    // The trigger's layer, module and fn, and the planned fn's layer; the planned fn itself needs no declaration.
     "keylang/map/ids.md": `# map\n\n- ${trigger[0]}\n  - module ${trigger[1]}\n    - fn ${trigger[2]} () → void\n- ${/^- planned fn ([^.\s]+)\./m.exec(example)![1]}\n`,
   });
   const parsed = keylang(spec, ["parse", "--json", "keylang/features/example.md"]);
