@@ -73,8 +73,11 @@ import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth
 
 export interface Surface {
   write(ansi: string): void;
-  /** Terminal only: open a file in `$EDITOR`, handing it the screen. */
-  openEditor?: (abs: string, line: number) => Promise<void>;
+  /**
+   * Terminal only: open a file in `$EDITOR` (a terminal editor gets the screen). Resolves to what the status
+   * line should say — the window a GUI editor opened, an editor that did not start — or null.
+   */
+  openEditor?: (abs: string, line: number) => Promise<string | null>;
   /** Terminal only: stop the process as a shell's Ctrl+Z does; the screen is restored first and repainted when it continues. */
   suspend?: () => void;
 }
@@ -977,8 +980,13 @@ export class App {
       return;
     }
     if (this.surface?.openEditor) {
-      // The transport detaches the surface while the editor has the screen and repaints when it is back.
-      void this.surface.openEditor(abs, line);
+      // The transport detaches the surface while the editor has the screen and repaints when it is back;
+      // what happened elsewhere (a GUI editor's window, an editor that did not start) is the status line's.
+      this.track(
+        this.surface.openEditor(abs, line).then((note) => {
+          if (note !== null && !this.closed) this.state.message = note;
+        }),
+      );
       return;
     }
     const place = this.state.current ? { path: this.state.current, cursor: { ...this.state.cursor }, mode: this.state.mode } : null;
@@ -1122,7 +1130,7 @@ export class App {
       if (this.state.results.open || this.state.barrier || this.state.quit) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
       else if (this.state.mode === "edit") this.insert(event.text);
-      else this.state.message = "paste: press i to edit first";
+      else this.state.message = pasteRefusal(this.state);
       return;
     }
     this.state.message = null;
@@ -1132,6 +1140,11 @@ export class App {
     // The help scrolls with the arrows and a page; any other key closes it.
     if (this.state.help) return this.helpKey(event);
     if (this.state.barrier) return this.barrierKey(event);
+    // The palette does not open over a form: that would drop what was typed in it. Ctrl+P says how to go on.
+    if (this.state.prompt && event.ctrl && event.name === "p") {
+      if (this.state.prompt.kind !== "palette") this.state.message = "Ctrl+P: the palette does not open over a form: Enter runs it, Esc closes it, then Ctrl+P";
+      return;
+    }
     if (this.state.prompt) return this.promptKey(event);
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
@@ -1946,13 +1959,17 @@ export class App {
     else if (at >= zoom.top + visible) zoom.top = at - visible + 1;
   }
 
-  /** One level up, the cursor on the node it came from; at the repository Esc closes the screen. */
+  /**
+   * One level up, the cursor on the node it came from. At the repository Esc
+   * closes the screen and leaves the view where it was; `q` is the one that
+   * goes to the selected node.
+   */
   private zoomUp(close: boolean): void {
     const analysis = this.state.analysis!;
     const zoom = this.state.zoom!;
     const above = zoomParent(analysis, zoom.focus);
     if (above === null) {
-      if (close) return this.closeZoom();
+      if (close) return this.closeZoom(false);
       this.state.message = "the repository is the top level: q closes the zoom";
       return;
     }
@@ -5545,6 +5562,11 @@ export class App {
     if (event.name === "enter" && prompt.kind === "spec-to-code") return this.submitSpecCode();
     if (event.name === "enter" && prompt.kind === "proposal") return this.submitProposal();
     if (event.name === "enter" && prompt.kind === "new-spec") return this.submitNewSpec();
+    if (event.name === "enter" && prompt.kind === "palette" && prompt.ids?.[prompt.index] === undefined) {
+      // Nothing matches: the palette stays with the query, so it can be corrected.
+      this.state.message = `no action matches "${prompt.text}": Backspace edits the query, Esc closes`;
+      return;
+    }
     if (event.name === "enter") {
       this.state.prompt = null;
       if (prompt.kind === "search") {
@@ -5583,7 +5605,7 @@ export class App {
     prompt.ids = entries.map((entry) => entry.action.id);
     prompt.notes = entries.map((entry) => entry.reason ?? (entry.note === null ? entry.action.group : `${entry.action.group} · ${entry.note}`));
     prompt.index = 0;
-    prompt.note = prompt.notes[0] ?? "";
+    prompt.note = prompt.notes[0] ?? "no action matches: Backspace edits the query, Esc closes";
   }
 
   /**
@@ -5856,6 +5878,16 @@ function typedRun(events: readonly InputEvent[], from: number): KeyEvent[] {
     run.push(event);
   }
   return run;
+}
+
+/** Why pasted text went nowhere, and the way to where it would go: only the editor takes text. */
+function pasteRefusal(state: State): string {
+  if (state.start !== null) return "paste: nothing takes text here: choose Browse or Init first, then i edits a file";
+  if (state.mode === "merge") return "paste: MERGE takes no text: finish it (w writes, Esc cancels), then i edits";
+  if (state.mode === "code") return "paste: the code viewer is read-only: Esc goes back to the spec, then i edits";
+  if (state.mode === "zoom") return "paste: the zoom screen takes no text: q goes back to the view, then i edits";
+  if (state.focus !== "editor") return "paste: the panel takes no text: Esc goes to the editor, then i edits";
+  return "paste: press i to edit first";
 }
 
 /**

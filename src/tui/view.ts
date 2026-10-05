@@ -172,9 +172,7 @@ export function detailText(item: LineEvidence, snapshotId: string | null): { tex
   }
   for (const diag of item.diagnostics) parts.push({ text: `${diag.code} `, style: THEME.lineNumber }, { text: `${diag.severity === "error" ? "✗" : "!"}  `, style: MARK_STYLE[diag.severity === "error" ? "fail" : "warning"] });
   parts.push({ text: "planned ", style: THEME.lineNumber }, item.planned ? { text: "◇  ", style: MARK_STYLE.planned } : { text: "—  ", style: THEME.lineNumber });
-  // Prose staleness needs a baseline (ticket 21); the state is named, not guessed.
-  parts.push({ text: "stale n/a", style: THEME.lineNumber });
-  if (snapshotId) parts.push({ text: `  · snapshot ${snapshotId.slice(0, 8)}`, style: THEME.lineNumber });
+  if (snapshotId) parts.push({ text: `· snapshot ${snapshotId.slice(0, 8)}`, style: THEME.lineNumber });
   return parts;
 }
 
@@ -1879,7 +1877,7 @@ const HELP: Record<string, [string, string][]> = {
     ["↑↓ PgUp PgDn g G", "move"],
     ["+ / Enter", "zoom into a layer, module or class"],
     ["Enter on fn or type", "its code; Esc comes back here"],
-    ["- / Esc / Backspace", "one level up; Esc at the top closes"],
+    ["- / Esc / Backspace", "one level up; at the top Esc closes, the view stays put"],
     ["> / <", "neighbors one edge farther / nearer (0–3)"],
     ["s", "find a node and zoom to its level"],
     ["e / K", "explain the node"],

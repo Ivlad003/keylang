@@ -63,7 +63,7 @@ test("tui: a step with ID and static but no trace is ◌, with the channels show
   for (const line of s.lines().filter((l) => /- (step|trigger) /.test(l))) assert.notEqual(line[0], "✓", `partial evidence shown as ✓: ${line}`);
   for (let i = 0; i < 5; i++) s.send(KEY.down);
   const detail = s.lines()[s.lines().findIndex((line) => line.includes("- step application.purchase.buy")) + 1]!;
-  assert.match(detail, /└ ID ✓ {2}static ✓ {2}tests — {2}trace ◌ {2}planned — {2}stale n\/a/);
+  assert.match(detail, /└ ID ✓ {2}static ✓ {2}tests — {2}trace ◌ {2}planned — {2}· snapshot [0-9a-f]{8} /);
   assert.match(lineOf(s.lines(), "trace: unverified"), /no trace/);
   assert.match(s.lines().at(-1)!, /✗ 0 {2}◌ \d+ {2}✓ \d+/);
 });
@@ -1847,7 +1847,7 @@ test("tui: text pasted without bracketed paste in MERGE is not a string of comma
   s.send("keylang/flows/checkout.md");
   assert.equal(s.app.state.mode, "merge");
   assert.deepEqual(s.app.state.merge!.decisions, ["pending"]);
-  assert.match(s.app.state.message ?? "", /paste: press i to edit first/);
+  assert.match(s.app.state.message ?? "", /paste: MERGE takes no text/);
   assert.equal(readFileSync(join(root, FLOW_PATH), "utf8"), CHECKOUT_FLOW);
   s.send("\x1b");
   await sleep(40);

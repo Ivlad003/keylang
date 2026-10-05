@@ -8,10 +8,11 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
 import { App, type AppOptions, type Surface } from "./app.ts";
 import { SnapshotWorker } from "./background.ts";
 import { analyze } from "../analyze.ts";
+import { toPosix } from "../config.ts";
 import { ENTER, LEAVE } from "./screen.ts";
 
 /** How to open `file` at `line` with the configured editor, or null without one. */
@@ -170,22 +171,38 @@ export async function runTerminal(root: string, host: TerminalHost = processHost
     stdin.resume();
     app.attach(surface, ...size());
   };
-  const openEditor = async (abs: string, line: number): Promise<void> => {
+  /**
+   * `$VISUAL` / `$EDITOR` at `line` of `abs`: a GUI editor in a window of its
+   * own, a terminal one with the screen. The answer is for the status line:
+   * the window that opened, the editor that did not start, or why nothing
+   * happened; null once a terminal editor gave the screen back.
+   */
+  const openEditor = async (abs: string, line: number): Promise<string | null> => {
     const command = editorCommand(host.env, abs, line);
-    if (!command) return;
+    if (!command) return "no $VISUAL or $EDITOR to open the code in";
+    const name = basename(command.command);
+    const place = `${toPosix(relative(root, abs))}:${line}`;
     if (!command.wait) {
-      spawn(command.command, command.args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
-      return;
+      // A GUI editor returns at once and the TUI keeps the screen: without a word nothing would seem to happen.
+      return new Promise((resolve) => {
+        const child = spawn(command.command, command.args, { stdio: "ignore", detached: true });
+        child.on("error", (error) => resolve(`${name}: could not start (${error.message}); ${place} not opened`));
+        child.on("spawn", () => {
+          child.unref();
+          resolve(`${place} opened in ${name}`);
+        });
+      });
     }
-    if (away !== null || finished) return;
+    if (finished) return null;
+    if (away !== null) return `${place} not opened: the screen is with ${away === "editor" ? "the editor" : "the shell"}`;
     handOver("editor");
-    await new Promise<void>((resolve) => {
+    const failure = await new Promise<string | null>((resolve) => {
       const child = spawn(command.command, command.args, { stdio: "inherit" });
-      child.on("exit", () => resolve());
-      child.on("error", () => resolve());
+      child.on("exit", () => resolve(null));
+      child.on("error", (error) => resolve(`${name}: could not start (${error.message}); ${place} not opened`));
     });
-    if (finished || away !== "editor") return;
-    takeBack();
+    if (!finished && away === "editor") takeBack();
+    return failure;
   };
   /** Ctrl+Z (a key in raw mode) or SIGTSTP: the screen goes back to the shell and keylang stops until SIGCONT. */
   const stop = (): void => {

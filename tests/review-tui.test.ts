@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,6 +18,7 @@ import { ENTER, Grid, LEAVE } from "../src/tui/screen.ts";
 import { runTerminal, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
 import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
+import { ZOOM_ROOT } from "../src/tui/zoom.ts";
 import { checkoutRepo, click, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -424,6 +426,104 @@ test("review-tui: Ctrl+Z where the surface cannot stop (keylang web) does nothin
   assert.equal(s.app.state.mode, "view");
   assert.equal(s.app.state.cursor.line, 1);
   assert.equal(s.app.state.message, null);
+});
+
+// ---------- 15: what the session says ----------
+
+test("review-tui: a jump to code in a GUI $EDITOR says where it opened, or that the editor did not start", { skip: process.platform === "win32" }, async (t) => {
+  const tools = mkdtempSync(join(tmpdir(), "keylang-editor-"));
+  t.after(() => rmSync(tools, { recursive: true, force: true }));
+  const code = join(tools, "code");
+  writeFileSync(code, "#!/bin/sh\nexit 0\n");
+  chmodSync(code, 0o755);
+  const cases: [string, RegExp][] = [
+    [code, /src\/application\/purchase\.ts:3 opened in code/],
+    [join(tools, "missing", "code"), /code: could not start \(spawn \S*missing\/code ENOENT/],
+  ];
+  for (const [editor, note] of cases) {
+    const term = fakeTerminal({ EDITOR: editor });
+    const running = runTerminal(checkoutRepo(t), term.host);
+    await waitUntil(() => /✗ 0/.test(term.out.join("")), "the first analysis");
+    for (let i = 0; i < 5; i++) term.type(KEY.down);
+    term.type(KEY.enter);
+    await waitUntil(() => note.test(term.screen()), `the note about ${editor}`);
+    term.signal("SIGTERM");
+    assert.equal(await running, 0);
+  }
+});
+
+test("review-tui: a paste where no text goes says where it can go, mode by mode", async (t) => {
+  const root = checkoutRepo(t);
+  put(root, `.keylang/proposals/${FLOW_PATH}`, CHECKOUT_FLOW_PAID);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const paste = (): string => {
+    s.send("\x1b[200~src/a.ts\x1b[201~");
+    return s.app.state.message ?? "";
+  };
+  assert.match(paste(), /^paste: press i to edit first/);
+  s.send("m");
+  assert.equal(s.app.state.mode, "merge");
+  assert.match(paste(), /^paste: MERGE takes no text: finish it \(w writes, Esc cancels\), then i edits/);
+  await escape(s);
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "code");
+  assert.match(paste(), /^paste: the code viewer is read-only/);
+  s.send(KEY.ctrlO);
+  s.send("z");
+  assert.equal(s.app.state.mode, "zoom");
+  assert.match(paste(), /^paste: the zoom screen takes no text/);
+  s.send("q");
+  s.send(KEY.tab);
+  assert.equal(s.app.state.focus, "nav");
+  assert.match(paste(), /^paste: the panel takes no text/);
+});
+
+test("review-tui: the expanded row names no placeholder for staleness it does not compute", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 5; i++) s.send(KEY.down);
+  const detail = s.lines()[s.lines().findIndex((line) => line.includes("- step application.purchase.buy")) + 1]!;
+  assert.match(detail, /planned — {2}· snapshot [0-9a-f]{8} /);
+  assert.doesNotMatch(detail, /stale/);
+});
+
+test("review-tui: Ctrl+P in a form keeps the form and says how to reach the palette; Enter on no match keeps the palette", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("/");
+  s.send("checkout");
+  s.send(KEY.ctrlP);
+  assert.equal(s.app.state.prompt?.kind, "search");
+  assert.equal(s.app.state.prompt?.text, "checkout", "what was typed stays");
+  assert.match(s.app.state.message ?? "", /the palette does not open over a form: Enter runs it, Esc closes it/);
+  await escape(s);
+  s.send(":");
+  s.send("qqzzxx");
+  assert.deepEqual(s.app.state.prompt?.items, []);
+  assert.match(s.text(), /:qqzzxx +no action matches: Backspace edits the query, Esc closes/, "the prompt line says so before Enter");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "palette", "still open, with its query");
+  assert.match(s.app.state.message ?? "", /^no action matches "qqzzxx": Backspace edits the query, Esc closes/);
+});
+
+test("review-tui: Esc at the top of the zoom closes it and leaves the view where it was; q goes to the selected node", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("z");
+  assert.equal(s.app.state.zoom?.focus, ZOOM_ROOT, "the top level");
+  await escape(s);
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.current, FLOW_PATH);
+  assert.deepEqual(s.app.state.cursor, { line: 0, col: 0 });
+  s.send("z");
+  s.send("q");
+  assert.notEqual(s.app.state.current, FLOW_PATH, "q follows the selection");
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
