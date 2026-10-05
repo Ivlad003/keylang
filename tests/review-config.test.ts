@@ -311,15 +311,17 @@ test("assume: names an assumed import binds are called outside the graph, like a
   );
 });
 
-test("assume: explain-edge counts an assumed import as no construct that could form an edge", (t) => {
+test("assume: explain-edge and explain count an assumed import as nothing they could not resolve", (t) => {
   const store = 'import { settings } from "../config";\nexport function save(order: unknown): boolean {\n  return settings.persist;\n}\n';
   const dir = repo(t, { ...SHOP, "src/infra/store.ts": store, "keylang.json": json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, assume: ["src/config.ts"] }) });
   const explained = keylang(dir, ["check", "--explain-edge", "infra.store", "ui.cli"]);
   assert.equal(explained.status, 0, explained.stderr);
   assert.equal(explained.stdout, "no edge, coverage complete\n");
+  assert.doesNotMatch(keylang(dir, ["explain", "infra.store"]).stdout, /not resolved/);
   // Without `assume` the missing file is an unresolved import that could.
   write(dir, "keylang.json", json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS }));
   assert.match(keylang(dir, ["check", "--explain-edge", "infra.store", "ui.cli"]).stdout, /^no confirmed edge; 1 unresolved construct\(s\) in `infra\.store` could form one\nunresolved src\/infra\/store\.ts:1:1 unresolved import `\.\.\/config`\n$/);
+  assert.match(keylang(dir, ["explain", "infra.store"]).stdout, /^not resolved: 1 unresolved-import$/m);
 });
 
 test("assume is validated like exclude, and init and draft map do not write it", (t) => {

@@ -3,7 +3,7 @@
 // then back, or — with no edge — whether that absence is proven. Only the
 // snapshot's own edges and coverage count; nothing is inferred from the map text.
 
-import type { AnalysisSnapshot, CoverageItem, SnapshotEdge } from "./snapshot.ts";
+import { leavesUnresolved, type AnalysisSnapshot, type CoverageItem, type SnapshotEdge } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
 /** One edge between the two ids: `forward` is `from → to`, `backward` is `to → from`. */
@@ -36,9 +36,6 @@ export function edgeIdKnown(snapshot: AnalysisSnapshot, id: string): boolean {
 
 const under = (id: string, scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
 
-/** An import of a file `assume` lists names no node, so it cannot hide an edge: it is no unresolved construct. */
-const NO_CONSTRUCT: ReadonlySet<CoverageItem["kind"]> = new Set(["assumed-import"]);
-
 /** The edges and the coverage between two known ids (see `edgeIdKnown`). */
 export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string): EdgeExplanation {
   const between =
@@ -53,7 +50,7 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
     .map((edge): EdgeEvidence => ({ direction: forward(edge) ? "forward" : "backward", edge }));
   if (edges.length > 0) return { from, to, edges, holes: [], conclusion: "edges" };
   const holes = snapshot.coverage
-    .filter((item) => item.source !== null && under(item.source, from) && !NO_CONSTRUCT.has(item.kind))
+    .filter((item) => item.source !== null && under(item.source, from) && leavesUnresolved(item))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
   return { from, to, edges, holes, conclusion: holes.length === 0 ? "complete" : "unresolved" };
 }

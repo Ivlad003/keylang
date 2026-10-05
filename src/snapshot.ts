@@ -109,6 +109,15 @@ export interface CoverageItem {
   source: string | null;
 }
 
+/**
+ * A coverage entry that leaves something unresolved: every kind but
+ * `assumed-import`, an import of a file `assume` lists, which names no node
+ * on purpose and so can hide no edge.
+ */
+export function leavesUnresolved(item: Pick<CoverageItem, "kind">): boolean {
+  return item.kind !== "assumed-import";
+}
+
 export interface SnapshotNode {
   kind: "layer" | "module" | "fn" | "type";
   /** A module node that is a class declared in its parent module: its children are members, `<id>.constructor` (Python `<id>.__init__`) its constructor. */

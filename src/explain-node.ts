@@ -6,6 +6,7 @@
 import type { Analysis } from "./analyze.ts";
 import type { Node, Ref } from "./ir.ts";
 import { flowsUsing, plannedDeclaration } from "./spec-ir.ts";
+import { leavesUnresolved } from "./snapshot.ts";
 
 /** What a node is by the snapshot and the specs, before any view of it shows it. */
 export interface NodeFacts {
@@ -78,7 +79,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   const node = analysis.snapshot?.nodes[id];
   if (facts.source === "code" && node) {
     const holes: Record<string, number> = {};
-    for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
+    for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id && leavesUnresolved(c)) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
     return {
       summary: {
         id,
