@@ -11,7 +11,7 @@ import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts"
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import { assumedTarget, type Resolution } from "./imports.ts";
-import { caselessMembers, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { caselessNames, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 
 export { EXTERNAL };
@@ -561,7 +561,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
    */
   const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
     // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
-    const caseless = caselessMembers(decls.classes.get(start)?.path);
+    const caseless = caselessNames(decls.classes.get(start)?.path);
     const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(member, true, caseless)] : [])];
     const seen = new Set<string>();
     const inClass = (id: string): string | null => {
@@ -600,14 +600,32 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return null;
   };
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
+  /** Per export table of a language whose names compare without case: lower-cased name → the names of its declarations; null for any other table. */
+  const caselessTables = new Map<string, Map<string, string[]> | null>();
+  /**
+   * PHP finds a class or a function whatever the case its name is written in: `new ORDER()`
+   * makes an `Order`, `HELPER()` runs `helper()`. The symbol of the one declaration of `unit`
+   * whose name is `name` in another case; null when the unit's language keeps case, or when no
+   * declaration or two of them (`class Twin`, `function twin`) match.
+   */
+  const caselessExport = (unit: string, name: string): string | null => {
+    let table = caselessTables.get(unit);
+    if (table === undefined) {
+      const file = unit.startsWith(FILE_UNIT) ? unit.slice(FILE_UNIT.length) : moduleFiles.get(unit)?.[0]?.facts.path;
+      table = caselessNames(file) ? caselessIndex(exportInputs.get(unit)?.rows ?? []) : null;
+      caselessTables.set(unit, table);
+    }
+    const names = table?.get(name.toLowerCase()) ?? [];
+    return names.length === 1 && names[0] !== name ? exportTables.symbolOf(unit, names[0]!) : null;
+  };
   /**
    * The symbol a public name stands for in an export table (`unit`: a module, or one file of a
    * module of several files): `export { a as b }`, `export default f`, `export { x } from`,
    * `export { x as y } from`, an imported name exported again, `export * as ns from` (the
    * module), and `export * from`. A name without an export row (CommonJS, an unexported helper)
-   * is the declaration of that name.
+   * is the declaration of that name. PHP may write the name in another case.
    */
-  const exportOf = (unit: string, name: string): string | null => exportTables.symbolOf(unit, name);
+  const exportOf = (unit: string, name: string): string | null => exportTables.symbolOf(unit, name) ?? caselessExport(unit, name);
   /** The export table of what a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
   const namespaceUnit = (id: string | null): string | null => {
     if (id === null) return null;
@@ -1238,6 +1256,21 @@ interface Decls {
   members: Map<string, { name: string; hash: boolean }>;
 }
 
+/**
+ * Lower-cased name → the names of the declarations an export table lists under it. A row that
+ * stands for no declaration (a PHP constant, which keeps its case) is left out.
+ */
+function caselessIndex(rows: readonly ExportRowInput[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.target.kind !== "symbol") continue;
+    const key = row.name.toLowerCase();
+    const names = out.get(key) ?? [];
+    if (!names.includes(row.name)) out.set(key, [...names, row.name]);
+  }
+  return out;
+}
+
 /** Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without case (PHP). */
 export function memberKey(member: string, isStatic: boolean, caseless = false): string {
   const hash = member.startsWith("#");
@@ -1354,7 +1387,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
     decls.classes.set(id, cls);
     const members = new Map<string, string>();
     declModule.set(id, members);
-    const segments = memberSegments(d.members, caselessMembers(file));
+    const segments = memberSegments(d.members, caselessNames(file));
     for (const m of d.members) {
       addDecl(cls, m, members, declModule, decls, stats, file, segments.get(m));
       const fnId = decls.ids.get(m);

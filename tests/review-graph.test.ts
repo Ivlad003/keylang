@@ -520,3 +520,51 @@ test("typescript: `export type * from` and `export type * as NS from` are read a
   const types = snapshot.edges.filter((e) => e.kind === "type" && e.source === "app.use.f").map((e) => `${e.text} → ${e.target}`);
   assert.deepEqual(types, ["T → app.t.T", "NS.U → app.t.U"]);
 });
+
+test("php: a class or a function is found whatever the case its name is written in, as PHP finds it; two declarations whose names differ only in case leave such a name a hole", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/Order.php": [
+        "<?php",
+        "namespace App;",
+        "class Order { public static function make(): void {} public function total(): int { return 1; } }",
+        "function helper(): int { return 2; }",
+        "function local(): int { $o = new ORDER(); return $o->total() + HELPER(); }",
+        "",
+      ].join("\n"),
+      // PHP keeps classes and functions apart; the export table of the file holds both.
+      "src/Twin.php": "<?php\nnamespace App;\nclass Twin {}\nfunction twin(): void {}\n",
+      "src/Use.php": [
+        "<?php",
+        "namespace App;",
+        "use App\\order as Alias;",
+        "function useIt(ORDER $p): int {",
+        "    $o = new ORDER();",
+        "    ORDER::MAKE();",
+        "    TWIN();",
+        "    $a = new alias();",
+        "    return HELPER() + $o->total() + $a->TOTAL();",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    { languages: ["php"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot), [
+    "app.Order.local → app.Order.Order",
+    "app.Order.local → app.Order.Order.total",
+    "app.Order.local → app.Order.helper",
+    "app.Use.useIt → app.Order.Order",
+    "app.Use.useIt → app.Order.Order.make",
+    "app.Use.useIt → app.Order.Order.total",
+    "app.Use.useIt → app.Order.helper",
+  ]);
+  assert.deepEqual(holes(snapshot), ["app.Use.useIt: unresolved-call unresolved call `TWIN`"]);
+  const types = snapshot.edges.filter((e) => e.kind === "type").map((e) => `${e.source} ${e.text} → ${e.target}`);
+  assert.deepEqual(types, ["app.Use.useIt ORDER → app.Order.Order"]);
+  // IDs keep the case the declaration is written in.
+  assert.ok(snapshot.nodes["app.Order.Order"] && snapshot.nodes["app.Order.helper"]);
+  assert.deepEqual(Object.keys(snapshot.nodes).filter((id) => /ORDER|HELPER/.test(id)), []);
+});
