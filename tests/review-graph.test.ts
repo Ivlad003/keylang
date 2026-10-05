@@ -113,3 +113,94 @@ test("module of several files: an import of one file gets that file's exports, `
   assert.equal(snapshot.nodes["ui.parts.make-2"]?.file, "src/ui/parts/card.ts");
   assert.deepEqual(calls(snapshot), ["ui.page.page → ui.parts.card", "ui.page.page → ui.parts.make", "ui.page.page → ui.parts.make-2"]);
 });
+
+test("rust: a name bound by `for`, `if let`, `while let` or a `match` arm shadows the module's fn; a `match` guard does not bind", (t) => {
+  const dir = repo(
+    t,
+    {
+      "Cargo.toml": '[package]\nname = "demo"\nversion = "0.1.0"\n',
+      "src/main.rs": [
+        "fn fa() {}",
+        "fn fb() {}",
+        "fn fc() {}",
+        "fn fd() {}",
+        "fn fe() {}",
+        "fn fg() {}",
+        "fn ready() -> bool { true }",
+        "struct P { fg: fn() }",
+        "fn main() {",
+        "    let fs: Vec<fn()> = vec![];",
+        "    for fa in fs.iter() { fa(); }",
+        "    if let Some(fb) = fs.first() { fb(); }",
+        "    match fs.first() { Some(fc) if ready() => fc(), _ => {} }",
+        "    while let Some(fd) = fs.first() { fd(); }",
+        "    if let Some(x) = fs.first() { let fe = x; fe(); }",
+        "    let p = P { fg: fa };",
+        "    match p { P { fg } => fg() }",
+        "}",
+        "",
+      ].join("\n"),
+    },
+    { languages: ["rust"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.main.main"), ["app.main.main → app.main.ready"]);
+  const shadowed = holes(snapshot, "app.main.main").filter((h) => h.includes("shadowed"));
+  assert.deepEqual(shadowed, ["fa", "fb", "fc", "fd", "fe", "fg"].map((name) => `app.main.main: unresolved-call shadowed by local \`${name}\``));
+});
+
+test("python: a `case` capture and `:=` shadow the module's fn; a value pattern does not", (t) => {
+  const dir = repo(
+    t,
+    {
+      "pkg/__init__.py": "",
+      "pkg/m.py": [
+        "def fa(): pass",
+        "def fb(): pass",
+        "def fc(): pass",
+        "def fd(): pass",
+        "def fe(): pass",
+        "def ff(): pass",
+        "def fg(): pass",
+        "def run(v, items, Color):",
+        "    match v:",
+        "        case (fa,): fa()",
+        '        case {"k": fb}: fb()',
+        "        case str() as fe: fe()",
+        "        case [*ff]: ff()",
+        "        case P(x=fg): fg()",
+        "        case Color.RED: fd()",
+        "    print((fc := items.pop()))",
+        "    fc()",
+        "",
+      ].join("\n"),
+    },
+    { languages: ["python"], layers: { app: ["pkg/**"] } },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot, "app.m.run"), ["app.m.run → app.m.fd"]);
+  const shadowed = holes(snapshot, "app.m.run").filter((h) => h.includes("shadowed"));
+  assert.deepEqual(shadowed, ["fa", "fb", "fc", "fe", "ff", "fg"].map((name) => `app.m.run: unresolved-call shadowed by local \`${name}\``));
+});
+
+test("typescript: a `const` or `function` in one `case` is in scope in every case of its `switch`", (t) => {
+  const dir = repo(t, {
+    "src/d.ts": "export function f(): void {}\nexport function g(): void {}\nexport function h(): void {}\n",
+    "src/c.ts": [
+      'import { f, g, h } from "./d";',
+      "export function sw(k: number): void {",
+      "  switch (k) {",
+      "    case 1: const f = () => {}; break;",
+      "    case 2: f(); h(); break;",
+      "    case 3: { g(); function h(): void {} }",
+      "    default: g();",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const { snapshot } = map(dir);
+  // `function h` in a block of case 3 is scoped to that block, not to the switch.
+  assert.deepEqual(calls(snapshot, "app.c."), ["app.c.sw → app.d.g", "app.c.sw → app.d.h"]);
+  assert.deepEqual(holes(snapshot, "app.c."), ["app.c.sw: unresolved-call shadowed by local `f`"]);
+});

@@ -1053,7 +1053,7 @@ function declarationOf(from: Node, name: string, stop: Node): Declaration | null
       if (at.id !== stop.id && at.type !== "arrow_function" && at.childForFieldName("name")?.text === name) return { kind: "other" };
     }
     if (BLOCK_NODES.has(at.type) || at.type === "program") {
-      for (const stmt of at.namedChildren) {
+      for (const stmt of blockStatements(at)) {
         const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
         if (!target) continue;
         if (target.type === "lexical_declaration" || target.type === "variable_declaration") {
@@ -1394,8 +1394,14 @@ function bindingOf(call: Node, name: string, stop: Node): "parameter" | "local" 
   return null;
 }
 
+/** The statements of a block. A `switch` is one block: a `const` or `function` of one case is in scope in every case. */
+function blockStatements(block: Node): Node[] {
+  if (block.type !== "switch_body") return block.namedChildren;
+  return block.namedChildren.flatMap((c) => (c.type === "switch_case" || c.type === "switch_default" ? c.childrenForFieldName("body") : []));
+}
+
 function blockDeclares(block: Node, name: string): boolean {
-  for (const stmt of block.namedChildren) {
+  for (const stmt of blockStatements(block)) {
     const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
     if (!target) continue;
     if (declaredNames(target).includes(name)) return true;
