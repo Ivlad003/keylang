@@ -130,7 +130,7 @@ keylang — це список, не мова програмування. Нем�
 - **M6.** `# wiring` пише типізований `wire()` у `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` і `explain <id> --llm` пишуть пропозиції. `keylang mcp`: `apply_diff` пише лише пропозицію. Голос за бажанням (`Ctrl+R`). `keylang doctor` звітує і нічого не змінює.
 - **M8.** `init` і `keylang agents` ставлять короткий блок в `AGENTS.md`, сервер MCP і skill для Claude Code, Codex, Cursor чи opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` пише `keylang/rules.baseline.md`: залежності між шарами, яких у графі ще немає. `check --changed` і `keylang hook stop` блокують хід лише на новому порушенні. Покрито тестами CLI і MCP. Наскрізно з Claude Code і Codex на чужому репозиторії ще не перевірено.
-- **PHP.** Класи, функції, `use` і виклики на тому самому графі ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Пакети composer — `external.*`; власні функції й класи PHP вузлів не мають. `spec-to-code` пише заготовку PHP і тест PHPUnit, що падає.
+- **PHP.** Класи, функції, `use` і виклики на тому самому графі ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Пакети composer — `external.*`; власні функції й класи PHP вузлів не мають. `spec-to-code` пише заготовку PHP і тест PHPUnit, що падає. Адаптер trace і розширення PHPUnit — в `adapters/php`.
 
 `bench/` ганяє інструмент на восьми репозиторіях. Числа — у [`bench/results.md`](bench/results.md).
 

@@ -318,3 +318,168 @@ test("php: spec-to-code puts a planned method into its class, a new class into a
   assert.equal(created.status, 0, created.stderr);
   assert.ok(created.stdout.startsWith(["src/Domain/Refund.php (new file)", "@@ line 1 @@", "+<?php", "+", "+declare(strict_types=1);", "+", "+namespace Shop\\Domain;", "+", "+class Refund", "+{", "+    public function make(): void"].join("\n")), created.stdout);
 });
+
+const php = spawnSync("php", ["--version"], { encoding: "utf8" }).status === 0;
+/** A PHPUnit to run under `php`: `KEYLANG_PHPUNIT` (a phar or a script), else `phpunit` on the PATH. */
+const phpunit = php ? (process.env.KEYLANG_PHPUNIT ?? (spawnSync("sh", ["-c", "command -v phpunit"], { encoding: "utf8" }).stdout.trim() || null)) : null;
+const ADAPTER = join(root, "adapters/php/keylang_trace.php");
+
+const TRACE_FILES: Record<string, string> = {
+  "keylang.json": JSON.stringify({ languages: ["php"], layers: { app: ["src/App/**"], domain: ["src/Domain/**"] }, exclude: ["run.php"], check: { trace: ".keylang/trace/*.jsonl", tests: ".keylang/reports/*.json" } }),
+  "src/App/Checkout.php": [
+    "<?php",
+    "namespace Shop\\App;",
+    "",
+    "use Shop\\Domain\\Order;",
+    "",
+    "class Checkout",
+    "{",
+    "    public function buy(): int",
+    "    {",
+    "        $order = new Order();",
+    "        $order->add(3);",
+    "        foreach ($order->each() as $price) {",
+    "        }",
+    "        return $order->total();",
+    "    }",
+    "",
+    "    public function fails(): void",
+    "    {",
+    "        throw new \\RuntimeException('boom');",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+  "src/Domain/Order.php": [
+    "<?php",
+    "namespace Shop\\Domain;",
+    "",
+    "class Order",
+    "{",
+    "    /** @var list<int> */",
+    "    private array $lines = [];",
+    "",
+    "    public function add(int $price): void",
+    "    {",
+    "        $this->lines[] = $price;",
+    "    }",
+    "",
+    "    public function total(): int",
+    "    {",
+    "        return array_sum($this->lines);",
+    "    }",
+    "",
+    "    /** @return \\Generator<int> */",
+    "    public function each(): \\Generator",
+    "    {",
+    "        yield from $this->lines;",
+    "    }",
+    "}",
+    "",
+  ].join("\n"),
+  "autoload.php": "<?php\nspl_autoload_register(static function (string $class): void {\n    require __DIR__ . '/src/' . str_replace('\\\\', '/', substr($class, strlen('Shop\\\\'))) . '.php';\n});\n",
+  "run.php": "<?php\nrequire __DIR__ . '/autoload.php';\n\n$checkout = new Shop\\App\\Checkout();\necho $checkout->buy(), \"\\n\";\nif (($argv[1] ?? '') === 'crash') {\n    $checkout->fails();\n}\n",
+  "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.add\n  - step domain.Order.Order.each\n  - step domain.Order.Order.total\n",
+};
+
+/** The trace plan of `flow`, written to `plan.json`. */
+function planOf(dir: string, flow: string): string[] {
+  const plan = keylang(dir, ["trace-plan", flow]);
+  assert.equal(plan.status, 0, plan.stderr);
+  writeFileSync(join(dir, "plan.json"), plan.stdout);
+  return (JSON.parse(plan.stdout) as { symbols: { id: string }[] }).symbols.map((s) => s.id);
+}
+
+function traceEvents(dir: string, flow: string): { event: string; symbolId?: string; outcome?: string; complete?: boolean; instrumented?: string[]; testId: string; parentSpanId?: string | null; spanId?: string }[] {
+  return readFileSync(join(dir, `.keylang/trace/${flow}.jsonl`), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+}
+
+test("php: `keylang trace-plan` + the PHP adapter give trace evidence; a generator and a file changed after the plan are not instrumented; a crash is incomplete", { skip: php ? false : "php is not installed" }, (t) => {
+  const dir = repo(t, TRACE_FILES);
+  assert.deepEqual(planOf(dir, "buy"), ["app.Checkout.Checkout.buy", "domain.Order.Order.add", "domain.Order.Order.each", "domain.Order.Order.total"]);
+  const trace = (...args: string[]): { status: number | null; stdout: string; stderr: string } => {
+    const r = spawnSync("php", [ADAPTER, "run.php", ...args], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow buy" } });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+  };
+  const ran = trace();
+  assert.equal(ran.status, 0, ran.stderr);
+  // The program runs as without the adapter.
+  assert.equal(ran.stdout, "3\n");
+  const events = traceEvents(dir, "buy");
+  const starts = events.filter((e) => e.event === "start");
+  assert.deepEqual(starts.map((e) => e.symbolId), ["app.Checkout.Checkout.buy", "domain.Order.Order.add", "domain.Order.Order.total"]);
+  // The steps nest under the trigger by the call stack.
+  assert.ok(starts.slice(1).every((e) => e.parentSpanId === starts[0]!.spanId));
+  const run = events.find((e) => e.event === "run")!;
+  assert.equal(run.complete, true);
+  assert.deepEqual(run.instrumented, ["app.Checkout.Checkout.buy", "domain.Order.Order.add", "domain.Order.Order.total"]);
+  const o = keylang(dir, ["check"]);
+  assert.match(o.stdout, /flows\.md:4:3: trace ok domain\.Order\.Order\.add: observed in run\.php > @flow buy/);
+  assert.match(o.stdout, /flows\.md:6:3: trace ok domain\.Order\.Order\.total/);
+  // A generator suspends and resumes: its frames give no nesting, so it is not instrumented.
+  assert.match(o.stdout, /flows\.md:5:3: trace unverified domain\.Order\.Order\.each: `domain\.Order\.Order\.each` is not instrumented/);
+
+  // An uncaught exception stops the flow short: the run is incomplete, and the span it left is an error.
+  rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
+  assert.equal(trace("crash").status, 255);
+  const crashed = traceEvents(dir, "buy");
+  assert.equal(crashed.find((e) => e.event === "run")?.complete, false);
+
+  // After the plan, `Order.php` changes: its functions are not instrumented, and the trace is the old snapshot's.
+  rmSync(join(dir, ".keylang/trace"), { recursive: true, force: true });
+  writeFileSync(join(dir, "src/Domain/Order.php"), `${readFileSync(join(dir, "src/Domain/Order.php"), "utf8")}// changed\n`);
+  assert.equal(trace().status, 0);
+  const changed = traceEvents(dir, "buy");
+  assert.ok(!changed.some((e) => e.symbolId === "domain.Order.Order.add"));
+  assert.deepEqual(changed.find((e) => e.event === "run")?.instrumented, ["app.Checkout.Checkout.buy"]);
+  assert.match(keylang(dir, ["check"]).stdout, /flows\.md:4:3: trace unverified domain\.Order\.Order\.add: stale trace/);
+});
+
+test("php: an instrumented function keeps its lines, its result and its exception; a method of the same name elsewhere is not the plan's", { skip: php ? false : "php is not installed" }, (t) => {
+  const dir = repo(t, {
+    ...TRACE_FILES,
+    "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function add(int $price): void {}\n\n    public function total(): int { return 7; }\n\n    public function each(): \\Generator { yield 1; }\n\n    public function where(): int { return __LINE__; }\n}\n\nclass Draft\n{\n    public function total(): int { return 0; }\n}\n",
+    "run.php": "<?php\nrequire __DIR__ . '/autoload.php';\n\n$order = new Shop\\Domain\\Order();\necho $order->total(), ' ', $order->where(), ' ', (new Shop\\Domain\\Draft())->total(), \"\\n\";\ntry {\n    (new Shop\\App\\Checkout())->fails();\n} catch (\\RuntimeException $e) {\n    echo $e->getMessage(), ' ', $e->getLine(), \"\\n\";\n}\n",
+    "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.fails\n  - step domain.Order.Order.total\n  - step domain.Order.Order.where\n",
+  });
+  planOf(dir, "buy");
+  const r = spawnSync("php", [ADAPTER, "run.php"], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: "run.php > @flow buy" } });
+  assert.equal(r.status, 0, r.stderr);
+  // `__LINE__` and the exception's line are the source's: the span sits on the lines of the braces.
+  assert.equal(r.stdout, "7 12 0\nboom 19\n");
+  const events = traceEvents(dir, "buy");
+  assert.deepEqual(events.filter((e) => e.event === "start").map((e) => e.symbolId), ["domain.Order.Order.total", "domain.Order.Order.where", "app.Checkout.Checkout.fails"]);
+  // The exception leaves `fails` with outcome `error`.
+  const fails = events.find((e) => e.event === "start" && e.symbolId === "app.Checkout.Checkout.fails")!;
+  assert.equal(events.find((e) => e.event === "end" && e.spanId === fails.spanId)?.outcome, "error");
+});
+
+test("php: keylang's PHPUnit extension writes a report bound to the snapshot, and with the adapter each test is a trace run", { skip: phpunit ? false : "phpunit is not installed" }, (t) => {
+  const dir = repo(t, {
+    ...TRACE_FILES,
+    "keylang/flows.md": "# flow buy\n\n- trigger app.Checkout.Checkout.buy\n  - step domain.Order.Order.add\n  - step domain.Order.Order.total\n  - test tests/BuyTest.php \"testBuy\"\n",
+    "phpunit.xml": '<?xml version="1.0"?>\n<phpunit bootstrap="tests/bootstrap.php">\n    <extensions>\n        <bootstrap class="Keylang\\PHPUnit\\Extension"/>\n    </extensions>\n    <testsuites>\n        <testsuite name="all">\n            <directory>tests</directory>\n        </testsuite>\n    </testsuites>\n</phpunit>\n',
+    "tests/bootstrap.php": `<?php\nrequire __DIR__ . '/../autoload.php';\nrequire ${JSON.stringify(join(root, "adapters/php/keylang_phpunit.php"))};\n`,
+    "tests/BuyTest.php": "<?php\nnamespace Shop\\Tests;\n\nuse PHPUnit\\Framework\\TestCase;\nuse Shop\\App\\Checkout;\n\nfinal class BuyTest extends TestCase\n{\n    public function testBuy(): void\n    {\n        $this->assertSame(3, (new Checkout())->buy());\n    }\n\n    public function testLater(): void\n    {\n        $this->markTestSkipped('later');\n    }\n}\n",
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  planOf(dir, "buy");
+  const r = spawnSync("php", ["-d", `auto_prepend_file=${ADAPTER}`, phpunit!], { cwd: dir, encoding: "utf8", env: { ...process.env, KEYLANG_TRACE: ".keylang/trace/buy.jsonl", KEYLANG_TRACE_PLAN: "plan.json", KEYLANG_TRACE_TEST: undefined } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const report = JSON.parse(readFileSync(join(dir, ".keylang/reports/phpunit.json"), "utf8")) as { schemaVersion: number; snapshotId: string; tests: { file: string; suite: string; name: string; status: string }[] };
+  assert.equal(report.schemaVersion, 1);
+  assert.equal(report.snapshotId, (JSON.parse(readFileSync(join(dir, "plan.json"), "utf8")) as { snapshotId: string }).snapshotId);
+  assert.deepEqual(report.tests, [
+    { file: "tests/BuyTest.php", suite: "BuyTest", name: "testBuy", status: "pass" },
+    { file: "tests/BuyTest.php", suite: "BuyTest", name: "testLater", status: "skip" },
+  ]);
+  const events = traceEvents(dir, "buy");
+  // `testLater` reaches none of the flow's functions: it ran something else and is no run of the flow.
+  assert.ok(events.every((e) => e.testId === "tests/BuyTest.php > BuyTest > testBuy"));
+  assert.equal(events.filter((e) => e.event === "run").length, 1);
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /flows\.md:6:3: tests ok test tests\/BuyTest\.php "testBuy": passed in \.keylang\/reports\/phpunit\.json/);
+  assert.match(o.stdout, /flows\.md:3:1: trace ok app\.Checkout\.Checkout\.buy/);
+  assert.match(o.stdout, /flows\.md:4:3: trace ok domain\.Order\.Order\.add: observed in tests\/BuyTest\.php > BuyTest > testBuy/);
+});
