@@ -1,18 +1,19 @@
 // `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
+//
+// A module only one command needs (the terminal TUI, web, LSP, MCP, `new`,
+// `hook install`, `completions`, `check --stale`) is imported in that
+// command's handler, so `--version` and `check` do not compile it. The
+// specifiers stay literal: the map keeps the import edge.
 
 import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
-import { SHELLS, completionScript, helpCommands, isShell } from "./completions.ts";
-import { gitHooksDir, preCommitCommand, preCommitState, preCommitText } from "./git-hook.ts";
 import { safeWrite, writeAtomic } from "./safe-write.ts";
-import { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } from "./tui/new-spec.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
-import { sameFinding } from "./assess.ts";
-import { formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { formatDiagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
@@ -20,13 +21,7 @@ import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
-import { lineDiff } from "./proposals.ts";
-import { serveLsp } from "./lsp.ts";
-import { runTerminal } from "./tui/terminal.ts";
-import { serveWeb } from "./tui/web.ts";
 import { checkSkipNote, checkSummary, featureSummary, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
-import { formatVerdict, type Verdict } from "./verdict.ts";
-import { runStaleCheck, staleLine, staleSummary } from "./stale.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -263,6 +258,7 @@ async function run(argv: readonly string[]): Promise<number> {
       process.stderr.write(USAGE);
       return 2;
     }
+    const { runTerminal } = await import("./tui/terminal.ts");
     return runTerminal(findRoot(process.cwd()));
   }
   switch (cmd) {
@@ -304,8 +300,10 @@ async function run(argv: readonly string[]): Promise<number> {
         limit: values.limit,
         jobs: values.jobs,
       });
-    case "lsp":
+    case "lsp": {
+      const { serveLsp } = await import("./lsp.ts");
       return serveLsp();
+    }
     case "doctor":
       return cmdDoctor();
     case "mcp": {
@@ -342,6 +340,7 @@ async function run(argv: readonly string[]): Promise<number> {
 async function cmdWeb(portText: string, host: string): Promise<number> {
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
+  const { serveWeb } = await import("./tui/web.ts");
   const server = await serveWeb({ root: findRoot(process.cwd()), port, host });
   process.stdout.write(`keylang web: ${server.url}\n`);
   process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
@@ -901,7 +900,8 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
  * directory. A hook without keylang's marker is someone else's: install
  * refuses with 2 and names the line to add; --check counts it as not installed.
  */
-function cmdHookInstall(checkOnly: boolean): number {
+async function cmdHookInstall(checkOnly: boolean): Promise<number> {
+  const { gitHooksDir, preCommitCommand, preCommitState, preCommitText } = await import("./git-hook.ts");
   const version = packageVersion();
   const file = join(gitHooksDir(process.cwd()), "pre-commit");
   const shown = toPosix(relative(process.cwd(), file));
@@ -929,7 +929,8 @@ function cmdHookInstall(checkOnly: boolean): number {
 }
 
 /** `new flow <name>`, `new module <name> --layer <layer>`: a skeleton spec, never over an existing file. */
-function cmdNew(args: readonly string[], layer: string | undefined): number {
+async function cmdNew(args: readonly string[], layer: string | undefined): Promise<number> {
+  const { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } = await import("./tui/new-spec.ts");
   const [what, name, ...rest] = args;
   if (what !== "flow" && what !== "module") throw new Error("new: expected `new flow <name>` or `new module <name> --layer <layer>`");
   if (name === undefined) throw new Error(`new ${what}: a name is required`);
@@ -978,7 +979,8 @@ function plannedModuleTemplate(layer: string, name: string): string {
 }
 
 /** `completions <shell>`: commands from the help text, flags from the parser's table. */
-function cmdCompletions(shell: string | undefined): number {
+async function cmdCompletions(shell: string | undefined): Promise<number> {
+  const { SHELLS, completionScript, helpCommands, isShell } = await import("./completions.ts");
   if (shell === undefined || !isShell(shell)) throw new Error(`completions: expected a shell: ${SHELLS.join(", ")}${shell === undefined ? "" : `; got \`${shell}\``}`);
   const flags = Object.entries(OPTIONS).map(([long, option]) => ("short" in option ? { long, short: option.short } : { long }));
   process.stdout.write(completionScript(shell, { commands: helpCommands(USAGE), flags }));
@@ -1113,6 +1115,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
  * fails; with `strict`, any such line is 1, so CI can gate on review.
  */
 async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean): Promise<number> {
+  const { runStaleCheck, staleLine, staleSummary } = await import("./stale.ts");
   const cwd = process.cwd();
   const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
   const toReview = report.findings.filter((f) => f.state !== "fresh" || f.incomplete.length > 0);
