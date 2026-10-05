@@ -140,6 +140,55 @@ export function sliceCells(text: string, left: number, width: number): string {
   return out;
 }
 
+/** A piece of text in one style: what `wrapRuns` breaks into rows. */
+export interface StyledText<S> {
+  text: string;
+  style: S;
+}
+
+/**
+ * Word-wraps runs of styled text into rows of `width` cells. A run splits
+ * after each space; a word goes to the next row when it does not fit —
+ * measured without the spaces after it, which stay at the end of its row —
+ * and a word wider than a whole row is cut between clusters and goes on in
+ * the next one, so no text is lost at the edge. Rows after the first start
+ * with `hang` spaces in the style `blank` (the indent of a list item).
+ */
+export function wrapRuns<S>(runs: readonly StyledText<S>[], width: number, hang: number, blank: S): StyledText<S>[][] {
+  const rows: StyledText<S>[][] = [];
+  let row: StyledText<S>[] = [];
+  let used = 0;
+  const flush = (): void => {
+    rows.push(row);
+    row = hang > 0 ? [{ text: " ".repeat(hang), style: blank }] : [];
+    used = hang;
+  };
+  for (const run of runs) {
+    for (let word of run.text.split(/(?<= )/u)) {
+      if (used + stringWidth(word.trimEnd()) > width && used > hang) flush();
+      // Wider than the room after the hang: a row's worth at a time, at least one cluster each.
+      while (width > hang && used + stringWidth(word.trimEnd()) > width) {
+        const part = fitWidth(word, width - used) || graphemes(word)[0]!;
+        if (part === word) break;
+        row.push({ text: part, style: run.style });
+        word = word.slice(part.length);
+        flush();
+      }
+      row.push({ text: word, style: run.style });
+      used += stringWidth(word);
+    }
+  }
+  rows.push(row);
+  return rows;
+}
+
+/** `text` word-wrapped to rows of at most `width` cells (`wrapRuns`); the spaces at a break are left out. */
+export function wrapCells(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+  const rows = wrapRuns([{ text, style: null }], width, 0, null).map((row) => row.map((run) => run.text).join(""));
+  return rows.map((row, index) => (index < rows.length - 1 ? row.trimEnd() : row));
+}
+
 /** Cells a cluster takes in a `Grid`: a tab is drawn as one blank cell. */
 export function cellWidth(cluster: string): number {
   return cluster === "\t" ? 1 : graphemeWidth(cluster);

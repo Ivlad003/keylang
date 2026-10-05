@@ -20,7 +20,7 @@ import { Grid, type Style } from "./screen.ts";
 import type { Buffer, Prompt, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
-import { clusters, fitWidth, graphemes, padWidth, sliceCells, stringWidth, type LineLayout } from "./width.ts";
+import { clusters, fitWidth, graphemes, padWidth, sliceCells, stringWidth, wrapCells, type LineLayout } from "./width.ts";
 
 export interface Rect {
   x: number;
@@ -453,7 +453,7 @@ function drawZoom(grid: Grid, state: State, rect: Rect): void {
   grid.write(rect.x + 1, rect.y, fitCrumbs(level.crumbs.map((crumb) => crumb.label), room), THEME.panelTitle, room);
   grid.write(rect.x + rect.width - stringWidth(header.text), rect.y, header.text, { ...THEME.panelTitle, bold: true });
   const e = explanationOf(analysis.snapshot, state.briefs, zoom.focus);
-  const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wrapWords(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
+  const about = e === null ? ["— no explanation yet: a doc comment, a README, or keylang explain --missing --llm writes one"] : wordRows(`${e.text}${originText(e)}`, rect.width - 4).slice(0, ZOOM_HEAD - 1);
   // A flow over the level takes the second row: its layers in the order written at the top and on a layer, else its steps here.
   const atLayers = zoom.focus === ZOOM_ROOT || analysis.snapshot.nodes[zoom.focus]?.kind === "layer";
   const flowRow = overlay === null ? null : atLayers ? `flow ${overlay.flow}: ${flowSequence(overlay)}` : `flow ${overlay.flow}: ${[...overlay.steps.values()].flat().length} step(s) on this level; numbers are the order written, a trace confirms the order run`;
@@ -558,24 +558,14 @@ export function navNote(state: State, width: number): string[] {
   const e = explanationOf(snapshot, state.briefs, item.id);
   if (!e) return [];
   const origin = e.origin === "doc" ? "code" : `llm · ${e.agent ?? "?"} · ${e.date ?? "?"}${e.stale ? " · stale" : ""}`;
-  const rows = wrapWords(`${e.text} (${origin})`, width);
+  const rows = wordRows(`${e.text} (${origin})`, width);
   return rows.length > NAV_NOTE_ROWS ? [...rows.slice(0, NAV_NOTE_ROWS - 1), `${rows[NAV_NOTE_ROWS - 1]!.slice(0, Math.max(0, width - 1))}…`] : rows;
 }
 
-/** Words of `text` in rows of at most `width` cells; a longer word is cut. */
-function wrapWords(text: string, width: number): string[] {
-  const rows: string[] = [];
-  let row = "";
-  for (const word of text.split(/\s+/).filter((w) => w !== "")) {
-    const next = row === "" ? word : `${row} ${word}`;
-    if (stringWidth(next) <= width) row = next;
-    else {
-      if (row !== "") rows.push(row);
-      row = stringWidth(word) <= width ? word : graphemes(word).slice(0, width).join("");
-    }
-  }
-  if (row !== "") rows.push(row);
-  return rows;
+/** An explanation as rows of `width` cells: its whitespace, line breaks included, one space between words; no words, no rows. */
+function wordRows(text: string, width: number): string[] {
+  const words = text.split(/\s+/).filter((word) => word !== "").join(" ");
+  return words === "" ? [] : wrapCells(words, width);
 }
 
 /** Rows of the nav panel's list: what the explanation of the selected node leaves. */
@@ -690,22 +680,6 @@ function clipRows(rows: string[], count: number, width: number): string[] {
 
 function padRows(rows: string[]): string[] {
   return [...rows, ...Array<string>(Math.max(0, DETAIL_MESSAGE_ROWS + DETAIL_META_ROWS - rows.length)).fill("")];
-}
-
-/** `text` cut into rows of at most `width` cells, at spaces where it can. */
-function wrapCells(text: string, width: number): string[] {
-  const rows: string[] = [];
-  let rest = text;
-  while (stringWidth(rest) > width && width > 0) {
-    const fit = fitWidth(rest, width);
-    const space = fit.lastIndexOf(" ");
-    // A cluster wider than the row still takes one row, so the loop always advances.
-    const cut = space > 0 ? space : Math.max(fit.length, graphemes(rest)[0]!.length);
-    rows.push(rest.slice(0, cut));
-    rest = rest.slice(cut).trimStart();
-  }
-  rows.push(rest);
-  return rows;
 }
 
 /** Rows the findings list takes inside the panel `rect`: the counts, the state and the details of the selected finding come first. */

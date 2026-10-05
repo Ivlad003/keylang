@@ -21,7 +21,7 @@ import { mergeRows } from "../src/tui/merge.ts";
 import { ENTER, Grid, LEAVE } from "../src/tui/screen.ts";
 import { runTerminal, type TerminalHost, type TerminalSignal } from "../src/tui/terminal.ts";
 import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
-import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
+import { clusterAt, graphemeWidth, sliceCells, stringWidth, wrapCells, wrapRuns } from "../src/tui/width.ts";
 import { ZOOM_ROOT } from "../src/tui/zoom.ts";
 import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -791,4 +791,26 @@ test("review-tui: the check report counts no import of a file `assume` names amo
   assert.ok(holes > 0, kinds.join(" "));
   const report = newestReport(s);
   assert.match(report, new RegExp(`coverage: ${holes} unresolved construct\\(s\\) in the code`));
+});
+
+test("review-tui: one word wrapper for the TUI: a word that fits to the last cell stays; a word wider than a row goes on; styles go with their text", () => {
+  // The last word ends on the last cell: no row is spent before it.
+  assert.deepEqual(wrapCells("aaa bbb ccc", 7), ["aaa bbb", "ccc"]);
+  // Cells, not code units: a wide cluster takes two.
+  assert.deepEqual(wrapCells("漢字 漢字 x", 9), ["漢字 漢字", "x"]);
+  // A word wider than a row is cut between clusters and goes on: nothing is lost at the edge.
+  assert.deepEqual(wrapCells("a verylongidentifier b", 8), ["a", "verylong", "identifi", "er b"]);
+  // The spaces of a break are left out; the text's own last spaces stay.
+  assert.deepEqual(wrapCells("one two ", 3), ["one", "two "]);
+  // Reading mode: a list item's rows keep the hang, and each piece its style.
+  const rows = wrapRuns([{ text: "• ", style: "bullet" }, { text: "see https://example.com/a/very/long/path now", style: "text" }], 12, 2, "blank");
+  assert.deepEqual(
+    rows.map((row) => row.map((run) => run.text).join("")),
+    ["• see ", "  https://ex", "  ample.com/", "  a/very/lon", "  g/path now"],
+  );
+  assert.deepEqual(
+    rows[1]!.map((run) => run.style),
+    ["blank", "text"],
+  );
+  for (const row of rows) assert.ok(stringWidth(row.map((run) => run.text).join("").trimEnd()) <= 12);
 });

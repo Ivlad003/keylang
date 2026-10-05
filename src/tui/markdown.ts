@@ -6,7 +6,7 @@
 
 import type { Style } from "./screen.ts";
 import { THEME } from "./theme.ts";
-import { stringWidth } from "./width.ts";
+import { stringWidth, wrapRuns } from "./width.ts";
 
 export interface Segment {
   text: string;
@@ -40,26 +40,9 @@ export function inline(written: string, base: Style): Segment[] {
   return out;
 }
 
-/** Word-wraps segments to `width` cells; continuation rows start with `hang` spaces. */
+/** Word-wraps segments to `width` cells (`wrapRuns`); continuation rows start with `hang` spaces. */
 function wrap(segments: Segment[], width: number, hang: number, source: number): ReadRow[] {
-  const rows: ReadRow[] = [];
-  let row: Segment[] = [];
-  let used = 0;
-  const flush = (): void => {
-    rows.push({ segments: row, source });
-    row = hang > 0 ? [{ text: " ".repeat(hang), style: {} }] : [];
-    used = hang;
-  };
-  for (const segment of segments) {
-    for (const word of segment.text.split(/(?<= )/u)) {
-      const w = stringWidth(word);
-      if (used + stringWidth(word.trimEnd()) > width && used > hang) flush();
-      row.push({ text: word, style: segment.style });
-      used += w;
-    }
-  }
-  rows.push({ segments: row, source });
-  return rows;
+  return wrapRuns(segments, width, hang, {}).map((row) => ({ segments: row, source }));
 }
 
 function tableRows(block: { text: string; line: number }[], width: number): ReadRow[] {
