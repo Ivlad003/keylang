@@ -82,7 +82,7 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Decide that the program does the right thing | An invariant sentence stays text. check does not parse "the total is price times quantity." Put that in a test. keylang only records that a named test passed |
 | Treat exit 0 as "everything is proved" | Exit 0 means no `fail`. `unverified` is still a gap. `ok` means the claim held where keylang looked. `--strict` is how CI refuses a gap. The default does not |
 | Let tests or traces decide a feature | They are printed. `feature` ignores them. A stale trace stays `unverified` until the report matches this snapshot |
-| Invent a call the extractor did not see | `obj[k]()`, an unknown decorator, a Rust macro: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
+| Invent a call the extractor did not see | `obj[k]()`, a Rust macro, a step into a function under a Python decorator keylang does not know: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
 | Check that prose still matches the code | check will not mark a description stale. A saved explanation prints `fresh` or `stale`. A green gutter is not "the paragraph is true" |
 | Watch deploys, SLOs, threat models, ADRs, or two services sharing a database | Write that in the other document. keylang will not notice |
 | Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Another language is absent. Absence is not a pass |
@@ -176,10 +176,14 @@ The trigger of a flow should be a plain named function whose body calls the next
 These stay `unverified`, and `feature` stays not done:
 
 - `bot.start(() => add(...))` with no named function in between
-- a body that only exists under a decorator keylang does not know (`@app.post`, `@Controller`, `@Get`, `@Injectable`)
+- a step whose function has a Python decorator keylang does not know (`@retry`, `@app.post`) or a Rust attribute macro it does not know: the decorator may replace the function, so its body may not run ("may not run its own body"). Decorators that keep the function (`@staticmethod`, `@classmethod`, `@property`, `@dataclass`, `@functools.wraps`, `@lru_cache`, `@total_ordering`) are fine
 - `obj[k]()`
 
 Put the real call in a plain function. The framework function calls that plain function.
+
+A decorated function as the trigger is fine: the framework calls it, and the steps under it are judged from its body. A FastAPI `@router.post` route as the trigger gives `static ok` to the step it calls.
+
+TypeScript decorators (`@Controller`, `@Get`, `@Injectable`) are not gaps: keylang assumes the decorated method's body runs, so a NestJS controller or service method can be a trigger or a step and get `static ok`. A call inside a decorator's arguments (`@Get(route())`) runs when the module loads, not inside the method, so it is not a call from the method.
 
 A route or a controller that calls the database directly never makes a flow `ok` if the flow goes through another function. There is no static path.
 
