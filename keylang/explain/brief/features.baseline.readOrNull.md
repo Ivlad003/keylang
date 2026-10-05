@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1983e2e60d05362f781df6064bfb6ea41e46993fe1d85accecf24977b69edd45 lang=en detail=brief -->
-Reads the file at the given absolute path as UTF-8 and returns its contents, or `null` if reading throws for any reason. `features.baseline.planBaseline` uses it to load an existing baseline without failing when the file is absent.

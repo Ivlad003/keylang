@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a342ecb8cafb4cab1c31dc251245846d61b12c61b760cd5e4816b1cdd2ac01c0 lang=en detail=brief -->
-Builds a bare `OperationEnvelope<"doctor">` carrying only the given status and exit code, with a null payload and empty messages, written, removed, and proposals lists. `operations.operations.runDoctor` uses it as a fallback result when no real diagnostics output is produced.

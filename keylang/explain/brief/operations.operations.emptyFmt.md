@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9f6bb4f5da540ca7d4622db936dd098762f3a653d41fb57199e73dd13a17464e lang=en detail=brief -->
-Builds a formatting result envelope with no payload, no written/removed files, and no proposals, carrying the given status and exit code. If an error string is supplied it becomes the sole error-level message; `operations.operations.runFmt` uses it for early-exit outcomes.
