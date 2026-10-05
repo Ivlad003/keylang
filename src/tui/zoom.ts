@@ -7,7 +7,7 @@
 import type { Analysis } from "../analyze.ts";
 import { SYSTEM_ID } from "../explanations.ts";
 import { EXTERNAL } from "../graph.ts";
-import type { AnalysisSnapshot } from "../snapshot.ts";
+import { leavesUnresolved, type AnalysisSnapshot } from "../snapshot.ts";
 import { walkFlow, type FlowItem, type Trigger } from "../spec-ir.ts";
 import { compareText } from "../span.ts";
 import { worse, type Mark } from "./evidence.ts";
@@ -243,7 +243,7 @@ export interface ZoomEdge {
 const EDGE_GROUPS: readonly ZoomEdge["group"][] = ["in", "out", "external", "inside", "unresolved"];
 
 /** Coverage entries that are not constructs keylang failed to resolve. */
-const NOT_HOLES: ReadonlySet<string> = new Set(["skipped-file", "outside-file", "assumed-import"]);
+const NOT_HOLES: ReadonlySet<string> = new Set(["skipped-file", "outside-file"]);
 
 /**
  * The edges view of a level: incoming from outside, outgoing to the code and
@@ -280,7 +280,7 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
   const holes = new Map<string, number>();
   for (const item of snapshot.coverage) {
     // Listed for the record, but no hole: a file left out or outside the architecture, an import of a file `assume` names.
-    if (item.source === null || !inside(item.source, focus) || NOT_HOLES.has(item.kind)) continue;
+    if (item.source === null || !inside(item.source, focus) || NOT_HOLES.has(item.kind) || !leavesUnresolved(item)) continue;
     holes.set(item.kind, (holes.get(item.kind) ?? 0) + 1);
   }
   if (holes.size > 0) {

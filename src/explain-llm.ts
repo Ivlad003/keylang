@@ -16,6 +16,7 @@ import { EXTERNAL } from "./graph.ts";
 import type { LlmRequest } from "./llm.ts";
 import { compareText } from "./span.ts";
 import { plannedDeclaration as plannedDecl } from "./spec-ir.ts";
+import { leavesUnresolved } from "./snapshot.ts";
 
 export type Explanation = StoredExplanation;
 
@@ -176,7 +177,7 @@ const MAX_UNRESOLVED = 20;
  * `assume` names is no such construct: the architecture leaves it unread.
  */
 function unresolved(analysis: Analysis, id: string): string[] {
-  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id && c.kind !== "assumed-import");
+  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id && leavesUnresolved(c));
   if (items.length === 0) return [];
   const lines = items.slice(0, MAX_UNRESOLVED).map((c) => `- ${c.file}:${c.line}: \`${c.text.replace(/\s+/g, " ").trim()}\` — ${c.reason}`);
   if (items.length > MAX_UNRESOLVED) lines.push(`… (${items.length - MAX_UNRESOLVED} more not shown)`);

@@ -8,6 +8,7 @@ import { formatDiagnostic, isError } from "../../diag.ts";
 import { edgeLine, holeLine } from "../../explain-edge.ts";
 import { STAGES, type FeatureInfo, type FeatureReport, type Gap, type Hint } from "../../feature-status.ts";
 import { checkSummary, exportFormatOf, type CheckRequest, type ExplainEdgePayload, type ExportC4Request } from "../../operations.ts";
+import { leavesUnresolved } from "../../snapshot.ts";
 import { FINDING_GLYPH, findingRow } from "../findings.ts";
 import { THEME } from "../theme.ts";
 import { BOLD, codeOf, ERROR, messageRow, MUTED, outcomeRow, shortId, textRows, WARNING, type Report, type ReportRow } from "./rows.ts";
@@ -136,8 +137,7 @@ export const CHECK_REPORTS: { [K in CheckKind]: Report<K> } = {
       payload.results.forEach((item, index) => {
         rows.push({ text: `${FINDING_GLYPH[item.verdict]} ${findingRow(item)}`, style: index === view.selected ? THEME.selected : item.verdict === "ok" ? MUTED : THEME.panel, gap: index });
       });
-      // An import of a file `assume` names is listed in coverage, but keylang left it unread on purpose: no unresolved construct.
-      const unresolved = payload.coverage.filter((item) => item.kind !== "assumed-import").length;
+      const unresolved = payload.coverage.filter(leavesUnresolved).length;
       if (unresolved > 0) rows.push({ text: `coverage: ${unresolved} unresolved construct(s) in the code`, style: MUTED });
       return rows;
     },
