@@ -44,9 +44,16 @@ const BLOCK_LIMIT = 4096;
 /** The spec directory when `keylang.json` names none (`dir`). */
 const DEFAULT_SPEC_DIR = "keylang";
 
-/** Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`. */
+/**
+ * Claude's Bash deny entries that keep an agent from accepting or rejecting a
+ * proposal itself: a person decides it. `*` matches any text, so every form of
+ * the call is covered (`npx -y keylang@x`, `keylang`, `node …/keylang.js`).
+ */
+const PROPOSAL_DENY = ["Bash(* proposals accept *)", "Bash(* proposals reject *)"];
+
+/** Claude's deny entries that keep an agent from editing the rules of the spec directory `dir`, or deciding a proposal. */
 function denyRules(dir: string): string[] {
-  return [`Edit(${dir}/rules.md)`, `Write(${dir}/rules.md)`, `Edit(${dir}/rules.baseline.md)`, `Write(${dir}/rules.baseline.md)`];
+  return [`Edit(${dir}/rules.md)`, `Write(${dir}/rules.md)`, `Edit(${dir}/rules.baseline.md)`, `Write(${dir}/rules.baseline.md)`, ...PROPOSAL_DENY];
 }
 
 /** The spec directory of `keylang.json` under `root` (`dir`, normalized), or `keylang` without the file. A broken file throws, naming the file and the field. */
@@ -144,7 +151,7 @@ export function agentsBody(version: string, dir: string): string {
     "2. Call `validate_spec` on that text, then `scaffold` for each planned fn (template only).",
     "3. Implement the code with your own edits.",
     "4. Call `feature_status` (or the CLI `feature` below) until done, then drop `planned` when K202 says it is implemented.",
-    "Done: every `planned` is implemented (K202, not K201), every flow step is static ok, and no rule fails. Tests and trace do not block.",
+    "Done: every `planned` is implemented (K202, not K201), every flow step is static ok, and no rule fail of this change remains (an older fail elsewhere is a hint). Tests and trace do not block.",
     "",
     "A feature file; the ids only show the shape:",
     "",

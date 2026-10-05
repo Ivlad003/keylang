@@ -200,7 +200,7 @@ Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict,
 or prose to review with check --stale --strict) or a stale map with --check,
 2 usage or I/O error. draft flow, draft rules, code-to-spec, spec-to-code: 1
 when an input changed on disk while the proposal was prepared (nothing is
-written; spec-to-code --apply: 2). hook stop: 0 once started; 2 only for a
+written; spec-to-code --apply too). hook stop: 0 once started; 2 only for a
 bad invocation.
 `;
 

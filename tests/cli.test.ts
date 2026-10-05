@@ -1798,7 +1798,7 @@ test("agents: MCP servers, skill copies, Claude deny and a stale --check that wr
     hooks: { PostToolUse: unknown[]; Stop: { hooks: { command: string }[] }[] };
   };
   assert.deepEqual(settings.permissions.allow, ["Bash"]);
-  for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
+  for (const rule of ["Edit(keylang/rules.md)", "Write(keylang/rules.md)", "Edit(keylang/rules.baseline.md)", "Write(keylang/rules.baseline.md)", "Bash(* proposals accept *)", "Bash(* proposals reject *)"]) assert.ok(settings.permissions.deny.includes(rule), rule);
   assert.ok(settings.permissions.deny.includes("Read(secret)"));
   assert.equal(settings.hooks.PostToolUse.length, 1);
   assert.match(JSON.stringify(settings.hooks.Stop), new RegExp(`keylang@${VERSION.replace(/\./g, "\\.")} hook stop`));

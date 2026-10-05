@@ -143,11 +143,12 @@ test("the harness files follow `dir` of keylang.json: deny rules, the AGENTS.md 
   });
   const read = (path: string): string => readFileSync(join(dir, path), "utf8");
   const deny = (): string[] => (JSON.parse(read(".claude/settings.json")) as { permissions?: { deny?: string[] } }).permissions?.deny ?? [];
-  const own = (spec: string): string[] => [`Edit(${spec}/rules.md)`, `Write(${spec}/rules.md)`, `Edit(${spec}/rules.baseline.md)`, `Write(${spec}/rules.baseline.md)`];
+  const rules = (spec: string): string[] => [`Edit(${spec}/rules.md)`, `Write(${spec}/rules.md)`, `Edit(${spec}/rules.baseline.md)`, `Write(${spec}/rules.baseline.md)`];
+  const proposals = ["Bash(* proposals accept *)", "Bash(* proposals reject *)"];
   const skills = [".agents/skills/keylang-feature/SKILL.md", ".claude/skills/keylang-feature/SKILL.md"];
   const init = keylang(dir, ["init"]);
   assert.equal(init.status, 0, init.stderr);
-  assert.deepEqual(deny(), ["Read(secret)", ...own("keylang")]);
+  assert.deepEqual(deny(), ["Read(secret)", ...rules("keylang"), ...proposals]);
 
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify({ ...LAYERS, dir: "spec" })}\n`);
   const before = treeBytes(dir);
@@ -158,7 +159,7 @@ test("the harness files follow `dir` of keylang.json: deny rules, the AGENTS.md 
 
   const agents = keylang(dir, ["agents"]);
   assert.equal(agents.status, 0, agents.stderr);
-  assert.deepEqual(deny(), ["Read(secret)", ...own("spec")], "keylang's entries for the old default dir go; the user's stays");
+  assert.deepEqual(deny(), ["Read(secret)", ...proposals, ...rules("spec")], "keylang's entries for the old default dir go; the user's stays; the dir-free entries keep their place");
   for (const path of ["AGENTS.md", ...skills]) {
     const text = read(path);
     for (const named of ["spec/features/<slug>.md", "spec/rules.md", "spec/rules.baseline.md"]) assert.ok(text.includes(`\`${named}\``), `${path}: ${named}`);

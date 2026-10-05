@@ -109,7 +109,7 @@ When the person asks you to add a feature, you may create `keylang/features/<slu
 Do not edit these by hand:
 
 - `keylang/map/` and any file whose first lines contain `keylang:generated`. Regenerate the map with `npx -y keylang map`.
-- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`, or accepts it whole with `keylang proposals accept <path>` where there is no terminal UI. Never run `proposals accept` or `proposals reject` yourself. Where your tool can deny edits, deny `Edit` and `Write` on both rule files.
+- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`, or accepts it whole with `keylang proposals accept <path>` where there is no terminal UI. Never run `proposals accept` or `proposals reject` yourself. Where your tool can deny edits, deny `Edit` and `Write` on both rule files and Bash `* proposals accept *` / `* proposals reject *`; `keylang agents` writes those entries for Claude.
 - `keylang.gen.ts` (the `keylang wire` output). You do not need `wire` to check a feature.
 
 A deny in the baseline that forbids a call the person still needs is a conversation. It is not a bug in the tool. Ask, then propose the rule change. After the new import is accepted, `npx -y keylang baseline` rewrites the baseline from the graph.
@@ -137,7 +137,7 @@ Use ids from the map of the repository you are in. The names above are only the 
 
 2. Call MCP `validate_spec` with that path and the full text before you rely on it. Fix every diagnostic. K001 includes a line and a column. A missing function is not K001 while it is `planned`.
 3. Call MCP `scaffold` for each `planned fn`. It returns a path, a stub, and failing tests. It does not write files and does not call a model. An id that already exists is an error and names the file. A planned module is not a stub. You create that file.
-4. Implement the bodies with your own edits. Keep the declared name and signature. Spaces do not matter, and `->` is the same as `→`. A different kind or signature is K201. A match is warning K202.
+4. Implement the bodies with your own edits. Keep the declared name and signature. Spaces do not matter, and `->` is the same as `→`. A plan with only a parameter list promises only the parameters: `(order: Order)` matches code `(order: Order) → Refund`; a plan with a return type must match in full. A different kind or signature is K201. A match is warning K202.
 5. Call `feature_status` or run `npx -y keylang feature <slug>`. Exit 0 and `done` on stderr means all three: every `planned` in **that file** is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` of this change remains, including the baseline. A rule `fail` is this change's when it touches a file changed since the base commit (`HEAD`, or `since`), as `check --changed` reports it, or an end of its edge is an id the feature names. An older `fail` elsewhere is a `hint: … rule … inherited` line and an entry of `info.rules`; it does not block. Without git every rule `fail` blocks. Tests and traces are printed. They do not decide. Until then the exit code is 1 and stdout lists the gaps.
 6. When K202 names a `planned` line, delete that line. Leave the feature file.
 
@@ -228,11 +228,17 @@ Proposals wait in `.keylang/proposals/`. `npx -y keylang proposals` lists them a
 
 On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202. A warning is not a failed verdict.
 
+A static `fail` ends with the fix: add a call to the step in its parent or in a function the parent reaches; for `calls`, a direct call in the parent. In `check --format json` an unverified rule names its `hole` (`file:line:col`). One hole can leave several rules unverified; the summary then reads `M unverified (from H holes)`. Fix the hole once.
+
 `parse --json` writes only JSON to stdout. Diagnostics go to stderr. `check` writes findings to stdout and the summary to stderr.
 
 ## Languages and layers
 
 Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Other files are absent, not a quiet success. In PHP a module is a file and its class a member: `src/Domain/Order.php` with `class Order` gives `Domain.Order.Order.place`.
+
+Each file is its own scope, also with `module: "dir"`: import a sibling file's function to call it. Two same-named functions of one directory module get the IDs `name` and `name-2`; an exported one keeps the plain name. IDs are NFC: a name typed in NFD (some macOS paths) means the same ID.
+
+In TypeScript, `import type …` and `export type … from` are still dependencies for the map, `deny` and `layers`, but `no-cycles` ignores them: to break a cycle that exists only in types, use `import type`, not inline `{ type A }`. `import * as ns` is a namespace object, not the default export: `ns.f()` resolves, `ns()` is a hole. A decorator is not a hole; see the TypeScript subsection of format.md §11.
 
 `keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`.
 
