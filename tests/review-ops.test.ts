@@ -256,3 +256,46 @@ test("export: with `dir: ./keylang` the map and the explained map under keylang/
   assert.equal(exportTargetProblem(flat, "map/app.md"), "a generated artifact: only its generator writes it");
   assert.equal(exportTargetProblem(flat, "map-explained/README.md"), "a generated artifact: only its generator writes it");
 });
+
+// ---------- 5. spec-to-code --mode llm: the part of the file where the code goes ----------
+
+/** `count` functions of four lines after an import: a module file far longer than the request shows. */
+function longModule(count: number, tail = ""): string {
+  return `import { createOrder, type Order } from "../domain/order.ts";\n\n${Array.from({ length: count }, (_, i) => `export function helper${i}(n: number): number {\n  return n + ${i};\n}\n`).join("\n")}${tail}`;
+}
+
+test("spec-to-code --mode llm sends the file's imports and the part where the code goes, not the whole file: the end of a module, the lines of a class", async (t) => {
+  const flow = (id: string, signature: string): string => `# flow plan\n\n- planned fn ${id} ${signature}\n- trigger ${id}\n`;
+  const reply = "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
+  // A function: appended to a module of 600 lines.
+  const dir = copy(t, { agent: "cli:claude" }, { "src/app/refund.ts": longModule(150), "keylang/flows/refund.md": flow("app.refund.refund", "(order: Order) → Order") });
+  const fake = fakeAgents(t, ["claude"], { reply });
+  const o = await keylang(dir, ["spec-to-code", "app.refund.refund", "--mode", "llm", "--print"], fake);
+  assert.equal(o.status, 0, o.stderr);
+  const prompt = fake.calls()[0]!.stdin;
+  assert.match(prompt, /File src\/app\/refund\.ts \(its head and the part where the code goes\):\n```\nimport \{ createOrder, type Order \} from "\.\.\/domain\/order\.ts";\n\n… \(lines 3–\d+ not shown\)\n/);
+  assert.ok(prompt.includes("export function helper149(n: number): number {\n  return n + 149;\n}\n"), "the end of the file, where the function goes");
+  assert.ok(!prompt.includes("export function helper0("), "the middle of the file is not sent");
+  assert.ok(prompt.split("\n").length < 260, `${prompt.split("\n").length} lines`);
+  // The candidate is still the whole file with the model's function at its end.
+  assert.match(o.stdout, /\+export function refund\(order: Order\): Order \{\n\+ {2}return order;\n\+\}/);
+
+  // A method: the class it goes into, not the functions before it.
+  const method = "```ts\ncount(): number {\n  return 0;\n}\n```";
+  const cls = copy(t, { agent: "cli:claude" }, {
+    "src/infra/db.ts": longModule(150, "\nexport class Db {\n  query(sql: string): string[] {\n    return sql.split(\";\");\n  }\n}\n").replace('import { createOrder, type Order } from "../domain/order.ts";', 'import { writeFileSync } from "node:fs";'),
+    "keylang/flows/count.md": flow("infra.db.Db.count", "() → number"),
+  });
+  const classFake = fakeAgents(t, ["claude"], { reply: method });
+  const m = await keylang(cls, ["spec-to-code", "infra.db.Db.count", "--mode", "llm", "--print"], classFake);
+  assert.equal(m.status, 0, m.stderr);
+  const asked = classFake.calls()[0]!.stdin;
+  assert.match(asked, /```\nimport \{ writeFileSync \} from "node:fs";\n\n… \(lines 3–\d+ not shown\)\nexport class Db \{\n {2}query\(sql: string\): string\[\] \{/);
+  assert.ok(!asked.includes("helper149"), "the functions before the class are not sent");
+  assert.match(m.stdout, /\+ {2}count\(\): number \{/);
+  // A short file is sent whole, as before.
+  const short = copy(t, { agent: "cli:claude" }, { "keylang/flows/refund.md": flow("app.refund.refund", "(order: Order) → Order"), "src/app/refund.ts": "export const policy = 1;\n" });
+  const shortFake = fakeAgents(t, ["claude"], { reply });
+  assert.equal((await keylang(short, ["spec-to-code", "app.refund.refund", "--mode", "llm", "--print"], shortFake)).status, 0);
+  assert.match(shortFake.calls()[0]!.stdin, /File src\/app\/refund\.ts:\n```\nexport const policy = 1;\n\n```/);
+});

@@ -618,18 +618,56 @@ function dedent(code: string): string {
   return Number.isFinite(common) ? lines.map((line) => line.slice(Math.min(common, leadingSpace(line).length))).join("\n") : code;
 }
 
+/** Most lines of the target file a request shows whole, and of the part where the code goes: the cap of the code `explain --llm` sends. */
+const EXCERPT_LINES = 200;
+/** Most lines of a long file's head (its imports) a request shows. */
+const HEAD_LINES = 50;
+
+/**
+ * What the model is shown of the file the code goes into, never more than
+ * about `HEAD_LINES + EXCERPT_LINES` lines: a file of up to `EXCERPT_LINES`
+ * lines whole; a longer one as its head up to the first declaration (the
+ * imports, at most `HEAD_LINES` lines), then the class the method joins
+ * (from its first line) or the end of the file a function is appended to,
+ * at most `EXCERPT_LINES` lines, each gap named with its lines.
+ */
+function fileExcerpt(text: string, owner: CodeTarget["owner"], firstDeclaration: number | null): string {
+  const lines = text.split("\n");
+  // The newline that ends the file is no line of its own.
+  if (lines.at(-1) === "") lines.pop();
+  if (lines.length <= EXCERPT_LINES) return text;
+  const span = owner?.span ?? null;
+  const from = span === null ? Math.max(0, lines.length - EXCERPT_LINES) : span.line - 1;
+  const to = span === null ? lines.length : Math.min(span.endLine, from + EXCERPT_LINES);
+  const head = Math.min(HEAD_LINES, from, Math.max(0, (firstDeclaration ?? HEAD_LINES + 1) - 1));
+  const gap = (start: number, end: number): string[] => (end > start ? [`… (lines ${start + 1}–${end} not shown)`] : []);
+  return [...lines.slice(0, head), ...gap(head, from), ...lines.slice(from, to), ...gap(to, lines.length)].join("\n");
+}
+
+/** The first line of a declaration in `file` the snapshot knows: a fn, a type or a class; null without one. */
+function firstDeclarationLine(analysis: Analysis, file: string): number | null {
+  let first: number | null = null;
+  for (const node of Object.values(analysis.snapshot?.nodes ?? {})) {
+    if (node.file !== file || node.line === null || (node.kind === "module" && node.class !== true) || node.kind === "layer") continue;
+    if (first === null || node.line < first) first = node.line;
+  }
+  return first;
+}
+
 /** The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped. */
 async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions): Promise<string> {
   const { file, name, signature, owner } = target;
   const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".php") ? "PHP" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
   const what = owner ? `method of class \`${owner.name}\`` : "function";
   const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
+  // Not the whole file: a large one would make a long request, and for an agent CLI an argument past its limit.
+  const shown = before === null ? "" : fileExcerpt(before, owner, firstDeclarationLine(analysis, file));
   const answer = await model.complete({
     system: `You implement one planned ${what} in ${language}. Keep its name \`${name}\` and the signature exactly as declared. Answer with the whole ${owner ? "method only, without the class around it" : "function only"}, in one fenced code block.`,
     prompt: [
       `Planned: \`${id}\` ${signature ?? "()"}`,
       ...(flows.length > 0 ? [`Flows that use it: ${flows.join(", ")}`] : []),
-      `File ${file}:\n\`\`\`\n${before ?? ""}\n\`\`\``,
+      `File ${file}${before === null ? " (a new file)" : shown === before ? "" : " (its head and the part where the code goes)"}:\n\`\`\`\n${shown}\n\`\`\``,
     ].join("\n\n"),
     maxTokens: 8192,
   }, options);
