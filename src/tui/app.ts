@@ -15,7 +15,11 @@
 // configuration and no writes; an invalid one is opened as text with the
 // reason, and the analyzer does not run until a saved fix parses.
 // MERGE lives in `merge-session.ts`; ghost text, voice and the agent's draft
-// in `assist.ts`; this class dispatches input to them and keeps the editor.
+// in `assist.ts`; the forms of the operations in `forms/` and the keys every
+// prompt shares in `prompt-keys.ts`; the zoom screen in `zoom-screen.ts`; the
+// F6 panel in `results-panel.ts`, with what each record shows in `reports/`.
+// This class dispatches input to them and keeps the editor, the analysis and
+// the session's one explicit operation with its save step and commit.
 
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -2478,8 +2482,6 @@ export class App {
     }
     this.requestOperation("feature-questions", { kind: "feature-questions", root: this.state.root, slug });
   }
-
-  // ---------- wire: the report's target ----------
 
   // ---------- the flow under the cursor ----------
 
