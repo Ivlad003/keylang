@@ -247,13 +247,18 @@ function childrenByParent(snapshot: AnalysisSnapshot): Map<string, string[]> {
   return children;
 }
 
+/**
+ * Children by file (a directory module by its name), then by line. Code-unit
+ * order, as the index and the snapshot sort: ICU collation differs between
+ * Node builds, and the map's bytes must not.
+ */
 function sortIds(snapshot: AnalysisSnapshot, ids: readonly string[]): string[] {
   return [...ids].sort((a, b) => {
     const na = snapshot.nodes[a];
     const nb = snapshot.nodes[b];
     const ka = na?.file ?? nameOf(a);
     const kb = nb?.file ?? nameOf(b);
-    return ka.localeCompare(kb, "en") || (na?.line ?? 0) - (nb?.line ?? 0);
+    return compareText(ka, kb) || (na?.line ?? 0) - (nb?.line ?? 0);
   });
 }
 
