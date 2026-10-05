@@ -49,12 +49,15 @@ Commands:
                             Whether <dir>/features/<slug>.md is done: it declares
                             something to check and has no spec errors (K001-K005),
                             every planned id is implemented (K202, not K201), every
-                            flow step is static ok, no rule fail remains, and the
-                            plan was not weakened since <ref> (default HEAD; without
-                            git only info.base says so). The last line names its
-                            stage: idea, behavior, structure, ready; hint: lines say
-                            what the spec still lacks. 0 done, 1 gaps, 2 missing
-                            file, unreadable --since ref, or bad invocation
+                            flow step is static ok, no rule fail of this change
+                            remains (one on a file changed since <ref> or on an id
+                            the feature names; without git, any), and the plan was
+                            not weakened since <ref> (default HEAD; without git only
+                            info.base says so). The last line names its stage: idea,
+                            behavior, structure, ready; hint: lines say what the spec
+                            still lacks, or name an inherited rule fail. 0 done,
+                            1 gaps, 2 missing file, unreadable --since ref, or bad
+                            invocation. Writes only the fact cache .keylang/cache/
   hook stop                 Read a harness Stop event (JSON) from stdin, run
                             check --changed, and print a JSON decision; writes
                             only the fact cache .keylang/cache/. Exit 0 once

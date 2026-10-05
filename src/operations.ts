@@ -67,7 +67,7 @@ export interface FeatureQuestionsRequest {
   slug: string;
 }
 
-/** Whether a feature file is done, on the saved state of the repository (tools.md `feature`). */
+/** Whether a feature file is done, on the saved state of the repository (tools.md `feature`); a rule fail blocks only when it is this change's. */
 export interface FeatureRequest {
   kind: "feature";
   /** Repository root (absolute). */
@@ -4289,11 +4289,30 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
   };
 }
 
-/** The report of feature `slug` on one analysis and its base: the CLI's `feature`, and the TUI's status line on the session's analysis. */
+/**
+ * The report of feature `slug` on one analysis and its base: the CLI's
+ * `feature`, MCP `feature_status`, and the TUI's status line on the session's
+ * analysis. What changed since the base decides which rule fails are this
+ * change's, as `check --changed` slices them; without it every one blocks.
+ */
 export function featureReportOf(analyzed: Analysis, slug: string, base: FeatureBase): FeatureReport | null {
   const config = analyzed.config;
+  const changed = base.state === "unavailable" ? undefined : { files: new Set(base.changes.files), deleted: deletedModuleIds(config, base.changes.deleted) };
   return featureStatus(
-    { dir: config.dir, docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {}, base, index: analyzed.index, format: config.format, layers: [...config.layers.keys()] },
+    {
+      dir: config.dir,
+      docs: analyzed.docs,
+      spec: analyzed.spec,
+      diagnostics: analyzed.diagnostics,
+      verdicts: analyzed.verdicts,
+      nodes: analyzed.snapshot?.nodes ?? {},
+      edges: analyzed.snapshot?.edges ?? [],
+      base,
+      ...(changed !== undefined ? { changed } : {}),
+      index: analyzed.index,
+      format: config.format,
+      layers: [...config.layers.keys()],
+    },
     slug,
   );
 }

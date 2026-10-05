@@ -15,6 +15,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { runOperation } from "../src/operations.ts";
 import { codeProposalProblem, proposalProblem } from "../src/proposals.ts";
+import { App } from "../src/tui/app.ts";
+import { KEY } from "./tui-fixture.ts";
+import { VirtualTerminal } from "./vt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
@@ -270,4 +273,124 @@ test("MCP saves the fact cache when its facts differ from it, and only then", as
   writeFileSync(join(dir, "src/domain/order.ts"), `${readFileSync(join(dir, "src/domain/order.ts"), "utf8")}export function discount(): number {\n  return 0;\n}\n`);
   await call("search", { query: "discount" });
   assert.match(readFileSync(cache, "utf8"), /"discount"/);
+});
+
+// ---------- feature: only this change's rule fails block ----------
+
+const FEATURE_LAYERS = { languages: ["typescript"], module: "file", layers: { app: ["src/app/**"], domain: ["src/domain/**"], infra: ["src/infra/**"] } };
+const LEGACY = 'import { save } from "../infra/db.ts";\nexport function old(): number {\n  return save(1);\n}\n';
+const PAY = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return price();\n}\n';
+const PAID = 'import { price } from "../domain/order.ts";\nexport function charge(): number {\n  return refund(price());\n}\nexport function refund(n: number): number {\n  return n;\n}\n';
+
+type Report = { done: boolean; stage: string; gaps: { kind: string; id: string; file: string }[]; hints: { kind: string; id: string; file: string; reason: string }[]; info: { rules: { id: string; file: string; verdict: string; reason: string }[] | null; base: { state: string } | null } };
+
+/** A committed repository with an inherited forbidden import (`domain.legacy` → `infra.db`) and the refund feature. */
+function inheritedRepo(t: TestContext, feature: string): string {
+  const dir = tempDir(t, "keylang-loop-feature-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify(FEATURE_LAYERS)}\n`,
+    "keylang/rules.md": "# rules\n\n- deny domain infra\n",
+    "src/infra/db.ts": "export function save(n: number): number {\n  return n;\n}\n",
+    "src/domain/order.ts": "export function price(): number {\n  return 2;\n}\n",
+    "src/domain/legacy.ts": LEGACY,
+    "src/app/pay.ts": PAY,
+    "keylang/features/refund.md": feature,
+  });
+  git(dir, ["init"]);
+  git(dir, ["add", "."]);
+  git(dir, ["commit", "-m", "base"]);
+  return dir;
+}
+
+const REFUND = "# flow refund\n\n- planned fn app.pay.refund (n: number) → number\n- trigger app.pay.charge\n  - step app.pay.refund\n";
+
+function feature(dir: string, slug: string, args: string[] = []): { status: number | null; body: Report; human: string } {
+  const r = keylang(dir, ["feature", slug, "--format", "json", ...args]);
+  const human = keylang(dir, ["feature", slug, ...args]);
+  return { status: r.status, body: JSON.parse(r.stdout) as Report, human: human.stdout };
+}
+
+test("feature: an inherited rule fail is a hint and info.rules, not a gap; a fail of this change blocks, as check --changed reports it", async (t) => {
+  const dir = inheritedRepo(t, REFUND);
+  assert.equal(keylang(dir, ["check"]).status, 1, "the inherited K102 fails the full check");
+  writeFileSync(join(dir, "src/app/pay.ts"), PAID);
+  const done = feature(dir, "refund");
+  assert.equal(done.status, 0, JSON.stringify(done.body));
+  assert.deepEqual([done.body.done, done.body.stage, done.body.gaps], [true, "done", []]);
+  assert.deepEqual(
+    done.body.info.rules?.map((item) => [item.id, item.file, item.verdict]),
+    [["domain.legacy", "src/domain/legacy.ts", "fail"]],
+  );
+  assert.match(done.body.info.rules![0]!.reason, /K102|`domain\.legacy` depends on `infra\.db`/);
+  const hint = done.body.hints.find((item) => item.kind === "rule");
+  assert.ok(hint, JSON.stringify(done.body.hints));
+  assert.equal(hint.file, "src/domain/legacy.ts");
+  assert.match(hint.reason, /^inherited \(no file changed since HEAD, no id of this feature\): divergence: `domain\.legacy` depends on `infra\.db`/);
+  assert.match(done.human, /^hint: src\/domain\/legacy\.ts:1:\d+: rule domain\.legacy: inherited/m);
+  // MCP answers the same report.
+  const call = await mcpClient(t, dir);
+  assert.deepEqual(JSON.parse((await call("feature_status", { slug: "refund" })).text), done.body);
+
+  // This change adds a forbidden import: it blocks, and so does every fail of the rule check --changed reports with it.
+  writeFileSync(join(dir, "src/domain/order.ts"), 'import { save } from "../infra/db.ts";\nexport function price(): number {\n  return save(2);\n}\n');
+  const blocked = feature(dir, "refund");
+  assert.equal(blocked.status, 1);
+  const changed = keylang(dir, ["check", "--changed", "--format", "json"]);
+  const reported = (JSON.parse(changed.stdout) as { results: { verdict: string; file: string; area: string }[] }).results.filter((row) => row.verdict === "fail");
+  assert.deepEqual(
+    blocked.body.gaps.filter((gap) => gap.kind === "rule").map((gap) => [gap.id, gap.file]).sort(),
+    reported.map((row) => [row.area, row.file]).sort(),
+  );
+  assert.ok(blocked.body.gaps.some((gap) => gap.kind === "rule" && gap.id === "domain.order"), JSON.stringify(blocked.body.gaps));
+  assert.deepEqual(blocked.body.info.rules, []);
+});
+
+test("the TUI status line and readiness screen agree with feature: an inherited rule fail keeps no feature from done", async (t) => {
+  const dir = inheritedRepo(t, REFUND);
+  writeFileSync(join(dir, "src/app/pay.ts"), PAID);
+  const vt = new VirtualTerminal(130, 32);
+  const app = new App({ root: dir, cols: 130, rows: 32 });
+  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 130, 32);
+  t.after(() => app.close());
+  const palette = (text: string): void => {
+    app.input(KEY.ctrlP);
+    for (const ch of text) app.input(ch);
+    app.input(KEY.enter);
+  };
+  await app.idle();
+  palette("open keylang/features/refund.md");
+  await app.idle();
+  assert.match(vt.lines().at(-1)!, /feature done · questions 0/);
+  palette("feature readiness");
+  assert.equal(app.state.prompt?.text, "refund");
+  app.input(KEY.enter);
+  await app.idle();
+  const record = app.state.records.at(-1)!;
+  assert.equal(record.result?.exitCode, 0, JSON.stringify(record.result?.messages));
+  assert.deepEqual(record.result?.kind === "feature" ? record.result.payload?.report : null, feature(dir, "refund").body);
+});
+
+test("feature: a committed rule fail on an id the feature names blocks; without git every rule fail blocks and info.rules is null", (t) => {
+  // The feature plans the module the inherited import reaches: the fail is on its id, though nothing changed.
+  const dir = inheritedRepo(t, "# flow audit\n\n- planned module infra.db\n- trigger app.pay.charge\n");
+  const named = feature(dir, "refund");
+  assert.equal(named.status, 1, JSON.stringify(named.body));
+  assert.deepEqual(
+    named.body.gaps.map((gap) => [gap.kind, gap.id]),
+    [["rule", "domain.legacy"]],
+  );
+  assert.deepEqual(named.body.info.rules, []);
+
+  rmSync(join(dir, ".git"), { recursive: true, force: true });
+  writeFileSync(join(dir, "keylang/features/refund.md"), REFUND);
+  writeFileSync(join(dir, "src/app/pay.ts"), PAID);
+  const bare = feature(dir, "refund");
+  assert.equal(bare.status, 1, JSON.stringify(bare.body));
+  assert.equal(bare.body.info.base?.state, "unavailable");
+  assert.equal(bare.body.info.rules, null);
+  assert.deepEqual(
+    bare.body.gaps.map((gap) => [gap.kind, gap.id]),
+    [["rule", "domain.legacy"]],
+  );
+  assert.equal(bare.body.hints.some((item) => item.kind === "rule"), false);
 });

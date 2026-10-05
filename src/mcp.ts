@@ -17,8 +17,8 @@ import { contextForIds } from "./agent-context.ts";
 import { analyze, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
 import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
-import { featureStatus, idsIn, type FeatureBase } from "./feature-status.ts";
-import { readFeatureBase } from "./git-changes.ts";
+import { idsIn } from "./feature-status.ts";
+import { runOperation } from "./operations.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
@@ -290,26 +290,14 @@ export function mcpServer(root: string, version: string): McpServer {
     "feature_status",
     {
       description:
-        "Whether keylang/features/<slug>.md is done, and how far it got: `stage` is idea (no flow yet), behavior (a flow without a trigger or steps), structure (the spec itself has gaps), ready (only the implementation is missing) or done. Done means the file declares something to check (else an `empty` gap), keylang reads it without errors (K001-K005 in it are `diagnostic` gaps), every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. Every gap has the stage where it is fixed. `hints` (a flow without a trigger or steps) say what the spec still lacks and do not block. Tests, trace, and the base (info.base) are informational and do not block.",
+        "Whether keylang/features/<slug>.md is done, and how far it got: `stage` is idea (no flow yet), behavior (a flow without a trigger or steps), structure (the spec itself has gaps), ready (only the implementation is missing) or done. Done means the file declares something to check (else an `empty` gap), keylang reads it without errors (K001-K005 in it are `diagnostic` gaps), every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail of this change remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. A rule fail is this change's when it touches a file changed since the base (as `check --changed` reports it) or an end of its edge is an id the feature names; any other is inherited: a `rule` hint and an entry of info.rules, not blocking. Without git (info.base unavailable) every rule fail blocks and info.rules is null. Every gap has the stage where it is fixed. `hints` (a flow without a trigger or steps, an inherited rule fail) do not block. Tests, trace, and the base (info.base) are informational and do not block.",
       inputSchema: { slug: z.string().min(1), since: z.string().min(1).optional() },
     },
     async ({ slug, since }) => {
-      const analysis = await fresh();
-      const path = `${analysis.config.dir}/features/${slug}.md`;
-      // Only a feature keylang read is looked up in the history: the slug never names another path.
-      if (!analysis.docs.some((doc) => doc.path === path)) return failure(`no feature \`${slug}\``);
-      let base: FeatureBase;
-      try {
-        base = readFeatureBase(root, path, since, "feature_status");
-      } catch (error) {
-        return failure(error instanceof Error ? error.message : String(error));
-      }
-      const report = featureStatus(
-        { dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts, nodes: analysis.snapshot?.nodes ?? {}, base, index: analysis.index, format: analysis.config.format, layers: [...analysis.config.layers.keys()] },
-        slug,
-      );
-      if (report === null) return failure(`no feature \`${slug}\``);
-      return json(report);
+      // The shared operation of `keylang feature` and the TUI's readiness screen, on this server's analysis.
+      const result = await runOperation({ kind: "feature", root, slug, ...(since !== undefined ? { since } : {}) }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages.find((message) => message.level === "error")?.text ?? `no feature \`${slug}\``);
+      return json(result.payload.report);
     },
   );
 

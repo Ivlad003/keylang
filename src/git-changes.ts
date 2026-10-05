@@ -1,10 +1,10 @@
 // What git says changed in the working tree since a ref: the inputs of
-// `check --changed`, `hook stop` and `code-to-spec --since`, and the feature
-// file at its base commit for `feature`. Git runs as an
-// argument array in the given root, never through a shell; a ref that looks
-// like an option is refused before git sees it. Every failure (no git, not a
-// repository, an unknown ref) is an error naming the caller, never an empty
-// change set.
+// `check --changed`, `hook stop` and `code-to-spec --since`, and for
+// `feature` the feature file at its base commit with the files changed
+// since. Git runs as an argument array in the given root, never through a
+// shell; a ref that looks like an option is refused before git sees it.
+// Every failure (no git, not a repository, an unknown ref) is an error naming
+// the caller, never an empty change set.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { join, relative } from "node:path";
@@ -13,6 +13,7 @@ import { deletedDiffPaths, diffHunks, type ChangedLines } from "./draft.ts";
 import type { FeatureBase } from "./feature-status.ts";
 import { placeFile } from "./graph.ts";
 import { parse } from "./parser.ts";
+import { compareText } from "./span.ts";
 
 /** Files changed since a ref. Paths are POSIX, relative to the root. */
 export interface ChangedFiles {
@@ -122,21 +123,26 @@ export function gitFileAt(root: string, ref: string, path: string, label: string
 }
 
 /**
- * The feature file at its base commit (`since`, else `HEAD`). Without an
- * explicit `since`, a failure to read git is an informational state, not an
- * error; with it, the error is thrown.
+ * The feature file at its base commit (`since`, else `HEAD`), and the files
+ * changed since that commit as `check --changed` reads them: a rule fail of
+ * this change is one that touches them. Without an explicit `since`, a
+ * failure to read git is an informational state, not an error; with it, the
+ * error is thrown.
  */
 export function readFeatureBase(root: string, path: string, since: string | undefined, label: string): FeatureBase {
   const ref = since ?? "HEAD";
   let text: string | null;
+  let changed: ChangedFiles;
   try {
     text = gitFileAt(root, ref, path, label);
+    changed = gitChangedFiles(root, ref, label);
   } catch (error) {
     if (since !== undefined) throw error;
     return { ref, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
-  if (text === null) return { ref, state: "absent" };
-  return { ref, state: "compared", doc: parse(path, text) };
+  const changes = { files: [...changed.paths].sort(compareText), deleted: [...changed.deleted].sort(compareText) };
+  if (text === null) return { ref, state: "absent", changes };
+  return { ref, state: "compared", doc: parse(path, text), changes };
 }
 
 /** Module id a deleted source file had, so a flow step that named it is still "changed". */
