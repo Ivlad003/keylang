@@ -21,7 +21,7 @@ import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, t
 import { Grid, type Style } from "./screen.ts";
 import { STAGES, type FeatureInfo, type FeatureReport, type Gap, type Hint } from "../feature-status.ts";
 import { edgeLine, holeLine } from "../explain-edge.ts";
-import { exportFormatOf, WIRE_OUT, type ExportC4Payload, type FeatureQuestionsPayload, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type CheckPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
+import { checkSummary, exportFormatOf, WIRE_OUT, type ExportC4Payload, type FeatureQuestionsPayload, type CodeToSpecPayload, type DraftFlowPayload, type DraftRulesPayload, type TracePlanPayload, type ExplainPayload, type ExplainLlmPayload, type ExplainPlanPayload, type ExplainPlanRequest, type ExplainBatchPayload, type ExplainBatchRequest, type ExportPayload, type ExportRequest, type AgentsPayload, type ExplainEdgePayload, type CheckRequest, type AgentsRequest, type BaselinePayload, type FmtFile, type FmtPayload, type GitignoreStage, type InitPayload, type MapCheckPayload, type MapPayload, type OperationRequest, type OperationResult, type ParsePayload, type SpecToCodePayload, type ApplyCodePayload, type WirePayload } from "../operations.ts";
 import { PROPOSALS_DIR } from "../proposals.ts";
 import { formatDiagnostic, isError } from "../diag.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -728,7 +728,7 @@ export function recordSummary(record: OperationRecord): string {
   if (result?.kind === "agents" && result.payload !== null) return `${agentsOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "init" && result.payload !== null) return `${initOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "fmt" && result.payload !== null) return `${fmtOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
-  if (result?.kind === "check" && result.payload !== null) return `${checkOutcome(result.payload)} · code ${result.exitCode}`;
+  if (result?.kind === "check" && result.payload !== null) return `${checkSummary(result.payload.counts)} · code ${result.exitCode}`;
   if (result?.kind === "explain-edge" && result.payload !== null) return `${edgeOutcome(result.payload)} · code ${result.exitCode}`;
   if (result?.kind === "wire" && result.payload !== null) return `${wireOutcome(record.status, result.payload, result.exitCode)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
   if (result?.kind === "export" && result.payload !== null) return `${exportOutcome(record.status, result.payload)}${result.exitCode === null ? "" : ` · code ${result.exitCode}`}`;
@@ -755,11 +755,6 @@ function checkParams(request: CheckRequest): string {
     `static ${request.static ?? "from config"}`,
     ...(request.changed === true ? [`changed since ${request.since ?? "HEAD"}`] : []),
   ].join(" · ");
-}
-
-/** `0 fail, 2 unverified, 5 ok`: the CLI's summary line. */
-function checkOutcome(payload: CheckPayload): string {
-  return `${payload.counts.fail} fail, ${payload.counts.unverified} unverified, ${payload.counts.ok} ok`;
 }
 
 /** The format an export request writes: an explained edge has only the human lines. */
@@ -960,21 +955,41 @@ function agentsOutcome(status: OperationRecord["status"], payload: AgentsPayload
   return `${done.length} of ${payload.steps.length} step(s) done, ${status}`;
 }
 
-/** `set up`, `partial: map failed`, `keylang.json not written`, `cancelled after map`, or a check's two stages: never a success for a partial run. */
+/**
+ * `set up`, `partial: map failed`, `keylang.json not written`, `cancelled
+ * after map`, or a check's three stages: never a success for a partial run.
+ * A completed write names the stages with their own reports; `.gitignore`
+ * is named once it failed or did not run.
+ */
 function initOutcome(status: OperationRecord["status"], payload: InitPayload): string {
   if (payload.preflight !== null && payload.preflight.status === "failed" && payload.preflight.payload !== null) return agentsOutcome(payload.preflight.status, payload.preflight.payload);
   if (payload.check) {
     const agents = payload.agents?.payload ? `harness files ${agentsOutcome(payload.agents.status, payload.agents.payload)}` : "harness files not checked";
     const baseline = payload.baseline?.payload ? `baseline ${baselineOutcome(payload.baseline.status, payload.baseline.payload)}` : payload.baseline ? "baseline not checked" : "";
-    return [agents, baseline].filter((part) => part !== "").join(", ");
+    const ignore = payload.gitignore === null ? "" : `.gitignore ${gitignoreOutcome(payload.gitignore, true)}`;
+    return [agents, baseline, ignore].filter((part) => part !== "").join(", ");
   }
   if (payload.config.error !== null) return "keylang.json not written, nothing else attempted";
   const stages = initStages(payload);
   if (status === "completed") return `set up: ${stages.map((stage) => stage.name).join(", ")}`;
-  const bad = stages.filter((stage) => stage.result !== null && stage.result.exitCode !== 0).map((stage) => stage.name);
-  const missing = stages.filter((stage) => stage.result === null).map((stage) => stage.name);
+  const ignore = payload.gitignore;
+  const bad = [...(ignore !== null && gitignoreFailed(ignore) ? [".gitignore"] : []), ...stages.filter((stage) => stage.result !== null && stage.result.exitCode !== 0).map((stage) => stage.name)];
+  const missing = [...(ignore === null ? [".gitignore"] : []), ...stages.filter((stage) => stage.result === null).map((stage) => stage.name)];
   if (status === "cancelled") return `cancelled${missing.length > 0 ? `, not run: ${missing.join(", ")}` : ""}`;
   return `partial: ${bad.join(", ")} did not finish`;
+}
+
+/** What init's `.gitignore` stage found or did: `lists .keylang/`, `.keylang/ added`, `does not list .keylang/`, a refusal or an I/O error. */
+function gitignoreOutcome(stage: GitignoreStage, check: boolean): string {
+  if (stage.error !== null) return `failed: ${stage.error}`;
+  if (stage.refused !== null) return `${check ? "not read" : ".keylang/ not added"} (${stage.refused})`;
+  if (stage.written) return ".keylang/ added";
+  return stage.listed ? "lists .keylang/" : "does not list .keylang/";
+}
+
+/** The stage keeps init from code 0: an I/O error, a refusal, or no `.keylang/` line (a check). */
+function gitignoreFailed(stage: GitignoreStage): boolean {
+  return stage.error !== null || stage.refused !== null || !stage.listed;
 }
 
 /** The stages of an init write, in the order they ran. */
@@ -1079,8 +1094,11 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
         rows.push({ text, style: index === selected ? THEME.selected : hint ? { ...THEME.panel, fg: 247 } : THEME.panel, gap: index });
       }
     }
-    rows.push({ text: `Info (not blocking): tests ${infoSummary(report.info.tests)} · trace ${infoSummary(report.info.trace)}`, style: { ...THEME.panel, fg: 243 } });
-    for (const item of [...report.info.tests, ...report.info.trace]) rows.push({ text: `  ${item.verdict} ${item.id}  ${item.file}:${item.line}  ${item.reason}`, style: { ...THEME.panel, fg: 243 } });
+    // A rule fail that is not this change's no longer blocks; without git none can be told inherited, so every one blocks.
+    const { rules } = report.info;
+    const inherited = rules === null ? "unknown without git: every rule fail blocks" : rules.length === 0 ? "—" : String(rules.length);
+    rows.push({ text: `Info (not blocking): tests ${infoSummary(report.info.tests)} · trace ${infoSummary(report.info.trace)} · inherited rule fails ${inherited}`, style: { ...THEME.panel, fg: 243 } });
+    for (const item of [...report.info.tests, ...report.info.trace, ...(rules ?? [])]) rows.push({ text: `  ${item.verdict} ${item.id}  ${item.file}:${item.line}  ${item.reason}`, style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "map-check" && result.payload !== null) {
     // Nothing was written: the check compares a fresh render with the files on disk.
     const { payload } = result;
@@ -1163,6 +1181,13 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       rows.push({ text: `  ${name.padEnd(13)} ${text}`, style: failed ? { ...THEME.panel, ...THEME.error } : THEME.panel });
     };
     const code = (stage: OperationResult): string => (stage.exitCode === null ? "" : ` · code ${stage.exitCode}`);
+    const notRun = payload.config.error !== null || record.status !== "cancelled" ? "not run" : "not run (cancelled)";
+    // `.gitignore` is a file stage of init itself, not an operation: no code of its own, its reason on the row.
+    const gitignoreRow = (): void => {
+      const stage = payload.gitignore;
+      if (stage === null) stageRow(".gitignore", notRun, false);
+      else stageRow(stage.file, gitignoreOutcome(stage, payload.check), gitignoreFailed(stage));
+    };
     if (payload.preflight?.status === "failed") {
       stageRow("harness plan", `${payload.preflight.messages.map((message) => message.text).join("; ")}${code(payload.preflight)}`, true);
       rows.push({ text: "  checked before any write: nothing was written, keylang.json included", style: THEME.hint });
@@ -1170,6 +1195,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       const config = payload.config;
       stageRow(config.file, config.existed ? "kept as it is" : config.written ? `written (layers: ${config.layers.join(", ")})` : config.error !== null ? `failed: ${config.error}` : "not written", config.error !== null);
       for (const note of config.notes) rows.push({ text: `    note: ${note}`, style: { ...THEME.panel, fg: 243 } });
+      gitignoreRow();
     }
     const stages: { name: string; result: OperationResult | null }[] = payload.check
       ? [
@@ -1181,7 +1207,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
         : initStages(payload);
     for (const { name, result: stage } of stages) {
       if (stage === null) {
-        stageRow(name, payload.config.error !== null || record.status !== "cancelled" ? "not run" : "not run (cancelled)", false);
+        stageRow(name, notRun, false);
         continue;
       }
       const outcome =
@@ -1200,6 +1226,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
         else if (step.state === "not-attempted") rows.push({ text: `    not attempted ${step.path}`, style: { ...THEME.panel, fg: 243 } });
       }
     }
+    if (payload.check) gitignoreRow();
     rows.push({ text: `written: ${result.written.length} file(s)${result.removed.length > 0 ? `, removed: ${result.removed.length}` : ""}`, style: { ...THEME.panel, fg: 243 } });
     if (payload.check) rows.push({ text: "The map is not part of init --check: Map: check compares it.", style: { ...THEME.panel, fg: 243 } });
     else if (!ok) rows.push({ text: "  Enter runs init again: a kept keylang.json and hand-written files stay as they are", style: THEME.hint });
@@ -1219,7 +1246,7 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
       if (slice.unborn) rows.push({ text: "  no commit yet: HEAD is the empty tree, every file is changed", style: { ...THEME.panel, fg: 243 } });
       if (slice.deleted.length > 0) rows.push({ text: `  deleted module(s) kept in the slice: ${slice.deleted.join(", ")}`, style: { ...THEME.panel, fg: 243 } });
     } else rows.push({ text: "scope: every finding of the paths (not changed)", style: { ...THEME.panel, fg: 243 } });
-    rows.push({ text: `${checkOutcome(payload)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
+    rows.push({ text: `${checkSummary(payload.counts)} · code ${result.exitCode}`, style: { ...THEME.panel, ...(result.exitCode === 0 ? MARK_STYLE.ok : MARK_STYLE.fail), bg: THEME.panel.bg! } });
     // Code 0 is not proof: unverified verdicts stay visible as incomplete evidence.
     if (!options.strict && payload.counts.unverified > 0) rows.push({ text: `  incomplete: ${payload.counts.unverified} unverified, not proven · strict would make it code 1`, style: { ...THEME.panel, fg: 179 } });
     if (options.withoutCode) rows.push({ text: "  specs outside the spec directory: checked on their own, without the code", style: { ...THEME.panel, fg: 243 } });

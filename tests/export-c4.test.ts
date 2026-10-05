@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -259,4 +259,38 @@ test("tui: the palette's Export C4 diagram shows the diagram in F6 without a fil
   assert.equal(app.state.records.at(-1)?.result?.exitCode, 0);
   assert.equal(readFileSync(join(dir, "docs/shop.puml"), "utf8"), COMPONENTS);
   assert.match(app.state.message ?? "", /written docs\/shop\.puml · code 0/);
+});
+
+test("tui: the C4 form runs the write policy on the typed file before reading it: a link out or a path outside is refused unread", { skip: process.platform === "win32" }, async (t) => {
+  const dir = repo(t);
+  const outside = mkdtempSync(join(tmpdir(), "keylang-c4-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  // A diagram this command wrote, but outside the repository: only reading it would call it replaceable.
+  writeFileSync(join(outside, "c4.puml"), COMPONENTS);
+  mkdirSync(join(dir, "docs"), { recursive: true });
+  symlinkSync(join(outside, "c4.puml"), join(dir, "docs/linked.puml"));
+  const vt = new VirtualTerminal(160, 34);
+  const app = new App({ root: dir, cols: 160, rows: 34 });
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 160, 34);
+  t.after(() => app.close());
+  await app.idle();
+  const form = (out: string): string => {
+    app.input(KEY.ctrlP);
+    for (const ch of "export c4 diagram") app.input(ch);
+    app.input(KEY.enter);
+    for (const ch of out) app.input(ch);
+    const note = app.state.prompt?.note ?? "";
+    app.input("\x1b");
+    return note;
+  };
+  for (const out of ["docs/linked.puml", join(outside, "c4.puml")]) {
+    const cli = keylang(dir, ["export", "c4", "--out", out]);
+    assert.equal(cli.status, 2);
+    // The form's note is the CLI's refusal, word for word.
+    assert.equal(`keylang: ${form(out)}\n`, cli.stderr, out);
+    await sleep(40);
+  }
+  assert.match(form("docs/linked.puml"), /leads out of the repository through a link; nothing written$/);
+  await sleep(40);
+  assert.equal(readFileSync(join(outside, "c4.puml"), "utf8"), COMPONENTS);
 });

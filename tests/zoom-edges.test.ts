@@ -35,6 +35,17 @@ test("zoom edges model: grouped by the level's units, with kinds and counts, and
   assert.deepEqual(rows("domain"), ["in application.purchase → domain.order call×1,import×1 =2 >application.purchase", "unresolved dynamic-call×1"]);
 });
 
+test("zoom edges model: an import of a file `assume` names is listed in coverage but is no unresolved construct", async (t) => {
+  const config = { languages: ["typescript"], layers: { domain: ["src/domain/**"], application: ["src/application/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] }, assume: ["src/config.ts"] };
+  const store = 'import { settings } from "../config";\nexport function save(task: () => void): void {\n  settings();\n  task();\n}\n';
+  const analysis = await analyze({ root: checkoutRepo(t, { "keylang.json": `${JSON.stringify(config)}\n`, "src/infrastructure/store.ts": store }) });
+  const kinds = analysis.snapshot?.coverage.filter((item) => item.source?.startsWith("infrastructure.store") === true).map((item) => item.kind) ?? [];
+  assert.ok(kinds.includes("assumed-import") && kinds.includes("dynamic-call"), kinds.join(" "));
+  // The dynamic call stays a hole of the level; the assumed import does not count as one.
+  const reasons = zoomEdges(analysis, "infrastructure").flatMap((edge) => (edge.group === "unresolved" ? (edge.reasons ?? []) : []));
+  assert.deepEqual(reasons.flatMap((item) => Array<string>(item.count).fill(item.reason)).sort(), kinds.filter((kind) => kind !== "assumed-import").sort());
+});
+
 function session(root: string): { app: App; send: (keys: string) => void; text: () => string; lines: () => string[] } {
   const vt = new VirtualTerminal(130, 30);
   const app = new App({ root, cols: 130, rows: 30 });

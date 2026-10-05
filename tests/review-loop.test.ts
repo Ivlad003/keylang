@@ -368,6 +368,11 @@ test("the TUI status line and readiness screen agree with feature: an inherited 
   const record = app.state.records.at(-1)!;
   assert.equal(record.result?.exitCode, 0, JSON.stringify(record.result?.messages));
   assert.deepEqual(record.result?.kind === "feature" ? record.result.payload?.report : null, feature(dir, "refund").body);
+  // The readiness screen names the inherited fail among what does not block.
+  app.input(KEY.f6);
+  const screen = vt.lines();
+  assert.ok(screen.some((line) => /Info \(not blocking\): tests .* · inherited rule fails 1/.test(line)), screen.join("\n"));
+  assert.ok(screen.some((line) => /^ +fail domain\.legacy {2}src\/domain\/legacy\.ts:1 {2}/.test(line.split("│")[0]!)), screen.join("\n"));
 });
 
 test("feature: a committed rule fail on an id the feature names blocks; without git every rule fail blocks and info.rules is null", (t) => {

@@ -47,7 +47,7 @@ import { codeToSpecTriggers } from "../draft.ts";
 import { plannedCodeTarget } from "../spec-to-code.ts";
 import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
 import { C4_FORMATS, C4_LEVELS, isC4Diagram } from "../c4-export.ts";
-import { exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportC4Request, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
+import { c4OutProblem, exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportC4Request, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
 import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
@@ -2483,7 +2483,7 @@ export class App {
   /** The classes of files `keylang init` may write, as its form and its save step name them. */
   private initTargets(): string[] {
     const config = existsSync(join(this.state.root, CONFIG_FILE)) ? [] : [CONFIG_FILE];
-    return [...config, ...this.mapTargets(), baselinePath({ dir: this.specDir() }), "the harness files of the selection"];
+    return [...config, ".gitignore (.keylang/, unless a line lists it)", ...this.mapTargets(), baselinePath({ dir: this.specDir() }), "the harness files of the selection"];
   }
 
   /** True (with the reason shown) while an operation writes files: saves and merge writes wait for it. */
@@ -2945,11 +2945,11 @@ export class App {
       `Found: ${found}`,
       existed ? "keylang.json: exists, kept byte for byte (no new guess replaces it)" : "keylang.json: none yet, written from this guess",
       `Harnesses: ${harness}`,
-      `Write, in order: ${existed ? "" : "keylang.json, "}the map (${this.specDir()}/map/, .keylang/), ${baseline}, the harness files — each file on its own, no overall rollback`,
-      "Check: as `keylang init --check` — the harness files and the baseline only; the map is not compared (Map: check does)",
+      `Write, in order: ${existed ? "" : "keylang.json, "}.keylang/ into .gitignore (unless a line lists it), the map (${this.specDir()}/map/, .keylang/), ${baseline}, the harness files — each file on its own, no overall rollback`,
+      "Check: as `keylang init --check` — the harness files, the baseline and whether .gitignore lists .keylang/; the map is not compared (Map: check does)",
     ];
     prompt.items = [`Initialize: ${existed ? "keep" : "write"} keylang.json, map, baseline, harness files`, "Check as `keylang init --check` (writes nothing)"];
-    prompt.notes = ["writes the files listed above, in order", "writes nothing; code 1 when a harness file or the baseline is stale"];
+    prompt.notes = ["writes the files listed above, in order", "writes nothing; code 1 when a harness file or the baseline is stale, or .gitignore does not list .keylang/"];
     prompt.note = prompt.notes[prompt.index] ?? "";
   }
 
@@ -3001,7 +3001,7 @@ export class App {
       return;
     }
     prompt.items = [`Write: format ${selection.files.length} file(s)`, `Check ${selection.files.length} file(s) (writes nothing)`];
-    prompt.note = `${selection.note} · saved explanations are skipped`;
+    prompt.note = `${selection.note} · saved explanations are skipped, as are generated files`;
   }
 
   /** The Markdown files the paths expand to on disk, and a note naming them and how many are unsaved (saved first). */
@@ -3160,7 +3160,7 @@ export class App {
       options.static === null ? `static: ${effective}, ${configured === undefined ? "the default" : "from keylang.json check.static"}` : `static: ${options.static}, override of keylang.json`,
       options.changed ? "changed: on · the full analysis, then only findings touching files git reports changed" : "changed: off · every finding of the paths; git is not read",
       `since: ${options.since}${prompt.ids?.[prompt.index] === "since" ? "▏" : ""}${options.changed ? " · the git ref the working tree is compared with" : " · used with changed on"}`,
-      "Run the check (writes nothing)",
+      "Run the check (writes only the local fact cache, .keylang/cache/facts.json)",
     ];
     const paths = this.checkPaths();
     if (!Array.isArray(paths)) {
@@ -4655,7 +4655,7 @@ export class App {
     if (path === "") return "type the target path, relative to the root";
     let problem: string | null;
     try {
-      problem = exportTargetProblem(this.state.root, path);
+      problem = exportTargetProblem(this.state.root, path, this.specDir());
     } catch (error) {
       problem = errorText(error);
     }
@@ -4779,6 +4779,12 @@ export class App {
     ];
     if (out === "") {
       prompt.note = "no file: the diagram shows in F6 and nothing is written · type a path to write it";
+      return;
+    }
+    // The write policy first, as the operation checks it: a path outside or a link out of the repository is never read.
+    const problem = c4OutProblem(this.state.root, toPosix(out));
+    if (problem !== null) {
+      prompt.note = problem;
       return;
     }
     const current = readText(resolve(this.state.root, out));

@@ -242,6 +242,9 @@ export interface ZoomEdge {
 
 const EDGE_GROUPS: readonly ZoomEdge["group"][] = ["in", "out", "external", "inside", "unresolved"];
 
+/** Coverage entries that are not constructs keylang failed to resolve. */
+const NOT_HOLES: ReadonlySet<string> = new Set(["skipped-file", "outside-file", "assumed-import"]);
+
 /**
  * The edges view of a level: incoming from outside, outgoing to the code and
  * to packages, between the children, and what inside it keylang could not
@@ -276,7 +279,8 @@ export function zoomEdges(analysis: Analysis, focus: string): ZoomEdge[] {
   out.sort((a, b) => EDGE_GROUPS.indexOf(a.group) - EDGE_GROUPS.indexOf(b.group) || b.count - a.count || compareText(a.from, b.from) || compareText(a.to, b.to));
   const holes = new Map<string, number>();
   for (const item of snapshot.coverage) {
-    if (item.source === null || !inside(item.source, focus) || item.kind === "skipped-file" || item.kind === "outside-file") continue;
+    // Listed for the record, but no hole: a file left out or outside the architecture, an import of a file `assume` names.
+    if (item.source === null || !inside(item.source, focus) || NOT_HOLES.has(item.kind)) continue;
     holes.set(item.kind, (holes.get(item.kind) ?? 0) + 1);
   }
   if (holes.size > 0) {

@@ -1,15 +1,12 @@
 // A new hand-written specification (design §2.8): its kinds, the default
 // path and the first text of each, and where a new file may go. The rules
-// are the proposal rules (a Markdown file under the spec directory, no
-// generated map, no link out of it), plus the explained map and the store of
-// saved explanations, which only their generators write. The session checks
-// a path when the form is accepted and again at the first save.
+// are the proposal rules: a Markdown file under the spec directory, not the
+// generated map, the explained map or the store of saved explanations, no
+// generated file, no directory, no link out of it. The session checks a
+// path when the form is accepted and again at the first save.
 
-import { existsSync, statSync } from "node:fs";
-import { basename, posix, resolve, win32 } from "node:path";
-import { EXPLAINED_MAP_DIR } from "../map.ts";
+import { basename, posix, win32 } from "node:path";
 import { isSegment } from "../parser.ts";
-import { landing } from "../safe-write.ts";
 import { proposalProblem } from "../proposals.ts";
 import type { SpecKind } from "./state.ts";
 
@@ -81,14 +78,8 @@ export function newSpecProblem(root: string, specDir: string, path: string, gene
   if (path.includes("\\") || posix.isAbsolute(path) || win32.isAbsolute(path)) return "not a plain relative path";
   if (!path.endsWith(".md")) return "not a Markdown spec: the path ends with .md";
   try {
-    const problem = proposalProblem(root, specDir, path, generated);
-    if (problem !== null) return problem.replace("a proposal changes specs only", "new specs go there");
-    const base = specDir === "" ? "" : `${specDir}/`;
-    if (path.startsWith(`${base}${EXPLAINED_MAP_DIR}/`)) return "the explained map is generated: `keylang map` writes it";
-    if (path.startsWith(`${base}explain/`)) return "saved explanations: only `keylang explain` writes them";
-    const lands = landing(resolve(root, path));
-    if (lands !== null && existsSync(lands) && !statSync(lands).isFile()) return "not a file";
-    return null;
+    // The proposal gate already refuses the explained map, saved explanations and a directory at the path.
+    return proposalProblem(root, specDir, path, generated)?.replace("a proposal changes specs only", "new specs go there") ?? null;
   } catch (error) {
     return `cannot be checked: ${error instanceof Error ? error.message : String(error)}`;
   }

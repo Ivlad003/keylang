@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,7 +23,7 @@ import { runTerminal, type TerminalHost, type TerminalSignal } from "../src/tui/
 import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
 import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
 import { ZOOM_ROOT } from "../src/tui/zoom.ts";
-import { checkoutRepo, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, CHECKOUT_FLOW, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
@@ -668,3 +668,103 @@ test("review-tui: reading mode renders a long spec once per text and width, not 
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
+
+// ---------- follow-ups of the other review groups ----------
+
+const BIN = join(REPO, "bin/keylang.js");
+
+function cli(root: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+  return spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: "utf8" });
+}
+
+/** The palette's init form: the selection (empty is auto), then Initialize or Check. */
+function initForm(s: Session, mode: "write" | "check"): void {
+  s.send(KEY.ctrlP);
+  for (const ch of "init set up keylang") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "init");
+  if (mode === "check") s.send(KEY.down);
+  s.send(KEY.enter);
+}
+
+/** The F6 report of the newest record, then the panel closed again. */
+function newestReport(s: Session): string {
+  s.send(KEY.f6);
+  const text = s.text();
+  s.send(KEY.f6);
+  return text;
+}
+
+test("review-tui: init names its .gitignore stage — a check whose only gap is the entry, the entry added, a link out refused as a partial init", { skip: process.platform === "win32" }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "keylang-init-ignore-"));
+  const outside = mkdtempSync(join(tmpdir(), "keylang-init-ignore-out-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  for (const [path, text] of Object.entries(CHECKOUT_FILES)) put(root, path, text);
+  const s = session(root, { cols: 150, rows: 34 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  // The form names the stage among the writes and the check.
+  s.send(KEY.enter);
+  const details = (s.app.state.prompt?.details ?? []).join("\n");
+  assert.match(details, /Write, in order: keylang\.json, \.keylang\/ into \.gitignore \(unless a line lists it\), the map/);
+  assert.match(details, /the baseline and whether \.gitignore lists \.keylang\//);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.equal(s.app.state.records.at(-1)?.result?.exitCode, 0);
+  assert.equal(readFileSync(join(root, ".gitignore"), "utf8"), "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n");
+  let report = newestReport(s);
+  assert.match(report, /set up: map, baseline, agents · code 0/);
+  assert.match(lineOf(report.split("\n"), "  .gitignore "), /\.gitignore +\.keylang\/ added/);
+
+  // Everything is set up but the entry: init --check is 1 for it alone, and the report says so.
+  writeFileSync(join(root, ".gitignore"), "dist/\n");
+  const cliCheck = cli(root, ["init", "--check"]);
+  assert.deepEqual([cliCheck.status, cliCheck.stdout], [1, ".gitignore: .keylang/ is not listed; run `keylang init`\n"]);
+  initForm(s, "check");
+  await s.app.idle();
+  const check = s.app.state.records.at(-1)!.result!;
+  assert.deepEqual([check.kind, check.exitCode], ["init", 1]);
+  assert.deepEqual(check.messages.map((message) => message.text), [".gitignore: .keylang/ is not listed; run `keylang init`"]);
+  report = newestReport(s);
+  assert.match(report, /harness files up to date, baseline up to date, \.gitignore does not list \.keylang\/ · code 1/);
+  assert.match(lineOf(report.split("\n"), "  .gitignore "), /\.gitignore +does not list \.keylang\//);
+  assert.equal(readFileSync(join(root, ".gitignore"), "utf8"), "dist/\n", "a check writes nothing");
+
+  // A .gitignore that leads out of the repository is never written: the other stages run, the init is partial.
+  rmSync(join(root, ".gitignore"));
+  writeFileSync(join(outside, "shared"), "dist/\n");
+  symlinkSync(join(outside, "shared"), join(root, ".gitignore"));
+  initForm(s, "write");
+  await s.app.idle();
+  const refused = s.app.state.records.at(-1)!;
+  assert.deepEqual([refused.status, refused.result?.exitCode], ["failed", 1]);
+  report = newestReport(s);
+  assert.match(report, /partial: \.gitignore did not finish · code 1/);
+  assert.match(lineOf(report.split("\n"), "  .gitignore "), /\.gitignore +\.keylang\/ not added \(leads out of the repository through a link\)/);
+  assert.equal(readFileSync(join(outside, "shared"), "utf8"), "dist/\n", "the file outside is untouched");
+});
+
+test("review-tui: the check report counts the holes as the CLI's summary does; the form says the check writes only the fact cache", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "keylang-holes-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  put(root, "keylang.json", `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", infra: "src/infra/**", app: "src/app/**" } })}\n`);
+  put(root, "src/domain/order.ts", 'import { gone } from "./gone.ts";\nexport function place(): void {\n  gone();\n}\n');
+  put(root, "src/infra/db.ts", "export function save(): void {}\n");
+  put(root, "src/app/main.ts", 'import { place } from "../domain/order.ts";\nexport function main(): void {\n  place();\n}\n');
+  put(root, "keylang/rules.md", "# rules\n\n- deny domain infra\n- deny domain app\n- deny infra app\n");
+  const summary = cli(root, ["check"]).stderr.trim().split("\n").at(-1);
+  assert.equal(summary, "0 fail, 2 unverified (from 1 hole), 1 ok");
+  const s = session(root, { cols: 120, rows: 30 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang check") s.send(ch);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.prompt?.kind, "full-check");
+  assert.match(s.text(), /Run the check \(writes only the local fact cache, \.keylang\/cache\/facts\.json\)/);
+  s.send(KEY.enter);
+  await s.app.idle();
+  assert.match(s.app.state.message ?? "", /check: 0 fail, 2 unverified \(from 1 hole\), 1 ok · code 0/);
+  assert.match(newestReport(s), /0 fail, 2 unverified \(from 1 hole\), 1 ok · code 0/);
+});

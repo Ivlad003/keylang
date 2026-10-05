@@ -5038,7 +5038,7 @@ test("tui: full check and strict give the CLI's codes on the same evidence; the 
     "static: behavior, the default",
     "changed: off · every finding of the paths; git is not read",
     "since: HEAD · used with changed on",
-    "Run the check (writes nothing)",
+    "Run the check (writes only the local fact cache, .keylang/cache/facts.json)",
   ]);
   assert.match(promptNote(app), /^2 spec file\(s\) · ←→ change the selected option$/);
   await esc(send);
@@ -5709,7 +5709,7 @@ test("tui: init from the start screen writes what the CLI writes in a twin and o
   assert.match(details, /Found: typescript · layers: application, domain, infrastructure, presentation/);
   assert.match(details, /keylang\.json: none yet, written from this guess/);
   assert.match(details, /Harnesses: auto: detected codex/);
-  assert.match(details, /Write, in order: keylang\.json, the map .*keylang\/rules\.baseline\.md, the harness files/);
+  assert.match(details, /Write, in order: keylang\.json, \.keylang\/ into \.gitignore \(unless a line lists it\), the map .*keylang\/rules\.baseline\.md, the harness files/);
   assert.match(details, /init --check.*the map is not compared/);
   assert.match(s.text(), /Initialize: write keylang\.json, map, baseline, harness files/);
   for (const ch of "nope") s.send(ch);
