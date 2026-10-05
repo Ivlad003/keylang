@@ -128,6 +128,11 @@ const DEFAULT_EXCLUDE = [
   "**/test_*.py",
   "**/*_test.py",
   "**/conftest.py",
+  // PHPUnit test classes, and the PHP that Laravel and Symfony compile into their caches.
+  "**/*Test.php",
+  "**/bootstrap/cache/**",
+  "**/storage/framework/**",
+  "**/var/cache/**",
   "*.config.*",
   "**/*.config.{js,cjs,mjs,ts}",
 ];
@@ -535,17 +540,44 @@ export function guessLayout(root: string, exclude: readonly string[]): { layers:
 }
 
 /**
- * `src` or `lib`; else the single layer candidate of the repository root when
- * it is a Python package (`__init__.py`) whose subdirectories hold code — one
- * layer for the whole application would leave nothing to rule; else `""`.
+ * `src` or `lib`; else the one directory the root `composer.json` maps its
+ * PSR-4 namespaces to (Laravel's `app/`); else the single layer candidate of
+ * the repository root when it is a Python package (`__init__.py`) whose
+ * subdirectories hold code — one layer for the whole application would leave
+ * nothing to rule; else `""`.
  */
 function sourceRoot(root: string, exclude: readonly string[]): string {
   const conventional = ["src", "lib"].find((d) => existsSync(join(root, d)) && statSync(join(root, d)).isDirectory());
   if (conventional) return conventional;
+  const psr4 = composerSourceRoot(root);
+  if (psr4 !== null) return psr4;
   const top = layerDirs(root, "", exclude);
   if (top.length !== 1) return "";
   const only = top[0]!.rel;
   return existsSync(join(root, only, "__init__.py")) && layerDirs(root, only, exclude).length > 0 ? only : "";
+}
+
+/** The single directory of the root `composer.json`'s `autoload.psr-4`, when it maps every namespace there; null otherwise. */
+function composerSourceRoot(root: string): string | null {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const autoload = manifest !== null && typeof manifest === "object" ? (manifest as Record<string, unknown>).autoload : undefined;
+  const psr4 = autoload !== null && typeof autoload === "object" ? (autoload as Record<string, unknown>)["psr-4"] : undefined;
+  if (psr4 === null || typeof psr4 !== "object" || Array.isArray(psr4)) return null;
+  const dirs = new Set<string>();
+  for (const value of Object.values(psr4)) {
+    for (const dir of Array.isArray(value) ? value : [value]) {
+      if (typeof dir !== "string") return null;
+      dirs.add(toPosix(dir).replace(/^\.\//, "").replace(/\/+$/, ""));
+    }
+  }
+  const [only] = dirs;
+  if (dirs.size !== 1 || only === undefined || only === "" || only === "." || only.startsWith("..") || only.includes("*")) return null;
+  return existsSync(join(root, only)) && statSync(join(root, only)).isDirectory() ? only : null;
 }
 
 /** The directories directly under `dir` (repository-relative, `""` for the root) that become layers. */

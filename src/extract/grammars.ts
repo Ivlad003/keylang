@@ -3,7 +3,7 @@
 // copies each into dist/wasm), so a new language cannot be left out of the
 // published package.
 
-export const GRAMMARS = ["typescript", "tsx", "javascript", "rust", "python"] as const;
+export const GRAMMARS = ["typescript", "tsx", "javascript", "rust", "python", "php"] as const;
 
 export type Grammar = (typeof GRAMMARS)[number];
 

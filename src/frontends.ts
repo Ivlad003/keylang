@@ -4,11 +4,13 @@
 // the same for every language; adding one means a frontend here.
 
 import type { FileFacts } from "./extract/facts.ts";
+import { extractPhp } from "./extract/php.ts";
 import { extractPython } from "./extract/python.ts";
 import { extractRust } from "./extract/rust.ts";
 import { extractTs } from "./extract/ts.ts";
 import { ImportResolver, type SourceResolver } from "./imports.ts";
 import { languageOf, type Language } from "./languages.ts";
+import { PhpResolver } from "./php-imports.ts";
 import { PythonResolver } from "./python-imports.ts";
 import { RustResolver } from "./rust-imports.ts";
 
@@ -18,9 +20,10 @@ export interface Frontend {
   /**
    * One resolver per graph: files of all this frontend's languages share it.
    * `sources`: the files of the analysis, which exist for resolution even when
-   * the disk does not have them (an unsaved or proposed file).
+   * the disk does not have them (an unsaved or proposed file); `files`: their
+   * facts, for a language whose imports name declarations, not files (PHP).
    */
-  resolver(root: string, sources: ReadonlySet<string>): SourceResolver;
+  resolver(root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]): SourceResolver;
   /** Edge kinds the extractor reports; a kind missing here is absent from the snapshot, not proven absent from the code. */
   edges: readonly ("import" | "call" | "type" | "reexport")[];
   /** Names of the language and platform: a call or type through them is external, not unresolved. */
@@ -71,8 +74,20 @@ const python: Frontend = {
   },
 };
 
+// A `use` names a declaration by its qualified name; a class of the same namespace needs none.
+// Calls through values, `$obj->$method()`, `new $class`, `call_user_func` and calls through an interface are holes.
+// The global functions and classes of PHP resolve as the standard library, so no list of them is kept here.
+const php: Frontend = {
+  name: "php",
+  extract: extractPhp,
+  resolver: phpResolver,
+  edges: ["import", "call", "type"],
+  globals: { values: new Set(), types: new Set() },
+};
+
 const FRONTENDS: Record<Language, Frontend> = {
   javascript: ecmascript,
+  php,
   python,
   rust,
   typescript: ecmascript,
@@ -88,6 +103,10 @@ function pythonResolver(root: string, sources: ReadonlySet<string>): SourceResol
 
 function rustResolver(root: string, sources: ReadonlySet<string>): SourceResolver {
   return new RustResolver(root, sources);
+}
+
+function phpResolver(root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]): SourceResolver {
+  return new PhpResolver(root, sources, files);
 }
 
 export function frontendOf(language: Language): Frontend {

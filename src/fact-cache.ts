@@ -56,7 +56,8 @@ function isStoredFacts(value: unknown): value is StoredFacts {
     every(value.moduleCalls, isCall) &&
     (value.completeness === "complete" || value.completeness === "opaque") &&
     (value.parseError === null || (isRecord(value.parseError) && isPosition(value.parseError.line) && typeof value.parseError.reason === "string")) &&
-    optional(value.doc, isString)
+    optional(value.doc, isString) &&
+    optional(value.symbols, (symbols) => every(symbols, (s) => isRecord(s) && typeof s.name === "string" && typeof s.qualified === "string" && (s.table === "class" || s.table === "function" || s.table === "const")))
   );
 }
 

@@ -214,7 +214,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const resolvers = new Map<Frontend, SourceResolver>();
   for (const language of config.languages) {
     const frontend = frontendOf(language);
-    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources));
+    if (!resolvers.has(frontend)) resolvers.set(frontend, frontend.resolver(config.root, sources, files));
   }
   const resolverFor = (file: string): SourceResolver | null => {
     const frontend = frontendFor(file);

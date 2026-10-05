@@ -1053,7 +1053,7 @@
     - fn [lineDiff](../../src/proposals.ts#L109) (before: string, after: string) → string
       <a id="features.proposals.lineDiff"></a><br>`-`/`+` lines between a common prefix and suffix: enough to see what a proposal changes.
   - module [spec-to-code](../../src/spec-to-code.ts#L1)
-    <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a TS/JS e2e test that…
+    <a id="features.spec-to-code"></a><br>`keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned` fn in the file its ID names, with the declared signature, analyzed as a new snapshot before anything is written; and for each `test` its flows name in a file that does not exist yet, a test that fails until…
     - node [external.node](external.md#external.node)
     - analyze [map.analyze](map.md#map.analyze)
     - config [base.config](base.md#base.config)
@@ -1069,85 +1069,107 @@
     - safe-write [base.safe-write](base.md#base.safe-write)
     - llm [features.llm](features.md#features.llm)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [FileCandidate](../../src/spec-to-code.ts#L26)
+    - type [FileCandidate](../../src/spec-to-code.ts#L27)
       <a id="features.spec-to-code.FileCandidate"></a><br>Describes one proposed file change: a root-relative POSIX path, the full new contents, and the exact prior contents (or null for a new file) that must still match on disk for the write to proceed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CodeCandidate](../../src/spec-to-code.ts#L34) extends FileCandidate
+    - type [CodeCandidate](../../src/spec-to-code.ts#L35) extends FileCandidate
       <a id="features.spec-to-code.CodeCandidate"></a><br>A generated source file for one feature ID, bundled with the e2e test files it adds, the `test` entries it couldn't automate (with reasons), and the `check` verdicts and diagnostics it introduces versus the codebase without it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [specToCode](../../src/spec-to-code.ts#L54) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
+    - fn [specToCode](../../src/spec-to-code.ts#L55) (analysis: Analysis, id: string, into?: string, model?: LlmClient, options: LlmCallOptions = {}) → Promise<CodeCandidate>
       <a id="features.spec-to-code.specToCode"></a><br>`model`: the body comes from the model instead of the stub — the whole function with the declared signature, in one fenced block — and is analyzed the same way before anything is written. `options.signal` cancels the model's requests (`LlmCancelled`); the file is read before…
-      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
-    - type [CodeTarget](../../src/spec-to-code.ts#L73)
+      - calls [features.spec-to-code.plannedCodeTarget](features.md#features.spec-to-code.plannedCodeTarget), [features.spec-to-code.modelBody](features.md#features.spec-to-code.modelBody), [features.spec-to-code.stubFor](features.md#features.spec-to-code.stubFor), [features.spec-to-code.placeStub](features.md#features.spec-to-code.placeStub), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [base.safe-write.allCrlf](base.md#base.safe-write.allCrlf), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.introduced](features.md#features.spec-to-code.introduced), [features.spec-to-code.testCandidates](features.md#features.spec-to-code.testCandidates)
+    - type [CodeTarget](../../src/spec-to-code.ts#L74)
       <a id="features.spec-to-code.CodeTarget"></a><br>Where the code of a planned fn goes: the file, and the class it is a method of.
-    - fn [plannedCodeTarget](../../src/spec-to-code.ts#L97) (analysis: Analysis, id: string, into?: string) → CodeTarget | { error: string; field: "id" | "into" }
+    - fn [plannedCodeTarget](../../src/spec-to-code.ts#L98) (analysis: Analysis, id: string, into?: string) → CodeTarget | { error: string; field: "id" | "into" }
       <a id="features.spec-to-code.plannedCodeTarget"></a><br>Where the code of the planned fn `id` goes, or why spec-to-code builds none — the checks it makes before any file is read: not planned (with a suggestion), not a fn, already implemented (with the place), a `deny` its flow would break (`field: "id"`); a file not of its module, a…
       - calls [features.lsp-features.plannedDecl](features.md#features.lsp-features.plannedDecl), [features.spec-to-code.callersInFlows](features.md#features.spec-to-code.callersInFlows), [check.rules.blocksDependency](check.md#check.rules.blocksDependency), [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [features.spec-to-code.placeCode](features.md#features.spec-to-code.placeCode), [features.spec-to-code.parentId](features.md#features.spec-to-code.parentId), [map.graph.placeFile](map.md#map.graph.placeFile), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem)
-    - type [Placement](../../src/spec-to-code.ts#L133) <!-- internal -->
+    - type [Placement](../../src/spec-to-code.ts#L134) <!-- internal -->
       <a id="features.spec-to-code.Placement"></a><br>The file and owner of a planned fn under `ownerId`; `moduleId`: the module the file must be (null: the code says where the class is).
-    - fn [parentId](../../src/spec-to-code.ts#L139) (id: string) → string <!-- internal -->
+    - fn [parentId](../../src/spec-to-code.ts#L140) (id: string) → string <!-- internal -->
       <a id="features.spec-to-code.parentId"></a>
-    - fn [placeCode](../../src/spec-to-code.ts#L143) (analysis: Analysis, ownerId: string, into: string | undefined) → Placement <!-- internal -->
+    - fn [placeCode](../../src/spec-to-code.ts#L144) (analysis: Analysis, ownerId: string, into: string | undefined) → Placement <!-- internal -->
       <a id="features.spec-to-code.placeCode"></a>
       - calls [features.spec-to-code.parentId](features.md#features.spec-to-code.parentId), [features.spec-to-code.placedModule](features.md#features.spec-to-code.placedModule), [features.spec-to-code.newModuleFile](features.md#features.spec-to-code.newModuleFile)
-    - fn [placedModule](../../src/spec-to-code.ts#L168) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [placedModule](../../src/spec-to-code.ts#L169) (config: Config, file: string) → string | null <!-- internal -->
       <a id="features.spec-to-code.placedModule"></a>
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
-    - fn [specToCodeText](../../src/spec-to-code.ts#L178) (candidate: CodeCandidate) → string
+    - fn [specToCodeText](../../src/spec-to-code.ts#L179) (candidate: CodeCandidate) → string
       <a id="features.spec-to-code.specToCodeText"></a><br>What `spec-to-code <id> --print` writes on stdout: each file with its `-`/`+` lines, and between the code and the tests every finding the candidate adds (one the diagnostics already name, once, as in `check`).
       - calls [features.spec-to-code.fileDiffText](features.md#features.spec-to-code.fileDiffText), [check.assess.sameFinding](check.md#check.assess.sameFinding), [check.verdict.formatVerdict](check.md#check.verdict.formatVerdict), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [fileDiffText](../../src/spec-to-code.ts#L187) (file: FileCandidate) → string
+    - fn [fileDiffText](../../src/spec-to-code.ts#L188) (file: FileCandidate) → string
       <a id="features.spec-to-code.fileDiffText"></a><br>`src/a.ts (new file)` and its `-`/`+` lines against the file it was built from.
       - calls [features.proposals.lineDiff](features.md#features.proposals.lineDiff)
-    - fn [introduced](../../src/spec-to-code.ts#L192) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
+    - fn [introduced](../../src/spec-to-code.ts#L193) (base: Analysis, next: Analysis) → { verdicts: Verdict[]; diagnostics: Diagnostic[] } <!-- internal -->
       <a id="features.spec-to-code.introduced"></a><br>Findings `next` has that `base` does not: what a candidate would change, wherever it lands (a K102 in the new file too).
-    - fn [flowTests](../../src/spec-to-code.ts#L203) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
+    - fn [flowTests](../../src/spec-to-code.ts#L204) (analysis: Analysis, id: string) → { flow: string; file: string; name: string }[] <!-- internal -->
       <a id="features.spec-to-code.flowTests"></a><br>The `test` entries of the flows that name `id`: flow name, test file and test name.
       - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [flowsMentioning](../../src/spec-to-code.ts#L216) (analysis: Analysis, id: string) → Flow[] <!-- internal -->
+    - fn [flowsMentioning](../../src/spec-to-code.ts#L217) (analysis: Analysis, id: string) → Flow[] <!-- internal -->
       <a id="features.spec-to-code.flowsMentioning"></a><br>Hand-written flows whose trigger, step, claim, `then`, or `planned` names `id`.
       - calls [features.spec-to-code.flowMentions](features.md#features.spec-to-code.flowMentions)
-    - fn [flowMentions](../../src/spec-to-code.ts#L221) (spec: SpecIR, flow: Flow, id: string) → boolean <!-- internal -->
+    - fn [flowMentions](../../src/spec-to-code.ts#L222) (spec: SpecIR, flow: Flow, id: string) → boolean <!-- internal -->
       <a id="features.spec-to-code.flowMentions"></a><br>Returns true if a planned item with the given id sits inside the flow's file at a line the flow owns per [`features.spec-to-code.flowOwns`](features.md#features.spec-to-code.flowOwns), or if any trigger, step, ref-then, reads, emits, or invariant visited by [`lang.spec-ir.walkFlow`](lang.md#lang.spec-ir.walkFlow) targets that id. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.spec-to-code.flowOwns](features.md#features.spec-to-code.flowOwns), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [flowOwns](../../src/spec-to-code.ts#L234) (spec: SpecIR, flow: Flow, line: number) → boolean <!-- internal -->
+    - fn [flowOwns](../../src/spec-to-code.ts#L235) (spec: SpecIR, flow: Flow, line: number) → boolean <!-- internal -->
       <a id="features.spec-to-code.flowOwns"></a><br>`line` sits in this flow: after its heading and before the next flow of the same file.
-    - fn [testCandidates](../../src/spec-to-code.ts#L244) (analysis: Analysis, id: string, target: CodeTarget, code: string, model: LlmClient | undefined, options: LlmCallOptions) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
+    - fn [testCandidates](../../src/spec-to-code.ts#L245) (analysis: Analysis, id: string, target: CodeTarget, code: string, model: LlmClient | undefined, options: LlmCallOptions) → Promise<{ tests: FileCandidate[]; notes: string[] }> <!-- internal -->
       <a id="features.spec-to-code.testCandidates"></a><br>One new file per test path the flows name and the disk lacks. A test in an existing file, or in a language without a `node:test` shape, is a note: editing someone's test file is theirs to do.
-      - calls [features.spec-to-code.flowTests](features.md#features.spec-to-code.flowTests), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [base.config.toPosix](base.md#base.config.toPosix), [features.spec-to-code.modelTest](features.md#features.spec-to-code.modelTest), [features.spec-to-code.testStub](features.md#features.spec-to-code.testStub)
-    - type [TestSubject](../../src/spec-to-code.ts#L282) <!-- internal -->
+      - calls [features.spec-to-code.flowTests](features.md#features.spec-to-code.flowTests), [features.proposals.codeProposalProblem](features.md#features.proposals.codeProposalProblem), [features.spec-to-code.phpSubject](features.md#features.spec-to-code.phpSubject), [features.spec-to-code.phpFileHead](features.md#features.spec-to-code.phpFileHead), [features.spec-to-code.modelPhpTest](features.md#features.spec-to-code.modelPhpTest), [features.spec-to-code.phpTestStub](features.md#features.spec-to-code.phpTestStub), [base.config.toPosix](base.md#base.config.toPosix), [features.spec-to-code.modelTest](features.md#features.spec-to-code.modelTest), [features.spec-to-code.testStub](features.md#features.spec-to-code.testStub)
+    - type [PhpSubject](../../src/spec-to-code.ts#L301) <!-- internal -->
+      <a id="features.spec-to-code.PhpSubject"></a><br>What a PHPUnit test of the planned fn reaches: its class (qualified) and method, or its function.
+    - fn [phpSubject](../../src/spec-to-code.ts#L308) (target: CodeTarget, code: string) → PhpSubject <!-- internal -->
+      <a id="features.spec-to-code.phpSubject"></a>
+      - calls [features.spec-to-code.phpNamespaceIn](features.md#features.spec-to-code.phpNamespaceIn)
+    - fn [phpString](../../src/spec-to-code.ts#L315) (text: string) → string <!-- internal -->
+      <a id="features.spec-to-code.phpString"></a><br>A string literal of PHP: single quotes, `\\` and `'` escaped.
+    - fn [phpNamespaceIn](../../src/spec-to-code.ts#L320) (text: string) → string | null <!-- internal -->
+      <a id="features.spec-to-code.phpNamespaceIn"></a><br>The namespace a PHP file declares first; null without one.
+    - fn [phpFileHead](../../src/spec-to-code.ts#L330) (analysis: Analysis, file: string) → string <!-- internal -->
+      <a id="features.spec-to-code.phpFileHead"></a><br>The head of a new PHP file at `file`: `<?php`, `declare(strict_types=1);` when the files beside it have it, and the namespace they declare — else the one the root `composer.json` maps the directory to (`autoload` and `autoload-dev`, PSR-4) — so the class is autoloaded and its…
+      - calls [features.spec-to-code.phpNamespaceIn](features.md#features.spec-to-code.phpNamespaceIn), [features.spec-to-code.composerNamespace](features.md#features.spec-to-code.composerNamespace)
+    - fn [composerNamespace](../../src/spec-to-code.ts#L351) (root: string, dir: string) → string | null <!-- internal -->
+      <a id="features.spec-to-code.composerNamespace"></a><br>The PSR-4 namespace of `dir` by the root `composer.json` (`autoload`, then `autoload-dev`); null when no prefix maps it.
+      - calls [base.config.toPosix](base.md#base.config.toPosix)
+    - fn [phpTestStub](../../src/spec-to-code.ts#L378) (file: string, head: string, subject: PhpSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+      <a id="features.spec-to-code.phpTestStub"></a><br>A PHPUnit test class that fails until it is written: one test method per declared name.
+      - calls [features.spec-to-code.lastName](features.md#features.spec-to-code.lastName), [features.spec-to-code.phpString](features.md#features.spec-to-code.phpString)
+    - fn [lastName](../../src/spec-to-code.ts#L391) (qualified: string) → string <!-- internal -->
+      <a id="features.spec-to-code.lastName"></a>
+    - fn [modelPhpTest](../../src/spec-to-code.ts#L396) (model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+      <a id="features.spec-to-code.modelPhpTest"></a><br>The PHPUnit test class from the model; each declared test method must be in it.
+    - type [TestSubject](../../src/spec-to-code.ts#L416) <!-- internal -->
       <a id="features.spec-to-code.TestSubject"></a><br>`imported`: the name the test imports; `value`: the function it reaches through it (`X.prototype.m` for a method).
-    - fn [testStub](../../src/spec-to-code.ts#L287) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L421) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       <a id="features.spec-to-code.testStub"></a><br>Builds the source text of a `node:test` file that imports one symbol from a given module and emits one placeholder test per flow entry, each asserting the symbol is a function and then failing with a "not written" message. Used by [`features.spec-to-code.testCandidates`](features.md#features.spec-to-code.testCandidates) to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-    - fn [modelTest](../../src/spec-to-code.ts#L295) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L429) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelTest"></a><br>The e2e test file from the model; each declared test name must be in it verbatim.
-    - fn [callersInFlows](../../src/spec-to-code.ts#L313) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L447) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.spec-to-code.callersInFlows"></a><br>IDs directly above `id` in flows: the trigger or step each of its steps is nested under.
-    - fn [newModuleFile](../../src/spec-to-code.ts#L332) (analysis: Analysis, moduleId: string) → string <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L466) (analysis: Analysis, moduleId: string) → string <!-- internal -->
       <a id="features.spec-to-code.newModuleFile"></a><br>`<layer glob prefix>/<segments>.<ext>` for a module the code lacks; one prefix per layer, or the path is ambiguous. The extension is the language most files of the layer are written in (then of the repository, then the first of `languages`); the file name follows the layer's…
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf), [map.graph.placeFile](map.md#map.graph.placeFile), [features.spec-to-code.mostWritten](features.md#features.spec-to-code.mostWritten), [features.spec-to-code.fileStem](features.md#features.spec-to-code.fileStem)
-    - fn [mostWritten](../../src/spec-to-code.ts#L351) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
+    - fn [mostWritten](../../src/spec-to-code.ts#L485) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
       <a id="features.spec-to-code.mostWritten"></a><br>The language most of `files` are written in; a tie goes to the one `languages` lists first.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [fileStem](../../src/spec-to-code.ts#L368) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
+    - fn [fileStem](../../src/spec-to-code.ts#L502) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
       <a id="features.spec-to-code.fileStem"></a><br>The file name (without extension) of the module segment `segment`. An ID segment has `_` where the file had `.` (`bookmark.service` → `bookmark_service`), so the nearest scope whose files end in `.service` or `_service` decides; a scope with both is ambiguous.
-    - fn [stubFor](../../src/spec-to-code.ts#L392) (target: CodeTarget, id: string) → string <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L526) (target: CodeTarget, id: string) → string <!-- internal -->
       <a id="features.spec-to-code.stubFor"></a><br>`(order: Order) → Promise<Refund>` → a function of that signature that fails until written; the declared parameters and result are kept as written, so the stub's own signature matches the plan (no K201). A method comes without indentation and without its class: `placeStub` puts…
-      - calls [features.spec-to-code.declared](features.md#features.spec-to-code.declared)
-    - fn [declared](../../src/spec-to-code.ts#L406) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
+      - calls [features.spec-to-code.declared](features.md#features.spec-to-code.declared), [features.spec-to-code.phpString](features.md#features.spec-to-code.phpString)
+    - fn [declared](../../src/spec-to-code.ts#L541) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
       <a id="features.spec-to-code.declared"></a><br>The parameters and result of a declared signature, as written.
-    - fn [placeStub](../../src/spec-to-code.ts#L417) (before: string | null, target: CodeTarget, code: string) → string <!-- internal -->
+    - fn [placeStub](../../src/spec-to-code.ts#L554) (before: string | null, target: CodeTarget, code: string, phpHead = "") → string <!-- internal -->
       <a id="features.spec-to-code.placeStub"></a><br>The file's text with `code` in place: appended to the module, wrapped in a new class appended to it, or inside the body of the class the code has. A new Python file gets postponed annotations: they name types it does not import, and are not evaluated when it loads.
       - calls [features.spec-to-code.intoClass](features.md#features.spec-to-code.intoClass), [features.spec-to-code.indent](features.md#features.spec-to-code.indent), [features.spec-to-code.declared](features.md#features.spec-to-code.declared)
-    - fn [intoClass](../../src/spec-to-code.ts#L437) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
+    - fn [intoClass](../../src/spec-to-code.ts#L579) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
       <a id="features.spec-to-code.intoClass"></a><br>`code` as the last member of the class whose lines `span` gives, indented as its other members are.
       - calls [features.spec-to-code.leadingSpace](features.md#features.spec-to-code.leadingSpace), [features.spec-to-code.indent](features.md#features.spec-to-code.indent)
-    - fn [leadingSpace](../../src/spec-to-code.ts#L463) (line: string) → string <!-- internal -->
+    - fn [leadingSpace](../../src/spec-to-code.ts#L605) (line: string) → string <!-- internal -->
       <a id="features.spec-to-code.leadingSpace"></a>
-    - fn [indent](../../src/spec-to-code.ts#L468) (code: string, prefix: string) → string <!-- internal -->
+    - fn [indent](../../src/spec-to-code.ts#L610) (code: string, prefix: string) → string <!-- internal -->
       <a id="features.spec-to-code.indent"></a><br>Each non-blank line of `code` with `prefix` before it.
-    - fn [dedent](../../src/spec-to-code.ts#L473) (code: string) → string <!-- internal -->
+    - fn [dedent](../../src/spec-to-code.ts#L615) (code: string) → string <!-- internal -->
       <a id="features.spec-to-code.dedent"></a><br>`code` without the indentation all its non-blank lines share.
       - calls [features.spec-to-code.leadingSpace](features.md#features.spec-to-code.leadingSpace)
-    - fn [modelBody](../../src/spec-to-code.ts#L480) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L622) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped.
       - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [features.spec-to-code.dedent](features.md#features.spec-to-code.dedent)
   - module [stale](../../src/stale.ts#L1)

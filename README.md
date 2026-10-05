@@ -54,6 +54,7 @@ keylang does not decide whether the program is correct, safe, or finished.
 - A sentence under a node is prose. keylang keeps it. It does not prove it.
 - A call it cannot name (`obj[k]()`, an unknown decorator, `eval`) is a hole. The answer stays `unverified`.
 - Rust and Python record imports and calls. They do not record type edges.
+- PHP records imports, calls and the types of its type hints. A call through an interface, or a trait's method through `$this`, is a hole.
 - Wiring writes a TypeScript `wire()`. It does not stop the rest of the program from importing what it wants. The rules still have to catch that.
 - keylang reads test reports and traces. It does not run the tests, typecheck, or review security.
 - Go, Java, Ruby and the rest are absent from the snapshot. Absence is not a proof that they depend on nothing.
@@ -129,6 +130,7 @@ The short list. Detail is in [`docs/design.md`](docs/design.md) §9.
 - **M6.** `# wiring` writes a typed `wire()` in `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` and `explain <id> --llm` write proposals. `keylang mcp`: `apply_diff` writes a proposal only. Optional voice (`Ctrl+R`). `keylang doctor` reports and changes nothing.
 - **M8.** `init` and `keylang agents` install a short block in `AGENTS.md`, the MCP server and a skill for Claude Code, Codex, Cursor or opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` writes `keylang/rules.baseline.md`: layer dependencies the graph does not have yet. `check --changed` and `keylang hook stop` block a turn only on a new violation. Covered by the CLI and MCP tests. Not yet tried end to end with Claude Code and Codex on an outside repository.
+- **PHP.** Classes, functions, `use` and calls on the same graph ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Composer packages are `external.*`; PHP's own functions and classes are no nodes. `spec-to-code` writes a PHP stub and a failing PHPUnit test.
 
 `bench/` runs the tool on eight repositories. Numbers are in [`bench/results.md`](bench/results.md).
 

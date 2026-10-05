@@ -49,32 +49,37 @@
     - external-ids base.external-ids
     - imports map.imports
     - span base.span
-    - type [DependencyField](../../src/declared-packages.ts#L25)
-    - type [Declaration](../../src/declared-packages.ts#L31)
-    - type [DeclaredPackage](../../src/declared-packages.ts#L39)
-    - type [Add](../../src/declared-packages.ts#L51) <!-- internal -->
-    - fn [readManifests](../../src/declared-packages.ts#L60) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
-      - calls map.declared-packages.readInput, map.declared-packages.typesTarget, map.declared-packages.manifestDirs, base.config.isAnalysed, map.declared-packages.addPackages, map.declared-packages.addCrates, map.declared-packages.workspaceNames, base.external-ids.assignExternalIds, base.span.compareText
-    - fn [manifestDirs](../../src/declared-packages.ts#L105) (files: readonly string[]) → Set<string> <!-- internal -->
+    - type [DependencyField](../../src/declared-packages.ts#L28)
+    - type [Declaration](../../src/declared-packages.ts#L37)
+    - type [DeclaredPackage](../../src/declared-packages.ts#L45)
+    - type [Add](../../src/declared-packages.ts#L57) <!-- internal -->
+    - fn [readManifests](../../src/declared-packages.ts#L66) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
+      - calls map.declared-packages.readInput, map.declared-packages.typesTarget, map.declared-packages.manifestDirs, base.config.isAnalysed, map.declared-packages.addPackages, map.declared-packages.addCrates, map.declared-packages.addComposer, map.declared-packages.workspaceNames, map.declared-packages.composerPathNames, base.external-ids.assignExternalIds, map.declared-packages.ecosystemOf, base.span.compareText
+    - fn [ecosystemOf](../../src/declared-packages.ts#L116) (declarations: readonly Declaration[]) → DeclaredPackage["ecosystem"] <!-- internal -->
+    - fn [manifestDirs](../../src/declared-packages.ts#L122) (files: readonly string[]) → Set<string> <!-- internal -->
       - calls base.config.toPosix
-    - fn [typesTarget](../../src/declared-packages.ts#L117) (name: string) → string <!-- internal -->
-    - fn [workspaceNames](../../src/declared-packages.ts#L129) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+    - fn [typesTarget](../../src/declared-packages.ts#L134) (name: string) → string <!-- internal -->
+    - fn [workspaceNames](../../src/declared-packages.ts#L146) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
       - calls map.imports.parseJsonc, map.declared-packages.isRecord, map.declared-packages.workspaceDirs
-    - fn [workspaceDirs](../../src/declared-packages.ts#L147) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
+    - fn [composerPathNames](../../src/declared-packages.ts#L167) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+      - calls map.declared-packages.isRecord, map.declared-packages.workspaceDirs
+    - fn [workspaceDirs](../../src/declared-packages.ts#L193) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
       - calls base.config.toPosix
-    - fn [readInput](../../src/declared-packages.ts#L158) (abs: string, rel: string) → string | null <!-- internal -->
+    - fn [readInput](../../src/declared-packages.ts#L204) (abs: string, rel: string) → string | null <!-- internal -->
       - calls map.declared-packages.isDirectory, map.declared-packages.isFile, map.declared-packages.readText
-    - fn [isFile](../../src/declared-packages.ts#L172) (abs: string) → boolean <!-- internal -->
-    - fn [isDirectory](../../src/declared-packages.ts#L180) (abs: string) → boolean <!-- internal -->
-    - fn [readText](../../src/declared-packages.ts#L189) (path: string, rel: string) → string <!-- internal -->
-    - fn [isRecord](../../src/declared-packages.ts#L198) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [table](../../src/declared-packages.ts#L202) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
+    - fn [isFile](../../src/declared-packages.ts#L218) (abs: string) → boolean <!-- internal -->
+    - fn [isDirectory](../../src/declared-packages.ts#L226) (abs: string) → boolean <!-- internal -->
+    - fn [readText](../../src/declared-packages.ts#L235) (path: string, rel: string) → string <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L244) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L248) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
       - calls map.declared-packages.isRecord
-    - fn [addPackages](../../src/declared-packages.ts#L209) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addPackages](../../src/declared-packages.ts#L255) (rel: string, text: string, add: Add) → void <!-- internal -->
       - calls map.imports.parseJsoncStrict, map.declared-packages.isRecord, map.declared-packages.table
-    - fn [addCrates](../../src/declared-packages.ts#L225) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addCrates](../../src/declared-packages.ts#L271) (rel: string, text: string, add: Add) → void <!-- internal -->
       - calls map.declared-packages.isRecord, map.declared-packages.table, map.declared-packages.crateTables
-    - fn [crateTables](../../src/declared-packages.ts#L249) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
+    - fn [addComposer](../../src/declared-packages.ts#L296) (rel: string, text: string, add: Add) → void <!-- internal -->
+      - calls map.declared-packages.isRecord, map.declared-packages.table
+    - fn [crateTables](../../src/declared-packages.ts#L311) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
       - calls map.declared-packages.table
   - module [emit](../../src/emit.ts#L1)
     - node external.node
@@ -178,54 +183,58 @@
       - calls map.fact-cache.isRecord, map.fact-cache.isStoredFacts
     - fn [isStoredFacts](../../src/fact-cache.ts#L43) (value: unknown) → value is StoredFacts <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isPosition, map.fact-cache.every, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.optional
-    - fn [isImport](../../src/fact-cache.ts#L63) (value: unknown) → boolean <!-- internal -->
+    - fn [isImport](../../src/fact-cache.ts#L64) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.every
-    - fn [isDecl](../../src/fact-cache.ts#L75) (value: unknown) → boolean <!-- internal -->
+    - fn [isDecl](../../src/fact-cache.ts#L76) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.every, map.fact-cache.optional, map.fact-cache.optionalTrue
-    - fn [isCall](../../src/fact-cache.ts#L96) (value: unknown) → boolean <!-- internal -->
+    - fn [isCall](../../src/fact-cache.ts#L97) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.optional, map.fact-cache.every
-    - fn [isHook](../../src/fact-cache.ts#L110) (value: unknown) → boolean <!-- internal -->
+    - fn [isHook](../../src/fact-cache.ts#L111) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isInteger
-    - fn [isPass](../../src/fact-cache.ts#L121) (value: unknown) → boolean <!-- internal -->
+    - fn [isPass](../../src/fact-cache.ts#L122) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.optional
-    - fn [isExportRow](../../src/fact-cache.ts#L128) (value: unknown) → boolean <!-- internal -->
+    - fn [isExportRow](../../src/fact-cache.ts#L129) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.optional
-    - fn [isBound](../../src/fact-cache.ts#L132) (value: unknown) → boolean <!-- internal -->
-    - fn [isRange](../../src/fact-cache.ts#L137) (value: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isBound](../../src/fact-cache.ts#L133) (value: unknown) → boolean <!-- internal -->
+    - fn [isRange](../../src/fact-cache.ts#L138) (value: Record<string, unknown>) → boolean <!-- internal -->
       - calls map.fact-cache.isPosition
-    - fn [isPosition](../../src/fact-cache.ts#L141) (value: unknown) → boolean <!-- internal -->
+    - fn [isPosition](../../src/fact-cache.ts#L142) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isInteger
-    - fn [isInteger](../../src/fact-cache.ts#L145) (value: unknown) → value is number <!-- internal -->
-    - fn [isString](../../src/fact-cache.ts#L149) (value: unknown) → boolean <!-- internal -->
-    - fn [every](../../src/fact-cache.ts#L153) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
-    - fn [optional](../../src/fact-cache.ts#L157) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
-    - fn [optionalTrue](../../src/fact-cache.ts#L161) (value: unknown) → boolean <!-- internal -->
-    - fn [isRecord](../../src/fact-cache.ts#L165) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - module [FactCache](../../src/fact-cache.ts#L171)
-      - fn [constructor](../../src/fact-cache.ts#L180) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
-      - fn [open](../../src/fact-cache.ts#L187) (root: string, version: string) → FactCache
+    - fn [isInteger](../../src/fact-cache.ts#L146) (value: unknown) → value is number <!-- internal -->
+    - fn [isString](../../src/fact-cache.ts#L150) (value: unknown) → boolean <!-- internal -->
+    - fn [every](../../src/fact-cache.ts#L154) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optional](../../src/fact-cache.ts#L158) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optionalTrue](../../src/fact-cache.ts#L162) (value: unknown) → boolean <!-- internal -->
+    - fn [isRecord](../../src/fact-cache.ts#L166) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - module [FactCache](../../src/fact-cache.ts#L172)
+      - fn [constructor](../../src/fact-cache.ts#L181) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+      - fn [open](../../src/fact-cache.ts#L188) (root: string, version: string) → FactCache
         - calls map.fact-cache.storedFiles, map.fact-cache.FactCache
-      - fn [facts](../../src/fact-cache.ts#L200) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
-      - fn [serialize](../../src/fact-cache.ts#L219) () → string
+      - fn [facts](../../src/fact-cache.ts#L201) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [serialize](../../src/fact-cache.ts#L220) () → string
         - calls base.span.compareText
   - module [frontends](../../src/frontends.ts#L1)
     - facts extract.facts
+    - php extract.php
     - python extract.python
     - rust extract.rust
     - ts extract.ts
     - imports map.imports
     - languages base.languages
+    - php-imports map.php-imports
     - python-imports map.python-imports
     - rust-imports map.rust-imports
-    - type [Frontend](../../src/frontends.ts#L15)
-    - fn [ecmascriptResolver](../../src/frontends.ts#L81) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - type [Frontend](../../src/frontends.ts#L17)
+    - fn [ecmascriptResolver](../../src/frontends.ts#L96) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       - calls map.imports.ImportResolver
-    - fn [pythonResolver](../../src/frontends.ts#L85) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [pythonResolver](../../src/frontends.ts#L100) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       - calls map.python-imports.PythonResolver
-    - fn [rustResolver](../../src/frontends.ts#L89) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [rustResolver](../../src/frontends.ts#L104) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       - calls map.rust-imports.RustResolver
-    - fn [frontendOf](../../src/frontends.ts#L93) (language: Language) → Frontend
-    - fn [frontendFor](../../src/frontends.ts#L100) (path: string) → Frontend | undefined
+    - fn [phpResolver](../../src/frontends.ts#L108) (root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]) → SourceResolver <!-- internal -->
+      - calls map.php-imports.PhpResolver
+    - fn [frontendOf](../../src/frontends.ts#L112) (language: Language) → Frontend
+    - fn [frontendFor](../../src/frontends.ts#L119) (path: string) → Frontend | undefined
       - calls base.languages.languageOf
   - module [graph](../../src/graph.ts#L1)
     - node external.node
@@ -395,6 +404,20 @@
       - calls map.map.mapConflicts, map.map.targets, map.map.extraGenerated
     - fn [extractorCode](../../src/map.ts#L482) () → string <!-- internal -->
       - calls map.snapshot.sha256
+  - module [php-imports](../../src/php-imports.ts#L1)
+    - node external.node
+    - facts extract.facts
+    - imports map.imports
+    - module [PhpResolver](../../src/php-imports.ts#L30)
+      - fn [constructor](../../src/php-imports.ts#L42) (root: string, sources: ReadonlySet<string> = new Set(), files: readonly FileFacts[] = [])
+        - calls map.php-imports.readText, map.php-imports.packagePrefixes
+      - fn [resolve](../../src/php-imports.ts#L64) (fromFile: string, spec: string) → Resolution
+        - calls map.php-imports.PhpResolver.include
+      - fn [include](../../src/php-imports.ts#L84) (fromFile: string, path: string) → Resolution <!-- internal -->
+    - fn [packagePrefixes](../../src/php-imports.ts#L94) (text: string) → { prefix: string; name: string }[]
+      - calls map.php-imports.isRecord
+    - fn [readText](../../src/php-imports.ts#L120) (abs: string) → string | null <!-- internal -->
+    - fn [isRecord](../../src/php-imports.ts#L128) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
     - imports map.imports

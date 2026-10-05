@@ -54,6 +54,7 @@ keylang не вирішує, чи програма правильна, безп�
 - Речення під вузлом — проза. keylang його зберігає. Не доводить.
 - Виклик, який він не може назвати (`obj[k]()`, невідомий декоратор, `eval`), — дірка. Відповідь лишається `unverified`.
 - Rust і Python записують імпорти й виклики. Ребер типів не записують.
+- PHP записує імпорти, виклики й типи з type hints. Виклик через інтерфейс чи метод трейту через `$this` — дірка.
 - Wiring пише TypeScript-функцію `wire()`. Він не забороняє решті програми імпортувати що завгодно. Це мають ловити правила.
 - keylang читає звіти тестів і trace. Він не запускає тести, не перевіряє типи і не робить рев'ю безпеки.
 - Go, Java, Ruby та інші у знімку відсутні. Відсутність не доводить, що вони ні від чого не залежать.
@@ -129,6 +130,7 @@ keylang — це список, не мова програмування. Нем�
 - **M6.** `# wiring` пише типізований `wire()` у `keylang.gen.ts` ([ADR 0003](docs/adr/0003-wiring-lifecycle.md)).
 - **M7.** `draft`, `code-to-spec`, `spec-to-code` і `explain <id> --llm` пишуть пропозиції. `keylang mcp`: `apply_diff` пише лише пропозицію. Голос за бажанням (`Ctrl+R`). `keylang doctor` звітує і нічого не змінює.
 - **M8.** `init` і `keylang agents` ставлять короткий блок в `AGENTS.md`, сервер MCP і skill для Claude Code, Codex, Cursor чи opencode ([ADR 0005](docs/adr/0005-harness-integration.md)). `keylang baseline` пише `keylang/rules.baseline.md`: залежності між шарами, яких у графі ще немає. `check --changed` і `keylang hook stop` блокують хід лише на новому порушенні. Покрито тестами CLI і MCP. Наскрізно з Claude Code і Codex на чужому репозиторії ще не перевірено.
+- **PHP.** Класи, функції, `use` і виклики на тому самому графі ([ADR 0015](docs/adr/0015-php-imports-name-declarations.md)). Пакети composer — `external.*`; власні функції й класи PHP вузлів не мають. `spec-to-code` пише заготовку PHP і тест PHPUnit, що падає.
 
 `bench/` ганяє інструмент на восьми репозиторіях. Числа — у [`bench/results.md`](bench/results.md).
 

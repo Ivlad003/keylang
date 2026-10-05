@@ -2,7 +2,9 @@
 // ranges. A rule or a flow may name one (`external.<segment>`) before any file
 // imports it. Python manifests are not read: a distribution name is not an
 // import name (`Pillow` is imported as `PIL`), so a Python package is known
-// only from an import.
+// only from an import. `composer.json` declares PHP packages by their composer
+// names (`monolog/monolog`), the name a PHP import resolves to as well; PHP
+// itself, its extensions and composer's own APIs are no packages.
 // A manifest counts at the root or in a directory between an analysed file and
 // the root, unless `exclude` matches it; no directory is walked. Workspace
 // ranges (`workspace:`, `file:`, `link:`, `portal:`) and the packages of the
@@ -20,12 +22,16 @@ import { compareText } from "./span.ts";
 
 const PACKAGE_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
 const CRATE_FIELDS = ["dependencies", "dev-dependencies", "build-dependencies"] as const;
+const COMPOSER_FIELDS = ["require", "require-dev"] as const;
 
 /** A manifest field a package is declared in. */
-export type DependencyField = (typeof PACKAGE_FIELDS)[number] | (typeof CRATE_FIELDS)[number];
+export type DependencyField = (typeof PACKAGE_FIELDS)[number] | (typeof CRATE_FIELDS)[number] | (typeof COMPOSER_FIELDS)[number];
 
-/** Field order within one manifest: npm first, then Cargo (`dependencies` is shared). */
-const FIELD_ORDER: readonly DependencyField[] = [...new Set<DependencyField>([...PACKAGE_FIELDS, ...CRATE_FIELDS])];
+/** Field order within one manifest: npm, then Cargo (`dependencies` is shared), then composer. */
+const FIELD_ORDER: readonly DependencyField[] = [...new Set<DependencyField>([...PACKAGE_FIELDS, ...CRATE_FIELDS, ...COMPOSER_FIELDS])];
+
+/** Composer requirements that are no package: PHP, its extensions and libraries, composer's APIs. */
+const PLATFORM = /^(php(-64bit|-ipv6|-zts|-debug)?|hhvm|ext-.+|lib-.+|composer|composer-plugin-api|composer-runtime-api)$/i;
 
 /** Where one package is declared, and its version range as written (null when the manifest gives none). */
 export interface Declaration {
@@ -40,7 +46,7 @@ export interface DeclaredPackage {
   id: string;
   /** The name as declared; `@types/x` is `x`. */
   name: string;
-  ecosystem: "npm" | "cargo";
+  ecosystem: "npm" | "cargo" | "composer";
   /** Sorted by manifest path, then field order. */
   declarations: Declaration[];
 }
@@ -75,6 +81,7 @@ export function readManifests(config: Config, files: readonly string[], known: R
   for (const dir of [...manifestDirs(files)].sort(compareText)) {
     const pkg = dir === "" ? "package.json" : `${dir}/package.json`;
     const cargo = dir === "" ? "Cargo.toml" : `${dir}/Cargo.toml`;
+    const composer = dir === "" ? "composer.json" : `${dir}/composer.json`;
     if (isAnalysed(pkg, config)) {
       const text = read(pkg);
       if (text !== null) addPackages(pkg, text, add);
@@ -83,22 +90,32 @@ export function readManifests(config: Config, files: readonly string[], known: R
       const text = read(cargo);
       if (text !== null) addCrates(cargo, text, add);
     }
+    if (isAnalysed(composer, config)) {
+      const text = read(composer);
+      if (text !== null) addComposer(composer, text, add);
+    }
   }
   // The listing of `<base>/*` is the resolver's when it made one, and is not
   // an input otherwise: which directories exist changes no edge by itself.
   const list = (rel: string): string | null => known.get(rel) ?? readInput(join(config.root, rel), rel);
-  const internal = workspaceNames(read, list);
+  const internal = new Set([...workspaceNames(read, list), ...composerPathNames(read, list)]);
   const entries = [...declared].filter(([name]) => !internal.has(name));
   const { ids } = assignExternalIds(entries.map(([name]) => name));
   const packages = entries
     .map(([name, declarations]): DeclaredPackage => ({
       id: ids.get(name)!,
       name,
-      ecosystem: declarations.some((d) => posix.basename(d.manifest) === "package.json") ? "npm" : "cargo",
+      ecosystem: ecosystemOf(declarations),
       declarations: declarations.sort((a, b) => compareText(a.manifest, b.manifest) || FIELD_ORDER.indexOf(a.field) - FIELD_ORDER.indexOf(b.field)),
     }))
     .sort((a, b) => compareText(a.id, b.id));
   return { packages, inputs };
+}
+
+/** npm when a `package.json` declares the package, else composer for a `composer.json`, else Cargo. */
+function ecosystemOf(declarations: readonly Declaration[]): DeclaredPackage["ecosystem"] {
+  const manifests = new Set(declarations.map((d) => posix.basename(d.manifest)));
+  return manifests.has("package.json") ? "npm" : manifests.has("composer.json") ? "composer" : "cargo";
 }
 
 /** The root (`""`) and every directory between a file and the root. */
@@ -138,6 +155,35 @@ function workspaceNames(read: (rel: string) => string | null, list: (rel: string
       const text = read(`${dir}/package.json`);
       const member = text === null ? null : parseJsonc(text);
       if (isRecord(member) && typeof member.name === "string") names.add(member.name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Names of the packages in the root `composer.json`'s `path` repositories
+ * (`packages/*`, `modules/billing`): this repository's code, not external.
+ */
+function composerPathNames(read: (rel: string) => string | null, list: (rel: string) => string | null): Set<string> {
+  const rootText = read("composer.json");
+  let manifest: unknown = null;
+  try {
+    manifest = rootText === null ? null : JSON.parse(rootText);
+  } catch {
+    // Reported where its packages are read.
+  }
+  const names = new Set<string>();
+  if (!isRecord(manifest) || !Array.isArray(manifest.repositories)) return names;
+  for (const repository of manifest.repositories) {
+    if (!isRecord(repository) || repository.type !== "path" || typeof repository.url !== "string") continue;
+    for (const dir of workspaceDirs(repository.url, list)) {
+      const text = read(`${dir}/composer.json`);
+      try {
+        const member: unknown = text === null ? null : JSON.parse(text);
+        if (isRecord(member) && typeof member.name === "string") names.add(member.name);
+      } catch {
+        // A member that does not parse names no package.
+      }
     }
   }
   return names;
@@ -243,6 +289,22 @@ function addCrates(rel: string, text: string, add: Add): void {
       const range = typeof dep === "string" ? dep : isRecord(dep) && typeof dep.version === "string" ? dep.version : null;
       add(renamed, rel, field, range);
     }
+  }
+}
+
+/** `require` and `require-dev` of a `composer.json`, without PHP and its extensions. */
+function addComposer(rel: string, text: string, add: Add): void {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${rel}: invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(value)) throw new Error(`${rel}: the document must be an object, got ${JSON.stringify(value)}`);
+  for (const key of COMPOSER_FIELDS) {
+    const names = table(rel, key, key in value ? value[key] : undefined, "object");
+    if (names === undefined) continue;
+    for (const [name, range] of Object.entries(names)) if (!PLATFORM.test(name)) add(name, rel, key, typeof range === "string" ? range : null);
   }
 }
 

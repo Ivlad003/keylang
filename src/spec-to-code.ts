@@ -1,8 +1,9 @@
 // `keylang spec-to-code <id>` (design §5.5), algo: a stub for a `planned`
 // fn in the file its ID names, with the declared signature, analyzed as a
 // new snapshot before anything is written; and for each `test` its flows
-// name in a file that does not exist yet, a TS/JS e2e test that fails until
-// it is written (with a model: the test from the model). An ID that is neither planned
+// name in a file that does not exist yet, a test that fails until it is
+// written — `node:test` for TS/JS, PHPUnit for PHP (with a model: the test
+// from the model). An ID that is neither planned
 // nor in the code is a reference to fix or an intention to declare first:
 // no code is guessed from a possible typo.
 
@@ -42,7 +43,7 @@ export interface CodeCandidate extends FileCandidate {
   diagnostics: Diagnostic[];
 }
 
-const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js", python: ".py", rust: ".rs" };
+const EXTENSIONS: Record<string, string> = { typescript: ".ts", javascript: ".js", python: ".py", rust: ".rs", php: ".php" };
 
 /**
  * `model`: the body comes from the model instead of the stub — the whole
@@ -59,7 +60,7 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
   const code = model ? await modelBody(analysis, model, target, id, lf, options) : stubFor(target, id);
-  const joined = placeStub(lf, target, code);
+  const joined = placeStub(lf, target, code, target.file.endsWith(".php") ? phpFileHead(analysis, target.file) : "");
   // A file with CRLF on every line keeps it.
   const after = before !== null && allCrlf(before) ? joined.replace(/\n/g, "\r\n") : joined;
   // The candidate is checked as the code it would be, without touching the disk, against the code without it.
@@ -258,8 +259,17 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
       if (!readFileSync(join(root, t.file), "utf8").includes(t.name)) notes.push(`${label}: ${t.file} exists without it; add it there`);
       continue;
     }
-    if (!TEST_EXTENSIONS.test(t.file) || !TEST_EXTENSIONS.test(codeFile)) {
-      notes.push(`${label}: write it by hand (spec-to-code writes node:test files for TS/JS)`);
+    const php = t.file.endsWith(".php") && codeFile.endsWith(".php");
+    if (!php && (!TEST_EXTENSIONS.test(t.file) || !TEST_EXTENSIONS.test(codeFile))) {
+      notes.push(`${label}: write it by hand (spec-to-code writes node:test files for TS/JS and PHPUnit tests for PHP)`);
+      continue;
+    }
+    if (php && !PHP_IDENTIFIER.test(posix.basename(t.file, ".php"))) {
+      notes.push(`${label}: write it by hand (a PHPUnit test file holds the class of its name, and \`${posix.basename(t.file, ".php")}\` is no class name)`);
+      continue;
+    }
+    if (php && !PHP_IDENTIFIER.test(t.name)) {
+      notes.push(`${label}: write it by hand (a PHPUnit test is a method, and \`${t.name}\` is no method name)`);
       continue;
     }
     const list = byFile.get(t.file) ?? [];
@@ -270,12 +280,136 @@ async function testCandidates(analysis: Analysis, id: string, target: CodeTarget
   const subject = target.owner ? { imported: target.owner.name, value: `${target.owner.name}.prototype.${target.name}` } : { imported: target.name, value: target.name };
   const tests: FileCandidate[] = [];
   for (const [file, entries] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (file.endsWith(".php")) {
+      const php = phpSubject(target, code);
+      const head = phpFileHead(analysis, file);
+      tests.push({ file, before: null, after: model ? await modelPhpTest(model, file, head, php, id, code, entries, options) : phpTestStub(file, head, php, entries) });
+      continue;
+    }
     let from = toPosix(relative(dirname(file), codeFile));
     if (!from.startsWith(".")) from = `./${from}`;
     const after = model ? await modelTest(model, file, from, subject, id, code, entries, options) : testStub(from, subject, entries);
     tests.push({ file, before: null, after });
   }
   return { tests, notes };
+}
+
+/** A PHP class, method or function name. */
+const PHP_IDENTIFIER = /^[A-Za-z_\x80-\uffff][A-Za-z0-9_\x80-\uffff]*$/;
+
+/** What a PHPUnit test of the planned fn reaches: its class (qualified) and method, or its function. */
+interface PhpSubject {
+  /** `Shop\Domain\Order`; null for a function. */
+  class: string | null;
+  /** `refund`, or the qualified function `Shop\Support\format`. */
+  name: string;
+}
+
+function phpSubject(target: CodeTarget, code: string): PhpSubject {
+  const ns = phpNamespaceIn(code);
+  const qualify = (name: string): string => (ns === null ? name : `${ns}\\${name}`);
+  return target.owner ? { class: qualify(target.owner.name), name: target.name } : { class: null, name: qualify(target.name) };
+}
+
+/** A string literal of PHP: single quotes, `\\` and `'` escaped. */
+function phpString(text: string): string {
+  return `'${text.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+/** The namespace a PHP file declares first; null without one. */
+function phpNamespaceIn(text: string): string | null {
+  return /^\s*namespace\s+([A-Za-z_\x80-\uffff][\w\x80-\uffff]*(?:\\[A-Za-z_\x80-\uffff][\w\x80-\uffff]*)*)\s*[;{]/m.exec(text)?.[1] ?? null;
+}
+
+/**
+ * The head of a new PHP file at `file`: `<?php`, `declare(strict_types=1);`
+ * when the files beside it have it, and the namespace they declare — else the
+ * one the root `composer.json` maps the directory to (`autoload` and
+ * `autoload-dev`, PSR-4) — so the class is autoloaded and its imports resolve.
+ */
+function phpFileHead(analysis: Analysis, file: string): string {
+  const root = analysis.config.root;
+  const dir = posix.dirname(file);
+  const siblings = (analysis.snapshot?.manifest.files ?? []).map((f) => f.path).filter((path) => path.endsWith(".php") && path !== file && posix.dirname(path) === dir).sort();
+  let strict = false;
+  let ns: string | null = null;
+  for (const path of siblings) {
+    let text: string;
+    try {
+      text = readFileSync(join(root, path), "utf8");
+    } catch {
+      continue;
+    }
+    strict ||= /declare\s*\(\s*strict_types\s*=\s*1\s*\)/.test(text);
+    ns ??= phpNamespaceIn(text);
+  }
+  ns ??= composerNamespace(root, dir);
+  return `<?php\n\n${strict ? "declare(strict_types=1);\n\n" : ""}${ns !== null ? `namespace ${ns};\n\n` : ""}`;
+}
+
+/** The PSR-4 namespace of `dir` by the root `composer.json` (`autoload`, then `autoload-dev`); null when no prefix maps it. */
+function composerNamespace(root: string, dir: string): string | null {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(join(root, "composer.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const record = (value: unknown): Record<string, unknown> | null => (value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
+  let best: { prefix: string; base: string } | null = null;
+  for (const section of ["autoload", "autoload-dev"]) {
+    const psr4 = record(record(record(manifest)?.[section])?.["psr-4"]);
+    for (const [prefix, value] of Object.entries(psr4 ?? {})) {
+      for (const path of Array.isArray(value) ? value : [value]) {
+        if (typeof path !== "string") continue;
+        const base = toPosix(path).replace(/^\.\//, "").replace(/\/+$/, "");
+        const inside = base === "" || base === "." || dir === base || dir.startsWith(`${base}/`);
+        if (inside && (best === null || base.length > best.base.length)) best = { prefix, base: base === "." ? "" : base };
+      }
+    }
+  }
+  if (best === null) return null;
+  const rest = best.base === "" ? dir : dir.slice(best.base.length).replace(/^\//, "");
+  const parts = [...best.prefix.split("\\").filter((part) => part !== ""), ...(rest === "" || rest === "." ? [] : rest.split("/"))];
+  return parts.length > 0 ? parts.join("\\") : null;
+}
+
+/** A PHPUnit test class that fails until it is written: one test method per declared name. */
+function phpTestStub(file: string, head: string, subject: PhpSubject, entries: readonly { flow: string; name: string }[]): string {
+  const className = posix.basename(file, ".php");
+  const exists = subject.class !== null ? `method_exists(${lastName(subject.class)}::class, ${phpString(subject.name)})` : `function_exists(${phpString(subject.name)})`;
+  const reach = subject.class !== null ? `${lastName(subject.class)}::${subject.name}` : subject.name;
+  const methods = entries.map((e) => {
+    // PHPUnit runs a public method whose name starts with `test`, or one marked `#[Test]`.
+    const marked = /^test/i.test(e.name) ? "" : "    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
+    return `${marked}    public function ${e.name}(): void\n    {\n        $this->assertTrue(${exists});\n        $this->fail(${phpString(`not written: drive flow \`${e.flow}\` through ${reach} and assert what the flow promises`)});\n    }\n`;
+  });
+  const uses = ["PHPUnit\\Framework\\TestCase", ...(subject.class !== null ? [subject.class] : [])].sort();
+  return `${head}${uses.map((use) => `use ${use};\n`).join("")}\nfinal class ${className} extends TestCase\n{\n${methods.join("\n")}}\n`;
+}
+
+function lastName(qualified: string): string {
+  return qualified.slice(qualified.lastIndexOf("\\") + 1);
+}
+
+/** The PHPUnit test class from the model; each declared test method must be in it. */
+async function modelPhpTest(model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions): Promise<string> {
+  const className = posix.basename(file, ".php");
+  const reach = subject.class !== null ? `the method \`${subject.name}\` of \`${subject.class}\`` : `the function \`${subject.name}\``;
+  const answer = await model.complete({
+    system: `You write one PHPUnit test class (PHPUnit 10 or newer): \`final class ${className} extends \\PHPUnit\\Framework\\TestCase\`, in a file that starts as given. It tests ${reach}. Use exactly the test method names given, each a public method returning void. Answer with the whole file only, in one fenced code block.`,
+    prompt: [
+      `Test file: ${file}`,
+      `It starts with:\n\`\`\`php\n${head.trimEnd()}\n\`\`\``,
+      `Tests (flow → method):\n${entries.map((e) => `- flow ${e.flow}: ${e.name}`).join("\n")}`,
+      `\`${id}\` as it will be:\n\`\`\`php\n${code}\n\`\`\``,
+    ].join("\n\n"),
+    maxTokens: 8192,
+  }, options);
+  const text = (/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).trim();
+  const missing = entries.filter((e) => !new RegExp(`\\bfunction\\s+${e.name}\\s*\\(`).test(text));
+  if (missing.length > 0) throw new Error(`the model's ${file} has no test method ${missing.map((e) => e.name).join(", ")}; nothing written`);
+  return `${text}\n`;
 }
 
 /** `imported`: the name the test imports; `value`: the function it reaches through it (`X.prototype.m` for a method). */
@@ -398,6 +532,7 @@ function stubFor(target: CodeTarget, id: string): string {
     return `def ${name}(${receiver})${result ? ` -> ${result}` : ""}:\n    raise NotImplementedError(${message})\n`;
   }
   if (file.endsWith(".rs")) return `pub fn ${name}(${params})${result ? ` -> ${result}` : ""} {\n    todo!(${message})\n}\n`;
+  if (file.endsWith(".php")) return `${owner ? "public " : ""}function ${name}(${params})${result ? `: ${result}` : ""}\n{\n    throw new \\LogicException(${phpString(`not implemented: ${id}`)});\n}\n`;
   const isAsync = result !== null && /^Promise</.test(result);
   return `${owner ? "" : "export "}${isAsync ? "async " : ""}${owner ? "" : "function "}${name}(${params})${result ? `: ${result}` : ""} {\n  throw new Error(${message});\n}\n`;
 }
@@ -412,22 +547,29 @@ function declared(signature: string | null): { params: string; result: string | 
  * The file's text with `code` in place: appended to the module, wrapped in
  * a new class appended to it, or inside the body of the class the code has.
  * A new Python file gets postponed annotations: they name types it does not
- * import, and are not evaluated when it loads.
+ * import, and are not evaluated when it loads. A new PHP file starts with
+ * `phpHead` (`<?php`, its namespace); one that ends with `?>` keeps the code
+ * before it.
  */
-function placeStub(before: string | null, target: CodeTarget, code: string): string {
+function placeStub(before: string | null, target: CodeTarget, code: string, phpHead = ""): string {
   const python = target.file.endsWith(".py");
   const rust = target.file.endsWith(".rs");
+  const php = target.file.endsWith(".php");
   const { owner } = target;
   if (owner?.span && before !== null && !rust) return intoClass(before, owner.span, code, python);
   let block = code;
   if (owner) {
-    const body = indent(code, python || rust ? "    " : "  ");
-    block = python ? `class ${owner.name}:\n${body}` : rust ? `${owner.span ? "" : `pub struct ${owner.name};\n\n`}impl ${owner.name} {\n${body}}\n` : `export class ${owner.name} {\n${body}}\n`;
+    const body = indent(code, python || rust || php ? "    " : "  ");
+    block = python ? `class ${owner.name}:\n${body}` : rust ? `${owner.span ? "" : `pub struct ${owner.name};\n\n`}impl ${owner.name} {\n${body}}\n` : php ? `class ${owner.name}\n{\n${body}}\n` : `export class ${owner.name} {\n${body}}\n`;
   }
   if (before === null || before.trim() === "") {
     const { params, result } = declared(target.signature);
     const future = python && before === null && (params.includes(":") || result !== null) ?"from __future__ import annotations\n\n\n" : "";
-    return `${future}${block}`;
+    return `${future}${php ? phpHead : ""}${block}`;
+  }
+  if (php && /\?>\s*$/.test(before)) {
+    const close = before.lastIndexOf("?>");
+    return `${before.slice(0, close).replace(/\n*$/, "")}\n\n${block}\n${before.slice(close)}`;
   }
   // PEP 8: two blank lines around a top-level definition.
   return `${before.replace(/\n*$/, "")}${python ? "\n\n\n" : "\n\n"}${block}`;
@@ -479,7 +621,7 @@ function dedent(code: string): string {
 /** The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped. */
 async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions): Promise<string> {
   const { file, name, signature, owner } = target;
-  const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
+  const language = file.endsWith(".py") ? "Python" : file.endsWith(".rs") ? "Rust" : file.endsWith(".php") ? "PHP" : file.endsWith(".js") ? "JavaScript" : "TypeScript";
   const what = owner ? `method of class \`${owner.name}\`` : "function";
   const flows = flowsMentioning(analysis, id).map((flow) => `# flow ${flow.name}`);
   const answer = await model.complete({
@@ -494,7 +636,7 @@ async function modelBody(analysis: Analysis, model: LlmClient, target: CodeTarge
   const code = dedent((/```[a-zA-Z]*\n([\s\S]*?)```/.exec(answer)?.[1] ?? answer).replace(/^\n+|\s+$/g, ""));
   const escaped = name.replace(/[$]/g, "\\$");
   // A TS/JS method has no keyword before its name.
-  const declares = owner && language !== "Python" && language !== "Rust" ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);
+  const declares = owner && (language === "TypeScript" || language === "JavaScript") ? new RegExp(`^(?:(?:public|private|protected|static|async|override)\\s+)*\\*?${escaped}\\s*[<(]`, "m") : new RegExp(`\\b(function|def|fn)\\s+${escaped}\\b`);
   if (!declares.test(code)) throw new Error(`the model did not return a ${owner ? "method" : "function"} named \`${name}\`; nothing written`);
   return `${code}\n`;
 }

@@ -85,7 +85,7 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Invent a call the extractor did not see | `obj[k]()`, an unknown decorator, a Rust macro: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
 | Check that prose still matches the code | check will not mark a description stale. A saved explanation prints `fresh` or `stale`. A green gutter is not "the paragraph is true" |
 | Watch deploys, SLOs, threat models, ADRs, or two services sharing a database | Write that in the other document. keylang will not notice |
-| Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, and Rust. Another language is absent. Absence is not a pass |
+| Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Another language is absent. Absence is not a pass |
 | Inject dependencies at runtime, or isolate modules | `keylang wire` emits one TypeScript file, `keylang.gen.ts`. It does not emit Rust or Python. A hand-written import bypasses `wire()`. The `deny` rules catch that import. `tsc` typechecks the generated file |
 | Start you, install a package, store a token, or scaffold Nest `@Module` / `main.ts` | You do that with your own tools when the person asked. keylang does not |
 | Click through the terminal UI | No subcommand opens a UI for a person at the keyboard. You use the CLI and MCP |
@@ -155,7 +155,7 @@ A package the code does not import yet:
 
 One segment: `stripe` is `external.stripe`. A hyphen stays one segment (`node-fetch`). `@scope/pkg` becomes `external.scope-pkg`.
 
-A name already in `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`) or in a `Cargo.toml` crate table is a known id even before any file imports it. `requirements.txt` and other Python manifests are not read. `planned module` becomes K202 only when some file imports the package and the snapshot has that node.
+A name already in `package.json` (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`), in a `Cargo.toml` crate table, or in `composer.json` (`require`, `require-dev`; `monolog/monolog` is `external.monolog-monolog`) is a known id even before any file imports it. `requirements.txt` and other Python manifests are not read. `planned module` becomes K202 only when some file imports the package and the snapshot has that node.
 
 Keep the core away from the package in `keylang/rules.md` (as a proposal, not a silent edit):
 
@@ -223,7 +223,7 @@ On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `
 
 ## Languages and layers
 
-Indexed languages are a subset of JavaScript, TypeScript, Python, and Rust. Other files are absent, not a quiet success.
+Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Other files are absent, not a quiet success. In PHP a module is a file and its class a member: `src/Domain/Order.php` with `class Order` gives `Domain.Order.Order.place`.
 
 `keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`.
 

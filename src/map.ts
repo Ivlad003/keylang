@@ -116,7 +116,7 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
 }
 
 /** Root manifests a repository names and describes itself in, in the order they are asked. */
-const ROOT_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml"] as const;
+const ROOT_MANIFESTS = ["package.json", "Cargo.toml", "pyproject.toml", "composer.json"] as const;
 
 /**
  * What the repository writes about itself (ADR 0014, the system and container
@@ -166,16 +166,16 @@ function readReadme(root: string, dir: string): { path: string; text: string } |
 }
 
 /**
- * `name` and `description` of a root manifest: `package.json` at the top,
- * `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of
- * `pyproject.toml`. A manifest that does not parse gives neither: the
+ * `name` and `description` of a root manifest: `package.json` and
+ * `composer.json` at the top, `[package]` (or `[workspace.package]`) of
+ * `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the
  * analysis reports it where it reads the manifest's packages.
  */
 function manifestAbout(file: (typeof ROOT_MANIFESTS)[number], text: string | null): { name: string | null; description: string | null } {
   if (text === null) return { name: null, description: null };
   let data: unknown;
   try {
-    data = file === "package.json" ? JSON.parse(text) : parseToml(text);
+    data = file === "package.json" || file === "composer.json" ? JSON.parse(text) : parseToml(text);
   } catch {
     return { name: null, description: null };
   }

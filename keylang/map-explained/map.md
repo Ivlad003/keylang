@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
+[README](README.md) · modules: [analyze](#map.analyze) · [c4-export](#map.c4-export) · [declared-packages](#map.declared-packages) · [emit](#map.emit) · [explanations](#map.explanations) · [exports](#map.exports) · [fact-cache](#map.fact-cache) · [frontends](#map.frontends) · [graph](#map.graph) · [imports](#map.imports) · [map](#map.map) · [php-imports](#map.php-imports) · [python-imports](#map.python-imports) · [python-stdlib](#map.python-stdlib) · [rust-imports](#map.rust-imports) · [snapshot](#map.snapshot) · [trace-plan](#map.trace-plan) · [wire-gen](#map.wire-gen)
 
 # map
 
@@ -71,49 +71,57 @@
     - external-ids [base.external-ids](base.md#base.external-ids)
     - imports [map.imports](map.md#map.imports)
     - span [base.span](base.md#base.span)
-    - type [DependencyField](../../src/declared-packages.ts#L25)
+    - type [DependencyField](../../src/declared-packages.ts#L28)
       <a id="map.declared-packages.DependencyField"></a><br>A manifest field a package is declared in.
-    - type [Declaration](../../src/declared-packages.ts#L31)
+    - type [Declaration](../../src/declared-packages.ts#L37)
       <a id="map.declared-packages.Declaration"></a><br>Where one package is declared, and its version range as written (null when the manifest gives none).
-    - type [DeclaredPackage](../../src/declared-packages.ts#L39)
+    - type [DeclaredPackage](../../src/declared-packages.ts#L45)
       <a id="map.declared-packages.DeclaredPackage"></a><br>A package a repository declares, with its `external.<segment>` id.
-    - type [Add](../../src/declared-packages.ts#L51) <!-- internal -->
+    - type [Add](../../src/declared-packages.ts#L57) <!-- internal -->
       <a id="map.declared-packages.Add"></a><br>Function type for a callback that records one declared dependency: the package name, the manifest file it came from, which dependency field listed it, and its version range (or null when none is given). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readManifests](../../src/declared-packages.ts#L60) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
+    - fn [readManifests](../../src/declared-packages.ts#L66) (config: Config, files: readonly string[], known: ReadonlyMap<string, string | null> = new Map()) → { packages: DeclaredPackage[]; inputs: Map<string, string | null> }
       <a id="map.declared-packages.readManifests"></a><br>The packages declared by the manifests at the root and on the ancestors of `files` (root-relative), sorted by id; their ids cover only these names. `known` holds files a resolver already read (text, or null for absent), so a manifest is parsed from the same text that went into…
-      - calls [map.declared-packages.readInput](map.md#map.declared-packages.readInput), [map.declared-packages.typesTarget](map.md#map.declared-packages.typesTarget), [map.declared-packages.manifestDirs](map.md#map.declared-packages.manifestDirs), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates), [map.declared-packages.workspaceNames](map.md#map.declared-packages.workspaceNames), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [base.span.compareText](base.md#base.span.compareText)
-    - fn [manifestDirs](../../src/declared-packages.ts#L105) (files: readonly string[]) → Set<string> <!-- internal -->
+      - calls [map.declared-packages.readInput](map.md#map.declared-packages.readInput), [map.declared-packages.typesTarget](map.md#map.declared-packages.typesTarget), [map.declared-packages.manifestDirs](map.md#map.declared-packages.manifestDirs), [base.config.isAnalysed](base.md#base.config.isAnalysed), [map.declared-packages.addPackages](map.md#map.declared-packages.addPackages), [map.declared-packages.addCrates](map.md#map.declared-packages.addCrates), [map.declared-packages.addComposer](map.md#map.declared-packages.addComposer), [map.declared-packages.workspaceNames](map.md#map.declared-packages.workspaceNames), [map.declared-packages.composerPathNames](map.md#map.declared-packages.composerPathNames), [base.external-ids.assignExternalIds](base.md#base.external-ids.assignExternalIds), [map.declared-packages.ecosystemOf](map.md#map.declared-packages.ecosystemOf), [base.span.compareText](base.md#base.span.compareText)
+    - fn [ecosystemOf](../../src/declared-packages.ts#L116) (declarations: readonly Declaration[]) → DeclaredPackage["ecosystem"] <!-- internal -->
+      <a id="map.declared-packages.ecosystemOf"></a><br>npm when a `package.json` declares the package, else composer for a `composer.json`, else Cargo.
+    - fn [manifestDirs](../../src/declared-packages.ts#L122) (files: readonly string[]) → Set<string> <!-- internal -->
       <a id="map.declared-packages.manifestDirs"></a><br>The root (`""`) and every directory between a file and the root.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [typesTarget](../../src/declared-packages.ts#L117) (name: string) → string <!-- internal -->
+    - fn [typesTarget](../../src/declared-packages.ts#L134) (name: string) → string <!-- internal -->
       <a id="map.declared-packages.typesTarget"></a><br>`@types/x` → `x`, `@types/scope__pkg` → `@scope/pkg`; any other name is itself.
-    - fn [workspaceNames](../../src/declared-packages.ts#L129) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+    - fn [workspaceNames](../../src/declared-packages.ts#L146) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
       <a id="map.declared-packages.workspaceNames"></a><br>Names of the packages in the directories the root `workspaces` names (`packages/*`, `apps/web`), read as the import resolver reads them: the same input keys and texts, and a member manifest that does not parse names none.
       - calls [map.imports.parseJsonc](map.md#map.imports.parseJsonc), [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.workspaceDirs](map.md#map.declared-packages.workspaceDirs)
-    - fn [workspaceDirs](../../src/declared-packages.ts#L147) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
+    - fn [composerPathNames](../../src/declared-packages.ts#L167) (read: (rel: string) => string | null, list: (rel: string) => string | null) → Set<string> <!-- internal -->
+      <a id="map.declared-packages.composerPathNames"></a><br>Names of the packages in the root `composer.json`'s `path` repositories (`packages/*`, `modules/billing`): this repository's code, not external.
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.workspaceDirs](map.md#map.declared-packages.workspaceDirs)
+    - fn [workspaceDirs](../../src/declared-packages.ts#L193) (pattern: string, list: (rel: string) => string | null) → string[] <!-- internal -->
       <a id="map.declared-packages.workspaceDirs"></a><br>Directories one `workspaces` entry names; a trailing `/*` expands one level, as in `src/imports.ts`.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [readInput](../../src/declared-packages.ts#L158) (abs: string, rel: string) → string | null <!-- internal -->
+    - fn [readInput](../../src/declared-packages.ts#L204) (abs: string, rel: string) → string | null <!-- internal -->
       <a id="map.declared-packages.readInput"></a><br>A file's text, null when there is none; a `<base>/*` key lists the subdirectories of `<base>`.
       - calls [map.declared-packages.isDirectory](map.md#map.declared-packages.isDirectory), [map.declared-packages.isFile](map.md#map.declared-packages.isFile), [map.declared-packages.readText](map.md#map.declared-packages.readText)
-    - fn [isFile](../../src/declared-packages.ts#L172) (abs: string) → boolean <!-- internal -->
+    - fn [isFile](../../src/declared-packages.ts#L218) (abs: string) → boolean <!-- internal -->
       <a id="map.declared-packages.isFile"></a><br>Checks whether an absolute path points to an existing regular file via a synchronous stat, returning false instead of throwing on any error. Used by [`map.declared-packages.readInput`](map.md#map.declared-packages.readInput) to decide whether a candidate input file should be read. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isDirectory](../../src/declared-packages.ts#L180) (abs: string) → boolean <!-- internal -->
+    - fn [isDirectory](../../src/declared-packages.ts#L226) (abs: string) → boolean <!-- internal -->
       <a id="map.declared-packages.isDirectory"></a><br>Synchronously stats the given absolute path and reports whether it is a directory, returning false instead of throwing when the path is missing or inaccessible. [`map.declared-packages.readInput`](map.md#map.declared-packages.readInput) uses it for a `<base>/*` key: when `<base>` is not a directory, the listing of its… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readText](../../src/declared-packages.ts#L189) (path: string, rel: string) → string <!-- internal -->
+    - fn [readText](../../src/declared-packages.ts#L235) (path: string, rel: string) → string <!-- internal -->
       <a id="map.declared-packages.readText"></a><br>The file is there but cannot be read. That is not the same error as invalid contents.
-    - fn [isRecord](../../src/declared-packages.ts#L198) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/declared-packages.ts#L244) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.declared-packages.isRecord"></a><br>Type guard that returns true only for non-null objects that are not arrays, narrowing the value to a string-keyed record. Used by [`map.declared-packages.table`](map.md#map.declared-packages.table) and the package/crate readers to check parsed manifest shapes before indexing fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [table](../../src/declared-packages.ts#L202) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
+    - fn [table](../../src/declared-packages.ts#L248) (rel: string, field: string, value: unknown, kind: "object" | "table") → Record<string, unknown> | undefined <!-- internal -->
       <a id="map.declared-packages.table"></a><br>Validates an optional manifest field: returns `undefined` when absent, passes the value through when [`map.declared-packages.isRecord`](map.md#map.declared-packages.isRecord) accepts it, and otherwise throws an error naming the file, field, and expected shape. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord)
-    - fn [addPackages](../../src/declared-packages.ts#L209) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addPackages](../../src/declared-packages.ts#L255) (rel: string, text: string, add: Add) → void <!-- internal -->
       <a id="map.declared-packages.addPackages"></a><br>`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`. Not `node_modules`.
       - calls [map.imports.parseJsoncStrict](map.md#map.imports.parseJsoncStrict), [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table)
-    - fn [addCrates](../../src/declared-packages.ts#L225) (rel: string, text: string, add: Add) → void <!-- internal -->
+    - fn [addCrates](../../src/declared-packages.ts#L271) (rel: string, text: string, add: Add) → void <!-- internal -->
       <a id="map.declared-packages.addCrates"></a><br>`[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, and the same under `[target.*]`.
       - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table), [map.declared-packages.crateTables](map.md#map.declared-packages.crateTables)
-    - fn [crateTables](../../src/declared-packages.ts#L249) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
+    - fn [addComposer](../../src/declared-packages.ts#L296) (rel: string, text: string, add: Add) → void <!-- internal -->
+      <a id="map.declared-packages.addComposer"></a><br>`require` and `require-dev` of a `composer.json`, without PHP and its extensions.
+      - calls [map.declared-packages.isRecord](map.md#map.declared-packages.isRecord), [map.declared-packages.table](map.md#map.declared-packages.table)
+    - fn [crateTables](../../src/declared-packages.ts#L311) (rel: string, source: Record<string, unknown>, prefix: string) → [DependencyField, Record<string, unknown>][] <!-- internal -->
       <a id="map.declared-packages.crateTables"></a><br>Walks the fixed list of Cargo dependency section keys, running each present entry in a manifest object through [`map.declared-packages.table`](map.md#map.declared-packages.table) with a prefixed field path for validation. Returns the pairs of section key and name map that validated, skipping absent or invalid ones. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.declared-packages.table](map.md#map.declared-packages.table)
   - module [emit](../../src/emit.ts#L1)
@@ -279,82 +287,87 @@
       <a id="map.fact-cache.storedFiles"></a><br>Entries of a cache written by this schema and version. An entry of the wrong shape — any field the graph reads, at any depth — is dropped, so its file is extracted again instead of trusted or thrown on.
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isStoredFacts](map.md#map.fact-cache.isStoredFacts)
     - fn [isStoredFacts](../../src/fact-cache.ts#L43) (value: unknown) → value is StoredFacts <!-- internal -->
-      <a id="map.fact-cache.isStoredFacts"></a><br>Runtime type guard that checks a deserialized cache record has the full per-file facts shape: string path, valid end position, well-formed import/decl/export/call arrays, a complete/opaque completeness flag, and a null or positioned parse error. Relies on… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="map.fact-cache.isStoredFacts"></a><br>Runtime type guard that checks a deserialized cache record has the full per-file facts shape: string path, valid end position, well-formed import/decl/export/call arrays, a complete/opaque completeness flag, and a null or positioned parse error. Relies on… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isPosition](map.md#map.fact-cache.isPosition), [map.fact-cache.every](map.md#map.fact-cache.every), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isImport](../../src/fact-cache.ts#L63) (value: unknown) → boolean <!-- internal -->
+    - fn [isImport](../../src/fact-cache.ts#L64) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isImport"></a><br>Validates that an unknown value from the cache has the shape of an import record: a plain object via [`map.fact-cache.isRecord`](map.md#map.fact-cache.isRecord) with string source and text, a boolean reexport, a range checked by [`map.fact-cache.isRange`](map.md#map.fact-cache.isRange), an optional flag via [`map.fact-cache.optionalTrue`](map.md#map.fact-cache.optionalTrue), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.every](map.md#map.fact-cache.every)
-    - fn [isDecl](../../src/fact-cache.ts#L75) (value: unknown) → boolean <!-- internal -->
+    - fn [isDecl](../../src/fact-cache.ts#L76) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isDecl"></a><br>Validates that an unknown value from the fact cache is a well-formed declaration record: kind is fn/class/type, with string name, range, boolean exported, valid calls/types, and recursively valid members. Optional fields are checked via [`map.fact-cache.optional`](map.md#map.fact-cache.optional) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.every](map.md#map.fact-cache.every), [map.fact-cache.optional](map.md#map.fact-cache.optional), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue)
-    - fn [isCall](../../src/fact-cache.ts#L96) (value: unknown) → boolean <!-- internal -->
+    - fn [isCall](../../src/fact-cache.ts#L97) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isCall"></a><br>Validates that a cached call-site record has a string `callee`, a valid range via `isRange`, and only well-formed optional fields (bound, receiver, hook, passes, opaque/closure flags). Returns false on any shape mismatch. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isRange](map.md#map.fact-cache.isRange), [map.fact-cache.optionalTrue](map.md#map.fact-cache.optionalTrue), [map.fact-cache.optional](map.md#map.fact-cache.optional), [map.fact-cache.every](map.md#map.fact-cache.every)
-    - fn [isHook](../../src/fact-cache.ts#L110) (value: unknown) → boolean <!-- internal -->
+    - fn [isHook](../../src/fact-cache.ts#L111) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isHook"></a><br>Checks that a value is a record (via [`map.fact-cache.isRecord`](map.md#map.fact-cache.isRecord)) with string `name`, `fallback`, and `path`, an `owner` of "self" or "constructor", and a `param` that is null or a non-negative integer per [`map.fact-cache.isInteger`](map.md#map.fact-cache.isInteger). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.isInteger](map.md#map.fact-cache.isInteger)
-    - fn [isPass](../../src/fact-cache.ts#L121) (value: unknown) → boolean <!-- internal -->
+    - fn [isPass](../../src/fact-cache.ts#L122) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isPass"></a><br>Checks that an unknown value is a plain object with an integer `arg`, string `path` and `callee`, plus optional `bound` and `receiver` fields validated via [`map.fact-cache.optional`](map.md#map.fact-cache.optional), using [`map.fact-cache.isRecord`](map.md#map.fact-cache.isRecord) for the shape test. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isExportRow](../../src/fact-cache.ts#L128) (value: unknown) → boolean <!-- internal -->
+    - fn [isExportRow](../../src/fact-cache.ts#L129) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isExportRow"></a><br>Validates that a cached value is a well-formed export row: an object (via [`map.fact-cache.isRecord`](map.md#map.fact-cache.isRecord)) with string `name`, a `kind` from the allowed set, and `local` either null or a string. Uses [`map.fact-cache.optional`](map.md#map.fact-cache.optional) to allow `form` and `from` to be absent, otherwise… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isRecord](map.md#map.fact-cache.isRecord), [map.fact-cache.optional](map.md#map.fact-cache.optional)
-    - fn [isBound](../../src/fact-cache.ts#L132) (value: unknown) → boolean <!-- internal -->
+    - fn [isBound](../../src/fact-cache.ts#L133) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isBound"></a><br>Returns true only when the input is exactly the string `"parameter"` or `"local"`, treating those two tags as the markers of a bound binding kind; any other value yields false. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRange](../../src/fact-cache.ts#L137) (value: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isRange](../../src/fact-cache.ts#L138) (value: Record<string, unknown>) → boolean <!-- internal -->
       <a id="map.fact-cache.isRange"></a><br>1-based `line`, `col`, `endLine`, `endCol`.
       - calls [map.fact-cache.isPosition](map.md#map.fact-cache.isPosition)
-    - fn [isPosition](../../src/fact-cache.ts#L141) (value: unknown) → boolean <!-- internal -->
+    - fn [isPosition](../../src/fact-cache.ts#L142) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isPosition"></a><br>Returns true only when the input passes [`map.fact-cache.isInteger`](map.md#map.fact-cache.isInteger) and is at least 1, i.e. a positive whole number usable as a line or column. Used by [`map.fact-cache.isRange`](map.md#map.fact-cache.isRange) and [`map.fact-cache.isStoredFacts`](map.md#map.fact-cache.isStoredFacts) to validate cached location fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.fact-cache.isInteger](map.md#map.fact-cache.isInteger)
-    - fn [isInteger](../../src/fact-cache.ts#L145) (value: unknown) → value is number <!-- internal -->
+    - fn [isInteger](../../src/fact-cache.ts#L146) (value: unknown) → value is number <!-- internal -->
       <a id="map.fact-cache.isInteger"></a><br>Type guard that checks a runtime value is a JavaScript number with no fractional part, narrowing it to `number`; [`map.fact-cache.isHook`](map.md#map.fact-cache.isHook) and [`map.fact-cache.isPosition`](map.md#map.fact-cache.isPosition) rely on it to validate cached fact fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isString](../../src/fact-cache.ts#L149) (value: unknown) → boolean <!-- internal -->
+    - fn [isString](../../src/fact-cache.ts#L150) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.isString"></a><br>Returns true only when the given value is a primitive string, via a `typeof` check; used in [`map.fact-cache`](map.md#map.fact-cache) to validate untrusted fields before they are accepted into cached fact records. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [every](../../src/fact-cache.ts#L153) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [every](../../src/fact-cache.ts#L154) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
       <a id="map.fact-cache.every"></a><br>Returns true only when the input is an array and `check` holds for each element; a non-array yields false without calling `check`. Used by [`map.fact-cache.isCall`](map.md#map.fact-cache.isCall), [`map.fact-cache.isDecl`](map.md#map.fact-cache.isDecl), [`map.fact-cache.isImport`](map.md#map.fact-cache.isImport) and [`map.fact-cache.isStoredFacts`](map.md#map.fact-cache.isStoredFacts) to validate cached shapes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [optional](../../src/fact-cache.ts#L157) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optional](../../src/fact-cache.ts#L158) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
       <a id="map.fact-cache.optional"></a><br>Returns true when the value is absent (`undefined`), otherwise defers to the supplied predicate. Shared by the row validators [`map.fact-cache.isCall`](map.md#map.fact-cache.isCall), [`map.fact-cache.isDecl`](map.md#map.fact-cache.isDecl), [`map.fact-cache.isExportRow`](map.md#map.fact-cache.isExportRow), [`map.fact-cache.isPass`](map.md#map.fact-cache.isPass), and [`map.fact-cache.isStoredFacts`](map.md#map.fact-cache.isStoredFacts) to accept… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [optionalTrue](../../src/fact-cache.ts#L161) (value: unknown) → boolean <!-- internal -->
+    - fn [optionalTrue](../../src/fact-cache.ts#L162) (value: unknown) → boolean <!-- internal -->
       <a id="map.fact-cache.optionalTrue"></a><br>Returns true when the value is absent (`undefined`) or exactly `true`, treating a missing optional flag as set. Used by [`map.fact-cache.isCall`](map.md#map.fact-cache.isCall), [`map.fact-cache.isDecl`](map.md#map.fact-cache.isDecl) and [`map.fact-cache.isImport`](map.md#map.fact-cache.isImport) to validate optional boolean fields on cached facts. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [isRecord](../../src/fact-cache.ts#L165) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [isRecord](../../src/fact-cache.ts#L166) (value: unknown) → value is Record<string, unknown> <!-- internal -->
       <a id="map.fact-cache.isRecord"></a><br>Type guard returning true only for non-null, non-array objects, narrowing the input to a string-keyed record. Shared base check used by the fact-cache validators like [`map.fact-cache.isStoredFacts`](map.md#map.fact-cache.isStoredFacts) and [`map.fact-cache.storedFiles`](map.md#map.fact-cache.storedFiles) before inspecting fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [FactCache](../../src/fact-cache.ts#L171)
-      <a id="map.fact-cache.FactCache"></a><br>Caches per-file extraction results keyed by path and content hash, serving them from process memory or `FACT_CACHE_FILE` on disk when the hash matches and calling `extract` otherwise, while counting hits and misses. [`map.fact-cache.FactCache.serialize`](map.md#map.fact-cache.FactCache.serialize) writes back only the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [constructor](../../src/fact-cache.ts#L180) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+    - module [FactCache](../../src/fact-cache.ts#L172)
+      <a id="map.fact-cache.FactCache"></a><br>Caches per-file extraction results keyed by path and content hash, serving them from process memory or `FACT_CACHE_FILE` on disk when the hash matches and calling `extract` otherwise, while counting hits and misses. [`map.fact-cache.FactCache.serialize`](map.md#map.fact-cache.FactCache.serialize) writes back only the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - fn [constructor](../../src/fact-cache.ts#L181) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
         <a id="map.fact-cache.FactCache.constructor"></a><br>Stores the given repository root, cache version string, and previously loaded per-file entries on the instance; private, so instances are only created through the class's own factory methods. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [open](../../src/fact-cache.ts#L187) (root: string, version: string) → FactCache
+      - fn [open](../../src/fact-cache.ts#L188) (root: string, version: string) → FactCache
         <a id="map.fact-cache.FactCache.open"></a><br>`version` names the extractor and grammars; any other stored version is ignored.
         - calls [map.fact-cache.storedFiles](map.md#map.fact-cache.storedFiles), [map.fact-cache.FactCache](map.md#map.fact-cache.FactCache)
-      - fn [facts](../../src/fact-cache.ts#L200) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [facts](../../src/fact-cache.ts#L201) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
         <a id="map.fact-cache.FactCache.facts"></a><br>Returns cached facts for a file, checking an in-memory map keyed by root, version and path, then the on-disk store, both validated against the given sha256; on a miss it runs the extractor and counts reuse versus extraction. Every result is written back to memory and recorded… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [serialize](../../src/fact-cache.ts#L219) () → string
+      - fn [serialize](../../src/fact-cache.ts#L220) () → string
         <a id="map.fact-cache.FactCache.serialize"></a><br>The text of `FACT_CACHE_FILE` with the facts of this run (and nothing else), for the next process.
         - calls [base.span.compareText](base.md#base.span.compareText)
   - module [frontends](../../src/frontends.ts#L1)
     <a id="map.frontends"></a><br>A frontend reads one family of languages: its extractor turns a file into `FileFacts`, its resolver turns an import specifier into a file, and its capabilities say which edges it looks for. Graph, snapshot and checks are the same for every language; adding one means a frontend…
     - facts [extract.facts](extract.md#extract.facts)
+    - php [extract.php](extract.md#extract.php)
     - python [extract.python](extract.md#extract.python)
     - rust [extract.rust](extract.md#extract.rust)
     - ts [extract.ts](extract.md#extract.ts)
     - imports [map.imports](map.md#map.imports)
     - languages [base.languages](base.md#base.languages)
+    - php-imports [map.php-imports](map.md#map.php-imports)
     - python-imports [map.python-imports](map.md#map.python-imports)
     - rust-imports [map.rust-imports](map.md#map.rust-imports)
-    - type [Frontend](../../src/frontends.ts#L15)
-      <a id="map.frontends.Frontend"></a><br>Contract a per-language analyzer fulfils: extracting facts from one file, building a per-graph resolver over the set of analyzed sources, and declaring which edge kinds it reports plus which global names count as external rather than unresolved. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ecmascriptResolver](../../src/frontends.ts#L81) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - type [Frontend](../../src/frontends.ts#L17)
+      <a id="map.frontends.Frontend"></a><br>Contract a per-language analyzer fulfils: extracting facts from one file, building a per-graph resolver over the set of analyzed sources, and declaring which edge kinds it reports plus which global names count as external rather than unresolved. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [ecmascriptResolver](../../src/frontends.ts#L96) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       <a id="map.frontends.ecmascriptResolver"></a><br>Builds a [`map.imports.ImportResolver`](map.md#map.imports.ImportResolver) over the given root directory and source-file set and returns it as the resolver used for JavaScript/TypeScript import lookups. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.imports.ImportResolver](map.md#map.imports.ImportResolver)
-    - fn [pythonResolver](../../src/frontends.ts#L85) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [pythonResolver](../../src/frontends.ts#L100) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       <a id="map.frontends.pythonResolver"></a><br>Factory adapter that wraps a project root and its known source paths in a [`map.python-imports.PythonResolver`](map.md#map.python-imports.PythonResolver) instance and returns it typed as a generic SourceResolver. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.python-imports.PythonResolver](map.md#map.python-imports.PythonResolver)
-    - fn [rustResolver](../../src/frontends.ts#L89) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
+    - fn [rustResolver](../../src/frontends.ts#L104) (root: string, sources: ReadonlySet<string>) → SourceResolver <!-- internal -->
       <a id="map.frontends.rustResolver"></a><br>Builds a [`map.rust-imports.RustResolver`](map.md#map.rust-imports.RustResolver) for the given project root and set of known source paths, returning it as the generic SourceResolver the frontend registry hands to callers. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [map.rust-imports.RustResolver](map.md#map.rust-imports.RustResolver)
-    - fn [frontendOf](../../src/frontends.ts#L93) (language: Language) → Frontend
+    - fn [phpResolver](../../src/frontends.ts#L108) (root: string, sources: ReadonlySet<string>, files: readonly FileFacts[]) → SourceResolver <!-- internal -->
+      <a id="map.frontends.phpResolver"></a>
+      - calls [map.php-imports.PhpResolver](map.md#map.php-imports.PhpResolver)
+    - fn [frontendOf](../../src/frontends.ts#L112) (language: Language) → Frontend
       <a id="map.frontends.frontendOf"></a><br>Looks up the frontend registered for a language in the module-level `FRONTENDS` table and returns it directly, with no fallback for unknown languages. [`map.graph.buildGraph`](map.md#map.graph.buildGraph) uses it to pick the parser per file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [frontendFor](../../src/frontends.ts#L100) (path: string) → Frontend | undefined
+    - fn [frontendFor](../../src/frontends.ts#L119) (path: string) → Frontend | undefined
       <a id="map.frontends.frontendFor"></a><br>Resolves a file path to the language-specific frontend used to parse it, looking the language up via [`base.languages.languageOf`](base.md#base.languages.languageOf) and indexing a static table. Returns nothing when the path's language is unknown. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [graph](../../src/graph.ts#L1)
@@ -560,7 +573,7 @@
       <a id="map.map.readReadme"></a><br>`README.md` in `dir` (relative, POSIX; "" for the root), its name in any case; null without one.
       - calls [map.map.readSource](map.md#map.map.readSource)
     - fn [manifestAbout](../../src/map.ts#L174) (file: (typeof ROOT_MANIFESTS)[number], text: string | null) → { name: string | null; description: string | null } <!-- internal -->
-      <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the manifest's packages.
+      <a id="map.map.manifestAbout"></a><br>`name` and `description` of a root manifest: `package.json` and `composer.json` at the top, `[package]` (or `[workspace.package]`) of `Cargo.toml`, `[project]` of `pyproject.toml`. A manifest that does not parse gives neither: the analysis reports it where it reads the…
     - fn [opaqueFacts](../../src/map.ts#L200) (path: string) → FileFacts <!-- internal -->
       <a id="map.map.opaqueFacts"></a><br>Builds an empty `FileFacts` record for a path with completeness set to "opaque": no imports, declarations, exports, or references, and no parse error. [`map.map.extractGuarded`](map.md#map.map.extractGuarded) and [`map.map.generateMap`](map.md#map.map.generateMap) use it as the placeholder when a file cannot or should not be analyzed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [readSource](../../src/map.ts#L205) (abs: string) → string | null <!-- internal -->
@@ -620,6 +633,28 @@
     - fn [extractorCode](../../src/map.ts#L482) () → string <!-- internal -->
       <a id="map.map.extractorCode"></a><br>A hash of the extractor's own code. Facts cached by a changed extractor are stale even when nobody bumped `EXTRACTOR_VERSION`; in the package the same files are the built `.js`.
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
+  - module [php-imports](../../src/php-imports.ts#L1)
+    <a id="map.php-imports"></a><br>PHP qualified name → file. A PHP import names a declaration, not a file: `App\Domain\Order` is the class `Order` of the namespace `App\Domain` wherever it is declared, so the resolver looks names up among the declarations of the analysed files (`FileFacts.symbols`), the way…
+    - node [external.node](external.md#external.node)
+    - facts [extract.facts](extract.md#extract.facts)
+    - imports [map.imports](map.md#map.imports)
+    - module [PhpResolver](../../src/php-imports.ts#L30)
+      <a id="map.php-imports.PhpResolver"></a>
+      - fn [constructor](../../src/php-imports.ts#L42) (root: string, sources: ReadonlySet<string> = new Set(), files: readonly FileFacts[] = [])
+        <a id="map.php-imports.PhpResolver.constructor"></a>
+        - calls [map.php-imports.readText](map.md#map.php-imports.readText), [map.php-imports.packagePrefixes](map.md#map.php-imports.packagePrefixes)
+      - fn [resolve](../../src/php-imports.ts#L64) (fromFile: string, spec: string) → Resolution
+        <a id="map.php-imports.PhpResolver.resolve"></a>
+        - calls [map.php-imports.PhpResolver.include](map.md#map.php-imports.PhpResolver.include)
+      - fn [include](../../src/php-imports.ts#L84) (fromFile: string, path: string) → Resolution <!-- internal -->
+        <a id="map.php-imports.PhpResolver.include"></a><br>`include <path>`: an analysed file, a file on disk keylang does not index, or nothing; composer's own files are generated.
+    - fn [packagePrefixes](../../src/php-imports.ts#L94) (text: string) → { prefix: string; name: string }[]
+      <a id="map.php-imports.packagePrefixes"></a><br>Namespace prefixes of each package a composer lock or `installed.json` lists; none when it is no such JSON.
+      - calls [map.php-imports.isRecord](map.md#map.php-imports.isRecord)
+    - fn [readText](../../src/php-imports.ts#L120) (abs: string) → string | null <!-- internal -->
+      <a id="map.php-imports.readText"></a>
+    - fn [isRecord](../../src/php-imports.ts#L128) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="map.php-imports.isRecord"></a>
   - module [python-imports](../../src/python-imports.ts#L1)
     <a id="map.python-imports"></a><br>Python dotted path → file. `.m.x` starts at the importing file's package (one dot per level), `a.b.x` at a source root (the repository root, then `src/`). A module is `p.py` or the package `p/__init__.py`; the longest prefix of the path that is a module names the file, and when…
     - node [external.node](external.md#external.node)

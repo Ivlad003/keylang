@@ -1621,7 +1621,7 @@ test("keylang.json errors name the file and the field, exit 2", (t) => {
     [{ ...config, check: { tests: "reports/none.json" } }, /keylang\.json: check\.tests: no such file `reports\/none\.json`/],
     [{ ...config, check: { tests: 5 } }, /keylang\.json: `check\.tests` must be a path, got 5/],
     [{ ...config, check: { junit: "x" } }, /keylang\.json: unknown field `check\.junit`/],
-    [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be one of "javascript", "python", "rust", "typescript", got "cobol"/],
+    [{ ...config, languages: ["cobol"] }, /keylang\.json: `languages\[0\]` must be one of "javascript", "php", "python", "rust", "typescript", got "cobol"/],
     [{ ...config, layers: { domain: 1 } }, /keylang\.json: `layers\.domain` must be a glob or an array of globs, got 1/],
   ];
   for (const [body, message] of cases) {

@@ -79,6 +79,7 @@ export function query(language: Language, g: Grammar, name: string, source: stri
 export function grammarFor(path: string): Grammar {
   if (path.endsWith(".rs")) return "rust";
   if (path.endsWith(".py")) return "python";
+  if (path.endsWith(".php")) return "php";
   if (path.endsWith(".tsx")) return "tsx";
   if (/\.[cm]?ts$/.test(path)) return "typescript";
   return "javascript";

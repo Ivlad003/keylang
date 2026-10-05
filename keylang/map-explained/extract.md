@@ -1,11 +1,11 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [bodies](#extract.bodies) · [doc-comments](#extract.doc-comments) · [facts](#extract.facts) · [grammars](#extract.grammars) · [python](#extract.python) · [rust](#extract.rust) · [treesitter](#extract.treesitter) · [ts](#extract.ts)
+[README](README.md) · modules: [bodies](#extract.bodies) · [doc-comments](#extract.doc-comments) · [facts](#extract.facts) · [grammars](#extract.grammars) · [php](#extract.php) · [python](#extract.python) · [rust](#extract.rust) · [treesitter](#extract.treesitter) · [ts](#extract.ts)
 
 # map
 
 - extract
-  <a id="extract"></a><br>Parses source files with tree-sitter and produces language-independent facts (declarations, imports, exports, calls, bodies, doc comments) via [`extract.facts`](extract.md#extract.facts), with per-language frontends [`extract.ts`](extract.md#extract.ts), [`extract.python`](extract.md#extract.python), and [`extract.rust`](extract.md#extract.rust). It knows nothing of layers or IDs, and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+  <a id="extract"></a><br>Parses source files with tree-sitter and produces language-independent facts (declarations, imports, exports, calls, bodies, doc comments) via [`extract.facts`](extract.md#extract.facts), with per-language frontends [`extract.ts`](extract.md#extract.ts), [`extract.python`](extract.md#extract.python), and [`extract.rust`](extract.md#extract.rust). It knows nothing of layers or IDs, and… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
   - module [bodies](../../src/extract/bodies.ts#L1)
     <a id="extract.bodies"></a><br>Function bodies by declaration position, for trace instrumentation. Positions match the declaration ranges of `FileFacts` (1-based line/col of the declaring node); offsets index the JS string (UTF-16 code units).
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
@@ -35,28 +35,30 @@
   - module [facts](../../src/extract/facts.ts#L1)
     <a id="extract.facts"></a><br>Language-independent facts extracted from one source file. Everything the map and the index need; nothing about layers or IDs yet.
     - type [FileFacts](../../src/extract/facts.ts#L4)
-      <a id="extract.facts.FileFacts"></a><br>Record of everything the extractor learns from one source file: its imports, declarations, exported names and re-exports, calls that run at module load, value-level references, and constructs it cannot turn into edges. A `completeness` flag marks whether the declaration list is… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ImportFact](../../src/extract/facts.ts#L42)
+      <a id="extract.facts.FileFacts"></a><br>Record of everything the extractor learns from one source file: its imports, declarations, exported names and re-exports, calls that run at module load, value-level references, and constructs it cannot turn into edges. A `completeness` flag marks whether the declaration list is… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - type [QualifiedSymbol](../../src/extract/facts.ts#L50)
+      <a id="extract.facts.QualifiedSymbol"></a><br>A top-level declaration by its qualified name.
+    - type [ImportFact](../../src/extract/facts.ts#L59)
       <a id="extract.facts.ImportFact"></a><br>Record of one import or require found in a file: the module specifier as written, its 1-based source span and text, the names it binds, whether it is an `export … from` re-export, and an `optional` flag for `new URL(...)`-style specifiers that only produce an edge when they… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ImportBinding](../../src/extract/facts.ts#L63)
+    - type [ImportBinding](../../src/extract/facts.ts#L80)
       <a id="extract.facts.ImportBinding"></a><br>A tagged union recording how one local name is bound by an import or `require`: as the whole module namespace, as the module's `default` export, or as a specific named export under a possibly renamed local identifier. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [DeclKind](../../src/extract/facts.ts#L71) = "fn" | "class" | "type"
+    - type [DeclKind](../../src/extract/facts.ts#L88) = "fn" | "class" | "type"
       <a id="extract.facts.DeclKind"></a><br>Restricts a declaration's kind to one of three string literals: a function, a class, or a type alias. Code in the extract layer uses it to tag each extracted declaration with its category. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [DeclFact](../../src/extract/facts.ts#L73)
+    - type [DeclFact](../../src/extract/facts.ts#L90)
       <a id="extract.facts.DeclFact"></a><br>Record of one extracted declaration: its kind, name, span, signature, export flag, body calls (`CallFact`), referenced types (`TypeRefFact`), and nested members. Optional flags mark accessors, implicit, static, or `#private` members, plus base class, doc comment, and body… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CallFact](../../src/extract/facts.ts#L105)
+    - type [CallFact](../../src/extract/facts.ts#L122)
       <a id="extract.facts.CallFact"></a><br>Record of one call site: the callee's dotted name (or raw text when `opaque`), how its head is bound, the receiver's class, a `HookFact` default, `PassFact` function arguments, and position. Each call becomes an edge or a `dynamic-call` hole. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [HookFact](../../src/extract/facts.ts#L143)
+    - type [HookFact](../../src/extract/facts.ts#L160)
       <a id="extract.facts.HookFact"></a><br>A callable chosen at run time with a default written next to it. `param` and `path` say where a caller injects the value: `analyze({ generate })` is parameter 0, path `generate`; `function f(run = defaultRun)` is parameter 0, path "".
-    - type [PassFact](../../src/extract/facts.ts#L156)
+    - type [PassFact](../../src/extract/facts.ts#L173)
       <a id="extract.facts.PassFact"></a><br>A function value in the arguments of a call: argument index, property path ("" for the argument itself).
-    - type [ValueRefFact](../../src/extract/facts.ts#L164)
+    - type [ValueRefFact](../../src/extract/facts.ts#L181)
       <a id="extract.facts.ValueRefFact"></a><br>Describes a single occurrence of a value being referenced in source, recording its name (plain or module-qualified), whether it was read as a property off an object, and its line and column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [TypeRefFact](../../src/extract/facts.ts#L174)
+    - type [TypeRefFact](../../src/extract/facts.ts#L191)
       <a id="extract.facts.TypeRefFact"></a><br>A type name in type position. `text` is the source fragment.
-    - type [ExportRow](../../src/extract/facts.ts#L188)
+    - type [ExportRow](../../src/extract/facts.ts#L205)
       <a id="extract.facts.ExportRow"></a><br>One public name of a file, compared with the `exports` rule and followed by the graph to the symbol it stands for.
-    - type [UnsupportedFact](../../src/extract/facts.ts#L218)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L235)
       <a id="extract.facts.UnsupportedFact"></a><br>Records a source construct the extractor could not analyze: its line/column span, raw text, and a reason string. The optional `symbol` names the dotted-path declaration whose call behavior the construct may alter, without adding a dependency. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [grammars](../../src/extract/grammars.ts#L1)
     <a id="extract.grammars"></a><br>The tree-sitter grammars keylang parses with. One list for the runtime (`treesitter.ts` loads them) and for packaging (`scripts/copy-wasm.mjs` copies each into dist/wasm), so a new language cannot be left out of the published package.
@@ -64,6 +66,120 @@
       <a id="extract.grammars.Grammar"></a><br>Derives a union type of the element types in the `GRAMMARS` array, so each supported grammar entry's shape can be referenced as a single type throughout the extract layer. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [wasmFile](../../src/extract/grammars.ts#L11) (g: Grammar) → string
       <a id="extract.grammars.wasmFile"></a><br>The grammar's file name in @vscode/tree-sitter-wasm and in dist/wasm.
+  - module [php](../../src/extract/php.ts#L1)
+    <a id="extract.php"></a><br>PHP facts: namespaces, `use`, classes, interfaces, traits, enums, functions and methods, calls, type hints, `require`/`include` and PHPDoc. PHP names a class or a function by its qualified name, never by its file, and a class of the file's own namespace needs no `use`.
+    - facts [extract.facts](extract.md#extract.facts)
+    - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
+    - treesitter [extract.treesitter](extract.md#extract.treesitter)
+    - fn [extractPhp](../../src/extract/php.ts#L34) (path: string, src: string) → Promise<FileFacts>
+      <a id="extract.php.extractPhp"></a>
+      - calls [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.php.extractTree](extract.md#extract.php.extractTree)
+    - type [Names](../../src/extract/php.ts#L39) <!-- internal -->
+      <a id="extract.php.Names"></a><br>What names mean in one namespace: its name and the aliases of its `use` statements (keys lowercased: PHP class and function names ignore case).
+    - type [Alias](../../src/extract/php.ts#L47) <!-- internal -->
+      <a id="extract.php.Alias"></a>
+    - type [ClassContext](../../src/extract/php.ts#L54) <!-- internal -->
+      <a id="extract.php.ClassContext"></a><br>A class while its members are read: what `self::`, `$this->field->` and `static` name.
+    - module [Collector](../../src/extract/php.ts#L63) <!-- internal -->
+      <a id="extract.php.Collector"></a><br>Per file: the imports, values read and holes the names of the code add.
+      - fn [constructor](../../src/extract/php.ts#L64)
+        <a id="extract.php.Collector.constructor"></a>
+      - fn [klass](../../src/extract/php.ts#L71) (written: string, node: Node, names: Names) → string
+        <a id="extract.php.Collector.klass"></a><br>A class the code names: the binding it goes through, registered as an optional import unless a `use` binds it.
+        - calls [extract.php.canonicalClass](extract.md#extract.php.canonicalClass), [extract.php.Collector.implicit](extract.md#extract.php.Collector.implicit)
+      - fn [fn](../../src/extract/php.ts#L78) (written: string, node: Node, names: Names) → string
+        <a id="extract.php.Collector.fn"></a><br>A function the code calls by name, likewise.
+        - calls [extract.php.canonicalFunction](extract.md#extract.php.canonicalFunction), [extract.php.Collector.implicit](extract.md#extract.php.Collector.implicit)
+      - fn [implicit](../../src/extract/php.ts#L84) (local: string, spec: string, node: Node) → void <!-- internal -->
+        <a id="extract.php.Collector.implicit"></a>
+        - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.firstLine](extract.md#extract.php.firstLine), [extract.php.lastSegment](extract.md#extract.php.lastSegment)
+      - fn [value](../../src/extract/php.ts#L92) (name: string, node: Node, member: boolean) → void
+        <a id="extract.php.Collector.value"></a>
+      - fn [hole](../../src/extract/php.ts#L97) (node: Node, reason: string, symbol: string | null) → void
+        <a id="extract.php.Collector.hole"></a>
+        - calls [extract.php.unsupported](extract.md#extract.php.unsupported)
+    - fn [extractTree](../../src/extract/php.ts#L102) (path: string, root: Node) → FileFacts <!-- internal -->
+      <a id="extract.php.extractTree"></a>
+      - calls [extract.php.Collector](extract.md#extract.php.Collector), [extract.php.fileDoc](extract.md#extract.php.fileDoc), [extract.php.regionsOf](extract.md#extract.php.regionsOf), [extract.php.collectTopLevel](extract.md#extract.php.collectTopLevel), [extract.php.usesOf](extract.md#extract.php.usesOf), [extract.php.declarationOf](extract.md#extract.php.declarationOf), [extract.php.qualify](extract.md#extract.php.qualify), [extract.php.exportRow](extract.md#extract.php.exportRow), [extract.php.callsIn](extract.md#extract.php.callsIn), [extract.php.includesIn](extract.md#extract.php.includesIn), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.treesitter.errorLine](extract.md#extract.treesitter.errorLine)
+    - fn [regionsOf](../../src/extract/php.ts#L156) (root: Node) → { ns: string; statements: Node[] }[] <!-- internal -->
+      <a id="extract.php.regionsOf"></a><br>The file in namespace regions: `namespace A;` runs to the next namespace statement, `namespace A { … }` is its block, and code before the first namespace (or in `namespace { … }`) is global.
+    - fn [collectTopLevel](../../src/extract/php.ts#L177) (node: Node, out: Node[]) → void <!-- internal -->
+      <a id="extract.php.collectTopLevel"></a><br>Statements of a namespace, including those under a top-level `if` (`if (!function_exists('x')) { function x() {} }`) and in plain blocks.
+    - fn [qualify](../../src/extract/php.ts#L185) (ns: string, name: string) → string <!-- internal -->
+      <a id="extract.php.qualify"></a>
+    - fn [lastSegment](../../src/extract/php.ts#L189) (name: string) → string <!-- internal -->
+      <a id="extract.php.lastSegment"></a>
+    - fn [firstLine](../../src/extract/php.ts#L193) (text: string) → string <!-- internal -->
+      <a id="extract.php.firstLine"></a>
+    - fn [useKind](../../src/extract/php.ts#L198) (node: Node) → "function" | "const" | null <!-- internal -->
+      <a id="extract.php.useKind"></a><br>`function` or `const` of a `use` or one of its clauses; null for a class.
+    - fn [usesOf](../../src/extract/php.ts#L208) (decl: Node, names: Names) → ImportFact[] <!-- internal -->
+      <a id="extract.php.usesOf"></a><br>The imports of one `use` statement, one per clause (`use A\{B, C as D}` is two), and the aliases they add to `names`. A function is `function <name>`, a constant `const <name>`, a class its name.
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.useKind](extract.md#extract.php.useKind), [extract.php.lastSegment](extract.md#extract.php.lastSegment), [extract.php.firstLine](extract.md#extract.php.firstLine)
+    - fn [canonicalClass](../../src/extract/php.ts#L236) (written: string, names: Names) → { local: string; qualified: string | null; explicit: boolean } <!-- internal -->
+      <a id="extract.php.canonicalClass"></a><br>A class name as the code writes it → the binding it goes through (`local`) and the qualified name PHP gives it. `explicit`: a `use` binds exactly this name. A name through an alias keeps the alias's spelling, so a call written in another case still finds the binding.
+      - calls [extract.php.qualify](extract.md#extract.php.qualify)
+    - fn [canonicalFunction](../../src/extract/php.ts#L252) (written: string, names: Names) → { local: string; spec: string; explicit: boolean } <!-- internal -->
+      <a id="extract.php.canonicalFunction"></a><br>A called function name → its binding and the specifier PHP resolves: `function A\f`, or for an unqualified name in a namespace `function A\f ?? f` (the global function when the namespace has none).
+      - calls [extract.php.canonicalClass](extract.md#extract.php.canonicalClass)
+    - fn [exportRow](../../src/extract/php.ts#L263) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
+      <a id="extract.php.exportRow"></a>
+    - fn [classNameOf](../../src/extract/php.ts#L270) (node: Node | null) → string | null <!-- internal -->
+      <a id="extract.php.classNameOf"></a><br>A class name in a name or qualified-name node, as written.
+    - fn [declarationOf](../../src/extract/php.ts#L275) (node: Node, names: Names, collector: Collector) → DeclFact | null <!-- internal -->
+      <a id="extract.php.declarationOf"></a><br>A top-level class, interface, trait, enum or function.
+      - calls [extract.php.fnDecl](extract.md#extract.php.fnDecl), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.typeRef](extract.md#extract.php.typeRef), [extract.php.docOf](extract.md#extract.php.docOf), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint), [extract.php.singleClass](extract.md#extract.php.singleClass), [extract.php.namedTypes](extract.md#extract.php.namedTypes)
+    - fn [singleClass](../../src/extract/php.ts#L350) (type: Node | null) → string | null <!-- internal -->
+      <a id="extract.php.singleClass"></a><br>The one class a type names: `Store`, `?Store`; null for a union, an intersection, a built-in type or none.
+      - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf)
+    - fn [namedTypes](../../src/extract/php.ts#L359) (type: Node | null) → { text: string; node: Node }[] <!-- internal -->
+      <a id="extract.php.namedTypes"></a><br>Every class a type names, in unions, intersections and nullable types.
+      - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf)
+    - fn [typeRef](../../src/extract/php.ts#L374) (name: string, node: Node) → TypeRefFact <!-- internal -->
+      <a id="extract.php.typeRef"></a>
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.firstLine](extract.md#extract.php.firstLine)
+    - type [Scope](../../src/extract/php.ts#L380) <!-- internal -->
+      <a id="extract.php.Scope"></a><br>What a call in a function sees: the namespace's names, the class, the function's variables and their classes.
+    - fn [fnDecl](../../src/extract/php.ts#L392) (node: Node, name: string, names: Names, ctx: ClassContext | null, collector: Collector, symbol: string) → DeclFact <!-- internal -->
+      <a id="extract.php.fnDecl"></a><br>A function or a method. `symbol` is its dotted path in the file.
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.singleClass](extract.md#extract.php.singleClass), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.namedTypes](extract.md#extract.php.namedTypes), [extract.php.typeRef](extract.md#extract.php.typeRef), [extract.php.walkScope](extract.md#extract.php.walkScope), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.callsIn](extract.md#extract.php.callsIn), [extract.php.docOf](extract.md#extract.php.docOf), [extract.treesitter.fingerprint](extract.md#extract.treesitter.fingerprint)
+    - fn [walkScope](../../src/extract/php.ts#L463) (node: Node, visit: (n: Node) => void) → void <!-- internal -->
+      <a id="extract.php.walkScope"></a><br>Every node of a function body that runs in its own scope: not into a nested named function or class.
+    - fn [callsIn](../../src/extract/php.ts#L476) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
+      <a id="extract.php.callsIn"></a><br>The calls under `node`: in a function body, or in code outside declarations. A call inside a closure, an arrow function or an anonymous class has `closure`: it runs when that value is called.
+      - calls [extract.php.callOf](extract.md#extract.php.callOf), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.Collector.value](extract.md#extract.php.Collector.value), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.arrayCallable](extract.md#extract.php.arrayCallable)
+    - fn [arrayCallable](../../src/extract/php.ts#L503) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+      <a id="extract.php.arrayCallable"></a><br>`[$this, 'save']`, `[Order::class, 'place']`, `['Order', 'place']`: a method read as a callable value.
+      - calls [extract.php.stringValue](extract.md#extract.php.stringValue), [extract.php.Collector.value](extract.md#extract.php.Collector.value)
+    - fn [stringValue](../../src/extract/php.ts#L514) (node: Node) → string | null <!-- internal -->
+      <a id="extract.php.stringValue"></a><br>The text of a string literal without interpolation; null for anything else.
+    - fn [firstClassCallable](../../src/extract/php.ts#L521) (n: Node) → boolean <!-- internal -->
+      <a id="extract.php.firstClassCallable"></a><br>The callable `f(...)`, `$x->m(...)`, `X::m(...)` makes from its callee: a value, not a call.
+    - fn [callOf](../../src/extract/php.ts#L535) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque"> | null <!-- internal -->
+      <a id="extract.php.callOf"></a><br>One call: `f()` → `f`, `A\f()` → `A\f`; `$this->m()` → `this.m`; `$this->store->m()` → `this.store.m` with the property's class; `$x->m()` → `x.m`, bound, with the variable's class when the syntax names it; `X::m()` → `X.m`; `self::m()` / `static::m()` → `this.m`, or `X.m` for…
+      - calls [extract.php.classNameOf](extract.md#extract.php.classNameOf), [extract.php.Collector.klass](extract.md#extract.php.Collector.klass), [extract.php.variableCall](extract.md#extract.php.variableCall), [extract.php.firstClassCallable](extract.md#extract.php.firstClassCallable), [extract.php.callableValue](extract.md#extract.php.callableValue), [extract.php.lastSegment](extract.md#extract.php.lastSegment), [extract.php.Collector.hole](extract.md#extract.php.Collector.hole), [extract.php.Collector.fn](extract.md#extract.php.Collector.fn)
+    - fn [variableCall](../../src/extract/php.ts#L610) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
+      <a id="extract.php.variableCall"></a><br>A call through a variable: `$f()`, `$x->m()`, `$class::m()`.
+    - fn [callableValue](../../src/extract/php.ts#L616) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+      <a id="extract.php.callableValue"></a><br>`f(...)`, `$this->m(...)`, `X::m(...)`: the function or method read as a value.
+      - calls [extract.php.Collector.value](extract.md#extract.php.Collector.value), [extract.php.Collector.fn](extract.md#extract.php.Collector.fn)
+    - fn [includesIn](../../src/extract/php.ts#L632) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
+      <a id="extract.php.includesIn"></a><br>`require`/`include` of a path the code spells out: a string, or `__DIR__` (`dirname(__DIR__)`, `dirname(__FILE__)`) joined with one. The specifier is `include <path>`, relative to the repository root; a path computed at run time is a hole.
+      - calls [extract.php.includedPath](extract.md#extract.php.includedPath), [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.Collector.hole](extract.md#extract.php.Collector.hole), [extract.php.firstLine](extract.md#extract.php.firstLine)
+    - fn [includedPath](../../src/extract/php.ts#L653) (expr: Node | null, file: string) → string | null <!-- internal -->
+      <a id="extract.php.includedPath"></a><br>The repository-relative path an include expression names: string literals, `__DIR__`, `dirname(__DIR__[, n])` and `dirname(__FILE__[, n])` joined with `.`; a relative literal is taken from the file's directory. Null when part of it is computed at run time.
+      - calls [extract.php.stringValue](extract.md#extract.php.stringValue), [extract.php.normalize](extract.md#extract.php.normalize)
+    - fn [normalize](../../src/extract/php.ts#L686) (path: string) → string <!-- internal -->
+      <a id="extract.php.normalize"></a><br>`a/./b/../c` → `a/c`; a path above the root keeps its leading `..`.
+    - fn [docOf](../../src/extract/php.ts#L701) (node: Node, header: number | null) → string | undefined <!-- internal -->
+      <a id="extract.php.docOf"></a><br>The PHPDoc of a declaration: the `/** … *\/` right above it. Line comments may stand between them, other code may not.
+      - calls [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
+    - fn [fileDoc](../../src/extract/php.ts#L714) (root: Node) → { doc: string; id: number } | null <!-- internal -->
+      <a id="extract.php.fileDoc"></a><br>The file's PHPDoc and its comment: the first `/** … *\/` after `<?php` (and `declare`), unless it stands right above a declaration, which it documents instead. A license documents nothing.
+      - calls [extract.doc-comments.jsdocDescription](extract.md#extract.doc-comments.jsdocDescription), [extract.doc-comments.blockCommentBody](extract.md#extract.doc-comments.blockCommentBody), [extract.doc-comments.isLicense](extract.md#extract.doc-comments.isLicense), [extract.doc-comments.nonEmpty](extract.md#extract.doc-comments.nonEmpty)
+    - fn [unsupported](../../src/extract/php.ts#L724) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+      <a id="extract.php.unsupported"></a>
+      - calls [extract.treesitter.located](extract.md#extract.treesitter.located), [extract.php.firstLine](extract.md#extract.php.firstLine)
   - module [python](../../src/extract/python.ts#L1)
     <a id="extract.python"></a><br>Python facts: `def`/`class`, imports, `__all__`, calls. Each imported name is one import whose specifier is the dotted path (`..pkg.mod.f`); the resolver decides how much of it is a module.
     - facts [extract.facts](extract.md#extract.facts)
@@ -269,23 +385,23 @@
     - fn [query](../../src/extract/treesitter.ts#L69) (language: Language, g: Grammar, name: string, source: string) → Query
       <a id="extract.treesitter.query"></a><br>Compile a query once per (grammar, source).
     - fn [grammarFor](../../src/extract/treesitter.ts#L79) (path: string) → Grammar
-      <a id="extract.treesitter.grammarFor"></a><br>Picks the tree-sitter grammar name from a file path's extension: `.rs` → rust, `.py` → python, `.tsx` → tsx, `.ts`/`.cts`/`.mts` → typescript, anything else → javascript. Used by [`extract.bodies.functionBodies`](extract.md#extract.bodies.functionBodies), [`extract.bodies.parsesCleanly`](extract.md#extract.bodies.parsesCleanly) and [`extract.ts.extractTs`](extract.md#extract.ts.extractTs) to… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [located](../../src/extract/treesitter.ts#L88) (node: Node) → { line: number; col: number; endLine: number; endCol: number; text: string }
+      <a id="extract.treesitter.grammarFor"></a><br>Picks the tree-sitter grammar name from a file path's extension: `.rs` → rust, `.py` → python, `.tsx` → tsx, `.ts`/`.cts`/`.mts` → typescript, anything else → javascript. Used by [`extract.bodies.functionBodies`](extract.md#extract.bodies.functionBodies), [`extract.bodies.parsesCleanly`](extract.md#extract.bodies.parsesCleanly) and [`extract.ts.extractTs`](extract.md#extract.ts.extractTs) to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [located](../../src/extract/treesitter.ts#L89) (node: Node) → { line: number; col: number; endLine: number; endCol: number; text: string }
       <a id="extract.treesitter.located"></a><br>1-based range and text of a node; columns count code points, and `endCol` is the column after it.
       - calls [extract.treesitter.startCol](extract.md#extract.treesitter.startCol), [extract.treesitter.codePointColumn](extract.md#extract.treesitter.codePointColumn)
-    - fn [startCol](../../src/extract/treesitter.ts#L99) (node: Node) → number
+    - fn [startCol](../../src/extract/treesitter.ts#L100) (node: Node) → number
       <a id="extract.treesitter.startCol"></a><br>The node's 1-based start column in code points (§7), as `located` gives it.
       - calls [extract.treesitter.codePointColumn](extract.md#extract.treesitter.codePointColumn)
-    - fn [codePointColumn](../../src/extract/treesitter.ts#L108) (tree: Tree, index: number, units: number) → number <!-- internal -->
+    - fn [codePointColumn](../../src/extract/treesitter.ts#L109) (tree: Tree, index: number, units: number) → number <!-- internal -->
       <a id="extract.treesitter.codePointColumn"></a><br>web-tree-sitter parses a JS string as UTF-16, so its columns and indices count code units. A surrogate pair between the line start and the point is one code point, and so one column.
       - calls [extract.treesitter.firstAtOrAfter](extract.md#extract.treesitter.firstAtOrAfter)
-    - fn [surrogatePairs](../../src/extract/treesitter.ts#L114) (src: string) → number[] <!-- internal -->
+    - fn [surrogatePairs](../../src/extract/treesitter.ts#L115) (src: string) → number[] <!-- internal -->
       <a id="extract.treesitter.surrogatePairs"></a><br>Scans the source text for UTF-16 surrogate pairs and returns the index just after each pair's high surrogate, giving [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree) the positions where JavaScript string offsets and tree-sitter byte/code-point offsets diverge. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [firstAtOrAfter](../../src/extract/treesitter.ts#L121) (sorted: readonly number[], value: number) → number <!-- internal -->
+    - fn [firstAtOrAfter](../../src/extract/treesitter.ts#L122) (sorted: readonly number[], value: number) → number <!-- internal -->
       <a id="extract.treesitter.firstAtOrAfter"></a><br>Position of the first element `>= value` in an ascending array.
-    - fn [errorLine](../../src/extract/treesitter.ts#L133) (node: Node) → number
+    - fn [errorLine](../../src/extract/treesitter.ts#L134) (node: Node) → number
       <a id="extract.treesitter.errorLine"></a><br>First syntax-error line, or the start of the tree when the grammar only sets `hasError`.
-    - fn [fingerprint](../../src/extract/treesitter.ts#L148) (node: Node) → string
+    - fn [fingerprint](../../src/extract/treesitter.ts#L149) (node: Node) → string
       <a id="extract.treesitter.fingerprint"></a><br>SHA-256 of the node's syntax: node types and token texts, without comments and whitespace. `>` → `>=` changes it; reformatting or editing a comment does not. Nesting is part of it, so moving a statement out of a block counts.
   - module [ts](../../src/extract/ts.ts#L1)
     <a id="extract.ts"></a><br>TypeScript / JavaScript facts: imports, declarations, exports, calls. A tree walk over the top level plus tree-sitter queries inside bodies.
@@ -294,7 +410,7 @@
     - doc-comments [extract.doc-comments](extract.md#extract.doc-comments)
     - treesitter [extract.treesitter](extract.md#extract.treesitter)
     - fn [extractTs](../../src/extract/ts.ts#L34) (path: string, src: string) → Promise<FileFacts>
-      <a id="extract.ts.extractTs"></a><br>Picks a grammar for the file via [`extract.treesitter.grammarFor`](extract.md#extract.treesitter.grammarFor), parses the source with [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree), and hands the root node to [`extract.ts.extractTree`](extract.md#extract.ts.extractTree) to produce the file's facts. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      <a id="extract.ts.extractTs"></a><br>Picks a grammar for the file via [`extract.treesitter.grammarFor`](extract.md#extract.treesitter.grammarFor), parses the source with [`extract.treesitter.withTree`](extract.md#extract.treesitter.withTree), and hands the root node to [`extract.ts.extractTree`](extract.md#extract.ts.extractTree) to produce the file's facts. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [extract.treesitter.grammarFor](extract.md#extract.treesitter.grammarFor), [extract.treesitter.withTree](extract.md#extract.treesitter.withTree), [extract.ts.extractTree](extract.md#extract.ts.extractTree)
     - fn [parentOf](../../src/extract/ts.ts#L55) (node: Node) → Node | null <!-- internal -->
       <a id="extract.ts.parentOf"></a><br>Resolves a syntax node's parent, consulting a module-level `parents` map by node id first and falling back to the node's own `parent` link. Shared by every scope- and ancestry-walking helper in [`extract.ts`](extract.md#extract.ts), such as [`extract.ts.declarationOf`](extract.md#extract.ts.declarationOf) and [`extract.ts.insideClosure`](extract.md#extract.ts.insideClosure). _(llm · claude:claude-fable-5-1 · 2026-10-04)_

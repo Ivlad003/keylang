@@ -37,6 +37,23 @@ export interface FileFacts {
   parseError: { line: number; reason: string } | null;
   /** The file's documentation comment (a header comment, a module docstring) without comment syntax; absent when it has none. */
   doc?: string;
+  /**
+   * Qualified names of the file's top-level declarations, for a language whose
+   * imports name declarations rather than files (PHP: `use App\Domain\Order`
+   * names the class `Order` of the namespace `App\Domain`, whatever file
+   * declares it). The resolver finds a name's file by them.
+   */
+  symbols?: QualifiedSymbol[];
+}
+
+/** A top-level declaration by its qualified name. */
+export interface QualifiedSymbol {
+  /** The name the file declares: `Order`. */
+  name: string;
+  /** With its namespace: `App\Domain\Order`. */
+  qualified: string;
+  /** PHP keeps classes (interfaces, traits and enums too), functions and constants in tables of their own. */
+  table: "class" | "function" | "const";
 }
 
 export interface ImportFact {

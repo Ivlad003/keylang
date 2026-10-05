@@ -21,6 +21,9 @@ export const LANGUAGES = {
   javascript: { extensions: [".js", ".jsx", ".mjs", ".cjs"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name) },
   // Dunder methods other than `__init__` run through syntax and built-ins: `with`, `for`, `str()`, operators, `x()`.
   python: { extensions: [".py"], module: "file", index: ["__init__"], constructor: "__init__", implicit: (name) => /^__.+__$/.test(name) && name !== "__init__" },
+  // PHP: magic methods other than `__construct` run through syntax: `__toString`, `__get`, `__call`, `__invoke`, `__destruct`…
+  // A file is no directory's module: `index.php` is an entry script, not an index.
+  php: { extensions: [".php"], module: "file", index: [] as string[], constructor: "__construct", implicit: (name) => name.startsWith("__") && name.toLowerCase() !== "__construct" },
   // Rust: the extractor marks the methods of `impl Drop`, `impl Display`, … (a name alone does not say it).
   rust: { extensions: [".rs"], module: "file", index: ["mod"], constructor: null, implicit: () => false },
   typescript: { extensions: [".ts", ".tsx", ".mts", ".cts"], module: "file", index: ["index"], constructor: "constructor", implicit: (name) => JS_IMPLICIT.has(name) },
