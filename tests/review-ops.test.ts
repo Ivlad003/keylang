@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { answerObject } from "../src/draft-llm.ts";
 import { exportTargetProblem, runOperation } from "../src/operations.ts";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
@@ -208,6 +209,33 @@ test("explain --missing --llm: a source changed while a wave's first answer come
   const rerun = await keylang(later, ["explain", "--missing", "--llm", "--jobs", "1"], laterFake);
   assert.equal(rerun.status, 0, rerun.stderr);
   assert.equal(rerun.stdout, "explained 2 of 2 node(s)\n");
+});
+
+// ---------- 3. draft map --mode llm: one JSON object from the answer ----------
+
+test("draft map --mode llm: the ```json block, else the first balanced object of the answer; an answer without one is code 2 naming it", async (t) => {
+  const dir = copy(t, { agent: "cli:claude" });
+  const before = readFileSync(join(dir, "keylang.json"), "utf8");
+  for (const [reply, layers] of [
+    ['Here you go: {"domain": ["src/domain/**"]} and also {"x": 1}', { domain: ["src/domain/**"] }],
+    ['A layer is {name: globs}. Mine:\n{"core": ["src/domain/**"], "edge": ["src/app/**", "src/infra/**"]}\nDone.', { core: ["src/domain/**"], edge: ["src/app/**", "src/infra/**"] }],
+    ['Like {"x": 1}, but:\n```json\n{"domain": ["src/domain/**"], "app": ["src/{app,infra}/**"]}\n```', { domain: ["src/domain/**"], app: ["src/{app,infra}/**"] }],
+  ] as const) {
+    const fake = fakeAgents(t, ["claude"], { reply });
+    const o = await keylang(dir, ["draft", "map", "--mode", "llm"], fake);
+    assert.equal(o.status, 0, `${reply}: ${o.stderr}`);
+    assert.deepEqual((JSON.parse(o.stdout) as { layers: unknown }).layers, layers, reply);
+  }
+  for (const reply of ["I cannot group these files.", "```json\n[\"src/**\"]\n```", "{\"domain\": [\"src/domain/**\"]"]) {
+    const fake = fakeAgents(t, ["claude"], { reply });
+    const o = await keylang(dir, ["draft", "map", "--mode", "llm"], fake);
+    assert.equal(o.status, 2, reply);
+    assert.equal(o.stdout, "");
+    assert.equal(o.stderr, "keylang: draft map: the model did not answer with one JSON object\n", reply);
+  }
+  assert.equal(readFileSync(join(dir, "keylang.json"), "utf8"), before, "keylang.json is never written");
+  // A brace inside a JSON string does not end the object.
+  assert.deepEqual(answerObject('{"a": ["src/}{/**"], "b": "x\\"}"} {"c": 1}'), { a: ["src/}{/**"], b: 'x"}' });
 });
 
 // ---------- 4. export target: the spec directory as the config reads it ----------
