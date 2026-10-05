@@ -352,3 +352,22 @@ test("an unverified rule names its hole; the summary counts the holes once two v
   const single = keylang(dir, ["check"]);
   assert.match(single.stderr, /^0 fail, 1 unverified, 0 ok$/m, single.stderr);
 });
+
+// ---------- 12. the rendered map is parsed once per text ----------
+
+test("analyses in one process see a new map text: a fn added to the code resolves in the next analysis", async (t) => {
+  const dir = repo(t, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**" } })}\n`,
+    "src/app/main.ts": "export function main(): void {}\n",
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.main.main\n- step app.main.later\n",
+  });
+  const k001 = (diagnostics: readonly { code: string }[]): number => diagnostics.filter((d) => d.code === "K001").length;
+  const first = await analyze({ root: dir, withoutEvidence: true });
+  assert.equal(k001(first.diagnostics), 1);
+  const again = await analyze({ root: dir, withoutEvidence: true });
+  assert.deepEqual(again.docs, first.docs, "the same text gives the same documents");
+  writeFileSync(join(dir, "src/app/main.ts"), "export function main(): void {\n  later();\n}\nexport function later(): void {}\n");
+  const changed = await analyze({ root: dir, withoutEvidence: true });
+  assert.equal(k001(changed.diagnostics), 0, JSON.stringify(changed.diagnostics));
+  assert.ok(changed.verdicts.some((v) => v.criterion === "static" && v.area === "app.main.later" && v.verdict === "ok"));
+});

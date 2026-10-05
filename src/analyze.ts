@@ -3,6 +3,7 @@
 // map rendered from the fresh snapshot, so IDs resolve against current code,
 // not a stale committed map. Nothing is written.
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
@@ -82,7 +83,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     for (const [name, text] of map.files) {
       const abs = join(mapDir, name);
       if (docs.some((doc) => doc.path === display(abs))) continue;
-      docs.push(parse(display(abs), text));
+      docs.push(parseRenderedMap(display(abs), text));
     }
   }
   docs.sort((a, b) => compareText(a.path, b.path));
@@ -105,6 +106,26 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     config.format,
   );
   return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
+}
+
+/**
+ * The rendered map files, parsed, by their display path and the hash of the
+ * text. The snapshot reaches the specs through the Markdown it renders, not
+ * an index built from it directly: the positions in that map file are the
+ * contract K001, K002 and LSP definition point at. Rendering stays per
+ * analysis; the parse is reused while the text is the same, so the repeated
+ * analyses of one process (MCP, LSP, TUI) parse each map text once.
+ * Documents are read-only past `parse`, so one may serve many analyses.
+ */
+const renderedMap = new Map<string, { hash: string; doc: Document }>();
+
+function parseRenderedMap(path: string, text: string): Document {
+  const hash = createHash("sha256").update(text).digest("hex");
+  const known = renderedMap.get(path);
+  if (known?.hash === hash) return known.doc;
+  const doc = parse(path, text);
+  renderedMap.set(path, { hash, doc });
+  return doc;
 }
 
 /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */
