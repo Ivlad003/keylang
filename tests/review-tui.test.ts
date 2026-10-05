@@ -2,14 +2,18 @@
 // session by the bytes a terminal sends and reads what it shows or writes.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { readStats, updateStats } from "../src/stats.ts";
-import { App, type AppOptions } from "../src/tui/app.ts";
+import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
+import type { OperationWorker } from "../src/tui/background.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
+const REPO = fileURLToPath(new URL("..", import.meta.url));
 const FLOW_PATH = "keylang/flows/checkout.md";
 
 interface Session {
@@ -20,15 +24,17 @@ interface Session {
   text: () => string;
 }
 
-function session(root: string, options: { cols?: number; rows?: number } & Pick<AppOptions, "operations" | "operationWorker"> = {}): Session {
+/** A session on a virtual terminal; `surface` adds what a transport can do besides drawing. */
+function session(root: string, options: { cols?: number; rows?: number; surface?: Omit<Surface, "write"> } & Pick<AppOptions, "operationWorker"> = {}): Session {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const { cols: _cols, rows: _rows, ...rest } = options;
-  const app = new App({ root, cols, rows, ...rest });
-  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
+  const app = new App({ root, cols, rows, ...(options.operationWorker ? { operationWorker: options.operationWorker } : {}) });
+  app.attach({ write: (ansi) => vt.feed(ansi), ...options.surface }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
+
+const tick = (): Promise<void> => new Promise((done) => setImmediate(done));
 
 /** A file in the repository, with its directories. */
 function put(root: string, path: string, text: string): void {
@@ -93,6 +99,48 @@ test("review-tui: a stats update that loses a race reads again: neither writer's
   const stats = readStats(root);
   assert.deepEqual(stats.drafts.agree, { proposed: 1, accepted: 1, rejected: 0 });
   assert.deepEqual(stats.suggestions.completion, { proposed: 1, accepted: 0, rejected: 0, ms: 0 }, "the other writer's count survives");
+});
+
+// ---------- 7: a helper that fails ----------
+
+test("review-tui: a helper that fails is a message in the session, never an unhandled rejection", async (t) => {
+  const root = checkoutRepo(t, { "keylang/features/refund.md": "# flow refund\n\n- trigger presentation.terminal.checkout\n" });
+  const unhandled: unknown[] = [];
+  const record = (reason: unknown): void => void unhandled.push(reason);
+  process.on("unhandledRejection", record);
+  t.after(() => process.off("unhandledRejection", record));
+  // The worker that reads a feature's plan at HEAD fails underneath the status line's refresh.
+  const worker = { featureBase: () => Promise.reject(new Error("the plan at HEAD could not be read")), close: () => {} } as unknown as OperationWorker;
+  const s = session(root, { operationWorker: worker });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(":");
+  s.send("refund");
+  s.send(KEY.enter);
+  await s.app.idle();
+  await tick();
+  assert.equal(s.app.state.current, "keylang/features/refund.md");
+  assert.deepEqual(unhandled, []);
+  assert.match(s.app.state.message ?? "", /^error: the plan at HEAD could not be read/);
+  s.send(KEY.down);
+  assert.equal(s.app.state.cursor.line, 1, "the session goes on");
+});
+
+test("review-tui: keylang web logs a rejection no session handled and goes on serving", (t) => {
+  const root = checkoutRepo(t);
+  const script = [
+    `import { serveWeb } from ${JSON.stringify(pathToFileURL(join(REPO, "src/tui/web.ts")).href)};`,
+    `const server = await serveWeb({ root: ${JSON.stringify(root)}, port: 0 });`,
+    `Promise.reject(new Error("a stray rejection in one session"));`,
+    "await new Promise((done) => setTimeout(done, 50));",
+    "const response = await fetch(`http://localhost:${server.port}/`);",
+    `console.log("served", response.status);`,
+    "await server.close();",
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 60000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^served 200$/m);
+  assert.match(result.stderr, /keylang web: unhandled rejection: Error: a stray rejection in one session/);
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");

@@ -365,12 +365,19 @@ export async function serveWeb(options: WebOptions): Promise<WebServer> {
     server.listen(options.port, host, () => resolve());
   });
   port = (server.address() as AddressInfo).port;
+  // A rejection no session handled (a helper it did not track) would make Node end the process, and with it
+  // every other session and its unsaved buffers: while the server runs it is logged instead.
+  const onRejection = (reason: unknown): void => {
+    process.stderr.write(`keylang web: unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`);
+  };
+  process.on("unhandledRejection", onRejection);
   const shown = loopback ? "localhost" : host.includes(":") ? `[${host}]` : host;
   return {
     url: `http://${shown}:${port}/#t=${token}`,
     port,
     unsaved: () => [...sessions.values()].flatMap((session) => session.app.unsaved()),
     close: async () => {
+      process.off("unhandledRejection", onRejection);
       clearInterval(heartbeat);
       for (const session of sessions.values()) {
         session.app.close();

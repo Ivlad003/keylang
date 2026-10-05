@@ -485,14 +485,23 @@ export class App {
     }, SETTLE_MS);
   }
 
-  /** Async work of a helper (a model, a microphone): `idle()` waits for it, and the frame follows it. */
+  /**
+   * Async work of a helper (a model, a microphone, an operation's result):
+   * `idle()` waits for it, and the frame follows it. Work that fails is a
+   * message, as a key that fails is (`safely`): never an unhandled rejection,
+   * which would end a terminal session and every session of `keylang web`.
+   */
   private track(work: Promise<void>): void {
     this.running++;
-    void work.finally(() => {
-      this.running--;
-      this.draw();
-      this.wake();
-    });
+    void work
+      .catch((error: unknown) => {
+        if (!this.closed) this.state.message = `error: ${errorText(error)}`;
+      })
+      .finally(() => {
+        this.running--;
+        this.draw();
+        this.wake();
+      });
   }
 
   private quiet(): boolean {
