@@ -499,9 +499,11 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
  * `spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is
  * built as a preview (stdout and the test notes as `--print`), then the
  * shared `apply-code` operation writes its files; a proposal waiting for one
- * stays, as it always did. Any file not written ends with 2, as `--apply`
- * always did — a file changed meanwhile too; part way, the error is followed
- * by what was written and what was not.
+ * stays, as it always did. The operation's code is the CLI's: a file or an
+ * input changed meanwhile (while the model answered too) is 1 with nothing
+ * written, as a refused proposal is; a file no write may change and an I/O
+ * error are 2; part way, the error is followed by what was written and what
+ * was not.
  */
 async function specToCodeApplyPrinter(root: string, id: string, into: string | undefined, mode: "algo" | "llm"): Promise<number> {
   const built = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: "preview", ...(mode === "llm" ? { mode } : {}) });
@@ -522,7 +524,7 @@ async function specToCodeApplyPrinter(root: string, id: string, into: string | u
   if (applied.payload?.error != null) {
     for (const file of applied.payload.files) if (file.state !== "failed") process.stderr.write(`keylang: ${file.file}: ${file.state === "completed" ? "written" : "not written"}\n`);
   }
-  return 2;
+  return applied.exitCode ?? 2;
 }
 
 /**

@@ -331,3 +331,34 @@ test("answerText: a remark is a first paragraph ending with `:` or of fewer than
   assert.equal(briefText("Sure! Here you go:\n\nSums the prices. It folds them. And more."), "Sums the prices. It folds them.");
   assert.equal(briefText("```\n```"), "");
 });
+
+// ---------- 7. exit codes of a draft whose inputs changed while the model answered ----------
+
+test("draft flow, draft rules, code-to-spec and spec-to-code (proposal and --apply): an input changed while the model answered is code 1 with nothing written; usage is 2", async (t) => {
+  const FLOW = "```markdown\n# flow checkout\n\n- trigger app.checkout.checkout\n```";
+  const CODE = "```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```";
+  const PLAN = { "keylang/flows/refund.md": "# flow refund\n\n- planned fn app.refund.refund (order: Order) → Order\n- trigger app.refund.refund\n", "src/app/refund.ts": "export const policy = 1;\n" };
+  for (const [args, reply, edited, reason] of [
+    [["draft", "flow", "app.checkout.checkout", "--mode", "llm"], FLOW, "src/domain/order.ts", "src/domain/order.ts: changed on disk while the draft was computed"],
+    [["draft", "rules", "--mode", "llm"], "```markdown\n# rules\n\n- no-cycles\n```", "src/domain/order.ts", "src/domain/order.ts: changed on disk while the draft was computed"],
+    [["code-to-spec", "src/app/checkout.ts:5", "--mode", "llm"], FLOW, "src/domain/order.ts", "src/domain/order.ts: changed on disk while the draft was computed"],
+    [["spec-to-code", "app.refund.refund", "--mode", "llm"], CODE, "src/domain/order.ts", "src/domain/order.ts: changed on disk while the candidate was computed"],
+    [["spec-to-code", "app.refund.refund", "--mode", "llm", "--apply"], CODE, "src/domain/order.ts", "src/domain/order.ts: changed on disk while the candidate was computed"],
+    [["spec-to-code", "app.refund.refund", "--mode", "llm", "--apply"], CODE, "src/app/refund.ts", "src/app/refund.ts: changed on disk while the change was prepared; nothing written"],
+  ] as const) {
+    const dir = copy(t, { agent: "cli:claude" }, PLAN);
+    const fake = fakeAgents(t, ["claude"], { reply });
+    editBeforeAnswer(fake);
+    const o = await keylang(dir, [...args], fake, { EDIT_FILE: join(dir, edited), EDIT_TEXT: EDITED });
+    const name = `${args.join(" ")} (${edited})`;
+    assert.equal(o.status, 1, `${name}: ${o.stderr}`);
+    assert.ok(o.stderr.includes(`keylang: ${reason}\n`), `${name}: ${o.stderr}`);
+    assert.ok(!existsSync(join(dir, ".keylang/proposals")), `${name}: no proposal`);
+    assert.equal(readFileSync(join(dir, "src/app/refund.ts"), "utf8"), edited === "src/app/refund.ts" ? `export const policy = 1;\n${EDITED}` : "export const policy = 1;\n", `${name}: the code file is not written`);
+  }
+  const dir = copy(t, {}, PLAN);
+  for (const args of [["draft", "flow"], ["draft", "rules", "--mode", "nope"], ["code-to-spec", "src/app/checkout.ts", "--since", "HEAD"], ["spec-to-code", "app.refund.refund", "--print", "--apply"], ["spec-to-code"]]) {
+    const o = await keylang(dir, args, null);
+    assert.equal(o.status, 2, `${args.join(" ")}: ${o.stderr}`);
+  }
+});
