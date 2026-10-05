@@ -173,6 +173,44 @@ test("rules without a snapshot are unverified at the first rule line in file and
   assert.equal(row?.specHash, sha("exports app: go\nno-cycles *\ndeny infra app"));
 });
 
+// ---------- 4. a planned signature without a return part ----------
+
+test("a planned signature without a return part matches on the parameters; with one it must match in full", (t) => {
+  const dir = repo(t, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**" } })}\n`,
+    "src/domain/order.ts": [
+      "export interface Order { id: string }",
+      "export interface Refund { id: string }",
+      "export function refund(order: Order): Refund {",
+      "  return { id: order.id };",
+      "}",
+      "export function cancel(order: Order): void {}",
+      "export function close(order: Order, why: string): void {}",
+      "export function open(order: Order): Refund {",
+      "  return { id: order.id };",
+      "}",
+      "",
+    ].join("\n"),
+    "keylang/flows/plan.md": [
+      "# flow plan",
+      "",
+      "- planned fn domain.order.refund (order: Order)",
+      "- planned fn domain.order.cancel (order: Order) -> Refund",
+      "- planned fn domain.order.close (order: Order)",
+      "- planned fn domain.order.open (order: Order) -> Refund",
+      "",
+    ].join("\n"),
+  });
+  const o = keylang(dir, ["check"]);
+  const lines = o.stdout.split("\n").filter((line) => / K20[12] /.test(line));
+  assert.deepEqual(lines, [
+    "keylang/flows/plan.md:3:1: K202 planned fn `domain.order.refund` is implemented (src/domain/order.ts:3); remove the declaration",
+    "keylang/flows/plan.md:4:1: K201 planned fn `domain.order.cancel` has signature `(order: Order) -> Refund`, the code has `(order: Order) → void` (src/domain/order.ts:6)",
+    "keylang/flows/plan.md:5:1: K201 planned fn `domain.order.close` has signature `(order: Order)`, the code has `(order: Order, why: string) → void` (src/domain/order.ts:7)",
+    "keylang/flows/plan.md:6:1: K202 planned fn `domain.order.open` is implemented (src/domain/order.ts:8); remove the declaration",
+  ]);
+});
+
 // ---------- 5. a dependency alias is a member ----------
 
 test("a module whose only children are dependency aliases has members: an unknown member is K001, the alias resolves", (t) => {
@@ -252,6 +290,29 @@ test("an id is NFC: a decomposed and a composed name are one id, while the file 
   const ref = flowDoc!.sections[0]!.items[0]!.refs[0]!;
   assert.deepEqual([ref.text, ref.target], [`app.${nfd}.go`, `app.${nfc}.go`]);
   assert.equal(keylang(dir, ["fmt", "--check", "map.md", "flow.md"]).status, 0, "fmt does not normalize the text");
+});
+
+// ---------- 9. a static fail says what to do ----------
+
+const BY_NAME: Record<string, string> = {
+  "src/domain/order.ts": "export function create(): void {}\nexport function other(): void {}\n",
+  "src/application/purchase.ts": 'import { create } from "../domain/order.ts";\nexport function buy(): void {\n  create();\n}\n',
+};
+
+test("a static fail names the call to add: from the parent or code it reaches for a step, in the parent for calls", (t) => {
+  const dir = repo(t, {
+    ...BY_NAME,
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { domain: "src/domain/**", application: "src/application/**" } })}\n`,
+    "keylang/flows/a.md": "# flow a\n\n- trigger domain.order.create\n- step application.purchase.buy\n",
+    "keylang/flows/b.md": "# flow b\n\n- trigger domain.order.other\n  - calls application.purchase.buy\n",
+  });
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 1, o.stdout);
+  assert.match(
+    o.stdout,
+    /^keylang\/flows\/a\.md:4:1: static fail application\.purchase\.buy: absence: no call path from domain\.order\.create; `application\.purchase\.buy` and its callers are called only by name, and no call from domain\.order\.create's reachable code can reach them; add a call to `application\.purchase\.buy` in `domain\.order\.create` or in a function it reaches$/m,
+  );
+  assert.match(o.stdout, /^keylang\/flows\/b\.md:4:11: static fail application\.purchase\.buy: absence: `domain\.order\.other` does not call `application\.purchase\.buy`; add a direct call in `domain\.order\.other`$/m);
 });
 
 // ---------- 11. the hole of an unverified rule, and the summary ----------

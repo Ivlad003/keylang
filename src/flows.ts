@@ -460,7 +460,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
   const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
   if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
-  return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them` };
+  return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them; add a call to \`${target}\` in \`${parent}\` or in a function it reaches` };
 }
 
 /**
@@ -508,7 +508,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   const { route } = search(graph, parent, target, proves);
   const via = route ? routeSteps(parent, target, route).slice(0, -1).map((step) => step.to) : [];
   const hint = via.length > 0 ? ` (it reaches it via ${via.join(" → ")}; \`step\` proves a path)` : "";
-  return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}` };
+  return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}; add a direct call in \`${parent}\`` };
 }
 
 /**
@@ -759,13 +759,29 @@ export function plannedMismatch(item: { decl: string; signature: string | null }
 /**
  * Signatures match without spaces, `->` as `→`. A Python method shows its
  * receiver (`(self, to: str)`), a plan may name only what the caller passes
- * (`(to: str)`): both match.
+ * (`(to: str)`): both match. A plan that is only a parameter list, with no
+ * return part, claims only the parameters: `(order: Order)` matches the code
+ * `(order: Order) → Refund`. A plan with a return part must match in full.
  */
 function sameSignature(planned: string, code: string, file: string | null): boolean {
   const plan = normalizeSignature(planned);
   const written = normalizeSignature(code);
-  if (plan === written) return true;
-  return file !== null && file.endsWith(".py") && written.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") === plan;
+  const receiverless = (text: string): string => (file !== null && file.endsWith(".py") ? text.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") : text);
+  if (plan === written || plan === receiverless(written)) return true;
+  if (parameterList(plan) !== plan) return false;
+  const params = parameterList(written);
+  return params !== null && (plan === params || plan === receiverless(params));
+}
+
+/** The leading `(…)` of a normalized signature, up to the parenthesis that closes the first; null when there is none. */
+function parameterList(signature: string): string | null {
+  if (!signature.startsWith("(")) return null;
+  let depth = 0;
+  for (let i = 0; i < signature.length; i++) {
+    if (signature[i] === "(") depth++;
+    else if (signature[i] === ")" && --depth === 0) return signature.slice(0, i + 1);
+  }
+  return null;
 }
 
 function normalizeSignature(text: string): string {
