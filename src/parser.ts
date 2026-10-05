@@ -159,6 +159,46 @@ function keywordsOf(ctx: Ctx): readonly string[] {
   }
 }
 
+/** Every position with keywords, in words, and the sections it is in: where a misplaced keyword goes. */
+const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: string }[] = [
+  { ctx: "map-top", sections: ["map"], where: "at the top of a map" },
+  { ctx: "rules-top", sections: ["rules"], where: "at the top of `# rules`" },
+  { ctx: "flow-top", sections: ["flow"], where: "at the top of `# flow`" },
+  { ctx: "wiring-top", sections: ["wiring"], where: "at the top of `# wiring`" },
+  { ctx: "layer", sections: ["map"], where: "under `- layer`" },
+  { ctx: "module", sections: ["map"], where: "under `- module`" },
+  { ctx: "fn", sections: ["map"], where: "under `- fn`" },
+  { ctx: "rule-module", sections: ["rules", "map"], where: "under a rule `- module <id>`" },
+  { ctx: "step", sections: ["flow"], where: "under `- step`" },
+  { ctx: "step", sections: ["flow"], where: "under `- trigger`" },
+  { ctx: "when", sections: ["flow"], where: "under `- when`" },
+  { ctx: "invariant", sections: ["flow"], where: "under `- invariant`" },
+  { ctx: "then", sections: ["flow"], where: "under `- then`" },
+  { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
+];
+
+const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`" };
+
+/**
+ * `; \`calls\` goes under \`- fn\`` when `word` is a keyword of other positions
+ * and not of `ctx`, else "". The places of the current section are listed;
+ * when the word belongs to other sections, one place is named with its
+ * section and several by their sections only (`; \`test\` goes in \`# flow\``).
+ */
+function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
+  if (keywordsOf(ctx).includes(word)) return "";
+  const places = PLACES.filter((place) => keywordsOf(place.ctx).includes(word));
+  const [first] = places;
+  if (first === undefined) return "";
+  const here = places.filter((place) => place.sections.includes(section));
+  let shown: string[];
+  if (here.length > 0) shown = here.map((place) => place.where);
+  else if (places.length === 1) shown = [first.ctx.endsWith("-top") ? first.where : `${first.where} in ${SECTION_NAMES[first.sections[0]!]}`];
+  else shown = [`in ${[...new Set(places.map((place) => SECTION_NAMES[place.sections[0]!]))].join(" or ")}`];
+  const listed = shown.length === 1 ? shown[0]! : `${shown.slice(0, -1).join(", ")} or ${shown.at(-1)!}`;
+  return `; \`${word}\` goes ${listed}`;
+}
+
 const RULE_ROLES: Partial<Record<NodeKind, string>> = {
   layers: "a layer order: a dependency may only point down, to a layer on the left",
   allow: "a rule: the first ID may depend on the rest",
@@ -677,14 +717,16 @@ class Parser {
   private bare(n: Node, ctx: Ctx, parent: Parent | undefined): void {
     const tokens = n.tokens;
     const parentId = parent?.id ?? null;
+    // A keyword of another position says where it goes when the line here is wrong.
+    const hint = (): string => (tokens[0]?.kind === "word" ? placeHint(tokens[0].text, ctx, this.sectionKind()) : "");
     switch (ctx) {
       case "map-top":
         n.kind = "layer";
-        this.decl(n, tokens, null, false);
+        this.decl(n, tokens, null, false, hint);
         break;
       case "layer":
         n.kind = "module";
-        this.decl(n, tokens, parentId, false);
+        this.decl(n, tokens, parentId, false, hint);
         break;
       case "module":
       case "wire": {
@@ -700,7 +742,7 @@ class Parser {
             ctx === "module"
               ? "`fn`, `type`, `event`, `module` or a dependency `<alias> <path>`"
               : "a dependency `<alias> <path>`";
-          this.err("K005", n.span, `expected ${what}`, "arguments");
+          this.err("K005", n.span, `expected ${what}${hint()}`, "arguments");
         }
         break;
       }
@@ -717,14 +759,17 @@ class Parser {
         } else {
           const t = tokens[0]!;
           const expected = keywordsOf(ctx).join(", ");
-          this.err("K004", t.span, `unknown keyword \`${t.text}\` here; expected one of: ${expected}`);
+          this.err("K004", t.span, `unknown keyword \`${t.text}\` here; expected one of: ${expected}${hint()}`);
         }
       }
     }
   }
 
-  /** `<name>` or `[name](path#Lnn)` + optional signature. */
-  private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean): void {
+  /**
+   * `<name>` or `[name](path#Lnn)` + optional signature. `hint` says where a
+   * keyword written as an implicit layer or module name goes.
+   */
+  private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => ""): void {
     const t = rest[0];
     if (!t) {
       this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a name`, "arguments");
@@ -754,8 +799,9 @@ class Parser {
       if (sig) {
         n.text = { value: renderTokens(tail), span: { start: first.span.start, end: last.span.end } };
       } else {
-        const hint = n.kind === "layer" ? " (a dependency `<alias> <path>` must be nested under a module)" : "";
-        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${hint}`, "arguments");
+        const keyword = hint();
+        const why = keyword !== "" ? keyword : n.kind === "layer" ? " (a dependency `<alias> <path>` must be nested under a module)" : "";
+        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${why}`, "arguments");
       }
     }
   }

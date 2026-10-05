@@ -434,7 +434,7 @@ test("format.md examples run through check and fmt, and the ebnf matches the par
     "```",
     "```diagnostics",
     "keylang/map/a.md:1:11: K005 unexpected arguments after layer `options` (a dependency `<alias> <path>` must be nested under a module)",
-    "keylang/rules.md:2:3: K004 unknown keyword `layer` here; expected one of: layers, allow, deny, entry, module, no-cycles",
+    "keylang/rules.md:2:3: K004 unknown keyword `layer` here; expected one of: layers, allow, deny, entry, module, no-cycles; `layer` goes at the top of a map",
     "```",
     "",
   ].join("\n");

@@ -156,6 +156,28 @@ test("a link destination may hold balanced parentheses; an unbalanced one is a m
   assert.equal(keylang(dir, ["fmt", "--check", "flow.md"]).status, 0, "fmt keeps the link as written");
 });
 
+// ---------- 6. a keyword out of its position says where it goes ----------
+
+test("a keyword of another position names where it goes; code and reason stay", (t) => {
+  const dir = repo(t, {
+    "map.md": "- layer app\n  - module a\n    - calls a.b, c.d\n    - fn x\n  - fn y z\n- fn p q\n",
+    "flow.md": "# flow f\n\n- fn app.a.x\n- trigger app.a.x\n  - trigger app.a.x\n",
+    "rules.md": "# rules\n\n- layer app\n",
+  });
+  const o = keylang(dir, ["check", "."]);
+  const lines = o.stdout.split("\n").filter((line) => / K00[45] /.test(line));
+  assert.deepEqual(lines, [
+    "flow.md:3:3: K004 unknown keyword `fn` here; expected one of: kind, trigger, step, reads, emits, calls, invariant, when, test, planned, ?; `fn` goes under `- module` in a map",
+    "flow.md:5:5: K004 unknown keyword `trigger` here; expected one of: step, reads, emits, calls, when, test, invariant, ?; `trigger` goes at the top of `# flow`",
+    "map.md:3:5: K005 expected `fn`, `type`, `event`, `module` or a dependency `<alias> <path>`; `calls` goes under `- fn`",
+    "map.md:5:8: K005 unexpected arguments after module `fn`; `fn` goes under `- module`",
+    "map.md:6:6: K005 unexpected arguments after layer `fn`; `fn` goes under `- module`",
+    "rules.md:3:3: K004 unknown keyword `layer` here; expected one of: layers, allow, deny, entry, module, no-cycles; `layer` goes at the top of a map",
+  ]);
+  const reasons = checkJson(dir, ["."]).results.filter((r) => r.code === "K005").map((r) => r.reason);
+  assert.deepEqual(reasons, ["arguments", "arguments", "arguments"]);
+});
+
 // ---------- 7. CommonMark headings: a closing sequence, a tab after `#` ----------
 
 test("a heading may end with a closing `#` sequence and may have a tab after `#`, as in CommonMark", (t) => {
