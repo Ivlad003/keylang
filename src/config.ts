@@ -4,7 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
-import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
+import { firstMatchingGlob, globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
 
@@ -384,7 +384,7 @@ export function withLayers(file: string, text: string, layers: Readonly<Record<s
 
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
-  return walkSources(c, (rel) => isAnalysed(rel, c)).files;
+  return classifySources(c).analysed;
 }
 
 /**
@@ -392,65 +392,90 @@ export function sourceFiles(c: Config): string[] {
  * (no permission): their files are unknown, which is a hole, not an absence.
  */
 export function sourceTree(c: Config): { files: string[]; unreadable: { dir: string; reason: string }[] } {
-  return walkSources(c, (rel) => isAnalysed(rel, c));
+  const sources = classifySources(c);
+  return { files: sources.analysed, unreadable: sources.unreadable };
+}
+
+/** Every source file of the configured languages by what keylang does with it; paths in walk order. */
+export interface SourceClasses {
+  /** Read and indexed. */
+  analysed: string[];
+  /** Left out by `exclude` only: opaque modules of their layer, a dependency hole. */
+  excluded: string[];
+  /** Put outside the architecture by `outside`: opaque modules of the layer `outside`, no hole. */
+  outside: string[];
+  /** Directories that could not be listed (no permission): their files are unknown, a hole, not an absence. */
+  unreadable: { dir: string; reason: string }[];
+}
+
+/** The source files by class, from one walk of the tree. */
+export function classifySources(c: Config): SourceClasses {
+  const sources: SourceClasses = { analysed: [], excluded: [], outside: [], unreadable: [] };
+  for (const rel of walkSources(c, sources.unreadable)) {
+    const kind = sourceClass(rel, c);
+    if (kind !== null) sources[kind].push(rel);
+  }
+  return sources;
+}
+
+/**
+ * What keylang does with a source file; null when the built-in list leaves it
+ * out (tests, declaration files). The built-in list wins over `outside`, and
+ * `outside` over `exclude`.
+ */
+export function sourceClass(rel: string, c: Pick<Config, "exclude" | "outside">): "analysed" | "excluded" | "outside" | null {
+  if (matchesAny(rel, DEFAULT_EXCLUDE)) return null;
+  if (matchesAny(rel, c.outside)) return "outside";
+  return matchesAny(rel, c.exclude) ? "excluded" : "analysed";
 }
 
 /** A source file keylang reads: not left out by the built-in list, `exclude` or `outside`. */
 export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside">): boolean {
-  return !isExcluded(rel, c.exclude) && !isOutside(rel, c.outside);
-}
-
-/** Source files left out only by the `exclude` of `keylang.json`: their modules are opaque. */
-export function excludedSourceFiles(c: Config): string[] {
-  if (c.exclude.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude) && !isOutside(rel, c.outside)).files;
-}
-
-/**
- * Source files `outside` of `keylang.json` puts outside the architecture; the
- * built-in list (tests) wins, and `outside` wins over `exclude`.
- */
-export function outsideSourceFiles(c: Config): string[] {
-  if (c.outside.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isOutside(rel, c.outside)).files;
+  return sourceClass(rel, c) === "analysed";
 }
 
 export function isOutside(rel: string, outside: readonly string[]): boolean {
-  return outside.some((g) => matchesGlob(rel, g));
+  return matchesAny(rel, outside);
 }
 
-function walkSources(c: Config, keep: (rel: string) => boolean): { files: string[]; unreadable: { dir: string; reason: string }[] } {
+function matchesAny(rel: string, globs: readonly string[]): boolean {
+  return firstMatchingGlob(rel, globs) !== null;
+}
+
+/**
+ * Source files of the configured languages under the root, depth first with
+ * names in code-unit order; the spec directory, hidden and build directories
+ * and nested repositories are skipped. A subdirectory that cannot be listed
+ * goes to `unreadable`; the root itself is an I/O error.
+ */
+function walkSources(c: Config, unreadable: { dir: string; reason: string }[]): string[] {
   const out: string[] = [];
-  const unreadable: { dir: string; reason: string }[] = [];
   const specDir = c.dir.replace(/\/$/, "");
-  const walk = (dir: string): void => {
+  const walk = (abs: string, rel: string): void => {
     let listed: Dirent[];
     try {
-      listed = readdirSync(dir, { withFileTypes: true });
+      listed = readdirSync(abs, { withFileTypes: true });
     } catch (error) {
-      // A subdirectory without permission: the rest of the tree is still read. The root itself is an I/O error.
       const code = error instanceof Error && "code" in error ? error.code : undefined;
-      if (dir === c.root || (code !== "EACCES" && code !== "EPERM")) throw error;
-      unreadable.push({ dir: toPosix(relative(c.root, dir)), reason: `directory is not readable (${code})` });
+      if (abs === c.root || (code !== "EACCES" && code !== "EPERM")) throw error;
+      unreadable.push({ dir: rel, reason: `directory is not readable (${code})` });
       return;
     }
     const entries = listed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const e of entries) {
-      const abs = join(dir, e.name);
-      const rel = toPosix(relative(c.root, abs));
+      const path = rel === "" ? e.name : `${rel}/${e.name}`;
       if (e.isDirectory()) {
-        if (rel === specDir || skipDir(abs, e.name)) continue;
-        walk(abs);
+        const child = join(abs, e.name);
+        if (path === specDir || skipDir(child, e.name)) continue;
+        walk(child, path);
       } else if (e.isFile()) {
         const lang = languageOf(e.name);
-        if (!lang || !c.languages.includes(lang)) continue;
-        if (!keep(rel)) continue;
-        out.push(rel);
+        if (lang && c.languages.includes(lang)) out.push(path);
       }
     }
   };
-  walk(c.root);
-  return { files: out, unreadable };
+  walk(c.root, "");
+  return out;
 }
 
 /**
@@ -480,7 +505,7 @@ export function evidenceFiles(c: Config, field: "tests" | "trace"): string[] | n
 }
 
 export function isExcluded(rel: string, extra: readonly string[]): boolean {
-  return [...DEFAULT_EXCLUDE, ...extra].some((g) => matchesGlob(rel, g));
+  return matchesAny(rel, DEFAULT_EXCLUDE) || matchesAny(rel, extra);
 }
 
 export function toPosix(p: string): string {

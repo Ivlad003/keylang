@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
-import { CONFIG_FILE, excludedSourceFiles, isAnalysed, outsideSourceFiles, sourceTree, toPosix, type Config } from "./config.ts";
+import { classifySources, CONFIG_FILE, isAnalysed, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
@@ -41,8 +41,9 @@ export interface MapResult {
 export async function generateMap(config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
-  const tree = sourceTree(config);
-  const all = tree.files;
+  // One walk sorts every source file into what is read, excluded and outside.
+  const tree = classifySources(config);
+  const all = tree.analysed;
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
   const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
     const language = languageOf(rel);
@@ -82,10 +83,10 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
   const factCache = options.persist ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
-  const excluded = excludedSourceFiles(config).filter((p) => !config.guessed || placeFile(config, p) !== null);
+  const excluded = tree.excluded.filter((p) => !config.guessed || placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
   // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
-  const outside = outsideSourceFiles(config);
+  const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
