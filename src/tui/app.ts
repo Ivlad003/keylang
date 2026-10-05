@@ -49,7 +49,6 @@ import { PROPOSALS_DIR, proposalProblem } from "../proposals.ts";
 import { C4_FORMATS, C4_LEVELS, isC4Diagram } from "../c4-export.ts";
 import { c4OutProblem, exportTargetProblem, exportText, FEATURE_SLUG, featureReportOf, featureSlugOf, initSources, resultWithout, runOperation, WIRE_OUT, wireOutProblem, WRITING_KINDS, type CodeToSpecRequest, type CodeToSpecSource, type CommitGate, type CommitPlan, type DraftFlowRequest, type DraftLayoutRequest, type DraftRulesRequest, type ExplainBatchRequest, type ExplainPlanRequest, type ExportC4Request, type ExportFormat, type ExportSource, type OperationContext, type OperationRequest, type OperationResult, type SpecToCodeRequest } from "../operations.ts";
 import { CHECK_FORMATS, isCheckFormat } from "../check-format.ts";
-import { formatDiagnostic } from "../diag.ts";
 import { PARSE_FORMATS, type ParseFormat } from "../parse-format.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
@@ -68,7 +67,10 @@ import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, C4Form, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { batchState, contextTop, edgeItems, editorRows, featureItems, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, operationLabel, PANEL_MIN_COLS, readCursorRow, recordSummary, render, reportOverflow, resultsReportRows, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
+import { featureItems } from "./reports/check.ts";
+import { operationLabel, recordSummary, reportItems, resultsReportRows } from "./reports/records.ts";
+import type { ReportItem } from "./reports/rows.ts";
+import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render, reportOverflow, resultsSplit, ZOOM_HEAD, zoomListHeight, zoomButtons, type ZoomButton } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -5260,7 +5262,7 @@ export class App {
     if (this.state.results.entry === "analysis") return this.moveFinding(delta);
     const results = this.state.results;
     const rows = resultsReportRows(this.state);
-    const gaps = this.recordGaps();
+    const gaps = reportItems(this.state);
     // A parse or trace-plan report is long text under its items: ↑↓ select one, a page or the wheel scrolls the text.
     const kind = this.state.records[results.index]?.kind;
     const scrollText = (kind === "parse" || kind === "trace-plan") && Math.abs(delta) > 1;
@@ -5278,38 +5280,8 @@ export class App {
     results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - height)));
   }
 
-  /**
-   * The items of the selected record the arrows select after Tab: the gaps of
-   * a feature record, every result of a check record, the evidence of an
-   * explain-edge record (an edge with no file has an empty one), the
-   * diagnostics of a parse record; none for the others.
-   * `text` is the whole reason, which the report row may cut.
-   */
-  private recordGaps(): readonly { file: string; line: number; col: number; text: string }[] {
-    const result = this.state.records[this.state.results.index]?.result;
-    // The gaps and hints up the stage ladder, as the readiness screen lists them (c4-zoom/11).
-    if (result?.kind === "feature") return result.payload === null ? [] : featureItems(result.payload.report).map(({ item, hint }) => ({ file: item.file, line: item.line, col: item.col, text: `${hint ? "hint " : ""}${item.kind} ${item.id}: ${item.reason}` }));
-    if (result?.kind === "check") return (result.payload?.results ?? []).map((item: CheckResult) => ({ file: item.file, line: item.line, col: item.col, text: `${item.verdict} ${item.code ?? item.criterion}: ${item.evidence}` }));
-    if (result?.kind === "explain-edge" && result.payload !== null) return edgeItems(result.payload).map((item) => ({ ...item, file: item.file ?? "" }));
-    // A place an explanation names: the node, a related ID the snapshot or a planned declares, a flow, a rule line.
-    if (result?.kind === "explain" && result.payload?.subject === "node") return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
-    // A node the inventory lists: its code (or its planned line); a gone ID has no place.
-    if (result?.kind === "explain-plan" && result.payload !== null) {
-      const entries = result.payload.list === "stale-saved" ? result.payload.entries.map((entry) => ({ place: entry.place, text: `${entry.id}${entry.kind === "brief" ? " (brief)" : ""}: ${entry.state}` })) : result.payload.plan.map((entry) => ({ place: entry.place, text: `${entry.id} (${entry.level}): ${entry.reason}` }));
-      return entries.map(({ place, text }) => ({ file: place?.file ?? "", line: place?.line ?? 1, col: place?.col ?? 1, text }));
-    }
-    // A node of the batch's plan, with what became of it.
-    if (result?.kind === "explain-batch" && result.payload !== null) return result.payload.plan.map((entry) => ({ file: entry.place?.file ?? "", line: entry.place?.line ?? 1, col: entry.place?.col ?? 1, text: `${entry.id} (${entry.level}): ${batchState(result.payload!, entry.id)}` }));
-    if (result?.kind === "explain-llm" && result.payload !== null) return result.payload.links.map((link) => ({ file: link.file ?? "", line: link.line, col: link.col, text: link.text }));
-    // A diagnostic names its document as the paths did (`./a.md`): opened by its path from the root.
-    // A symbol of a trace plan: its declaration in the code (1-based line and column, as the snapshot has them).
-    if (result?.kind === "trace-plan") return (result.payload?.plan.symbols ?? []).map((symbol) => ({ file: symbol.file, line: symbol.line, col: symbol.col, text: `${symbol.id} ${symbol.file}:${symbol.line}:${symbol.col}` }));
-    if (result?.kind === "parse") return (result.payload?.diagnostics ?? []).map((d) => ({ file: toPosix(relative(this.state.root, resolve(this.state.root, d.file))), line: d.span.start.line, col: d.span.start.col, text: formatDiagnostic(d) }));
-    return [];
-  }
-
-  private selectedGap(): { file: string; line: number; col: number; text: string } | undefined {
-    return this.recordGaps()[this.state.results.gap];
+  private selectedGap(): ReportItem | undefined {
+    return reportItems(this.state)[this.state.results.gap];
   }
 
   /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
