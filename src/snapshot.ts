@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.ts";
@@ -512,11 +513,12 @@ export const GRAMMARS_MANIFEST = "grammars.json";
  * `@vscode/tree-sitter-wasm` of a checkout. `unknown` when neither is found.
  */
 export function grammarVersions(): Record<string, string> {
-  // Literal specifiers: the import graph sees which packages the snapshot id depends on.
+  // `require.resolve`, not `import.meta.resolve`: the trace adapter builds its snapshot on
+  // Node's module hooks thread, which has no `import.meta.resolve`, and its id must match.
+  const require = createRequire(import.meta.url);
   return {
-    "web-tree-sitter": installedVersion("web-tree-sitter", () => import.meta.resolve("web-tree-sitter")) ?? "unknown",
-    "@vscode/tree-sitter-wasm":
-      bundledGrammarsVersion() ?? installedVersion("@vscode/tree-sitter-wasm", () => import.meta.resolve("@vscode/tree-sitter-wasm/package.json")) ?? "unknown",
+    "web-tree-sitter": installedVersion("web-tree-sitter", () => require.resolve("web-tree-sitter")) ?? "unknown",
+    "@vscode/tree-sitter-wasm": bundledGrammarsVersion() ?? installedVersion("@vscode/tree-sitter-wasm", () => require.resolve("@vscode/tree-sitter-wasm/package.json")) ?? "unknown",
   };
 }
 
@@ -527,15 +529,15 @@ function bundledGrammarsVersion(): string | null {
 }
 
 /**
- * The version in the nearest `package.json` of that name above the resolved
- * module: a package's `exports` may not list `./package.json`
+ * The version in the nearest `package.json` of that name above the file
+ * `resolve` finds: a package's `exports` may not list `./package.json`
  * (web-tree-sitter does not), so reading it by name fails. Null when the
  * package is not installed.
  */
 function installedVersion(name: string, resolve: () => string): string | null {
   let dir: string;
   try {
-    dir = dirname(fileURLToPath(resolve()));
+    dir = dirname(resolve());
   } catch {
     return null;
   }
