@@ -24,7 +24,8 @@ import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
 import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
-import { collectMdFiles } from "./files.ts";
+import { errorText } from "./diag.ts";
+import { collectMdFiles, existingText } from "./files.ts";
 import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
 import { searchNodes } from "./node-search.ts";
@@ -50,7 +51,7 @@ export function currentAnalysis(root: string): () => Promise<Analysis> {
   let last: { key: string; analysis: Analysis } | null = null;
   return async () => {
     const configFile = join(root, CONFIG_FILE);
-    const raw = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
+    const raw = existingText(configFile);
     const config = loadConfig(root);
     const map = config.languages.length > 0 ? await generateMap(config, keepsFactCache(root) ? { persist: "changed" } : {}) : null;
     if (map?.factCache) saveFactCache(root, map.factCache);
@@ -201,7 +202,7 @@ export function mcpServer(root: string, version: string): McpServer {
       const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
       if (problem) return failure(`${target}: ${problem}`);
       const abs = join(root, target);
-      const before = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+      const before = existingText(abs) ?? "";
       writeProposal(root, target, text);
       return json({ status: "pending", proposal: `${PROPOSALS_DIR}/${target}`, diff: lineDiff(before, text) });
     },
@@ -282,7 +283,7 @@ export function mcpServer(root: string, version: string): McpServer {
           })),
         });
       } catch (error) {
-        return failure(error instanceof Error ? error.message : String(error));
+        return failure(errorText(error));
       }
     },
   );

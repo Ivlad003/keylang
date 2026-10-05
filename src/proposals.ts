@@ -12,6 +12,8 @@ import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync
 import { basename, dirname, join, posix, relative, resolve, win32 } from "node:path";
 import { within } from "./analyze.ts";
 import { toPosix } from "./config.ts";
+import { errorText } from "./diag.ts";
+import { existingText } from "./files.ts";
 import { languageOf } from "./languages.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { parse } from "./parser.ts";
@@ -59,7 +61,7 @@ export function proposalProblem(root: string, specDir: string, path: string, gen
   const problem = writeProblem(root, path, { ...(specDir === "" ? {} : { under: specDir }), generated: true });
   if (problem !== null) return problem.startsWith("leads out of") ? `leads out of ${specDir || "."}/ through a link` : problem;
   const lands = landing(resolve(root, path))!;
-  const text = existsSync(lands) ? readFileSync(lands, "utf8") : null;
+  const text = existingText(lands);
   const marker = text === null ? null : parse(path, text).generated;
   if (marker !== null || (text !== null && isGeneratedText(text)) || generated(path)) return generatedSpecProblem(marker, specDir);
   return null;
@@ -90,7 +92,7 @@ export function codeProposalProblem(root: string, path: string): string | null {
   const problem = writeProblem(root, path, { generated: true });
   if (problem !== null) return problem;
   const lands = landing(resolve(root, path))!;
-  const text = existsSync(lands) ? readFileSync(lands, "utf8") : null;
+  const text = existingText(lands);
   if (text?.startsWith(WIRE_MARKER)) return "a generated file: it is written by `keylang wire` only";
   if (text !== null && isGeneratedText(text)) return "a generated file: only its generator writes it";
   return null;
@@ -118,7 +120,7 @@ export interface ProposalBasis {
  */
 export function proposalWriteProblem(root: string, path: string, basis: ProposalBasis): string | null {
   const abs = resolve(root, path);
-  const target = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  const target = existingText(abs);
   if (target !== basis.target) return `${path}: ${basis.target === null ? "created" : target === null ? "removed" : "changed"} on disk while the proposal was prepared; nothing written`;
   const problem = writeProblem(root, `${PROPOSALS_DIR}/${path}`, { under: PROPOSALS_DIR, generated: true, expect: basis.proposal });
   if (problem === null) return null;
@@ -232,7 +234,7 @@ function readProposal(root: string, specDir: string, target: string): ReadPropos
   const problem = targetProblem(root, specDir, target);
   if (problem !== null) return { problem };
   const abs = landing(resolve(root, target))!;
-  return { proposal: readFileSync(entry.abs, "utf8"), before: existsSync(abs) ? readFileSync(abs, "utf8") : null };
+  return { proposal: readFileSync(entry.abs, "utf8"), before: existingText(abs) };
 }
 
 /** `+` and `-` lines `lineDiff` prints. */
@@ -314,7 +316,7 @@ export function rejectProposal(root: string, specDir: string, target: string): R
   if ("problem" in entry) return { state: "refused", reason: entry.problem };
   if (!entry.link && target.endsWith(".md") && targetProblem(root, specDir, target) === null) {
     const abs = landing(resolve(root, target))!;
-    countDecision(root, existsSync(abs) ? readFileSync(abs, "utf8") : "", readFileSync(entry.abs, "utf8"), "rejected");
+    countDecision(root, existingText(abs) ?? "", readFileSync(entry.abs, "utf8"), "rejected");
   }
   rmSync(entry.abs, { force: true });
   return { state: "removed" };
@@ -328,7 +330,7 @@ function dropProposal(root: string, target: string, text: string): string | null
     rmSync(entry.abs);
     return null;
   } catch (error) {
-    return `${PROPOSALS_DIR}/${target} could not be removed (${error instanceof Error ? error.message : String(error)})`;
+    return `${PROPOSALS_DIR}/${target} could not be removed (${errorText(error)})`;
   }
 }
 

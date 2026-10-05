@@ -3,9 +3,9 @@
 // The grammar is the ordinary `deny` / `allow`. Point `allow`s name packages
 // the layer already imports, and they beat `deny <layer> external`.
 
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
+import { readTextOrNull } from "./files.ts";
 import { sourceInputProblems, sourceInputs, type SourceInputs } from "./map.ts";
 import { isGeneratedText, landing, writeAtomic, writeProblem } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -103,7 +103,7 @@ export interface BaselinePlan {
 export function planBaseline(config: Config, snapshot: AnalysisSnapshot): BaselinePlan {
   const path = baselinePath(config);
   const text = baselineText(snapshot);
-  const current = readOrNull(join(config.root, path));
+  const current = readTextOrNull(join(config.root, path));
   const state = current === null ? "stale" : !isGeneratedText(current) ? "manual" : current.replace(/\r\n/g, "\n") === text ? "current" : "stale";
   const before = new Set(ruleLines(current ?? ""));
   const after = new Set(ruleLines(text));
@@ -143,12 +143,4 @@ export function commitBaseline(plan: BaselinePlan): void {
 /** The `- deny` / `- allow` lines of a rules text, in order. */
 function ruleLines(text: string): string[] {
   return text.split(/\r?\n/).filter((line) => /^- (?:deny|allow) /.test(line));
-}
-
-function readOrNull(abs: string): string | null {
-  try {
-    return readFileSync(abs, "utf8");
-  } catch {
-    return null;
-  }
 }

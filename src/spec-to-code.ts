@@ -11,7 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
 import { analyze, type Analysis } from "./analyze.ts";
 import { toPosix, type Config } from "./config.ts";
-import { formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { errorText, formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { existingText } from "./files.ts";
 import { globPrefix } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { placeFile } from "./graph.ts";
@@ -57,7 +58,7 @@ export async function specToCode(analysis: Analysis, id: string, into?: string, 
   if ("error" in target) throw new Error(target.error);
   const config = analysis.config;
   const abs = join(config.root, target.file);
-  const before = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  const before = existingText(abs);
   const lf = before?.replace(/\r\n/g, "\n") ?? null;
   const code = model ? await modelBody(analysis, model, target, id, lf, options) : stubFor(target, id);
   const joined = placeStub(lf, target, code, target.file.endsWith(".php") ? phpFileHead(analysis, target.file) : "");
@@ -117,7 +118,7 @@ export function plannedCodeTarget(analysis: Analysis, id: string, into?: string)
   try {
     placement = placeCode(analysis, parentId(id), into);
   } catch (error) {
-    return { field: "into", error: error instanceof Error ? error.message : String(error) };
+    return { field: "into", error: errorText(error) };
   }
   const { file, moduleId, owner } = placement;
   if (moduleId !== null) {

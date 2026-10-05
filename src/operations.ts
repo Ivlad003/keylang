@@ -16,7 +16,7 @@ import { filterChanged } from "./changed.ts";
 import { checkReportText, type CheckFormat, type CheckReportData } from "./check-format.ts";
 import { checkExitCode, checkReport, type CheckCounts, type CheckResult } from "./check-results.ts";
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, parseConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
-import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
+import { errorText, formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
 import { answerText, briefRequest, briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
 import { cliVersion, probeAgentClis, resolveAgent, selectedAgent, type AgentCliProbe, type AgentSource } from "./agent-cli.ts";
@@ -24,7 +24,7 @@ import { briefPlan, briefPlanText, defaultBriefJobs, staleInventory, staleInvent
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { codeExplanation, isDiagnosticCode, nodeExplanation, offlineExplanationText, savedAnswer, savedAnswerMiss, savedAnswerText, unknownIdMessage, type AnswerMiss, type ExplainLink, type OfflineExplanation, type SavedAnswer } from "./explain-offline.ts";
 import { explainDir, explanationOf, explanationPath, formatStoredExplanation, isStoredExplanation, loadBriefs, SYSTEM_ID, systemBaseline, type ExplanationDetail } from "./explanations.ts";
-import { collectMdFiles } from "./files.ts";
+import { collectMdFiles, existingText, readTextOrNull } from "./files.ts";
 import { formatSource } from "./fmt.ts";
 import { sectionNodes, walk, type Document } from "./ir.ts";
 import { parse } from "./parser.ts";
@@ -1571,7 +1571,7 @@ async function runMapCheck(request: MapCheckRequest, context: OperationContext):
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyMapCheck("failed", 2, messageOf(error));
+    return emptyMapCheck("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyMapCheck("cancelled", null);
   const map = analyzed.map;
@@ -1618,7 +1618,7 @@ async function runMap(request: MapRequest, context: OperationContext): Promise<O
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: true });
   } catch (error) {
-    return emptyMap("failed", 2, messageOf(error));
+    return emptyMap("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyMap("cancelled", null);
   const map = analyzed.map;
@@ -1638,7 +1638,7 @@ async function runMap(request: MapRequest, context: OperationContext): Promise<O
   try {
     plan = planMap(analyzed.config, map);
   } catch (error) {
-    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+    return { ...emptyMap("failed", 2, errorText(error)), payload };
   }
   if (plan.conflicts.length > 0) {
     payload.conflicts = plan.conflicts;
@@ -1648,14 +1648,14 @@ async function runMap(request: MapRequest, context: OperationContext): Promise<O
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+    return { ...emptyMap("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyMap("cancelled", null), payload };
   let problems: string[];
   try {
     problems = mapPlanProblems(plan);
   } catch (error) {
-    return { ...emptyMap("failed", 2, messageOf(error)), payload };
+    return { ...emptyMap("failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
@@ -1748,7 +1748,7 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, specs: [], withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyBaseline("failed", 2, messageOf(error));
+    return emptyBaseline("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyBaseline("cancelled", null);
   if (!analyzed.snapshot) return emptyBaseline("failed", 2, "baseline: no supported source files; run `keylang init`");
@@ -1756,7 +1756,7 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
   try {
     plan = planBaseline(analyzed.config, analyzed.snapshot);
   } catch (error) {
-    return emptyBaseline("failed", 2, messageOf(error));
+    return emptyBaseline("failed", 2, errorText(error));
   }
   const payload: BaselinePayload = {
     file: plan.path,
@@ -1779,14 +1779,14 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyBaseline("failed", 2, messageOf(error)), payload };
+    return { ...emptyBaseline("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyBaseline("cancelled", null), payload };
   let problems: string[];
   try {
     problems = baselinePlanProblems(plan);
   } catch (error) {
-    return { ...emptyBaseline("failed", 2, messageOf(error)), payload };
+    return { ...emptyBaseline("failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
@@ -1800,7 +1800,7 @@ async function runBaseline(request: BaselineRequest, context: OperationContext):
   try {
     commitBaseline(plan);
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return { ...emptyBaseline("failed", 2), payload, messages: [{ level: "error", text: `${plan.path}: ${payload.error}` }] };
   }
   payload.written = true;
@@ -1831,7 +1831,7 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
   try {
     plan = planAgents(request.root, request.harnesses);
   } catch (error) {
-    return emptyAgents("failed", 2, messageOf(error));
+    return emptyAgents("failed", 2, errorText(error));
   }
   const payload: AgentsPayload = {
     check: request.check,
@@ -1852,14 +1852,14 @@ async function runAgents(request: AgentsRequest, context: OperationContext): Pro
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyAgents("failed", 2, messageOf(error)), payload };
+    return { ...emptyAgents("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyAgents("cancelled", null), payload };
   let problems: string[];
   try {
     problems = agentsPlanProblems(plan);
   } catch (error) {
-    return { ...emptyAgents("failed", 2, messageOf(error)), payload };
+    return { ...emptyAgents("failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
@@ -1905,7 +1905,7 @@ export function initSources(root: string, label = "."): { config: Config } | { e
   try {
     config = loadConfig(root);
   } catch (error) {
-    return { error: messageOf(error) };
+    return { error: errorText(error) };
   }
   // Nothing to describe is a usage error (like `map`), not a finding.
   if (config.languages.length === 0) return { error: `no supported source files found under ${label} (TypeScript, JavaScript, Python, Rust)` };
@@ -1951,9 +1951,9 @@ function planGitignore(root: string): GitignorePlan {
     const problem = writeProblem(root, GITIGNORE_FILE);
     if (problem !== null) return { current: null, text: null, stage: { ...stage, refused: problem } };
     const at = landing(join(root, GITIGNORE_FILE));
-    current = at !== null && existsSync(at) ? readFileSync(at, "utf8") : null;
+    current = at === null ? null : existingText(at);
   } catch (error) {
-    return { current: null, text: null, stage: { ...stage, error: messageOf(error) } };
+    return { current: null, text: null, stage: { ...stage, error: errorText(error) } };
   }
   const listed = current !== null && ignoresKeylangCache(current);
   return { current, text: listed ? null : withKeylangCacheIgnored(current), stage: { ...stage, listed } };
@@ -2051,7 +2051,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyInit("failed", 2, messageOf(error)), payload };
+    return { ...emptyInit("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyInit("cancelled", null), payload };
   const messages: OperationMessage[] = [];
@@ -2067,7 +2067,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
     try {
       writeAtomic(join(root, CONFIG_FILE), configToJson({ ...config, layers: layout.layers }));
     } catch (error) {
-      payload.config.error = messageOf(error);
+      payload.config.error = errorText(error);
       return { ...emptyInit("failed", 2), payload, messages: [...messages, { level: "error", text: `${CONFIG_FILE}: ${payload.config.error}; nothing else was written` }] };
     }
     payload.config.written = true;
@@ -2082,7 +2082,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
       const refused = commitGitignore(root, ignore);
       payload.gitignore = refused === null ? { ...ignore.stage, listed: true, written: true } : { ...ignore.stage, refused };
     } catch (error) {
-      payload.gitignore = { ...ignore.stage, error: messageOf(error) };
+      payload.gitignore = { ...ignore.stage, error: errorText(error) };
     }
     if (payload.gitignore.written) written.push(GITIGNORE_FILE);
   }
@@ -2148,7 +2148,7 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
         source = readFileSync(abs, "utf8");
       } catch (error) {
         file.state = "unreadable";
-        file.error = messageOf(error);
+        file.error = errorText(error);
         continue;
       }
       // The model's text is kept as it was written: formatting it would change a saved answer.
@@ -2173,7 +2173,7 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
       }
     }
   } catch (error) {
-    return emptyFmt("failed", 2, messageOf(error));
+    return emptyFmt("failed", 2, errorText(error));
   }
   const payload: FmtPayload = { check: request.check, files };
   const finish = (status: OperationStatus, written: string[]): OperationEnvelope<"fmt"> => {
@@ -2189,7 +2189,7 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
     await context.beforeCommit?.();
   } catch (error) {
     const stopped = finish("failed", []);
-    return { ...stopped, exitCode: 2, messages: [...stopped.messages, { level: "error", text: messageOf(error) }] };
+    return { ...stopped, exitCode: 2, messages: [...stopped.messages, { level: "error", text: errorText(error) }] };
   }
   if (context.signal?.aborted) return finish("cancelled", []);
   const written: string[] = [];
@@ -2207,7 +2207,7 @@ async function runFmt(request: FmtRequest, context: OperationContext): Promise<O
       written.push(step.file.path);
     } catch (error) {
       step.file.state = "failed";
-      step.file.error = messageOf(error);
+      step.file.error = errorText(error);
     }
   }
   return finish(cancelled ? "cancelled" : "completed", written);
@@ -2295,7 +2295,7 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     specs = wireSpecInputs(loadConfig(request.root));
     analyzed = await (context.analyze ?? analyze)({ root: request.root, withoutEvidence: true, persistFacts: false });
   } catch (error) {
-    return emptyWire("failed", 2, messageOf(error));
+    return emptyWire("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyWire("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -2315,9 +2315,9 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
   try {
     text = generateWire({ root: request.root, out, wires, snapshot });
     const abs = landing(join(request.root, out));
-    current = abs !== null && existsSync(abs) ? readFileSync(abs, "utf8") : null;
+    current = abs === null ? null : existingText(abs);
   } catch (error) {
-    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+    return { ...emptyWire("failed", 2, errorText(error)), payload };
   }
   if (current !== null && !current.startsWith(WIRE_MARKER)) {
     payload.state = "manual";
@@ -2332,7 +2332,7 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+    return { ...emptyWire("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyWire("cancelled", null), payload };
   let problems: string[];
@@ -2342,7 +2342,7 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     const sources = sourceInputProblems(analyzed.config, inputs, "the wiring").filter((line) => !line.startsWith(`${out}: `));
     problems = [...(target === null ? [] : [`${out}: ${target}`]), ...wireSpecProblems(analyzed.config, specs), ...sources];
   } catch (error) {
-    return { ...emptyWire("failed", 2, messageOf(error)), payload };
+    return { ...emptyWire("failed", 2, errorText(error)), payload };
   }
   if (problems.length > 0) {
     payload.refused = problems;
@@ -2359,7 +2359,7 @@ async function runWire(request: WireRequest, context: OperationContext): Promise
     // Missing directories are created; a CRLF file keeps CRLF, as `keylang wire` always wrote it.
     writeAtomic(abs, text);
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return { ...emptyWire("failed", 2), payload, messages: [{ level: "error", text: `${out}: ${payload.error}` }] };
   }
   payload.written = true;
@@ -2378,7 +2378,7 @@ export function wireOutProblem(root: string, out: string): string | null {
     const problem = writeProblem(root, out, { generated: true });
     return problem === null ? null : `wire: --out ${out}: ${problem}`;
   } catch (error) {
-    return `wire: --out ${out}: ${messageOf(error)}`;
+    return `wire: --out ${out}: ${errorText(error)}`;
   }
 }
 
@@ -2431,14 +2431,6 @@ function wireSpecProblems(config: Config, before: WireSpecInputs): string[] {
   return problems;
 }
 
-function readTextOrNull(abs: string): string | null {
-  try {
-    return readFileSync(abs, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 function emptyCheck(status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string): OperationEnvelope<"check"> {
   return { kind: "check", status, exitCode, payload: null, messages: error === undefined ? [] : [{ level: "error", text: error }], written: [], removed: [], proposals: [] };
 }
@@ -2464,7 +2456,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return emptyCheck("failed", 2, messageOf(error));
+    return emptyCheck("failed", 2, errorText(error));
   }
   const specDir = join(request.root, config.dir);
   if (request.paths.length === 0 && !existsSync(specDir)) return emptyCheck("failed", 2, `no \`${config.dir}/\` directory here; run \`keylang init\` or pass paths`);
@@ -2478,7 +2470,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
     try {
       git = gitChangedFiles(request.root, since);
     } catch (error) {
-      return emptyCheck("failed", 2, messageOf(error));
+      return emptyCheck("failed", 2, errorText(error));
     }
   }
   // Specs outside the repository's spec directory (examples, a slide) have no code to check against.
@@ -2498,7 +2490,7 @@ async function runCheck(request: CheckRequest, context: OperationContext): Promi
       ...(withoutCode ? { withoutCode: true } : {}),
     });
   } catch (error) {
-    return emptyCheck("failed", 2, messageOf(error));
+    return emptyCheck("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyCheck("cancelled", null);
   const snapshotId = analyzed.snapshot?.snapshotId ?? null;
@@ -2558,7 +2550,7 @@ async function runExplainEdge(request: ExplainEdgeRequest, context: OperationCon
   try {
     analyzed = await analyzeSaved({ root: request.root, specs: [] });
   } catch (error) {
-    return emptyExplainEdge("failed", 2, messageOf(error));
+    return emptyExplainEdge("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExplainEdge("cancelled", null);
   const { snapshot } = analyzed;
@@ -2603,7 +2595,7 @@ async function runExplain(request: ExplainRequest, context: OperationContext): P
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplain("failed", 2, messageOf(error));
+    return emptyExplain("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExplain("cancelled", null);
   const old = oldExplanations(analyzed.config.root);
@@ -2649,7 +2641,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainLlm("failed", 2, messageOf(error));
+    return emptyExplainLlm("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
   const config = analyzed.config;
@@ -2710,7 +2702,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     answer = await client.complete(explanationRequest(analyzed, found.summary, { lang, detail, briefs: loadBriefs(config) }), { ...(context.signal ? { signal: context.signal } : {}), onModel: (model) => (reported = model) });
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptyExplainLlm("cancelled", null);
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
   if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
@@ -2727,7 +2719,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   try {
     gate = await context.beforeCommit?.({ targets: [file] });
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
   if (context.signal?.aborted) return { ...emptyExplainLlm("cancelled", null), payload };
@@ -2741,7 +2733,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     const target = writeProblem(root, file, { under: explainDir(config), expect: savedBytes });
     problems = [...(target === null ? [] : [`${file}: ${target}`]), ...sourceInputProblems(config, inputs, "the explanation"), ...specProblems(root, specs, "the explanation")];
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
   if (problems.length > 0) return refuse(problems);
@@ -2749,7 +2741,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
   try {
     writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return failed(2, [{ level: "error", text: payload.error }]);
   }
   payload.written = file;
@@ -2782,7 +2774,7 @@ async function runExplainPlan(request: ExplainPlanRequest, context: OperationCon
   try {
     analyzed = await analyzeSaved({ root: request.root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainPlan("failed", 2, messageOf(error));
+    return emptyExplainPlan("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExplainPlan("cancelled", null);
   const old = oldExplanations(analyzed.config.root);
@@ -2841,7 +2833,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExplainBatch("failed", 2, messageOf(error));
+    return emptyExplainBatch("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExplainBatch("cancelled", null);
   const config = analyzed.config;
@@ -2884,7 +2876,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     try {
       return [...sourceInputProblems(config, inputs, "the batch"), ...specProblems(root, specs, "the batch")];
     } catch (error) {
-      return [`the sources could not be read again: ${messageOf(error)}`];
+      return [`the sources could not be read again: ${errorText(error)}`];
     }
   };
   const files = new Map(plan.map((entry) => [entry.id, explanationPath(config, entry.id, "brief")]));
@@ -2924,7 +2916,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     } catch (error) {
       if (cancelled()) stop("cancelled");
       if (error instanceof LlmCancelled || signal.aborted) return void notStarted.add(id);
-      return finish(id, messageOf(error));
+      return finish(id, errorText(error));
     }
     if (cancelled()) stop("cancelled");
     if (payload.stopped !== null) return void notStarted.add(id);
@@ -2933,7 +2925,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     // Asked once, before the first write: from here on the session defers its own writes and Cancel stops between briefs.
     gate ??= Promise.resolve()
       .then(() => context.beforeCommit?.({ targets: [...files.values()] }))
-      .catch((error: unknown) => ({ refused: [messageOf(error)] }));
+      .catch((error: unknown) => ({ refused: [errorText(error)] }));
     const answered = await gate;
     if (cancelled()) stop("cancelled");
     if (answered && answered.refused.length > 0) stop("refused", answered.refused);
@@ -2952,7 +2944,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     try {
       target = writeProblem(root, file, { under: explainDir(config), expect: expected.get(file) ?? null });
     } catch (error) {
-      return finish(id, messageOf(error));
+      return finish(id, errorText(error));
     }
     if (target !== null) return finish(id, `${file}: ${target}`);
     // The repository's baseline reads the layer briefs this batch just wrote.
@@ -2961,7 +2953,7 @@ async function runExplainBatch(request: ExplainBatchRequest, context: OperationC
     try {
       writeAtomic(landing(resolve(root, file))!, formatStoredExplanation(e));
     } catch (error) {
-      return finish(id, messageOf(error));
+      return finish(id, errorText(error));
     }
     // A parent asked later reads this brief in its members.
     briefs.set(id, e);
@@ -3075,14 +3067,14 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
   try {
     await context.beforeCommit?.();
   } catch (error) {
-    return { ...emptyExport("failed", 2, messageOf(error)), payload };
+    return { ...emptyExport("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyExport("cancelled", null), payload };
   let problem: string | null;
   try {
     problem = exportTargetProblem(request.root, request.path) ?? writeProblem(request.root, request.path, { expect: request.expect });
   } catch (error) {
-    return { ...emptyExport("failed", 2, messageOf(error)), payload };
+    return { ...emptyExport("failed", 2, errorText(error)), payload };
   }
   if (problem !== null) {
     payload.refused = [`${request.path}: ${problem}`];
@@ -3095,7 +3087,7 @@ async function runExport(request: ExportRequest, context: OperationContext): Pro
     // The CLI's bytes: no CRLF carried over from a file it replaces.
     writeAtomic(abs, text, { exact: true });
   } catch (error) {
-    payload.error = messageOf(error);
+    payload.error = errorText(error);
     return { ...emptyExport("failed", 2), payload, messages: [{ level: "error", text: `${request.path}: ${payload.error}` }] };
   }
   payload.written = true;
@@ -3143,7 +3135,7 @@ async function runParse(request: ParseRequest, context: OperationContext): Promi
       } else documents.push(parse(file, text));
     }
   } catch (error) {
-    return emptyParse("failed", 2, messageOf(error));
+    return emptyParse("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyParse("cancelled", null);
   const diagnostics = documents.flatMap((doc) => doc.diagnostics);
@@ -3172,7 +3164,7 @@ async function runTracePlan(request: TracePlanRequest, context: OperationContext
   try {
     found = await tracePlan(loadConfig(request.root), request.flow);
   } catch (error) {
-    return emptyTracePlan("failed", 2, messageOf(error));
+    return emptyTracePlan("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyTracePlan("cancelled", null);
   const { plan, omitted } = found;
@@ -3228,7 +3220,7 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftFlow("failed", 2, messageOf(error));
+    return emptyDraftFlow("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyDraftFlow("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -3242,14 +3234,14 @@ async function runDraftFlow(request: DraftFlowRequest, context: OperationContext
   const algo = draftFlow(snapshot, trigger, request.name !== undefined ? { name: request.name } : {});
   const setup = await modelSetup(mode, analyzed.config);
   if ("error" in setup) return emptyDraftFlow("failed", 2, setup.error);
-  const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
-  const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
+  const specDir = rootRelative(root, analyzed.config.dir);
+  const generated = generatedIn(analyzed.docs);
   // The target and its waiting proposal as they are now, before the model answers: the basis of the write.
   let basis: FlowCandidate;
   try {
     basis = flowCandidate(root, specDir, generated, algo, request.into);
   } catch (error) {
-    return emptyDraftFlow("failed", 2, messageOf(error));
+    return emptyDraftFlow("failed", 2, errorText(error));
   }
   // A refusal before the model is asked: the payload is the algo candidate, so the target's state stays visible.
   const early = (exitCode: 1 | 2, error: string, refused: string[] = []): OperationEnvelope<"draft-flow"> => ({
@@ -3349,7 +3341,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftRules("failed", 2, messageOf(error));
+    return emptyDraftRules("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyDraftRules("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -3362,15 +3354,15 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
   const algo = draftRules(snapshot, cyclic);
   const setup = await modelSetup(mode, analyzed.config, "draft rules");
   if ("error" in setup) return emptyDraftRules("failed", 2, setup.error);
-  const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
-  const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
+  const specDir = rootRelative(root, analyzed.config.dir);
+  const generated = generatedIn(analyzed.docs);
   let basis: RulesCandidate;
   try {
     basis = rulesCandidate(root, specDir, generated, algo, request.into);
   } catch (error) {
     // A target that cannot be read (a directory) fails a proposal; a preview, like `--print`, never needs it.
-    if (request.output === "proposal") return emptyDraftRules("failed", 2, messageOf(error));
-    basis = { rules: algo, target: toPosix(request.into ?? `${specDir}/rules.md`), problem: messageOf(error), before: null, pending: null, text: null };
+    if (request.output === "proposal") return emptyDraftRules("failed", 2, errorText(error));
+    basis = { rules: algo, target: toPosix(request.into ?? `${specDir}/rules.md`), problem: errorText(error), before: null, pending: null, text: null };
   }
   const fallbackNote: OperationMessage[] = setup.fallback === null ? [] : [{ level: "warning", text: setup.fallback }];
   const nothingWritten: OperationMessage = { level: "info", text: "nothing was written; the target and any proposal waiting for it are kept" };
@@ -3398,7 +3390,7 @@ async function runDraftRules(request: DraftRulesRequest, context: OperationConte
       model = { agent: client.agent, counts: drafted.counts, conflicts: drafted.conflicts };
     } catch (error) {
       if (error instanceof LlmCancelled || context.signal?.aborted) return emptyDraftRules("cancelled", null);
-      return emptyDraftRules("failed", 2, messageOf(error));
+      return emptyDraftRules("failed", 2, errorText(error));
     }
   }
   const candidate: RulesCandidate = { ...basis, rules, text: basis.problem === null ? withRules(basis.before, rules) : null };
@@ -3456,7 +3448,7 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
   try {
     config = loadConfig(root);
   } catch (error) {
-    return emptyDraftLayout("failed", 2, messageOf(error));
+    return emptyDraftLayout("failed", 2, errorText(error));
   }
   const configExists = existsSync(join(root, CONFIG_FILE));
   const setup = await modelSetup(mode, config, "draft map");
@@ -3475,7 +3467,7 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyDraftLayout("failed", 2, messageOf(error));
+    return emptyDraftLayout("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
   context.onProgress?.({ text: `asking ${client.agent}` });
@@ -3486,7 +3478,7 @@ async function runDraftLayout(request: DraftLayoutRequest, context: OperationCon
     layers = await draftLayoutWithModel(analyzed, client, analyzed.snapshot?.manifest.files.map((file) => file.path) ?? [], context.signal ? { signal: context.signal } : {});
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptyDraftLayout("cancelled", null);
-    return emptyDraftLayout("failed", 2, messageOf(error));
+    return emptyDraftLayout("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyDraftLayout("cancelled", null);
   const preview = configToJson({ ...analyzed.config, layers: new Map(Object.entries(layers)), guessed: false });
@@ -3585,7 +3577,7 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyCodeToSpec("failed", 2, messageOf(error));
+    return emptyCodeToSpec("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyCodeToSpec("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -3601,7 +3593,7 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
     try {
       changes = changedFlows(snapshot, gitChangedLines(root, since), describedIds(analyzed.docs));
     } catch (error) {
-      return emptyCodeToSpec("failed", 2, messageOf(error));
+      return emptyCodeToSpec("failed", 2, errorText(error));
     }
     described = changes.named;
     if (described.length > 0) notes.push({ level: "warning", text: `changed and already in flows (review those): ${described.join(", ")}` });
@@ -3615,14 +3607,14 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
       const position = codeToSpec(snapshot, file!, line);
       drafted = { file: file!, line, since: null, name: position.name, drafts: position.drafts };
     } catch (error) {
-      return emptyCodeToSpec("failed", 2, messageOf(error));
+      return emptyCodeToSpec("failed", 2, errorText(error));
     }
   }
   const setup = await modelSetup(mode, analyzed.config, "code-to-spec");
   if ("error" in setup) return { ...emptyCodeToSpec("failed", 2), messages: [...notes, { level: "error", text: setup.error }] };
   if (setup.fallback !== null) notes.push({ level: "warning", text: setup.fallback });
-  const specDir = toPosix(relative(root, resolve(root, analyzed.config.dir)));
-  const generated = (path: string): boolean => analyzed.docs.some((doc) => doc.path === path && doc.generated !== null);
+  const specDir = rootRelative(root, analyzed.config.dir);
+  const generated = generatedIn(analyzed.docs);
   const target = toPosix(request.into ?? `${specDir}/flows/${drafted.name}.md`);
   // The target and its waiting proposal as they are now, before any model answers: the basis of the write.
   let basis: CodeToSpecCandidate;
@@ -3630,7 +3622,7 @@ async function runCodeToSpec(request: CodeToSpecRequest, context: OperationConte
   try {
     basis = codeToSpecCandidate(root, specDir, generated, drafted, target);
   } catch (error) {
-    unreadable = messageOf(error);
+    unreadable = errorText(error);
     basis = { ...codePosition(drafted, target), problem: unreadable, before: null, pending: null, text: null };
   }
   const draftedMode = setup.client === null ? "algo" : mode;
@@ -3760,7 +3752,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptySpecToCode("failed", 2, messageOf(error));
+    return emptySpecToCode("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -3803,7 +3795,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
     candidate = specToCodeCandidate(root, await specToCode(analyzed, request.id, into, counted, context.signal ? { signal: context.signal } : {}), basis);
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptySpecToCode("cancelled", null);
-    return emptySpecToCode("failed", 2, messageOf(error));
+    return emptySpecToCode("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptySpecToCode("cancelled", null);
   const tests = candidate.targets.length - 1;
@@ -3840,7 +3832,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
   try {
     gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
   } catch (error) {
-    return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: messageOf(error) }] };
+    return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
   }
   if (context.signal?.aborted) return { ...emptySpecToCode("cancelled", null), payload };
   const refused: string[] = gate ? [...gate.refused] : [];
@@ -3854,7 +3846,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
       refused.push(...sourceInputProblems(analyzed.config, basis, "the candidate"));
       refused.push(...specProblems(root, basis.specs));
     } catch (error) {
-      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: messageOf(error) }] };
+      return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: errorText(error) }] };
     }
   }
   if (refused.length > 0) {
@@ -3875,7 +3867,7 @@ async function runSpecToCode(request: SpecToCodeRequest, context: OperationConte
       writeProposal(root, target.file, target.after, { target: target.before, proposal: target.pending });
     } catch (error) {
       payload.proposals = [...written];
-      payload.error = messageOf(error);
+      payload.error = errorText(error);
       return { ...emptySpecToCode("failed", 2), payload, messages: [...notes, { level: "error", text: payload.error }, ...sofar()], proposals: [...written] };
     }
     written.push(store);
@@ -3954,7 +3946,7 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
     try {
       problems = applyProblems(request);
     } catch (error) {
-      return { ...emptyApplyCode("failed", 2, messageOf(error)), payload };
+      return { ...emptyApplyCode("failed", 2, errorText(error)), payload };
     }
     if (problems.policy !== null) return { ...emptyApplyCode("failed", 2, problems.policy), payload };
     if (problems.refused.length === 0) return null;
@@ -3969,7 +3961,7 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
   try {
     gate = await context.beforeCommit?.({ targets: candidate.targets.map((target) => target.file) });
   } catch (error) {
-    return { ...emptyApplyCode("failed", 2, messageOf(error)), payload };
+    return { ...emptyApplyCode("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyApplyCode("cancelled", null), payload };
   if (gate && gate.refused.length > 0) {
@@ -4003,7 +3995,7 @@ async function runApplyCode(request: ApplyCodeRequest, context: OperationContext
       writeAtomic(landing(join(root, target.file))!, target.after);
     } catch (error) {
       step.state = "failed";
-      step.error = messageOf(error);
+      step.error = errorText(error);
       payload.error = step.error;
       return stopped("failed", step.error);
     }
@@ -4057,7 +4049,7 @@ async function modelFlows(
       drafts.push({ name: answer.name, text: answer.text, steps: flowSteps(answer.text, trigger) });
     } catch (error) {
       if (error instanceof LlmCancelled || context.signal?.aborted) return { cancelled: true };
-      return { error: messageOf(error) };
+      return { error: errorText(error) };
     }
   }
   return { drafts, model };
@@ -4114,7 +4106,7 @@ async function commitProposal(commit: ProposalCommit, context: OperationContext)
   try {
     gate = await context.beforeCommit?.({ targets: [target] });
   } catch (error) {
-    return { failed: messageOf(error), writing: false };
+    return { failed: errorText(error), writing: false };
   }
   if (context.signal?.aborted) return { cancelled: true };
   if (gate && gate.refused.length > 0) return { refused: gate.refused };
@@ -4124,7 +4116,7 @@ async function commitProposal(commit: ProposalCommit, context: OperationContext)
     const written = problem !== null ? `${target}: ${problem}` : proposalWriteProblem(root, target, expected);
     problems = [...(written === null ? [] : [written]), ...sourceInputProblems(commit.config, commit.inputs, "the draft")];
   } catch (error) {
-    return { failed: messageOf(error), writing: false };
+    return { failed: errorText(error), writing: false };
   }
   if (problems.length > 0) return { refused: problems };
   const store = `${PROPOSALS_DIR}/${target}`;
@@ -4132,7 +4124,7 @@ async function commitProposal(commit: ProposalCommit, context: OperationContext)
   try {
     writeProposal(root, target, commit.text, expected);
   } catch (error) {
-    return { failed: messageOf(error), writing: true };
+    return { failed: errorText(error), writing: true };
   }
   return { proposal: store };
 }
@@ -4143,7 +4135,7 @@ function countProposed(root: string, counts: Record<DraftStatus, number>): strin
     updateStats(root, (stats) => addDrafts(stats, counts, "proposed"));
     return null;
   } catch (error) {
-    return messageOf(error);
+    return errorText(error);
   }
 }
 
@@ -4175,7 +4167,7 @@ async function modelDraft(request: DraftFlowRequest, mode: "llm" | "hybrid", ana
     };
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return { cancelled: true };
-    return { error: messageOf(error) };
+    return { error: errorText(error) };
   }
 }
 
@@ -4206,9 +4198,14 @@ function draftNotes(payload: DraftFlowPayload): OperationMessage[] {
   return notes;
 }
 
-/** The file's text, null when there is none; a directory or an unreadable file throws. */
-function existingText(abs: string): string | null {
-  return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+/** `path` as the caller typed it (relative to the root, or absolute): relative to the root, POSIX. */
+function rootRelative(root: string, path: string): string {
+  return toPosix(relative(root, resolve(root, path)));
+}
+
+/** Whether the analysis knows a spec path as a generated document (the map): what `proposalProblem` asks. */
+function generatedIn(docs: readonly Document[]): (path: string) => boolean {
+  return (path) => docs.some((doc) => doc.path === path && doc.generated !== null);
 }
 
 export function checkSkipNote(path: string): string {
@@ -4258,7 +4255,7 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return emptyFeature("failed", 2, messageOf(error));
+    return emptyFeature("failed", 2, errorText(error));
   }
   const file = `${config.dir}/features/${request.slug}.md`;
   if (!existsSync(join(request.root, file))) return emptyFeature("failed", 2, `feature: ${file}: not found`);
@@ -4266,14 +4263,14 @@ async function runFeature(request: FeatureRequest, context: OperationContext): P
   try {
     analyzed = await (context.analyze ?? analyze)({ root: request.root, saveFacts: true });
   } catch (error) {
-    return emptyFeature("failed", 2, messageOf(error));
+    return emptyFeature("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyFeature("cancelled", null);
   let base: FeatureBase;
   try {
     base = readFeatureBase(request.root, file, request.since, "feature");
   } catch (error) {
-    return emptyFeature("failed", 2, messageOf(error));
+    return emptyFeature("failed", 2, errorText(error));
   }
   const report = featureReportOf(analyzed, request.slug, base);
   if (report === null) return emptyFeature("failed", 2, `feature: ${file}: not a spec keylang read`);
@@ -4371,7 +4368,7 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyFeatureQuestions("failed", 2, messageOf(error));
+    return emptyFeatureQuestions("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
   const config = analyzed.config;
@@ -4381,8 +4378,8 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
   const setup = await modelSetup("llm", config, "feature questions");
   if ("error" in setup) return emptyFeatureQuestions("failed", 2, setup.error.replace(" --mode llm", ""));
   const client = setup.client!;
-  const specDir = toPosix(relative(root, resolve(root, config.dir)));
-  const generated = (path: string): boolean => analyzed.docs.some((item) => item.path === path && item.generated !== null);
+  const specDir = rootRelative(root, config.dir);
+  const generated = generatedIn(analyzed.docs);
   const problem = proposalProblem(root, specDir, file, generated);
   const store = `${PROPOSALS_DIR}/${file}`;
   const before = problem === null ? existingText(join(root, file)) : null;
@@ -4412,7 +4409,7 @@ async function runFeatureQuestions(request: FeatureQuestionsRequest, context: Op
     );
   } catch (error) {
     if (error instanceof LlmCancelled || context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
-    return emptyFeatureQuestions("failed", 2, messageOf(error));
+    return emptyFeatureQuestions("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyFeatureQuestions("cancelled", null);
   const { questions, dropped } = questionLines(answer);
@@ -4446,12 +4443,12 @@ function emptyExportC4(status: OperationStatus, exitCode: 0 | 1 | 2 | null, erro
  * nothing outside the repository; a form may call it as the path is typed.
  */
 export function c4OutProblem(root: string, out: string): string | null {
-  const path = toPosix(relative(root, resolve(root, out)));
+  const path = rootRelative(root, out);
   try {
     const problem = writeProblem(root, path, { generated: true });
     return problem === null ? null : `export c4: --out ${out}: ${problem}; nothing written`;
   } catch (error) {
-    return `export c4: --out ${out}: ${messageOf(error)}`;
+    return `export c4: --out ${out}: ${errorText(error)}`;
   }
 }
 
@@ -4479,7 +4476,7 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   try {
     analyzed = await (context.analyze ?? analyze)({ root, withoutEvidence: true });
   } catch (error) {
-    return emptyExportC4("failed", 2, messageOf(error));
+    return emptyExportC4("failed", 2, errorText(error));
   }
   if (context.signal?.aborted) return emptyExportC4("cancelled", null);
   const snapshot = analyzed.snapshot;
@@ -4494,11 +4491,11 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   try {
     text = renderC4(snapshot, brief, { format, level, ...(request.layer !== undefined ? { layer: request.layer } : {}) });
   } catch (error) {
-    return emptyExportC4("failed", 2, messageOf(error));
+    return emptyExportC4("failed", 2, errorText(error));
   }
   const payload: ExportC4Payload = { text, format, level, layer: request.layer ?? null, out: null };
   if (request.out === undefined) return { ...emptyExportC4("completed", 0), payload };
-  const out = toPosix(relative(root, resolve(root, request.out)));
+  const out = rootRelative(root, request.out);
   // Checked again right before the read: a link may have changed during the analysis.
   const problem = c4OutProblem(root, request.out);
   if (problem !== null) return { ...emptyExportC4("failed", 2, problem), payload };
@@ -4506,7 +4503,7 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   try {
     current = existingText(resolve(root, out));
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, `${out}: ${messageOf(error)}`), payload };
+    return { ...emptyExportC4("failed", 2, `${out}: ${errorText(error)}`), payload };
   }
   if (current !== null && !isC4Diagram(current)) return { ...emptyExportC4("failed", 2, `${out}: not a diagram \`keylang export c4\` wrote (no keylang:generated marker on its first line); nothing written`), payload };
   context.onProgress?.({ text: "waiting to write" });
@@ -4514,14 +4511,14 @@ async function runExportC4(request: ExportC4Request, context: OperationContext):
   try {
     gate = await context.beforeCommit?.({ targets: [out] });
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, messageOf(error)), payload };
+    return { ...emptyExportC4("failed", 2, errorText(error)), payload };
   }
   if (context.signal?.aborted) return { ...emptyExportC4("cancelled", null), payload };
   if (gate && gate.refused.length > 0) return { ...emptyExportC4("failed", 2), payload, messages: gate.refused.map((line) => ({ level: "error" as const, text: line })) };
   try {
     safeWrite(root, out, text, { generated: true, expect: current });
   } catch (error) {
-    return { ...emptyExportC4("failed", 2, messageOf(error)), payload };
+    return { ...emptyExportC4("failed", 2, errorText(error)), payload };
   }
   return { ...emptyExportC4("completed", 0), payload: { ...payload, out }, written: [out], messages: [{ level: "info", text: `${out}: written` }] };
 }
@@ -4558,7 +4555,7 @@ async function runDoctor(request: DoctorRequest, context: OperationContext): Pro
   try {
     config = loadConfig(request.root);
   } catch (error) {
-    return { ...emptyDoctor("failed", 2), messages: [{ level: "error", text: messageOf(error) }] };
+    return { ...emptyDoctor("failed", 2), messages: [{ level: "error", text: errorText(error) }] };
   }
   // The heavy adapters load only for this operation, as they did in the CLI.
   const { llmClient } = await import("./llm.ts");
@@ -4605,7 +4602,7 @@ async function agentState(config: Config, llmClient: (agent: string | null, opti
   try {
     resolved = resolveAgent(config.agent, process.env, homedir());
   } catch (error) {
-    return { configured: config.agent, source: null, state: "error", detail: messageOf(error) };
+    return { configured: config.agent, source: null, state: "error", detail: errorText(error) };
   }
   const { agent: configured, source } = resolved;
   if (configured === null) return { configured: null, source: null, state: "missing", detail: "not configured (keylang.json `agent`, KEYLANG_AGENT or ~/.config/keylang/agents.json)" };
@@ -4618,7 +4615,7 @@ async function agentState(config: Config, llmClient: (agent: string | null, opti
     const version = await cliVersion(bin);
     return { configured, source, state: "ok", detail: `${bin} (${version ?? "no version"}); login is checked on the first request` };
   } catch (error) {
-    return { configured, source, state: "error", detail: messageOf(error) };
+    return { configured, source, state: "error", detail: errorText(error) };
   }
 }
 
@@ -4635,7 +4632,7 @@ function engineState(
       ? { resolved: { kind: "openrouter", model: found.model }, missing: null, error: null }
       : { resolved: { kind: "local", modelFile: found.modelFile }, missing: null, error: null };
   } catch (error) {
-    return { resolved: null, missing: null, error: messageOf(error) };
+    return { resolved: null, missing: null, error: errorText(error) };
   }
 }
 
@@ -4671,8 +4668,4 @@ function doctorLines(payload: DoctorPayload): string[] {
     `microphone (decibri): ${microphone}`,
     ...install,
   ];
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
