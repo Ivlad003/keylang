@@ -2347,154 +2347,109 @@ export class App {
 
   /**
    * Starts an operation that reads the saved files: after the save step when
-   * buffers are dirty (design §2.5), then as the session's one explicit
-   * operation. A second one is refused while one runs.
+   * buffers it reads are dirty or it names what it writes (design §2.5), then
+   * as the session's one explicit operation. A second one is refused while
+   * one runs.
    */
   private requestOperation(action: string, request: OperationRequest): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
       return;
     }
-    if (request.kind === "baseline") {
-      // The baseline reads the code and the saved keylang.json, not the specs. The form already
-      // explained the write, so only a dirty keylang.json opens the step, which names the target.
-      const isConfig = (path: string): boolean => path === CONFIG_FILE;
-      const writes = !request.check && this.dirtyInputs().some(isConfig) ? { writes: [baselinePath({ dir: this.specDir() })] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
+    const step = this.saveStep(request);
+    if (step === null) return this.startOperation(action, request);
+    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), step);
+  }
+
+  /**
+   * The save step of an operation: which dirty buffers it reads (saved
+   * first; the rest stay dirty and are never read behind them) and what it
+   * writes, named before it starts — always for the map and an apply, else
+   * when the step opens for dirty inputs anyway (the form already named the
+   * target). Null: no step, it starts at once.
+   */
+  private saveStep(request: OperationRequest): { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string } | null {
+    const config = (path: string): boolean => path === CONFIG_FILE;
+    const dir = `${this.specDir()}/`;
+    const specs = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
+    const harness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
+    // The chosen files and directories, as the paths name them from the root, and keylang.json.
+    const chosen = (paths: readonly string[]): ((path: string) => boolean) => {
+      const selected = paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
+      return (path) => path === CONFIG_FILE || selected.some((item) => item === "" || path === item || path.startsWith(`${item}/`));
+    };
+    const naming = (inputs: (path: string) => boolean, targets: string[] | null): { inputs: (path: string) => boolean; writes?: string[] } => ({ inputs, ...(targets !== null && this.dirtyInputs().some(inputs) ? { writes: targets } : {}) });
+    switch (request.kind) {
+      // Doctor reads settings only; a layout draft writes nothing and moves its layers into keylang.json's
+      // buffer later, so a dirty keylang.json stays dirty (only an edit after the draft refuses the move).
+      case "doctor":
+      case "draft-layout":
+        return null;
+      // A feature, the map check and an export read the saved files: every dirty buffer is saved first.
+      case "feature":
+      case "map-check":
+      case "export":
+        return {};
+      // The baseline reads the code and the saved keylang.json, not the specs.
+      case "baseline":
+        return naming(config, request.check ? null : [baselinePath({ dir: this.specDir() })]);
+      // Agents reads the harness files only; the form already showed what a write changes.
+      case "agents":
+        return { inputs: harness };
+      // Init reads the saved keylang.json (kept when it exists), the harness files and the code, never the specs.
+      case "init":
+        return naming((path) => config(path) || harness(path), request.check ? null : this.initTargets());
+      // Fmt and parse read the chosen files and the edition in keylang.json.
+      case "fmt":
+      case "parse":
+        return { inputs: chosen(request.paths) };
+      // Check reads the specs under its paths (the spec directory by default) and keylang.json.
+      case "check":
+        return { inputs: chosen(request.paths.length > 0 ? request.paths : [this.specDir()]) };
+      // An edge reads the saved code and keylang.json, never the specs.
+      case "explain-edge":
+        return { inputs: config };
+      // A code's help reads nothing. A node's summary, the inventory and a trace plan read the specs and
+      // the saved explanations under the spec directory, keylang.json and the code.
+      case "explain":
+        return isDiagnosticCode(request.subject) ? null : { inputs: specs };
+      case "explain-plan":
+      case "trace-plan":
+        return { inputs: specs };
+      case "explain-batch":
+        return naming(specs, [`${explainDir({ dir: this.specDir() })}/brief/<id>.md of each planned node`]);
+      case "explain-llm":
+        return naming(specs, [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")]);
+      // The diagram reads the code, keylang.json and the saved briefs.
+      case "export-c4":
+        return naming(specs, request.out === undefined ? null : [request.out]);
+      // The questions read the feature file, the specs around it, keylang.json and the code.
+      case "feature-questions":
+        return naming(specs, [`${PROPOSALS_DIR}/${dir}features/${request.slug}.md`]);
+      // A draft reads the saved code and keylang.json (rules also the specs they are checked with); its
+      // target is read from disk, and its form refused a dirty one.
+      case "draft-flow":
+        return naming(config, request.output === "proposal" ? [`${PROPOSALS_DIR}/${flowDraftTarget(this.merges.specDir(), { trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target}`] : null);
+      case "draft-rules":
+        return naming(config, request.output === "proposal" ? [`${PROPOSALS_DIR}/${rulesDraftTarget(this.merges.specDir(), request.into ?? "")}`] : null);
+      case "code-to-spec":
+        return naming(config, request.output === "proposal" ? [`${PROPOSALS_DIR}/${codeDraftTarget(this.merges.specDir(), this.state.analysis?.snapshot ?? null, codeDraftFormOf(request))}`] : null);
+      // The candidate reads the specs (the planned signature, the flows' tests), keylang.json and the code.
+      case "spec-to-code": {
+        const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
+        const code = placed !== null && "file" in placed ? placed.file : "<the module's file>";
+        return naming(specs, request.output === "proposal" ? [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] : null);
+      }
+      // Nothing is computed again: no buffer is read or saved. The write is a decision of its own: the step names every file.
+      case "apply-code":
+        return { inputs: () => false, writes: request.candidate.targets.map((target) => target.file), writesNote: "Writes these files directly, as spec-to-code --apply (no proposal, no test is run):" };
+      // Wire reads the saved specs and keylang.json.
+      case "wire":
+        return naming(() => true, request.check ? null : [request.out ?? WIRE_OUT]);
+      // The map reads the code and the saved keylang.json, not the specs: dirty specs go into the analysis after the commit.
+      case "map":
+        return { writes: this.mapTargets(), inputs: config };
     }
-    if (request.kind === "agents") {
-      // Agents reads the harness files only, never the specs or keylang.json: dirty spec and config
-      // buffers stay dirty. The form already showed what the write changes, so there is no extra step.
-      const isHarness = (path: string): boolean => (HARNESS_PATHS as readonly string[]).includes(path);
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isHarness });
-    }
-    if (request.kind === "init") {
-      // Init reads the saved keylang.json (kept when it exists), the harness files and the code, never
-      // the specs: dirty spec buffers stay dirty. The form already named the classes of files it writes.
-      const isInput = (path: string): boolean => path === CONFIG_FILE || (HARNESS_PATHS as readonly string[]).includes(path);
-      const writes = !request.check && this.dirtyInputs().some(isInput) ? { writes: this.initTargets() } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "fmt" || request.kind === "parse") {
-      // Fmt and parse read the saved bytes of the chosen files and the edition in keylang.json: those
-      // dirty buffers are saved first; other dirty specs stay dirty and are never read behind them.
-      const selected = request.paths.map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
-      const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
-    }
-    if (request.kind === "check") {
-      // Check reads the saved specs under its paths and the saved keylang.json: those dirty buffers are
-      // saved first; other dirty buffers stay dirty. The check itself never writes.
-      const selected = (request.paths.length > 0 ? request.paths : [this.specDir()]).map((path) => toPosix(relative(this.state.root, resolve(this.state.root, path))));
-      const isInput = (path: string): boolean => path === CONFIG_FILE || selected.some((chosen) => chosen === "" || path === chosen || path.startsWith(`${chosen}/`));
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput });
-    }
-    if (request.kind === "explain-edge") {
-      // Explain-edge reads the saved code and keylang.json, never the specs: only a dirty keylang.json is saved first.
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE });
-    }
-    if (request.kind === "explain") {
-      // A code's help reads nothing: no save step. A node's summary reads the saved specs and their
-      // saved explanations under the spec directory, keylang.json and the code: those dirty buffers are saved first.
-      if (isDiagnosticCode(request.subject)) return this.startOperation(action, request);
-      const dir = `${this.specDir()}/`;
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
-    }
-    if (request.kind === "explain-plan") {
-      // The inventory reads the saved explanations and specs under the spec directory, keylang.json and the code: those dirty buffers are saved first.
-      const dir = `${this.specDir()}/`;
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
-    }
-    if (request.kind === "explain-batch") {
-      // As the plan: the saved specs and explanations under the spec directory, keylang.json and the code
-      // are saved first; the step names the briefs the batch writes.
-      const dir = `${this.specDir()}/`;
-      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const writes = this.dirtyInputs().some(isInput) ? { writes: [`${explainDir({ dir: this.specDir() })}/brief/<id>.md of each planned node`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "explain-llm") {
-      // As a node's offline summary: the saved specs and explanations under the spec directory, keylang.json
-      // and the code are saved first; the step names the explanation a new answer would replace.
-      const dir = `${this.specDir()}/`;
-      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const writes = this.dirtyInputs().some(isInput) ? { writes: [explanationPath({ dir: this.specDir() }, request.id, request.detail ?? "short")] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "export-c4") {
-      // The diagram reads the saved code, keylang.json and the saved briefs under the spec directory: those
-      // dirty buffers are saved first; the step names the file it writes, when there is one.
-      const dir = `${this.specDir()}/`;
-      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const writes = request.out !== undefined && this.dirtyInputs().some(isInput) ? { writes: [request.out] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "feature-questions") {
-      // The questions read the saved feature file, the specs around it, keylang.json and the code: those dirty
-      // buffers are saved first; the step names the proposal the answer becomes.
-      const dir = `${this.specDir()}/`;
-      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const writes = this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${dir}features/${request.slug}.md`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "trace-plan") {
-      // The plan reads the saved specs under the spec directory (the flow), keylang.json and the code:
-      // those dirty buffers are saved first, so the plan's IDs and hashes are the files on disk.
-      const dir = `${this.specDir()}/`;
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: (path) => path === CONFIG_FILE || path.startsWith(dir) });
-    }
-    if (request.kind === "draft-flow") {
-      // The draft reads the saved code and keylang.json; the target is read from disk and was refused
-      // above when dirty. Only a dirty keylang.json is saved first; other dirty specs stay dirty.
-      const isConfig = (path: string): boolean => path === CONFIG_FILE;
-      const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${flowDraftTarget(this.merges.specDir(), { trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target}`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
-    }
-    if (request.kind === "code-to-spec") {
-      // As a flow draft: the saved code and keylang.json; the target was refused above when dirty. Only a dirty keylang.json is saved first.
-      const isConfig = (path: string): boolean => path === CONFIG_FILE;
-      const target = codeDraftTarget(this.merges.specDir(), this.state.analysis?.snapshot ?? null, codeDraftFormOf(request));
-      const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${target}`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
-    }
-    if (request.kind === "spec-to-code") {
-      // The candidate reads the saved specs (the planned signature, the flows' tests), keylang.json and
-      // the code: those dirty buffers are saved first; the step names the proposals it would write.
-      const dir = `${this.specDir()}/`;
-      const isInput = (path: string): boolean => path === CONFIG_FILE || path.startsWith(dir);
-      const placed = specCodePlace(this.state.analysis, { id: request.id, into: request.into ?? "", mode: request.mode ?? "algo", output: request.output });
-      const code = placed !== null && "file" in placed ? placed.file : "<the module's file>";
-      const writes = request.output === "proposal" && this.dirtyInputs().some(isInput) ? { writes: [`${PROPOSALS_DIR}/${code}`, `${PROPOSALS_DIR}/<each new test file of its flows>`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isInput, ...writes });
-    }
-    if (request.kind === "apply-code") {
-      // Nothing is computed again: no dirty buffer is read or saved. The step names every file the
-      // candidate writes, so the write is a decision of its own, never the end of a generation.
-      const files = request.candidate.targets.map((target) => target.file);
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: () => false, writes: files, writesNote: "Writes these files directly, as spec-to-code --apply (no proposal, no test is run):" });
-    }
-    if (request.kind === "draft-rules") {
-      // As a flow draft: the saved code and keylang.json (and the saved specs the model's rules are checked
-      // with); only a dirty keylang.json is saved first; the target was refused above when dirty.
-      const isConfig = (path: string): boolean => path === CONFIG_FILE;
-      const writes = request.output === "proposal" && this.dirtyInputs().some(isConfig) ? { writes: [`${PROPOSALS_DIR}/${rulesDraftTarget(this.merges.specDir(), request.into ?? "")}`] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { inputs: isConfig, ...writes });
-    }
-    if (request.kind === "draft-layout") {
-      // The layout reads the saved keylang.json and the code and writes nothing: no save step. A dirty
-      // keylang.json stays dirty — the move goes into that buffer, and only after it was edited does it refuse.
-      return this.startOperation(action, request);
-    }
-    if (request.kind === "wire") {
-      // Wire reads the saved specs and keylang.json: every dirty spec or config buffer is saved first.
-      // A write names its target in that step; without dirty buffers the form already did.
-      const writes = !request.check && this.dirtyInputs().length > 0 ? { writes: [request.out ?? WIRE_OUT] } : {};
-      return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), writes);
-    }
-    if (request.kind !== "map") return this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request));
-    // The map reads the code and the saved keylang.json, not the specs: dirty specs stay dirty
-    // and go into the analysis after the commit as overlays. The step names the targets first.
-    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), { writes: this.mapTargets(), inputs: (path) => path === CONFIG_FILE });
   }
 
   /** What `keylang map` may write, as the step before it shows. */
@@ -2638,12 +2593,9 @@ export class App {
       if (request.kind === "init" && this.state.start !== null && this.state.config.kind !== "missing-config") this.state.start = null;
       // Completion adds a message; it never changes the open file.
       this.state.message = `${label}: ${recordSummary(record)} · F6 shows the report${note === null ? "" : ` · ${note}`}`;
-      if (request.kind === "draft-flow" || request.kind === "draft-rules") this.afterDraft(record, origin);
-      if (request.kind === "code-to-spec") this.afterCodeDraft(record, origin);
-      if (request.kind === "spec-to-code") this.afterSpecCode(record, origin);
+      this.afterProposed(record, origin);
       if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
-      if (request.kind === "feature-questions") this.afterFeatureQuestions(record, origin);
       this.quitAfterSettle(record);
       this.draw();
     };
@@ -2680,47 +2632,43 @@ export class App {
   }
 
   /**
-   * The session's answer before a commit: a draft's target edited in a buffer
-   * while the draft was prepared keeps its text and gets no proposal (the
-   * proposal would be judged against the disk under unsaved edits).
+   * The session's answer before a commit: a target open with unsaved edits
+   * keeps its text and is not written under — an explanation or a feature
+   * file edited while the model answered, a diagram, a draft's target edited
+   * while the draft was prepared (the proposal would be judged against the
+   * disk under them) — and an apply stops at what blocks its files.
    */
   private commitGate(request: OperationRequest, plan?: CommitPlan): CommitGate {
-    if (request.kind === "explain-llm" || request.kind === "explain-batch") {
-      // A saved explanation edited in a buffer while the model answered keeps its text: the answer is not written over it.
-      const edited = (plan?.targets ?? []).filter((target) => {
+    const refuse = (targets: readonly string[], why: string): CommitGate => {
+      const edited = targets.filter((target) => {
         const buffer = this.state.buffers.get(target);
         return buffer !== undefined && isDirty(buffer);
       });
-      return edited.length > 0 ? { refused: edited.map((target) => `${target}: edited in this session while the model answered; save or undo the edits, then ask again`) } : undefined;
+      return edited.length > 0 ? { refused: edited.map((target) => `${target}: ${why}`) } : undefined;
+    };
+    switch (request.kind) {
+      case "explain-llm":
+      case "explain-batch":
+      case "feature-questions":
+        return refuse(plan?.targets ?? [], "edited in this session while the model answered; save or undo the edits, then ask again");
+      case "export-c4":
+        return refuse(plan?.targets ?? [], "open with unsaved edits; save or undo them, then export again");
+      case "apply-code": {
+        const conflicts = this.applyConflicts(request.candidate.targets.map((target) => target.file), false);
+        return conflicts.length > 0 ? { refused: conflicts } : undefined;
+      }
+      case "draft-flow":
+      case "draft-rules":
+      case "code-to-spec":
+      case "spec-to-code": {
+        if (request.output !== "proposal") return undefined;
+        // The operation names the target it resolved; code-to-spec's default target depends on the snapshot it read.
+        const targets = plan?.targets ?? (request.kind === "draft-rules" ? [rulesDraftTarget(this.merges.specDir(), request.into ?? "")] : request.kind === "draft-flow" ? [flowDraftTarget(this.merges.specDir(), { trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target] : []);
+        return refuse(targets, "edited in this session while the draft was prepared; save or undo the edits, then draft again");
+      }
+      default:
+        return undefined;
     }
-    if (request.kind === "export-c4") {
-      // A diagram open with unsaved edits is never written under.
-      const edited = (plan?.targets ?? []).filter((target) => {
-        const buffer = this.state.buffers.get(target);
-        return buffer !== undefined && isDirty(buffer);
-      });
-      return edited.length > 0 ? { refused: edited.map((target) => `${target}: open with unsaved edits; save or undo them, then export again`) } : undefined;
-    }
-    if (request.kind === "feature-questions") {
-      // The feature file edited while the model answered keeps its text: the proposal would be judged against the disk under unsaved edits.
-      const edited = (plan?.targets ?? []).filter((target) => {
-        const buffer = this.state.buffers.get(target);
-        return buffer !== undefined && isDirty(buffer);
-      });
-      return edited.length > 0 ? { refused: edited.map((target) => `${target}: edited in this session while the model answered; save or undo the edits, then ask again`) } : undefined;
-    }
-    if (request.kind === "apply-code") {
-      const conflicts = this.applyConflicts(request.candidate.targets.map((target) => target.file), false);
-      return conflicts.length > 0 ? { refused: conflicts } : undefined;
-    }
-    if ((request.kind !== "draft-flow" && request.kind !== "draft-rules" && request.kind !== "code-to-spec" && request.kind !== "spec-to-code") || request.output !== "proposal") return;
-    // The operation names the target it resolved; code-to-spec's default target depends on the snapshot it read.
-    const targets = plan?.targets ?? (request.kind === "draft-rules" ? [rulesDraftTarget(this.merges.specDir(), request.into ?? "")] : request.kind === "draft-flow" ? [flowDraftTarget(this.merges.specDir(), { trigger: request.trigger, name: request.name ?? "", into: request.into ?? "" }).target] : []);
-    const edited = targets.filter((target) => {
-      const buffer = this.state.buffers.get(target);
-      return buffer !== undefined && isDirty(buffer);
-    });
-    if (edited.length > 0) return { refused: edited.map((target) => `${target}: edited in this session while the draft was prepared; save or undo the edits, then draft again`) };
   }
 
   /** Cancel (palette, `x` in F6): the running operation ends as cancelled with exit code null. Esc never does this. */
@@ -2730,6 +2678,121 @@ export class App {
       return;
     }
     this.cancelActive();
+  }
+
+  /**
+   * A finished operation that proposed files: what MERGE opens by itself, or
+   * the message saying what waits. The answer's lines it left out and the
+   * model's notes are named either way; a preview or a run that proposed
+   * nothing only adds its notes to the message.
+   */
+  private afterProposed(record: OperationRecord, origin: DraftOrigin): void {
+    const result = record.result;
+    switch (result?.kind) {
+      case "draft-flow": {
+        if (result.status !== "completed" || result.payload?.proposal == null) return;
+        const { candidate, model } = result.payload;
+        const target = candidate.target;
+        // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
+        const notes = model === null ? "" : [...(model.unknown.length > 0 ? [`still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}`] : []), ...(model.dropped.length > 0 ? [`dropped from the model's draft: ${model.dropped.join("; ")}`] : [])].join("; ");
+        const agent = record.action === AGENT_DRAFT;
+        return this.afterProposal(origin, {
+          target,
+          report: false,
+          opened: agent && notes ? `agent: ${notes}` : `${agent ? "agent" : "draft flow"}: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${notes ? ` · ${notes}` : ""}`,
+          // The person moved on (another file, an edit, a merge): the draft waits as a proposal; focus stays where it is.
+          waits: agent ? `agent: the draft of flow ${candidate.name} is a proposal for ${target}: m merges it${notes ? `; ${notes}` : ""}` : `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${notes ? ` · ${notes}` : ""}`,
+        });
+      }
+      case "draft-rules": {
+        // Its conflicts are named, never taken for the workspace's verdict.
+        if (result.status !== "completed" || result.payload === null) return;
+        const { candidate, model } = result.payload;
+        const conflicts = model === null || model.conflicts.length === 0 ? "" : ` · ${model.conflicts.length} conflict(s) with the code now: F6 names them`;
+        if (result.payload.proposal === null) {
+          if (conflicts !== "") this.state.message = `${this.state.message ?? ""}${conflicts}`;
+          return;
+        }
+        const target = candidate.target;
+        return this.afterProposal(origin, { target, report: false, opened: `draft rules: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${conflicts}`, waits: `draft rules: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${conflicts}` });
+      }
+      case "code-to-spec": {
+        // Every flow it proposes is named, and the model's notes.
+        if (result.status !== "completed" || result.payload === null) return;
+        const { candidate, model, described } = result.payload;
+        const review = described.length > 0 ? ` · already in flows (review those): ${described.join(", ")}` : "";
+        if (candidate === null || result.payload.proposal === null) {
+          if (review !== "") this.state.message = `${this.state.message ?? ""}${review}`;
+          return;
+        }
+        const flows = candidate.flows.map((flow) => flow.name).join(", ");
+        const unknown = model === null ? [] : model.flows.flatMap((flow) => flow.unknown);
+        const dropped = model === null ? 0 : model.flows.reduce((sum, flow) => sum + flow.dropped.length, 0);
+        const notes = `${review}${unknown.length > 0 ? ` · still unknown: ${unknown.join(", ")}` : ""}${dropped > 0 ? ` · ${dropped} line(s) dropped from the model's drafts: F6 names them` : ""}`;
+        const target = candidate.target;
+        return this.afterProposal(origin, { target, report: false, opened: `code-to-spec: ${PROPOSALS_DIR}/${target} (${flows}) · MERGE: decide the hunks, w writes ${target}${notes}`, waits: `code-to-spec: ${PROPOSALS_DIR}/${target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}` });
+      }
+      case "spec-to-code": {
+        // The code file opens; the tests wait next. A run that stopped opens nothing: what it proposed waits. A candidate is never the feature done.
+        if (result.payload === null || result.payload.proposals.length === 0) return;
+        const files = result.payload.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1));
+        const [code, ...rest] = files;
+        const next = rest.length > 0 ? ` · then m or Proposals: ${rest.join(", ")}` : "";
+        const after = result.payload.mode === "llm" ? "the model's code is a candidate: review it, run its tests, then check" : "run check after: the stub is not the feature done";
+        const partial = result.status === "completed" ? "" : ` · ${result.status}: only these were proposed`;
+        return this.afterProposal(origin, {
+          target: result.status === "completed" ? code! : null,
+          report: false,
+          opened: `spec-to-code: ${PROPOSALS_DIR}/${code} · MERGE: decide the hunks, w writes ${code}${next} · ${after}`,
+          waits: `spec-to-code: ${files.length} proposal(s) wait: ${files.join(", ")} · m, Proposals or Enter in F6 opens them${partial}`,
+        });
+      }
+      case "feature-questions": {
+        // The model's questions open in MERGE from the readiness report they were asked from, too.
+        if (result.status !== "completed" || result.payload === null) return;
+        const { file, questions, dropped, proposal, agent } = result.payload;
+        const left = dropped > 0 ? ` · ${dropped} line(s) of the answer left out: no \`- ? …\` question, or past the fifth` : "";
+        if (proposal === null) {
+          this.state.message = `questions: ${agent} asked no question, nothing proposed${left}`;
+          return;
+        }
+        return this.afterProposal(origin, { target: file, report: true, opened: `questions: ${questions.length} proposed for ${file}${left} · MERGE: decide the hunks, w writes ${file}`, waits: `questions: ${proposal} waits: m, Proposals or Enter in F6 opens MERGE${left}` });
+      }
+      default:
+        return;
+    }
+  }
+
+  /**
+   * A finished operation proposed `target`: MERGE opens it by itself only
+   * while the person is still where the operation started (`report`: F6 may
+   * still show the report it started from, and closes); otherwise — or when
+   * MERGE cannot open it, or `target` is null — the proposal waits and the
+   * message says so.
+   */
+  private afterProposal(origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }): void {
+    const { target, report } = proposal;
+    if (target !== null && this.stillWhereStarted(origin, report)) {
+      if (report && origin.results) this.closeResults();
+      this.merges.open(target);
+      if (this.state.merge?.path === target) {
+        this.state.message = proposal.opened;
+        return;
+      }
+    }
+    this.state.message = proposal.waits;
+  }
+
+  /**
+   * The file, mode and text an operation started from are current and nothing
+   * else is open; with `report`, F6 may show the report it started from, else
+   * it must be closed.
+   */
+  private stillWhereStarted(origin: DraftOrigin, report: boolean): boolean {
+    const results = this.state.results;
+    const panel = report && origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
+    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
+    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help;
   }
 
   /** The session's operation worker, started on first use; after a failure the next request starts a new one. */
@@ -2750,40 +2813,6 @@ export class App {
       return;
     }
     this.requestOperation("feature-questions", { kind: "feature-questions", root: this.state.root, slug });
-  }
-
-  /**
-   * Finished questions: the proposal opens in MERGE while the person is still
-   * where they asked — the same file, mode and text, the same report in F6
-   * (or the editor) and nothing else open; otherwise it waits as any
-   * proposal. The answer's lines left out are counted either way.
-   */
-  private afterFeatureQuestions(record: OperationRecord, origin: DraftOrigin): void {
-    const result = record.result;
-    if (result?.kind !== "feature-questions" || result.status !== "completed" || result.payload === null) return;
-    const { file, questions, dropped, proposal, agent } = result.payload;
-    const left = dropped > 0 ? ` · ${dropped} line(s) of the answer left out: no \`- ? …\` question, or past the fifth` : "";
-    if (proposal === null) {
-      this.state.message = `questions: ${agent} asked no question, nothing proposed${left}`;
-      return;
-    }
-    if (this.stillWhereAsked(origin)) {
-      if (origin.results) this.closeResults();
-      this.merges.open(file);
-      if (this.state.merge?.path === file) {
-        this.state.message = `questions: ${questions.length} proposed for ${file}${left} · MERGE: decide the hunks, w writes ${file}`;
-        return;
-      }
-    }
-    this.state.message = `questions: ${proposal} waits: m, Proposals or Enter in F6 opens MERGE${left}`;
-  }
-
-  /** The file, mode and text an operation started from are current, F6 shows the report it started from (or stays closed), and nothing else is open. */
-  private stillWhereAsked(origin: DraftOrigin): boolean {
-    const results = this.state.results;
-    const panel = origin.results ? results.open && !results.viewing && results.entry === "record" && results.index === origin.record : !results.open;
-    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null || this.state.buffers.get(origin.path)?.version === origin.version);
-    return panel && current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.help;
   }
 
   // ---------- wire: the report's target ----------
@@ -2819,7 +2848,7 @@ export class App {
     return found;
   }
 
-  // ---------- draft flow (algo, hybrid, llm) ----------
+  // ---------- the agent and its draft at the cursor (Ctrl+Space) ----------
 
   /** The effective agent (`KEYLANG_AGENT`, agents.json, the saved keylang.json as the last analysis read it), or null. Credentials are checked by the operation. */
   private agentName(): string | null {
@@ -2895,81 +2924,7 @@ export class App {
     }
   }
 
-  /**
-   * A finished draft: a proposal opens in MERGE only while the file, the mode
-   * and the text the operation started from are still current and nothing
-   * else is open; otherwise it waits, named in the message and the list.
-   */
-  private afterDraft(record: OperationRecord, origin: DraftOrigin): void {
-    const result = record.result;
-    if (result?.kind === "draft-rules") return this.afterRulesDraft(record, origin);
-    if (result?.kind !== "draft-flow" || result.status !== "completed" || result.payload?.proposal == null) return;
-    const { candidate, model } = result.payload;
-    const target = candidate.target;
-    // What the proposal does not show: IDs still unknown, and the model's lines that did not parse where they stood.
-    const notes = model === null ? "" : [...(model.unknown.length > 0 ? [`still unknown after ${model.rounds} round(s): ${model.unknown.join(", ")}`] : []), ...(model.dropped.length > 0 ? [`dropped from the model's draft: ${model.dropped.join("; ")}`] : [])].join("; ");
-    const agent = record.action === AGENT_DRAFT;
-    if (this.stillWhereDraftStarted(origin)) {
-      this.merges.open(target);
-      if (this.state.merge?.path === target) this.state.message = agent && notes ? `agent: ${notes}` : `${agent ? "agent" : "draft flow"}: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${notes ? ` · ${notes}` : ""}`;
-      return;
-    }
-    // The person moved on (another file, an edit, a merge): the draft waits as a proposal; focus stays where it is.
-    this.state.message = agent
-      ? `agent: the draft of flow ${candidate.name} is a proposal for ${target}: m merges it${notes ? `; ${notes}` : ""}`
-      : `draft flow: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${notes ? ` · ${notes}` : ""}`;
-  }
-
-  /** The file, the mode and the text a draft started from are still current and nothing else is open: its proposal may open MERGE by itself. */
-  private stillWhereDraftStarted(origin: DraftOrigin): boolean {
-    const current = this.state.current === origin.path && this.state.mode === origin.mode && (origin.path === null ? true : this.state.buffers.get(origin.path)?.version === origin.version);
-    return current && this.state.merge === null && this.state.prompt === null && this.state.barrier === null && !this.state.results.open && !this.state.help;
-  }
-
-  /** A finished rules draft: the proposal opens MERGE under the same rule as a flow draft's; its conflicts are named, never taken for the workspace's verdict. */
-  private afterRulesDraft(record: OperationRecord, origin: DraftOrigin): void {
-    const result = record.result;
-    if (result?.kind !== "draft-rules" || result.status !== "completed" || result.payload === null) return;
-    const { candidate, model } = result.payload;
-    const conflicts = model === null || model.conflicts.length === 0 ? "" : ` · ${model.conflicts.length} conflict(s) with the code now: F6 names them`;
-    if (result.payload.proposal === null) {
-      if (conflicts !== "") this.state.message = `${this.state.message ?? ""}${conflicts}`;
-      return;
-    }
-    const target = candidate.target;
-    if (this.stillWhereDraftStarted(origin)) {
-      this.merges.open(target);
-      if (this.state.merge?.path === target) this.state.message = `draft rules: ${PROPOSALS_DIR}/${target} · MERGE: decide the hunks, w writes ${target}${conflicts}`;
-      return;
-    }
-    this.state.message = `draft rules: ${PROPOSALS_DIR}/${target} waits: m, Proposals or Enter in F6 opens MERGE${conflicts}`;
-  }
-
-  // ---------- code-to-spec ----------
-
-  /** A finished code-to-spec draft: the proposal opens MERGE under the same rule as a flow draft's, naming every flow it proposes and the model's notes. */
-  private afterCodeDraft(record: OperationRecord, origin: DraftOrigin): void {
-    const result = record.result;
-    if (result?.kind !== "code-to-spec" || result.status !== "completed" || result.payload === null) return;
-    const { candidate, model, described } = result.payload;
-    const review = described.length > 0 ? ` · already in flows (review those): ${described.join(", ")}` : "";
-    if (candidate === null || result.payload.proposal === null) {
-      if (review !== "") this.state.message = `${this.state.message ?? ""}${review}`;
-      return;
-    }
-    const flows = candidate.flows.map((flow) => flow.name).join(", ");
-    const unknown = model === null ? [] : model.flows.flatMap((flow) => flow.unknown);
-    const dropped = model === null ? 0 : model.flows.reduce((sum, flow) => sum + flow.dropped.length, 0);
-    const notes = `${review}${unknown.length > 0 ? ` · still unknown: ${unknown.join(", ")}` : ""}${dropped > 0 ? ` · ${dropped} line(s) dropped from the model's drafts: F6 names them` : ""}`;
-    if (this.stillWhereDraftStarted(origin)) {
-      this.merges.open(candidate.target);
-      if (this.state.merge?.path === candidate.target) this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) · MERGE: decide the hunks, w writes ${candidate.target}${notes}`;
-      return;
-    }
-    this.state.message = `code-to-spec: ${PROPOSALS_DIR}/${candidate.target} (${flows}) waits: m, Proposals or Enter in F6 opens MERGE${notes}`;
-  }
-
-  // ---------- spec-to-code: a stub and failing tests for a planned fn (template), or the model's code ----------
+  // ---------- spec-to-code: the planned fns, and a candidate applied whole ----------
 
   /** The planned fns of the current analysis that no code implements yet: the IDs spec-to-code builds. */
   private plannedFns(): string[] {
@@ -2977,29 +2932,6 @@ export class App {
     if (!analysis) return [];
     const nodes = analysis.snapshot?.nodes ?? {};
     return [...new Set(analysis.spec.planned.filter((item) => item.decl === "fn" && nodes[item.id] === undefined).map((item) => item.id))].sort(compareText);
-  }
-
-  /**
-   * Finished spec-to-code proposals: the code file opens MERGE under the
-   * same rule as a draft's, and the message names the tests waiting next;
-   * otherwise they all wait. A candidate is never the feature done.
-   */
-  private afterSpecCode(record: OperationRecord, origin: DraftOrigin): void {
-    const result = record.result;
-    if (result?.kind !== "spec-to-code" || result.payload === null || result.payload.proposals.length === 0) return;
-    const files = result.payload.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1));
-    const [code, ...rest] = files;
-    const next = rest.length > 0 ? ` · then m or Proposals: ${rest.join(", ")}` : "";
-    const partial = result.status === "completed" ? "" : ` · ${result.status}: only these were proposed`;
-    if (result.status === "completed" && this.stillWhereDraftStarted(origin)) {
-      this.merges.open(code);
-      if (this.state.merge?.path === code) {
-        const after = result.payload.mode === "llm" ? `the model's code is a candidate: review it, run its tests, then check` : "run check after: the stub is not the feature done";
-        this.state.message = `spec-to-code: ${PROPOSALS_DIR}/${code} · MERGE: decide the hunks, w writes ${code}${next} · ${after}`;
-        return;
-      }
-    }
-    this.state.message = `spec-to-code: ${files.length} proposal(s) wait: ${files.join(", ")} · m, Proposals or Enter in F6 opens them${partial}`;
   }
 
   /**
@@ -3376,8 +3308,7 @@ export class App {
     }
     // A current layout draft: Enter moves its layers into keylang.json's buffer; an outdated one drafts again.
     if (record.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null) return this.moveLayers(record);
-    // Doctor reads no specs; a feature rerun reads the saved files, so dirty buffers go through the save step.
-    if (record.params.kind === "doctor") return this.startOperation(record.action, record.params);
+    // The same save step as the first run: a feature rerun reads the saved files; doctor reads no specs.
     return this.requestOperation(record.action, record.params);
   }
 
@@ -3908,7 +3839,7 @@ export class App {
       case "results":
         return this.openResults();
       case "doctor":
-        return this.startOperation("doctor", { kind: "doctor", root: this.state.root });
+        return this.requestOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
         return this.runs.openFeaturePrompt();
       case "export-c4":
