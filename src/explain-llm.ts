@@ -170,9 +170,13 @@ const FULL_SECTIONS = [
 /** Most unresolved constructs a `full` prompt lists; the summary already counts them all. */
 const MAX_UNRESOLVED = 20;
 
-/** The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`. */
+/**
+ * The constructs inside the node keylang did not turn into edges, with their
+ * line and code, for the calls section of `full`. An import of a file
+ * `assume` names is no such construct: the architecture leaves it unread.
+ */
 function unresolved(analysis: Analysis, id: string): string[] {
-  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id);
+  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id && c.kind !== "assumed-import");
   if (items.length === 0) return [];
   const lines = items.slice(0, MAX_UNRESOLVED).map((c) => `- ${c.file}:${c.line}: \`${c.text.replace(/\s+/g, " ").trim()}\` — ${c.reason}`);
   if (items.length > MAX_UNRESOLVED) lines.push(`… (${items.length - MAX_UNRESOLVED} more not shown)`);

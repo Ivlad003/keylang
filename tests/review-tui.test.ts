@@ -768,3 +768,27 @@ test("review-tui: the check report counts the holes as the CLI's summary does; t
   assert.match(s.app.state.message ?? "", /check: 0 fail, 2 unverified \(from 1 hole\), 1 ok · code 0/);
   assert.match(newestReport(s), /0 fail, 2 unverified \(from 1 hole\), 1 ok · code 0/);
 });
+
+test("review-tui: the check report counts no import of a file `assume` names among the unresolved constructs", async (t) => {
+  const layers = { domain: ["src/domain/**"], application: ["src/application/**"], infrastructure: ["src/infrastructure/**"], presentation: ["src/presentation/**"] };
+  const root = checkoutRepo(t, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers, assume: ["src/config.ts"] })}\n`,
+    "src/infrastructure/store.ts": 'import { settings } from "../config";\nexport function save(task: () => void): void {\n  settings();\n  task();\n}\n',
+  });
+  const s = session(root, { cols: 120, rows: 30 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send(KEY.ctrlP);
+  for (const ch of "keylang check") s.send(ch);
+  s.send(KEY.enter);
+  s.send(KEY.enter);
+  await s.app.idle();
+  const result = s.app.state.records.at(-1)?.result;
+  assert.ok(result?.kind === "check" && result.payload !== null, JSON.stringify(result?.messages));
+  const kinds = result.payload.coverage.map((item) => item.kind);
+  assert.ok(kinds.includes("assumed-import"), kinds.join(" "));
+  const holes = kinds.filter((kind) => kind !== "assumed-import").length;
+  assert.ok(holes > 0, kinds.join(" "));
+  const report = newestReport(s);
+  assert.match(report, new RegExp(`coverage: ${holes} unresolved construct\\(s\\) in the code`));
+});

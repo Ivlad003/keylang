@@ -1254,7 +1254,9 @@ export function resultsReportRows(state: State): { text: string; style: Style; g
     payload.results.forEach((item, index) => {
       rows.push({ text: `${FINDING_GLYPH[item.verdict]} ${findingRow(item)}`, style: index === selected ? THEME.selected : item.verdict === "ok" ? { ...THEME.panel, fg: 243 } : THEME.panel, gap: index });
     });
-    if (payload.coverage.length > 0) rows.push({ text: `coverage: ${payload.coverage.length} unresolved construct(s) in the code`, style: { ...THEME.panel, fg: 243 } });
+    // An import of a file `assume` names is listed in coverage, but keylang left it unread on purpose: no unresolved construct.
+    const unresolved = payload.coverage.filter((item) => item.kind !== "assumed-import").length;
+    if (unresolved > 0) rows.push({ text: `coverage: ${unresolved} unresolved construct(s) in the code`, style: { ...THEME.panel, fg: 243 } });
   } else if (result?.kind === "explain-edge" && result.payload !== null) {
     // The snapshot's evidence between two ids: both directions, or why an absence is (not) proven.
     const { payload } = result;
