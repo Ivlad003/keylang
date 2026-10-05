@@ -100,6 +100,7 @@ export interface AppOptions {
 
 /** Changes typed together are analysed once. */
 const SETTLE_MS = 120;
+/** A lone ESC, or a cluster that may go on, waits this long for the rest of its sequence. */
 const ESC_MS = 25;
 /** A bracketed paste whose end marker has not come within this pause is ended by hand. */
 const PASTE_MS = 1000;
@@ -108,6 +109,8 @@ export const MAX_COLS = 1000;
 export const MAX_ROWS = 400;
 /** At most this many of one key in one chunk are a key held down (auto-repeat); more are pasted text. */
 const HELD_KEYS = 32;
+/** Outside the editor, at most this many keys of one chunk are keys typed while the session was busy; more are pasted text. */
+const TYPED_KEYS = 8;
 /** Keys handled before the mode: they show panels and reanalyse, and never edit. */
 const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6"]);
 
@@ -286,11 +289,7 @@ export class App {
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
       const run = typedRun(events, i);
-      // Many typed keys in one chunk are a paste from a terminal without bracketed paste: one edit, not one
-      // per key — and outside the editor not a string of commands (a pasted path in MERGE would accept and
-      // write hunks). A few of one key is the key held down.
-      const held = run.length <= HELD_KEYS && run.every((key) => key.name === run[0]!.name);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && (this.state.mode === "edit" || !held)) {
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit")) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -5827,6 +5826,20 @@ function typedRun(events: readonly InputEvent[], from: number): KeyEvent[] {
     run.push(event);
   }
   return run;
+}
+
+/**
+ * Whether a run of typed keys from one chunk is text pasted by a terminal
+ * without bracketed paste rather than keys. In the editor every run is: one
+ * edit, not one per key. Elsewhere keys coalesce whenever the session is
+ * busy, so a short run (`jk`, `gG`) and one key held down stay commands; a
+ * long run or one with Enter or Tab is pasted text, and a pasted path is not
+ * a string of commands (in MERGE its `a` and `w` would accept and write).
+ */
+function pastedRun(run: readonly KeyEvent[], editing: boolean): boolean {
+  if (editing) return true;
+  const held = run.length <= HELD_KEYS && run.every((key) => key.name === run[0]!.name);
+  return !held && (run.length > TYPED_KEYS || run.some((key) => key.name === "enter" || key.name === "tab"));
 }
 
 /**

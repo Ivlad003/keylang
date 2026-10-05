@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { readStats, updateStats } from "../src/stats.ts";
 import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
 import type { OperationWorker } from "../src/tui/background.ts";
+import { InputDecoder, type InputEvent } from "../src/tui/input.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
@@ -141,6 +142,67 @@ test("review-tui: keylang web logs a rejection no session handled and goes on se
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^served 200$/m);
   assert.match(result.stderr, /keylang web: unhandled rejection: Error: a stray rejection in one session/);
+});
+
+// ---------- 4, 13: keys that come together ----------
+
+test("review-tui: outside the editor a few different keys in one chunk are commands; a long run or one with Enter is a paste", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const last = s.app.state.buffers.get(FLOW_PATH)!.text.split("\n").length - 1;
+  // Keys typed while the session was busy arrive in one chunk.
+  s.send("jjk");
+  assert.equal(s.app.state.cursor.line, 1, "j, j, k");
+  assert.equal(s.app.state.message, null);
+  s.send("Gk");
+  assert.equal(s.app.state.cursor.line, last - 1, "G, k");
+  s.send("gj");
+  assert.equal(s.app.state.cursor.line, 1, "g, j");
+  // A path from the clipboard of a terminal without bracketed paste is still no string of commands.
+  s.send("keylang/flows/x.md");
+  assert.equal(s.app.state.cursor.line, 1);
+  assert.match(s.app.state.message ?? "", /^paste: /);
+  s.send("j\r");
+  assert.equal(s.app.state.cursor.line, 1, "a run with Enter is pasted text, not a move and a jump");
+  assert.match(s.app.state.message ?? "", /^paste: /);
+});
+
+const names = (events: readonly InputEvent[]): string[] => events.map((event) => (event.type === "key" ? `${event.ctrl ? "ctrl+" : ""}${event.alt ? "alt+" : ""}${event.name}` : event.type));
+
+test("review-tui: input keeps a cluster whole at a chunk's end, folds CRLF and drops reports the terminal sends", () => {
+  const decoder = new InputDecoder();
+  // A decomposed é alone in its chunk may still go on: it waits, then is one key.
+  assert.deepEqual(names(decoder.feed("é")), []);
+  assert.equal(decoder.waiting, true);
+  assert.deepEqual(names(decoder.flush()), ["é"]);
+  // A ZWJ sequence cut by the chunk's end is one key once the next chunk ends it.
+  assert.deepEqual(names(decoder.feed("👨‍👩")), []);
+  assert.deepEqual(names(decoder.feed("‍👧x")), ["👨‍👩‍👧", "x"]);
+  assert.deepEqual(names(decoder.feed("👨‍👩‍👧")), []);
+  assert.deepEqual(names(decoder.flush()), ["👨‍👩‍👧"]);
+  // Alt with a waiting cluster.
+  assert.deepEqual(names(decoder.feed("\x1bé")), []);
+  assert.deepEqual(names(decoder.flush()), ["alt+é"]);
+  // A letter typed alone is a key at once.
+  assert.deepEqual(names(decoder.feed("ї")), ["ї"]);
+  assert.deepEqual(names(decoder.feed("a\r\nb")), ["a", "enter", "b"]);
+  // DECRPM and device attributes are reports, not Alt+[ and typed text.
+  assert.deepEqual(names(decoder.feed("\x1b[?2004;1$y")), []);
+  assert.deepEqual(names(decoder.feed("\x1b[?1;2c\x1b[>0;95;0cj")), ["j"]);
+  assert.deepEqual(names(decoder.feed("\x1b[?2004")), [], "a report cut by the chunk's end waits");
+  assert.deepEqual(names(decoder.feed(";2$yk")), ["k"]);
+  assert.deepEqual(names(decoder.feed("\x1b[1;5A")), ["ctrl+up"], "keys with parameters still decode");
+});
+
+test("review-tui: a decomposed letter arriving alone in the view is one key, not e (Explain) and a mark", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("é");
+  await new Promise((done) => setTimeout(done, 60));
+  assert.equal(s.app.state.hover, null);
+  assert.equal(s.app.state.message, null, "e did not run");
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
