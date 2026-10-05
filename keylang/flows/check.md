@@ -17,7 +17,7 @@ and static evidence does not depend on a run.
 - trigger cli.cli.main
   - step cli.cli.run
     - step cli.cli.cmdCheck
-      - step operations.operations.runCheck
+      - step operations.spec.runCheck
         - step map.analyze.analyze
           - step map.map.generateMap
           - step lang.parser.parse
