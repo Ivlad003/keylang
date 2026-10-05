@@ -519,7 +519,7 @@ keylang/map.md:5:13: K001 dangling reference `domain.aggregate` (did you mean `d
 keylang/rules.baseline.md:5:12: K001 dangling reference `ghost` in a generated file; run `keylang baseline`
 ```
 
-**Р13. Без знімка модуль без членів непрозорий** (слайди: `infrastructure.config.log`). Зі знімком вирішує він: `members: complete` дає K001 на невідомого члена, а `members: opaque` (зовнішній модуль, помилка розбору, файл із `exclude`) — `unverified`, не K001, навіть коли карта перелічує члени, які вдалося прочитати з частково розібраного файла. K001 має підказку `did you mean` і `declare `planned``.
+**Р13. Без знімка модуль без членів непрозорий** (слайди: `infrastructure.config.log`). Член — це `fn`, `type`, `event`, `module` або аліас залежності: модуль, під яким є лише `- log infra.logger`, має члени, тож `infra.config.anything` — K001, а `infra.config.log` — його аліас. Зі знімком вирішує він: `members: complete` дає K001 на невідомого члена, а `members: opaque` (зовнішній модуль, помилка розбору, файл із `exclude`) — `unverified`, не K001, навіть коли карта перелічує члени, які вдалося прочитати з частково розібраного файла. K001 має підказку `did you mean` і `declare `planned``.
 
 Без `keylang.json` член непрозорого модуля не дає K001:
 

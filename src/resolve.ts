@@ -14,8 +14,8 @@ export interface Decl {
   /** Span of the declared name (LSP: definition target). */
   span: Span;
   /**
-   * Module declares `fn`/`type`/`event`/`module` children. A module without
-   * members is opaque: `module.anything` resolves to it.
+   * Module declares `fn`/`type`/`event`/`module` children or dependency
+   * aliases. A module without members is opaque: `module.anything` resolves to it.
    */
   hasMembers: boolean;
 }
@@ -165,7 +165,8 @@ export function check(docs: readonly Document[], context: ResolveContext = {}): 
   }
 
   for (const d of index.decls.values()) {
-    if (d.kind === "fn" || d.kind === "type" || d.kind === "event" || d.kind === "module") {
+    // A dependency alias is a member too (CONTEXT.md): a module of aliases only is not opaque.
+    if (d.kind === "fn" || d.kind === "type" || d.kind === "event" || d.kind === "module" || d.kind === "dep") {
       const dot = d.id.lastIndexOf(".");
       if (dot === -1) continue;
       const parent = index.decls.get(d.id.slice(0, dot));

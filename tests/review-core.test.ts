@@ -156,6 +156,15 @@ test("a link destination may hold balanced parentheses; an unbalanced one is a m
   assert.equal(keylang(dir, ["fmt", "--check", "flow.md"]).status, 0, "fmt keeps the link as written");
 });
 
+// ---------- 5. a dependency alias is a member ----------
+
+test("a module whose only children are dependency aliases has members: an unknown member is K001, the alias resolves", (t) => {
+  const map = "- layer infra\n  - module config\n    - log infra.logger\n  - module logger\n- layer app\n  - module a\n    - fn go\n      - calls infra.config.anything\n      - calls infra.config.log\n";
+  const dir = repo(t, { "map.md": map });
+  const o = keylang(dir, ["check", "."]);
+  assert.deepEqual(o.stdout.split("\n").filter((line) => / K\d{3} /.test(line)), ["map.md:8:15: K001 dangling reference `infra.config.anything`; declare `planned` if this is an intention"]);
+});
+
 // ---------- 6. a keyword out of its position says where it goes ----------
 
 test("a keyword of another position names where it goes; code and reason stay", (t) => {
