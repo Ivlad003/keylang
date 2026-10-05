@@ -78,8 +78,13 @@ export interface ImportFact {
 }
 
 export type ImportBinding =
-  /** `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module (its namespace). */
-  | { kind: "module"; local: string }
+  /**
+   * `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module:
+   * `x.m` is its export `m`. `namespace`: an ESM namespace object (`import * as x`, `export * as x`,
+   * `await import()`), which is no function and holds no default value; without it the binding is
+   * the module's value (`module.exports` of `require()`), which `x()` calls as its `default`.
+   */
+  | { kind: "module"; local: string; namespace?: true }
   /** `import x from` — `x` is the export `default` (for a CommonJS module without one, `module.exports`). */
   | { kind: "default"; local: string }
   /** `import { a as b } from` — `b` is the export `a`. */

@@ -517,12 +517,25 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   };
   /** A symbol a call can run: a fn, or a class (its constructor). */
   const callable = (id: string): boolean => decls.fns.has(id) || decls.classes.has(id);
+  /** Callable symbols of an export table: what a namespace object holds. Grouped once, on first use. */
+  let callablesByUnit: Map<string, string[]> | null = null;
+  const exportedCallables = (unit: string): string[] => {
+    if (!callablesByUnit) {
+      const byUnit = new Map<string, string[]>();
+      for (const e of exportTables.entries()) if (e.symbol !== null && callable(e.symbol)) byUnit.set(e.module, [...(byUnit.get(e.module) ?? []), e.symbol]);
+      callablesByUnit = byUnit;
+    }
+    return callablesByUnit.get(unit) ?? [];
+  };
   /** Per file: how its names resolve to symbols. The file is the scope: its own declarations and its imports. */
   const scopeOf = (facts: FileFacts) => {
     const locals = importTargets.get(facts.path)!;
     const localDecls = fileDecls.get(facts.path)!;
-    /** The symbol an import binds: the named export, or the default export of a default or whole-module binding. */
-    const importedSymbol = (imp: ImportTarget): string | null => exportOf(imp.unit, imp.imported ?? "default");
+    /**
+     * The symbol an import binds: the named export, or the default export of a default binding or
+     * of `module.exports`. An ESM namespace object stands for no symbol: it is no function.
+     */
+    const importedSymbol = (imp: ImportTarget): string | null => (imp.namespace ? null : exportOf(imp.unit, imp.imported ?? "default"));
     /** A class by the name this file uses for it: a local declaration or an import. */
     const classNamed = (name: string): string | null => {
       const ids = new Set<string>();
@@ -567,7 +580,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         for (const imp of locals.get(head) ?? []) {
           if (imp.kind === "module") {
             // `import * as ns`, `require()`: a named export; for `require`, also a static member of `module.exports`.
-            const id = exportOf(imp.unit, member) ?? staticOf(exportOf(imp.unit, "default"));
+            const id = exportOf(imp.unit, member) ?? (imp.namespace ? undefined : staticOf(exportOf(imp.unit, "default")));
             if (id) found.add(id);
             continue;
           }
@@ -753,7 +766,9 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
               gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
             } else {
               stats.callsUnresolved++;
-              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: c.hook ? holeReason(c) : `unresolved call \`${c.callee}\``, source: fn.id });
+              // `ns()` with `import * as ns`: a TypeError at run time, and no edge to the default export.
+              const reason = c.hook ? holeReason(c) : c.callee === head && imported?.namespace ? `call of the namespace object \`${head}\`, which is no function` : `unresolved call \`${c.callee}\``;
+              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
             }
             continue;
           }
@@ -784,6 +799,14 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (ref.member) {
         if (!readMembers.has(ref.name)) readMembers.set(ref.name, escape);
         continue;
+      }
+      // A namespace object read as a value (`keep(ns)`) hands on every export of its module.
+      for (const imp of ref.name.includes(".") ? [] : (locals.get(ref.name) ?? [])) {
+        if (!imp.namespace) continue;
+        for (const id of exportedCallables(imp.unit)) {
+          const target = decls.classes.has(id) ? constructorOf(id) : id;
+          if (!readIds.has(target)) readIds.set(target, escape);
+        }
       }
       // A class read as a value (`extends A`, a factory argument) may be constructed anywhere.
       for (const id of resolveCallees(ref.name, null, false)) {
@@ -917,6 +940,8 @@ interface ImportTarget {
   kind: ImportBinding["kind"];
   /** The export the binding names: its name, `default`, or null for the whole module. */
   imported: string | null;
+  /** An ESM namespace object (`import * as ns`): no function and no default value, unlike `module.exports` of `require()`. */
+  namespace: boolean;
 }
 
 /**
@@ -946,8 +971,8 @@ const STDLIB_MODULE: Module = {
 
 /** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
 function importTarget(module: Module, unit: string, binding: ImportBinding, whole: boolean): ImportTarget {
-  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null };
-  return binding.kind === "default" ? { module, unit, kind: "default", imported: "default" } : { module, unit, kind: "named", imported: binding.imported };
+  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null, namespace: binding.kind === "module" && binding.namespace === true };
+  return binding.kind === "default" ? { module, unit, kind: "default", imported: "default", namespace: false } : { module, unit, kind: "named", imported: binding.imported, namespace: false };
 }
 
 /**

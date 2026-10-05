@@ -204,3 +204,35 @@ test("typescript: a `const` or `function` in one `case` is in scope in every cas
   assert.deepEqual(calls(snapshot, "app.c."), ["app.c.sw → app.d.g", "app.c.sw → app.d.h"]);
   assert.deepEqual(holes(snapshot, "app.c."), ["app.c.sw: unresolved-call shadowed by local `f`"]);
 });
+
+test("typescript: `import * as ns` is a namespace object, not the default export: calling it is a hole and `ns.f()` reads no value; `require()` stays `module.exports`", (t) => {
+  const b = "export function helper(): void {}\nexport function later(x: unknown): void {}\nexport default function defFn(): void {}\n";
+  const dir = repo(
+    t,
+    {
+      "src/b.ts": b,
+      "src/a.ts": 'import * as ns from "./b";\nexport function callNs(): void { ns(); }\nexport function useNs(): void { ns.helper(); new ns.later(); }\n',
+      "src/d.js": "module.exports = function main() {};\nmodule.exports.x = function () {};\n",
+      "src/e.js": 'const d = require("./d");\nfunction run() { d(); d.x(); }\nmodule.exports = { run };\n',
+    },
+    { languages: ["typescript", "javascript"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot), ["app.a.useNs → app.b.helper", "app.a.useNs → app.b.later", "app.e.run → app.d.default", "app.e.run → app.d.x"]);
+  assert.deepEqual(holes(snapshot), ["app.a.callNs: unresolved-call call of the namespace object `ns`, which is no function"]);
+  // Reading a member of a module binding reads that member, not the binding.
+  assert.deepEqual(Object.keys(snapshot.nodes).filter((id) => snapshot.nodes[id]?.escapes), []);
+});
+
+test("typescript: a namespace object read as a value hands on every export of its module", (t) => {
+  const dir = repo(t, {
+    "src/b.ts": "export function helper(): void {}\nexport class Box { constructor() {} }\nexport default function defFn(): void {}\n",
+    "src/c.ts": 'import * as nb from "./b";\nexport function pass(keep: (x: unknown) => void): void { keep(nb); }\n',
+  });
+  const { snapshot } = map(dir);
+  const escaping = Object.entries(snapshot.nodes)
+    .filter(([, node]) => node.escapes?.reason === "`nb` is read as a value")
+    .map(([id]) => id)
+    .sort();
+  assert.deepEqual(escaping, ["app.b.Box.constructor", "app.b.defFn", "app.b.helper"]);
+});

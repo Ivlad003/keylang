@@ -215,7 +215,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const name = nameNode.text;
           const req = value ? requireSource(value, requires) : null;
           if (req) {
-            facts.imports.push(importAt(d, req, [{ kind: "module", local: name }], false));
+            facts.imports.push(importAt(d, req.source, [{ kind: "module", local: name, ...(req.namespace ? { namespace: true as const } : {}) }], false));
             continue;
           }
           // `(() => …) as Handler` and `(function () {}) satisfies T` are the function itself.
@@ -240,7 +240,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const value = d.childForFieldName("value");
           if (d.type !== "variable_declarator" || !nameNode || nameNode.type !== "object_pattern" || !value) continue;
           // `const { a } = mod;` where `mod` is an imported module binding.
-          const req = requireSource(value, requires) ?? (value.type === "identifier" ? moduleSource(facts, value.text) : null);
+          const req = requireSource(value, requires)?.source ?? (value.type === "identifier" ? moduleSource(facts, value.text) : null);
           if (!req) continue;
           const bindings: ImportBinding[] = [];
           for (const p of nameNode.namedChildren) {
@@ -333,7 +333,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           } else if (ns) {
             const alias = ns.namedChildren[0]?.text;
             if (alias) {
-              bindings.push({ kind: "module", local: alias });
+              bindings.push({ kind: "module", local: alias, namespace: true });
               facts.exports.add(alias);
               facts.exportRows.push({ name: alias, kind: "value", local: null, form: "namespace", from: spec });
             }
@@ -880,7 +880,7 @@ function importStatement(node: Node): ImportFact[] {
     if (c.type === "identifier") bindings.push({ kind: "default", local: c.text });
     else if (c.type === "namespace_import") {
       const id = c.namedChildren.find((x) => x.type === "identifier");
-      if (id) bindings.push({ kind: "module", local: id.text });
+      if (id) bindings.push({ kind: "module", local: id.text, namespace: true });
     } else if (c.type === "named_imports") {
       for (const s of c.namedChildren) {
         if (s.type !== "import_specifier") continue;
@@ -1217,14 +1217,14 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
   walkNamed(root, (node) => {
     const parent = parentOf(node);
     // A local binding of the name is not the module-level declaration; exporting a name is not reading it.
-    if (((node.type === "identifier" && parent && !bindsOrCalls(node, parent)) || node.type === "shorthand_property_identifier") && !exportedValue(node)) {
+    if (((node.type === "identifier" && parent && !bindsOrCalls(node, parent)) || node.type === "shorthand_property_identifier") && !exportedValue(node) && !memberObject(node, parent, facts)) {
       if (bindingOf(node, node.text, root) === null) note(node.text, node, false);
     }
     // Destructuring reads properties: `const { feed } = decoder` takes the method as a value.
     if (node.type === "shorthand_property_identifier_pattern" || (node.type === "property_identifier" && parent?.type === "pair_pattern" && parent.childForFieldName("key")?.id === node.id)) note(node.text, node, true);
     if ((node.type === "property_identifier" || node.type === "private_property_identifier") && parent?.type === "member_expression" && parent.childForFieldName("property")?.id === node.id) {
       const grand = parentOf(parent);
-      const called = grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id;
+      const called = (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === parent.id);
       const written = grand?.type === "assignment_expression" && grand.childForFieldName("left")?.id === parent.id;
       const object = parent.childForFieldName("object");
       // `mod.save` of an imported module reads the module function itself.
@@ -1237,6 +1237,21 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
     return true;
   });
   facts.valueRefs = [...first.values()].sort((a, b) => a.line - b.line || a.col - b.col);
+}
+
+/**
+ * The identifier is the object of a member access that uses only a member of
+ * it: `ns.helper()`, `new ns.X()`, and any `mod.x` of a module binding (the
+ * read is `mod.x`, noted on its own). `.call`, `.apply` and `.bind` use the
+ * function itself, so they read it.
+ */
+function memberObject(node: Node, parent: Node | null, facts: FileFacts): boolean {
+  if (parent?.type !== "member_expression" || parent.childForFieldName("object")?.id !== node.id) return false;
+  const property = parent.childForFieldName("property")?.text;
+  if (property === "call" || property === "apply" || property === "bind") return false;
+  const grand = parentOf(parent);
+  const called = (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === parent.id);
+  return called || moduleSource(facts, node.text, true) !== null;
 }
 
 /**
@@ -1464,8 +1479,10 @@ function moduleSource(facts: FileFacts, local: string, orDefault = false): strin
 /**
  * `require("./x")`, `import("./x")`, `await import("./x")` as the whole value:
  * the module a declarator binds. A `require` parameter or local is not Node's.
+ * `namespace`: `import()` gives the module's namespace object, `require()`
+ * its `module.exports`.
  */
-function requireSource(value: Node, requires: ReturnType<typeof query>): string | null {
+function requireSource(value: Node, requires: ReturnType<typeof query>): { source: string; namespace: boolean } | null {
   const call = value.type === "await_expression" ? value.namedChildren[0] : value;
   if (call?.type !== "call_expression") return null;
   for (const m of requires.matches(call)) {
@@ -1477,7 +1494,7 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): string 
     if ((args ? parentOf(args) : null)?.id !== call.id) continue;
     const fn = m.captures.find((c) => c.name === "fn");
     if (fn && requireKind(fn.node) === "shadowed") continue;
-    return src.node.text;
+    return { source: src.node.text, namespace: fn === undefined };
   }
   return null;
 }
