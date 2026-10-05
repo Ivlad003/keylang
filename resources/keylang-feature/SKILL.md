@@ -7,6 +7,8 @@ description: Implement a feature or integration from a keylang spec. Use when ad
 
 keylang is the spec and the check. You write the code with your own edits. Do not treat a draft as done until `feature_status` says so.
 
+The grammar on one page, with examples that check clean: https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md (the normative text is `docs/format.md`).
+
 ## Cycle
 
 1. Write `<dir>/features/<slug>.md`. Declare each new fn, module, or integration with `planned`, and add a flow whose steps name those ids. An integration that is not in the repo yet is `planned module external.<pkg>` plus a flow step from the module that will import it. No new grammar.

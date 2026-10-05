@@ -132,7 +132,7 @@ The buyer sends an order back. The order rules build a refund. The screen does n
     - step domain.orderAggregate.refund
 ```
 
-Use ids from the map of the repository you are in. The names above are only the shape.
+Use ids from the map of the repository you are in. The names above are only the shape. Every keyword, where it may stand, and its arguments are on one English page with examples: https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md
 
 2. Call MCP `validate_spec` with that path and the full text before you rely on it. Fix every diagnostic. K001 includes a line and a column. A missing function is not K001 while it is `planned`.
 3. Call MCP `scaffold` for each `planned fn`. It returns a path, a stub, and failing tests. It does not write files and does not call a model. An id that already exists is an error and names the file. A planned module is not a stub. You create that file.
@@ -249,6 +249,7 @@ The course is the guide. This file is the install and the working cycle.
 - Course, Ukrainian: https://github.com/Ivlad003/keylang/blob/master/docs/course/uk/README.md
 - Adding a feature to a repository that already exists: https://github.com/Ivlad003/keylang/blob/master/docs/course/existing/README.md
 - A new Telegram bot, Python CRUD, or NestJS app: https://github.com/Ivlad003/keylang/blob/master/docs/course/from-scratch/README.md
+- Grammar on one page (English, for agents): https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md
 - Grammar (Ukrainian, normative): https://github.com/Ivlad003/keylang/blob/master/docs/format.md
 - Commands: https://github.com/Ivlad003/keylang/blob/master/docs/tools.md
 

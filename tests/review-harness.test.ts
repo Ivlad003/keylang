@@ -247,6 +247,36 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
   assert.match(feature.stdout, /question/, "the open question is a gap for a person");
 });
 
+test("docs/cheatsheet.md: every keylang example parses alone and checks with the others against its map example, without K001–K005 or a fail", (t) => {
+  const sheet = readFileSync(join(root, "docs/cheatsheet.md"), "utf8");
+  assert.match(sheet, /\]\(format\.md\)/, "the cheatsheet names the normative grammar");
+  for (const keyword of ["layers", "allow", "deny", "entry", "exports", "no-cycles", "trigger", "step", "calls", "when", "then", "invariant", "test", "planned", "?", "wire"]) {
+    assert.ok(new RegExp(`^ *- ${escaped(keyword)}(?: |$)`, "m").test(sheet), `an example of \`${keyword}\``);
+  }
+  const examples = [...sheet.matchAll(/^```keylang\n([\s\S]*?)^```$/gm)].map((match) => match[1]!);
+  assert.ok(examples.length >= 10 && examples.length <= 15, `${examples.length} examples`);
+  const files = Object.fromEntries(examples.map((body, i) => [`keylang/example-${String(i + 1).padStart(2, "0")}.md`, body]));
+  const dir = tempDir(t, "keylang-cheatsheet-");
+  writeTree(dir, files);
+  const parsed = keylang(dir, ["parse", "--json", "keylang"]);
+  assert.equal(parsed.status, 0, parsed.stderr);
+  for (const doc of JSON.parse(parsed.stdout) as { path: string; diagnostics: { code: string; message: string }[] }[]) {
+    assert.deepEqual(doc.diagnostics.filter((d) => ["K003", "K004", "K005"].includes(d.code)), [], doc.path);
+  }
+  const checked = keylang(dir, ["check"]);
+  assert.doesNotMatch(checked.stdout, SPEC_ERRORS, checked.stdout);
+  assert.match(checked.stderr, /^0 fail, /m, checked.stdout);
+  const formatted = keylang(dir, ["fmt", "--check", "keylang"]);
+  assert.equal(formatted.status, 0, `the examples are in canonical form: ${formatted.stdout}${formatted.stderr}`);
+  // The control: an id the map does not declare is reported, so the examples above were really read.
+  const [first, second] = Object.keys(files).slice(4, 6);
+  writeFileSync(join(dir, first!), files[first!]!.replace("app.orders.place", "app.orders.nope"));
+  writeFileSync(join(dir, second!), `${files[second!]!}- deny app infra\n`);
+  const broken = keylang(dir, ["check"]);
+  assert.match(broken.stdout, /K001 dangling reference `app\.orders\.nope`/);
+  assert.match(broken.stdout, /K004 unknown keyword `deny`/);
+});
+
 const IGNORED = "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n";
 
 test("init lists .keylang/ in the root .gitignore: created when missing, appended once in the file's line ends, kept when listed", (t) => {
