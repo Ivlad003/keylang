@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { OUTSIDE_LAYER, type StaticMode, type StaticSource } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { constructorName } from "./languages.ts";
+import { caselessNames, constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, Trigger, WhenItem } from "./spec-ir.ts";
@@ -273,6 +273,8 @@ interface CallGraph {
   callers: Map<string, Step[]>;
   /** Fns by the name code calls them (`callName`), for calls whose receiver is unknown. */
   byName: Map<string, string[]>;
+  /** Fns of a language whose names compare without case (PHP), by that name lower-cased. */
+  byCaselessName: Map<string, string[]>;
   /** Unsupported constructs by file. */
   unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
   /**
@@ -312,11 +314,16 @@ function callGraph(input: FlowInput): CallGraph {
     }
   }
   const byName = new Map<string, string[]>();
-  for (const [id, node] of Object.entries(input.nodes)) if (node.kind === "fn") add(byName, callName(id), id);
+  const byCaselessName = new Map<string, string[]>();
+  for (const [id, node] of Object.entries(input.nodes)) {
+    if (node.kind !== "fn") continue;
+    add(byName, callName(id), id);
+    if (caselessNames(node.file)) add(byCaselessName, callName(id).toLowerCase(), id);
+  }
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
-  return { resolved, open, callers, byName, unsupported, opaque, callable, ...doubtfulBodies(input) };
+  return { resolved, open, callers, byName, byCaselessName, unsupported, opaque, callable, ...doubtfulBodies(input) };
 }
 
 /**
@@ -361,10 +368,13 @@ function callName(id: string): string {
   return suffix[1] === "static" ? name : `#${name}`;
 }
 
-/** Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member whose ID has no suffix. */
+/**
+ * Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member
+ * whose ID has no suffix; a fn of PHP matches the name in any case (`x.RUN` may run `run`).
+ */
 function namedLike(graph: CallGraph, name: string): string[] {
-  const plain = graph.byName.get(name) ?? [];
-  return name.startsWith("#") ? [...plain, ...(graph.byName.get(name.slice(1)) ?? [])] : plain;
+  const named = (key: string): string[] => [...(graph.byName.get(key) ?? []), ...(graph.byCaselessName.get(key.toLowerCase()) ?? [])];
+  return [...new Set([...named(name), ...(name.startsWith("#") ? named(name.slice(1)) : [])])];
 }
 
 function describeVia(edge: SnapshotEdge): string {
@@ -502,7 +512,10 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
     const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, lastSegment(edge.text ?? ""));
     if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
   }
-  const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && callName(step.to) === callName(target));
+  // An override has the name of the method the call resolved to; in PHP, in any case.
+  const caseless = caselessNames(to?.file);
+  const sameName = (id: string): boolean => callName(id) === callName(target) || (caseless && callName(id).toLowerCase() === callName(target).toLowerCase());
+  const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && sameName(step.to));
   if (override) return { verdict: "unverified", message: `${lead}; ${describeHole(override.edge, target, input)} at ${at(override.edge)}` };
   const blocker = escapeOf(graph, input, new Set([target]), new Set([parent]));
   if (blocker) return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
@@ -649,7 +662,15 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
     const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
     if (closure) return { reason: `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`, from: closure.from };
   }
-  const names = [...new Set([...routes].map((id) => callName(id).replace(/^#/, "")))].map(identifierPattern);
+  // PHP names a fn in any case: `call_user_func('HELPER')` mentions `helper`.
+  const patterns = new Map<string, RegExp>();
+  for (const id of routes) {
+    const name = callName(id).replace(/^#/, "");
+    const caseless = caselessNames(input.nodes[id]?.file);
+    const key = `${caseless ? "i" : ""}:${name}`;
+    if (!patterns.has(key)) patterns.set(key, identifierPattern(name, caseless));
+  }
+  const names = [...patterns.values()];
   for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => compareText(a, b))) {
     for (const item of items) {
       // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
@@ -665,9 +686,9 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
   return null;
 }
 
-/** `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit. */
-function identifierPattern(name: string): RegExp {
-  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
+/** `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit; `caseless`: in any case. */
+function identifierPattern(name: string, caseless = false): RegExp {
+  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{ID_Continue}$\\u200c\\u200d])`, caseless ? "iu" : "u");
 }
 
 /** The innermost fn whose declaration holds `file:line`. */

@@ -614,3 +614,48 @@ test("typescript: a class's type-parameter constraint and default, and a method 
     "app.c.Repo Order:3:36 → app.order.Order",
   ]);
 });
+
+test("php: a hole, a callable or a module-level call that names a method or a function in another case is a possible route to it, never an absence `fail`; a case-sensitive language keeps its `fail`", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/Jobs.php": [
+        "<?php",
+        "namespace App;",
+        "class Job { public function run(): void {} }",
+        "class Store { public function save(): void {} }",
+        "class Base { public function work(): void {} }",
+        "class Child extends Base { public function WORK(): void {} }",
+        "class Kernel { public function handle(): void {} }",
+        "function helper(): void {}",
+        "function start($x): void { $x->RUN(); }",
+        "function keep(Store $o): array { return [$o, 'SAVE']; }",
+        "function go(Base $b): void { $b->work(); }",
+        "function begin(): void {}",
+        "",
+      ].join("\n"),
+      // Code outside declarations runs when the file is included.
+      "src/boot.php": "<?php\nnamespace App;\n$kernel = make_kernel();\n$kernel->HANDLE();\ncall_user_func('App\\HELPER');\n",
+      "src/t.ts": "export class Task { run(): void {} }\nexport function start(x: any): void { x.RUN(); }\n",
+      "keylang/flows/begin.md": "# flow begin\n\n- trigger app.Jobs.begin\n  - step app.Jobs.Store.save\n  - step app.Jobs.Kernel.handle\n  - step app.Jobs.helper\n",
+      "keylang/flows/jobs.md": "# flow jobs\n\n- trigger app.Jobs.start\n  - step app.Jobs.Job.run\n",
+      "keylang/flows/task.md": "# flow task\n\n- trigger app.t.start\n  - step app.t.Task.run\n",
+      "keylang/flows/work.md": "# flow work\n\n- trigger app.Jobs.go\n  - step app.Jobs.Child.WORK\n  - calls app.Jobs.Child.WORK\n",
+    },
+    { languages: ["php", "typescript"] },
+  );
+  map(dir);
+  const o = keylang(dir, ["check"]);
+  // The only `fail`: a TypeScript call `x.RUN()` cannot run `run`.
+  assert.equal(o.status, 1, o.stdout + o.stderr);
+  const statics = o.stdout.split("\n").filter((line) => line.includes(" static "));
+  assert.deepEqual(statics, [
+    "keylang/flows/begin.md:4:3: static unverified app.Jobs.Store.save: no call path from app.Jobs.begin in the static graph; `SAVE` is read as a value at src/Jobs.php:10:41, so code keylang cannot follow may call `app.Jobs.Store.save`",
+    "keylang/flows/begin.md:5:3: static unverified app.Jobs.Kernel.handle: no call path from app.Jobs.begin in the static graph; `kernel.HANDLE` is called from module-level code at src/boot.php:4:1, so code keylang cannot follow may call `app.Jobs.Kernel.handle`",
+    "keylang/flows/begin.md:6:3: static unverified app.Jobs.helper: no call path from app.Jobs.begin in the static graph; `call_user_func` calls a callable chosen at run time at src/boot.php:5:1 may call it",
+    "keylang/flows/jobs.md:4:3: static unverified app.Jobs.Job.run: no resolved path from app.Jobs.start; call through a local value `x.RUN` at src/Jobs.php:9:28 may reach it",
+    "keylang/flows/task.md:4:3: static fail app.t.Task.run: absence: no call path from app.t.start; `app.t.Task.run` and its callers are called only by name, and no call from app.t.start's reachable code can reach them; add a call to `app.t.Task.run` in `app.t.start` or in a function it reaches",
+    "keylang/flows/work.md:4:3: static unverified app.Jobs.Child.WORK: no resolved path from app.Jobs.go; `b.work` may dispatch to another `work` at src/Jobs.php:11:30 may reach it",
+    "keylang/flows/work.md:5:11: static unverified app.Jobs.Child.WORK: no resolved call from app.Jobs.go; `b.work` may dispatch to another `work` at src/Jobs.php:11:30",
+  ]);
+});

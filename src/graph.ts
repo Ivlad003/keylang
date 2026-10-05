@@ -1222,22 +1222,35 @@ function holeReason(c: CallFact): string {
  * Functions that code may reach without naming them in a call: read as a value
  * (`later(save)` names the declaration `save` resolves to; `obj.save` any
  * method `save`), called implicitly, or the constructor of a class read as a
- * value (`extends A` runs `A`'s constructor). Names read and called are keyed in NFC.
+ * value (`extends A` runs `A`'s constructor). Names read and called are keyed in NFC;
+ * a fn of PHP matches them in any case (`[$o, 'SAVE']` reads `save`).
  */
 function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]): void {
+  const caselessReads = foldCase(readMembers);
+  const caselessCalls = foldCase(calledNames);
   const visit = (m: Module, isClass: boolean): void => {
     for (const fn of m.fns) {
       if (fn.escapes) continue;
       // A member is named in code as written (`go`), whatever suffix its ID has (`go-private`).
       const name = members.get(fn.id)?.name ?? fn.written ?? fn.name;
       const key = name.normalize("NFC");
-      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(fn.file ?? m.path) ? readMembers.get(key) : undefined) ?? calledNames.get(key);
+      const file = fn.file ?? m.path;
+      const caseless = caselessNames(file);
+      const named = (exact: ReadonlyMap<string, Escape>, folded: ReadonlyMap<string, Escape>): Escape | undefined => exact.get(key) ?? (caseless ? folded.get(key.toLowerCase()) : undefined);
+      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(file) ? named(readMembers, caselessReads) : undefined) ?? named(calledNames, caselessCalls);
       if (ref) fn.escapes = ref;
-      else if (isClass && !members.get(fn.id)?.hash && implicitMember(fn.file ?? m.path, name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
+      else if (isClass && !members.get(fn.id)?.hash && implicitMember(file, name)) fn.escapes = { file: file ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
     }
     for (const child of m.children) if (child.class) visit(child, true);
   };
   for (const m of modules.values()) visit(m, false);
+}
+
+/** Names keyed lower-cased, each with the escape of its first spelling: what a language whose names compare without case looks up. */
+function foldCase(names: ReadonlyMap<string, Escape>): Map<string, Escape> {
+  const out = new Map<string, Escape>();
+  for (const [name, escape] of names) if (!out.has(name.toLowerCase())) out.set(name.toLowerCase(), escape);
+  return out;
 }
 
 function markOpaque(m: Module): void {
