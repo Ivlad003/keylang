@@ -107,6 +107,11 @@ export interface Dep {
   endCol: number;
   text: string;
   reexport: boolean;
+  /**
+   * Every import of this kind from the module names types only (TypeScript `import type`,
+   * `export type … from`): erased from the code that runs, so `no-cycles` skips it.
+   */
+  typeOnly?: true;
 }
 
 export interface Fn {
@@ -460,15 +465,19 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
       for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
       // `import type`, `export type … from`: a dependency of types only, erased from the code that
-      // runs. A `type` edge, which `allow`, `deny`, `layers` and `entry` see, but `no-cycles` does not.
-      if (imp.typeOnly) {
-        openEdges.push({ kind: "type", source: module.id, target: target.id, candidates: [], file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, resolution: "resolved" });
-        continue;
-      }
+      // runs. An edge like any other, which `no-cycles` alone skips.
+      const typeOnly = imp.typeOnly ? { typeOnly: true as const } : {};
+      const at = { file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text };
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
       if (same.length > 0) {
-        if (!same.some((d) => d.reexport === imp.reexport)) module.deps.push({ alias: same[0]!.alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
+        const kind = same.find((d) => d.reexport === imp.reexport);
+        if (!kind) module.deps.push({ alias: same[0]!.alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
+        // `import type { A }`, then `import { a }` of the same module: the module runs, from the second import on.
+        else if (kind.typeOnly && !imp.typeOnly) {
+          Object.assign(kind, at);
+          delete kind.typeOnly;
+        }
         continue;
       }
       const wanted = imp.bindings.find((b) => b.kind === "module" || b.kind === "default")?.local ?? target.name;
@@ -487,7 +496,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         alias = `${alias}${n}`;
       }
       aliases.set(alias, target.id);
-      module.deps.push({ alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
+      module.deps.push({ alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
       stats.deps++;
     }
   }

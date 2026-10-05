@@ -16,7 +16,7 @@ import type { Verdict } from "./verdict.ts";
 interface SnapshotView {
   snapshotId: string;
   nodes: Record<string, { kind: string; file: string | null; line: number | null; col?: number | null; members?: string; class?: true }>;
-  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string }[];
+  edges: { kind: string; source: string; target: string | null; file: string | null; line: number; col: number; resolution: string; reason?: string; via?: string; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; col: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; kind: string; form?: string; from?: string; reason?: string }[];
 }
@@ -47,6 +47,8 @@ interface UseEdge {
   fromUnit: string;
   toUnit: string;
   kind: "import" | "call" | "type" | "reexport";
+  /** An import of types only (TypeScript `import type`): erased before the code runs, so no cycle. */
+  typeOnly: boolean;
   file: string;
   line: number;
   col: number;
@@ -182,10 +184,10 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     const fromUnit = unitOf(from);
     const toUnit = unitOf(to);
     if (fromUnit === toUnit) {
-      if (edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved") selfLoops.add(fromUnit);
+      if (edge.kind !== "call" && edge.kind !== "type" && edge.resolution === "resolved" && !edge.typeOnly) selfLoops.add(fromUnit);
       continue;
     }
-    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution });
+    edges.push({ from, to, fromUnit, toUnit, kind: edge.kind, typeOnly: edge.typeOnly === true, file: edge.file, line: edge.line, col: edge.col, resolution: edge.resolution });
   }
   /** Every module node, classes included: the area of a scope. */
   const modules = new Set<string>();
@@ -468,7 +470,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
   if (rules.noCycles.length > 0) {
     const adj = new Map<string, Set<string>>();
     for (const edge of edges) {
-      if (edge.resolution !== "resolved" || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
+      // A cycle is one the code runs: an import of types only is erased before that.
+      if (edge.resolution !== "resolved" || (edge.kind !== "import" && edge.kind !== "reexport") || edge.typeOnly) continue;
       const list = adj.get(edge.fromUnit) ?? new Set<string>();
       list.add(edge.toUnit);
       adj.set(edge.fromUnit, list);

@@ -74,7 +74,7 @@ export interface ImportFact {
   glob?: true;
   /**
    * TypeScript `import type …`, `export type … from`, `export type * from`: the statement names
-   * types only and is erased from the code that runs, so it is a dependency of types, not an import.
+   * types only and is erased from the code that runs, so its edge forms no cycle that runs.
    * An inline `import { type A }` is not: with `verbatimModuleSyntax` it stays `import {} from`.
    */
   typeOnly?: true;

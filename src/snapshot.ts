@@ -56,6 +56,12 @@ export interface SnapshotEdge {
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;
+  /**
+   * An import or re-export of types only (TypeScript `import type`, `export type … from`,
+   * `export type * from`), erased from the code that runs: `no-cycles` skips it, other rules
+   * and the map see it as any import.
+   */
+  typeOnly?: true;
 }
 
 export interface SnapshotExport {
@@ -326,6 +332,7 @@ export function buildSnapshot(
         text: d.text,
         resolution: "resolved",
         provenance: "syntactic",
+        ...(d.typeOnly ? { typeOnly: true as const } : {}),
       });
     }
     for (const f of m.fns) {

@@ -30,8 +30,8 @@ function repo(t: TestContext, files: Record<string, string>, config: Record<stri
 }
 
 interface Snapshot {
-  nodes: Record<string, { kind: string; name?: string; file: string | null; members?: string; escapes?: { reason: string } }>;
-  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; candidates?: string[]; alias?: string; reason?: string }[];
+  nodes: Record<string, { kind: string; name?: string; file: string | null; members?: string; escapes?: { reason: string }; deps?: string[]; dependents?: string[] }>;
+  edges: { kind: string; source: string; target: string | null; resolution: string; text: string; line: number; candidates?: string[]; alias?: string; reason?: string; typeOnly?: true }[];
   coverage: { kind: string; file: string; line: number; reason: string; source: string | null }[];
   exports: { module: string; name: string; symbol: string | null; kind: string; form?: string; from?: string }[];
 }
@@ -338,26 +338,35 @@ test("python: a name from `from m import *` resolves through `m`'s public names,
   assert.deepEqual(holes(snapshot, "app.n."), ["app.n.run: dynamic-call call through `gone`, a name from a glob import keylang does not follow"]);
 });
 
-test("typescript: `import type` and `export type … from` are `type` edges: `no-cycles` does not see them, `deny` does; an inline `{ type A }` stays an import", (t) => {
+test("typescript: `import type` and `export type … from` are import edges marked `typeOnly`: `no-cycles` skips them, while `deny`, the map, `deps` and `explain` see them; an inline `{ type A }` is an ordinary import", (t) => {
   const dir = repo(
     t,
     {
-      "src/a/a.ts": 'import { b } from "../b/b";\nexport interface A { x: number }\nexport function a(): void { b(); }\n',
+      "src/a/a.ts": 'import { b } from "../b/b";\nimport { e } from "../b/e";\nexport interface A { x: number }\nexport function a(): void { b(); e(); }\n',
       "src/b/b.ts": 'import type { A } from "../a/a";\nexport function b(x?: A): void {}\n',
       "src/b/c.ts": 'export type { A } from "../a/a";\n',
       "src/b/d.ts": 'import { type A } from "../a/a";\nexport function d(x?: A): void {}\n',
+      // A type-only import, then one that loads the module: one dependency, which runs.
+      "src/b/e.ts": 'import type { A } from "../a/a";\nimport { a } from "../a/a";\nexport function e(x?: A): void { a(); }\n',
       "keylang/rules.md": "# rules\n\n- no-cycles\n- deny b a\n",
     },
     { layers: { a: ["src/a/**"], b: ["src/b/**"] } },
   );
   const { snapshot } = map(dir);
-  const toA = snapshot.edges.filter((e) => e.target === "a.a").map((e) => `${e.kind} ${e.source}`).sort();
-  assert.deepEqual(toA, ["import b.d", "type b.b", "type b.c"]);
+  const toA = snapshot.edges.filter((e) => e.target === "a.a").map((e) => `${e.kind}${e.typeOnly ? " typeOnly" : ""} ${e.source}:${e.line}`).sort();
+  assert.deepEqual(toA, ["import b.d:1", "import b.e:2", "import typeOnly b.b:1", "reexport typeOnly b.c:1"]);
+  assert.deepEqual(snapshot.edges.filter((e) => e.kind === "type" && e.source.split(".").length === 2), [], "no module-to-module `type` edge");
+  assert.deepEqual(snapshot.nodes["b.b"]?.deps, ["a.a"]);
+  assert.deepEqual(snapshot.nodes["a.a"]?.dependents, ["b.b", "b.c", "b.d", "b.e"]);
   assert.deepEqual(snapshot.exports.filter((e) => e.module === "b.c").map((e) => `${e.name} → ${e.symbol}`), ["A → a.a.A"]);
+  // The map prints a type-only dependency like any other.
+  assert.match(readFileSync(join(dir, "keylang/map/b.md"), "utf8"), /- module \[b\]\(\.\.\/\.\.\/src\/b\/b\.ts#L1\)\n {4}- a a\.a\n/);
+  assert.match(keylang(dir, ["explain", "b.b"]).stdout, /^depends on: a\.a$/m);
   const o = keylang(dir, ["check"]);
   assert.equal(o.status, 1, o.stdout);
-  assert.doesNotMatch(o.stdout, /K105/);
-  for (const m of ["b\\.b", "b\\.c", "b\\.d"]) assert.match(o.stdout, new RegExp(`K102 divergence: \`${m}\` depends on \`a\\.a\``));
+  // The only cycle runs through the import of `b.e` that loads `a.a`.
+  assert.deepEqual(o.stdout.match(/K105 .*/g), ["K105 divergence: dependency cycle a.a → b.e → a.a"]);
+  for (const m of ["b\\.b", "b\\.c", "b\\.d", "b\\.e"]) assert.match(o.stdout, new RegExp(`K102 divergence: \`${m}\` depends on \`a\\.a\``));
 });
 
 test("typescript: `export type * from` and `export type * as NS from` are read as type-only re-exports, not a syntax error", (t) => {
@@ -374,8 +383,8 @@ test("typescript: `export type * from` and `export type * as NS from` are read a
   const rows = snapshot.exports.filter((e) => e.module === "app.a" || e.module === "app.b").map((e) => `${e.module} ${e.name} → ${e.symbol}`);
   assert.deepEqual(rows, ["app.a T → app.t.T", "app.a U → app.t.U", "app.a keep → app.a.keep", "app.b NS → app.t"]);
   // The text is the statement as written, `type` included.
-  const toT = snapshot.edges.filter((e) => e.target === "app.t").map((e) => `${e.kind} ${e.source} ${e.text}`);
-  assert.deepEqual(toT, ['type app.a export type * from "./t";', 'type app.b export type * as NS from "./t";']);
+  const toT = snapshot.edges.filter((e) => e.target === "app.t").map((e) => `${e.kind}${e.typeOnly ? " typeOnly" : ""} ${e.source} ${e.text}`);
+  assert.deepEqual(toT, ['reexport typeOnly app.a export type * from "./t";', 'reexport typeOnly app.b export type * as NS from "./t";']);
   const types = snapshot.edges.filter((e) => e.kind === "type" && e.source === "app.use.f").map((e) => `${e.text} → ${e.target}`);
   assert.deepEqual(types, ["T → app.t.T", "NS.U → app.t.U"]);
 });
