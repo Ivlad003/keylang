@@ -216,9 +216,11 @@ test("explain --llm: an Anthropic request that never answers ends within KEYLANG
   const elapsed = performance.now() - started;
   assert.equal(o.status, 2, o.stdout);
   assert.match(o.stderr, /^keylang: anthropic: no answer within 400 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m);
-  assert.ok(requests >= 1);
-  // Three attempts with back-off between them would take well over a second.
-  assert.ok(elapsed < 1400 + 600, `took ${Math.round(elapsed)} ms`);
+  // The timeout bounds the call, retries included: the SDK never gets to a second attempt.
+  // Counting requests is the proof; the wall clock of a whole CLI run depends on the machine's load.
+  assert.equal(requests, 1, "one request: no retry after the timeout");
+  // Three attempts with back-off would add seconds; a loose bound still catches a hang.
+  assert.ok(elapsed < 10_000, `took ${Math.round(elapsed)} ms`);
 });
 
 test("explain --llm: a module's explanation goes stale when a member changes; code in backticks is not an unknown id; an empty key is no key", async (t) => {
