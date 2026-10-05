@@ -109,3 +109,35 @@ test("every provider's model follows the rule that keeps the explanation header 
   assert.equal(valid.status, 0, valid.stderr);
   assert.match(valid.stderr, /OPENROUTER_API_KEY/);
 });
+
+test("IDs from file and directory names are NFC, whatever normalization the disk keeps", (t) => {
+  const nfd = "café"; // as macOS stores `café`
+  const nfc = "café"; // as a person types it
+  const dir = repo(t, {
+    // The layer name typed in NFD too: one layer with the spec's spelling.
+    "keylang.json": json({ languages: ["typescript"], layers: { [`${nfd}s`]: ["src/**"] } }),
+    [`src/${nfd}/menu.ts`]: `export function order(): void {}\n`,
+    "src/main.ts": `import { order } from "./${nfd}/menu.ts";\nexport function main(): void {\n  order();\n}\n`,
+    "keylang/flows/order.md": `# flow order\n\n- trigger ${nfc}s.main.main\n  - step ${nfc}s.${nfc}.menu.order\n`,
+  });
+  const run = keylang(dir, ["map"]);
+  assert.equal(run.status, 0, run.stderr);
+  const nodes = index(dir).nodes;
+  const id = `${nfc}s.${nfc}.menu.order`;
+  assert.ok(nodes[id], Object.keys(nodes).join(", "));
+  assert.equal(Object.keys(nodes).some((key) => key !== key.normalize("NFC")), false);
+  // The path stays the one on disk: keylang reads the file by it.
+  assert.equal(nodes[id]!.file, `src/${nfd}/menu.ts`);
+  assert.ok(readFileSync(join(dir, `keylang/map/${nfc}s.md`), "utf8").includes(`- module ${nfc}`));
+  const check = keylang(dir, ["check", "--format", "json"]);
+  assert.equal(check.status, 0, check.stdout);
+  const rows = (JSON.parse(check.stdout) as { results: { criterion: string; verdict: string; code: string | null }[] }).results;
+  assert.equal(rows.some((row) => row.code === "K001"), false, check.stdout);
+  assert.ok(rows.some((row) => row.criterion === "ID" && row.verdict === "ok" && check.stdout.includes(id)), check.stdout);
+
+  // Two keys that are one name once normalized: an error naming both.
+  write(dir, "keylang.json", `{"languages":["typescript"],"layers":{"${nfd}s":["src/**"],"${nfc}s":["lib/**"]}}\n`);
+  const twice = keylang(dir, ["map", "--check"]);
+  assert.equal(twice.status, 2);
+  assert.ok(twice.stderr.includes(`keylang.json: \`layers.${nfc}s\` is the layer \`layers.${nfd}s\` written in another Unicode normalization`), twice.stderr);
+});

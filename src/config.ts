@@ -243,7 +243,13 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.layers !== undefined) {
     if (!isObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
     const layers: Record<string, string | string[]> = {};
-    for (const [name, globs] of Object.entries(value.layers)) {
+    const written = new Map<string, string>();
+    for (const [key, globs] of Object.entries(value.layers)) {
+      // IDs are NFC: a name typed in NFD is the same layer as the one a spec names.
+      const name = key.normalize("NFC");
+      const other = written.get(name);
+      if (other !== undefined) throw new Error(`${file}: \`layers.${key}\` is the layer \`layers.${other}\` written in another Unicode normalization; keep one`);
+      written.set(name, key);
       // A layer is the first segment of every ID under it; `core.domain` would be two.
       if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
       if (RESERVED_LAYER_NAMES.has(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
@@ -700,11 +706,14 @@ export function decodeLayerName(segment: string): string {
 }
 
 /**
- * Make a directory or file name a valid ID segment.
+ * Make a directory or file name a valid ID segment, in Unicode NFC.
  * An existing segment is kept. Without `()[]`, any other character becomes `_`.
  * Brackets (and the rest of that name) are encoded reversibly — see `decodeLayerName`.
  */
-export function layerName(name: string): string {
+export function layerName(written: string): string {
+  // IDs are NFC: a directory macOS stores in NFD (`cafe` + U+0301) and the
+  // same name typed in a spec (`café`) look alike, so they are one ID.
+  const name = written.normalize("NFC");
   // Only a name that is not already a segment, and only when it has brackets.
   // `cats.controller` still collapses the dot; `_shop_` is already a segment.
   if (/[()[\]]/.test(name) && !isIdSegment(name)) return encodeBracketSegment(name);
