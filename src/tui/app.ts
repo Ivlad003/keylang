@@ -61,6 +61,7 @@ import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
 import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } from "./findings.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
+import { mergeRows } from "./merge.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, C4Form, CodeDraftForm, ConfigState, Cursor, DraftForm, ExplainPlanForm, Hover, Mode, NewSpecForm, OperationRecord, RulesDraftForm, SpecCodeForm, State } from "./state.ts";
@@ -644,7 +645,9 @@ export class App {
     this.state.current = path;
     this.state.cursor = { ...cursor };
     this.state.filesIndex = Math.max(0, this.state.files.indexOf(path));
-    if (this.state.mode === "code" || this.state.mode === "merge") this.state.mode = "view";
+    // The file is shown in the view: a screen over the editor goes. The zoom keeps its state, so `z` (or
+    // Ctrl+O, when the place was remembered) comes back to it.
+    if (this.state.mode === "code" || this.state.mode === "merge" || this.state.mode === "zoom") this.state.mode = "view";
     this.state.selection = null;
     this.state.completion = null;
     this.state.hover = null;
@@ -686,6 +689,9 @@ export class App {
     const col = Math.min(this.state.cursor.col, line.clusters.length);
     if (col < this.state.left) this.state.left = col;
     this.state.left = scrollToFit(line, this.state.left, col, textWidth);
+    // Scrolled further than this line needs (a longer line was before it): back as far as its end still
+    // fits, which keeps the cursor in view too, so a short line is never drawn blank.
+    this.state.left = Math.min(this.state.left, scrollToFit(line, 0, line.clusters.length, textWidth));
   }
 
   private edit(change: (lines: string[], cursor: Cursor) => void, coalesce = false): void {
@@ -1312,11 +1318,23 @@ export class App {
     }
   }
 
+  /** `Tab`: the editor, then each open side panel that is drawn once it has the focus. */
   private cycleFocus(): void {
-    const order = ["editor", ...(this.state.context.open ? ["context"] : this.state.showNav ? ["nav"] : []), ...(this.state.showFiles ? ["files"] : [])] as const;
-    const at = order.indexOf(this.state.focus as (typeof order)[number]);
-    this.state.focus = order[(at + 1) % order.length] as State["focus"];
+    const panels: SidePanel[] = [...(this.state.context.open ? ["context" as const] : this.state.showNav ? ["nav" as const] : []), ...(this.state.showFiles ? ["files" as const] : [])];
+    const order: State["focus"][] = ["editor", ...panels.filter((panel) => this.drawable(panel))];
+    const at = order.indexOf(this.state.focus);
+    this.state.focus = order[(at + 1) % order.length]!;
     if (this.state.focus === "nav") this.fixNavIndex(1);
+  }
+
+  /**
+   * Whether `panel` is drawn when it has the focus (below 100 columns the
+   * focused panel is the one shown). Below 60 columns none is: keys must not
+   * go to a list nobody sees.
+   */
+  private drawable(panel: SidePanel): boolean {
+    const area = layout({ ...this.state, focus: panel });
+    return (panel === "files" ? area.files : area.nav) !== null;
   }
 
   /** `K`: the hover of the id nearest the cursor, as the mouse would show it. */
@@ -1619,7 +1637,7 @@ export class App {
     this.state.showFiles = !this.state.showFiles;
     if (this.state.showFiles) this.state.lastPanel = "files";
     this.narrowNote();
-    if (this.state.showFiles && focusable) this.state.focus = "files";
+    if (this.state.showFiles && focusable && this.drawable("files")) this.state.focus = "files";
     else if (!this.state.showFiles && this.state.focus === "files") this.state.focus = "editor";
     this.keepVisible();
   }
@@ -1632,12 +1650,13 @@ export class App {
     this.keepVisible();
   }
 
-  private toggleContext(focus = true): void {
+  /** F4 and the palette: the context panel; it takes the focus only where keys go to panels (`focusable`). */
+  private toggleContext(focusable: boolean): void {
     const context = this.state.context;
     context.open = !context.open;
     if (context.open) this.state.lastPanel = "nav";
     this.narrowNote();
-    if (context.open && focus) this.state.focus = "context";
+    if (context.open && focusable && this.drawable("context")) this.state.focus = "context";
     else if (!context.open && this.state.focus === "context") this.state.focus = "editor";
     this.keepVisible();
   }
@@ -1684,7 +1703,7 @@ export class App {
       case "tab":
         return this.cycleFocus();
       case "escape":
-        return this.toggleContext();
+        return this.toggleContext(false);
       default:
         return;
     }
@@ -5292,10 +5311,13 @@ export class App {
     if (this.state.mode === "zoom" && inside(area.editor)) return this.zoomMouse(event, area.editor);
     if (event.action === "wheel-up" || event.action === "wheel-down") {
       const delta = event.action === "wheel-up" ? -3 : 3;
-      if (this.state.mode === "code" && this.state.code) this.state.code.top = Math.max(0, Math.min(this.state.code.lines.length - 1, this.state.code.top + delta));
-      else if (this.state.mode === "merge" && this.state.merge) this.state.merge.top = Math.max(0, this.state.merge.top + delta);
+      // Like every list the wheel scrolls, it stops with the last row at the top.
+      const scroll = (top: number, rows: number): number => Math.max(0, Math.min(rows - 1, top + delta));
+      const merge = this.state.merge;
+      if (this.state.mode === "code" && this.state.code) this.state.code.top = scroll(this.state.code.top, this.state.code.lines.length);
+      else if (this.state.mode === "merge" && merge) merge.top = scroll(merge.top, mergeRows(merge.base, merge.hunks).length);
       else if (context) this.state.context.index = Math.max(0, Math.min(Math.max(0, (this.contextPack()?.items.length ?? 1) - 1), this.state.context.index + delta));
-      else if (inside(area.nav)) this.state.navTop = Math.max(0, this.state.navTop + delta);
+      else if (inside(area.nav)) this.state.navTop = scroll(this.state.navTop, navEntries(this.state).length);
       else {
         this.state.top = Math.max(0, Math.min(this.lines().length - 1, this.state.top + delta));
         this.state.cursor.line = Math.max(this.state.top, Math.min(this.state.cursor.line, this.state.top + area.editor.height - 2));
@@ -5330,8 +5352,10 @@ export class App {
       return;
     }
     if (inside(area.nav) && area.nav) {
-      const index = this.state.navTop + event.y - area.nav.y - 1;
-      if (index < this.state.navTop) return;
+      const row = event.y - area.nav.y - 1;
+      const index = this.state.navTop + row;
+      // The title, the space below the last item and the explanation under the list open nothing.
+      if (row < 0 || row >= navListHeight(this.state, area.nav) - 1 || index >= navEntries(this.state).length) return;
       this.state.focus = "nav";
       this.state.navIndex = index;
       this.fixNavIndex(1);
@@ -5582,7 +5606,7 @@ export class App {
       case "zoom":
         return this.openZoom(null);
       case "context":
-        return this.toggleContext(true);
+        return this.toggleContext(focusable);
       case "results":
         return this.openResults();
       case "doctor":
@@ -5924,6 +5948,9 @@ const DRAFT_MODES = ["algo", "hybrid", "llm"] as const;
 
 /** The lists of the inventory form, in ←→ order. */
 const EXPLAIN_PLAN_LISTS = ["stale-saved", "missing", "stale"] as const;
+
+/** A side panel that can take the focus: files (F2), navigation (F3) or the context in its place (F4). */
+type SidePanel = "files" | "nav" | "context";
 
 /** What a layout draft was made against: keylang.json's buffer (null: none open), the file, the code snapshot. */
 interface LayoutBasis {

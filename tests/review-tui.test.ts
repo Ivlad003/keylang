@@ -11,10 +11,11 @@ import { readStats, updateStats } from "../src/stats.ts";
 import { App, type AppOptions, type Surface } from "../src/tui/app.ts";
 import type { OperationWorker } from "../src/tui/background.ts";
 import { InputDecoder, type InputEvent } from "../src/tui/input.ts";
+import { mergeRows } from "../src/tui/merge.ts";
 import { Grid } from "../src/tui/screen.ts";
-import { reportOverflow } from "../src/tui/view.ts";
+import { layout, navEntries, reportOverflow } from "../src/tui/view.ts";
 import { clusterAt, graphemeWidth, sliceCells, stringWidth } from "../src/tui/width.ts";
-import { checkoutRepo, KEY } from "./tui-fixture.ts";
+import { checkoutRepo, click, KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
@@ -39,6 +40,19 @@ function session(root: string, options: { cols?: number; rows?: number; surface?
 }
 
 const tick = (): Promise<void> => new Promise((done) => setImmediate(done));
+const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
+/** A lone ESC is the Escape key once the decoder's pause has passed. */
+async function escape(s: Session): Promise<void> {
+  s.send("\x1b");
+  await sleep(40);
+}
+
+function lineOf(lines: readonly string[], text: string): string {
+  const found = lines.find((line) => line.includes(text));
+  assert.ok(found, `no line with ${text}:\n${lines.join("\n")}`);
+  return found;
+}
 
 /** A file in the repository, with its directories. */
 function put(root: string, path: string, text: string): void {
@@ -235,6 +249,110 @@ test("review-tui: clusterAt maps a column inside a cluster to that cluster; slic
   const max = reportOverflow(rows, 20);
   assert.equal(sliceCells(rows[0]!.text, max, 20), `…${"x".repeat(18)}y`);
   assert.equal(sliceCells(rows[1]!.text, max, 20), "");
+});
+
+// ---------- 3, 5, 6, 8, 9, 10: where the screen goes ----------
+
+test("review-tui: a file opened from the zoom screen is shown in the view; Ctrl+O, and Esc from a finding, come back to the zoom", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("z");
+  assert.equal(s.app.state.mode, "zoom");
+  s.send(":");
+  s.send("rules");
+  assert.match(s.app.state.prompt!.items[0]!, /keylang\/rules\.md/);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.mode, "view");
+  assert.equal(s.app.state.current, "keylang/rules.md");
+  assert.match(s.lines()[1]!, /# rules/, "the file, not the zoom screen");
+  s.send(KEY.ctrlO);
+  assert.equal(s.app.state.mode, "zoom", "back where it was opened from");
+  s.send(KEY.f6);
+  s.send(KEY.enter);
+  assert.equal(s.app.state.results.viewing, true);
+  assert.equal(s.app.state.mode, "view", "the finding's line is shown, not the zoom over it");
+  assert.equal(s.app.state.current, FLOW_PATH);
+  assert.match(lineOf(s.lines(), "- step application.purchase.buy"), /^◌/);
+  await escape(s);
+  assert.equal(s.app.state.results.viewing, false);
+  assert.equal(s.app.state.mode, "zoom", "Esc brings the list back over the zoom it was opened from");
+});
+
+test("review-tui: a short line after the end of a long one scrolls back and is drawn", async (t) => {
+  const long = `- step application.purchase.buy ${"x".repeat(150)}`;
+  const s = session(checkoutRepo(t, { [FLOW_PATH]: `# flow checkout\n\n- trigger presentation.terminal.checkout\n${long}\n- step domain.order.create\n` }));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  for (let i = 0; i < 3; i++) s.send(KEY.down);
+  s.send(KEY.end);
+  assert.ok(s.app.state.left > 0, "the long line scrolls to its end");
+  s.send(KEY.down);
+  assert.equal(s.app.state.cursor.col, "- step domain.order.create".length);
+  assert.equal(s.app.state.left, 0);
+  assert.match(s.text(), /5 - step domain\.order\.create/);
+  assert.match(s.text(), /3 - trigger presentation\.terminal\.checkout/, "every line is drawn from its start again");
+});
+
+test("review-tui: below 60 columns F2, F4 and Tab leave the focus in the editor, where the keys still go", async (t) => {
+  const s = session(checkoutRepo(t), { cols: 50, rows: 24 });
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("\x1b[12~"); // F2
+  assert.equal(s.app.state.focus, "editor");
+  assert.match(s.app.state.message ?? "", /side panels need 60 columns \(now 50\)/);
+  s.send("\x1b[14~"); // F4
+  assert.equal(s.app.state.focus, "editor");
+  s.send(KEY.tab);
+  assert.equal(s.app.state.focus, "editor");
+  s.send("j");
+  assert.equal(s.app.state.cursor.line, 1, "the keys go to the editor");
+});
+
+test("review-tui: the palette's agent context panel in edit mode leaves the focus and the cursor in the editor", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  s.send(KEY.ctrlP);
+  s.send("agent context");
+  s.send(KEY.enter);
+  assert.equal(s.app.state.context.open, true);
+  assert.equal(s.app.state.mode, "edit");
+  assert.equal(s.app.state.focus, "editor");
+  assert.notEqual(s.app.frame().cursor, null, "the editor's cursor is drawn");
+  s.send("x");
+  assert.match(s.app.state.buffers.get(FLOW_PATH)!.text, /^x# flow checkout/);
+});
+
+test("review-tui: a click below the last item of the navigation opens nothing", async (t) => {
+  const s = session(checkoutRepo(t));
+  t.after(() => s.app.close());
+  await s.app.idle();
+  const nav = layout(s.app.state).nav!;
+  assert.ok(navEntries(s.app.state).length < nav.height - 3, "the list ends above the panel's bottom");
+  const before = { current: s.app.state.current, mode: s.app.state.mode, cursor: { ...s.app.state.cursor }, focus: s.app.state.focus, navIndex: s.app.state.navIndex };
+  s.send(click(nav.x + 4, nav.y + nav.height - 2));
+  assert.deepEqual({ current: s.app.state.current, mode: s.app.state.mode, cursor: s.app.state.cursor, focus: s.app.state.focus, navIndex: s.app.state.navIndex }, before);
+});
+
+test("review-tui: the wheel stops at the last row in MERGE and over the navigation", async (t) => {
+  const root = checkoutRepo(t);
+  put(root, `.keylang/proposals/${FLOW_PATH}`, "# flow checkout\n\nChanged.\n\n- trigger presentation.terminal.checkout\n- step application.purchase.buy\n");
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("m");
+  assert.equal(s.app.state.mode, "merge");
+  const merge = s.app.state.merge!;
+  const rows = mergeRows(merge.base, merge.hunks).length;
+  for (let i = 0; i < 30; i++) s.send("\x1b[<65;10;10M");
+  assert.equal(merge.top, rows - 1);
+  assert.ok(s.lines()[2]!.trim() !== "", "the body still shows a row");
+  await escape(s);
+  const nav = layout(s.app.state).nav!;
+  for (let i = 0; i < 40; i++) s.send(`\x1b[<65;${nav.x + 5};10M`);
+  assert.equal(s.app.state.navTop, navEntries(s.app.state).length - 1);
 });
 
 const CHECKOUT_FLOW_PAID = ["# flow checkout", "", "Checkout from the terminal, paid.", "", "- trigger presentation.terminal.checkout", "- step application.purchase.buy", "  - step domain.order.create", "  - step infrastructure.store.save", ""].join("\n");
