@@ -568,3 +568,24 @@ test("php: a class or a function is found whatever the case its name is written 
   assert.ok(snapshot.nodes["app.Order.Order"] && snapshot.nodes["app.Order.helper"]);
   assert.deepEqual(Object.keys(snapshot.nodes).filter((id) => /ORDER|HELPER/.test(id)), []);
 });
+
+test("typescript: a step to a package is proved by an import from the parent's module that loads it, never by `import type` or `export type … from`", (t) => {
+  const dir = repo(t, {
+    "package.json": '{"dependencies":{"zod":"3.0.0","yup":"1.0.0"}}',
+    "src/a.ts": 'import type { ZodType } from "zod";\nexport type { Schema } from "yup";\nexport function run(x?: ZodType): void {}\n',
+    // A runtime import in another module proves nothing for `app.a`.
+    "src/b.ts": 'import { z } from "zod";\nexport function other(): unknown { return z; }\n',
+    "src/c.ts": 'import type { ZodType } from "zod";\nimport { z } from "zod";\nexport function both(x?: ZodType): unknown { return z; }\n',
+    "keylang/flows/f.md": "# flow f\n\n- trigger app.a.run\n  - step external.zod\n  - step external.yup\n",
+    "keylang/flows/g.md": "# flow g\n\n- trigger app.c.both\n  - step external.zod\n",
+  });
+  map(dir);
+  const o = keylang(dir, ["check"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  const statics = o.stdout.split("\n").filter((line) => line.includes(" static "));
+  assert.deepEqual(statics, [
+    "keylang/flows/f.md:4:3: static unverified external.zod: no import of `external.zod` from `app.a`; the type-only import at src/a.ts:1:1 is erased from the code that runs",
+    "keylang/flows/f.md:5:3: static unverified external.yup: no import of `external.yup` from `app.a`; the type-only import at src/a.ts:2:1 is erased from the code that runs",
+    "keylang/flows/g.md:4:3: static ok external.zod: imported by `app.c`",
+  ]);
+});

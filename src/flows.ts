@@ -29,6 +29,8 @@ interface SnapshotEdge {
   hook?: string;
   site?: string;
   closure?: true;
+  /** An `import` or `reexport` of types only (`import type`, `export type … from`): erased from the code that runs. */
+  typeOnly?: true;
 }
 
 interface SnapshotNodeView {
@@ -563,15 +565,20 @@ function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
   }
 }
 
-/** Static proof for `external.<pkg>`: a resolved import from the parent fn's own module. */
+/**
+ * Static proof for `external.<pkg>`: a resolved import from the parent fn's own module that
+ * loads the package. A type-only one (`import type`, `export type … from`) is erased from the
+ * code that runs, so it proves nothing.
+ */
 function externalImport(input: FlowInput, parent: string, target: string): { verdict: Verdict["verdict"]; message: string } {
   const moduleId = fileModule(input.nodes, parent);
   if (moduleId === null) return { verdict: "unverified", message: `no module of \`${parent}\` imports \`${target}\`` };
-  const edge = input.edges.find(
+  const imports = input.edges.filter(
     (item) => (item.kind === "import" || item.kind === "reexport") && item.resolution === "resolved" && item.source === moduleId && item.target === target,
   );
-  if (edge) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
-  return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`` };
+  if (imports.some((edge) => !edge.typeOnly)) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
+  const erased = imports[0] ? `; the type-only import at ${at(imports[0])} is erased from the code that runs` : "";
+  return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`${erased}` };
 }
 
 function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
