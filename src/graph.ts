@@ -11,7 +11,7 @@ import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts"
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import { assumedTarget, type Resolution } from "./imports.ts";
-import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { caselessMembers, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 
 export { EXTERNAL };
@@ -558,7 +558,9 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
    * ended at, null when the class has no base; an unread base may declare it.
    */
   const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
-    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic), ...(staticToo && !isStatic ? [memberKey(member, true)] : [])];
+    // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
+    const caseless = caselessMembers(decls.classes.get(start)?.path);
+    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(member, true, caseless)] : [])];
     const seen = new Set<string>();
     const inClass = (id: string): string | null => {
       if (seen.has(id)) return null;
@@ -1223,10 +1225,11 @@ interface Decls {
   members: Map<string, { name: string; hash: boolean }>;
 }
 
-/** Lookup key of a class member: `this.#m` in a static method is `static #m`. */
-export function memberKey(member: string, isStatic: boolean): string {
+/** Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without case (PHP). */
+export function memberKey(member: string, isStatic: boolean, caseless = false): string {
   const hash = member.startsWith("#");
-  return `${isStatic ? "static " : ""}${hash ? "#" : ""}${layerName(hash ? member.slice(1) : member)}`;
+  const key = `${isStatic ? "static " : ""}${hash ? "#" : ""}${layerName(hash ? member.slice(1) : member)}`;
+  return caseless ? key.toLowerCase() : key;
 }
 
 /** Suffixes of a member whose name another member of the class already has. */
@@ -1236,15 +1239,16 @@ const MEMBER_SUFFIX = ["", "-static", "-private", "-static-private"];
  * ID segments of class members. An instance member keeps its name; a static
  * or `#private` member of the same name as another gets a suffix (`m-static`,
  * `go-private`, `go-static-private`), which no JS name can collide with.
- * Priority: instance, static, `#private`, static `#private`.
+ * Priority: instance, static, `#private`, static `#private`. A segment keeps
+ * the case of the declaration; a `caseless` key does not (PHP).
  */
-function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: string; segment: string }> {
+function memberSegments(members: readonly DeclFact[], caseless: boolean): Map<DeclFact, { key: string; segment: string }> {
   const rank = (m: DeclFact): number => (m.static ? 1 : 0) + (m.hash ? 2 : 0);
   const out = new Map<DeclFact, { key: string; segment: string }>();
   const byKey = new Map<string, string>();
   const used = new Set<string>();
   for (const m of [...members].sort((a, b) => rank(a) - rank(b))) {
-    const key = memberKey(`${m.hash ? "#" : ""}${m.name}`, m.static === true);
+    const key = memberKey(`${m.hash ? "#" : ""}${m.name}`, m.static === true, caseless);
     let segment = byKey.get(key);
     if (segment === undefined) {
       const name = layerName(m.name);
@@ -1337,7 +1341,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
     decls.classes.set(id, cls);
     const members = new Map<string, string>();
     declModule.set(id, members);
-    const segments = memberSegments(d.members);
+    const segments = memberSegments(d.members, caselessMembers(file));
     for (const m of d.members) {
       addDecl(cls, m, members, declModule, decls, stats, file, segments.get(m));
       const fnId = decls.ids.get(m);

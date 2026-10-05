@@ -303,6 +303,44 @@ test("php: `$this->m()` finds a method of a `use`d trait and of the base class; 
   assert.deepEqual(holes(snapshot, "app.Service."), []);
 });
 
+test("php: a method is found whatever the case its call is written in, as PHP finds it", (t) => {
+  const dir = repo(
+    t,
+    {
+      "src/Order.php": [
+        "<?php",
+        "namespace App;",
+        "trait Logs { public function log(): void {} }",
+        "class Base { public function greet(): void {} public static function make(): void {} }",
+        "class Order extends Base {",
+        "    use Logs;",
+        "    public function total(): int { return $this->HELPER() + self::Tax() + static::TAX(); }",
+        "    private function helper(): int { return 1; }",
+        "    public static function tax(): int { return 2; }",
+        "    public function run(): void { $this->GREET(); parent::Greet(); $this->Make(); $this->LOG(); }",
+        "}",
+        "function useIt(Order $o): int { $o->Run(); return $o->TOTAL() + Order::TAX(); }",
+        "",
+      ].join("\n"),
+    },
+    { languages: ["php"] },
+  );
+  const { snapshot } = map(dir);
+  assert.deepEqual(calls(snapshot), [
+    "app.Order.Order.run → app.Order.Base.greet",
+    "app.Order.Order.run → app.Order.Base.make",
+    "app.Order.Order.run → app.Order.Logs.log",
+    "app.Order.Order.total → app.Order.Order.helper",
+    "app.Order.Order.total → app.Order.Order.tax",
+    "app.Order.useIt → app.Order.Order.run",
+    "app.Order.useIt → app.Order.Order.tax",
+    "app.Order.useIt → app.Order.Order.total",
+  ]);
+  assert.deepEqual(holes(snapshot), []);
+  // IDs keep the case the declaration is written in.
+  assert.ok(snapshot.nodes["app.Order.Order.helper"] && !snapshot.nodes["app.Order.Order.HELPER"]);
+});
+
 test("rust: a name from `use m::*` resolves through that module's public items; two globs that both have it are ambiguous; a glob of a crate keeps it external", (t) => {
   const dir = repo(
     t,
