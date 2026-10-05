@@ -350,7 +350,7 @@ test("the TUI status line and readiness screen agree with feature: an inherited 
   writeFileSync(join(dir, "src/app/pay.ts"), PAID);
   const vt = new VirtualTerminal(130, 32);
   const app = new App({ root: dir, cols: 130, rows: 32 });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, 130, 32);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, 130, 32);
   t.after(() => app.close());
   const palette = (text: string): void => {
     app.input(KEY.ctrlP);
