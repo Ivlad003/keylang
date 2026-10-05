@@ -47,7 +47,7 @@ import { OperationWorker } from "./background.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
-import { DEFAULT_FILTER, FILTER_KEYS, findingsOf, sameResult, visibleFindings } from "./findings.ts";
+import { DEFAULT_FILTER, findingsOf, sameResult, visibleFindings } from "./findings.ts";
 import { InputDecoder, type InputEvent, type KeyEvent, type MouseEvent } from "./input.ts";
 import { mergeRows } from "./merge.ts";
 import { errorText, MergeSession, type ProposalEntry } from "./merge-session.ts";
@@ -56,16 +56,15 @@ import { ExplainForms } from "./forms/explain.ts";
 import { ExportForms } from "./forms/export.ts";
 import type { FormHost } from "./forms/host.ts";
 import { RunForms } from "./forms/run.ts";
+import { ResultsPanel } from "./results-panel.ts";
 import { ZoomScreen } from "./zoom-screen.ts";
 import { NODE_HITS, noteOfSelection, promptKey, typeInto, type PromptKeys } from "./prompt-keys.ts";
 import { renderDiff, type Grid } from "./screen.ts";
 import type { Buffer, ConfigState, Cursor, Hover, Mode, NewSpecForm, OperationRecord, Prompt, State } from "./state.ts";
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
-import { featureItems } from "./reports/check.ts";
-import { operationLabel, recordSummary, reportItems, resultsReportRows } from "./reports/records.ts";
-import type { ReportItem } from "./reports/rows.ts";
-import { contextTop, editorRows, filesTop, findingsListRows, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render, reportOverflow, resultsSplit } from "./view.ts";
+import { operationLabel, recordSummary } from "./reports/records.ts";
+import { contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -142,6 +141,8 @@ export class App {
   private readonly exports: ExportForms;
   /** The zoom screen's keys and pointer. */
   private readonly zoomScreen: ZoomScreen;
+  /** The F6 panel's keys. */
+  private readonly results: ResultsPanel;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
@@ -294,6 +295,25 @@ export class App {
       openPalette: () => this.openPalette(),
       requestOperation: (action, request) => this.requestOperation(action, request),
     });
+    this.results = new ResultsPanel({
+      state: this.state,
+      reanalyze: () => this.reanalyze(),
+      quit: () => this.quit(),
+      requestOperation: (action, request) => this.requestOperation(action, request),
+      cancelOperation: () => this.cancelOperation(),
+      openMerge: (path) => this.merges.open(path),
+      openProposals: (prefer) => this.openProposals(prefer),
+      moveLayers: (record) => this.moveLayers(record),
+      applyCandidate: (record) => this.applyCandidate(record),
+      askFeatureQuestions: (slug) => this.askFeatureQuestions(slug),
+      openExport: () => this.exports.openExportPrompt(),
+      openSpecCode: (id) => this.drafts.openSpecCode(id),
+      plannedFns: () => this.plannedFns(),
+      load: (path) => this.load(path),
+      open: (path, cursor, remember) => this.open(path, cursor, remember),
+      showCode: (rel, abs, line) => this.showCode(rel, abs, line),
+      clampCursor: () => this.clampCursor(),
+    });
     // The first frame comes from disk, before any analysis: a cold start shows text at once.
     this.state.files = this.diskFiles();
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
@@ -436,7 +456,7 @@ export class App {
       .then(
         (analysis) => {
           if (generation !== this.generation || this.closed) return;
-          const selected = this.selectedFinding();
+          const selected = this.results.selectedFinding();
           this.state.analysis = analysis;
           try {
             this.adoptResult(analysis, edits, selected);
@@ -515,7 +535,7 @@ export class App {
     // The findings list follows the new analysis: the selected finding stays selected while it is still reported.
     const at = selected ? visibleFindings(findingsOf(analysis), this.state.results.filter).findIndex((result) => sameResult(result, selected)) : -1;
     if (at >= 0) this.state.results.finding = at;
-    this.clampFinding();
+    this.results.clampFinding();
   }
 
   /** Typing: mark results outdated now, analyse once the typing settles. */
@@ -1215,15 +1235,15 @@ export class App {
         // The panel is hidden while the finding's target is shown; the keys go to the editor or the
         // code viewer. Esc / Ctrl+O (and q in the code viewer) bring the list back and put back the place the finding was opened
         // from (Esc in edit mode leaves editing first); F6 closes the panel and stays at the target.
-        if ((event.name === "escape" && this.state.mode !== "edit") || (event.ctrl && event.name === "o") || (event.name === "q" && this.state.mode === "code")) return this.returnToFindings();
-        if (event.name === "f6") return this.closeResults();
+        if ((event.name === "escape" && this.state.mode !== "edit") || (event.ctrl && event.name === "o") || (event.name === "q" && this.state.mode === "code")) return this.results.returnToFindings();
+        if (event.name === "f6") return this.results.closeResults();
       } else {
-        return this.resultsKey(event);
+        return this.results.resultsKey(event);
       }
     }
     if (this.state.start !== null && event.name !== "f6") return this.startKey(event);
     if (event.name === "f5") return this.reanalyze();
-    if (event.name === "f6") return this.openResults();
+    if (event.name === "f6") return this.results.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
     // the code viewer they are shown, and the keys still go where they went.
     const focusable = this.state.mode === "view" || this.state.mode === "read";
@@ -1973,7 +1993,7 @@ export class App {
     }
   }
 
-  // ---------- operations and results (F6) ----------
+  // ---------- operations ----------
 
   /**
    * Records that an input changed: a feature or check result computed before
@@ -2417,7 +2437,7 @@ export class App {
   private afterProposal(origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }): void {
     const { target, report } = proposal;
     if (target !== null && this.stillWhereStarted(origin, report)) {
-      if (report && origin.results) this.closeResults();
+      if (report && origin.results) this.results.closeResults();
       this.merges.open(target);
       if (this.state.merge?.path === target) {
         this.state.message = proposal.opened;
@@ -2460,21 +2480,6 @@ export class App {
   }
 
   // ---------- wire: the report's target ----------
-
-  /** What Enter over the selected wire report opens: the first blocking error, else the generated file when it is on disk. */
-  private wireTarget(): { file: string; line: number; col: number } | null {
-    const result = this.state.records[this.state.results.index]?.result;
-    if (result?.kind !== "wire" || result.payload === null) return null;
-    const first = result.payload.diagnostics[0];
-    if (first) return { file: first.file, line: first.span.start.line, col: first.span.start.col };
-    return existsSync(resolve(this.state.root, result.payload.file)) ? { file: result.payload.file, line: 1, col: 1 } : null;
-  }
-
-  /** The generated code opens in the read-only viewer, not as a writable buffer; Esc / Ctrl+O come back to the report. */
-  private openWireTarget(): void {
-    const target = this.wireTarget();
-    if (target) this.openTarget(target.file, target.line, target.col);
-  }
 
   // ---------- the flow under the cursor ----------
 
@@ -2701,7 +2706,7 @@ export class App {
     const base = existing === undefined && !onDisk ? preview : buffer.text;
     const moved = withLayers(CONFIG_FILE, base, layers);
     if ("error" in moved) {
-      this.closeResults();
+      this.results.closeResults();
       this.openConfig(moved.error, true);
       this.state.message = `draft map: ${moved.error} — nothing was changed; fix it, then draft again (Enter in F6)`;
       return;
@@ -2712,7 +2717,7 @@ export class App {
     }
     if (!this.state.buffers.has(CONFIG_FILE)) this.state.buffers.set(CONFIG_FILE, buffer);
     if (buffer.newFile && !this.state.files.includes(CONFIG_FILE)) this.state.files = sortFiles([...this.state.files, CONFIG_FILE], this.state.analysis);
-    this.closeResults();
+    this.results.closeResults();
     this.open(CONFIG_FILE, { line: 0, col: 0 });
     // In the editor, as after any edit: Ctrl+S and Ctrl+Z act on it at once.
     this.state.mode = "edit";
@@ -2895,347 +2900,13 @@ export class App {
     this.merges.open(path);
   }
 
-  /** F6 or the palette: the pinned current analysis and the history of operation records. */
-  private openResults(): void {
-    const results = this.state.results;
-    // Already open: keep the current selection — re-entering must not capture a stale focus or reset the record.
-    if (results.open) return;
-    results.open = true;
-    results.previousFocus = this.state.focus;
-    results.scrollReport = false;
-    results.viewing = false;
-    results.top = 0;
-    results.left = 0;
-    // The pinned "Current analysis" is the first entry; with records, the newest one stays selected as before.
-    results.entry = this.state.records.length > 0 ? "record" : "analysis";
-    results.index = Math.max(0, this.state.records.length - 1);
-    this.clampFinding();
-    this.state.focus = "results";
-  }
-
-  /** Esc closes the panel, not the running operation; the focus goes back where F6 was pressed. */
-  private closeResults(): void {
-    this.state.results.open = false;
-    this.state.results.scrollReport = false;
-    this.state.results.viewing = false;
-    this.state.results.origin = null;
-    this.state.focus = this.state.results.previousFocus;
-  }
-
-  /** Enter in the panel: reruns the selected record with its exact parameters. */
-  private rerunRecord(): void {
-    const record = this.state.records[this.state.results.index];
-    if (!record) return;
-    if (record.status === "running") {
-      this.state.message = "this operation is still running";
-      return;
-    }
-    // An export was made from the target as its form showed it: a new one shows the target again first.
-    if (record.params.kind === "export") {
-      this.state.message = "export: select the report and press e: the form shows the target again before Save";
-      return;
-    }
-    // A proposed draft: Enter opens its MERGE (checked again: a proposal merged or rewritten since is judged as it is now).
-    if ((record.result?.kind === "draft-flow" || record.result?.kind === "draft-rules" || record.result?.kind === "code-to-spec") && record.result.payload?.proposal != null && record.result.payload.candidate !== null) {
-      this.closeResults();
-      return this.merges.open(record.result.payload.candidate.target);
-    }
-    // The model's questions: Enter opens MERGE of the feature file (checked again, as a draft's).
-    if (record.result?.kind === "feature-questions" && record.result.payload?.proposal != null) {
-      this.closeResults();
-      return this.merges.open(record.result.payload.file);
-    }
-    // Spec-to-code proposes several files: Enter opens the proposals list on the first still waiting, so each merges on its own.
-    if (record.result?.kind === "spec-to-code" && (record.result.payload?.proposals.length ?? 0) > 0) {
-      this.closeResults();
-      return this.openProposals(record.result.payload!.proposals.map((store) => store.slice(PROPOSALS_DIR.length + 1)));
-    }
-    // A current layout draft: Enter moves its layers into keylang.json's buffer; an outdated one drafts again.
-    if (record.result?.kind === "draft-layout" && record.result.payload !== null && record.outdated === null) return this.moveLayers(record);
-    // The same save step as the first run: a feature rerun reads the saved files; doctor reads no specs.
-    return this.requestOperation(record.action, record.params);
-  }
-
-  /** While the panel is open its keys stay with it; Tab switches between the entries and the content. */
-  private resultsKey(event: KeyEvent): void {
-    if (this.state.results.entry === "analysis") return this.findingsKey(event);
-    const results = this.state.results;
-    const records = this.state.records;
-    const page = Math.max(1, layout(this.state).panel.height - 4);
-    const select = (next: number): void => {
-      results.index = Math.max(0, Math.min(Math.max(0, records.length - 1), next));
-      // Each record shows its report from the top; a selection change never keeps a scroll offset of another report.
-      results.top = 0;
-      results.left = 0;
-      results.gap = 0;
-    };
-    switch (event.name) {
-      case "left":
-      case "right": {
-        // Sideways over the report (after Tab): a long row of an edge, a JSON line or a path is read whole.
-        if (!results.scrollReport) return;
-        const max = reportOverflow(resultsReportRows(this.state), layout(this.state).panel.width - 4);
-        results.left = Math.max(0, Math.min(max, results.left + (event.name === "left" ? -SIDE_STEP : SIDE_STEP)));
-        return;
-      }
-      case "up":
-      case "k":
-        if (results.scrollReport) return this.scrollReport(-1);
-        if (results.index === 0) {
-          // The pinned current analysis sits above the records.
-          results.entry = "analysis";
-          results.top = 0;
-          return this.clampFinding();
-        }
-        return select(results.index - 1);
-      case "down":
-      case "j":
-        if (results.scrollReport) return this.scrollReport(1);
-        return select(results.index + 1);
-      case "pageup":
-        if (results.scrollReport) return this.scrollReport(-page);
-        return select(results.index - page);
-      case "pagedown":
-        if (results.scrollReport) return this.scrollReport(page);
-        return select(results.index + page);
-      case "tab":
-        results.scrollReport = !results.scrollReport;
-        if (results.scrollReport) this.showGapReason();
-        return;
-      case "enter":
-        // Over the gaps of a feature record Enter opens the selected gap; over the entries it reruns.
-        if (results.scrollReport && this.selectedGap()) return this.openGap();
-        // Over a wire report: the generated file in the read-only viewer, or the first blocking error.
-        if (results.scrollReport && this.wireTarget()) return this.openWireTarget();
-        return this.rerunRecord();
-      case "f5":
-        return this.reanalyze();
-      case "f6":
-      case "escape":
-        return this.closeResults();
-      case "x":
-        return this.cancelOperation();
-      case "e":
-        return this.exports.openExportPrompt();
-      case "a":
-        return this.applyCandidate(this.state.records[this.state.results.index]);
-      case "g":
-        // Over a planned gap of a feature report: the spec-to-code form for the same ID.
-        if (results.scrollReport) return this.specCodeForGap();
-        return;
-      case "m": {
-        // On a feature report: the model's open questions for that feature, as a proposal (c4-zoom/11).
-        const record = records[results.index];
-        if (record?.result?.kind === "feature" && record.params.kind === "feature") return this.askFeatureQuestions(record.params.slug);
-        return;
-      }
-      case "q":
-        return this.quit();
-      case "?":
-        this.state.help = true;
-        return;
-      default:
-        return;
-    }
-  }
-
-  /** The keys of the pinned "Current analysis" entry: the findings list with verdict filters. */
-  private findingsKey(event: KeyEvent): void {
-    const results = this.state.results;
-    const page = Math.max(1, findingsListRows(this.state, layout(this.state).panel));
-    switch (event.name) {
-      case "up":
-      case "k":
-        if (results.scrollReport) return this.moveFinding(-1);
-        return; // The analysis entry is pinned at the top; nothing above it.
-      case "down":
-      case "j":
-        if (results.scrollReport) return this.moveFinding(1);
-        if (this.state.records.length > 0) {
-          // Below the pinned entry come the records.
-          results.entry = "record";
-          results.index = 0;
-          results.top = 0;
-        }
-        return;
-      case "pageup":
-      case "pagedown":
-        if (results.scrollReport) return this.moveFinding(event.name === "pageup" ? -page : page);
-        return;
-      case "tab":
-        // Tab switches the arrows between the entries and the findings.
-        results.scrollReport = !results.scrollReport;
-        return;
-      case "enter":
-        // Enter opens the selected finding straight away; back in the list the arrows select findings.
-        results.scrollReport = true;
-        return this.openFinding();
-      case "f5":
-        return this.reanalyze();
-      case "f6":
-      case "escape":
-        return this.closeResults();
-      case "x":
-        return this.cancelOperation();
-      case "q":
-        return this.quit();
-      case "?":
-        this.state.help = true;
-        return;
-      default: {
-        // The filters hide verdicts; the report itself and its totals stay unchanged.
-        const verdict = FILTER_KEYS.get(event.name);
-        if (verdict === undefined) return;
-        results.filter[verdict] = !results.filter[verdict];
-        return this.clampFinding();
-      }
-    }
-  }
-
-  /** Moves the finding selection and keeps it in the visible part of the list. */
-  private moveFinding(delta: number): void {
-    this.state.results.finding += delta;
-    this.clampFinding();
-  }
-
-  /** The finding selection stays within the filtered list, and the list scrolls to keep it in view. */
-  private clampFinding(): void {
-    const results = this.state.results;
-    const visible = visibleFindings(findingsOf(this.state.analysis), results.filter);
-    results.finding = Math.max(0, Math.min(results.finding, Math.max(0, visible.length - 1)));
-    const rows = findingsListRows(this.state, layout(this.state).panel);
-    if (results.finding < results.top) results.top = results.finding;
-    if (results.finding >= results.top + rows) results.top = results.finding - rows + 1;
-  }
-
-  /** The finding selected in the filtered list of the current analysis, if any. */
-  private selectedFinding(): CheckResult | undefined {
-    return visibleFindings(findingsOf(this.state.analysis), this.state.results.filter)[this.state.results.finding];
-  }
-
-  /**
-   * Enter on a finding: the panel hides while the target is shown — a spec
-   * position in the editor (the file need not be among the Markdown buffers)
-   * or the line in the read-only code viewer. Esc / Ctrl+O return to the list
-   * without losing the selection and put back the place it was opened from.
-   */
-  private openFinding(): void {
-    const finding = this.selectedFinding();
-    if (finding) this.openTarget(finding.file, finding.line, finding.col);
-  }
-
-  /** Shows a spec position (1-based line, code-point column) or a code line with the F6 panel hidden; the origin is kept for the way back. */
-  private openTarget(file: string, targetLine: number, targetCol: number): void {
-    const results = this.state.results;
-    // Leaving MERGE for the target would drop the open hunk decisions.
-    if (this.state.mode === "merge") {
-      this.state.message = "finish the merge first: it opens after MERGE";
-      return;
-    }
-    const origin = { path: this.state.current, cursor: { ...this.state.cursor }, top: this.state.top, mode: this.state.mode, code: this.state.code };
-    const abs = resolve(this.state.root, file);
-    if (extname(file) === ".md" && !file.startsWith("..")) {
-      const lines = bufferLines(this.load(file));
-      const line = Math.max(0, Math.min(targetLine - 1, lines.length - 1));
-      // Verdict columns are 1-based code points; the cursor counts grapheme clusters.
-      const col = clusterAt(lines[line] ?? "", targetCol - 1);
-      this.open(file, { line, col }, false);
-      this.state.code = null;
-    } else if (!this.showCode(file, abs, targetLine)) {
-      return;
-    }
-    results.viewing = true;
-    results.origin = origin;
-    this.state.message = `Esc or Ctrl+O: back to the ${results.entry === "analysis" ? "findings list" : "report"} · F6: stay here`;
-  }
-
-  /** Back from a finding's target: the list with its selection, over the place the finding was opened from. */
-  private returnToFindings(): void {
-    const results = this.state.results;
-    const origin = results.origin;
-    results.viewing = false;
-    results.origin = null;
-    if (!origin) return;
-    if (origin.path !== null) {
-      this.load(origin.path);
-      this.state.filesIndex = Math.max(0, this.state.files.indexOf(origin.path));
-    }
-    this.state.current = origin.path;
-    this.state.cursor = { ...origin.cursor };
-    this.state.mode = origin.mode;
-    this.state.code = origin.code;
-    this.state.selection = null;
-    this.state.completion = null;
-    this.state.hover = null;
-    this.clampCursor();
-    this.state.top = origin.top;
-  }
-
-  private scrollReport(delta: number): void {
-    // Over the findings the selection moves, so it never leaves the shown rows.
-    if (this.state.results.entry === "analysis") return this.moveFinding(delta);
-    const results = this.state.results;
-    const rows = resultsReportRows(this.state);
-    const gaps = reportItems(this.state);
-    // A parse or trace-plan report is long text under its items: ↑↓ select one, a page or the wheel scrolls the text.
-    const kind = this.state.records[results.index]?.kind;
-    const scrollText = (kind === "parse" || kind === "trace-plan") && Math.abs(delta) > 1;
-    if (gaps.length > 0 && !scrollText) {
-      // A feature report: the arrows select a gap, and the report scrolls to keep it in view.
-      results.gap = Math.max(0, Math.min(results.gap + delta, gaps.length - 1));
-      const row = rows.findIndex((item) => item.gap === results.gap);
-      const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
-      if (row < results.top) results.top = row;
-      if (row >= results.top + height) results.top = row - height + 1;
-      return this.showGapReason();
-    }
-    // The last page ends at the report's last row: a page down never leaves a lone row on an empty panel.
-    const height = Math.max(1, resultsSplit(this.state, layout(this.state).panel.height).report);
-    results.top = Math.max(0, Math.min(results.top + delta, Math.max(0, rows.length - height)));
-  }
-
-  private selectedGap(): ReportItem | undefined {
-    return reportItems(this.state)[this.state.results.gap];
-  }
-
-  /** The report row cuts a long reason; the message line shows the selected item's whole reason. */
-  private showGapReason(): void {
-    const gap = this.selectedGap();
-    if (gap) this.state.message = `${gap.file === "" ? `${gap.text} · no position in the code` : `${gap.text} · Enter opens ${gap.file}:${gap.line}`}${this.plannedGap() !== null ? " · g: spec-to-code" : ""}`;
-  }
-
-  /** The ID of the selected gap of a feature report when it is a planned fn no code implements yet, else null. */
-  private plannedGap(): string | null {
-    const result = this.state.records[this.state.results.index]?.result;
-    if (result?.kind !== "feature" || result.payload === null) return null;
-    const entry = featureItems(result.payload.report)[this.state.results.gap];
-    return entry !== undefined && !entry.hint && entry.item.kind === "planned" && this.plannedFns().includes(entry.item.id) ? entry.item.id : null;
-  }
-
-  /** `g` on a planned gap: the spec-to-code form with its ID; the report stays in the history. */
-  private specCodeForGap(): void {
-    const id = this.plannedGap();
-    if (id === null) {
-      this.state.message = "g drafts code for a planned fn gap of a feature report";
-      return;
-    }
-    this.closeResults();
-    this.drafts.openSpecCode(id);
-  }
-
-  /** Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report). */
-  private openGap(): void {
-    const gap = this.selectedGap();
-    if (gap && gap.file !== "") this.openTarget(gap.file, gap.line, gap.col);
-  }
-
   // ---------- mouse ----------
 
   private mouse(event: MouseEvent): void {
     // The F6 panel is modal over the editor area: only the wheel scrolls its report.
     // While a finding's target is shown (viewing), the keys and the wheel go to it instead.
     if (this.state.results.open && !this.state.results.viewing) {
-      if (event.action === "wheel-up" || event.action === "wheel-down") this.scrollReport(event.action === "wheel-up" ? -3 : 3);
+      if (event.action === "wheel-up" || event.action === "wheel-down") this.results.scrollReport(event.action === "wheel-up" ? -3 : 3);
       return;
     }
     // The start screen covers the editor: a click never moves the hidden cursor.
@@ -3487,7 +3158,7 @@ export class App {
       case "context":
         return this.toggleContext(focusable);
       case "results":
-        return this.openResults();
+        return this.results.openResults();
       case "doctor":
         return this.requestOperation("doctor", { kind: "doctor", root: this.state.root });
       case "feature":
@@ -3801,9 +3472,6 @@ function proposalSummary(entry: ProposalEntry): string {
   if (entry.problem !== null) parts.push("cannot merge");
   return parts.join(" · ");
 }
-
-/** Cells one ←/→ scrolls a report sideways. */
-const SIDE_STEP = 16;
 
 /** The record action of a `Ctrl+Space` draft: the draft-flow operation asked for by the agent key, not the form. */
 const AGENT_DRAFT = "agent-draft";
