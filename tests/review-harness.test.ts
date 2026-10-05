@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -129,4 +129,79 @@ test("hook: a bad invocation is still code 2, with nothing on stdout", (t) => {
     assert.equal(bad.stdout, "", args.join(" "));
     assert.match(bad.stderr, /^keylang: hook/, args.join(" "));
   }
+});
+
+const IGNORED = "# keylang: local cache (index, facts, proposals, traces), not the spec\n.keylang/\n";
+
+test("init lists .keylang/ in the root .gitignore: created when missing, appended once in the file's line ends, kept when listed", (t) => {
+  const dir = tempDir(t, "keylang-gitignore-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  const first = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), IGNORED);
+  assert.match(first.stdout, /^\.gitignore: \.keylang\/ added$/m);
+  const again = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), IGNORED);
+  assert.doesNotMatch(again.stdout, /\.gitignore/);
+  assert.equal(keylang(dir, ["init", "--check", "--agents=none"]).status, 0);
+
+  // CRLF on every line and no newline at the end: the bytes stay, the entry follows in CRLF.
+  const crlf = "node_modules/\r\ndist/";
+  writeFileSync(join(dir, ".gitignore"), crlf);
+  const appended = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(appended.status, 0, appended.stderr);
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), `${crlf}\r\n\r\n${IGNORED.replace(/\n/g, "\r\n")}`);
+
+  // Already listed, in any of git's spellings: not a byte changes.
+  for (const listed of [".keylang", ".keylang/", "/.keylang", "/.keylang/", "/.keylang/  "]) {
+    const text = `node_modules/\n${listed}\n*.log\n`;
+    writeFileSync(join(dir, ".gitignore"), text);
+    const kept = keylang(dir, ["init", "--agents=none"]);
+    assert.equal(kept.status, 0, kept.stderr);
+    assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), text, JSON.stringify(listed));
+    assert.equal(keylang(dir, ["init", "--check", "--agents=none"]).status, 0, JSON.stringify(listed));
+  }
+  // A comment, a negation, a deeper path or the contents only is not the entry.
+  for (const other of ["# .keylang/", "!.keylang/", "sub/.keylang/", ".keylang/*"]) {
+    writeFileSync(join(dir, ".gitignore"), `${other}\n`);
+    assert.equal(keylang(dir, ["init", "--check", "--agents=none"]).status, 1, other);
+  }
+});
+
+test("init --check reports a .gitignore without .keylang/ (code 1) and writes nothing; init adds it with harnesses too", (t) => {
+  const dir = tempDir(t, "keylang-gitignore-check-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER, ".gitignore": "dist/\n" });
+  mkdirSync(join(dir, ".claude"));
+  const init = keylang(dir, ["init"]);
+  assert.equal(init.status, 0, init.stderr);
+  assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), `dist/\n\n${IGNORED}`);
+  assert.equal(keylang(dir, ["init", "--check"]).status, 0);
+  writeFileSync(join(dir, ".gitignore"), "dist/\n");
+  const before = treeBytes(dir);
+  const check = keylang(dir, ["init", "--check"]);
+  assert.equal(check.status, 1, check.stdout + check.stderr);
+  assert.equal(check.stdout, ".gitignore: .keylang/ is not listed; run `keylang init`\n");
+  assert.deepEqual(treeBytes(dir), before, "init --check writes nothing");
+  rmSync(join(dir, ".gitignore"));
+  const missing = keylang(dir, ["init", "--check"]);
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stdout, ".gitignore: .keylang/ is not listed; run `keylang init`\n");
+});
+
+test("init does not write .gitignore through a link out of the repository: code 1, the target untouched", { skip: process.platform === "win32" }, (t) => {
+  const dir = tempDir(t, "keylang-gitignore-link-");
+  const outside = tempDir(t, "keylang-gitignore-outside-");
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER });
+  writeFileSync(join(outside, "shared"), "dist/\n");
+  symlinkSync(join(outside, "shared"), join(dir, ".gitignore"));
+  const refused = ".gitignore: .keylang/ not added (leads out of the repository through a link)";
+  const init = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(init.status, 1, init.stdout + init.stderr);
+  assert.ok(init.stdout.split("\n").includes(refused), init.stdout);
+  assert.equal(readFileSync(join(outside, "shared"), "utf8"), "dist/\n");
+  assert.ok(existsSync(join(dir, "keylang/rules.baseline.md")), "the stages after it still run");
+  const check = keylang(dir, ["init", "--check", "--agents=none"]);
+  assert.equal(check.status, 1);
+  assert.equal(check.stdout, `${refused}\n`);
 });

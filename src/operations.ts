@@ -42,7 +42,7 @@ import type { DraftStatus } from "./draft-llm.ts";
 import { addDrafts, STATS_FILE, updateStats } from "./stats.ts";
 import { commitMap, diffMap, EXPLAINED_MAP_DIR, mapPlanProblems, planMap, sourceInputProblems, sourceInputs, type CommittedStep, type MapPlan, type SourceInputs } from "./map.ts";
 import { stronglyConnected } from "./scc.ts";
-import { landing, safeWrite, writeAtomic, writeProblem } from "./safe-write.ts";
+import { allCrlf, landing, safeWrite, writeAtomic, writeProblem } from "./safe-write.ts";
 import { sha256, type CoverageItem } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 import type { ModuleStatus } from "./voice-local.ts";
@@ -1323,9 +1323,29 @@ export interface InitPayload {
   };
   /** The harness plan checked before any write, the config included: a failure here writes nothing. Null in a check (its agents stage is the plan). */
   preflight: OperationEnvelope<"agents"> | null;
+  /** The root `.gitignore` and keylang's local cache; null when the stage did not run. */
+  gitignore: GitignoreStage | null;
   map: OperationEnvelope<"map"> | null;
   baseline: OperationEnvelope<"baseline"> | null;
   agents: OperationEnvelope<"agents"> | null;
+}
+
+/**
+ * Whether the root `.gitignore` lists `.keylang/`: the index, the fact
+ * cache, proposals, test reports and traces are a local cache, never the
+ * spec. Repository hygiene, not a harness file: `--agents=none` has it too.
+ */
+export interface GitignoreStage {
+  /** `.gitignore`, relative to the root. */
+  file: string;
+  /** It lists `.keylang/`: it did before the run, or this run added it. */
+  listed: boolean;
+  /** This run appended `.keylang/` (never in a check). */
+  written: boolean;
+  /** Why it was neither read nor written: a link out of the repository, a directory, a change since it was read. */
+  refused: string | null;
+  /** The I/O error of the read or the write, or null. */
+  error: string | null;
 }
 
 /** The payload type of each operation kind. */
@@ -1887,20 +1907,96 @@ export function initSources(root: string, label = "."): { config: Config } | { e
   return { config };
 }
 
+const GITIGNORE_FILE = ".gitignore";
+
+/** What `init` appends to `.gitignore`: a comment and the entry. */
+const GITIGNORE_LINES = ["# keylang: local cache (index, facts, proposals, traces), not the spec", ".keylang/"];
+
+/** A line that ignores the root `.keylang` directory: `.keylang`, `.keylang/`, `/.keylang` or `/.keylang/`, with trailing spaces as git ignores them. */
+export function ignoresKeylangCache(text: string): boolean {
+  return text.split(/\r?\n/).some((line) => /^\/?\.keylang\/? *$/.test(line));
+}
+
+/**
+ * `current` (null: no file) with the comment and `.keylang/` appended after
+ * one blank line. The bytes before stay as they are; the new lines end in
+ * CRLF only when every line of the file does.
+ */
+export function withKeylangCacheIgnored(current: string | null): string {
+  const text = current ?? "";
+  const nl = allCrlf(text) ? "\r\n" : "\n";
+  const block = GITIGNORE_LINES.map((line) => `${line}${nl}`).join("");
+  if (text === "") return block;
+  const ended = text.endsWith("\n") ? text : `${text}${nl}`;
+  return `${ended}${/\n[ \t\r]*\n$/.test(ended) ? "" : nl}${block}`;
+}
+
+/** The `.gitignore` stage before the commit: the bytes read (null: no file), and the text to write (null: nothing to write). */
+interface GitignorePlan {
+  current: string | null;
+  text: string | null;
+  stage: GitignoreStage;
+}
+
+/** Reads the root `.gitignore` under the write rules (never through a link out of the repository) and plans the entry. Writes nothing. */
+function planGitignore(root: string): GitignorePlan {
+  const stage: GitignoreStage = { file: GITIGNORE_FILE, listed: false, written: false, refused: null, error: null };
+  let current: string | null;
+  try {
+    const problem = writeProblem(root, GITIGNORE_FILE);
+    if (problem !== null) return { current: null, text: null, stage: { ...stage, refused: problem } };
+    const at = landing(join(root, GITIGNORE_FILE));
+    current = at !== null && existsSync(at) ? readFileSync(at, "utf8") : null;
+  } catch (error) {
+    return { current: null, text: null, stage: { ...stage, error: messageOf(error) } };
+  }
+  const listed = current !== null && ignoresKeylangCache(current);
+  return { current, text: listed ? null : withKeylangCacheIgnored(current), stage: { ...stage, listed } };
+}
+
+/** Appends the entry while the file still holds the bytes the plan read; the reason when it may not be written. Throws on an I/O error. */
+function commitGitignore(root: string, plan: GitignorePlan): string | null {
+  const problem = writeProblem(root, GITIGNORE_FILE, { expect: plan.current });
+  if (problem !== null) return problem;
+  const at = landing(join(root, GITIGNORE_FILE));
+  if (at === null) return "leads through a loop of links";
+  // The planned bytes exactly: their line ends were chosen from the file itself.
+  writeAtomic(at, plan.text!, { exact: true });
+  return null;
+}
+
+/** The code of the `.gitignore` stage: 2 an I/O error, 1 refused or (in a check) not listed, else 0. */
+function gitignoreCode(stage: GitignoreStage): 0 | 1 | 2 {
+  if (stage.error !== null) return 2;
+  return stage.refused !== null || !stage.listed ? 1 : 0;
+}
+
+/** The line init prints for the `.gitignore` stage; null when it was already listed. */
+export function gitignoreMessage(stage: GitignoreStage): OperationMessage | null {
+  if (stage.error !== null) return { level: "error", text: `${stage.file}: ${stage.error}` };
+  if (stage.refused !== null) return { level: "error", text: `${stage.file}: .keylang/ not added (${stage.refused})` };
+  if (stage.written) return { level: "info", text: `${stage.file}: .keylang/ added` };
+  if (!stage.listed) return { level: "info", text: `${stage.file}: .keylang/ is not listed; run \`keylang init\`` };
+  return null;
+}
+
 /**
  * `keylang init [--check]`: an orchestration of the shared config, map,
  * baseline and agents steps, not a call of the CLI commands. Before
  * anything: the configuration (2 when it is broken or there is no supported
  * source), then the harness plan (a broken harness file is 2 and nothing is
- * written, keylang.json included). Check — exactly `init --check`: the
- * agents check (2 stops it), then the baseline check; 0 when both are 0,
- * else 1. Write, after `beforeCommit` (called once for the whole run): an
- * existing keylang.json is kept, a missing one is written from the guess
- * (an I/O error stops init, 2); then map, baseline and agents run in turn,
- * each whatever the one before it did, as the CLI always has. The code is
- * the first non-zero of map, baseline, agents; any non-zero stage makes the
- * whole run `failed` — a partial init is never a success. Cancelled: the
- * stage under way names what it wrote; the rest are not run (null).
+ * written, keylang.json included) and the `.gitignore` plan. Check —
+ * exactly `init --check`: the agents check (2 stops it), the baseline check,
+ * then whether `.gitignore` lists `.keylang/`; 0 when all three are 0, 2 when
+ * `.gitignore` cannot be read, else 1. Write, after `beforeCommit` (called
+ * once for the whole run): an existing keylang.json is kept, a missing one
+ * is written from the guess (an I/O error stops init, 2); `.gitignore` gets
+ * `.keylang/` while it still holds the bytes planned (refused: 1, I/O: 2);
+ * then map, baseline and agents run in turn, each whatever the one before it
+ * did, as the CLI always has. The code is the first non-zero of
+ * `.gitignore`, map, baseline, agents; any non-zero stage makes the whole run
+ * `failed` — a partial init is never a success. Cancelled: the stage under
+ * way names what it wrote; the rest are not run (null).
  */
 async function runInit(request: InitRequest, context: OperationContext): Promise<OperationEnvelope<"init">> {
   if (!isAbsolute(request.root)) return emptyInit("failed", 2, "init: root must be an absolute path");
@@ -1917,6 +2013,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
     languages: [...config.languages],
     config: { file: CONFIG_FILE, existed, written: false, error: null, layers: [...layout.layers.keys()], notes: layout.notes },
     preflight: null,
+    gitignore: null,
     map: null,
     baseline: null,
     agents: null,
@@ -1933,14 +2030,18 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
     if (payload.agents.exitCode === 2) return { ...emptyInit("failed", 2), payload, messages: payload.agents.messages };
     payload.baseline = await runBaseline({ kind: "baseline", root, check: true }, stage("baseline"));
     if (payload.baseline.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
-    // `init --check` has always reported a failed baseline check as a difference, code 1.
-    const code = payload.agents.exitCode === 0 && payload.baseline.exitCode === 0 ? 0 : 1;
-    return { ...emptyInit("completed", code), payload, messages: [...payload.agents.messages, ...payload.baseline.messages] };
+    payload.gitignore = planGitignore(root).stage;
+    const ignore = gitignoreMessage(payload.gitignore);
+    // `init --check` has always reported a failed baseline check as a difference, code 1; an unreadable `.gitignore` is I/O, 2.
+    const ignored = gitignoreCode(payload.gitignore);
+    const code = ignored === 2 ? 2 : payload.agents.exitCode === 0 && payload.baseline.exitCode === 0 && ignored === 0 ? 0 : 1;
+    return { ...emptyInit(code === 2 ? "failed" : "completed", code), payload, messages: [...payload.agents.messages, ...payload.baseline.messages, ...(ignore ? [ignore] : [])] };
   }
   // An unknown name or a broken harness file fails before any write, including keylang.json.
   payload.preflight = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: true }, stage("agents"));
   if (payload.preflight.status === "cancelled") return { ...emptyInit("cancelled", null), payload };
   if (payload.preflight.status === "failed") return { ...emptyInit("failed", payload.preflight.exitCode ?? 2), payload, messages: payload.preflight.messages };
+  const ignore = planGitignore(root);
   context.onProgress?.({ text: "waiting to write" });
   try {
     await context.beforeCommit?.();
@@ -1968,6 +2069,20 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
     written.push(CONFIG_FILE);
     messages.push({ level: "info", text: `${CONFIG_FILE}: written (${config.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})` });
   }
+  // Before the map writes the cache: `.keylang/` is ignored by the time it exists.
+  payload.gitignore = ignore.stage;
+  if (ignore.text !== null && ignore.stage.refused === null && ignore.stage.error === null) {
+    context.onProgress?.({ text: `writing ${GITIGNORE_FILE}` });
+    try {
+      const refused = commitGitignore(root, ignore);
+      payload.gitignore = refused === null ? { ...ignore.stage, listed: true, written: true } : { ...ignore.stage, refused };
+    } catch (error) {
+      payload.gitignore = { ...ignore.stage, error: messageOf(error) };
+    }
+    if (payload.gitignore.written) written.push(GITIGNORE_FILE);
+  }
+  const ignoreLine = gitignoreMessage(payload.gitignore);
+  if (ignoreLine) messages.push(ignoreLine);
   const collect = (result: OperationResult): void => {
     messages.push(...result.messages);
     written.push(...result.written);
@@ -1983,7 +2098,7 @@ async function runInit(request: InitRequest, context: OperationContext): Promise
   payload.agents = await runAgents({ kind: "agents", root, harnesses: request.harnesses, check: false }, stage("agents"));
   collect(payload.agents);
   if (payload.agents.status === "cancelled") return stopped();
-  const code = [payload.map.exitCode, payload.baseline.exitCode, payload.agents.exitCode].find((exit) => exit !== 0) ?? 0;
+  const code = [gitignoreCode(payload.gitignore), payload.map.exitCode, payload.baseline.exitCode, payload.agents.exitCode].find((exit) => exit !== 0) ?? 0;
   return { ...emptyInit(code === 0 ? "completed" : "failed", code), payload, messages, written, removed };
 }
 

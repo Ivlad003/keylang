@@ -24,7 +24,7 @@ import { lineDiff } from "./proposals.ts";
 import { serveLsp } from "./lsp.ts";
 import { runTerminal } from "./tui/terminal.ts";
 import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
+import { checkSkipNote, checkSummary, featureSummary, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
 import { formatVerdict, type Verdict } from "./verdict.ts";
 import { runStaleCheck, staleLine, staleSummary } from "./stale.ts";
 
@@ -37,12 +37,14 @@ Commands:
   web [--port N] [--host H] The TUI in a browser tab: serves http://localhost:7070
                             with a one-time token (localhost only by default)
   init [dir] [--agents=LIST] [--check]
-                            Detect languages and layers, write keylang.json, build the map,
+                            Detect languages and layers, write keylang.json, add
+                            .keylang/ (the local cache) to .gitignore, build the map,
                             write rules.baseline.md, and install harness files
                             (AGENTS.md, MCP, skill, hooks). --agents is
                             claude,codex,opencode,cursor or none (no harness files
                             outside keylang/). --check writes nothing and fails when a
-                            managed block, MCP command, skill, or baseline is stale
+                            managed block, MCP command, skill, or baseline is stale,
+                            or .gitignore does not list .keylang/
   agents [--agents=LIST] [--check]
                             Install the same harness files on an initialized repo
   baseline [--check]        Write <dir>/rules.baseline.md from the current layer graph
@@ -751,6 +753,7 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
   if (payload.check) {
     if (payload.agents) printAgents(payload.agents);
     if (payload.baseline) printBaseline(payload.baseline);
+    if (payload.gitignore) printGitignore(payload.gitignore);
     return result.exitCode ?? 2;
   }
   if (payload.preflight?.status === "failed") return printAgents(payload.preflight);
@@ -764,10 +767,19 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
     }
     if (payload.config.written) process.stdout.write(`${config}: written (${payload.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})\n`);
   }
+  if (payload.gitignore) printGitignore(payload.gitignore);
   if (payload.map) printMap(payload.map, root);
   if (payload.baseline) printBaseline(payload.baseline);
   if (payload.agents) printAgents(payload.agents);
   return result.exitCode ?? 2;
+}
+
+/** The `.gitignore` line of init: an I/O error to stderr; added, not listed, or a refusal's reason to stdout, as the file lines of the other stages. */
+function printGitignore(stage: GitignoreStage): void {
+  const line = gitignoreMessage(stage);
+  if (line === null) return;
+  if (stage.error !== null) process.stderr.write(`keylang: ${line.text}\n`);
+  else process.stdout.write(`${line.text}\n`);
 }
 
 /** `agents [--agents=LIST] [--check]`: a printer over the shared agents operation. */

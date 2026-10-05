@@ -35,7 +35,7 @@ npx -y keylang map
 
 The first `npx` needs a network. Later `check` and `map` do not.
 
-`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone.
+`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone. It also adds `.keylang/` to the root `.gitignore` when that file does not list it yet.
 
 3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude.
 
@@ -91,7 +91,7 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Click through the terminal UI | No subcommand opens a UI for a person at the keyboard. You use the CLI and MCP |
 | Quiet a failure by editing the spec in place | Ask, then `apply_diff`. `draft rules` describes what the code already does, or tags the model's lines `agree`, `conflict`, `llm-only`. The person chooses the `deny` |
 | Call a stub finished | `scaffold` and `spec-to-code` give a signature and a failing test. You write the body. Done is `feature_status` |
-| Commit `.keylang/` | The index, proposals, and traces are a local cache and gitignored. Commit the spec and the generated map |
+| Commit `.keylang/` | The index, fact cache, proposals, and traces are a local cache. `init` lists `.keylang/` in `.gitignore`, and `init --check` exits 1 when it is missing. Commit the spec and the generated map |
 | Bump `format` | Leave the field as it is. `3` or higher exits 2 and names the field |
 | Read `calls` order as a timeline | Sibling flow steps are "this, then that." Nested steps are "this happens inside" |
 
