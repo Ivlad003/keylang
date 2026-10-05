@@ -9146,7 +9146,8 @@ test("tui: explain with the model asks once for a missing answer and saves it wi
   assert.match(s.text(), /read from the saved file: fresh, same detail and language; the model was not asked, nothing was written/);
   await esc(s.send);
   // brief (two steps right): its own file, cut by the brief rule, in the session's explained map after the write.
-  reply = "Makes an order.\n\nMore than a brief.";
+  // The first paragraph has four words: a shorter one before more text is a remark the answer drops (review-ops 6).
+  reply = "Makes an order here.\n\nMore than a brief.";
   explainModelForm(s, { steps: 2, submit: false });
   await s.app.idle();
   assert.match(promptNote(s.app), /^domain\.order\.create: no saved brief · asks anthropic:claude-opus-5 once, then saves keylang\/explain\/brief\/domain\.order\.create\.md · brief \(←→\)/);
@@ -9155,8 +9156,8 @@ test("tui: explain with the model asks once for a missing answer and saves it wi
   model.release();
   await s.app.idle();
   const brief = explainLlmRecord(s.app);
-  assert.deepEqual([brief.status, brief.written, brief.payload.detail, brief.payload.answer?.text], ["completed", [`keylang/explain/brief/${EXPLAIN_ID}.md`], "brief", "Makes an order."]);
-  assert.equal(s.app.state.briefs.get(EXPLAIN_ID)?.text, "Makes an order.", "the session reads the new brief");
+  assert.deepEqual([brief.status, brief.written, brief.payload.detail, brief.payload.answer?.text], ["completed", [`keylang/explain/brief/${EXPLAIN_ID}.md`], "brief", "Makes an order here."]);
+  assert.equal(s.app.state.briefs.get(EXPLAIN_ID)?.text, "Makes an order here.", "the session reads the new brief");
   assert.equal(readFileSync(join(root, EXPLAIN_FILE), "utf8").includes(EXPLAIN_REPLY), true, "the short answer stays");
   reply = EXPLAIN_REPLY;
   // full: the saved answer is short, so the model is asked once more and the shared file takes the full one.

@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { answerObject } from "../src/draft-llm.ts";
+import { answerText, briefText } from "../src/explain-llm.ts";
 import { exportTargetProblem, runOperation } from "../src/operations.ts";
 import { fakeAgents, type FakeAgents } from "./agent-fixture.ts";
 
@@ -298,4 +299,35 @@ test("spec-to-code --mode llm sends the file's imports and the part where the co
   const shortFake = fakeAgents(t, ["claude"], { reply });
   assert.equal((await keylang(short, ["spec-to-code", "app.refund.refund", "--mode", "llm", "--print"], shortFake)).status, 0);
   assert.match(shortFake.calls()[0]!.stdin, /File src\/app\/refund\.ts:\n```\nexport const policy = 1;\n\n```/);
+});
+
+// ---------- 6. the wrappers of a saved answer ----------
+
+test("explain --llm saves the answer without a fence around all of it, and a brief without the remark before it; the batch's briefs too", async (t) => {
+  const dir = copy(t);
+  const short = await keylang(dir, ["explain", "app.checkout.checkout", "--llm"], fakeAgents(t, ["claude"], { reply: "```markdown\nChecks out an order: it creates the order and saves it.\n```" }), { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(short.status, 0, short.stderr);
+  assert.match(readFileSync(join(dir, "keylang/explain/app.checkout.checkout.md"), "utf8"), /^<!-- keylang:explain [^\n]* detail=short -->\nChecks out an order: it creates the order and saves it\.\n$/);
+  assert.doesNotMatch(short.stdout, /```/);
+  const brief = await keylang(dir, ["explain", "domain.order.total", "--llm", "--brief"], fakeAgents(t, ["claude"], { reply: "Sure, here is the brief:\n\nSums the prices of the items." }), { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(brief.status, 0, brief.stderr);
+  assert.match(readFileSync(join(dir, "keylang/explain/brief/domain.order.total.md"), "utf8"), /^<!-- keylang:explain [^\n]* detail=brief -->\nSums the prices of the items\.\n$/);
+  const batch = await keylang(dir, ["explain", "--missing", "--llm", "--limit", "1"], fakeAgents(t, ["claude"], { reply: "Certainly!\n\n```\nCreates an order from its items.\n```" }), { KEYLANG_AGENT: "cli:claude" });
+  assert.equal(batch.status, 0, batch.stderr);
+  const [file] = readdirSync(join(dir, "keylang/explain/brief")).filter((name) => name !== "domain.order.total.md");
+  assert.match(readFileSync(join(dir, "keylang/explain/brief", file!), "utf8"), /-->\nCreates an order from its items\.\n$/);
+});
+
+test("answerText: a remark is a first paragraph ending with `:` or of fewer than four words before more; a fence goes only when it holds the whole answer; headings, lists and code stay", () => {
+  assert.equal(answerText("Here is the explanation:\n\n## What it is for\nIt sums.\n"), "## What it is for\nIt sums.");
+  assert.equal(answerText("## What it is for\nIt sums.\n\n## Steps\nIt folds."), "## What it is for\nIt sums.\n\n## Steps\nIt folds.", "a full answer as written");
+  assert.equal(answerText("~~~text\nIt sums.\n~~~"), "It sums.");
+  assert.equal(answerText("````markdown\nIt sums the prices.\n\n```ts\nitems.reduce(add);\n```\n````"), "It sums the prices.\n\n```ts\nitems.reduce(add);\n```", "a longer fence around an inner one");
+  assert.equal(answerText("```markdown\nIt sums.\n```\n\nAnd folds.\n\n```ts\nx();\n```"), "```markdown\nIt sums.\n```\n\nAnd folds.\n\n```ts\nx();\n```", "two blocks are the answer's own");
+  assert.equal(answerText("```ts\nexport function f() {}\n```"), "```ts\nexport function f() {}\n```", "code is not unwrapped");
+  assert.equal(answerText("- sums the items\n\n- folds them"), "- sums the items\n\n- folds them");
+  assert.equal(answerText("Sure!"), "Sure!", "the only paragraph stays");
+  assert.equal(answerText("It sums the prices of the items.\n\nIt folds them."), "It sums the prices of the items.\n\nIt folds them.");
+  assert.equal(briefText("Sure! Here you go:\n\nSums the prices. It folds them. And more."), "Sums the prices. It folds them.");
+  assert.equal(briefText("```\n```"), "");
 });

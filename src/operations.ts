@@ -18,7 +18,7 @@ import { checkExitCode, checkReport, type CheckResult } from "./check-results.ts
 import { CONFIG_FILE, assertFormatOnly, configToJson, guessLayout, loadConfig, parseConfig, resolveStatic, toPosix, type Config, type StaticMode } from "./config.ts";
 import { formatDiagnostic, isError, type Diagnostic } from "./diag.ts";
 import { edgeExplanationLines, edgeIdKnown, explainEdge, type EdgeExplanation } from "./explain-edge.ts";
-import { briefRequest, briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
+import { answerText, briefRequest, briefText, currentBaseline, explainedIds, explanationRequest, isStale, moveHint, oldExplanations, readExplanation, type BriefBatch, type Explanation } from "./explain-llm.ts";
 import { cliVersion, probeAgentClis, resolveAgent, selectedAgent, type AgentCliProbe, type AgentSource } from "./agent-cli.ts";
 import { briefPlan, briefPlanText, defaultBriefJobs, staleInventory, staleInventoryText, type BriefPlan, type PlannedBriefEntry, type StaleInventory } from "./explain-inventory.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
@@ -2479,7 +2479,8 @@ function emptyExplainLlm(status: OperationStatus, exitCode: 0 | 1 | 2 | null, er
  * nothing asked or written. No usable model: the offline summary and the
  * saved answer with the CLI's note (0), nothing asked. Otherwise the inputs
  * are fixed — keylang.json, the sources, the specs and the saved file's
- * bytes — and the model is asked once (a brief is cut by `briefText`). A
+ * bytes — and the model is asked once (`answerText` drops a remark and a
+ * fence around the whole answer; a brief is then cut by `briefText`). A
  * Cancel during the answer is cancelled; a timeout, an empty answer or a
  * provider error is 2; both keep the saved file. After `beforeCommit`
  * (which may refuse: 1) the inputs and the saved file must still be the
@@ -2563,7 +2564,7 @@ async function runExplainLlm(request: ExplainLlmRequest, context: OperationConte
     return failed(2, [{ level: "error", text: payload.error }]);
   }
   if (context.signal?.aborted) return emptyExplainLlm("cancelled", null);
-  const text = detail === "brief" ? briefText(answer) : answer.trim();
+  const text = detail === "brief" ? briefText(answer) : answerText(answer);
   if (text === "") {
     payload.error = `${client.agent} answered without text; nothing written`;
     return failed(2, [{ level: "error", text: payload.error }]);
