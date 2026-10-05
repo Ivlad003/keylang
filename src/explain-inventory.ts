@@ -9,7 +9,7 @@ import { isCliAgent } from "./config.ts";
 import { currentBaseline, estimateTokens, explainedIds, isStale, planBriefs, readExplanation, type BriefBatch, type BriefLevel, type PlannedBrief } from "./explain-llm.ts";
 import { explanationPath, loadBriefs, snapshotBaseline, SYSTEM_ID } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
-import { plannedDecl } from "./lsp-features.ts";
+import { plannedDeclaration } from "./spec-ir.ts";
 
 /** Requests a batch keeps in flight: enough to be quick, few enough for a provider's rate limit. */
 export const DEFAULT_BRIEF_JOBS = 4;
@@ -94,7 +94,7 @@ function nodePlace(analysis: Analysis, id: string): NodePlace | null {
   const node = analysis.snapshot?.nodes[id];
   if (node?.file) return { file: node.file, line: node.line ?? 1, col: node.col ?? 1 };
   if (node) return null;
-  const planned = plannedDecl(analysis.docs, id);
+  const planned = plannedDeclaration(analysis.docs, id);
   return planned === null ? null : { file: planned.file, line: planned.line, col: planned.col };
 }
 

@@ -9,7 +9,7 @@ import { explainCode } from "./explain.ts";
 import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.ts";
 import { isStale, readExplanation, unknownIds, type Explanation } from "./explain-llm.ts";
 import { explanationPath, type ExplanationDetail } from "./explanations.ts";
-import { plannedDecl } from "./lsp-features.ts";
+import { plannedDeclaration } from "./spec-ir.ts";
 
 /** `K001`, `k104`: a diagnostic code, whatever its case, as the CLI tells it from an ID. */
 export function isDiagnosticCode(subject: string): boolean {
@@ -133,7 +133,7 @@ function summaryLinks(analysis: Analysis, summary: NodeSummary): ExplainLink[] {
   const related = (role: ExplainLink["role"], ids: readonly string[]): void => {
     for (const id of ids) {
       const node = analysis.snapshot?.nodes[id];
-      const plan = node?.file ? null : plannedDecl(analysis.docs, id);
+      const plan = node?.file ? null : plannedDeclaration(analysis.docs, id);
       const where: [string | null, number, number] = node?.file ? [node.file, node.line ?? 1, 1] : plan ? [plan.file, plan.line, plan.col] : [null, 1, 1];
       const [file, line, col] = where;
       links.push({ role, id, file, line, col, text: `${role} ${id}  ${place(file, line)}${plan ? " (planned)" : ""}` });

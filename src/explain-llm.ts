@@ -14,8 +14,8 @@ import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.t
 import { explainDir, explanationOf, explanationPath, loadBriefs, OLD_EXPLAIN_DIR, ownLayers, readStoredExplanation, snapshotBaseline, storedIds, SYSTEM_ID, systemBaseline, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import type { LlmRequest } from "./llm.ts";
-import { plannedDecl } from "./lsp-features.ts";
 import { compareText } from "./span.ts";
+import { plannedDeclaration as plannedDecl } from "./spec-ir.ts";
 
 export type Explanation = StoredExplanation;
 

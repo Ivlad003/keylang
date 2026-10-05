@@ -218,9 +218,6 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
 
 // ---------- hover, definition, signature ----------
 
-// They moved next to SpecIR (`spec-ir.ts`); importers that still take them from here keep working.
-export { flowsUsing, plannedDeclaration as plannedDecl } from "./spec-ir.ts";
-
 /** The facts of an ID (`explain-node.ts`) with the state hover names: opaque, and a plan with or without code. */
 function describe(ws: Workspace, id: string): (NodeFacts & { state: string[] }) | null {
   const facts = nodeFacts(ws.analysis, id);
