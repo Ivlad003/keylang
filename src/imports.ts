@@ -49,16 +49,16 @@ export interface SourceResolver {
 
 /**
  * The path an import names when `assumed` holds for it (`assume` in
- * keylang.json): the file it resolves to, or — when no file answers, as in a
- * checkout without the generated or untracked file — a path the specifier
- * would name with the usual extension candidates. Null otherwise.
+ * keylang.json): the file `r` resolved it to, or — when no file answers, as
+ * in a checkout without the generated or untracked file — a path the
+ * specifier would name with the usual extension candidates (`wouldName`,
+ * `SourceResolver.wouldName`). Null otherwise.
  */
-export function assumedTarget(resolver: SourceResolver, fromFile: string, spec: string, assumed: (path: string) => boolean): string | null {
-  const r = resolver.resolve(fromFile, spec);
+export function assumedTarget(r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean): string | null {
   if (r.kind === "internal") return assumed(r.file) ? r.file : null;
   if (r.kind !== "unresolved") return null;
   // `src/gen/**` also matches the extensionless `src/gen/x`: the source file is the better name for it.
-  const matches = (resolver.wouldName?.(fromFile, spec) ?? []).filter(assumed);
+  const matches = wouldName().filter(assumed);
   return matches.find((path) => languageOf(path) !== undefined) ?? matches[0] ?? null;
 }
 

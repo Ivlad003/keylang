@@ -3,14 +3,14 @@
 // a local or missing callee stays a gap instead of a confirmed edge.
 
 import { posix } from "node:path";
-import { isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
+import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
-import type { Resolution } from "./imports.ts";
+import { assumedTarget, type Resolution } from "./imports.ts";
 import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 
@@ -25,6 +25,8 @@ export interface Graph {
   warnings: string[];
   /** Analysis holes kept beside the graph so a clean edge list is not a claim of full coverage. */
   gaps: Gap[];
+  /** Imports of files `assume` lists: neither an edge nor a hole (`assumed-import` coverage). */
+  assumed: AssumedImport[];
   /** Type edges and calls with more than one target. Confirmed calls stay on functions. */
   openEdges: OpenEdge[];
   /** Config files import resolution read (`tsconfig.json`, `package.json`), with their text or null. */
@@ -47,6 +49,9 @@ export interface Gap {
   /** Module or function that contains the gap, when there is one. */
   source: string | null;
 }
+
+/** An import of a file `assume` lists: the architecture imports it, and keylang neither reads nor requires it. */
+export type AssumedImport = Omit<Gap, "kind">;
 
 export interface OpenEdge {
   kind: "call" | "type";
@@ -231,6 +236,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const stats: Stats = { files: files.length, modules: 0, fns: 0, types: 0, deps: 0, callsResolved: 0, callsUnresolved: 0, callsExternal: 0, callsDynamic: 0, importsUnresolved: 0, unassignedFiles: 0 };
   const warnings: string[] = [];
   const gaps: Gap[] = [];
+  const assumedImports: AssumedImport[] = [];
   const openEdges: OpenEdge[] = [];
   for (const name of config.layers.keys()) layers.set(name, { name, modules: [] });
 
@@ -404,6 +410,16 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       const globFrom = (unit: string | null, external: boolean): void => {
         if (imp.glob) globs.push({ unit, external });
       };
+      // `assume`: a file the architecture imports that keylang neither reads nor requires, present or
+      // absent. No edge and no hole; its names are bound like a package's, so calls through them are external.
+      const assumed = config.assume.length === 0 ? null : assumedTarget(r, () => resolverFor(facts.path)?.wouldName?.(facts.path, imp.source) ?? [], (path) => isAssumed(path, config));
+      if (assumed !== null) {
+        assumedImports.push({ file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason: `assumed import \`${imp.source}\` → \`${assumed}\` (\`assume\` in keylang.json)`, source: module.id });
+        globFrom(null, true);
+        for (const b of imp.bindings) bind(b, importTarget(ASSUMED_MODULE, ASSUMED_MODULE.id, b, false));
+        if (star) starFrom({ target: null, reason: `re-export from assumed \`${imp.source}\`` });
+        continue;
+      }
       let target: Module | null = null;
       if (r.kind === "internal") {
         target = byFile.get(r.file)?.module ?? null;
@@ -1019,6 +1035,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     stats,
     warnings,
     gaps,
+    assumed: assumedImports,
     openEdges,
     // Manifests are inputs too: the snapshot id (and the MCP cache keyed on it) covers them.
     resolverInputs: new Map([...manifests.inputs, ...resolverInputs()]),
@@ -1073,29 +1090,19 @@ interface ImportTarget {
 }
 
 /**
- * What a standard-library import (Python `typing`) binds: an external module
- * that is never added to the graph. Its ID is no valid ID, so it names no node.
+ * A module an import may bind that is never added to the graph: an external
+ * one, so calls through its names are external. Its ID is no valid ID, so it
+ * names no node.
  */
-const STDLIB_MODULE: Module = {
-  id: `${EXTERNAL}.<stdlib>`,
-  layer: EXTERNAL,
-  name: "<stdlib>",
-  path: null,
-  line: null,
-  col: null,
-  endLine: null,
-  endCol: null,
-  synthetic: true,
-  class: false,
-  comment: null,
-  doc: null,
-  deps: [],
-  fns: [],
-  types: [],
-  children: [],
-  members: "opaque",
-  starSources: [],
-};
+function unindexedModule(name: string): Module {
+  return { id: `${EXTERNAL}.<${name}>`, layer: EXTERNAL, name: `<${name}>`, path: null, line: null, col: null, endLine: null, endCol: null, synthetic: true, class: false, comment: null, doc: null, deps: [], fns: [], types: [], children: [], members: "opaque", starSources: [] };
+}
+
+/** What a standard-library import (Python `typing`) binds. */
+const STDLIB_MODULE = unindexedModule("stdlib");
+
+/** What an import of a file `assume` lists binds: code keylang deliberately leaves unread, as it leaves a package. */
+const ASSUMED_MODULE = unindexedModule("assumed");
 
 /** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
 function importTarget(module: Module, unit: string, binding: ImportBinding, whole: boolean): ImportTarget {
@@ -1120,7 +1127,8 @@ function exportInput(row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string
   const local = row.local ?? name;
   const declared = reexported ? undefined : scope.get(layerName(local));
   const found = declared === undefined ? imported.get(reexported ? name : local)?.[0] : undefined;
-  const from = found?.module.id;
+  // The standard library and an assumed file are no nodes: such a name comes from no module of the snapshot.
+  const from = found?.module.synthetic ? undefined : found?.module.id;
   let target: ExportTarget = { kind: "none" };
   if (declared !== undefined) target = { kind: "symbol", id: declared };
   else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.unit } : { kind: "name", module: found.unit, name: found.imported ?? "default" };

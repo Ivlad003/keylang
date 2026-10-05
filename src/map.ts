@@ -5,19 +5,18 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
-import { classifySources, CONFIG_FILE, isAnalysed, isAssumed, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
+import { classifySources, CONFIG_FILE, isAnalysed, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 import type { FileFacts } from "./extract/facts.ts";
-import { frontendFor, type Frontend } from "./frontends.ts";
-import { assumedTarget, type SourceResolver } from "./imports.ts";
+import { frontendFor } from "./frontends.ts";
 import { isGeneratedMap, renderExplainedMap, renderMap } from "./emit.ts";
 import { explanationOf, loadBriefs } from "./explanations.ts";
 import { buildGraph, placeFile, type Graph } from "./graph.ts";
 import { FACT_CACHE_FILE, FactCache } from "./fact-cache.ts";
 import { landing, writeAtomic, writeProblem } from "./safe-write.ts";
-import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type CoverageItem, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
+import { buildSnapshot, EXTRACTOR_VERSION, grammarVersions, sha256, type AnalysisSnapshot, type RepositoryDocs, type SystemDoc } from "./snapshot.ts";
 
 export interface MapResult {
   graph: Graph;
@@ -92,8 +91,6 @@ export async function generateMap(config: Config, options: { persist?: boolean |
   const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
-  // `assume`: an import of a file keylang neither reads nor requires is no edge and no hole.
-  const assumed = config.assume.length === 0 ? [] : assumeImports(config, graph, facts);
   // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
   if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded]));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
@@ -114,53 +111,13 @@ export async function generateMap(config: Config, options: { persist?: boolean |
     ...excluded.map((file) => ({ file, reason: "excluded by keylang.json" })),
     ...outside.map((file) => ({ file, reason: "outside the architecture (`outside` in keylang.json)", kind: "outside-file" as const })),
     ...unreadable,
-  ], readRepositoryDocs(config), assumed);
+  ], readRepositoryDocs(config));
   let explained: Map<string, string> | null = null;
   if (config.explain.map) {
     const briefs = loadBriefs(config);
     explained = renderExplainedMap(index, `${config.dir}/${EXPLAINED_MAP_DIR}`, (id) => explanationOf(index, briefs, id));
   }
   return { graph, files: renderMap(index, mapDir), explained, index, skipped: skipped.length, facts: { reused: cache.reused, extracted: cache.extracted }, factCache };
-}
-
-/**
- * Takes the dependency holes of imports that name a file `assume` lists out
- * of the graph, with their warning and count, and returns them as
- * `assumed-import` coverage: the architecture imports the file, and keylang
- * neither reads nor requires it. The graph reports such an import as
- * unresolved (absent) or not indexed (present), so each hole is resolved
- * again: by the file it names, or — absent — by the paths the specifier
- * would name.
- */
-function assumeImports(config: Config, graph: Graph, facts: readonly FileFacts[]): CoverageItem[] {
-  const byPath = new Map(facts.map((f) => [f.path, f]));
-  const sources = new Set(byPath.keys());
-  // The graph's resolvers are its own; these read the same config files again, only when `assume` is set.
-  const resolvers = new Map<Frontend, SourceResolver>();
-  const resolverFor = (file: string): SourceResolver | null => {
-    const frontend = frontendFor(file);
-    if (!frontend) return null;
-    let resolver = resolvers.get(frontend);
-    if (!resolver) resolvers.set(frontend, (resolver = frontend.resolver(config.root, sources, facts)));
-    return resolver;
-  };
-  const assumed: CoverageItem[] = [];
-  const kept: Graph["gaps"] = [];
-  for (const gap of graph.gaps) {
-    const imp = gap.kind === "unresolved-import" ? byPath.get(gap.file)?.imports.find((i) => i.line === gap.line && i.col === gap.col) : undefined;
-    const resolver = imp === undefined ? null : resolverFor(gap.file);
-    const path = imp === undefined || resolver === null ? null : assumedTarget(resolver, gap.file, imp.source, (p) => isAssumed(p, config));
-    if (imp === undefined || path === null) {
-      kept.push(gap);
-      continue;
-    }
-    assumed.push({ kind: "assumed-import", file: gap.file, line: gap.line, col: gap.col, endLine: gap.endLine, endCol: gap.endCol, text: gap.text, reason: `assumed import \`${imp.source}\` → \`${path}\` (\`assume\` in keylang.json)`, source: gap.source });
-    graph.stats.importsUnresolved--;
-    const warning = graph.warnings.indexOf(`${gap.file}:${gap.line}: ${gap.reason}`);
-    if (warning !== -1) graph.warnings.splice(warning, 1);
-  }
-  graph.gaps.splice(0, graph.gaps.length, ...kept);
-  return assumed;
 }
 
 /** Root manifests a repository names and describes itself in, in the order they are asked. */

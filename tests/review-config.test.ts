@@ -39,6 +39,8 @@ interface Index {
   nodes: Record<string, { kind: string; file: string | null }>;
   edges: { kind: string; source: string; target: string | null; resolution: string }[];
   coverage: { kind: string; file: string; line: number; col: number; text: string; reason: string; source: string | null }[];
+  exports: { module: string; name: string; symbol: string | null; form?: string; from?: string }[];
+  stats: { callsExternal: number; callsDynamic: number; callsUnresolved: number; importsUnresolved: number };
 }
 
 function index(dir: string): Index {
@@ -277,6 +279,36 @@ test("assume: a path-mapped specifier names the path it would resolve to; `assum
   assert.equal(keylang(dir, ["map"]).status, 0);
   assert.notEqual(index(dir).snapshotId, assumed.snapshotId);
   assert.ok(verdicts(dir).rows.some((row) => row.code === "K107"));
+});
+
+test("assume: names an assumed import binds are called outside the graph, like a package's", (t) => {
+  const store = [
+    'import { loadSettings, Settings } from "../config";',
+    'import * as cfg from "../config";',
+    'export { settings } from "../config";',
+    "export class Store extends Settings {",
+    "  save(): boolean {",
+    "    return loadSettings().persist && cfg.flag() && this.inherited();",
+    "  }",
+    "}",
+    "export function save(order: unknown): void {}",
+    "",
+  ].join("\n");
+  const dir = repo(t, { ...SHOP, "src/infra/store.ts": store, "keylang.json": json({ format: 2, languages: ["typescript"], layers: SHOP_LAYERS, assume: ["src/config.ts"] }) });
+  const map = keylang(dir, ["map"]);
+  assert.equal(map.status, 0, map.stderr);
+  const snapshot = index(dir);
+  // Each import is an `assumed-import`, and the calls through its names are no holes.
+  assert.deepEqual(
+    snapshot.coverage.filter((item) => item.file === "src/infra/store.ts").map((item) => `${item.kind} ${item.line}`),
+    ["assumed-import 1", "assumed-import 2", "assumed-import 3"],
+  );
+  assert.deepEqual([snapshot.stats.callsExternal, snapshot.stats.callsDynamic, snapshot.stats.callsUnresolved, snapshot.stats.importsUnresolved], [3, 0, 0, 0]);
+  // A name re-exported from the file is no symbol keylang indexes, and comes from no node.
+  assert.deepEqual(
+    snapshot.exports.filter((row) => row.module === "infra.store" && row.name === "settings"),
+    [{ module: "infra.store", name: "settings", symbol: null, kind: "value", form: "reexport" }],
+  );
 });
 
 test("assume is validated like exclude, and init and draft map do not write it", (t) => {
