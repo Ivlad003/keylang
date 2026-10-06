@@ -11,7 +11,7 @@ import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts"
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
 import { assumedTarget, type Resolution } from "./imports.ts";
-import { caselessNames, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { asciiLowerCase, caselessNames, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 
 export { EXTERNAL };
@@ -600,7 +600,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     return null;
   };
   const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
-  /** Per export table of a language whose names compare without case: lower-cased name → the names of its declarations; null for any other table. */
+  /** Per export table of a language whose names compare without case: name in ASCII lower case → the names of its declarations; null for any other table. */
   const caselessTables = new Map<string, Map<string, string[]> | null>();
   /**
    * PHP finds a class or a function whatever the case its name is written in: `new ORDER()`
@@ -615,7 +615,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       table = caselessNames(file) ? caselessIndex(exportInputs.get(unit)?.rows ?? []) : null;
       caselessTables.set(unit, table);
     }
-    const names = table?.get(name.toLowerCase()) ?? [];
+    const names = table?.get(asciiLowerCase(name)) ?? [];
     return names.length === 1 && names[0] !== name ? exportTables.symbolOf(unit, names[0]!) : null;
   };
   /**
@@ -1223,7 +1223,7 @@ function holeReason(c: CallFact): string {
  * (`later(save)` names the declaration `save` resolves to; `obj.save` any
  * method `save`), called implicitly, or the constructor of a class read as a
  * value (`extends A` runs `A`'s constructor). Names read and called are keyed in NFC;
- * a fn of PHP matches them in any case (`[$o, 'SAVE']` reads `save`).
+ * a fn of PHP matches them in any ASCII case (`[$o, 'SAVE']` reads `save`).
  */
 function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]): void {
   const caselessReads = foldCase(readMembers);
@@ -1236,7 +1236,7 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
       const key = name.normalize("NFC");
       const file = fn.file ?? m.path;
       const caseless = caselessNames(file);
-      const named = (exact: ReadonlyMap<string, Escape>, folded: ReadonlyMap<string, Escape>): Escape | undefined => exact.get(key) ?? (caseless ? folded.get(key.toLowerCase()) : undefined);
+      const named = (exact: ReadonlyMap<string, Escape>, folded: ReadonlyMap<string, Escape>): Escape | undefined => exact.get(key) ?? (caseless ? folded.get(asciiLowerCase(key)) : undefined);
       const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(file) ? named(readMembers, caselessReads) : undefined) ?? named(calledNames, caselessCalls);
       if (ref) fn.escapes = ref;
       else if (isClass && !members.get(fn.id)?.hash && implicitMember(file, name)) fn.escapes = { file: file ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
@@ -1246,10 +1246,10 @@ function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, 
   for (const m of modules.values()) visit(m, false);
 }
 
-/** Names keyed lower-cased, each with the escape of its first spelling: what a language whose names compare without case looks up. */
+/** Names keyed in ASCII lower case, each with the escape of its first spelling: what a language whose names compare without case looks up. */
 function foldCase(names: ReadonlyMap<string, Escape>): Map<string, Escape> {
   const out = new Map<string, Escape>();
-  for (const [name, escape] of names) if (!out.has(name.toLowerCase())) out.set(name.toLowerCase(), escape);
+  for (const [name, escape] of names) if (!out.has(asciiLowerCase(name))) out.set(asciiLowerCase(name), escape);
   return out;
 }
 
@@ -1270,25 +1270,25 @@ interface Decls {
 }
 
 /**
- * Lower-cased name → the names of the declarations an export table lists under it. A row that
+ * Name in ASCII lower case → the names of the declarations an export table lists under it. A row that
  * stands for no declaration (a PHP constant, which keeps its case) is left out.
  */
 function caselessIndex(rows: readonly ExportRowInput[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const row of rows) {
     if (row.target.kind !== "symbol") continue;
-    const key = row.name.toLowerCase();
+    const key = asciiLowerCase(row.name);
     const names = out.get(key) ?? [];
     if (!names.includes(row.name)) out.set(key, [...names, row.name]);
   }
   return out;
 }
 
-/** Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without case (PHP). */
+/** Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without ASCII case (PHP). */
 export function memberKey(member: string, isStatic: boolean, caseless = false): string {
   const hash = member.startsWith("#");
   const key = `${isStatic ? "static " : ""}${hash ? "#" : ""}${layerName(hash ? member.slice(1) : member)}`;
-  return caseless ? key.toLowerCase() : key;
+  return caseless ? asciiLowerCase(key) : key;
 }
 
 /** Suffixes of a member whose name another member of the class already has. */

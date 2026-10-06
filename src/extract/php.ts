@@ -12,6 +12,7 @@
 // `call_user_func`) are holes; so is a method through a value whose class the
 // syntax does not name.
 
+import { asciiLowerCase } from "../languages.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, ImportFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, nonEmpty } from "./doc-comments.ts";
 import { errorLine, fingerprint, located, withTree, type Node } from "./treesitter.ts";
@@ -35,7 +36,7 @@ export function extractPhp(path: string, src: string): Promise<FileFacts> {
   return withTree("php", src, (tree) => extractTree(path, tree.rootNode));
 }
 
-/** What names mean in one namespace: its name and the aliases of its `use` statements (keys lowercased: PHP class and function names ignore case). */
+/** What names mean in one namespace: its name and the aliases of its `use` statements (keys in ASCII lower case: PHP class and function names ignore ASCII case). */
 interface Names {
   ns: string;
   classes: Map<string, Alias>;
@@ -53,7 +54,7 @@ interface Alias {
 /** A class while its members are read: what `self::`, `$this->field->` and `static` name. */
 interface ClassContext {
   name: string;
-  /** Lowercased names of the static methods. */
+  /** Names of the static methods, in ASCII lower case. */
   statics: ReadonlySet<string>;
   /** Property → its class as written, for a property typed with one class (`private Store $store`, a promoted constructor parameter). */
   fields: ReadonlyMap<string, string>;
@@ -220,7 +221,7 @@ function usesOf(decl: Node, names: Names): ImportFact[] {
     const kind = useKind(clause) ?? useKind(decl) ?? "class";
     const alias = aliasNode?.text ?? lastSegment(qualified);
     const table = kind === "function" ? names.functions : kind === "const" ? names.consts : names.classes;
-    table.set(kind === "const" ? alias : alias.toLowerCase(), { alias, qualified });
+    table.set(kind === "const" ? alias : asciiLowerCase(alias), { alias, qualified });
     out.push({ source: kind === "class" ? qualified : `${kind} ${qualified}`, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: firstLine(at.text), bindings: [{ kind: "named", local: alias, imported: lastSegment(qualified) }], reexport: false });
   }
   return out;
@@ -235,11 +236,11 @@ function usesOf(decl: Node, names: Names): ImportFact[] {
  */
 function canonicalClass(written: string, names: Names): { local: string; qualified: string | null; explicit: boolean } {
   if (written.startsWith("\\")) return { local: written, qualified: written.slice(1), explicit: false };
-  const lower = written.toLowerCase();
+  const lower = asciiLowerCase(written);
   if (SPECIAL_CLASSES.has(lower)) return { local: written, qualified: null, explicit: true };
   if (lower.startsWith("namespace\\")) return { local: written, qualified: qualify(names.ns, written.slice("namespace\\".length)), explicit: false };
   const [head = "", ...rest] = written.split("\\");
-  const alias = names.classes.get(head.toLowerCase());
+  const alias = names.classes.get(asciiLowerCase(head));
   if (alias) return rest.length === 0 ? { local: alias.alias, qualified: alias.qualified, explicit: true } : { local: [alias.alias, ...rest].join("\\"), qualified: [alias.qualified, ...rest].join("\\"), explicit: false };
   return { local: written, qualified: qualify(names.ns, written), explicit: false };
 }
@@ -255,7 +256,7 @@ function canonicalFunction(written: string, names: Names): { local: string; spec
     const name = canonicalClass(written, names);
     return { local: name.local, spec: `function ${name.qualified ?? written}`, explicit: false };
   }
-  const alias = names.functions.get(written.toLowerCase());
+  const alias = names.functions.get(asciiLowerCase(written));
   if (alias) return { local: alias.alias, spec: `function ${alias.qualified}`, explicit: true };
   return { local: written, spec: names.ns === "" ? `function ${written}` : `function ${names.ns}\\${written} ?? ${written}`, explicit: false };
 }
@@ -304,7 +305,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
   const body = node.childForFieldName("body");
   const items = body?.namedChildren ?? [];
   const methods = items.filter((item) => item.type === "method_declaration");
-  const statics = new Set(methods.filter((m) => m.namedChildren.some((c) => c.type === "static_modifier")).map((m) => m.childForFieldName("name")?.text.toLowerCase() ?? ""));
+  const statics = new Set(methods.filter((m) => m.namedChildren.some((c) => c.type === "static_modifier")).map((m) => asciiLowerCase(m.childForFieldName("name")?.text ?? "")));
   const fields = new Map<string, string>();
   const traits: string[] = [];
   for (const item of items) {
@@ -327,7 +328,7 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     }
   }
   for (const method of methods) {
-    if (method.childForFieldName("name")?.text.toLowerCase() !== "__construct") continue;
+    if (asciiLowerCase(method.childForFieldName("name")?.text ?? "") !== "__construct") continue;
     for (const param of method.childForFieldName("parameters")?.namedChildren ?? []) {
       if (param.type !== "property_promotion_parameter") continue;
       const typeNode = param.childForFieldName("type");
@@ -342,11 +343,11 @@ function declarationOf(node: Node, names: Names, collector: Collector): DeclFact
     const written = method.childForFieldName("name")?.text;
     if (!written) continue;
     // PHP names the constructor in any case; its ID is `<class>.__construct`, the name `new X()` runs.
-    const member = written.toLowerCase() === "__construct" ? "__construct" : written;
+    const member = asciiLowerCase(written) === "__construct" ? "__construct" : written;
     const decl = fnDecl(method, member, names, ctx, collector, `${name}.${member}`);
-    const visibility = method.namedChildren.find((c) => c.type === "visibility_modifier")?.text.toLowerCase();
+    const visibility = asciiLowerCase(method.namedChildren.find((c) => c.type === "visibility_modifier")?.text ?? "");
     decl.exported = visibility !== "private" && visibility !== "protected";
-    if (statics.has(member.toLowerCase())) decl.static = true;
+    if (statics.has(asciiLowerCase(member))) decl.static = true;
     members.push(decl);
   }
   return { kind: "class", name, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, signature: null, exported: true, calls: [], types, members, fingerprint: fingerprint(node), ...(base !== undefined ? { base } : {}), ...(traits.length > 0 ? { traits } : {}), ...(doc !== undefined ? { doc } : {}) };
@@ -358,7 +359,7 @@ function singleClass(type: Node | null): string | null {
   const inner = type.type === "optional_type" ? type.namedChildren[0] : type;
   if (inner?.type !== "named_type") return null;
   const written = classNameOf(inner.namedChildren[0] ?? null);
-  return written && !BUILTIN_TYPES.has(written.toLowerCase()) ? written : null;
+  return written && !BUILTIN_TYPES.has(asciiLowerCase(written)) ? written : null;
 }
 
 /** Every class a type names, in unions, intersections and nullable types. */
@@ -368,7 +369,7 @@ function namedTypes(type: Node | null): { text: string; node: Node }[] {
     if (node.type === "named_type") {
       const nameNode = node.namedChildren[0] ?? null;
       const written = classNameOf(nameNode);
-      if (written && nameNode && !BUILTIN_TYPES.has(written.toLowerCase())) out.push({ text: written, node: nameNode });
+      if (written && nameNode && !BUILTIN_TYPES.has(asciiLowerCase(written))) out.push({ text: written, node: nameNode });
       return;
     }
     for (const child of node.namedChildren) walk(child);
@@ -438,7 +439,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
         if (!bound.has(variable)) bound.set(variable, "local");
         const right = n.childForFieldName("right");
         const created = n.type === "assignment_expression" && right?.type === "object_creation_expression" ? classNameOf(right.namedChildren[0] ?? null) : null;
-        const cls = created && !SPECIAL_CLASSES.has(created.toLowerCase()) ? collector.klass(created, right!, names) : null;
+        const cls = created && !SPECIAL_CLASSES.has(asciiLowerCase(created)) ? collector.klass(created, right!, names) : null;
         evidence.set(variable, evidence.has(variable) ? null : cls);
       } else if (n.type === "foreach_statement") {
         // `foreach ($items as $k => $v)`: what follows `as` is bound; the iterated expression is only read.
@@ -453,7 +454,7 @@ function fnDecl(node: Node, name: string, names: Names, ctx: ClassContext | null
       } else if (n.type === "binary_expression" && n.childForFieldName("operator")?.text === "instanceof") {
         const right = n.childForFieldName("right");
         const written = classNameOf(right);
-        if (written && right && !SPECIAL_CLASSES.has(written.toLowerCase())) types.push(typeRef(collector.klass(written, right, names), right));
+        if (written && right && !SPECIAL_CLASSES.has(asciiLowerCase(written))) types.push(typeRef(collector.klass(written, right, names), right));
       }
     });
   }
@@ -493,11 +494,11 @@ function callsIn(node: Node, scope: Scope, collector: Collector, closure: boolea
       // `X::class` reads the class as a value: whoever holds it may construct it.
       const [scopeNode, member] = n.namedChildren;
       const written = classNameOf(scopeNode ?? null);
-      if (member?.text.toLowerCase() === "class" && written && !SPECIAL_CLASSES.has(written.toLowerCase())) collector.value(collector.klass(written, scopeNode!, scope.names), n, false);
-      else if (written && !SPECIAL_CLASSES.has(written.toLowerCase())) collector.klass(written, scopeNode!, scope.names);
+      if (asciiLowerCase(member?.text ?? "") === "class" && written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.value(collector.klass(written, scopeNode!, scope.names), n, false);
+      else if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, scopeNode!, scope.names);
     } else if (n.type === "scoped_property_access_expression") {
       const written = classNameOf(n.childForFieldName("scope"));
-      if (written && !SPECIAL_CLASSES.has(written.toLowerCase())) collector.klass(written, n.childForFieldName("scope")!, scope.names);
+      if (written && !SPECIAL_CLASSES.has(asciiLowerCase(written))) collector.klass(written, n.childForFieldName("scope")!, scope.names);
     } else if (n.type === "array_creation_expression") arrayCallable(n, scope, collector);
     for (const child of n.namedChildren) walk(child, inner || CLOSURE_NODES.has(n.type));
   };
@@ -545,7 +546,7 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
     if (!target || target.type === "anonymous_class") return null;
     const written = classNameOf(target);
     if (written) {
-      const lower = written.toLowerCase();
+      const lower = asciiLowerCase(written);
       if (lower === "self" || lower === "static") return scope.ctx ? { callee: scope.ctx.name } : opaque();
       if (lower === "parent") return scope.ctx ? { callee: "super" } : opaque();
       return { callee: collector.klass(written, target, scope.names) };
@@ -561,7 +562,7 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
     const fn = n.childForFieldName("function");
     if (fn?.type === "name" || fn?.type === "qualified_name") {
       const written = fn.text.replace(/\s+/g, "");
-      const lower = lastSegment(written).toLowerCase();
+      const lower = asciiLowerCase(lastSegment(written));
       if (CONSTRUCTS.has(lower) && !written.includes("\\")) return null;
       if (CALLABLE_CALLS.has(lower)) collector.hole(n, `\`${lastSegment(written)}\` calls a callable chosen at run time`, scope.symbol);
       if (lower === "eval") collector.hole(n, "`eval` runs code keylang cannot read", scope.symbol);
@@ -575,11 +576,11 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
   const member = name.text;
   if (n.type === "scoped_call_expression") {
     const scopeNode = n.childForFieldName("scope");
-    if (scopeNode?.type === "relative_scope" || (scopeNode && SPECIAL_CLASSES.has(scopeNode.text.toLowerCase()))) {
-      const relative = scopeNode.text.toLowerCase();
+    if (scopeNode?.type === "relative_scope" || (scopeNode && SPECIAL_CLASSES.has(asciiLowerCase(scopeNode.text)))) {
+      const relative = asciiLowerCase(scopeNode.text);
       if (!scope.ctx) return opaque();
       if (relative === "parent") return { callee: `super.${member}` };
-      return scope.ctx.statics.has(member.toLowerCase()) ? { callee: `${scope.ctx.name}.${member}` } : { callee: `this.${member}` };
+      return scope.ctx.statics.has(asciiLowerCase(member)) ? { callee: `${scope.ctx.name}.${member}` } : { callee: `this.${member}` };
     }
     const written = classNameOf(scopeNode);
     if (written) return { callee: `${collector.klass(written, scopeNode!, scope.names)}.${member}` };
@@ -606,7 +607,7 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
   // `(new Order())->total()`: an instance of the class `new` names.
   const created = object?.type === "parenthesized_expression" && object.namedChildren[0]?.type === "object_creation_expression" ? classNameOf(object.namedChildren[0].namedChildren[0] ?? null) : null;
   const text = n.text.replace(/\s+/g, " ");
-  if (created && !SPECIAL_CLASSES.has(created.toLowerCase()) && text.length <= MAX_CALLEE) {
+  if (created && !SPECIAL_CLASSES.has(asciiLowerCase(created)) && text.length <= MAX_CALLEE) {
     return { callee: text, receiver: collector.klass(created, object!.namedChildren[0]!, scope.names) };
   }
   return opaque();
@@ -665,7 +666,7 @@ function includedPath(expr: Node | null, file: string): string | null {
     const literal = stringValue(node);
     if (literal !== null) return { text: literal, anchored: false };
     if (node.type === "name" && node.text === "__DIR__") return { text: dir, anchored: true };
-    if (node.type === "function_call_expression" && node.childForFieldName("function")?.text.toLowerCase() === "dirname") {
+    if (node.type === "function_call_expression" && asciiLowerCase(node.childForFieldName("function")?.text ?? "") === "dirname") {
       const args = (node.childForFieldName("arguments")?.namedChildren ?? []).map((a) => a.namedChildren[0] ?? null);
       const levels = args[1] ? Number(args[1].text) : 1;
       if (!Number.isInteger(levels) || levels < 1) return null;

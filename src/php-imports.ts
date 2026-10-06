@@ -9,7 +9,8 @@
 // namespace) nobody declares is PHP's own: a built-in class or function, or a
 // global function a package defines, and so the standard library. A
 // namespace written in a `use` (`use App\Domain;`) is no declaration: it binds
-// nothing and adds no edge. Names compare without case, as PHP compares them.
+// nothing and adds no edge. Names compare without ASCII case, as PHP compares
+// them: `App\ORDER` is `App\Order`, `App\äpfel` is not `App\Äpfel`.
 //
 // Specifiers (`src/extract/php.ts`): a class `App\Domain\Order`; a function
 // `function App\f`, or `function App\f ?? f` for an unqualified call (the
@@ -20,6 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FileFacts } from "./extract/facts.ts";
 import type { Resolution, SourceResolver } from "./imports.ts";
+import { asciiLowerCase } from "./languages.ts";
 
 /** Lock files that say which namespaces each installed package holds, in the order they are read. */
 const LOCKS = ["composer.lock", "vendor/composer/installed.json"];
@@ -30,11 +32,11 @@ const PHP_NAMESPACES = ["random\\", "dom\\", "ffi\\", "pdo\\", "uri\\"];
 export class PhpResolver implements SourceResolver {
   private readonly root: string;
   private readonly sources: ReadonlySet<string>;
-  /** Table → lowercased qualified name → files that declare it, sorted. */
+  /** Table → qualified name in ASCII lower case → files that declare it, sorted. */
   private readonly declared = { class: new Map<string, string[]>(), function: new Map<string, string[]>(), const: new Map<string, string[]>() };
-  /** Lowercased namespaces the declarations are in, with every prefix. */
+  /** Namespaces the declarations are in, with every prefix, in ASCII lower case. */
   private readonly namespaces = new Set<string>();
-  /** Lowercased namespace prefixes of packages (`symfony\component\httpfoundation\`), longest first. */
+  /** Namespace prefixes of packages in ASCII lower case (`symfony\component\httpfoundation\`), longest first. */
   private readonly packages: { prefix: string; name: string }[] = [];
   /** The lock file read, with its text (null: absent); the snapshot id depends on it. */
   readonly inputs = new Map<string, string | null>();
@@ -44,7 +46,7 @@ export class PhpResolver implements SourceResolver {
     this.sources = sources;
     for (const facts of files) {
       for (const symbol of facts.symbols ?? []) {
-        const key = symbol.qualified.toLowerCase();
+        const key = asciiLowerCase(symbol.qualified);
         const table = this.declared[symbol.table];
         table.set(key, [...(table.get(key) ?? []), facts.path].sort());
         const parts = key.split("\\");
@@ -66,12 +68,12 @@ export class PhpResolver implements SourceResolver {
     const kind = spec.startsWith("function ") ? "function" : spec.startsWith("const ") ? "const" : "class";
     const names = (kind === "class" ? spec : spec.slice(kind.length + 1)).split(" ?? ").map((name) => name.replace(/^\\/, ""));
     for (const name of names) {
-      const files = this.declared[kind].get(name.toLowerCase());
+      const files = this.declared[kind].get(asciiLowerCase(name));
       // A name declared twice (a polyfill, a conditional declaration) is the first file's, by path.
       if (files) return files[0] === fromFile ? { kind: "local" } : { kind: "internal", file: files[0]! };
     }
     const name = names[names.length - 1]!;
-    const lower = name.toLowerCase();
+    const lower = asciiLowerCase(name);
     if (kind === "class" && this.namespaces.has(lower)) return { kind: "generated" };
     const pkg = this.packages.find((p) => lower.startsWith(p.prefix));
     if (pkg) return { kind: "external", pkg: pkg.name };
@@ -110,7 +112,7 @@ export function packagePrefixes(text: string): { prefix: string; name: string }[
         const map = pkg.autoload[field];
         if (!isRecord(map)) continue;
         // An empty prefix claims every name: no namespace can be told to be this package's.
-        for (const prefix of Object.keys(map)) if (prefix !== "") out.push({ prefix: prefix.toLowerCase(), name: pkg.name });
+        for (const prefix of Object.keys(map)) if (prefix !== "") out.push({ prefix: asciiLowerCase(prefix), name: pkg.name });
       }
     }
   }

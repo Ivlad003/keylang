@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { OUTSIDE_LAYER, type StaticMode, type StaticSource } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { caselessNames, constructorName } from "./languages.ts";
+import { asciiLowerCase, caselessNames, constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, Trigger, WhenItem } from "./spec-ir.ts";
@@ -273,7 +273,7 @@ interface CallGraph {
   callers: Map<string, Step[]>;
   /** Fns by the name code calls them (`callName`), for calls whose receiver is unknown. */
   byName: Map<string, string[]>;
-  /** Fns of a language whose names compare without case (PHP), by that name lower-cased. */
+  /** Fns of a language whose names compare without case (PHP), by that name in ASCII lower case. */
   byCaselessName: Map<string, string[]>;
   /** Unsupported constructs by file. */
   unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
@@ -318,7 +318,7 @@ function callGraph(input: FlowInput): CallGraph {
   for (const [id, node] of Object.entries(input.nodes)) {
     if (node.kind !== "fn") continue;
     add(byName, callName(id), id);
-    if (caselessNames(node.file)) add(byCaselessName, callName(id).toLowerCase(), id);
+    if (caselessNames(node.file)) add(byCaselessName, asciiLowerCase(callName(id)), id);
   }
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
@@ -370,10 +370,10 @@ function callName(id: string): string {
 
 /**
  * Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member
- * whose ID has no suffix; a fn of PHP matches the name in any case (`x.RUN` may run `run`).
+ * whose ID has no suffix; a fn of PHP matches the name in any ASCII case (`x.RUN` may run `run`).
  */
 function namedLike(graph: CallGraph, name: string): string[] {
-  const named = (key: string): string[] => [...(graph.byName.get(key) ?? []), ...(graph.byCaselessName.get(key.toLowerCase()) ?? [])];
+  const named = (key: string): string[] => [...(graph.byName.get(key) ?? []), ...(graph.byCaselessName.get(asciiLowerCase(key)) ?? [])];
   return [...new Set([...named(name), ...(name.startsWith("#") ? named(name.slice(1)) : [])])];
 }
 
@@ -512,9 +512,9 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
     const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, lastSegment(edge.text ?? ""));
     if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
   }
-  // An override has the name of the method the call resolved to; in PHP, in any case.
+  // An override has the name of the method the call resolved to; in PHP, in any ASCII case.
   const caseless = caselessNames(to?.file);
-  const sameName = (id: string): boolean => callName(id) === callName(target) || (caseless && callName(id).toLowerCase() === callName(target).toLowerCase());
+  const sameName = (id: string): boolean => callName(id) === callName(target) || (caseless && asciiLowerCase(callName(id)) === asciiLowerCase(callName(target)));
   const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && sameName(step.to));
   if (override) return { verdict: "unverified", message: `${lead}; ${describeHole(override.edge, target, input)} at ${at(override.edge)}` };
   const blocker = escapeOf(graph, input, new Set([target]), new Set([parent]));
@@ -662,7 +662,7 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
     const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
     if (closure) return { reason: `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`, from: closure.from };
   }
-  // PHP names a fn in any case: `call_user_func('HELPER')` mentions `helper`.
+  // PHP names a fn in any ASCII case: `call_user_func('HELPER')` mentions `helper`.
   const patterns = new Map<string, RegExp>();
   for (const id of routes) {
     const name = callName(id).replace(/^#/, "");
@@ -686,9 +686,15 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
   return null;
 }
 
-/** `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit; `caseless`: in any case. */
+/**
+ * `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit;
+ * `caseless`: in any ASCII case, as PHP compares names (`HELPER` is `helper`, `ÄNDERN` is no `ändern`),
+ * which the flag `i` would not keep apart.
+ */
 function identifierPattern(name: string, caseless = false): RegExp {
-  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{ID_Continue}$\\u200c\\u200d])`, caseless ? "iu" : "u");
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const body = caseless ? escaped.replace(/[A-Za-z]/g, (letter) => `[${letter.toLowerCase()}${letter.toUpperCase()}]`) : escaped;
+  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${body}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
 }
 
 /** The innermost fn whose declaration holds `file:line`. */
