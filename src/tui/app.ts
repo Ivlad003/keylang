@@ -315,6 +315,12 @@ export class App {
       requestOperation: (action, request, then) => this.requestOperation(action, request, then),
       cancelOperation: () => this.cancelOperation(),
       track: (work) => this.track(work),
+      proposalDir: () => this.merges.specDir(),
+      generatedDoc: (path) => this.generatedDoc(path),
+      proposalWaiting: (path) => this.proposalWaiting(path),
+      rescanProposals: () => {
+        this.state.proposals = this.merges.scan();
+      },
     });
     this.clip = new Clip({
       state: this.state,

@@ -43,11 +43,12 @@ export const FLOW_PATH = "keylang/flows/checkout.md";
 export const PAID = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal, paid by card.");
 
 /**
- * A Messages API stand-in in this process: the TUI runs here too. `delay`
- * holds each answer back; `aborted` counts the requests whose connection the
- * client dropped before the answer.
+ * A Messages API stand-in in this process: the TUI runs here too. `reply`
+ * is the answer, or makes it from the prompt; `delay` holds each answer
+ * back; `aborted` counts the requests whose connection the client dropped
+ * before the answer.
  */
-export async function mockModel(t: { after: (f: () => void) => void }, reply: string, delay = 0): Promise<{ prompts: string[]; aborted: number }> {
+export async function mockModel(t: { after: (f: () => void) => void }, reply: string | ((prompt: string) => string), delay = 0): Promise<{ prompts: string[]; aborted: number }> {
   const model = { prompts: [] as string[], aborted: 0 };
   const server = createServer((req, res) => {
     let data = "";
@@ -59,10 +60,12 @@ export async function mockModel(t: { after: (f: () => void) => void }, reply: st
     });
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      model.prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      const prompt = (JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content;
+      model.prompts.push(prompt);
+      const text = typeof reply === "string" ? reply : reply(prompt);
       timer = setTimeout(() => {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
+        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
       }, delay);
     });
   });

@@ -1,18 +1,24 @@
-// What the clip answers in its chat (ADR 0021, .scratch/tui-clip/03). A
+// What the clip answers in its chat (ADR 0021, .scratch/tui-clip/03–04). A
 // message that starts with `/` is a command, answered from the session or a
 // shared operation without the model. Any other message goes to the model of
 // `agent` as the session's one explicit operation, `assistant-reply` — an F6
 // record with Cancel, the ghost paused meanwhile — with the open file, the
 // ID under the cursor and the F4 pack as they are when it is sent. One
 // request at a time: the eyes are ◔◔ until the answer lands in the
-// conversation, and Esc cancels it. Without a model the commands work and
-// free text says how to set one; nothing is asked.
+// conversation, and Esc cancels it. The answer's first `keylang path=` block
+// becomes a proposal through the gate of MCP `apply_diff`; MERGE takes it or
+// not. Without a model the commands work and free text says how to set one;
+// nothing is asked.
 
+import { join } from "node:path";
 import { contextText, type ContextPack } from "../agent-context.ts";
 import { selectedAgent } from "../agent-cli.ts";
 import { errorText } from "../diag.ts";
 import type { FeatureReport } from "../feature-status.ts";
-import { featureSlugOf, featureSummary, gapLine, hintLine, type AssistantReplyRequest, type OperationRequest, type OperationResult } from "../operations.ts";
+import { existingText } from "../files.ts";
+import { featureSlugOf, featureSummary, gapLine, hintLine, type AssistantReplyPayload, type AssistantReplyRequest, type OperationRequest, type OperationResult } from "../operations.ts";
+import { proposalProblem, writeProposal } from "../proposals.ts";
+import { isDirty } from "./buffer.ts";
 import { totals } from "./evidence.ts";
 import { findingRow, findingsOf } from "./findings.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -37,6 +43,14 @@ export interface ChatHost {
   cancelOperation(): void;
   /** Async work the frame follows (`idle()` waits for it). */
   track(work: Promise<void>): void;
+  /** The spec directory relative to the root, POSIX: the only place a proposal from the chat may change. */
+  proposalDir(): string;
+  /** The analysis knows `path` as a generated document. */
+  generatedDoc(path: string): boolean;
+  /** Something waits at `.keylang/proposals/<path>`. */
+  proposalWaiting(path: string): boolean;
+  /** Lists the proposals again: the status line counts them (`≈ N proposal(s): m`). */
+  rescanProposals(): void;
 }
 
 /** A command of the chat: answered without the model. */
@@ -278,8 +292,38 @@ export class ClipChat {
     if (record.status === "cancelled" || result === null) return this.answer(CANCELLED);
     if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`);
     const { reply, proposal, dropped } = result.payload;
-    const notes = [...(proposal === null ? [] : [`блок для ${proposal.path} не записано: пропозиції з чату ще не пишуться`]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
+    const notes = [...(proposal === null ? [] : [this.propose(proposal)]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
     this.answer([reply, ...notes].filter((line) => line !== "").join("\n"));
+  }
+
+  /**
+   * The model's block as a proposal, by the gate of MCP `apply_diff`
+   * (`proposalProblem` with the analysis's generated documents) and the
+   * refusals before it: Browse writes nothing, code is the harness's, a
+   * target with unsaved edits would come back as hunks reverting them, and a
+   * proposal waiting for it is never covered. Only `.keylang/proposals/<p>`
+   * is written; the file itself changes in MERGE on `w`. Returns the chat's
+   * line about it.
+   */
+  private propose({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>): string {
+    const state = this.state;
+    const refused = (why: string): string => `пропозицію для ${path} не записано: ${why}`;
+    if (state.config.kind === "missing-config") return refused("режим перегляду нічого не пише; keylang init створює keylang.json");
+    const dir = this.host.proposalDir();
+    if (!path.endsWith(".md")) return refused(`це не специфікація: код пише харнес, скрепка пропонує лише .md під ${dir === "" ? "коренем репозиторію" : `${dir}/`}`);
+    try {
+      const problem = proposalProblem(state.root, dir, path, (candidate) => this.host.generatedDoc(candidate));
+      if (problem !== null) return refused(problem);
+      const buffer = state.buffers.get(path);
+      if (buffer !== undefined && isDirty(buffer)) return refused("файл має незбережені правки: збережіть (Ctrl+S) чи відкотіть їх і спитайте знову");
+      if (this.host.proposalWaiting(path)) return refused("для нього вже чекає пропозиція: m — MERGE, потім спитайте знову");
+      // Against the target as it is now and no proposal: one that appears meanwhile is never overwritten.
+      writeProposal(state.root, path, text, { target: existingText(join(state.root, path)), proposal: null });
+    } catch (error) {
+      return refused(errorText(error));
+    }
+    this.host.rescanProposals();
+    return `пропозиція: ${path} · m — MERGE`;
   }
 
   private stopWaiting(): void {
