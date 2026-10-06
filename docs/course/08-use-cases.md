@@ -2,13 +2,13 @@
 
 [Course](README.md) · **English** · [Українською](uk/08-use-cases.md)
 
-Four sessions, from this repository and from `examples/shop`. You write the spec in them. The agent generates the functions. You do not. Each session says what to run, what the picture shows, and the decision it supports.
+Here are five sessions taken from this repository and from `examples/shop`. In each of them you write the spec, and the agent generates the functions; you do not write those yourself. Every session tells you what to run, what the picture shows, and which decision it helps you make.
 
-The UI captures are `keylang web` on 2026-09-28. Trace and test files under `.keylang/` were stale. The CLI summary of that same tree was `0 fail, 22 unverified, 43 ok`.
+The UI screenshots were taken from `keylang web` on 2026-09-28. At that moment the trace and test files under `.keylang/` were stale, and the CLI summary for the same tree was `0 fail, 22 unverified, 43 ok`.
 
 ## 1. A renamed module
 
-Someone writes `order domain.aggregate` under `application.purchase`. The module in the map is `orderAggregate`.
+Someone writes `order domain.aggregate` under `application.purchase`, but the module on the map is called `orderAggregate`.
 
 ```sh
 node bin/keylang.js check examples/shop
@@ -16,7 +16,7 @@ node bin/keylang.js check examples/shop
 
 ![K001 dangling reference domain.aggregate](images/cli-shop-k001.png)
 
-The first line is the decision: a typo or a stale name, and the process fails. The hint is the nearest id. The second line is a different fact. The example ships no TypeScript, so the checkout flow cannot be proved. Fix the id (see `examples/shop-fixed`) or, if the module really does not exist yet, declare `planned` and accept `unverified` until the code arrives.
+The first line is the one that decides: the name is a typo or a stale name, so the process fails, and the hint suggests the nearest existing id. The second line reports a different fact. The example ships no TypeScript, so the checkout flow cannot be proved. To fix the first problem, correct the id (see `examples/shop-fixed`). If the module really does not exist yet, declare it `planned` instead and accept `unverified` until the code arrives.
 
 ```sh
 node bin/keylang.js explain K001
@@ -26,33 +26,33 @@ node bin/keylang.js explain K001
 
 The UI shows the same paragraph when you press `?` on the diagnostic.
 
-After the fix the process exits 0 and the flow is still not proved:
+After the fix, the process exits with 0, but the flow is still not proved:
 
 ![Exit 0, one unverified, because there is no snapshot](images/cli-shop-fixed.png)
 
-Do not read that as "the shop is verified." Read it as "the names that can be resolved do resolve, and there is no code to check the rules against."
+Do not read that as "the shop is verified." It means something narrower: "the names that can be resolved do resolve, but there is no code to check the rules against."
 
 ## 2. A layer rule you want CI to keep
 
-This repository's rule: the parser and the checker do not import the tree-sitter extractor, and they do not import `web-tree-sitter` directly. The TUI asks the analysis for facts. It does not parse source itself.
+This repository has a rule that the parser and the checker import neither the tree-sitter extractor nor `web-tree-sitter` directly. The TUI follows the same idea: it asks the analysis for facts and does not parse source code itself.
 
 ![Rules file with a green gutter](images/tui-rules.png)
 
-- The gutter on the rule lines is `✓`. Every criterion held.
+- The gutter on the rule lines shows `✓`, which means every criterion held.
 - The colors follow the layer order in `keylang.json`.
-- The tree on the right is the snapshot, not a drawing.
-- The status line is `✗ 0  ◌ 22  ✓ 11`. Zero failing lines. Twenty-two lines whose worst mark is unverified. Eleven lines fully ok. Those eleven are the rules.
+- The tree on the right is the snapshot itself, not a drawing.
+- The status line reads `✗ 0  ◌ 22  ✓ 11`: zero failing lines, twenty-two lines whose worst mark is unverified, and eleven lines that are fully ok. Those eleven are the rules.
 
-In CI, run both. Neither writes files:
+In CI, run both commands. Neither of them writes files:
 
 ```sh
 node bin/keylang.js check
 node bin/keylang.js map --check
 ```
 
-`check` fails if a new import crosses a `deny`. `map --check` fails if someone changed the code and did not regenerate the map. A pull request that adds `import web-tree-sitter` from `src/parser.ts` fails with K102 on that import. The rules file stays the explanation.
+`check` fails if a new import crosses a `deny`, and `map --check` fails if someone changed the code but did not regenerate the map. For example, a pull request that adds `import web-tree-sitter` to `src/parser.ts` fails with K102 on that import, while the rules file remains the place that explains why.
 
-`draft rules` can suggest a `layers` line from whatever the code does today. Treat that as a description of the present. Edit it into the rule you want before you merge it.
+`draft rules` can suggest a `layers` line based on whatever the code does today. Treat that as a description of the present, not of what you want, and edit it into the rule you actually want before you merge it.
 
 ## 3. A flow that is partly proved
 
@@ -63,73 +63,73 @@ Open `keylang/flows/check.md` and put the cursor on the trigger.
 | Mark | Reading |
 |---|---|
 | `ID ✓` | `cli.cli.main` is in the fresh snapshot |
-| `static —` | Not reported. A trigger has no parent call |
+| `static —` | Not reported, because a trigger has no parent call |
 | `tests —` | Not reported on this line |
-| `trace ◌` | Reported, and the trace file belongs to another snapshot |
+| `trace ◌` | Reported, but the trace file belongs to another snapshot |
 
-A single green badge would have hidden the stale trace. The yellow line names `.keylang/trace/check.jsonl` and the old snapshot id.
+A single green badge would have hidden the stale trace. Instead, the yellow line names `.keylang/trace/check.jsonl` and the old snapshot id, so you can see exactly what is out of date.
 
 ![Hover: id ok, trace unverified](images/tui-hover.png)
 
-`Enter` opens the function. The viewer is read-only. `Esc` goes back. It does not edit the TypeScript.
+`Enter` opens the function in a read-only viewer, and `Esc` takes you back. The viewer does not edit the TypeScript.
 
 ![main at src/cli.ts:114](images/tui-code.png)
 
-To make the trace `ok`, run the suite so the reporter rewrites `.keylang/` for the current `snapshotId`, then `check` again. Until the hashes match, the honest mark is `◌`. Pass `--strict` if the pipeline must refuse that. If you have not adopted traces, delete `check.trace` from `keylang.json` and the kind stops being reported.
+To make the trace `ok`, run the test suite so that the reporter rewrites `.keylang/` for the current `snapshotId`, and then run `check` again. Until the hashes match, `◌` is the honest mark. If the pipeline must refuse that state, pass `--strict`. If you have not adopted traces at all, delete `check.trace` from `keylang.json`, and that kind of evidence stops being reported.
 
-The same shape in the CLI, middle cut:
+Here is the same picture in the CLI, with the middle cut out:
 
 ![CLI: ID ok, static ok, trace unverified](images/cli-check-repo.png)
 
-`static ok` on `cli.cli.run` is the call from `main`. Further down, `generateMap` is reached through the default of the hook `generate`. `--static=behavior` counts that. `--static=shape` would not. The summary `0 fail, 22 unverified, 43 ok` matches the UI once you remember the UI counts lines and the CLI counts results.
+`static ok` on `cli.cli.run` comes from the call in `main`. Further down, `generateMap` is reached through the default value of the hook `generate`. `--static=behavior` counts that path, while `--static=shape` would not. The summary `0 fail, 22 unverified, 43 ok` matches the UI once you remember that the UI counts lines and the CLI counts results.
 
 ![explain cli.cli.cmdCheck](images/cli-explain-id.png)
 
 ## 4. Reading the repository before editing it
 
-1. `keylang web`, or `keylang` in the terminal.
-2. `:` and type part of a path.
+1. Run `keylang web`, or `keylang` in the terminal.
+2. Press `:` and type part of a path.
 
    ![Palette filtered with "rules"](images/tui-palette.png)
 
-   The same gesture, then the cursor walks down the denies. Recorded after `npm test`, so the status line is all green:
+   Here is the same gesture, after which the cursor walks down the denies. It was recorded after `npm test`, so the status line is all green:
 
    ![Opening the rules and walking down](images/tui-rules.gif)
 
-3. `F2` for the list. Specs sit above the generated map.
+3. Press `F2` for the file list. Specs sit above the generated map.
 
    ![File list](images/tui-files.png)
 
-4. On a generated map, `Enter` on a function. The file is `generated, read-only`. Change the source, then `keylang map`. Do not hand-edit the Markdown.
+4. On a generated map, press `Enter` on a function. The file is marked `generated, read-only`, so do not hand-edit the Markdown: change the source instead, then run `keylang map`.
 
    ![lang layer map](images/tui-map.png)
 
-5. `v` to read the prose as a document. The gutter remains.
+5. Press `v` to read the prose as a document. The gutter stays in place.
 
    ![Reading mode](images/tui-read.png)
 
-6. `?` when you forget a key. Esc closes the list.
+6. Press `?` when you forget a key, and Esc to close the list.
 
    ![The key list, then Esc](images/tui-keys.gif)
 
-Then `i` to change a rule, `Ctrl+S` to write it. `keylang init` on a checkout the agent has not seen writes the baseline and, where a harness is already present, the MCP server. keylang does not launch the agent. Drafts land in `.keylang/proposals/`. You merge with `m`.
+After that, press `i` to change a rule and `Ctrl+S` to write it. On a checkout the agent has not seen yet, `keylang init` writes the baseline and, where a harness is already present, the MCP server. keylang still does not launch the agent itself. Drafts land in `.keylang/proposals/`, and you are the one who merges them, with `m`.
 
 ## 5. Words on the map, and a feature that is not done
 
-No screenshot for this one.
+There is no screenshot for this session.
 
-Turn on `"explain": {"map": true}`, run `keylang map`, open a layer file and press `t`. Same tree, with a doc comment or a saved brief under each node. `s` finds a node by id or by those words. `check` does not read `keylang/map-explained/`. A green run is not a claim that the paragraph is true.
+Turn on `"explain": {"map": true}`, run `keylang map`, open a layer file and press `t`. You will see the same tree, but with a doc comment or a saved brief under each node, and `s` finds a node by its id or by those words. Keep in mind that `check` does not read `keylang/map-explained/`, so a green run does not claim that any of those paragraphs is true.
 
-A piece of work that is not in the code yet is `keylang/features/<slug>.md`: `planned` ids and a flow. You write that file. An agent generates the functions from it. You do not write them. keylang does not start the agent. An integration nobody imports is `planned module external.<pkg>` and a step from the module that will import it. `keylang feature <slug>` is done when those declarations are implemented, the steps are static `ok`, and no rule fails. The tests and the trace are listed beside that answer. They do not decide it.
+Work that is not in the code yet lives in `keylang/features/<slug>.md` as `planned` ids and a flow. You write that file, and an agent generates the functions from it; you do not write them, and keylang does not start the agent. An integration that nothing imports yet is written as `planned module external.<pkg>` plus a step from the module that will import it. `keylang feature <slug>` reports the feature as done when those declarations are implemented, the steps are static `ok`, and no rule fails. The tests and the trace are listed beside that answer, but they do not decide it.
 
 ## When to leave it alone
 
-keylang earns its keep when people already argue about layers, and you want that argument to fail a pull request. It is a poor fit when:
+keylang earns its keep when people already argue about layers and you want that argument to be able to fail a pull request. It is a poor fit when:
 
-- The codebase is one layer, or the boundaries move every week and nobody will update ids.
+- The codebase is a single layer, or the boundaries move every week and nobody will keep the ids up to date.
 - The bugs you care about never show up as an import or a call between modules.
-- You need a language the frontends do not parse. A project made entirely of holes will report `unverified` forever.
-- You want the prose checked against the code. That check is not implemented. The bullets are what `check` reads.
-- You want a runtime injector for Rust. `keylang wire` emits one TypeScript composition root.
+- You need a language the frontends do not parse. A project made entirely of holes, places the analysis cannot see into, will report `unverified` forever.
+- You want the prose checked against the code. That check is not implemented: `check` reads only the bullets.
+- You want a runtime injector for Rust. `keylang wire` emits a single TypeScript composition root.
 
-A small adoption that still pays: `keylang.json`, a short `rules.md` with `layers` and two or three `deny` lines, `check` and `map --check` in CI, and no flows until a scenario is worth a trace.
+A small adoption still pays off: `keylang.json`, a short `rules.md` with `layers` and two or three `deny` lines, `check` and `map --check` in CI, and no flows until some scenario is worth a trace.

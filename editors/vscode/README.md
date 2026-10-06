@@ -1,10 +1,12 @@
 # keylang for VS Code
 
-A thin client: it starts `keylang lsp` over stdio and shows what the server
-returns. It is not part of the `keylang` npm package. It sends the server the
-Markdown specs under `dir` of each folder's `keylang.json` (`keylang/`
-without one) and the TypeScript, JavaScript, Rust and Python sources; a new
-`dir` takes effect after a window reload.
+This extension is a thin client: it starts `keylang lsp` over stdio and shows
+whatever the server returns, so all the analysis happens in keylang itself. It
+is not part of the `keylang` npm package. For each workspace folder, it sends
+the server the Markdown specs under the `dir` set in that folder's
+`keylang.json` (or under `keylang/` when there is no such file), along with the
+TypeScript, JavaScript, Rust, Python and PHP sources. If you change `dir`, reload
+the window for the new value to take effect.
 
 ## Run from a checkout
 
@@ -14,8 +16,8 @@ npm install                     # vscode-languageclient
 code --extensionDevelopmentPath="$PWD" /path/to/a/repository/with/keylang.json
 ```
 
-Without a global `keylang`, point the client at the checkout in the settings of
-the opened repository:
+If `keylang` is not installed globally, point the client at your clone of
+keylang in the settings of the repository you opened:
 
 ```json
 {
@@ -31,31 +33,37 @@ cd editors/vscode && npm install && cd ../..
 node editors/vscode/test/run.mjs            # or: … run.mjs /path/to/code
 ```
 
-`test/run.mjs` copies `tests/fixtures/repo` to a temp workspace whose
-settings run this checkout's `keylang lsp`, starts VS Code with a throwaway
-profile, this extension, and `test/smoke.js`, and prints one line per step
-(exit 0 when all pass). It needs a display. The steps:
+`test/run.mjs` copies `tests/fixtures/repo` into a temporary workspace whose
+settings run `keylang lsp` from this clone. It then starts VS Code with a
+throwaway profile, this extension and `test/smoke.js`, and prints one line per
+step; the exit code is 0 when every step passes. Because it opens a real
+VS Code window, it needs a display. The steps are:
 
-1. `keylang/rules.md` shows the rule verdicts, each once.
-2. An unsaved edit adding `- step domain.order.missingFn` to a flow shows
-   K001; the file on disk is unchanged.
-3. Hover on a step shows the signature, `file:line`, and one line per kind of
-   evidence.
+1. `keylang/rules.md` shows the verdict for each rule, exactly once.
+2. An unsaved edit that adds `- step domain.order.missingFn` to a flow shows
+   K001, while the file on disk stays unchanged.
+3. Hovering over a step shows the signature, `file:line` and one line for each
+   kind of evidence.
 4. Go to Definition on the step opens `src/domain/order.ts` at the function.
 5. Completion after `- step ` offers functions, not modules.
-6. Accepting the top suggestion after `- step domain.or` gives one whole id
-   (`domain.order.createOrder`): the items replace the typed dotted prefix,
-   which Markdown's word pattern splits at dots, and rank above Markdown's
-   snippets.
-7. `src/domain/order.ts` has the code lens `flows: use`.
+6. Accepting the top suggestion after `- step domain.or` inserts one whole id
+   (`domain.order.createOrder`). This works because the items replace the whole
+   typed dotted prefix, which Markdown's word pattern would otherwise split at
+   the dots, and because they rank above Markdown's own snippets.
+7. `src/domain/order.ts` shows the code lens `flows: use`.
 
-Last run: 2026-09-28, VS Code 1.139.0 on Linux — all seven steps ok.
+Last run: 2026-09-28, VS Code 1.139.0 on Linux — all seven steps passed.
 
 ## By hand
 
-On this repository (`code --extensionDevelopmentPath="$PWD/editors/vscode" .`,
-after `npm test` so that tests and trace evidence exist): open
-`keylang/rules.md`, add `- deny cli check` without saving — K102 appears on
-imports in `src/cli.ts` once that file is open; hover `cli.cli.cmdCheck` in
-`keylang/flows/check.md` for the four kinds of evidence; the code lens above
-`cmdCheck` in `src/cli.ts` reads `flows: check`, and clicking it lists them.
+You can also try the extension by hand on this repository. First run
+`npm test`, so that test and trace evidence exist, and then open the
+repository with `code --extensionDevelopmentPath="$PWD/editors/vscode" .`.
+Now try the following:
+
+- Open `keylang/rules.md` and add `- deny cli check` without saving. Once
+  `src/cli.ts` is open too, K102 appears on its imports.
+- In `keylang/flows/check.md`, hover over `cli.cli.cmdCheck` to see all four
+  kinds of evidence.
+- In `src/cli.ts`, the code lens above `cmdCheck` reads `flows: check`;
+  clicking it lists those flows.

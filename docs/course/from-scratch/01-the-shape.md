@@ -2,14 +2,14 @@
 
 [Starting a project](README.md) · **English** · [Українською](uk/01-the-shape.md)
 
-Give the program four jobs. The same four as the shop.
+Give the program four jobs, the same four the shop has.
 
-- **presentation** — the edge a person or another program touches. A bot update, an HTTP route, a controller.
-- **application** — one task. Save a note. Create a task. Place an order.
-- **domain** — rules that stay true with the network unplugged. A note has text. A task has a title.
-- **infrastructure** — the library, the database, the bot API. It sits beside the other three, not under domain.
+- **presentation** — the edge that a person or another program touches: a bot update, an HTTP route, a controller.
+- **application** — one task, such as saving a note, creating a task, or placing an order.
+- **domain** — rules that stay true even with the network unplugged: a note has text, a task has a title.
+- **infrastructure** — the library, the database, the bot API. It sits beside the other three rather than under domain.
 
-Domain does not import infrastructure. The edge does not import it either. The task in the middle may.
+Domain does not import infrastructure, and neither does the edge. Only the task in the middle may.
 
 ```markdown
 # rules
@@ -21,16 +21,16 @@ Domain does not import infrastructure. The edge does not import it either. The t
 - deny presentation infrastructure
 ```
 
-You write this file. The next parts name functions. The agent writes those functions. You do not.
+You write this file yourself. The next parts name functions, but the agent writes those functions, not you.
 
-Create the empty app with its own tool. Then:
+First create the empty app with its own tool. Then run:
 
 ```sh
 npx keylang init .
 ```
 
-Replace the guessed layers in `keylang.json` with the paths in the next part. `keylang check` on a feature that is still a wish exits 1. That is day one, not a broken tool.
+Replace the guessed layers in `keylang.json` with the paths from the next part. While a feature is still only a wish, `keylang check` on it exits 1. That is normal for day one and does not mean the tool is broken.
 
-`keylang feature <slug>` is done when every `planned` line in that file matches the code, every step has a static call path, and no rule fails. Tests and traces are printed beside that answer. They do not decide it. Exit 0 prints `done` on stderr.
+`keylang feature <slug>` reports done when every `planned` line in that file matches the code, every step has a static call path, and no rule fails. Tests and traces are printed beside that answer, but they do not decide it. On exit 0 it prints `done` on stderr.
 
 Next: [a Telegram bot](02-telegram-bot.md).

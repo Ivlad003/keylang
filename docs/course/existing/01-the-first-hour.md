@@ -2,7 +2,7 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/01-the-first-hour.md)
 
-Do not redesign the repository on day one. Point the tool at it, read what it sees, and write the few rules you are willing to keep. Those rules are the spec. The functions that appear later are the agent's. You do not write them. keylang does not start the agent.
+Do not redesign the repository on day one. Point the tool at it, read what it sees, and write down the few rules you are actually willing to keep. Those rules are the spec. The functions that appear later are written by the agent, not by you, and keylang does not start the agent: it only checks what comes out.
 
 ```sh
 npx keylang init .
@@ -10,13 +10,13 @@ npx keylang map
 npx keylang check
 ```
 
-`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map, and `keylang/rules.baseline.md`. The baseline denies layer dependencies the code does not have yet. Read it. A deny that forbids a call you still need is a conversation, not a bug in the tool.
+`init` guesses a layer from each folder that has source code; if `src/` or `lib/` exists, it takes the folders inside it instead. It then writes `keylang.json`, a generated map, and `keylang/rules.baseline.md`. The baseline denies the layer dependencies the code does not have yet, so a new one that appears later will be flagged. Read it before you move on. If a deny forbids a call you still need, that is a conversation to have, not a bug in the tool.
 
-Open `keylang/map`. The id under a function is the name you will type later. Copy it from the map. Do not invent a shorter one.
+Open `keylang/map`. The id under each function is the name you will type later, so copy it from the map instead of inventing a shorter one.
 
-Fix `keylang.json` only where the guess is wrong. A folder named `external` is renamed (`external_`) because that word is reserved. The new name is printed when you init.
+Edit `keylang.json` only where the guess is wrong. One thing to know: a folder named `external` is renamed (`external_`), because that word is reserved. `init` prints the new name when it runs.
 
-Then write the rules you mean, in `keylang/rules.md`, separate from the baseline. Two or three lines are enough:
+Then write the rules you actually mean in `keylang/rules.md`, separately from the baseline. Two or three lines are enough to start:
 
 ```markdown
 # rules
@@ -27,17 +27,30 @@ Then write the rules you mean, in `keylang/rules.md`, separate from the baseline
 - deny domain external
 ```
 
-`infrastructure` sits beside the chain, not under `domain`. The left side of `<` is the inner one. Domain may not import the database or a package.
+`infrastructure` sits beside the chain rather than under `domain`. In the chain, the left side of `<` is the inner layer. The two deny lines mean that domain may import neither the database nor a package.
 
-`keylang check` writes nothing. Exit 0 means no blocking finding. `unverified` is still allowed. Exit 1 is a real break, or a stale map if you ran `map --check`.
+`keylang check` never writes files. Exit 0 means there is no blocking finding, and lines that are still `unverified` are allowed through. Exit 1 means a real break, or, if you ran `map --check`, a map that is out of date.
 
-In CI, run both:
+In CI, run both, so that broken rules and a stale map are both caught:
 
 ```sh
 npx keylang check
 npx keylang map --check
 ```
 
-Stop here if a fence was all you wanted. The next part is for a change that does not exist in the code yet.
+## Someone else's repository
+
+To read a repository before you work in it, you do not need to clone it yourself or write anything into it. `keylang clone` makes a shallow clone in keylang's cache (`~/.cache/keylang/repos/<host>/<path>`), runs `init` there without agent files, and builds the map:
+
+```sh
+npx keylang clone https://github.com/owner/repo
+npx keylang clone https://github.com/owner/repo --explain map-and-ai --dry-run
+npx keylang clone https://github.com/owner/repo --explain map-and-ai
+npx keylang web https://github.com/owner/repo
+```
+
+The first line of the output is where the clone lives; open its `keylang/map` like your own. Run the same command again to pick up new commits. `--explain map-and-ai` also asks the model for a short note on every node and writes `keylang/map-explained/`; `--explain all` adds a longer explanation of every layer. Both need a model in the environment, for example `KEYLANG_AGENT=cli:claude`, because the clone's `keylang.json` belongs to keylang. `--dry-run` prints the token estimate first and asks nothing. `web` with a URL does the clone and then opens the browser UI on it.
+
+If a fence around the code was all you wanted, you can stop here. The next part is for a change that does not exist in the code yet.
 
 Next: [a new feature](02-a-feature.md).

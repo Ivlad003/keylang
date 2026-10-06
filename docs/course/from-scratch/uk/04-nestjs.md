@@ -2,7 +2,7 @@
 
 [Проєкт з нуля](README.md) · [English](../04-nestjs.md) · **Українською**
 
-Запустіть `nest new`, потім наведіть шари на теки, які обираєте ви. Типові імена Nest (`tasks.controller.ts` поруч із `tasks.service.ts`) можуть жити в одній теці. keylang віддає файл першому glob-у, який збігся, і ім'я файла стає частиною id (`presentation.tasks.tasks.controller`). Окремі теки лишають id короткими.
+Запустіть `nest new`, а потім наведіть шари на теки, які оберете самі. Типові імена Nest (`tasks.controller.ts` поруч із `tasks.service.ts`) можуть жити в одній теці, але тоді id стають довгими: keylang віддає файл першому glob-у, який із ним збігся, і ім'я файла стає частиною id (`presentation.tasks.tasks_controller`). Окремі теки дають короткі id.
 
 ```json
 {
@@ -16,7 +16,7 @@
 }
 ```
 
-Контролер — край. Функція задачі — звичайний TypeScript. Репозиторій говорить з базою. Domain і далі не імпортує ні те, ні те.
+Контролер — це край, функція задачі — звичайний TypeScript, а репозиторій говорить з базою. Domain, як і раніше, не імпортує ні того, ні іншого.
 
 `keylang/features/tasks.md`:
 
@@ -31,11 +31,11 @@
   - step infrastructure.tasks.insert
 ```
 
-`src/tasks/create.ts` і функція `create` — це `application.create.create`. `src/domain/task.ts` і `make` — `domain.task.make`. `src/db/tasks.ts` і `insert` — `infrastructure.tasks.insert`. `src/http/tasks.ts` — `presentation.tasks`. Ім'я `make`, бо `new` у TypeScript не може бути ім'ям функції.
+За такого розкладу `src/tasks/create.ts` і функція `create` дають `application.create.create`, `src/domain/task.ts` і `make` — `domain.task.make`, а `src/db/tasks.ts` і `insert` — `infrastructure.tasks.insert`. Файл контролера `src/http/tasks.ts` — це `presentation.tasks`. Функція називається `make`, бо `new` у TypeScript не може бути ім'ям функції.
 
-Nest позначає класи `@Controller()`, `@Injectable()` і `@Get()`. keylang цих декораторів не знає. Виклик усередині такого методу може лишитись `unverified`, бо декоратор може повернути іншу функцію. Тоді `feature` не стає готовим.
+Nest позначає класи декораторами `@Controller()`, `@Injectable()` і `@Get()`, а keylang цих декораторів не знає. Тому виклик усередині такого методу може лишитися `unverified`: декоратор може повернути іншу функцію. У такому разі `feature` не повідомить, що фіча готова.
 
-Агент тримає сценарій у звичайній функції. Контролер кличе її. Ви це не набираєте. Ось форма, яку має згенерувати агент:
+Ось чому агент тримає сценарій у звичайній функції, а контролер лише викликає її. Набирати цей код вам не треба; це форма, яку має згенерувати агент:
 
 ```ts
 export function create(title: string): Task {
@@ -50,8 +50,8 @@ npx keylang spec-to-code application.create.create
 npx keylang feature tasks
 ```
 
-Заготовка — це TypeScript і файл `node:test`. `@Module`, провайдери і `main.ts` теж пише агент, із тієї самої специфікації. keylang їх не генерує, і `keylang wire` — інший генератор. Для цієї перевірки він не потрібен.
+Заготовка — це функція TypeScript і файл `node:test`. `@Module`, провайдери і `main.ts` агент теж пише з тієї самої специфікації, бо keylang їх не генерує. `keylang wire` — це інший генератор, і для цієї перевірки він не потрібен.
 
-Зелена фіча означає: `create` кличе `make` і `insert`, і жодне правило не падає. Вона не означає, що HTTP-сервер стартував або що інжектори класів зібрані. Правила імпорту все одно ловлять контролер, який імпортує `src/db` напряму.
+Ось що означає зелена фіча: `create` викликає `make` і `insert`, і жодне правило не падає. Вона не означає, що HTTP-сервер запустився або що інжектори класів під'єднано. Проте правила імпорту все одно ловлять контролер, який імпортує `src/db` напряму.
 
 Далі — [курс](../../uk/README.md).

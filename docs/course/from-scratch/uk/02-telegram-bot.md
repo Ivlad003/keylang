@@ -2,9 +2,9 @@
 
 [Проєкт з нуля](README.md) · [English](../02-telegram-bot.md) · **Українською**
 
-Бот відповідає на `/start` тим, що зберігає нотатку. Тут Node і пакет `telegraf`, бо агент може згенерувати функцію TypeScript зі специфікації, а `spec-to-code` вміє зробити заготовку. Python-бот (aiogram) має ту саму специфікацію. Тест на Python пише агент. `spec-to-code` його не напише. Ні того, ні того ви не пишете.
+Бот відповідає на `/start` тим, що зберігає нотатку. На цій сторінці використано Node і пакет `telegraf`, бо агент може згенерувати функцію TypeScript зі специфікації, а `spec-to-code` вміє зробити для неї заготовку. Python-бот (aiogram) спирається на ту саму специфікацію, з однією відмінністю: тест на Python пише агент, бо `spec-to-code` його не напише. Хай там як, ні функцію, ні тест ви не пишете.
 
-Створіть проєкт, поставте `telegraf`, потім наведіть шари на теки:
+Створіть проєкт, установіть `telegraf`, а потім наведіть шари на теки:
 
 ```json
 {
@@ -18,14 +18,14 @@
 }
 ```
 
-Лише тека бота може імпортувати `telegraf`. Частина 1 вже зупиняє правила нотатки (`deny domain external`) і не дає екрану імпортувати сховище. Додайте два рядки, щоб завдання і сховище теж не імпортували пакет:
+Імпортувати `telegraf` може лише тека бота. Правила з частини 1 уже не підпускають правила нотатки до пакетів (`deny domain external`) і не дають екрану імпортувати сховище. Додайте два рядки, щоб завдання і сховище теж не могли імпортувати пакет:
 
 ```markdown
 - deny application external.telegraf
 - deny infrastructure external.telegraf
 ```
 
-Ці рядки безпечні, коли `telegraf` уже є в `package.json`. Доти `external.telegraf` — висячий id (K001).
+Ці рядки безпечні, щойно `telegraf` з'явиться в `package.json`. Доти `external.telegraf` — висячий id, і keylang повідомляє про нього як K001.
 
 `keylang/features/start.md`:
 
@@ -43,9 +43,9 @@
     - step infrastructure.store.save
 ```
 
-Glob зрізається. `src/bot/start.ts` — модуль `presentation.start`, а `onStart` — `presentation.start.onStart`. `src/notes/note.ts` і `add` — `application.note.add`. `src/domain/note.ts` і `make` — `domain.note.make`. `src/store/store.ts` і `save` — `infrastructure.store.save`. Ім'я `make`, бо `new` у TypeScript не може бути ім'ям функції. Після `keylang map` беріть id, який друкує карта, якщо ім'я файла інше.
+Коли keylang будує id, частина шляху з glob-у відкидається. Тож `src/bot/start.ts` — це модуль `presentation.start`, а `onStart` у ньому — `presentation.start.onStart`. Так само `src/notes/note.ts` і `add` дають `application.note.add`, `src/domain/note.ts` і `make` — `domain.note.make`, а `src/store/store.ts` і `save` — `infrastructure.store.save`. Функція називається `make`, бо `new` у TypeScript не може бути ім'ям функції. Якщо ваші файли називаються інакше, запустіть `keylang map` і беріть id, який друкує карта.
 
-Агент пише `add` у `src/notes/note.ts`, а обробник — у `src/bot/start.ts`. Саме другий файл імпортує `telegraf`. Імпорт і робить `external.telegraf` справжнім. Обробник — іменована функція, яку передають у бібліотеку. `add` не кладуть у файл бота, інакше id зміниться. Ви це не набираєте. Ось форма, яку має згенерувати агент:
+Агент пише `add` у `src/notes/note.ts`, а обробник — у `src/bot/start.ts`. Саме другий файл імпортує `telegraf`, і саме цей імпорт робить `external.telegraf` справжнім. Обробник — це іменована функція, яку передають у бібліотеку. `add` не можна класти у файл бота, бо тоді її id зміниться. Набирати цей код вам не треба; це форма, яку має згенерувати агент:
 
 ```ts
 export function add(text: string): Note {
@@ -64,15 +64,15 @@ export function onStart(text: string): void {
 bot.start((ctx) => onStart(ctx.message.text));
 ```
 
-keylang бачить, що `onStart` кличе `add`. Що бібліотека кличе `onStart`, він часто не бачить, і це не потрібно. У тригера немає батька. У кроку під ним є.
+keylang бачить, що `onStart` викликає `add`. А от того, що бібліотека викликає `onStart`, він часто не бачить, і це й не потрібно: у тригера в потоці немає батька, тож бачити виклик до нього не обов'язково. Крок під тригером батька має, і саме цей виклик keylang мусить побачити.
 
-Обробник, який існує лише як `bot.start(() => add(...))` або лише як декоратор, — дірка. Крок лишається `unverified`, і `feature` не стає готовим.
+Обробник, який існує лише як `bot.start(() => add(...))` або лише як декоратор, — це дірка: крок лишається `unverified`, і `feature` не повідомляє, що фіча готова.
 
 ```sh
 npx keylang spec-to-code application.note.add
 npx keylang feature start
 ```
 
-`spec-to-code` не додасть `telegraf` у `package.json` і не збереже токен бота. Пакет ставите ви, токен тримаєте ви. Це не функції. Функції пише агент. Зелена фіча означає, що `onStart` кличе `add`, а `add` кличе `make` і `save` — викликами, які інструмент бачить. Вона не означає, що Telegram доставив повідомлення. Trace може показати виклик у тесті. Trace друкується. Він не вирішує.
+`spec-to-code` не додасть `telegraf` у `package.json` і не збереже токен бота. Установити пакет і зберігати токен — ваша справа, але це не функції; функції пише агент. Зелена фіча означає, що `onStart` викликає `add`, а `add` викликає `make` і `save`, причому ці виклики інструмент бачить. Вона не означає, що Telegram доставив повідомлення. Trace може показати, як виклик відбувається в тесті, але trace лише друкується і нічого не вирішує.
 
 Далі: [Python CRUD](03-python-crud.md).

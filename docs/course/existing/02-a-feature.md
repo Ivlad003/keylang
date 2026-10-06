@@ -2,9 +2,9 @@
 
 [Adding to a codebase](README.md) · **English** · [Українською](uk/02-a-feature.md)
 
-The shop already has checkout. A refund does not exist yet. Write that spec before any function exists. You do not write the function. An agent generates it from this file.
+The shop already has checkout, but a refund does not exist yet. Write its spec before any function exists. You still do not write the function itself: an agent generates it from this file.
 
-Create `keylang/features/refund.md`. The file name is the slug. `refund` is the slug.
+Create `keylang/features/refund.md`. The file name is the feature's slug, so here the slug is `refund`.
 
 ```markdown
 # flow refund
@@ -17,29 +17,29 @@ The buyer sends an order back. The order rules build a refund. The screen does n
     - step domain.orderAggregate.refund
 ```
 
-Use the ids from your map. The shop's map already uses `application.purchase`, `presentation.terminal`, and `domain.orderAggregate`. The links there are `src/app/purchase.ts`, `src/ui/terminal.ts`, and `src/domain/order.ts`. The example has no source files, and `order.ts` is not named `orderAggregate`. On a real repository, copy the id the map prints.
+Use the ids from your own map. The shop's map already has `application.purchase`, `presentation.terminal`, and `domain.orderAggregate`, which link to `src/app/purchase.ts`, `src/ui/terminal.ts`, and `src/domain/order.ts`. The example has no source files, and notice that `order.ts` is not named `orderAggregate`, so you cannot always guess an id from a file name. On a real repository, copy the id exactly as the map prints it.
 
-`planned fn` is a wish. A reference to it is not an error. The step stays `unverified` until the function exists.
+`planned fn` records a wish: the function is expected but not written yet. That is why a reference to it is not an error. The step that uses it stays `unverified` until the function exists.
 
 ```sh
 npx keylang feature refund
 ```
 
-Exit 0 and `done` on stderr means three things. Every `planned` line in this file matches code (warning K202). Every step has a static call path (`ok`). No rule in the repo fails, including the baseline. Tests and traces are printed. They do not decide.
+When this exits 0 and prints `done` on stderr, three things are true. First, every `planned` line in this file matches code (keylang reports that with warning K202). Second, every step has a static call path (`ok`). Third, no rule in the repo fails, including the baseline. Tests and traces are printed as well, but they do not decide whether the feature is done.
 
-Until then, stdout lists the gaps and the exit code is 1. A missing function is `planned`. A function with another kind or another signature is K201. Spaces do not matter, and `->` is the same as `→`.
+Until then, stdout lists the gaps and the exit code is 1. A function that is missing shows up as `planned`. A function that exists but has another kind or another signature is reported as K201. Spaces in the signature do not matter, and `->` counts the same as `→`.
 
-For TypeScript or JavaScript, this prints a stub and a failing test, and writes nothing:
+For TypeScript or JavaScript, the first command below prints a stub and a failing test without writing anything; the second one, with `--apply`, writes them:
 
 ```sh
 npx keylang spec-to-code application.purchase.refund
 npx keylang spec-to-code application.purchase.refund --apply
 ```
 
-It only builds a `planned fn`. A planned module is a file the agent creates. This command will not. It writes `node:test` files. For Python and Rust it does not write the test. The agent does, from the same spec. It refuses an id that already exists.
+It only builds from a `planned fn`. A planned module is a file the agent creates, and this command will not create it. The tests it writes are `node:test` files. For Python and Rust it does not write the test at all: the agent does, from the same spec. It also refuses an id that already exists.
 
-When K202 appears, `feature` can already say done. Delete the `planned` line so the warning goes away.
+Once K202 appears, `feature` can already say done. At that point delete the `planned` line, so the warning goes away.
 
-That file is what you hand the agent. It generates the functions. keylang does not start it. `check --changed` blocks a turn only on a new fail. An `unverified` line does not block, so read those yourself. A change to `rules.md` should arrive as a proposal under `.keylang/proposals/`. You merge it, or you don't.
+The spec file is what you hand to the agent. The agent generates the functions, and keylang does not start it. While it works, `check --changed` blocks a turn only on a new fail. An `unverified` line does not block, so read those lines yourself. If a change to `rules.md` is needed, it should arrive as a proposal under `.keylang/proposals/`, and you decide whether to merge it.
 
 Next: [an integration](03-an-integration.md).
