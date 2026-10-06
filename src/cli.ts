@@ -52,8 +52,13 @@ Commands:
                             flow step is static ok, no rule fail of this change
                             remains (one on a file changed since <ref> or on an id
                             the feature names; without git, any), and the plan was
-                            not weakened since <ref> (default HEAD; without git only
-                            info.base says so). The last line names its stage: idea,
+                            not weakened since <ref> (without git only info.base
+                            says so). Default <ref>: the merge-base of HEAD with the
+                            main branch (origin/HEAD, else main, master, origin/main,
+                            origin/master), so a fail committed on the branch is
+                            still this change's; HEAD when there is none or it is
+                            HEAD itself; with a merge-base the plan at HEAD is
+                            compared too. The last line names its stage: idea,
                             behavior, structure, ready; hint: lines say what the spec
                             still lacks, or name an inherited rule fail. 0 done,
                             1 gaps, 2 missing file, unreadable --since ref, or bad

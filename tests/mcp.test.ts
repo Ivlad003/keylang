@@ -299,14 +299,15 @@ test("mcp: feature_status compares the feature with its base commit; a rewritten
     const r = spawnSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: mcp.dir, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   };
-  git(["init"]);
+  git(["-c", "init.defaultBranch=main", "init"]);
   git(["add", "."]);
   git(["commit", "-m", "plan"]);
   // The agent drops the planned fn and points the step at code that already exists.
   writeFileSync(join(mcp.dir, "keylang/features/refund.md"), "# flow refund\n\n- trigger app.checkout.checkout\n  - step domain.order.createOrder\n");
   const status = JSON.parse((await mcp.call("feature_status", { slug: "refund" })).text) as { done: boolean; gaps: { kind: string; id: string }[]; info: { base: { ref: string; state: string } } };
   assert.equal(status.done, false, JSON.stringify(status));
-  assert.deepEqual(status.info.base, { ref: "HEAD", state: "compared" });
+  // On the main branch itself the merge-base is HEAD: the base is HEAD.
+  assert.deepEqual(status.info.base, { ref: "HEAD", state: "compared", source: "HEAD", main: "main" });
   assert.deepEqual(
     status.gaps.map((gap) => [gap.kind, gap.id]),
     [

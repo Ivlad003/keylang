@@ -631,9 +631,10 @@ export class App {
   /**
    * The status line's `feature <stage> · questions <n>` of the current file
    * when it is a feature file (c4-zoom/11): its report on the session's
-   * analysis against the plan at HEAD, as `keylang feature` computes it. It
-   * follows a save and its analysis, never typing: while the buffer has
-   * unsaved edits the last line stays.
+   * analysis against the plan at its base (the merge-base with the main
+   * branch, else HEAD), as `keylang feature` computes it. It follows a save
+   * and its analysis, never typing: while the buffer has unsaved edits the
+   * last line stays.
    */
   private refreshFeatureLine(): void {
     const path = this.state.current;
@@ -649,7 +650,7 @@ export class App {
       if (this.state.featureLine?.path !== path) this.state.featureLine = null;
       return;
     }
-    // The plan at HEAD is read in the operation worker: the session's thread starts no git process.
+    // The plan at the base is read in the operation worker: the session's thread starts no git process.
     // A newer refresh (another analysis, another file) supersedes this one; an unknown base keeps the line.
     this.track(
       this.worker()

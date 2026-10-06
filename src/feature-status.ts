@@ -2,12 +2,14 @@
 // reads it without errors, every `planned` in it is implemented (K202, not
 // K201), every flow step and `calls` in it is static ok, no rule fail of this
 // change remains (ADR 0005 §2: no new violations), and the plan was not
-// weakened since the base commit. A rule fail is this change's when it
-// touches a file changed since the base, as `check --changed` slices it, or
-// an end of its edge is an id the feature names; any other is inherited, a
-// hint that does not block. Without the base every rule fail blocks. Tests
-// and trace are reported and do not block. The stage says how far the file
-// got from an idea to a spec an agent can implement (.scratch/c4-zoom, B1).
+// weakened since the base commit: `--since`, else the merge-base of HEAD with
+// the main branch, else HEAD (ADR 0016, amendment). A rule fail is this
+// change's when it touches a file changed since the base, as `check
+// --changed` slices it, or an end of its edge is an id the feature names; any
+// other is inherited, a hint that does not block. Without the base every rule
+// fail blocks. Tests and trace are reported and do not block. The stage says
+// how far the file got from an idea to a spec an agent can implement
+// (.scratch/c4-zoom, B1).
 
 import { sameFinding } from "./assess.ts";
 import { filterChanged } from "./changed.ts";
@@ -79,18 +81,43 @@ export interface BaseChanges {
 }
 
 /**
- * The feature file at its base commit (`HEAD` or `--since`) and what changed
- * since. `compared`: the file is there; `absent`: it is not (a new feature,
- * or no commit yet: then every file is changed); `unavailable`: the history
- * could not be read, so the plan is not compared and every rule fail blocks.
+ * How the base commit was chosen: `since` — given (`--since`, MCP `since`);
+ * `merge-base` — where HEAD left the main branch, so the branch's own commits
+ * are the change; `HEAD` — no main branch, no merge-base, or HEAD itself.
  */
-export type FeatureBase =
-  | { ref: string; state: "compared"; doc: Document; changes: BaseChanges }
-  | { ref: string; state: "absent"; changes: BaseChanges }
-  | { ref: string; state: "unavailable"; reason: string };
+export type BaseSource = "since" | "merge-base" | "HEAD";
 
-/** `FeatureBase` as the report shows it. */
-export type FeatureBaseInfo = { ref: string; state: "compared" | "absent" } | { ref: string; state: "unavailable"; reason: string };
+/** The commit a feature is judged against, and how a sentence names it. */
+export interface BaseOrigin {
+  /** The commit as git reads it: the `since` ref as given, the merge-base's full id, or `HEAD`. */
+  ref: string;
+  source: BaseSource;
+  /** The main branch the merge-base was taken with (`origin/main`, `main`); absent when there is none. */
+  main?: string;
+  /** In a sentence: `HEAD`, the `since` ref, or `merge-base 1a2b3c4 with origin/main`. */
+  label: string;
+}
+
+/** The base when nothing else is: HEAD. */
+export const HEAD_BASE: BaseOrigin = { ref: "HEAD", source: "HEAD", label: "HEAD" };
+
+/**
+ * The feature file at its base commit and what changed since. `compared`: the
+ * file is there; `absent`: it is not (a new feature, or no commit yet: then
+ * every file is changed); `unavailable`: the history could not be read, so
+ * the plan is not compared and every rule fail blocks. `head`: with a
+ * merge-base, the file at HEAD too (null: HEAD has none), so a plan weakened
+ * since its last commit is a gap even when the base has no such file.
+ */
+export type FeatureBase = BaseOrigin &
+  (
+    | { state: "compared"; doc: Document; changes: BaseChanges; head?: Document | null }
+    | { state: "absent"; changes: BaseChanges; head?: Document | null }
+    | { state: "unavailable"; reason: string }
+  );
+
+/** `FeatureBase` as the report shows it: the commit, its state, and how it was chosen. */
+export type FeatureBaseInfo = Omit<BaseOrigin, "label"> & ({ state: "compared" | "absent" } | { state: "unavailable"; reason: string });
 
 export interface FeatureReport {
   done: boolean;
@@ -120,7 +147,7 @@ export interface FeatureInput {
   nodes?: Readonly<Record<string, { kind: string; signature?: string | null; file: string | null; layer?: string }>>;
   /** Snapshot edges: the ends of a rule fail reported at a code position. */
   edges?: readonly { source: string; target: string | null; file: string | null; line: number; col: number }[];
-  /** The feature file at its base commit; omitted, the plan is not compared. */
+  /** The feature file at its base commit (and at HEAD with a merge-base); omitted, the plan is not compared. */
   base?: FeatureBase;
   /**
    * What changed since the base: the changed files as the analysis names
@@ -230,12 +257,12 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
     if (ofThisChange(fail)) gaps.push({ kind: "rule", ...at, reason: fail.reason, stage: "ready" });
     else {
       inherited.push(fail);
-      const since = input.base?.ref ?? "the base";
+      const since = input.base?.label ?? "the base";
       hints.push({ kind: "rule", ...at, reason: `inherited (no file changed since ${since}, no id of this feature): ${fail.reason}`, stage: "ready" });
     }
   }
 
-  if (input.base?.state === "compared") gaps.push(...planGaps(input, path, input.base.ref, input.base.doc));
+  if (input.base !== undefined && input.base.state !== "unavailable") gaps.push(...weakenedPlan(input, path, input.base));
 
   for (const flow of flows) {
     const at = { file: path, line: flow.span.start.line, col: flow.span.start.col };
@@ -267,9 +294,13 @@ export function featureStatus(input: FeatureInput, slug: string): FeatureReport 
       .filter((verdict) => verdict.file === path && verdict.criterion === criterion)
       .map((verdict) => ({ id: verdict.area, file: verdict.file, line: verdict.line, col: verdict.col, verdict: verdict.verdict, reason: verdict.message }));
   const rules = input.changed === undefined ? null : inherited.map((fail) => ({ id: fail.id, file: fail.file, line: fail.line, col: fail.col, verdict: "fail", reason: fail.reason }));
-  const base: FeatureBaseInfo | null =
-    input.base === undefined ? null : input.base.state === "unavailable" ? { ref: input.base.ref, state: "unavailable", reason: input.base.reason } : { ref: input.base.ref, state: input.base.state };
-  return { done: gaps.length === 0, stage: stageOf(hasFlow, gaps, hints), gaps, hints, info: { tests: info("tests"), trace: info("trace"), rules, base } };
+  return { done: gaps.length === 0, stage: stageOf(hasFlow, gaps, hints), gaps, hints, info: { tests: info("tests"), trace: info("trace"), rules, base: input.base === undefined ? null : baseInfo(input.base) } };
+}
+
+/** The base as the report names it: the commit and its state first, as they always came, then how it was chosen. */
+function baseInfo(base: FeatureBase): FeatureBaseInfo {
+  const origin = { source: base.source, ...(base.main !== undefined ? { main: base.main } : {}) };
+  return base.state === "unavailable" ? { ref: base.ref, state: "unavailable", reason: base.reason, ...origin } : { ref: base.ref, state: base.state, ...origin };
 }
 
 /** A rule fail: an error diagnostic of a rule (K101, K102, K104, K105, K107), or a failed rule verdict that repeats none. */
@@ -404,15 +435,30 @@ function claimsOf(flow: Flow): { id: string; span: Span }[] {
 }
 
 /**
- * Where the feature file weakened its plan since `ref`: a `planned` removed
- * while the code does not implement it (no K202), and a `trigger`, `step` or
- * open question that is no longer there under the same flow and parents: a
- * question is answered in a commit, never by deleting it. Added items and
- * order among siblings are not compared. Positions are the base file's.
+ * Where the plan was weakened: against the base, then — with a merge-base —
+ * against HEAD as well, so a file new on the branch keeps its committed plan.
+ * A removal both find is the base's gap alone.
  */
-function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Document): Gap[] {
+function weakenedPlan(input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>): Gap[] {
+  const found = base.state === "compared" ? planGaps(input, path, base.label, base.doc) : [];
+  if (base.head === undefined || base.head === null) return found.map((item) => item.gap);
+  const seen = new Set(found.map((item) => item.key));
+  const sinceHead = planGaps(input, path, "HEAD", base.head).filter((item) => !seen.has(item.key));
+  return [...found, ...sinceHead].map((item) => item.gap);
+}
+
+/**
+ * Where the feature file weakened its plan since `at` (how a sentence names
+ * the commit): a `planned` removed while the code does not implement it (no
+ * K202), and a `trigger`, `step` or open question that is no longer there
+ * under the same flow and parents: a question is answered in a commit, never
+ * by deleting it. Added items and order among siblings are not compared.
+ * Positions are the compared file's; `key` names the removed item in any
+ * version of the file.
+ */
+function planGaps(input: FeatureInput, path: string, at: string, baseDoc: Document): { key: string; gap: Gap }[] {
   const base = compileSpec([baseDoc]).spec;
-  const gaps: Gap[] = [];
+  const gaps: { key: string; gap: Gap }[] = [];
   const kept = new Set(input.spec.planned.filter((item) => item.file === path).map((item) => item.id));
   for (const item of base.planned) {
     if (kept.has(item.id)) continue;
@@ -420,7 +466,8 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
     const mismatch = code === undefined ? "missing" : plannedMismatch(item, code);
     if (mismatch === null) continue;
     const why = mismatch === "missing" ? "the code does not have it" : `the code has a different ${mismatch}`;
-    gaps.push({ kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `planned ${item.decl} \`${item.id}\` (line ${item.span.start.line} at ${ref}) was removed, but ${why}; restore it or implement it`, stage: "ready" });
+    const reason = `planned ${item.decl} \`${item.id}\` (line ${item.span.start.line} at ${at}) was removed, but ${why}; restore it or implement it`;
+    gaps.push({ key: `planned\0${item.id}`, gap: { kind: "spec", id: item.id, file: path, line: item.span.start.line, col: item.span.start.col, reason, stage: "ready" } });
   }
   const now = new Map<string, number>();
   for (const flow of input.spec.flows) if (flow.file === path) for (const { key } of planItems(flow)) now.set(key, (now.get(key) ?? 0) + 1);
@@ -431,12 +478,15 @@ function planGaps(input: FeatureInput, path: string, ref: string, baseDoc: Docum
         now.set(key, left - 1);
         continue;
       }
+      const position = { file: path, line: item.span.start.line, col: item.span.start.col };
       if (item.kind === "question") {
-        gaps.push({ kind: "spec", id: flow.name, file: path, line: item.span.start.line, col: item.span.start.col, reason: `question «${item.question}» of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was removed; done is judged against the plan at ${ref}: answer the question in a commit`, stage: "ready" });
+        const reason = `question «${item.question}» of flow \`${flow.name}\` (line ${item.span.start.line} at ${at}) was removed; done is judged against the plan at ${at}: answer the question in a commit`;
+        gaps.push({ key, gap: { kind: "spec", id: flow.name, ...position, reason, stage: "ready" } });
         continue;
       }
       const id = item.target.target;
-      gaps.push({ kind: "spec", id, file: path, line: item.span.start.line, col: item.span.start.col, reason: `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${ref}) was changed or removed; done is judged against the plan at ${ref}`, stage: "ready" });
+      const reason = `${item.kind} \`${id}\` of flow \`${flow.name}\` (line ${item.span.start.line} at ${at}) was changed or removed; done is judged against the plan at ${at}`;
+      gaps.push({ key, gap: { kind: "spec", id, ...position, reason, stage: "ready" } });
     }
   }
   return gaps;

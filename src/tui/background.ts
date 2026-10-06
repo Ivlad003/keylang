@@ -11,7 +11,7 @@
 
 import { Worker } from "node:worker_threads";
 import type { Config } from "../config.ts";
-import type { FeatureBase } from "../feature-status.ts";
+import { HEAD_BASE, type FeatureBase } from "../feature-status.ts";
 import { generateMap, type MapResult } from "../map.ts";
 import { resultWithout, type CommitGate, type CommitPlan, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import type { OperationCall, OperationReply } from "./operation-worker.ts";
@@ -157,9 +157,11 @@ export class OperationWorker {
   };
 
   /**
-   * `path` (relative to `root`) at `HEAD`, read in the worker: the session's
-   * thread starts no git process. A worker that cannot start is a base that
-   * could not be read; one stopped before it answered gives null (unknown).
+   * `path` (relative to `root`) at the base `keylang feature` takes without
+   * `--since` (the merge-base with the main branch, else HEAD), read in the
+   * worker: the session's thread starts no git process. A worker that cannot
+   * start is a base that could not be read; one stopped before it answered
+   * gives null (unknown).
    */
   featureBase(root: string, path: string): Promise<FeatureBase | null> {
     if (this.closed) return Promise.resolve(null);
@@ -167,7 +169,7 @@ export class OperationWorker {
     try {
       worker = this.start();
     } catch (error) {
-      return Promise.resolve({ ref: "HEAD", state: "unavailable", reason: `the operation worker did not start: ${messageOf(error)}` });
+      return Promise.resolve({ ...HEAD_BASE, state: "unavailable", reason: `the operation worker did not start: ${messageOf(error)}` });
     }
     const baseId = ++this.nextBase;
     return new Promise((resolve) => {

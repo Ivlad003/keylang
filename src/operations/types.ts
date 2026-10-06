@@ -51,7 +51,11 @@ export interface FeatureRequest {
   root: string;
   /** The feature: `<dir>/features/<slug>.md`. */
   slug: string;
-  /** Base commit the plan is compared with; default `HEAD`. An explicit one that cannot be read fails with code 2. */
+  /**
+   * Base commit the plan is compared with; default the merge-base of HEAD
+   * with the main branch, else `HEAD` (`featureBaseOrigin`). An explicit one
+   * that cannot be read fails with code 2.
+   */
   since?: string;
 }
 

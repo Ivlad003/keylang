@@ -7,7 +7,8 @@
 // `cancel` ends it with nothing written;
 // `cancel` during the commit stops it between two file steps.
 //
-// `base` reads a feature file at `HEAD` for the session's status line
+// `base` reads a feature file at the base `keylang feature` takes (the
+// merge-base with the main branch, else `HEAD`) for the session's status line
 // (c4-zoom/11): git runs here, so the session's thread starts no process.
 
 import { parentPort } from "node:worker_threads";
@@ -15,7 +16,7 @@ import type { FeatureBase } from "../feature-status.ts";
 import { readFeatureBase } from "../git-changes.ts";
 import { runOperation, type BatchStep, type CommitGate, type CommitPlan, type OperationRequest, type OperationResult } from "../operations.ts";
 
-/** A message to the worker: run a request, let its commit go ahead, cancel it, or read a feature file at `HEAD`. */
+/** A message to the worker: run a request, let its commit go ahead, cancel it, or read a feature file at its base. */
 export type OperationCall =
   | { type: "run"; operationId: number; request: OperationRequest }
   | { type: "commit"; operationId: number; refused?: string[] }
