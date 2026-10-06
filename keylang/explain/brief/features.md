@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=cd19ab02b1622efba90f9d61ba253bc646b1ff92655355a8e524ec7055efbea0 lang=en detail=brief -->
-The user-facing capabilities shared by the CLI, TUI, LSP and MCP: checking and reporting (`features.check-results`), flow drafting, model and agent-CLI access (`features.llm`), node explanations, staleness, git hooks, proposals and voice input.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=d6b8e019241235b4f4063feec6efd9196e9f9156df47414e536f0e03263f8200 lang=en detail=brief -->
+The layer holds keylang's user-facing capabilities: checking and reports (`features.check-results`, `features.changed`), model-backed drafting and explanations (`features.llm`, `features.draft-llm`), and editor, git and voice support (`features.lsp-features`…

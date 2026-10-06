@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=5c3584a8df3909e7c481f894ad4a94cc0dfb55ffd05a9242d76fe285b26e3398 lang=en detail=brief -->
-Entry points and adapters: the terminal commands and TUI (`cli.cli`), shell completions (`cli.completions`), a stdio language server (`cli.lsp`), an MCP server for agents (`cli.mcp`), and test reporting and flow tracing (`cli.node-test`, `cli.trace`).
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=5511b06d59cacb30c58d05aecc2f25452a644faa615a40ef72956e91eaeb96a7 lang=en detail=brief -->
+The entry points: `cli.cli` and `cli.completions` give the command line and shell completion, `cli.lsp` and `cli.mcp` serve analysis to editors and agents, and `cli.trace` with `cli.node-test` record test traces and reports.
