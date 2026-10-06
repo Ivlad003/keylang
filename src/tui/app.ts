@@ -23,6 +23,7 @@
 
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
@@ -51,6 +52,7 @@ import { OperationWorker } from "./background.ts";
 import { chatTakesKeys, Clip, newClip } from "./clip.ts";
 import { ClipChat } from "./clip-chat.ts";
 import { newFailsAfter, openQuestions } from "./clip-questions.ts";
+import { placeClip, placeOf, readPlace, writePlace } from "./clip-memory.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -106,6 +108,8 @@ export interface AppOptions {
    * passes the browser's microphone; tests pass recorded PCM.
    */
   microphone?: Microphone;
+  /** The user's home: `~/.config/keylang/tui.json` there keeps the clip's place. Default: the home directory of the process's user; tests pass a temporary one. */
+  home?: string;
 }
 
 /** Changes typed together are analysed once. */
@@ -154,6 +158,8 @@ export class App {
   private readonly clip: Clip;
   /** What the clip answers in its chat: commands, and the model's reply as the session's operation. */
   private readonly chat: ClipChat;
+  /** The user's home, where `~/.config/keylang/tui.json` keeps the clip's place. */
+  private readonly home: string;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
@@ -197,6 +203,7 @@ export class App {
     // map-check analyse the whole repository in the worker, which has no fallback to this thread.
     this.operations = options.operations ?? ((request, context) => (request.kind === "doctor" ? runOperation(request, context) : this.worker().run(request, context)));
     this.onQuit = options.onQuit ?? (() => {});
+    this.home = options.home ?? homedir();
     this.state = {
       root: options.root,
       config: { kind: "configured" },
@@ -330,6 +337,7 @@ export class App {
       said: (text) => this.chat.said(text),
       cancelReply: () => this.chat.cancel(),
       opened: () => this.chat.opened(),
+      placed: () => this.keepPlace(),
     });
     this.results = new ResultsPanel({
       state: this.state,
@@ -355,6 +363,9 @@ export class App {
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
     if (first) this.open(first, { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
+    // The clip's memory (ADR 0021): where the person left it and its window, and today's conversation.
+    this.restorePlace();
+    this.chat.restore();
     const { config, clip } = configState(this.state.root);
     this.state.config = config;
     if (clip !== null) this.state.clip.enabled = clip;
@@ -362,6 +373,22 @@ export class App {
     if (config.kind === "missing-config") this.state.start = 0;
     else if (config.kind === "invalid-config") this.openConfig(config.reason, false);
     else this.reanalyze();
+  }
+
+  /** The clip's place from tui.json as the session starts; a file it cannot use is said once and left as it is until a drag. */
+  private restorePlace(): void {
+    const { place, problem } = readPlace(this.home);
+    placeClip(this.state.clip, place);
+    if (problem !== null) this.state.message = `${problem}; ignored: the clip and its window start where they do by default, and the first drag rewrites the file`;
+  }
+
+  /** A drag, a keyboard move or a resize of the clip or its window ended, or they were put back: tui.json keeps the place. */
+  private keepPlace(): void {
+    try {
+      writePlace(this.home, placeOf(this.state.clip));
+    } catch (error) {
+      this.state.message = `the clip's place is not kept: ${errorText(error)}`;
+    }
   }
 
   // ---------- transport ----------

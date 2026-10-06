@@ -19,7 +19,7 @@ import { App } from "../src/tui/app.ts";
 import { runOperation } from "../src/operations.ts";
 import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
-import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove, tempHome } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -238,9 +238,9 @@ test("web: a click on the clip opens its chat and a drag by the window's top edg
   const repo = checkoutRepo(t);
   const cols = 100;
   const rows = 28;
-  // Terminal: the session in this process, as `keylang` runs it.
+  // Terminal: the session in this process, as `keylang` runs it; its drag keeps the place in a home of its own, not the server's.
   const terminal = new VirtualTerminal(cols, rows);
-  const app = new App({ root: repo, cols, rows });
+  const app = new App({ root: repo, cols, rows, home: tempHome() });
   t.after(() => app.close());
   app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();

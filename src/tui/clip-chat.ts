@@ -1,4 +1,4 @@
-// What the clip answers in its chat (ADR 0021, .scratch/tui-clip/03–04). A
+// What the clip answers in its chat (ADR 0021, .scratch/tui-clip/03–04, 06). A
 // message that starts with `/` is a command, answered from the session or a
 // shared operation without the model. Any other message goes to the model of
 // `agent` as the session's one explicit operation, `assistant-reply` — an F6
@@ -8,7 +8,9 @@
 // conversation, and Esc cancels it. The answer's first `keylang path=` block
 // becomes a proposal through the gate of MCP `apply_diff`; MERGE takes it or
 // not. Without a model the commands work and free text says how to set one;
-// nothing is asked.
+// nothing is asked. Every answer to a message ends an exchange, which goes
+// into today's log of the conversation (`clip-memory.ts`); a cancelled
+// request is no exchange.
 
 import { join } from "node:path";
 import { contextText, type ContextPack } from "../agent-context.ts";
@@ -20,6 +22,7 @@ import { featureSlugOf, featureSummary, gapLine, hintLine, type AssistantReplyPa
 import { proposalProblem, writeProposal } from "../proposals.ts";
 import { isDirty } from "./buffer.ts";
 import { openQuestions, questionRow, questionsAnswer } from "./clip-questions.ts";
+import { ChatLog } from "./clip-memory.ts";
 import { totals } from "./evidence.ts";
 import { findingRow, findingsOf } from "./findings.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -115,11 +118,21 @@ function featureAnswer(report: FeatureReport): string {
   return [...report.gaps.map(gapLine), ...report.hints.map(hintLine), featureSummary(report)].join("\n");
 }
 
+/** The operation was cancelled, or ended without a result: nothing was asked, and the log keeps nothing of it. */
+function cancelled(record: OperationRecord): boolean {
+  return record.status === "cancelled" || record.result === null;
+}
+
 /** What an operation the chat started ended with: its text, `скасовано`, or the reasons it failed. */
 function outcomeAnswer(record: OperationRecord, text: (result: OperationResult) => string | null): string {
   const result = record.result;
-  if (record.status === "cancelled" || result === null) return CANCELLED;
+  if (cancelled(record) || result === null) return CANCELLED;
   return text(result) ?? `помилка: ${failure(result)}`;
+}
+
+/** What the chat says of a proposal it wrote. The log keeps its path alone (`**пропозиція:**`): its MERGE may be over by the time the log is read. */
+function proposalWritten(path: string): string {
+  return `пропозиція: ${path} · m — MERGE`;
 }
 
 /** Why an operation failed, as its messages say. */
@@ -132,6 +145,19 @@ function failure(result: OperationResult): string {
 interface Asked {
   agent: string | null;
   record: number | null;
+  /** The person's message it answers: the log keeps them as one exchange. */
+  said: string | null;
+}
+
+/**
+ * How an answer ends its exchange in the log: the person's message it
+ * answers (null: nothing goes into the log — a cancelled request, or no one
+ * asked), the model that answered, the proposal written from it.
+ */
+interface Ending {
+  said: string | null;
+  agent?: string;
+  proposal?: string;
 }
 
 /**
@@ -143,19 +169,34 @@ export class ClipChat {
   private readonly host: ChatHost;
   /** The request to the model being looked up or answered, or null. */
   private asked: Asked | null = null;
+  /** Today's conversation in `.keylang/chat/`. */
+  private readonly log: ChatLog;
+  /** The person's message `said` answers now; null outside it. An answer later carries its message itself. */
+  private sent: string | null = null;
 
   constructor(host: ChatHost) {
     this.host = host;
+    this.log = new ChatLog(host.state.root);
   }
 
   private get state(): State {
     return this.host.state;
   }
 
+  /** The session starts: the history goes on with today's last conversation in the log. */
+  restore(): void {
+    this.state.clip.chat.messages = this.log.restore();
+  }
+
   /** The person sent `text` (already in the history): a command runs, anything else goes to the model. */
   said(text: string): void {
-    if (text.startsWith("/")) return this.command(text.slice(1));
-    this.ask();
+    this.sent = text;
+    try {
+      if (text.startsWith("/")) return this.command(text.slice(1));
+      this.ask();
+    } finally {
+      this.sent = null;
+    }
   }
 
   /**
@@ -184,7 +225,7 @@ export class ClipChat {
     if (asked.record === null) {
       // The model is still being looked up: nothing was asked.
       this.stopWaiting();
-      return this.answer(CANCELLED);
+      return this.answer(CANCELLED, { said: null });
     }
     // The operation's record ends as cancelled, and `replied` says so.
     if (this.state.activeOperation === asked.record) this.host.cancelOperation();
@@ -230,11 +271,12 @@ export class ClipChat {
     this.answer(questionsAnswer(openQuestions(this.state)));
   }
 
-  /** `/new`: a new conversation; the old one is gone from the window. */
+  /** `/new`: a new conversation; the old one is gone from the window, and the log starts a section. */
   restart(): void {
     const chat = this.state.clip.chat;
     chat.messages = [];
     chat.scroll = 0;
+    this.note(this.log.restart(this.browsing()));
   }
 
   /** `/help`: the commands and the keys. */
@@ -245,7 +287,8 @@ export class ClipChat {
   /** A command's shared operation, as the session runs any: one at a time, after the save step when it reads dirty buffers. */
   private operation(action: string, request: OperationRequest, text: (result: OperationResult) => string | null): void {
     if (this.state.activeOperation !== null) return this.answer(BUSY);
-    this.host.requestOperation(action, request, (record) => this.answer(outcomeAnswer(record, text)));
+    const said = this.sent;
+    this.host.requestOperation(action, request, (record) => this.answer(outcomeAnswer(record, text), { said: cancelled(record) ? null : said }));
   }
 
   // ---------- the model ----------
@@ -260,7 +303,7 @@ export class ClipChat {
     if (analysis === null) return this.answer("аналіз ще триває: спитайте, коли він закінчиться");
     if (selectedAgent(analysis.config.agent) === null) return this.answer(noModelAnswer(null));
     if (this.state.activeOperation !== null) return this.answer(BUSY);
-    const asked: Asked = { agent: analysis.config.agent, record: null };
+    const asked: Asked = { agent: analysis.config.agent, record: null, said: this.sent };
     this.asked = asked;
     this.state.clip.waiting = true;
     this.host.track(this.start(asked, this.request()));
@@ -301,12 +344,12 @@ export class ClipChat {
     if (this.asked !== asked) return;
     if (missing !== null) {
       this.stopWaiting();
-      return this.answer(noModelAnswer(missing));
+      return this.answer(noModelAnswer(missing), { said: asked.said });
     }
     const record = this.host.startOperation(CLIP_REPLY, request, (done) => this.replied(asked, done));
     if (record === null) {
       this.stopWaiting();
-      return this.answer(BUSY);
+      return this.answer(BUSY, { said: asked.said });
     }
     asked.record = record.id;
   }
@@ -315,11 +358,13 @@ export class ClipChat {
   private replied(asked: Asked, record: OperationRecord): void {
     if (this.asked === asked) this.stopWaiting();
     const result = record.result;
-    if (record.status === "cancelled" || result === null) return this.answer(CANCELLED);
-    if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`);
-    const { reply, proposal, dropped } = result.payload;
-    const notes = [...(proposal === null ? [] : [this.propose(proposal)]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
-    this.answer([reply, ...notes].filter((line) => line !== "").join("\n"));
+    if (cancelled(record) || result === null) return this.answer(CANCELLED, { said: null });
+    if (result.kind !== "assistant-reply" || result.payload === null) return this.answer(`помилка моделі: ${failure(result)}`, { said: asked.said });
+    const { agent, reply, proposal, dropped } = result.payload;
+    const proposed = proposal === null ? null : this.propose(proposal);
+    const notes = [...(proposed === null ? [] : [proposed]), ...(dropped.length > 0 ? [`відкинуто: ${dropped.join(", ")} — береться лише перший закритий блок keylang path=`] : [])];
+    const written = proposal !== null && proposed === proposalWritten(proposal.path) ? { proposal: proposal.path } : {};
+    this.answer([reply, ...notes].filter((line) => line !== "").join("\n"), { said: asked.said, agent, ...written });
   }
 
   /**
@@ -349,7 +394,7 @@ export class ClipChat {
       return refused(errorText(error));
     }
     this.host.rescanProposals();
-    return `пропозиція: ${path} · m — MERGE`;
+    return proposalWritten(path);
   }
 
   private stopWaiting(): void {
@@ -357,10 +402,32 @@ export class ClipChat {
     this.state.clip.waiting = false;
   }
 
-  /** The clip's message ends an exchange: it joins the history, and the history shows its end. */
-  private answer(text: string): void {
+  /**
+   * The clip's message ends an exchange: it joins the history, and the
+   * history shows its end. The exchange goes into today's log; `ending`
+   * names the message it answers — by default the one `said` answers now.
+   */
+  private answer(text: string, ending: Ending = { said: this.sent }): void {
     const chat = this.state.clip.chat;
     chat.messages.push({ role: "clip", text });
     chat.scroll = 0;
+    const { said, agent = null, proposal = null } = ending;
+    if (said === null) return;
+    // The proposal goes in as its path: the line that points at MERGE is the session's.
+    const clip = proposal === null ? text : text.split("\n").filter((line) => line !== proposalWritten(proposal)).join("\n");
+    this.note(this.log.exchange({ you: said, clip, agent, proposal }, this.browsing()));
+  }
+
+  /** Why the log is not written, said once a session: the clip's message after the answer, and no exchange itself. */
+  private note(why: string | null): void {
+    if (why === null) return;
+    const chat = this.state.clip.chat;
+    chat.messages.push({ role: "clip", text: why });
+    chat.scroll = 0;
+  }
+
+  /** Browse writes nothing: not the log either. */
+  private browsing(): boolean {
+    return this.state.config.kind === "missing-config";
   }
 }

@@ -9,7 +9,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
-import { esc, FLOW_PATH, mockModel, PAID, propose, REFUND, session, treeBytes, withConfig } from "./tui-helpers.ts";
+import { esc, FLOW_PATH, mockModel, PAID, propose, REFUND, session, treeBytes, withConfig, withoutChatLog } from "./tui-helpers.ts";
 
 const AGENT = { agent: "anthropic:claude-opus-5" };
 
@@ -90,7 +90,7 @@ test("tui-clip-proposals: a generated, unsaved, already proposed, code or outsid
   assert.match(await refusal("src/app.ts"), /це не специфікація: код пише харнес, скрепка пропонує лише \.md під keylang\/$/);
   assert.match(await refusal("../outside.md"), /not a plain relative path$/);
   assert.match(await refusal("README.md"), /outside keylang\/: a proposal changes specs only$/);
-  assert.deepEqual(treeBytes(root), before, "nothing written");
+  assert.deepEqual(withoutChatLog(treeBytes(root)), before, "nothing written but the log of the conversation");
   // The target has unsaved edits: the proposal would come back as hunks reverting them.
   s.send(KEY.f7);
   s.send("i");
@@ -103,7 +103,7 @@ test("tui-clip-proposals: a generated, unsaved, already proposed, code or outsid
   const waiting = treeBytes(root);
   assert.match(await refusal("keylang/flows/other.md"), /для нього вже чекає пропозиція: m — MERGE, потім спитайте знову$/);
   assert.equal(readFileSync(join(root, ".keylang/proposals/keylang/flows/other.md"), "utf8"), "# flow other\n");
-  assert.deepEqual(treeBytes(root), waiting, "nothing written");
+  assert.deepEqual(withoutChatLog(treeBytes(root)), withoutChatLog(waiting), "nothing written but the log of the conversation");
   assert.equal(model.prompts.length, 6);
 });
 

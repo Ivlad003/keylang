@@ -65,8 +65,8 @@ const NARROW_ROWS = 12;
 /** The window's size with its frame, and the least it is resized to. */
 const CHAT_COLS = 40;
 const CHAT_ROWS = 10;
-const CHAT_MIN_COLS = 30;
-const CHAT_MIN_ROWS = 7;
+export const CHAT_MIN_COLS = 30;
+export const CHAT_MIN_ROWS = 7;
 /** The window's height on a narrow terminal. */
 const NARROW_CHAT_ROWS = 8;
 
@@ -313,6 +313,8 @@ export interface ClipHost {
   cancelReply(): void;
   /** The person opened the chat or gave it the focus (a click on the clip or its badge, F7): the clip lists the open questions (`ClipChat.opened`). */
   opened(): void;
+  /** A drag, a keyboard move or a resize ended, or the palette put them back: the session keeps where they are (`tui.json`). */
+  placed(): void;
 }
 
 /** What a press was on. */
@@ -412,6 +414,7 @@ export class Clip {
     clip.chat.place = null;
     clip.chat.size = { cols: CHAT_COLS, rows: CHAT_ROWS };
     this.state.message = "the clip is back in its corner, its window above it";
+    this.host.placed();
   }
 
   /** A key while the window has the focus (`chatTakesKeys`): its input line, its history and its place. */
@@ -463,6 +466,7 @@ export class Clip {
       // A terminal that reports no motion still says where the button came up.
       this.dragTo(press, event);
       if (!press.moved) this.click(press.target);
+      else if (this.places(press.target)) this.host.placed();
       return true;
     }
     const target = this.targetAt(event);
@@ -523,6 +527,11 @@ export class Clip {
     }
   }
 
+  /** A drag of this moves the clip or the window, or resizes the window; a narrow terminal's window neither moves nor resizes. */
+  private places(target: Target): boolean {
+    return target === "clip" || ((target === "move" || target === "resize") && !narrow(this.state));
+  }
+
   private click(target: Target): void {
     if (target === "clip" || target === "badge") return this.open();
     if (target === "close") return this.fold();
@@ -542,6 +551,7 @@ export class Clip {
       chat.place = { x: rect.x, y: rect.y };
       chat.size = resized(rect, delta.x, delta.y, chatArea(state));
     } else chat.place = moved(rect, delta.x, delta.y, chatArea(state));
+    this.host.placed();
   }
 
   /** Rows PgUp and PgDn scroll the history by: its height but one. */

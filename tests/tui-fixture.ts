@@ -1,10 +1,26 @@
 // Shared by the TUI and web tests: the checkout repository of design §3.4
-// with a configured but absent trace, and the bytes a terminal sends.
+// with a configured but absent trace, the bytes a terminal sends, and a home
+// directory of the test's own.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { stringWidth } from "../src/tui/width.ts";
+
+// A session reads the clip's place from `~/.config/keylang/tui.json` and a
+// drag writes it (ADR 0021): no test reads or writes the developer's own. The
+// process's HOME — for a session made without one, a `keylang web` it
+// spawns, the CLI — is a temporary directory, removed when the process exits.
+const HOMES = mkdtempSync(join(tmpdir(), "keylang-home-"));
+process.on("exit", () => rmSync(HOMES, { recursive: true, force: true }));
+process.env.HOME = join(HOMES, "process");
+mkdirSync(process.env.HOME);
+let homes = 0;
+
+/** A home of a session's own, made when something is written there: no other session reads its tui.json. */
+export function tempHome(): string {
+  return join(HOMES, `session-${++homes}`);
+}
 
 export const CHECKOUT_FILES: Record<string, string> = {
   "src/domain/order.ts": "export function create(): void {}\n",

@@ -13,7 +13,7 @@ import { assistantPrompt, fileWindow, parseReply, recentTurns, REPLY_TOKENS } fr
 import { runOperation, type AssistantReplyRequest } from "../src/operations.ts";
 import type { AppOptions } from "../src/tui/app.ts";
 import { checkoutRepo, KEY } from "./tui-fixture.ts";
-import { BIN, esc, FEATURES, FLOW_PATH, mapCheck, mockModel, session, sleep, treeBytes, waitUntil, withConfig } from "./tui-helpers.ts";
+import { BIN, esc, FEATURES, FLOW_PATH, mapCheck, mockModel, session, sleep, treeBytes, waitUntil, withConfig, withoutChatLog } from "./tui-helpers.ts";
 
 const AGENT = { agent: "anthropic:claude-opus-5" };
 
@@ -75,7 +75,7 @@ test("tui-clip-chat: one message is one request with the message, the open file,
   assert.equal(s.app.state.records.length, 1);
   assert.match(s.app.state.message ?? "", /ask again in its chat/);
   assert.equal(s.app.state.analysis!.verdicts, verdicts, "a reply does not touch the verdicts");
-  assert.deepEqual(treeBytes(root), before, "nothing written");
+  assert.deepEqual(withoutChatLog(treeBytes(root)), before, "nothing written but the log of the conversation");
 });
 
 test("tui-clip-chat: the second message carries the first and its reply; past 16 000 characters the oldest messages are left out whole", async (t) => {
@@ -193,7 +193,7 @@ test("tui-clip-chat: a model error says why in the chat and nothing is written; 
   assert.equal(model.prompts.length, 1);
   assert.equal(lastAnswer(s), "помилка моделі: claude-opus-5 answered without text (stop reason: end_turn)");
   assert.equal(s.app.state.records.at(-1)!.status, "failed");
-  assert.deepEqual(treeBytes(root), before, "nothing written");
+  assert.deepEqual(withoutChatLog(treeBytes(root)), before, "nothing written but the log of the conversation");
   // Another operation runs: the chat says so, and no request is made.
   s.send(KEY.f7);
   mapCheck(s.send);
@@ -227,7 +227,7 @@ test("tui-clip-chat: without an agent free text says how to set one and the comm
   const check = lastAnswer(s).split("\n");
   assert.equal(check[0], statusCounts(s), "the counts of the status line");
   assert.equal(model.prompts.length, 0, "no request");
-  assert.deepEqual(treeBytes(root), before, "nothing written");
+  assert.deepEqual(withoutChatLog(treeBytes(root)), before, "nothing written but the log of the conversation");
 });
 
 test("tui-clip-chat: /check names the first fails with their positions; /feature shows the stage and gaps keylang feature prints; /new starts over; an unknown command lists the commands", async (t) => {
