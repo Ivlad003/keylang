@@ -380,8 +380,9 @@ function phpTestStub(file: string, head: string, subject: PhpSubject, entries: r
   const exists = subject.class !== null ? `method_exists(${lastName(subject.class)}::class, ${phpString(subject.name)})` : `function_exists(${phpString(subject.name)})`;
   const reach = subject.class !== null ? `${lastName(subject.class)}::${subject.name}` : subject.name;
   const methods = entries.map((e) => {
-    // PHPUnit runs a public method whose name starts with `test`, or one marked `#[Test]`.
-    const marked = /^test/i.test(e.name) ? "" : "    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
+    // PHPUnit runs a public method whose name starts with lowercase `test` (case-sensitive,
+    // unlike PHP method names), or one marked `#[Test]`.
+    const marked = /^test/.test(e.name) ? "" : "    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
     return `${marked}    public function ${e.name}(): void\n    {\n        $this->assertTrue(${exists});\n        $this->fail(${phpString(`not written: drive flow \`${e.flow}\` through ${reach} and assert what the flow promises`)});\n    }\n`;
   });
   const uses = ["PHPUnit\\Framework\\TestCase", ...(subject.class !== null ? [subject.class] : [])].sort();

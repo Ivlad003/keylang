@@ -140,3 +140,28 @@ test("php: a method called on a new object, `(new X())->m()` or PHP 8.4's `new X
   assert.deepEqual(holes(snapshot, "app.Cart."), ["app.Cart.chain: dynamic-call call through an expression `(new Cart())->total()->tax()`"]);
   assert.deepEqual(statics(dir, "app.Cart.Cart.total"), ["keylang/flows/checkout.md:4:3: static ok app.Cart.Cart.total: called from app.Cart.checkout"]);
 });
+
+test("php: spec-to-code marks a test method named TestRefund with #[Test]: PHPUnit runs unmarked methods only when they start with lowercase `test`", (t) => {
+  const dir = repo(t, {
+    "keylang.json": JSON.stringify({ languages: ["php"], layers: { App: ["src/App/**"], Domain: ["src/Domain/**"] } }),
+    "src/Domain/Order.php": "<?php\nnamespace Shop\\Domain;\n\nclass Order\n{\n    public function total(): int\n    {\n        return 1;\n    }\n}\n",
+    "src/App/Checkout.php": "<?php\nnamespace Shop\\App;\n\nuse Shop\\Domain\\Order;\n\nclass Checkout\n{\n    public function buy(): void\n    {\n        (new Order())->total();\n    }\n}\n",
+    "keylang/refund.md": [
+      "# flow refund",
+      "",
+      "- planned fn Domain.Order.Order.refund (int $amount) → void",
+      "- trigger App.Checkout.Checkout.buy",
+      "  - step Domain.Order.Order.refund",
+      '    - test tests/RefundTest.php "TestRefund"',
+      '    - test tests/RefundTest.php "testTwice"',
+      "",
+    ].join("\n"),
+  });
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const r = keylang(dir, ["spec-to-code", "Domain.Order.Order.refund", "--print"]);
+  assert.equal(r.status, 0, r.stderr);
+  const marked = "+    #[\\PHPUnit\\Framework\\Attributes\\Test]\n";
+  assert.ok(r.stdout.includes(`${marked}+    public function TestRefund(): void`), r.stdout);
+  assert.ok(r.stdout.includes("+    public function testTwice(): void"), r.stdout);
+  assert.ok(!r.stdout.includes(`${marked}+    public function testTwice(): void`), r.stdout);
+});
