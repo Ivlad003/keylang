@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=2bf88d40da690448d784bd8c109aa5245be2a71eab1f2ad5c4500073de840680 lang=en detail=brief -->
-Handles incoming LSP notifications: syncs the open-file buffer overlay, triggers `cli.lsp.Server.changed`, sets the exit code on exit, and errors cancelled requests. Ignored before initialization.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f7e353547fc369565f840763fa9545918bb9209c41b75e7d4959db363cdef176 lang=en detail=brief -->
+Handles LSP notifications: sets the exit code, drops anything before initialization, syncs open-document buffers via `cli.lsp.Server.edited` and calls `cli.lsp.Server.changed`, and errors out cancelled pending requests.

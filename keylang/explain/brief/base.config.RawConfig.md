@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a096fd86a4f654f7ed565023b4d005186364853b0ecb0695487ae04b7aadf4b5 lang=en detail=brief -->
-Unvalidated shape of the user's keylang configuration, with every field optional: rule format and directory, languages, module granularity, layer globs, exclusions, check settings, and agent, ghost, voice and explain options.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=ff551328ff73995e5aa2d8bae4223d62819e05f3370826fd47c28c20c9fc8d02 lang=en detail=brief -->
+Describes the unvalidated shape of the project configuration file, with every field optional: rule format, languages, module granularity, layer globs, excludes, check modes, and settings for agent, ghost, assistant, voice and explain.

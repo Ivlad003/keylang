@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f1a1ef164ddb74e76191b03b7d7517a4dd40d33564c1b16747845030ce53be66 lang=en detail=brief -->
-Dispatches keystrokes in view/read mode: cursor motion, jumps via `tui.app.App.goToCode`/`tui.app.App.goToSpec`, toggling read/edit modes (blocking read-only buffers), and opening merge, zoom, search, palette or help.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=817c7af8d269cf30b911c2ce03bfcef8a9d9f12e34c8efd0ce4e171c83d5a010 lang=en detail=brief -->
+Dispatches view-mode keystrokes after `tui.app.App.common`: vim-style cursor movement, toggling read/edit modes, jumping between spec and code, and opening search, palette, zoom or map. It also triggers merges and undo, explanations, voice stop and quit.

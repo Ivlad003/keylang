@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=7beb1e0692389f5c2178d7b5ed9a495e30a349aea3a4ed1a28b438af407c06ae lang=en detail=brief -->
-Waits for the workspace at the current generation via `cli.lsp.Server.current`, then either asks pull-mode clients to refresh diagnostics or pushes `features.lsp-features.diagnosticsFor` results for each open buffer, clearing closed ones.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0595ba2181d905f7bc569c47a242db82a3b62a0d751db083daee1526f45b653a lang=en detail=brief -->
+Once the latest workspace is built via `cli.lsp.Server.current` (stale generations are dropped), asks pull-mode clients to refresh diagnostics. Otherwise it pushes `features.lsp-features.diagnosticsFor` results per open buffer and clears closed files.

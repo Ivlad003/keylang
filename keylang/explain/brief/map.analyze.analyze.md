@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=08209cf170f702253558c530ea15f9b53be3bc38ee92e99c5051c343848d810b lang=en detail=brief -->
-Loads config, generates the code map via `map.map.generateMap`, and parses spec Markdown, including unsaved overlays and freshly rendered map files. It then runs `check.assess.assess` with test-report and trace evidence.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e8f92dff181a1b9f20e17ec274ead138db6d905efd2895baa0ac213ebbdae3eb lang=en detail=brief -->
+Generates the code map via `map.map.generateMap`, parses spec Markdown plus rendered map files, and runs `check.assess.assess` with test and trace evidence, returning the result with config, map and docs.

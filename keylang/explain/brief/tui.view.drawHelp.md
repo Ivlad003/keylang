@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a313cf1d2d00ebda1a3dd393f20402bbed8270d374309bd4b961e507b2872035 lang=en detail=brief -->
-Renders the key-help popup onto the grid: a box from `tui.view.helpBox` titled with the current mode, filled with the clamped scroll window of help rows. Adds a position and scroll hint when rows overflow.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=1fae66e6079171cb14560363bb56cde9c9647b03d7ba1015337d3633cf93f8d5 lang=en detail=brief -->
+Draws the key-help popup for the current mode, using `tui.view.helpBox` for size and rows and showing a scrolled window of lines via `tui.screen.Grid.write`. If rows overflow, it adds a position and scroll-hint footer.

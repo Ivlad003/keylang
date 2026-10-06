@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=397f86a81207b0fe7d6be5878e90b474ab0f8b65dfa28dd51d24e5a987dad010 lang=en detail=brief -->
-Transport-independent workspace actions shared by CLI and TUI under typed contracts in `operations.types`: spec checks, code and spec drafting, map generation, explanations, exports, feature status, and environment reports.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=c2b4eea44a071ceed447508e941d6bd69a722772e2f7206f3ca3b5ed0b9bb185 lang=en detail=brief -->
+Transport-independent actions the CLI and TUI both call, each a typed request and result defined in `operations.types` and orchestrated by `operations.operations`: generating maps, checking specs, drafting, explaining nodes and exporting.

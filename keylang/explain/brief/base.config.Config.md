@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=5c0f959a87c193a3e21d57a385a9ca0534b8d0679a1d8f62f22f70416c02a425 lang=en detail=brief -->
-Resolved repository settings loaded from `keylang.json`: absolute root, rules edition, languages, module granularity, layer globs, exclude/outside/assume globs, check options, plus agent, voice, ghost-text and explanation preferences.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0f9a7163a79417c6f3c041835edaa930a9f79864d83f70d4bf08f32b1bebd28c lang=en detail=brief -->
+The resolved repository settings loaded from `keylang.json`: root, rules edition, language, module mode, layer globs, excluded/outside/assumed paths and checks. It also holds the agent, voice, ghost-text, clip and explanation options.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=81190b7c109aab88e20a8b2216713a8abccdd58e4c3d6c4d096c8017948e8072 lang=en detail=brief -->
-Exits merge mode: clears the merge state, rescans proposals via `tui.merge-session.MergeSession.scan` since agents may have changed them, restores the prior mode, sets a status message and clamps the cursor.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=66a4574ac7117fc53c87d7adf7e38f898543d31b4e99315ecba74b05e6bee926 lang=en detail=brief -->
+Ends a merge: clears merge state, refreshes the proposal list via `tui.merge-session.MergeSession.scan` (agents may have changed it), restores the prior mode, sets a status message, and clamps the cursor.

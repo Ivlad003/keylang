@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=c83220e5537c3622a07905c1a5f114ab322cf19ed31322945272d41f2e75d64e lang=en detail=brief -->
-Drives the TUI's merge mode for agent proposals: lists and validates files under the proposals directory, opens one as a hunk diff against disk, and handles accept/reject/undo keys before writing via `tui.merge-session.MergeSession.write`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=1b03cf29c845c286ce90a5d0be5466b979cf9b3bbce93f89e3b5d17e55d742ab lang=en detail=brief -->
+Drives the TUI review of files under the proposals store: lists and validates proposals, opens each as a hunk-by-hunk diff against disk, takes accept/reject keys, then writes, undoes or cancels via `tui.merge-session.MergeSession.write`.

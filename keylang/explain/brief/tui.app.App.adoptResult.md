@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=fb6647c837518c46f515b819f6c16f6293065dc9b2422ab9a769450f60a7ebf6 lang=en detail=brief -->
-Installs a finished analysis via `tui.app.App.adopt`, clears the updating and error state, and marks results outdated if the text was edited during the run. It keeps the previously selected finding selected when still reported, then clamps the selection.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=dac7d66521b957c564330cee9a8f0bfe7d419155921e4680450b11b3eac35fec lang=en detail=brief -->
+Installs a finished analysis via `tui.app.App.adopt`, clearing the updating and error state and marking results outdated if edits happened meanwhile. It then keeps the previously selected finding selected if still reported, and clamps the selection.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=03270b411fbdba953b0ce9d706a836e134b20b2040dcac7857cfeb9fa85868cd lang=en detail=brief -->
-Jumps the editor to where an ID is declared in a spec, opening that file via `tui.app.App.open` with the cursor placed using `tui.width.clusterAt`; shows a status message if no ID is given or it's undeclared.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=a695e7e22603334c90a3f86cda94fe92aca8a57728eca56da9de03a5957ca338 lang=en detail=brief -->
+Jumps the editor to where a spec ID is declared, loading the file via `tui.app.App.load` and opening it with `tui.app.App.open` at the declaration's line and grapheme column; sets a status message if no ID or undeclared.
