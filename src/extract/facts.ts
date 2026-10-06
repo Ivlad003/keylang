@@ -75,9 +75,16 @@ export interface ImportFact {
   /**
    * TypeScript `import type …`, `export type … from`, `export type * from`: the statement names
    * types only and is erased from the code that runs, so its edge forms no cycle that runs.
-   * An inline `import { type A }` is not: with `verbatimModuleSyntax` it stays `import {} from`.
    */
   typeOnly?: true;
+  /**
+   * TypeScript `import { type A, type B as C } from`, `export { type A } from`: every name in the
+   * braces is `type` (at least one, with no default or namespace binding beside them). tsc and
+   * esbuild erase the statement unless the tsconfig that governs the file sets
+   * `verbatimModuleSyntax`, which keeps it as `import {} from`: a fact of the syntax, whose
+   * `typeOnly` edge the graph decides with the tsconfig, so cached facts do not depend on it.
+   */
+  inlineTypeOnly?: true;
   /**
    * The specifier may name a module or another file: `new URL("./worker", import.meta.url)`
    * without an extension. An edge when it resolves to a source file, nothing otherwise.

@@ -75,6 +75,7 @@ function isImport(value: unknown): boolean {
     optionalTrue(value.optional) &&
     optionalTrue(value.glob) &&
     optionalTrue(value.typeOnly) &&
+    optionalTrue(value.inlineTypeOnly) &&
     every(value.bindings, (b) => isRecord(b) && typeof b.local === "string" && ((b.kind === "module" && optionalTrue(b.namespace)) || b.kind === "default" || (b.kind === "named" && typeof b.imported === "string")))
   );
 }

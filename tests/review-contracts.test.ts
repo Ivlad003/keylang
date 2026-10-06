@@ -1,12 +1,14 @@
 // Contracts the author settled on 2026-10-06 (ADR 0016, amendment): a Stop
 // hook turn keylang could not check is a warning the person sees; `feature`
 // without `--since` judges the change since the merge-base with the main
-// branch. Every test runs the real CLI (and, where it says so, MCP and the
-// TUI) on a temporary repository and removes it afterwards.
+// branch; a TypeScript `import { type A }` is type-only unless the tsconfig
+// keeps it (`verbatimModuleSyntax`). Every test runs the real CLI (and, where
+// it says so, MCP and the TUI) on a temporary repository and removes it
+// afterwards.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -272,4 +274,136 @@ test("feature: the plan is compared with the merge-base and with HEAD: a questio
     store.report.gaps.filter((gap) => gap.kind === "spec").map((gap) => [gap.id, gap.line, gap.reason]),
     [["app.refund_store.record", 5, "step `app.refund_store.record` of flow `store` (line 5 at HEAD) was changed or removed; done is judged against the plan at HEAD"]],
   );
+});
+
+// ---------- TypeScript: `import { type A }` with every name `type` ----------
+
+const ORDER = 'import { type Price } from "./price.ts"; export function total(p: Price): number { return p.amount; }\n';
+const PRICE = 'import { total } from "./order.ts"; export type Price = { amount: number }; export function show(p: Price): string { return String(total(p)); }\n';
+const CYCLE = "keylang/rules.md:3:1: K105 divergence: dependency cycle app.order → app.price → app.order";
+
+/** A cycle that runs only when `order.ts`'s `import { type Price }` loads `price.ts`. */
+function typeCycleRepo(t: TestContext, extra: Record<string, string> = {}): string {
+  const dir = tempDir(t, "keylang-contracts-ts-");
+  writeTree(dir, {
+    "keylang.json": `${JSON.stringify({ languages: ["typescript"], layers: { app: "src/app/**" } })}\n`,
+    "keylang/rules.md": "# rules\n\n- no-cycles\n",
+    "src/app/order.ts": ORDER,
+    "src/app/price.ts": PRICE,
+    ...extra,
+  });
+  return dir;
+}
+
+/** `check`'s verdict on the cycle: `runs` (K105, code 1) or `erased` (no fail, code 0). */
+function cycle(dir: string): "runs" | "erased" {
+  const r = keylang(dir, ["check"]);
+  if (r.status === 1 && r.stdout.includes(CYCLE)) return "runs";
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /0 fail, 0 unverified, 1 ok/);
+  return "erased";
+}
+
+interface IndexEdge {
+  kind: string;
+  source: string;
+  target: string | null;
+  text: string;
+  typeOnly?: true;
+}
+
+/** The import and re-export edges between modules, as `kind[ typeOnly] source → target`. */
+function moduleEdges(dir: string): string[] {
+  assert.equal(keylang(dir, ["map"]).status, 0);
+  const index = JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { edges: IndexEdge[] };
+  return index.edges
+    .filter((edge) => edge.kind === "import" || edge.kind === "reexport")
+    .map((edge) => `${edge.kind}${edge.typeOnly ? " typeOnly" : ""} ${edge.source} → ${edge.target}`)
+    .sort();
+}
+
+test("typescript: `import { type A }` with every name `type` is type-only unless the governing tsconfig sets verbatimModuleSyntax; the map and deny see the edge either way; a tsconfig change needs no cache clearing", (t) => {
+  const dir = typeCycleRepo(t);
+  // No tsconfig: tsc's default erases the statement, so no cycle runs.
+  assert.equal(cycle(dir), "erased");
+  assert.deepEqual(moduleEdges(dir), ["import app.price → app.order", "import typeOnly app.order → app.price"]);
+  // A tsconfig without the option: the same.
+  writeTree(dir, { "tsconfig.json": '{\n  // the project\'s own options\n  "compilerOptions": { "strict": true, },\n}\n' });
+  assert.equal(cycle(dir), "erased");
+  // The fact cache keeps what the syntax says, not what the tsconfig decides.
+  const cached = (): { source: string; typeOnly?: true; inlineTypeOnly?: true }[] | undefined =>
+    (JSON.parse(readFileSync(join(dir, ".keylang/cache/facts.json"), "utf8")) as { files: Record<string, { facts: { imports: { source: string; typeOnly?: true; inlineTypeOnly?: true }[] } }> }).files["src/app/order.ts"]?.facts.imports;
+  assert.deepEqual(cached()?.map((fact) => [fact.source, fact.typeOnly, fact.inlineTypeOnly]), [["./price.ts", undefined, true]]);
+  // With it the statement stays `import {} from "./price.ts"` and loads the module: the cycle runs, as before.
+  // The cache of the last run is read as it is: the graph, not the cached facts, reads the tsconfig.
+  const facts = cached();
+  writeTree(dir, { "tsconfig.json": '{ "compilerOptions": { "verbatimModuleSyntax": true } }\n' });
+  assert.equal(cycle(dir), "runs");
+  assert.deepEqual(cached(), facts);
+  assert.deepEqual(moduleEdges(dir), ["import app.order → app.price", "import app.price → app.order"]);
+  writeTree(dir, { "tsconfig.json": '{ "compilerOptions": { "verbatimModuleSyntax": false } }\n' });
+  assert.equal(cycle(dir), "erased");
+
+  // The map prints the dependency and `deny` judges it, erased or not.
+  assert.match(readFileSync(join(dir, "keylang/map/app.md"), "utf8"), /- module \[order\]\([^)]*\)\n {4}- price app\.price\n/);
+  writeTree(dir, { "keylang/rules.md": "# rules\n\n- deny app.order app.price\n" });
+  for (const verbatim of [false, true]) {
+    writeTree(dir, { "tsconfig.json": `{ "compilerOptions": { "verbatimModuleSyntax": ${verbatim} } }\n` });
+    const denied = keylang(dir, ["check"]);
+    assert.equal(denied.status, 1, `verbatimModuleSyntax ${verbatim}: ${denied.stdout}`);
+    assert.match(denied.stdout, /K102 divergence: `app\.order` depends on `app\.price`, which is denied by `deny app\.order app\.price`/);
+  }
+});
+
+test("typescript: a default or a value name beside `type` names, or empty braces, keep the import one that runs; `export { type A } from` with every name `type` is type-only too", (t) => {
+  const dir = typeCycleRepo(t, {
+    "src/app/mixed.ts": 'import { type Price, show } from "./price.ts"; export const m = show;\n',
+    "src/app/both.ts": 'import price, { type Price } from "./price.ts"; export const b = price;\n',
+    "src/app/empty.ts": 'import {} from "./price.ts";\n',
+    "src/app/types.ts": 'export { type Price } from "./price.ts";\n',
+    "src/app/values.ts": 'export { type Price, show } from "./price.ts";\n',
+  });
+  assert.deepEqual(
+    moduleEdges(dir).filter((edge) => edge.endsWith("→ app.price")),
+    ["import app.both → app.price", "import app.empty → app.price", "import app.mixed → app.price", "import typeOnly app.order → app.price", "reexport app.values → app.price", "reexport typeOnly app.types → app.price"],
+  );
+});
+
+test("typescript: the tsconfig that governs a file is the nearest one up to the root, through `extends` (relative or a package in node_modules) and the configs a solution config references; one keylang cannot read keeps the import", (t) => {
+  // The nearest config extends a relative base that sets the option.
+  const dir = typeCycleRepo(t, {
+    "tsconfig.json": '{ "compilerOptions": { "strict": true } }\n',
+    "src/app/tsconfig.json": '{ "extends": "../../tsconfig.base", "compilerOptions": { "noEmit": true } }\n',
+    "tsconfig.base.json": '{ "compilerOptions": { "verbatimModuleSyntax": true } }\n',
+  });
+  assert.equal(cycle(dir), "runs");
+  // A later `extends` entry that sets the option wins over an earlier one, as in tsc; one that does not, does not.
+  writeTree(dir, { "tsconfig.loose.json": '{ "compilerOptions": { "verbatimModuleSyntax": false } }\n', "src/app/tsconfig.json": '{ "extends": ["../../tsconfig.base.json", "../../tsconfig.loose.json"] }\n' });
+  assert.equal(cycle(dir), "erased");
+  writeTree(dir, { "src/app/tsconfig.json": '{ "extends": ["../../tsconfig.base.json", "../../tsconfig.json"] }\n' });
+  assert.equal(cycle(dir), "runs");
+  // Without the nearer config the root one governs.
+  rmSync(join(dir, "src/app/tsconfig.json"));
+  assert.equal(cycle(dir), "erased");
+
+  // A solution config (Vite's) hands its files to the projects it references.
+  writeTree(dir, {
+    "tsconfig.json": '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }] }\n',
+    "tsconfig.app.json": '{ "compilerOptions": { "verbatimModuleSyntax": true }, "include": ["src"] }\n',
+    "tsconfig.node.json": '{ "compilerOptions": { "strict": true }, "include": ["vite.config.ts"] }\n',
+  });
+  assert.equal(cycle(dir), "runs");
+
+  // A package's config, as tsc finds it in node_modules: its `tsconfig.json`, or a path under it.
+  writeTree(dir, { "tsconfig.json": '{ "extends": "@acme/tsconfig" }\n', "node_modules/@acme/tsconfig/tsconfig.json": '{ "compilerOptions": { "strict": true } }\n' });
+  assert.equal(cycle(dir), "erased");
+  writeTree(dir, { "tsconfig.json": '{ "extends": "@acme/tsconfig/strict.json" }\n', "node_modules/@acme/tsconfig/strict.json": '{ "compilerOptions": { "verbatimModuleSyntax": true } }\n' });
+  assert.equal(cycle(dir), "runs");
+  // Not installed: keylang cannot tell, so the import stays one that runs.
+  rmSync(join(dir, "node_modules"), { recursive: true, force: true });
+  writeTree(dir, { "tsconfig.json": '{ "extends": "@acme/tsconfig" }\n' });
+  assert.equal(cycle(dir), "runs");
+  // Nor can it read a tsconfig that is no JSON.
+  writeTree(dir, { "tsconfig.json": '{ "compilerOptions": \n' });
+  assert.equal(cycle(dir), "runs");
 });

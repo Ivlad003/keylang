@@ -45,6 +45,13 @@ export interface SourceResolver {
    * resolver does not say finds only the files that exist (`resolve`).
    */
   wouldName?(fromFile: string, spec: string): string[];
+  /**
+   * TypeScript: whether the tsconfig that governs `file` sets
+   * `verbatimModuleSyntax`, so `import { type A } from` stays `import {} from`
+   * and loads the module. A resolver without it keeps such an import one
+   * that runs.
+   */
+  verbatimModuleSyntax?(file: string): boolean;
 }
 
 /**
@@ -76,6 +83,8 @@ export class ImportResolver {
   private readonly paths: PathRule[];
   private readonly packages: Set<string>;
   private readonly workspaces: string[];
+  /** A config file's text (null: absent), and its JSONC value (null: absent or no JSON). */
+  private readonly text: (file: string) => string | null;
   private readonly read: (file: string) => unknown;
   /** Source files of the analysis: they exist even when the disk does not have them (yet). */
   private readonly sources: ReadonlySet<string>;
@@ -85,6 +94,10 @@ export class ImportResolver {
   private readonly nested = new Map<string, Set<string>>();
   /** Per directory under the root: the `imports` of its `package.json`, null without one. */
   private readonly scopes = new Map<string, PathRule[] | null>();
+  /** Per directory under the root: the tsconfig that governs its files, null without one up to the root. */
+  private readonly governing = new Map<string, string | null>();
+  /** Per governing tsconfig: whether `verbatimModuleSyntax` holds for its files. */
+  private readonly verbatim = new Map<string, boolean>();
   /** Config files read, with their text (null: absent); edges depend on them, so the snapshot id does too. */
   readonly inputs = new Map<string, string | null>();
 
@@ -92,12 +105,17 @@ export class ImportResolver {
     this.root = root;
     this.sources = sources;
     // One read per file: the text hashed into the snapshot id is the text parsed.
-    const read = (file: string): unknown => {
+    const text = (file: string): string | null => {
       const known = this.inputs.get(file);
-      const text = known !== undefined ? known : readText(join(root, file));
-      this.inputs.set(file, text);
-      return text === null ? null : parseJsonc(text);
+      const read = known !== undefined ? known : readText(join(root, file));
+      this.inputs.set(file, read);
+      return read;
     };
+    const read = (file: string): unknown => {
+      const known = text(file);
+      return known === null ? null : parseJsonc(known);
+    };
+    this.text = text;
     this.read = read;
     const configFile = existsSync(join(root, "tsconfig.json")) || !existsSync(join(root, "jsconfig.json")) ? "tsconfig.json" : "jsconfig.json";
     const ts = loadTsconfig(read, configFile);
@@ -107,6 +125,97 @@ export class ImportResolver {
     this.packages = new Set([pkg?.dependencies, pkg?.devDependencies, pkg?.peerDependencies, pkg?.optionalDependencies].flatMap((deps) => (isObject(deps) ? Object.keys(deps) : [])));
     const workspaces = Array.isArray(pkg?.workspaces) ? pkg.workspaces : isObject(pkg?.workspaces) && Array.isArray(pkg.workspaces.packages) ? pkg.workspaces.packages : [];
     this.workspaces = workspaces.filter((w): w is string => typeof w === "string");
+  }
+
+  /**
+   * Whether `compilerOptions.verbatimModuleSyntax` holds for `file`: in the
+   * tsconfig that governs it — the nearest `tsconfig.json` (else
+   * `jsconfig.json`) from its directory up to the root, through `extends` —
+   * or in a config that one `references`, since a solution config (Vite's
+   * `"files": []`) hands its files to those. Read like `paths`: every config
+   * file is an input of the snapshot id, so a changed tsconfig changes edges
+   * on the next run. A config keylang cannot read to the end counts as
+   * setting it (`verbatimSetting`); no config at all is tsc's default, unset.
+   */
+  verbatimModuleSyntax(file: string): boolean {
+    const config = this.governingConfig(posix.dirname(file));
+    if (config === null) return false;
+    const known = this.verbatim.get(config);
+    if (known !== undefined) return known;
+    let held = this.verbatimSetting(config, 0);
+    const raw = this.read(config);
+    for (const ref of isObject(raw) && Array.isArray(raw.references) ? raw.references : []) {
+      if (held === true || held === "unknown") break;
+      const target = isObject(ref) && typeof ref.path === "string" ? posix.normalize(posix.join(posix.dirname(config), toPosix(ref.path))) : null;
+      if (target === null) held = "unknown";
+      // A project outside the root governs no file of this analysis.
+      else if (!target.startsWith("../")) held = this.verbatimSetting(target.endsWith(".json") ? target : posix.join(target, "tsconfig.json"), 1);
+    }
+    const holds = held === true || held === "unknown";
+    this.verbatim.set(config, holds);
+    return holds;
+  }
+
+  /** The tsconfig (else jsconfig) of `dir` or the nearest directory above it, up to the root; null without one. */
+  private governingConfig(dir: string): string | null {
+    const known = this.governing.get(dir);
+    if (known !== undefined) return known;
+    const at = (name: string): string => (dir === "." ? name : `${dir}/${name}`);
+    let found: string | null = null;
+    if (this.text(at("tsconfig.json")) !== null) found = at("tsconfig.json");
+    else if (this.text(at("jsconfig.json")) !== null) found = at("jsconfig.json");
+    else if (dir !== ".") found = this.governingConfig(posix.dirname(dir));
+    this.governing.set(dir, found);
+    return found;
+  }
+
+  /**
+   * `verbatimModuleSyntax` as `file` sets it, its own option first, then its
+   * `extends` from the last (which tsc lets override the earlier ones).
+   * `unknown`: a config in the chain is missing, is no JSON object, is a
+   * package keylang does not find, or the chain is deeper than tsc would go.
+   */
+  private verbatimSetting(file: string, depth: number): boolean | "unset" | "unknown" {
+    if (depth > 5) return "unknown";
+    const raw = this.read(file);
+    if (!isObject(raw)) return "unknown";
+    const options = isObject(raw.compilerOptions) ? raw.compilerOptions : {};
+    const own = options.verbatimModuleSyntax;
+    if (typeof own === "boolean") return own;
+    if (own !== undefined) return "unknown";
+    const parents: unknown[] = raw.extends === undefined ? [] : Array.isArray(raw.extends) ? raw.extends : [raw.extends];
+    for (const parent of [...parents].reverse()) {
+      const target = typeof parent === "string" ? this.extendedConfig(posix.dirname(file), parent) : null;
+      const setting = target === null ? "unknown" : this.verbatimSetting(target, depth + 1);
+      if (setting !== "unset") return setting;
+    }
+    return "unset";
+  }
+
+  /**
+   * The config file an `extends` entry of a config in `dir` names, as tsc
+   * finds it: a relative path (with `.json` added when the path itself is no
+   * file), or a package's config in a `node_modules` from `dir` up to the
+   * root — `<pkg>/<path>.json` as written or with `.json` added, the file the
+   * `tsconfig` field of its `package.json` names, or its `tsconfig.json`.
+   * Null when the entry leads out of the root or no file answers.
+   */
+  private extendedConfig(dir: string, spec: string): string | null {
+    const name = toPosix(spec);
+    if (/^\.\.?(\/|$)/.test(name)) {
+      const path = posix.normalize(posix.join(dir, name));
+      if (path.startsWith("../")) return null;
+      return this.text(path) !== null || path.endsWith(".json") ? path : `${path}.json`;
+    }
+    if (name === "" || name.startsWith("/") || /^[A-Za-z]:/.test(name)) return null;
+    for (let at = dir; ; at = posix.dirname(at)) {
+      const base = at === "." ? `node_modules/${name}` : `${at}/node_modules/${name}`;
+      const field = name.endsWith(".json") ? null : (this.read(`${base}/package.json`) as { tsconfig?: unknown } | null)?.tsconfig;
+      const candidates = name.endsWith(".json") ? [base] : [`${base}.json`, ...(typeof field === "string" ? [posix.normalize(posix.join(base, field))] : []), `${base}/tsconfig.json`];
+      const found = candidates.find((candidate) => this.text(candidate) !== null);
+      if (found !== undefined) return found;
+      if (at === ".") return null;
+    }
   }
 
   /** A package the project declares, or one installed in a `node_modules` at or above the root. */

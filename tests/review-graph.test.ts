@@ -443,7 +443,7 @@ test("python: an import from a module that does not exist is an unresolved impor
   assert.deepEqual(imports, ["4 app.m", "6 app.__init__", "1 unresolved import `.missing.*`", "2 unresolved import `.absent.f`", "3 unresolved import `pkg.absent2.g`"]);
 });
 
-test("typescript: `import type` and `export type … from` are import edges marked `typeOnly`: `no-cycles` skips them, while `deny`, the map, `deps` and `explain` see them; an inline `{ type A }` is an ordinary import", (t) => {
+test("typescript: `import type`, `export type … from` and, without verbatimModuleSyntax, `import { type A }` are import edges marked `typeOnly`: `no-cycles` skips them, while `deny`, the map, `deps` and `explain` see them", (t) => {
   const dir = repo(
     t,
     {
@@ -459,7 +459,8 @@ test("typescript: `import type` and `export type … from` are import edges mark
   );
   const { snapshot } = map(dir);
   const toA = snapshot.edges.filter((e) => e.target === "a.a").map((e) => `${e.kind}${e.typeOnly ? " typeOnly" : ""} ${e.source}:${e.line}`).sort();
-  assert.deepEqual(toA, ["import b.d:1", "import b.e:2", "import typeOnly b.b:1", "reexport typeOnly b.c:1"]);
+  // No tsconfig, so no verbatimModuleSyntax: `import { type A }` is erased like `import type { A }`.
+  assert.deepEqual(toA, ["import b.e:2", "import typeOnly b.b:1", "import typeOnly b.d:1", "reexport typeOnly b.c:1"]);
   assert.deepEqual(snapshot.edges.filter((e) => e.kind === "type" && e.source.split(".").length === 2), [], "no module-to-module `type` edge");
   assert.deepEqual(snapshot.nodes["b.b"]?.deps, ["a.a"]);
   assert.deepEqual(snapshot.nodes["a.a"]?.dependents, ["b.b", "b.c", "b.d", "b.e"]);

@@ -114,7 +114,8 @@ export interface Dep {
   reexport: boolean;
   /**
    * Every import of this kind from the module names types only (TypeScript `import type`,
-   * `export type … from`): erased from the code that runs, so `no-cycles` skips it.
+   * `export type … from`, or every name `type` without `verbatimModuleSyntax`): erased from
+   * the code that runs, so `no-cycles` skips it.
    */
   typeOnly?: true;
 }
@@ -483,8 +484,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
       for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
       // `import type`, `export type … from`: a dependency of types only, erased from the code that
-      // runs. An edge like any other, which `no-cycles` alone skips.
-      const typeOnly = imp.typeOnly ? { typeOnly: true as const } : {};
+      // runs. So is `import { type A }` with every name `type`, unless the file's tsconfig sets
+      // `verbatimModuleSyntax` (then `import {} from` loads the module; a resolver that cannot
+      // tell keeps it). An edge like any other, which `no-cycles` alone skips.
+      const erased = imp.typeOnly === true || (imp.inlineTypeOnly === true && resolverFor(facts.path)?.verbatimModuleSyntax?.(facts.path) === false);
+      const typeOnly = erased ? { typeOnly: true as const } : {};
       const at = { file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text };
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
@@ -492,7 +496,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const kind = same.find((d) => d.reexport === imp.reexport);
         if (!kind) module.deps.push({ alias: same[0]!.alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
         // `import type { A }`, then `import { a }` of the same module: the module runs, from the second import on.
-        else if (kind.typeOnly && !imp.typeOnly) {
+        else if (kind.typeOnly && !erased) {
           Object.assign(kind, at);
           delete kind.typeOnly;
         }

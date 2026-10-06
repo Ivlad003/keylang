@@ -388,6 +388,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const fact = importAt(node, spec, bindings, true);
           if (written !== undefined) fact.text = written;
           if (written !== undefined || typeKeyword(node)) fact.typeOnly = true;
+          else if (clause && inlineTypesOnly(clause, "export_specifier")) fact.inlineTypeOnly = true;
           facts.imports.push(fact);
           break;
         }
@@ -521,6 +522,17 @@ function reactExportOf(callee: Node, react: ReactBindings): { name: string; loca
 /** The `type` keyword of `import type` or `import { type name }` — an unnamed child, not an identifier. */
 function typeKeyword(node: Node): boolean {
   return node.children.some((c) => c.type === "type");
+}
+
+/**
+ * `{ type A, type B as C }` of an import or an `export … from`: at least one
+ * name, and every one of them `type`. Whether such a statement runs is the
+ * tsconfig's to say (`ImportFact.inlineTypeOnly`), so it stays a fact of the
+ * syntax here.
+ */
+function inlineTypesOnly(list: Node, specifier: "import_specifier" | "export_specifier"): boolean {
+  const names = list.namedChildren.filter((c) => c.type === specifier);
+  return names.length > 0 && names.every(typeKeyword);
 }
 
 /** `import { type memo as m }`: the specifier that binds `local` is type-only. */
@@ -999,9 +1011,12 @@ function importStatement(node: Node): ImportFact[] {
       }
     }
   }
-  // `import type …` is erased from the code that runs. `import { type A }` is not: it stays `import {} from` under `verbatimModuleSyntax`.
+  // `import type …` is erased from the code that runs. `import { type A }` is erased unless
+  // `verbatimModuleSyntax` keeps it as `import {} from`: the graph decides, with the tsconfig.
   const fact = importAt(node, spec, bindings, false);
+  const parts = clause?.namedChildren.filter((c) => c.type !== "comment") ?? [];
   if (typeKeyword(node)) fact.typeOnly = true;
+  else if (parts.length === 1 && parts[0]!.type === "named_imports" && inlineTypesOnly(parts[0]!, "import_specifier")) fact.inlineTypeOnly = true;
   return [fact];
 }
 

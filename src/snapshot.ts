@@ -17,7 +17,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 7;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.11";
+export const EXTRACTOR_VERSION = "m1.12";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -58,8 +58,9 @@ export interface SnapshotEdge {
   closure?: true;
   /**
    * An import or re-export of types only (TypeScript `import type`, `export type … from`,
-   * `export type * from`), erased from the code that runs: `no-cycles` skips it, other rules
-   * and the map see it as any import.
+   * `export type * from`; `import { type A }` and `export { type A } from` with every name `type`
+   * when the file's tsconfig does not set `verbatimModuleSyntax`), erased from the code that
+   * runs: `no-cycles` skips it, other rules and the map see it as any import.
    */
   typeOnly?: true;
 }
