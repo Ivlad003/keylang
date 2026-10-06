@@ -19,8 +19,13 @@ RUN apt-get update \
   # A mounted /work belongs to the host's user; git refuses such a tree without this.
   && git config --system safe.directory '*'
 COPY --from=pack /keylang.tgz /tmp/keylang.tgz
-# Voice (whisper, microphone) is optional and has no use in a container: ~300 MB less.
-RUN npm install --global --omit=dev --omit=optional /tmp/keylang.tgz && rm /tmp/keylang.tgz \
+# Voice (whisper, microphone) is optional and has no use in a container. npm 10
+# installs optionalDependencies even with --omit=optional, so they are removed:
+# ~290 MB less, and keylang treats them as absent (`doctor` says so).
+RUN npm install --global --omit=dev /tmp/keylang.tgz && rm /tmp/keylang.tgz \
+  && rm -rf /usr/local/lib/node_modules/keylang/node_modules/@fugood \
+    /usr/local/lib/node_modules/keylang/node_modules/@decibri \
+    /usr/local/lib/node_modules/keylang/node_modules/decibri \
   && mkdir -p /cache /work && chown node:node /cache /work
 # Clones live in the volume: a rerun of `clone` fetches instead of cloning again.
 ENV XDG_CACHE_HOME=/cache
