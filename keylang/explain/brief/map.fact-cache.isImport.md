@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=c9c1bb2c63542801f500cbc8563c7ae6b324bf93f0a2218fc991b62372611311 lang=en detail=brief -->
-Type guard that checks whether an unknown value is a well-formed cached import record: string source and text, a range via `map.fact-cache.isRange`, boolean flags, and valid module/default/named bindings via `map.fact-cache.every`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=c2a878398df0b6b549e0d3d75cd85179b7bc0b4967067dcc0dd347512ae8256f lang=en detail=brief -->
+Type guard that validates a cached import fact: a record with string source and text, a valid range via `map.fact-cache.isRange`, boolean reexport, optional true-only flags, and well-formed module, default or named bindings.

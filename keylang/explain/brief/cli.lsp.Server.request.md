@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=523acca92b00a30c74166ae035f737b8b5e89855beff0ec82c185391c13d9ac2 lang=en detail=brief -->
-Dispatches an LSP request after enforcing initialize/shutdown ordering, syncs any inline buffer text, then waits for an up-to-date workspace via `cli.lsp.Server.current` and routes to the matching handler such as `features.lsp-features.hover`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=ea71a8bc59413c368c29d5a2766cb47bd01ef6ae4b1ebd85a375a32411a3edf9 lang=en detail=brief -->
+Dispatches an LSP request after enforcing the initialize/shutdown lifecycle, syncing any inline buffer text, then waits on `cli.lsp.Server.current` and routes to feature handlers like `features.lsp-features.hover`. Unknown methods raise `cli.lsp.LspError`.

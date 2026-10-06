@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9143347235315953b9d67d7ed931c9053940eabb18789be7e14819daa4cf620c lang=en detail=brief -->
-Compiles the spec, resolves IDs, and evaluates rules (`check.rules.evaluateRules`), flows (`check.flows.evaluateFlows`), and wiring against a snapshot, returning sorted diagnostics, unverified ID verdicts, and recovery-adjusted verdicts.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=fc64eecdc013e2fd7f47d8730c2e7aa1c270a8d67fec7a45690422456cc77c65 lang=en detail=brief -->
+Compiles the spec and resolves IDs against the snapshot, then runs rule, flow and wiring checks via `check.rules.evaluateRules`, `check.flows.evaluateFlows` and `check.wiring.checkWiring`. Returns sorted diagnostics and merged verdicts.

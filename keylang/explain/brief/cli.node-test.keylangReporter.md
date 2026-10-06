@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d59e19e58cf3d801769ce6099a823183133ecb631b5a3c35f6f973aa281de453 lang=en detail=brief -->
-Node test-runner reporter that records each test's file, enclosing suite path and pass/fail/skip status, then writes a JSON report with a `cli.run-id.runId` ID. Its snapshot ID comes from `map.map.generateMap` and is nulled if code changed mid-run.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=982735404130f2bba1eb9205b12922467616667a9959dfc796168d5a850e66bd lang=en detail=brief -->
+Node test-runner reporter that collects pass/fail/skip results with suite paths, then writes a JSON report with a `cli.run-id.runId` ID. Its snapshot ID comes from `map.map.generateMap` and is kept only if code didn't change during the run.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bdf1de0b6babe7747957e8a5ca4e5a9a45775a825cf52d856d4524f43cecf1a6 lang=en detail=brief -->
-The terminal editor session holds all state, decodes and routes input, renders diffs to the surface, and edits buffers. It runs analyses and operations, gating commits, via helpers such as `tui.merge-session.MergeSession` and `tui.results-panel.ResultsPanel`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=d50c0f124176e8522500f7ca0d1546e1d1d0158be0e5f23adcc190017514d01e lang=en detail=brief -->
+The terminal editor session: holds editor state, routes keys and mouse via `tui.app.App.handle`, edits and saves spec buffers, reruns analysis, and runs operations with save and commit gates, wiring `tui.merge-session.MergeSession` and `tui.results-panel.ResultsPanel`.

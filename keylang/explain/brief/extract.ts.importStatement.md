@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=af082a47bef7a1209fd2c983bd7b2eb7a2bb3b555b899a0ee46011b849c27d73 lang=en detail=brief -->
-Turns a TypeScript import statement into import facts via `extract.ts.importAt`, collecting default, namespace, named/aliased and `import = require` bindings, and marks `import type` as type-only via `extract.ts.typeKeyword`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=bdf972a9db0d5f0035f61d96ad002790c9b4938207596727005e0ef880cdb894 lang=en detail=brief -->
+Turns a TypeScript import statement into an import fact via `extract.ts.importAt`, recording default, namespace, named, and `import = require` bindings. It flags type-only imports using `extract.ts.typeKeyword` and `extract.ts.inlineTypesOnly`.

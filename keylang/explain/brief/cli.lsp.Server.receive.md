@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=c286cac19593592418e79a12fda0e4c0b8c7aab6e863c0171498027cc776c95b lang=en detail=brief -->
-Dispatches an incoming JSON-RPC message: invalid ids or methods are refused via `cli.lsp.Server.reject`, notifications go to `cli.lsp.Server.notify`, and requests run through `cli.lsp.Server.request` with replies suppressed if cancelled.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=cc5e8d4196732318374954ba248c77bad56334b4e50f8a1e7dc97bb06c68d57d lang=en detail=brief -->
+Dispatches each incoming JSON-RPC message: invalid ids or methods go to `cli.lsp.Server.reject`, notifications to `cli.lsp.Server.notify` (errors logged), and requests to `cli.lsp.Server.request`, sending replies unless cancelled.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4dbc9a2ca1bcbc426db644b92033983e36d47501c7c34f4bee23d4aab797e03d lang=en detail=brief -->
-Validates and dispatches JSON-RPC messages via `cli.lsp.Server.receive`, tracking open buffers and cancelled requests. Edits trigger a debounced, one-at-a-time re-analysis whose diagnostics `cli.lsp.Server.publish` sends.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=adc619f7f6a8d4365153f48743a581d14f9954f59efef8c244432fa975a6b124 lang=en detail=brief -->
+Keylang's JSON-RPC language server: it holds open-file text as an overlay, debounces edits into analyses that run one at a time, publishes diagnostics, and answers or cancels requests via `cli.lsp.Server.request`.

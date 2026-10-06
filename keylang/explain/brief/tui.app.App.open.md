@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0a820f88f0f7ad8df9b1399711833c6c37e208452b4c295677a6320805fe5ee2 lang=en detail=brief -->
-Shows a file in the editor view at a given cursor via `tui.app.App.load`, optionally pushing the current place onto the back history, closing overlay modes and clearing selection, completion and hover state.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=aa604558ec34ad2032c420ce1bcaf7b30a1bfdbcfee3175fbfb4b45b6a968223 lang=en detail=brief -->
+Switches the editor to a file at a given cursor, optionally pushing the previous place onto the back stack, loading it via `tui.app.App.load`, leaving start/code/merge/zoom screens for view, and re-scrolling.

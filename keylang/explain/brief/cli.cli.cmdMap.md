@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=008c4d8e7face43170afd8736e6b17a5f90b7fc49a853cddc245c0974cd9bcc6 lang=en detail=brief -->
-Resolves the target directory and runs the shared map operation, printing results via `cli.cli.printMap`; in check mode it prints warnings and `operations.generate.mapCheckLines` output with cwd-relative paths, returning the exit code.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=263aabe3bf29492cf79b6cabba1ff353cb9f3ea7fcf403e9bb4ac9c4f316dcd3 lang=en detail=brief -->
+Runs the map operation via `operations.operations.runOperation` and prints it with `cli.cli.printMap`. In check mode, it prints errors or warnings plus `operations.generate.mapCheckLines` output and returns the exit code.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=ebb40a9313d6fd6005664b89f74750bfdeb0f8142d40846332fa17cbe727b182 lang=en detail=brief -->
-Decodes a terminal chunk, merging pasted key runs into one paste event and dispatching the rest via `tui.app.App.safely`. Schedules a flush for pending escape/paste input and redraws; ignored once closed.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=edf0c3679914c97a8e90bbf6458be50437bcd32ad25ba9278e6bd6feda222c78 lang=en detail=brief -->
+Decodes a raw terminal chunk via `tui.input.InputDecoder.feed`, dispatching multi-key typed runs detected by `tui.app.pastedRun` as one paste and other keys singly through `tui.app.App.safely`, then redraws. Pending escapes or pastes flush on a timer; closed sessions ignore…

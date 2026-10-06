@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=acf7cbbb681bac236130c35102701b7b0886f633c52856d8e3ff162ec1ee7fed lang=en detail=brief -->
-Looks up an ID in the analysis index and opens the declaring spec file via `tui.app.App.open`, placing the cursor at the declaration's start. Sets a status message instead when no analysis or ID exists or it's undeclared.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=03270b411fbdba953b0ce9d706a836e134b20b2040dcac7857cfeb9fa85868cd lang=en detail=brief -->
+Jumps the editor to where an ID is declared in a spec, opening that file via `tui.app.App.open` with the cursor placed using `tui.width.clusterAt`; shows a status message if no ID is given or it's undeclared.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4064c59f46c9e719f9fb64ed60518068a2c4cc2df702e8759fc6e7d9b72c1ce7 lang=en detail=brief -->
-Turns parsed file facts into the architecture graph: places files into layer modules, registers declarations, resolves imports to dependencies and external packages via `map.declared-packages.readManifests`, and records gaps and warnings.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=9668436bd2f0354adc7c866997c018f4d3977cddddbacad39d85d1c31f772674 lang=en detail=brief -->
+Turns analyzed files into the architecture graph: places them into layered modules, registers declarations, resolves imports, exports and calls into edges, and records unresolved spots as gaps and warnings.

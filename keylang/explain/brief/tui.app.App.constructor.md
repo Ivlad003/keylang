@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=69dda43a0befd09a1dcaa2042c69b6d6b2f1b306d0564414e76b8cb70fc3cf61 lang=en detail=brief -->
-Builds the editor's initial state and wires helpers (`tui.merge-session.MergeSession`, `tui.assist.Assist`, forms, `tui.results-panel.ResultsPanel`) via closures, opens a first file from disk, then shows the start screen, config error, or calls `tui.app.App.reanalyze`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=7bb857e9dd73447aa6aa1da05dfd6bcac978d6f80f90c9bf6f409fc778ca5b50 lang=en detail=brief -->
+Builds the editor's initial state and wires helpers (`tui.merge-session.MergeSession`, `tui.assist.Assist`, forms, `tui.results-panel.ResultsPanel`) through closures, opens a first file from disk, then shows the start screen, config error, or `tui.app.App.reanalyze`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=418a72bf94746fd390199fc602c5487c023530725162d49816ace0266f3af6f4 lang=en detail=brief -->
-Validates spec-to-code CLI options (planned id required, `--apply` and `--print` exclusive, mode `algo` or `llm`) and resolves the repo root via `map.analyze.findRoot`. Dispatches to `cli.cli.specToCodeApplyPrinter` when applying, otherwise to `cli.cli.specToCodePrinter`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4aec89f4e7eb3b7d836b4b55e0ed5c3611743c31ad4c1c6e53be076aec38eff5 lang=en detail=brief -->
+Validates the spec-to-code options (planned id required, mode `algo` or `llm`, not both apply and print), then locates the repo root via `map.analyze.findRoot`. Dispatches to `cli.cli.specToCodeApplyPrinter` or `cli.cli.specToCodePrinter`.

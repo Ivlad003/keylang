@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=ca52638a41dd28846bb15235345b9c8652839d02989f31ad814f8d6b57abea88 lang=en detail=brief -->
-Builds a parent map and module-header set via `extract.ts.parentIndex` and `extract.ts.moduleHeader`, runs `extract.ts.extractIndexed`, attaches any header doc to the facts, and always resets that shared state afterward.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=906cc4ceb8a2e2c9f0b2ba6e98b32dd8fbbd5c2bfa7141560965ab11e5312ba1 lang=en detail=brief -->
+Sets up module-level parent and header-node state via `extract.ts.parentIndex` and `extract.ts.moduleHeader`, then runs `extract.ts.extractIndexed` and attaches the module doc comment to the returned facts. Always resets that shared state afterwards.

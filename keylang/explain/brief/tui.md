@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=850aea25469df00519cccbe3a95239382ad970a4ec4b8cc222794b1e6aba0c94 lang=en detail=brief -->
-The interactive spec editor, served in a terminal or a browser tab via `tui.web`, with gutter evidence marks, navigation, zoom and merge review; map building runs in a worker from `tui.background`, as it may not use extraction or tree-sitter directly.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0041fe09e35c08f940752e82f456846dd5dfe2d278a9363e134addcf70eaf762 lang=en detail=brief -->
+The interactive editor shared by terminal and browser: a session with spec buffers, an evidence gutter, navigation, merge, zoom and off-thread analysis, drawn as ANSI frames. It must not use `extract` or web-tree-sitter directly.

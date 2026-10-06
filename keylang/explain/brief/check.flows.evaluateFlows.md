@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=360ba25dc213f0e2ed1ec146c9610cb3c57456398c5cb067deb3792a75960133 lang=en detail=brief -->
-Walks each spec flow and emits static, trace and test verdicts per step, call, claim and test, using `check.flows.reachability`, `check.trace-evidence.traceFlow` and `check.test-report.matchTest`. Planned steps stay unverified; missing test files raise K203.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e7eb8fe86af9de9b7f0e362aff8167a30afe431b1e87fef16142c0470bde4b05 lang=en detail=brief -->
+Walks each spec flow's steps, calls and claims to emit static reachability (`check.flows.reachability`), trace (`check.trace-evidence.traceFlow`) and test verdicts, plus K203 diagnostics for missing test files.

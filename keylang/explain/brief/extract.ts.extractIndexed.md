@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6b7b5873e657df7fe67876050bd0847937bd1956471eae2767a768ff7d63e079 lang=en detail=brief -->
-Walks a parsed TS/JS syntax tree's top-level statements to build its file facts: imports, requires, re-exports, declarations with their calls and JSX/React component uses, and exports. It marks the file opaque when nesting is too deep.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=338345d48bccdf4cdb30e7412f19089268128bef06dd09dbc5de1bc1f5af3fcd lang=en detail=brief -->
+Walks a parsed TS/JS syntax tree's top-level statements to build its file facts: imports, `require` bindings, declarations with their calls and JSX uses, and exports. It marks the file opaque when nesting is too deep.

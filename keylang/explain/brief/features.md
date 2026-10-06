@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=da583c4a1ed8b6256c01aec3ca9de0a2a11f6f25f7c520fcb9b6716e8c5459a0 lang=en detail=brief -->
-User-facing capabilities on top of the analysis: check reports and filtering (`features.check-results`, `features.changed`), flow drafting, explanations, and editor support (`features.lsp-features`). Model calls go through `features.llm`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f61d7bd99b341a64e2d6107a65f6026f70f92b449a6d1ea0b2de64293a6cdeb2 lang=en detail=brief -->
+The user-facing capabilities behind the CLI, TUI, LSP and MCP: check reporting (`features.check-results`), node explanations (`features.explain-node`), flow drafting (`features.draft`), model calls (`features.llm`), and voice input (`features.voice`).

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=5be2077a2a9750a2f22a4a19b589519fa2cc5fcf9d792caedf6696e374c45375 lang=en detail=brief -->
-Indexes call edges from the flow input into resolved steps, unresolved edges and reverse callers, redirecting class targets to their constructors. It also maps function names (caselessly where applicable), unsupported files and an opaque module, merged with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=9e4631bf9bbd0451ecfee04e80622234ce924f6610a17b9a410309be735d1fd5 lang=en detail=brief -->
+Indexes call edges into resolved, unresolved and caller maps (mapping class targets to their constructors), plus function lookups by name and caseless name, unsupported coverage, and doubtful bodies via `check.flows.doubtfulBodies`.

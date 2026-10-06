@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e775e62693c43cfb8f03d7830859cb8db14474119a8e0f8420f6ae2ce4409a8d lang=en detail=brief -->
-Validates explain flags, then routes to `cli.cli.cmdExplainBatch` for missing/stale batches, `cli.cli.explainPlanPrinter` for saved stale plans, or `operations.operations.runOperation` for offline or LLM explanations, printing the text.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0db566aa44df328f3201b3d5f5d0a41df1f9e94883305cc27d9c2f5c738f3db6 lang=en detail=brief -->
+Validates explain flags, then routes to `cli.cli.cmdExplainBatch` for missing/stale batches, `cli.cli.explainPlanPrinter` for stale listings, or `operations.operations.runOperation` for offline or model explanations, printing the text.

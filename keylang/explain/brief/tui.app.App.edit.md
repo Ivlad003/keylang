@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=f46935bf473103d9b83e712f500c8facc9b01d5e675f62c5e2b2f6380c89d1e5 lang=en detail=brief -->
-Applies a line-level mutation to the active buffer, refusing read-only files, pushing a capped undo snapshot (optionally coalesced), and clearing any pending merge undo. It then writes text via `tui.buffer.setText`, fixes the cursor and viewport, and calls…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e9a0408df825f5c50af25bdbc0c447f3a911c2abc76d6c5150bb5ca5e96b8c5d lang=en detail=brief -->
+Applies a line-level change to the current buffer, refusing read-only files via `tui.app.App.readOnlyReason` and pushing capped, optionally coalesced undo snapshots, then writes text with `tui.buffer.setText` and schedules reanalysis.

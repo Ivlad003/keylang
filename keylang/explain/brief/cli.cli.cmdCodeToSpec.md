@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1180670c9ed64b9ad454bf7ac6380187535e9d783047632a2fcc620326302f63 lang=en detail=brief -->
-Requires either a file path (optionally `:line`) or a `--since` git ref, then runs `map.analyze.analyze` without evidence from the project root. Builds a root-relative source and delegates to `cli.cli.codeToSpecPrinter`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=d0793af2037efce4195ce700ef2f20b32bec8ab64d8cf7bc17dca2e0147e8804 lang=en detail=brief -->
+Validates that exactly one of a `path[:line]` or a `--since` git ref is given, runs `map.analyze.analyze` from the project root, and hands the resolved file/line or ref source to `cli.cli.codeToSpecPrinter`.

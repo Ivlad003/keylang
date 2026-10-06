@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=269165ee547c4b52284ec4a6ec3d3f0ebfdb6e9f7082e5d39267a24dacd79bfb lang=en detail=brief -->
-Validates specs against code: resolves IDs, checks rules, flows and wiring, and turns test reports and traces into ok/fail/unverified verdicts. Must not depend on extract or web-tree-sitter.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=12ba2bb8c64db10ef9c3f629e7221e7a1c1e6809ad36734b33daeb6508d25801 lang=en detail=brief -->
+Turns specs and analysis snapshots into diagnostics and ok/fail/unverified verdicts for IDs, rules, flows and wiring. It may not depend on `extract` or `external.web-tree-sitter`.

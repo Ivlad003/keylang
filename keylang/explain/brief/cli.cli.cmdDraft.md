@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=8760dde613b781d14540e00f4371ef433ae5058e07c094063cfe2e09fc7ee863 lang=en detail=brief -->
-Dispatches the `draft` subcommand: hands `rules`/`map` to `cli.cli.cmdDraftLayout`, otherwise validates a `flow` trigger and mode (algo, llm, hybrid) and runs `cli.cli.draftFlowPrinter` from the root found by `map.analyze.findRoot`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4042e4e28098ae6f49282c93635342270ba9b5bf3571f98d80c463079fc46dc0 lang=en detail=brief -->
+Dispatches the draft subcommand: `rules` or `map` go to `cmdDraftLayout`, while `flow <trigger>` checks the trigger and mode (algo, llm or hybrid) and then calls `draftFlowPrinter` from the root that `findRoot` locates.

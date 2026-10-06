@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d5559dcb033ca22abb6250f1d6d24a349560f7aa0f6a1582518552940b4bda30 lang=en detail=brief -->
-Routes each input event to the active surface: mouse via `tui.app.App.mouse`, pastes into prompt or editor, keys through quit, help, prompt and results overlays, then by mode to handlers like `tui.app.App.editKey`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=7b862cf370d89487b9eac575d7d5de6d666424a1656cf9b4a3f8300a8a7aeaad lang=en detail=brief -->
+Central input dispatcher: routes mouse, paste and key events through modal layers (quit, help, save barrier, prompts, results panel) to function keys and per-mode handlers like `tui.app.App.editKey` or `tui.merge-session.MergeSession.key`.
