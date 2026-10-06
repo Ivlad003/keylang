@@ -1,6 +1,6 @@
 # 0021. Скрепка: вбудований агент у плаваючому вікні TUI
 
-**Дата:** 2026-10-06 · **Статус:** прийнято 2026-10-06, не реалізовано (`.scratch/tui-clip/`) · **Джерело:** запит автора 2026-10-06 («асистент на кшталт скрепки у Word 95»), його відповіді на чотири питання того ж дня; [ADR 0019](0019-tui-assistant-without-harness.md); дослідження [research-c4-zoom-literature.md §7](../archive/research-c4-zoom-literature.md#7-асистент-clippy-mixed-initiative-проактивність) і [research-c4-zoom-tools.md](../archive/research-c4-zoom-tools.md)
+**Дата:** 2026-10-06 · **Статус:** прийнято й реалізовано 2026-10-06 (`.scratch/tui-clip/`, тікети 01–06) · **Джерело:** запит автора 2026-10-06 («асистент на кшталт скрепки у Word 95»), його відповіді на чотири питання того ж дня; [ADR 0019](0019-tui-assistant-without-harness.md); дослідження [research-c4-zoom-literature.md §7](../archive/research-c4-zoom-literature.md#7-асистент-clippy-mixed-initiative-проактивність) і [research-c4-zoom-tools.md](../archive/research-c4-zoom-tools.md)
 
 ## Контекст
 
