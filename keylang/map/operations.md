@@ -13,9 +13,30 @@
     - code operations.code
     - export operations.export
     - doctor operations.doctor
+    - assistant operations.assistant
     - shared operations.shared
-    - fn [runOperation](../../src/operations.ts#L32) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
-      - calls operations.doctor.runDoctor, operations.feature.runFeature, operations.feature.runFeatureQuestions, operations.export.runExportC4, operations.generate.runMapCheck, operations.generate.runMap, operations.generate.runBaseline, operations.generate.runAgents, operations.spec.runFmt, operations.generate.runWire, operations.spec.runCheck, operations.spec.runExplainEdge, operations.explain.runExplain, operations.explain.runExplainLlm, operations.explain.runExplainPlan, operations.explain.runExplainBatch, operations.generate.runInit, operations.export.runExport, operations.spec.runParse, operations.spec.runTracePlan, operations.draft.runDraftFlow, operations.draft.runDraftRules, operations.draft.runDraftLayout, operations.draft.runCodeToSpec, operations.code.runSpecToCode, operations.code.runApplyCode
+    - fn [runOperation](../../src/operations.ts#L34) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
+      - calls operations.doctor.runDoctor, operations.feature.runFeature, operations.feature.runFeatureQuestions, operations.export.runExportC4, operations.generate.runMapCheck, operations.generate.runMap, operations.generate.runBaseline, operations.generate.runAgents, operations.spec.runFmt, operations.generate.runWire, operations.spec.runCheck, operations.spec.runExplainEdge, operations.explain.runExplain, operations.explain.runExplainLlm, operations.explain.runExplainPlan, operations.explain.runExplainBatch, operations.generate.runInit, operations.export.runExport, operations.spec.runParse, operations.spec.runTracePlan, operations.draft.runDraftFlow, operations.draft.runDraftRules, operations.draft.runDraftLayout, operations.draft.runCodeToSpec, operations.code.runSpecToCode, operations.code.runApplyCode, operations.assistant.runAssistantReply
+  - module [assistant](../../src/operations/assistant.ts#L1)
+    - node external.node
+    - config base.config
+    - diag base.diag
+    - shared operations.shared
+    - types operations.types
+    - llm features.llm
+    - fn [assistantSystem](../../src/operations/assistant.ts#L29) (specDir: string) → string
+    - fn [recentTurns](../../src/operations/assistant.ts#L46) (history: readonly ChatTurn[], budget = HISTORY_CHARS) → { turns: ChatTurn[]; dropped: number }
+    - fn [fileWindow](../../src/operations/assistant.ts#L63) (text: string, line: number, count = FILE_LINES) → { first: number; last: number; total: number; text: string }
+    - fn [assistantPrompt](../../src/operations/assistant.ts#L79) (request: AssistantReplyRequest, specDir: string) → LlmRequest
+      - calls operations.assistant.fileWindow, operations.assistant.fenced, operations.assistant.listOf, operations.assistant.recentTurns, operations.assistant.assistantSystem
+    - fn [listOf](../../src/operations/assistant.ts#L98) (lines: readonly string[]) → string <!-- internal -->
+    - fn [fenced](../../src/operations/assistant.ts#L103) (text: string) → string <!-- internal -->
+    - fn [parseReply](../../src/operations/assistant.ts#L121) (answer: string) → Pick<AssistantReplyPayload, "reply" | "proposal" | "dropped">
+      - calls operations.assistant.closes
+    - fn [closes](../../src/operations/assistant.ts#L150) (line: string, fence: string) → boolean <!-- internal -->
+    - fn [runAssistantReply](../../src/operations/assistant.ts#L162) (request: AssistantReplyRequest, context: OperationContext) → Promise<OperationEnvelope<"assistant-reply">>
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, operations.assistant.assistantPrompt, operations.shared.rootRelative, operations.assistant.parseReply, operations.assistant.replyMessages
+    - fn [replyMessages](../../src/operations/assistant.ts#L197) (payload: AssistantReplyPayload) → OperationMessage[] <!-- internal -->
   - module [code](../../src/operations/code.ts#L1)
     - node external.node
     - analyze map.analyze
@@ -365,55 +386,58 @@
     - type [ExportRequest](../../src/operations/types.ts#L500)
     - type [ExportC4Request](../../src/operations/types.ts#L515)
     - type [InitRequest](../../src/operations/types.ts#L535)
-    - type [OperationRequest](../../src/operations/types.ts#L548)
-    - type [OperationContext](../../src/operations/types.ts#L554)
-    - type [OperationProgress](../../src/operations/types.ts#L576)
-    - type [BatchStep](../../src/operations/types.ts#L582)
-    - type [CommitPlan](../../src/operations/types.ts#L593)
-    - type [CommitGate](../../src/operations/types.ts#L599) = void | { refused: string[] }
-    - type [OperationStatus](../../src/operations/types.ts#L602) = "completed" | "failed" | "cancelled"
-    - type [OperationMessage](../../src/operations/types.ts#L605)
-    - type [DoctorPayload](../../src/operations/types.ts#L612)
-    - type [FeatureQuestionsPayload](../../src/operations/types.ts#L661)
-    - type [ExportC4Payload](../../src/operations/types.ts#L675)
-    - type [FeaturePayload](../../src/operations/types.ts#L685)
-    - type [MapCheckPayload](../../src/operations/types.ts#L696)
-    - type [MapPayload](../../src/operations/types.ts#L715)
-    - type [BaselinePayload](../../src/operations/types.ts#L731)
-    - type [AgentsPayload](../../src/operations/types.ts#L759)
-    - type [FmtFile](../../src/operations/types.ts#L786)
-    - type [FmtPayload](../../src/operations/types.ts#L801)
-    - type [ParsePayload](../../src/operations/types.ts#L807)
-    - type [TracePlanPayload](../../src/operations/types.ts#L822)
-    - type [FlowCandidate](../../src/operations/types.ts#L836)
-    - type [DraftFlowPayload](../../src/operations/types.ts#L856)
-    - type [RulesCandidate](../../src/operations/types.ts#L881)
-    - type [DraftRulesPayload](../../src/operations/types.ts#L897)
-    - type [CodeFlow](../../src/operations/types.ts#L921)
-    - type [CodeToSpecCandidate](../../src/operations/types.ts#L935)
-    - type [CodeToSpecPayload](../../src/operations/types.ts#L960)
-    - type [CodeModelInfo](../../src/operations/types.ts#L987)
-    - type [CodeProposalTarget](../../src/operations/types.ts#L996)
-    - type [SpecToCodeCandidate](../../src/operations/types.ts#L1012)
-    - type [CandidateBasis](../../src/operations/types.ts#L1028) extends SourceInputs
-    - type [AppliedFile](../../src/operations/types.ts#L1034)
-    - type [ApplyCodePayload](../../src/operations/types.ts#L1043)
-    - type [SpecCodeModelInfo](../../src/operations/types.ts#L1054)
-    - type [SpecToCodePayload](../../src/operations/types.ts#L1061)
-    - type [DraftLayoutPayload](../../src/operations/types.ts#L1078)
-    - type [RulesModelInfo](../../src/operations/types.ts#L1094)
-    - type [DraftModelInfo](../../src/operations/types.ts#L1102)
-    - type [WirePayload](../../src/operations/types.ts#L1113)
-    - type [CheckPayload](../../src/operations/types.ts#L1141)
-    - type [ChangedSlice](../../src/operations/types.ts#L1166)
-    - type [ExplainEdgePayload](../../src/operations/types.ts#L1181) extends EdgeExplanation
-    - type [ExplainPayload](../../src/operations/types.ts#L1189)
-    - type [ExplainLlmPayload](../../src/operations/types.ts#L1202)
-    - type [ExplainPlanPayload](../../src/operations/types.ts#L1232)
-    - type [ExplainBatchPayload](../../src/operations/types.ts#L1248)
-    - type [ExportPayload](../../src/operations/types.ts#L1273)
-    - type [InitPayload](../../src/operations/types.ts#L1295)
-    - type [GitignoreStage](../../src/operations/types.ts#L1327)
-    - type [OperationPayloads](../../src/operations/types.ts#L1341)
-    - type [OperationResult](../../src/operations/types.ts#L1371)
-    - type [OperationEnvelope](../../src/operations/types.ts#L1374)
+    - type [ChatTurn](../../src/operations/types.ts#L548)
+    - type [AssistantReplyRequest](../../src/operations/types.ts#L560)
+    - type [OperationRequest](../../src/operations/types.ts#L584)
+    - type [OperationContext](../../src/operations/types.ts#L590)
+    - type [OperationProgress](../../src/operations/types.ts#L612)
+    - type [BatchStep](../../src/operations/types.ts#L618)
+    - type [CommitPlan](../../src/operations/types.ts#L629)
+    - type [CommitGate](../../src/operations/types.ts#L635) = void | { refused: string[] }
+    - type [OperationStatus](../../src/operations/types.ts#L638) = "completed" | "failed" | "cancelled"
+    - type [OperationMessage](../../src/operations/types.ts#L641)
+    - type [DoctorPayload](../../src/operations/types.ts#L648)
+    - type [FeatureQuestionsPayload](../../src/operations/types.ts#L697)
+    - type [AssistantReplyPayload](../../src/operations/types.ts#L711)
+    - type [ExportC4Payload](../../src/operations/types.ts#L723)
+    - type [FeaturePayload](../../src/operations/types.ts#L733)
+    - type [MapCheckPayload](../../src/operations/types.ts#L744)
+    - type [MapPayload](../../src/operations/types.ts#L763)
+    - type [BaselinePayload](../../src/operations/types.ts#L779)
+    - type [AgentsPayload](../../src/operations/types.ts#L807)
+    - type [FmtFile](../../src/operations/types.ts#L834)
+    - type [FmtPayload](../../src/operations/types.ts#L849)
+    - type [ParsePayload](../../src/operations/types.ts#L855)
+    - type [TracePlanPayload](../../src/operations/types.ts#L870)
+    - type [FlowCandidate](../../src/operations/types.ts#L884)
+    - type [DraftFlowPayload](../../src/operations/types.ts#L904)
+    - type [RulesCandidate](../../src/operations/types.ts#L929)
+    - type [DraftRulesPayload](../../src/operations/types.ts#L945)
+    - type [CodeFlow](../../src/operations/types.ts#L969)
+    - type [CodeToSpecCandidate](../../src/operations/types.ts#L983)
+    - type [CodeToSpecPayload](../../src/operations/types.ts#L1008)
+    - type [CodeModelInfo](../../src/operations/types.ts#L1035)
+    - type [CodeProposalTarget](../../src/operations/types.ts#L1044)
+    - type [SpecToCodeCandidate](../../src/operations/types.ts#L1060)
+    - type [CandidateBasis](../../src/operations/types.ts#L1076) extends SourceInputs
+    - type [AppliedFile](../../src/operations/types.ts#L1082)
+    - type [ApplyCodePayload](../../src/operations/types.ts#L1091)
+    - type [SpecCodeModelInfo](../../src/operations/types.ts#L1102)
+    - type [SpecToCodePayload](../../src/operations/types.ts#L1109)
+    - type [DraftLayoutPayload](../../src/operations/types.ts#L1126)
+    - type [RulesModelInfo](../../src/operations/types.ts#L1142)
+    - type [DraftModelInfo](../../src/operations/types.ts#L1150)
+    - type [WirePayload](../../src/operations/types.ts#L1161)
+    - type [CheckPayload](../../src/operations/types.ts#L1189)
+    - type [ChangedSlice](../../src/operations/types.ts#L1214)
+    - type [ExplainEdgePayload](../../src/operations/types.ts#L1229) extends EdgeExplanation
+    - type [ExplainPayload](../../src/operations/types.ts#L1237)
+    - type [ExplainLlmPayload](../../src/operations/types.ts#L1250)
+    - type [ExplainPlanPayload](../../src/operations/types.ts#L1280)
+    - type [ExplainBatchPayload](../../src/operations/types.ts#L1296)
+    - type [ExportPayload](../../src/operations/types.ts#L1321)
+    - type [InitPayload](../../src/operations/types.ts#L1343)
+    - type [GitignoreStage](../../src/operations/types.ts#L1375)
+    - type [OperationPayloads](../../src/operations/types.ts#L1389)
+    - type [OperationResult](../../src/operations/types.ts#L1420)
+    - type [OperationEnvelope](../../src/operations/types.ts#L1423)

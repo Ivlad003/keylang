@@ -5,7 +5,7 @@
 # map
 
 - features
-  <a id="features"></a><br>The user-facing capabilities behind the CLI, TUI, LSP and MCP: check reporting ([`features.check-results`](features.md#features.check-results)), node explanations ([`features.explain-node`](features.md#features.explain-node)), flow drafting ([`features.draft`](features.md#features.draft)), model calls ([`features.llm`](features.md#features.llm)), and voice input ([`features.voice`](features.md#features.voice)). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="features"></a><br>The user-facing capabilities shared by the CLI, TUI, LSP and MCP: checking and reporting ([`features.check-results`](features.md#features.check-results)), flow drafting, model and agent-CLI access ([`features.llm`](features.md#features.llm)), node explanations, staleness, git hooks, proposals and voice input. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [agent-cli](../../src/agent-cli.ts#L1)
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
