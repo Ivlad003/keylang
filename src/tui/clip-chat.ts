@@ -19,6 +19,7 @@ import { existingText } from "../files.ts";
 import { featureSlugOf, featureSummary, gapLine, hintLine, type AssistantReplyPayload, type AssistantReplyRequest, type OperationRequest, type OperationResult } from "../operations.ts";
 import { proposalProblem, writeProposal } from "../proposals.ts";
 import { isDirty } from "./buffer.ts";
+import { openQuestions, questionRow, questionsAnswer } from "./clip-questions.ts";
 import { totals } from "./evidence.ts";
 import { findingRow, findingsOf } from "./findings.ts";
 import type { Buffer, OperationRecord, State } from "./state.ts";
@@ -70,6 +71,7 @@ const COMMANDS: readonly ChatCommand[] = [
   { name: "explain", args: "<код|ID>", about: "те саме, що keylang explain, офлайн; без аргументу — ID під курсором", offline: true, run: (chat, arg) => chat.explain(arg) },
   { name: "feature", args: "<slug>", about: "стадія й прогалини фічі, як keylang feature; без аргументу — відкритий файл фічі", offline: true, run: (chat, arg) => chat.feature(arg) },
   { name: "check", args: "", about: "підсумок ✗ ◌ ✓ сесії й перші fail з позиціями", offline: true, run: (chat) => chat.check() },
+  { name: "questions", args: "", about: "відкриті питання з позиціями: рядки - ? відкритого файла, прогалини фічі, нові fail", offline: true, run: (chat) => chat.questions() },
   { name: "new", args: "", about: "нова розмова", offline: false, run: (chat) => chat.restart() },
   { name: "help", args: "", about: "команди й клавіші чату", offline: false, run: (chat) => chat.help() },
 ];
@@ -156,6 +158,25 @@ export class ClipChat {
     this.ask();
   }
 
+  /**
+   * The person opened the chat or gave it the focus (a click on the clip,
+   * F7): with open questions the clip lists them, unless that list is its
+   * last message already, and asks the model nothing. The new fails are told
+   * then and count no more (spec §4.6).
+   */
+  opened(): void {
+    const questions = openQuestions(this.state);
+    this.state.clip.newFails = [];
+    if (questions.length === 0) return;
+    const chat = this.state.clip.chat;
+    const text = questionsAnswer(questions);
+    const last = chat.messages.at(-1);
+    if (last?.role === "clip" && last.text === text) return;
+    // No message of the person's is answered: the clip's word starts no exchange and ends none.
+    chat.messages.push({ role: "clip", text });
+    chat.scroll = 0;
+  }
+
   /** Esc while the model answers: the request is cancelled, nothing is written, and the history says `скасовано`. */
   cancel(): void {
     const asked = this.asked;
@@ -204,6 +225,11 @@ export class ClipChat {
     this.answer(checkAnswer(this.state));
   }
 
+  /** `/questions`: the open questions with their places, the list the clip says when its chat opens. */
+  questions(): void {
+    this.answer(questionsAnswer(openQuestions(this.state)));
+  }
+
   /** `/new`: a new conversation; the old one is gone from the window. */
   restart(): void {
     const chat = this.state.clip.chat;
@@ -243,8 +269,8 @@ export class ClipChat {
   /**
    * What the model reads, frozen when the message is sent: the conversation,
    * the open buffer with the cursor's line and the ID under it, the F4 pack
-   * without the buffer it already shows, and the open feature's stage and
-   * gaps as the status line has them.
+   * without the buffer it already shows, the open feature's stage and gaps
+   * as the status line has them, and the open questions the clip counts.
    */
   private request(): AssistantReplyRequest {
     const state = this.state;
@@ -258,7 +284,7 @@ export class ClipChat {
       file: buffer === null ? null : { path: buffer.path, text: buffer.text, line: state.cursor.line, id: this.host.idAtCursor() },
       context: pack === null ? null : contextText({ ...pack, items: pack.items.filter((item) => item.kind !== "buffer") }),
       feature: feature !== null && buffer !== null && feature.path === buffer.path ? { stage: feature.stage, gaps: feature.gaps.map(gapLine) } : null,
-      questions: [],
+      questions: openQuestions(state).map(questionRow),
     };
   }
 

@@ -187,7 +187,7 @@ test("tui-clip-window: Enter puts the line into the history after ти › and t
   for (const ch of "last") s.send(ch);
   s.send(KEY.enter);
   assert.match(s.text(), /ти › last/);
-  assert.match(windowRow(s.lines(), w.height - 4), /\/check +│$/);
+  assert.match(windowRow(s.lines(), w.height - 4), /\/questions +│$/);
   assert.equal(s.app.state.top, top);
 });
 

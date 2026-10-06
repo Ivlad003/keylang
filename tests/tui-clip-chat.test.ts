@@ -216,7 +216,7 @@ test("tui-clip-chat: without an agent free text says how to set one and the comm
   const before = treeBytes(root);
   s.send(KEY.f7);
   say(s, "чому save позначено ◌?");
-  assert.equal(lastAnswer(s), "немає моделі: задайте `agent` у keylang.json або `KEYLANG_AGENT`; без неї працюють /explain, /feature, /check");
+  assert.equal(lastAnswer(s), "немає моделі: задайте `agent` у keylang.json або `KEYLANG_AGENT`; без неї працюють /explain, /feature, /check, /questions");
   assert.equal(s.app.state.clip.waiting, false);
   say(s, "/explain K105");
   await s.app.idle();
@@ -252,7 +252,7 @@ test("tui-clip-chat: /check names the first fails with their positions; /feature
   await s.app.idle();
   assert.equal(lastAnswer(s), "помилка: feature: keylang/features/nope.md: not found");
   say(s, "/nope");
-  assert.match(lastAnswer(s), /^невідома команда \/nope; команди:\n\/explain <код\|ID> — .*\n\/feature <slug> — .*\n\/check — .*\n\/new — .*\n\/help — /);
+  assert.match(lastAnswer(s), /^невідома команда \/nope; команди:\n\/explain <код\|ID> — .*\n\/feature <slug> — .*\n\/check — .*\n\/questions — .*\n\/new — .*\n\/help — /);
   say(s, "/help");
   assert.match(lastAnswer(s), /^команди, без моделі:\n\/explain/);
   assert.match(lastAnswer(s), /Esc — згорнути, а поки скрепка думає — скасувати/);

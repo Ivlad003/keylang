@@ -50,6 +50,7 @@ import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { chatTakesKeys, Clip, newClip } from "./clip.ts";
 import { ClipChat } from "./clip-chat.ts";
+import { newFailsAfter, openQuestions } from "./clip-questions.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -328,6 +329,7 @@ export class App {
       clipOnScreen: () => clipOnScreen(this.state),
       said: (text) => this.chat.said(text),
       cancelReply: () => this.chat.cancel(),
+      opened: () => this.chat.opened(),
     });
     this.results = new ResultsPanel({
       state: this.state,
@@ -427,7 +429,7 @@ export class App {
 
   /** The current frame, as the transport would show it. */
   frame(): Grid {
-    return render(this.state);
+    return this.paint();
   }
 
   /** Files with unsaved changes. */
@@ -459,9 +461,15 @@ export class App {
 
   private draw(): void {
     if (!this.surface) return;
-    const grid = render(this.state);
+    const grid = this.paint();
     this.surface.write(renderDiff(this.previous, grid));
     this.previous = grid;
+  }
+
+  /** The frame of the state now. The clip's counter follows what it counts — the analysis, the open file, the chat — so it is counted here (spec §4.6). */
+  private paint(): Grid {
+    this.state.clip.questions = openQuestions(this.state).length;
+    return render(this.state);
   }
 
   // ---------- analysis ----------
@@ -493,7 +501,10 @@ export class App {
         (analysis) => {
           if (generation !== this.generation || this.closed) return;
           const selected = this.results.selectedFinding();
+          const previous = this.state.analysis;
           this.state.analysis = analysis;
+          // The clip counts the fails this analysis added (spec §4.6).
+          this.state.clip.newFails = newFailsAfter(this.state.clip.newFails, previous, analysis);
           try {
             this.adoptResult(analysis, edits, selected);
           } catch (error) {

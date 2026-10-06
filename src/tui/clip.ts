@@ -5,6 +5,7 @@
 // `clip-chat.ts` answers what is sent. The clip never speaks by itself: its
 // window opens on a click or F7 only.
 
+import type { Verdict } from "../verdict.ts";
 import { MERGE_CLICK } from "./actions.ts";
 import type { KeyEvent, MouseEvent } from "./input.ts";
 import { backspaced } from "./prompt-keys.ts";
@@ -49,8 +50,10 @@ export interface ClipState {
   place: Cell | null;
   /** A reply of the model is awaited: the eyes are ◔◔ instead of ◕◕. */
   waiting: boolean;
-  /** Open questions, shown next to the clip; 0 shows no counter. */
+  /** Open questions (`openQuestions`), counted for each frame and shown next to the clip; 0 shows no counter. */
   questions: number;
+  /** Fails the session's analyses added since the chat was last opened, still reported: one source of the questions (`clip-questions.ts`). */
+  newFails: Verdict[];
   chat: ChatState;
 }
 
@@ -90,6 +93,7 @@ export function newClip(): ClipState {
     place: null,
     waiting: false,
     questions: 0,
+    newFails: [],
     chat: { open: false, focused: false, place: null, size: { cols: CHAT_COLS, rows: CHAT_ROWS }, messages: [], input: "", scroll: 0 },
   };
 }
@@ -307,6 +311,8 @@ export interface ClipHost {
   said(text: string): void;
   /** Esc while the model's reply is awaited: the request is cancelled (`ClipChat.cancel`). */
   cancelReply(): void;
+  /** The person opened the chat or gave it the focus (a click on the clip or its badge, F7): the clip lists the open questions (`ClipChat.opened`). */
+  opened(): void;
 }
 
 /** What a press was on. */
@@ -359,10 +365,11 @@ export class Clip {
     this.open();
   }
 
-  /** A click on the clip or its badge: the chat opens with the focus. */
+  /** A click on the clip or its badge: the chat opens with the focus, and the clip lists the open questions. */
   open(): void {
     this.state.clip.chat.open = true;
     this.focus();
+    this.host.opened();
   }
 
   /** The window takes the keys: the editor's completion, which waits for them, goes. */
