@@ -1304,6 +1304,8 @@ export class App {
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
+    // Ctrl+S still saves the buffer being edited: a person who typed in the chat expects the file to save.
+    if (chatTakesKeys(this.state) && event.ctrl && event.name === "s" && this.state.mode === "edit") return this.save();
     // The clip's focused window takes every other key, `?` and letters as text; F2–F7 stay global.
     if (chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name)) return this.clip.key(event);
     // In raw mode the terminal sends Ctrl+Z as a key, not SIGTSTP: outside the editor (where it undoes) and

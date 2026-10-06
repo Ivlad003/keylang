@@ -278,3 +278,22 @@ test("tui-clip-window: on 50×20 the window takes the width above the detail lin
   s.send(KEY.enter);
   assert.match(windowRow(s.lines(), 0), /^│ ти › hi +│$/);
 });
+
+test("tui-clip-window: Ctrl+S in the focused window saves the buffer the editor is editing, and puts nothing into the input line", async (t) => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = checkoutRepo(t);
+  const s = session(root);
+  t.after(() => s.app.close());
+  await s.app.idle();
+  s.send("i");
+  assert.equal(s.app.state.mode, "edit");
+  s.send("Z");
+  const path = s.app.state.current!;
+  assert.equal(readFileSync(join(root, path), "utf8").includes("Z"), false);
+  s.send(KEY.f7);
+  s.send(KEY.ctrlS);
+  assert.ok(readFileSync(join(root, path), "utf8").includes("Z"), "the edited buffer is saved");
+  assert.match(inputRow(s.lines()), /^│ > +│$/);
+  assert.equal(s.app.state.mode, "edit");
+});
