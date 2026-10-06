@@ -1,6 +1,6 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
+[README](README.md) · modules: [agent-cli](#features.agent-cli) · [agent-context](#features.agent-context) · [baseline](#features.baseline) · [changed](#features.changed) · [check-format](#features.check-format) · [check-results](#features.check-results) · [clone](#features.clone) · [draft-llm](#features.draft-llm) · [draft](#features.draft) · [explain-edge](#features.explain-edge) · [explain-inventory](#features.explain-inventory) · [explain-llm](#features.explain-llm) · [explain-node](#features.explain-node) · [explain-offline](#features.explain-offline) · [explain](#features.explain) · [feature-status](#features.feature-status) · [ghost](#features.ghost) · [git-changes](#features.git-changes) · [git-hook](#features.git-hook) · [harness](#features.harness) · [keys](#features.keys) · [llm](#features.llm) · [lsp-features](#features.lsp-features) · [node-search](#features.node-search) · [proposals](#features.proposals) · [spec-to-code](#features.spec-to-code) · [stale](#features.stale) · [stats](#features.stats) · [voice-local](#features.voice-local) · [voice](#features.voice)
 
 # map
 
@@ -271,6 +271,43 @@
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.check-results.checkResults](features.md#features.check-results.checkResults)
     - fn [checkExitCode](../../src/check-results.ts#L98) (counts: CheckReport["counts"], strict: boolean) → 0 | 1
       <a id="features.check-results.checkExitCode"></a><br>The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible.
+  - module [clone](../../src/clone.ts#L1)
+    <a id="features.clone"></a><br>`keylang clone <source>`: a repository someone names by URL (or a local path) becomes a shallow clone in keylang's cache, which `init`, `map` and `explain` then work on like any checkout. Git runs as an argument array, never through a shell, with its credential prompt off so a…
+    - node [external.node](external.md#external.node)
+    - git-changes [features.git-changes](features.md#features.git-changes)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - type [RepoSource](../../src/clone.ts#L15)
+      <a id="features.clone.RepoSource"></a><br>What to clone and where it sits under the cache root.
+    - type [CloneExplain](../../src/clone.ts#L23) = "map-only" | "map-and-ai" | "all"
+      <a id="features.clone.CloneExplain"></a><br>How far `clone --explain` goes past the map.
+    - fn [isCloneExplain](../../src/clone.ts#L27) (text: string) → text is CloneExplain
+      <a id="features.clone.isCloneExplain"></a>
+    - fn [parseRepoSource](../../src/clone.ts#L42) (text: string, cwd: string) → RepoSource | { error: string }
+      <a id="features.clone.parseRepoSource"></a><br>Reads a clone source: an `http(s)://`, `ssh://`, `git://` or `file://` URL, the scp form `git@host:owner/repo.git`, or a path to a local repository. The key never holds credentials, `..` or characters a file name cannot carry.
+      - calls [features.clone.fromUrl](features.md#features.clone.fromUrl), [features.clone.placeable](features.md#features.clone.placeable), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [fromUrl](../../src/clone.ts#L58) (source: string) → RepoSource | { error: string } <!-- internal -->
+      <a id="features.clone.fromUrl"></a>
+      - calls [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.keyed](features.md#features.clone.keyed)
+    - fn [keyed](../../src/clone.ts#L72) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+      <a id="features.clone.keyed"></a>
+      - calls [features.clone.placeable](features.md#features.clone.placeable)
+    - fn [placeable](../../src/clone.ts#L82) (segment: string) → string | undefined <!-- internal -->
+      <a id="features.clone.placeable"></a>
+    - fn [cloneCacheRoot](../../src/clone.ts#L87) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+      <a id="features.clone.cloneCacheRoot"></a><br>`$XDG_CACHE_HOME/keylang/repos`, else `~/.cache/keylang/repos`.
+    - type [CloneSync](../../src/clone.ts#L92)
+      <a id="features.clone.CloneSync"></a>
+    - fn [syncClone](../../src/clone.ts#L102) (source: RepoSource, dir: string) → CloneSync
+      <a id="features.clone.syncClone"></a><br>Clones `source` into `dir`, or brings a clone keylang made there up to the remote's default branch. A directory keylang did not clone is never touched: the reset would drop its work.
+      - calls [features.clone.git](features.md#features.clone.git), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [features.clone.readMarker](features.md#features.clone.readMarker)
+    - fn [readMarker](../../src/clone.ts#L118) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+      <a id="features.clone.readMarker"></a>
+    - fn [git](../../src/clone.ts#L132) (cwd: string, args: string[]) → void <!-- internal -->
+      <a id="features.clone.git"></a>
+      - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
+    - fn [enableExplainedMap](../../src/clone.ts#L148) (root: string) → string | null
+      <a id="features.clone.enableExplainedMap"></a><br>Turns on the explained map (`"explain": {"map": true}`) in the clone's keylang.json; the rest of the file stays. Returns an error to name, or null.
+      - calls [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
   - module [draft-llm](../../src/draft-llm.ts#L1)
     <a id="features.draft-llm"></a><br>`draft flow --mode llm|hybrid` (design §5.1): the model proposes a flow from a compact map, the flow grammar and flows of this repository; an ID that is neither in the snapshot nor declared `planned` sends the draft back once with the nearest real IDs. The answer is reconciled…
     - analyze [map.analyze](map.md#map.analyze)
