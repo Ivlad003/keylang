@@ -535,9 +535,11 @@ function firstClassCallable(n: Node): boolean {
  * `$this->store->m()` → `this.store.m` with the property's class;
  * `$x->m()` → `x.m`, bound, with the variable's class when the syntax names
  * it; `X::m()` → `X.m`; `self::m()` / `static::m()` → `this.m`, or `X.m` for a
- * static method; `parent::m()` → `super.m`; `new X()` → `X`. A name chosen
- * at run time is a call through a value or an opaque expression. Null for a
- * first-class callable (`f(...)`), which is a value.
+ * static method; `parent::m()` → `super.m`; `new X()` → `X`;
+ * `(new X())->m()` → `(new X()).m` and PHP 8.4's `new X()->m()` → `new X().m`,
+ * with the class `X`. A name chosen at run time is a call through a value or
+ * an opaque expression. Null for a first-class callable (`f(...)`), which is a
+ * value.
  */
 function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "callee" | "bound" | "receiver" | "opaque"> | null {
   const opaque = (): Pick<CallFact, "callee" | "opaque"> => ({ callee: n.text.replace(/\s+/g, " ").slice(0, MAX_CALLEE), opaque: true });
@@ -604,13 +606,23 @@ function callOf(n: Node, scope: Scope, collector: Collector): Pick<CallFact, "ca
       return receiver ? { callee: `this.${prop.text}.${member}`, receiver } : { callee: `this.${prop.text}.${member}`, bound: "local" };
     }
   }
-  // `(new Order())->total()`: an instance of the class `new` names.
-  const created = object?.type === "parenthesized_expression" && object.namedChildren[0]?.type === "object_creation_expression" ? classNameOf(object.namedChildren[0].namedChildren[0] ?? null) : null;
-  const text = n.text.replace(/\s+/g, " ");
-  if (created && !SPECIAL_CLASSES.has(asciiLowerCase(created)) && text.length <= MAX_CALLEE) {
-    return { callee: text, receiver: collector.klass(created, object!.namedChildren[0]!, scope.names) };
+  // `(new Order())->total()` and `new Order()->total()`: a method of the class `new` names. The
+  // callee ends in `.total`, the member the graph looks up in that class. What `total()` returns
+  // has no class the syntax names, so `->total()->tax()` stays a call through an expression.
+  const creation = object ? unparenthesized(object) : null;
+  const created = creation?.type === "object_creation_expression" ? classNameOf(creation.namedChildren[0] ?? null) : null;
+  if (object && creation && created && !SPECIAL_CLASSES.has(asciiLowerCase(created))) {
+    const callee = `${object.text.replace(/\s+/g, " ")}.${member}`;
+    if (callee.length <= MAX_CALLEE) return { callee, receiver: collector.klass(created, creation, scope.names) };
   }
   return opaque();
+}
+
+/** The expression inside any parentheses around it: `((new X()))` → `new X()`. */
+function unparenthesized(node: Node): Node {
+  let inner = node;
+  while (inner.type === "parenthesized_expression" && inner.namedChildren[0]) inner = inner.namedChildren[0];
+  return inner;
 }
 
 /** A call through a variable: `$f()`, `$x->m()`, `$class::m()`. */
