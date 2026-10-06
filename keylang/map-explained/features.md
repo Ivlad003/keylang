@@ -5,7 +5,7 @@
 # map
 
 - features
-  <a id="features"></a><br>The user-facing capabilities shared by the CLI, TUI, LSP and MCP: checking and reporting ([`features.check-results`](features.md#features.check-results)), flow drafting, model and agent-CLI access ([`features.llm`](features.md#features.llm)), node explanations, staleness, git hooks, proposals and voice input. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="features"></a><br>The layer holds keylang's user-facing capabilities: checking and reports ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), model-backed drafting and explanations ([`features.llm`](features.md#features.llm), [`features.draft-llm`](features.md#features.draft-llm)), and editor, git and voice support ([`features.lsp-features`](features.md#features.lsp-features)… _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [agent-cli](../../src/agent-cli.ts#L1)
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)

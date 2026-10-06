@@ -170,6 +170,29 @@
     - fn [checkReport](../../src/check-results.ts#L98) (verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]) → CheckReport
       - calls check.assess.sameFinding, features.check-results.checkResults
     - fn [checkExitCode](../../src/check-results.ts#L116) (counts: CheckCounts, strict: boolean) → 0 | 1
+  - module [clone](../../src/clone.ts#L1)
+    - node external.node
+    - git-changes features.git-changes
+    - safe-write base.safe-write
+    - type [RepoSource](../../src/clone.ts#L15)
+    - type [CloneExplain](../../src/clone.ts#L23) = "map-only" | "map-and-ai" | "all"
+    - fn [isCloneExplain](../../src/clone.ts#L27) (text: string) → text is CloneExplain
+    - fn [parseRepoSource](../../src/clone.ts#L42) (text: string, cwd: string) → RepoSource | { error: string }
+      - calls features.clone.fromUrl, features.clone.placeable, features.clone.keyed
+    - fn [fromUrl](../../src/clone.ts#L58) (source: string) → RepoSource | { error: string } <!-- internal -->
+      - calls features.clone.parseRepoSource, features.clone.keyed
+    - fn [keyed](../../src/clone.ts#L72) (url: string, host: string, path: string) → RepoSource | { error: string } <!-- internal -->
+      - calls features.clone.placeable
+    - fn [placeable](../../src/clone.ts#L82) (segment: string) → string | undefined <!-- internal -->
+    - fn [cloneCacheRoot](../../src/clone.ts#L87) (env: Readonly<Record<string, string | undefined>>, home: string) → string
+    - type [CloneSync](../../src/clone.ts#L92)
+    - fn [syncClone](../../src/clone.ts#L102) (source: RepoSource, dir: string) → CloneSync
+      - calls features.clone.git, base.safe-write.writeAtomic, features.clone.readMarker
+    - fn [readMarker](../../src/clone.ts#L118) (dir: string) → { url: string; key: string[] } | undefined <!-- internal -->
+    - fn [git](../../src/clone.ts#L132) (cwd: string, args: string[]) → void <!-- internal -->
+      - calls features.git-changes.gitUnavailable
+    - fn [enableExplainedMap](../../src/clone.ts#L148) (root: string) → string | null
+      - calls base.safe-write.writeAtomic
   - module [draft-llm](../../src/draft-llm.ts#L1)
     - analyze map.analyze
     - assess check.assess
