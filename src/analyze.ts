@@ -1,8 +1,9 @@
 // One analysis for the CLI and the language server: config, a fresh snapshot,
 // spec documents, and their assessment. Generated map files are replaced by the
 // map rendered from the fresh snapshot, so IDs resolve against current code,
-// not a stale committed map. Nothing is written.
+// not a stale committed map. Nothing is written but, when asked, the fact cache.
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { assess, type Assessment } from "./assess.ts";
@@ -11,6 +12,7 @@ import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
 import { compareText } from "./span.ts";
 import { collectMdFiles } from "./files.ts";
 import type { Document } from "./ir.ts";
+import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
 import { EXPLAINED_MAP_DIR, generateMap, type MapResult } from "./map.ts";
 import { parse } from "./parser.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -32,8 +34,14 @@ export interface AnalysisRequest {
   withoutEvidence?: boolean;
   /** Write the fact cache for the next process (`keylang map`). */
   persistFacts?: boolean;
+  /**
+   * Save the fact cache for the next process now, best-effort, when the facts
+   * of this run differ from it (`check`, `feature`, `hook stop`): a write that
+   * fails is no error. Only without an overlay, in a repository with `keylang.json`.
+   */
+  saveFacts?: boolean;
   /** Builds the snapshot; the TUI passes one that runs in a worker thread. Default: `generateMap`. */
-  generate?: (config: Config, options: { persist: boolean; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
+  generate?: (config: Config, options: { persist: boolean | "changed"; overlay: ReadonlyMap<string, string> }) => Promise<MapResult>;
   /** Overrides `config.check.static`. Omitted leaves the config, then `behavior`. */
   static?: StaticMode;
 }
@@ -57,9 +65,12 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
   const config = loadConfig(root);
   const display = request.display ?? ((abs: string) => toPosix(relative(root, abs)));
   const overlay = request.overlay ?? new Map<string, string>();
-  const options = { persist: request.persistFacts === true, overlay };
+  // Facts of unsaved text are no cache of the files on disk.
+  const save = request.persistFacts !== true && request.saveFacts === true && overlay.size === 0 && keepsFactCache(root);
+  const options = { persist: request.persistFacts === true || (save ? ("changed" as const) : false), overlay };
   const generate = request.generate ?? generateMap;
   const map = config.languages.length > 0 && request.withoutCode !== true ? await generate(config, options) : null;
+  if (save && map?.factCache) saveFactCache(root, map.factCache);
   const snapshot = map?.index ?? null;
   const specDir = join(root, config.dir);
   const specs = request.specs ?? (existsSync(specDir) ? [specDir] : []);
@@ -82,7 +93,7 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     for (const [name, text] of map.files) {
       const abs = join(mapDir, name);
       if (docs.some((doc) => doc.path === display(abs))) continue;
-      docs.push(parse(display(abs), text));
+      docs.push(parseRenderedMap(display(abs), text));
     }
   }
   docs.sort((a, b) => compareText(a.path, b.path));
@@ -105,6 +116,26 @@ export async function analyze(request: AnalysisRequest): Promise<Analysis> {
     config.format,
   );
   return { ...assessment, config, map, snapshot, docs, notSpecs, packages };
+}
+
+/**
+ * The rendered map files, parsed, by their display path and the hash of the
+ * text. The snapshot reaches the specs through the Markdown it renders, not
+ * an index built from it directly: the positions in that map file are the
+ * contract K001, K002 and LSP definition point at. Rendering stays per
+ * analysis; the parse is reused while the text is the same, so the repeated
+ * analyses of one process (MCP, LSP, TUI) parse each map text once.
+ * Documents are read-only past `parse`, so one may serve many analyses.
+ */
+const renderedMap = new Map<string, { hash: string; doc: Document }>();
+
+function parseRenderedMap(path: string, text: string): Document {
+  const hash = createHash("sha256").update(text).digest("hex");
+  const known = renderedMap.get(path);
+  if (known?.hash === hash) return known.doc;
+  const doc = parse(path, text);
+  renderedMap.set(path, { hash, doc });
+  return doc;
 }
 
 /** Walk up from `start` to the directory that holds `keylang.json`; `start` when there is none. */

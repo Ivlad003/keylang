@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c804c16d7d2c8e568c73993fee294cec442443bb30fd6dc3f6c6d45f2292cef0 lang=en detail=brief -->
-Validates that the mode is algo, llm or hybrid, throwing otherwise, then locates the repository root via `map.analyze.findRoot`. Dispatches to `cli.cli.draftMapPrinter` for maps or `cli.cli.draftRulesPrinter` for rules, returning its exit code.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=00e5809f68caf8df05d40f7c942c00bf834290858cdbc56a0d72b085feb71d5f lang=en detail=brief -->
+Validates that the draft mode is algo, llm or hybrid, locates the project root via `map.analyze.findRoot`, then dispatches to `cli.cli.draftMapPrinter` or `cli.cli.draftRulesPrinter` and returns its exit code.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=51fd42a5a9d11f4102817b9e920bdb8a922bea24cd8cfc99651a0c3a885f9113 lang=en detail=brief -->
-Maps a keyword string to the node kind used by `lang.parser.Parser.interpret`, passing most keywords through unchanged and returning "unknown" for anything unrecognized. The one context-sensitive case is "module", which becomes "rule-module" when the context is "map-top" or…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=74285fb959f69b8de9ca1794a9cde14e20e3aa17709ef61eac9c83a4a59a8375 lang=en detail=brief -->
+Maps a parsed keyword to its node kind for `lang.parser.Parser.interpret`, passing most keywords through unchanged, turning `?` into a question and top-level `module` into a rule module; unrecognized keywords become unknown.

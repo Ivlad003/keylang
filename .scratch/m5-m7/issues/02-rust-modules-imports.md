@@ -14,4 +14,4 @@
 
 ## Answer
 
-`src/extract/rust.ts` + `src/rust-imports.ts` (`Cargo.toml` через `smol-toml`). Відхилення від design §8: дефолт Rust — `module: "file"` з `mod.rs` як індексом, бо так ID (`domain.order`) збігається з Rust-шляхом `crate::domain::order`; `dir` лишається доступним у конфігу. Нові стани резолвінгу: `internal.whole` (шлях називає сам модуль) і `local` (шлях у власний файл). Тести `tests/languages.test.ts`: init/map, K102 для забороненого `use`, нерозв'язаний крейт у покритті. Формат — `docs/format.md` §11 «Мови».
+`src/extract/rust.ts` + `src/rust-imports.ts` (`Cargo.toml` через `smol-toml`). Відхилення від design §8: дефолт Rust — `module: "file"` з `mod.rs` як індексом, бо так ID (`domain.order`) збігається з Rust-шляхом `crate::domain::order`; `dir` лишається доступним у конфігу. Нові стани резолвінгу: `internal.whole` (шлях називає сам модуль) і `local` (шлях у власний файл). Тести `tests/languages.test.ts`: init/map, K102 для забороненого `use`, нерозв'язаний крейт у покритті. Формат — `docs/snapshot.md` §11 «Мови».

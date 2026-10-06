@@ -1,7 +1,7 @@
 // Markdown → IR. A small line-oriented parser: keylang files use a strict
 // subset of Markdown (headings, bullet lists indented by 2 spaces, paragraphs,
 // fenced code), so a hand-written parser gives exact spans for every token
-// without mapping back from a CommonMark AST. See `docs/format.md`.
+// without mapping back from a CommonMark AST. See `docs/grammar.md`.
 
 import { diagnostic, type Code, type K005Reason } from "./diag.ts";
 import type { Document, Item, Link, Node, NodeKind, Ref, Section, SectionKind, Token, TokenKind } from "./ir.ts";
@@ -159,6 +159,46 @@ function keywordsOf(ctx: Ctx): readonly string[] {
   }
 }
 
+/** Every position with keywords, in words, and the sections it is in: where a misplaced keyword goes. */
+const PLACES: readonly { ctx: Ctx; sections: readonly SectionKind[]; where: string }[] = [
+  { ctx: "map-top", sections: ["map"], where: "at the top of a map" },
+  { ctx: "rules-top", sections: ["rules"], where: "at the top of `# rules`" },
+  { ctx: "flow-top", sections: ["flow"], where: "at the top of `# flow`" },
+  { ctx: "wiring-top", sections: ["wiring"], where: "at the top of `# wiring`" },
+  { ctx: "layer", sections: ["map"], where: "under `- layer`" },
+  { ctx: "module", sections: ["map"], where: "under `- module`" },
+  { ctx: "fn", sections: ["map"], where: "under `- fn`" },
+  { ctx: "rule-module", sections: ["rules", "map"], where: "under a rule `- module <id>`" },
+  { ctx: "step", sections: ["flow"], where: "under `- step`" },
+  { ctx: "step", sections: ["flow"], where: "under `- trigger`" },
+  { ctx: "when", sections: ["flow"], where: "under `- when`" },
+  { ctx: "invariant", sections: ["flow"], where: "under `- invariant`" },
+  { ctx: "then", sections: ["flow"], where: "under `- then`" },
+  { ctx: "wire-dep", sections: ["wiring"], where: "under a dependency of `- wire`" },
+];
+
+const SECTION_NAMES: Record<SectionKind, string> = { map: "a map", rules: "`# rules`", flow: "`# flow`", wiring: "`# wiring`" };
+
+/**
+ * `; \`calls\` goes under \`- fn\`` when `word` is a keyword of other positions
+ * and not of `ctx`, else "". The places of the current section are listed;
+ * when the word belongs to other sections, one place is named with its
+ * section and several by their sections only (`; \`test\` goes in \`# flow\``).
+ */
+function placeHint(word: string, ctx: Ctx, section: SectionKind): string {
+  if (keywordsOf(ctx).includes(word)) return "";
+  const places = PLACES.filter((place) => keywordsOf(place.ctx).includes(word));
+  const [first] = places;
+  if (first === undefined) return "";
+  const here = places.filter((place) => place.sections.includes(section));
+  let shown: string[];
+  if (here.length > 0) shown = here.map((place) => place.where);
+  else if (places.length === 1) shown = [first.ctx.endsWith("-top") ? first.where : `${first.where} in ${SECTION_NAMES[first.sections[0]!]}`];
+  else shown = [`in ${[...new Set(places.map((place) => SECTION_NAMES[place.sections[0]!]))].join(" or ")}`];
+  const listed = shown.length === 1 ? shown[0]! : `${shown.slice(0, -1).join(", ")} or ${shown.at(-1)!}`;
+  return `; \`${word}\` goes ${listed}`;
+}
+
 const RULE_ROLES: Partial<Record<NodeKind, string>> = {
   layers: "a layer order: a dependency may only point down, to a layer on the left",
   allow: "a rule: the first ID may depend on the rest",
@@ -173,7 +213,7 @@ const TEST_ROLE = "a test that must pass in the `check.tests` report";
 const QUESTION_ROLE = "an open question: not a claim `check` judges; a feature with one is not done until a person answers it";
 
 /**
- * What an item does where it stands (format.md §5), for hover. Keyed like
+ * What an item does where it stands (grammar.md §5), for hover. Keyed like
  * `keywordsOf`, which K004 reads, so the roles follow the allowed keywords.
  */
 const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {
@@ -415,7 +455,7 @@ class Parser {
       }
     }
 
-    if (indent === 0 && (rest === "#" || rest.startsWith("# "))) {
+    if (indent === 0 && (rest === "#" || rest.startsWith("# ") || rest.startsWith("#\t"))) {
       this.heading(l);
     } else if (opensFence(text, this.stack.length > 0)) {
       this.flushProse();
@@ -441,7 +481,8 @@ class Parser {
   private heading(l: Line): void {
     this.flushProse();
     this.closeList(0);
-    const { tokens, comment } = lex(l, 1, []);
+    // The words end before an optional closing sequence of `#` (CommonMark), which fmt does not keep.
+    const { tokens, comment } = lex(new Line(l.no, l.start, l.text.slice(0, headingEnd(l.text))), 1, []);
     const title = renderTokens(tokens);
     const full = l.span(0, l.text.trimEnd().length);
     const first = tokens[0]?.text;
@@ -458,7 +499,7 @@ class Parser {
       const named = kind === "flow";
       const t = tokens[1];
       if (named && t) {
-        if (isSegment(t.text)) name = { value: t.text, span: t.span };
+        if (isSegment(t.text)) name = { value: nfc(t.text), span: t.span };
         else this.err("K005", t.span, `invalid section name \`${t.text}\``, "id");
       } else if (named) {
         this.err("K005", full, "`# flow` needs a name, e.g. `# flow checkout`", "arguments");
@@ -558,7 +599,7 @@ class Parser {
         for (const t of rest) {
           if (t.kind === "comma") continue;
           if (t.kind === "word" && isSegment(t.text)) {
-            n.refs.push({ text: t.text, target: base === null ? t.text : `${base}.${t.text}`, span: t.span });
+            n.refs.push({ text: t.text, target: base === null ? nfc(t.text) : `${base}.${nfc(t.text)}`, span: t.span });
           } else {
             this.err("K005", t.span, `expected a name, found \`${t.text}\``, "id");
           }
@@ -641,7 +682,7 @@ class Parser {
           this.err("K005", n.span, "`planned` needs `<fn|module|type|event> <id> [signature]`", badId ? "id" : "arguments");
           break;
         }
-        n.id = idTok.text;
+        n.id = nfc(idTok.text);
         n.label = { value: kindTok.text, span: kindTok.span };
         const sig = rest.slice(2);
         const sigStart = sig[0];
@@ -676,22 +717,24 @@ class Parser {
   private bare(n: Node, ctx: Ctx, parent: Parent | undefined): void {
     const tokens = n.tokens;
     const parentId = parent?.id ?? null;
+    // A keyword of another position says where it goes when the line here is wrong.
+    const hint = (): string => (tokens[0]?.kind === "word" ? placeHint(tokens[0].text, ctx, this.sectionKind()) : "");
     switch (ctx) {
       case "map-top":
         n.kind = "layer";
-        this.decl(n, tokens, null, false);
+        this.decl(n, tokens, null, false, hint);
         break;
       case "layer":
         n.kind = "module";
-        this.decl(n, tokens, parentId, false);
+        this.decl(n, tokens, parentId, false, hint);
         break;
       case "module":
       case "wire": {
         n.kind = ctx === "module" ? "dep" : "wire-dep";
         const [alias, target] = tokens;
         if (tokens.length === 2 && alias && target && alias.kind === "word" && isSegment(alias.text)) {
-          n.name = spanned(alias);
-          if (ctx === "module") n.id = parentId === null ? null : `${parentId}.${alias.text}`;
+          n.name = { value: nfc(alias.text), span: alias.span };
+          if (ctx === "module") n.id = parentId === null ? null : `${parentId}.${n.name.value}`;
           this.oneRef(n, [target]);
         } else {
           n.kind = "unknown";
@@ -699,7 +742,7 @@ class Parser {
             ctx === "module"
               ? "`fn`, `type`, `event`, `module` or a dependency `<alias> <path>`"
               : "a dependency `<alias> <path>`";
-          this.err("K005", n.span, `expected ${what}`, "arguments");
+          this.err("K005", n.span, `expected ${what}${hint()}`, "arguments");
         }
         break;
       }
@@ -716,14 +759,17 @@ class Parser {
         } else {
           const t = tokens[0]!;
           const expected = keywordsOf(ctx).join(", ");
-          this.err("K004", t.span, `unknown keyword \`${t.text}\` here; expected one of: ${expected}`);
+          this.err("K004", t.span, `unknown keyword \`${t.text}\` here; expected one of: ${expected}${hint()}`);
         }
       }
     }
   }
 
-  /** `<name>` or `[name](path#Lnn)` + optional signature. */
-  private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean): void {
+  /**
+   * `<name>` or `[name](path#Lnn)` + optional signature. `hint` says where a
+   * keyword written as an implicit layer or module name goes.
+   */
+  private decl(n: Node, rest: Token[], parentId: string | null, sig: boolean, hint: () => string = () => ""): void {
     const t = rest[0];
     if (!t) {
       this.err("K005", n.span, `\`${kindLabel(n.kind)}\` needs a name`, "arguments");
@@ -743,8 +789,8 @@ class Parser {
       return;
     }
     const nameSpan = link ? linkTextSpan(t) : t.span;
-    n.id = n.kind === "layer" ? name : parentId === null ? null : `${parentId}.${name}`;
-    n.name = { value: name, span: nameSpan };
+    n.name = { value: nfc(name), span: nameSpan };
+    n.id = n.kind === "layer" ? n.name.value : parentId === null ? null : `${parentId}.${n.name.value}`;
     n.link = link;
     const tail = rest.slice(1);
     const first = tail[0];
@@ -753,8 +799,9 @@ class Parser {
       if (sig) {
         n.text = { value: renderTokens(tail), span: { start: first.span.start, end: last.span.end } };
       } else {
-        const hint = n.kind === "layer" ? " (a dependency `<alias> <path>` must be nested under a module)" : "";
-        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${hint}`, "arguments");
+        const keyword = hint();
+        const why = keyword !== "" ? keyword : n.kind === "layer" ? " (a dependency `<alias> <path>` must be nested under a module)" : "";
+        this.err("K005", first.span, `unexpected arguments after ${kindLabel(n.kind)} \`${name}\`${why}`, "arguments");
       }
     }
   }
@@ -762,11 +809,11 @@ class Parser {
   /** A bare ID, or `[id](href)`: the link text is the ID, the target is kept and never checked. */
   private makeRef(t: Token): Ref | null {
     if (t.kind === "word" && isId(t.text)) {
-      return { text: t.text, target: t.text, span: t.span };
+      return { text: t.text, target: nfc(t.text), span: t.span };
     }
     if (t.kind === "link") {
       const link = parseLink(t);
-      if (isId(link.text)) return { text: link.text, target: link.text, span: linkTextSpan(t), link };
+      if (isId(link.text)) return { text: link.text, target: nfc(link.text), span: linkTextSpan(t), link };
       this.err("K005", t.span, `expected an ID as the link text, found \`${link.text}\``, "id");
       return null;
     }
@@ -960,10 +1007,30 @@ function htmlBlockStart(rest: string): { end: (line: string) => boolean } | null
   return null;
 }
 
+/**
+ * Where the words of a `#` heading line end: before an optional closing
+ * sequence of `#` that follows a space or a tab and has only spaces or tabs
+ * after it (CommonMark). `# flow a #` has the words `flow a`; in `# flow a#`
+ * the `#` is part of a word.
+ */
+function headingEnd(text: string): number {
+  const content = text.replace(/[ \t]+$/, "");
+  const closing = /[ \t]+#+$/.exec(content);
+  return closing ? closing.index : content.length;
+}
+
 function isBullet(rest: string): boolean {
   const c0 = rest[0];
   const c1 = rest[1];
   return (c0 === "-" || c0 === "*" || c0 === "+") && (c1 === undefined || c1 === " ");
+}
+
+/**
+ * An ID in Unicode normal form C: a composed `café` and a decomposed one are
+ * one ID. Tokens and spans keep the text as written, so `fmt` changes nothing.
+ */
+function nfc(text: string): string {
+  return text.normalize("NFC");
 }
 
 /** A single ID segment: letter or `_`, then letters (with their combining marks), digits, `_`, `-`. */
@@ -1077,13 +1144,26 @@ function lex(l: Line, start: number, errs: [Span, string][]): { tokens: Token[];
   return { tokens, comment };
 }
 
+/**
+ * The end of `[text](destination)` opened at `i`, or null. As in CommonMark,
+ * the destination has no whitespace and holds parentheses only in balanced
+ * pairs or escaped (`\(`), so `(https://e.com/Foo_(bar))` ends at the last `)`.
+ */
 function linkEnd(s: string, i: number): number | null {
   const close = s.indexOf("]", i);
-  if (close === -1 || s[close + 1] !== "(") return null;
-  const end = s.indexOf(")", close + 1);
-  if (end === -1) return null;
-  const target = s.slice(close + 2, end);
-  return close > i + 1 && target.length > 0 && !/\s/.test(target) ? end + 1 : null;
+  if (close <= i + 1 || s[close + 1] !== "(") return null;
+  let depth = 0;
+  for (let k = close + 2; k < s.length; k++) {
+    const c = s[k]!;
+    if (/\s/.test(c)) return null;
+    if (c === "\\" && (s[k + 1] === "(" || s[k + 1] === ")")) k++;
+    else if (c === "(") depth++;
+    else if (c === ")") {
+      if (depth === 0) return k > close + 2 ? k + 1 : null;
+      depth--;
+    }
+  }
+  return null;
 }
 
 /**

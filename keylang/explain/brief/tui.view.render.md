@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4cf62d21894f2c9a7f4b94cbe990f2632447710db2df0e98bdb0a778c3e9726d lang=en detail=brief -->
-Builds the full terminal frame: title bar with file and mode, side panels via `tui.view.drawFiles`/`tui.view.drawNav`, the body chosen by mode (`tui.view.drawEditor`, `tui.view.drawCode`, etc.), a detail line from `tui.evidence.evidenceOf`, and a status bar with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=86b0a26ced879972b2eabde5fd91996b5dee7b586bc2c66f8754de4742fe6bf3 lang=en detail=brief -->
+Builds the full terminal frame as a `tui.screen.Grid`: title, side panels, a mode-specific body (`tui.view.drawEditor`, `tui.view.drawMerge`, etc.), detail line, status bar with evidence totals, then any open popups.

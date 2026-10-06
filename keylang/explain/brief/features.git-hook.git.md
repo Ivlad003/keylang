@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5d3ee3ebefc30e0078ba84086972a489e112ab1033fa9ecf12825b70eadfd83c lang=en detail=brief -->
-Runs a git command synchronously in the given directory via `spawnSync` and returns its trimmed stdout. Throws a descriptive "hook install" error if git can't be launched or exits non-zero, which `features.git-hook.gitHooksDir` relies on to locate the hooks folder.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=2b605ace98569eccff9d1f90a3a7f516ebf7fc2d53d65ea1dfbf05a937988661 lang=en detail=brief -->
+Runs a git command synchronously in the given directory and returns its trimmed stdout, throwing a hook-install error if git can't launch or exits non-zero; used by `features.git-hook.gitHooksDir`.

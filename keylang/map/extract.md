@@ -5,12 +5,13 @@
 - extract
   - module [bodies](../../src/extract/bodies.ts#L1)
     - treesitter extract.treesitter
-    - type [FunctionBody](../../src/extract/bodies.ts#L7)
-    - fn [functionBodies](../../src/extract/bodies.ts#L21) (path: string, src: string) → Promise<Map<string, FunctionBody>>
-      - calls extract.treesitter.withTree, extract.treesitter.grammarFor, extract.bodies.bodiesOf
-    - fn [parsesCleanly](../../src/extract/bodies.ts#L26) (path: string, src: string) → Promise<boolean>
-      - calls extract.treesitter.withTree, extract.treesitter.grammarFor
-    - fn [bodiesOf](../../src/extract/bodies.ts#L30) (root: Node) → Map<string, FunctionBody> <!-- internal -->
+    - ts extract.ts
+    - type [FunctionBody](../../src/extract/bodies.ts#L8)
+    - fn [functionBodies](../../src/extract/bodies.ts#L22) (path: string, src: string) → Promise<Map<string, FunctionBody>>
+      - calls extract.ts.withTsTree, extract.bodies.bodiesOf
+    - fn [parsesCleanly](../../src/extract/bodies.ts#L30) (path: string, src: string) → Promise<boolean>
+      - calls extract.ts.withTsTree
+    - fn [bodiesOf](../../src/extract/bodies.ts#L34) (root: Node) → Map<string, FunctionBody> <!-- internal -->
       - calls extract.treesitter.startCol
   - module [doc-comments](../../src/extract/doc-comments.ts#L1)
     - fn [isLicense](../../src/extract/doc-comments.ts#L10) (text: string) → boolean
@@ -22,88 +23,90 @@
     - type [FileFacts](../../src/extract/facts.ts#L4)
     - type [QualifiedSymbol](../../src/extract/facts.ts#L50)
     - type [ImportFact](../../src/extract/facts.ts#L59)
-    - type [ImportBinding](../../src/extract/facts.ts#L80)
-    - type [DeclKind](../../src/extract/facts.ts#L88) = "fn" | "class" | "type"
-    - type [DeclFact](../../src/extract/facts.ts#L90)
-    - type [CallFact](../../src/extract/facts.ts#L122)
-    - type [HookFact](../../src/extract/facts.ts#L160)
-    - type [PassFact](../../src/extract/facts.ts#L173)
-    - type [ValueRefFact](../../src/extract/facts.ts#L181)
-    - type [TypeRefFact](../../src/extract/facts.ts#L191)
-    - type [ExportRow](../../src/extract/facts.ts#L205)
-    - type [UnsupportedFact](../../src/extract/facts.ts#L235)
+    - type [ImportBinding](../../src/extract/facts.ts#L95)
+    - type [DeclKind](../../src/extract/facts.ts#L109) = "fn" | "class" | "type"
+    - type [DeclFact](../../src/extract/facts.ts#L111)
+    - type [CallFact](../../src/extract/facts.ts#L145)
+    - type [HookFact](../../src/extract/facts.ts#L183)
+    - type [PassFact](../../src/extract/facts.ts#L196)
+    - type [ValueRefFact](../../src/extract/facts.ts#L204)
+    - type [TypeRefFact](../../src/extract/facts.ts#L214)
+    - type [ExportRow](../../src/extract/facts.ts#L228)
+    - type [UnsupportedFact](../../src/extract/facts.ts#L258)
   - module [grammars](../../src/extract/grammars.ts#L1)
     - type [Grammar](../../src/extract/grammars.ts#L8) = (typeof GRAMMARS)[number]
     - fn [wasmFile](../../src/extract/grammars.ts#L11) (g: Grammar) → string
   - module [php](../../src/extract/php.ts#L1)
+    - languages base.languages
     - facts extract.facts
     - doc-comments extract.doc-comments
     - treesitter extract.treesitter
-    - fn [extractPhp](../../src/extract/php.ts#L34) (path: string, src: string) → Promise<FileFacts>
+    - fn [extractPhp](../../src/extract/php.ts#L35) (path: string, src: string) → Promise<FileFacts>
       - calls extract.treesitter.withTree, extract.php.extractTree
-    - type [Names](../../src/extract/php.ts#L39) <!-- internal -->
-    - type [Alias](../../src/extract/php.ts#L47) <!-- internal -->
-    - type [ClassContext](../../src/extract/php.ts#L54) <!-- internal -->
-    - module [Collector](../../src/extract/php.ts#L63) <!-- internal -->
-      - fn [constructor](../../src/extract/php.ts#L64)
-      - fn [klass](../../src/extract/php.ts#L71) (written: string, node: Node, names: Names) → string
+    - type [Names](../../src/extract/php.ts#L40) <!-- internal -->
+    - type [Alias](../../src/extract/php.ts#L48) <!-- internal -->
+    - type [ClassContext](../../src/extract/php.ts#L55) <!-- internal -->
+    - module [Collector](../../src/extract/php.ts#L64) <!-- internal -->
+      - fn [constructor](../../src/extract/php.ts#L65)
+      - fn [klass](../../src/extract/php.ts#L72) (written: string, node: Node, names: Names) → string
         - calls extract.php.canonicalClass, extract.php.Collector.implicit
-      - fn [fn](../../src/extract/php.ts#L78) (written: string, node: Node, names: Names) → string
+      - fn [fn](../../src/extract/php.ts#L79) (written: string, node: Node, names: Names) → string
         - calls extract.php.canonicalFunction, extract.php.Collector.implicit
-      - fn [implicit](../../src/extract/php.ts#L84) (local: string, spec: string, node: Node) → void <!-- internal -->
+      - fn [implicit](../../src/extract/php.ts#L85) (local: string, spec: string, node: Node) → void <!-- internal -->
         - calls extract.treesitter.located, extract.php.firstLine, extract.php.lastSegment
-      - fn [value](../../src/extract/php.ts#L92) (name: string, node: Node, member: boolean) → void
-      - fn [hole](../../src/extract/php.ts#L97) (node: Node, reason: string, symbol: string | null) → void
+      - fn [value](../../src/extract/php.ts#L93) (name: string, node: Node, member: boolean) → void
+      - fn [hole](../../src/extract/php.ts#L98) (node: Node, reason: string, symbol: string | null) → void
         - calls extract.php.unsupported
-    - fn [extractTree](../../src/extract/php.ts#L102) (path: string, root: Node) → FileFacts <!-- internal -->
+    - fn [extractTree](../../src/extract/php.ts#L103) (path: string, root: Node) → FileFacts <!-- internal -->
       - calls extract.php.Collector, extract.php.fileDoc, extract.php.regionsOf, extract.php.collectTopLevel, extract.php.usesOf, extract.php.declarationOf, extract.php.qualify, extract.php.exportRow, extract.php.callsIn, extract.php.includesIn, extract.treesitter.located, extract.treesitter.errorLine
-    - fn [regionsOf](../../src/extract/php.ts#L156) (root: Node) → { ns: string; statements: Node[] }[] <!-- internal -->
-    - fn [collectTopLevel](../../src/extract/php.ts#L177) (node: Node, out: Node[]) → void <!-- internal -->
-    - fn [qualify](../../src/extract/php.ts#L185) (ns: string, name: string) → string <!-- internal -->
-    - fn [lastSegment](../../src/extract/php.ts#L189) (name: string) → string <!-- internal -->
-    - fn [firstLine](../../src/extract/php.ts#L193) (text: string) → string <!-- internal -->
-    - fn [useKind](../../src/extract/php.ts#L198) (node: Node) → "function" | "const" | null <!-- internal -->
-    - fn [usesOf](../../src/extract/php.ts#L208) (decl: Node, names: Names) → ImportFact[] <!-- internal -->
-      - calls extract.treesitter.located, extract.php.useKind, extract.php.lastSegment, extract.php.firstLine
-    - fn [canonicalClass](../../src/extract/php.ts#L236) (written: string, names: Names) → { local: string; qualified: string | null; explicit: boolean } <!-- internal -->
-      - calls extract.php.qualify
-    - fn [canonicalFunction](../../src/extract/php.ts#L252) (written: string, names: Names) → { local: string; spec: string; explicit: boolean } <!-- internal -->
-      - calls extract.php.canonicalClass
-    - fn [exportRow](../../src/extract/php.ts#L263) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
-    - fn [classNameOf](../../src/extract/php.ts#L270) (node: Node | null) → string | null <!-- internal -->
-    - fn [declarationOf](../../src/extract/php.ts#L275) (node: Node, names: Names, collector: Collector) → DeclFact | null <!-- internal -->
-      - calls extract.php.fnDecl, extract.treesitter.located, extract.php.classNameOf, extract.php.Collector.klass, extract.php.typeRef, extract.php.docOf, extract.treesitter.fingerprint, extract.php.singleClass, extract.php.namedTypes
-    - fn [singleClass](../../src/extract/php.ts#L350) (type: Node | null) → string | null <!-- internal -->
-      - calls extract.php.classNameOf
-    - fn [namedTypes](../../src/extract/php.ts#L359) (type: Node | null) → { text: string; node: Node }[] <!-- internal -->
-      - calls extract.php.classNameOf
-    - fn [typeRef](../../src/extract/php.ts#L374) (name: string, node: Node) → TypeRefFact <!-- internal -->
+    - fn [regionsOf](../../src/extract/php.ts#L157) (root: Node) → { ns: string; statements: Node[] }[] <!-- internal -->
+    - fn [collectTopLevel](../../src/extract/php.ts#L178) (node: Node, out: Node[]) → void <!-- internal -->
+    - fn [qualify](../../src/extract/php.ts#L186) (ns: string, name: string) → string <!-- internal -->
+    - fn [lastSegment](../../src/extract/php.ts#L190) (name: string) → string <!-- internal -->
+    - fn [firstLine](../../src/extract/php.ts#L194) (text: string) → string <!-- internal -->
+    - fn [useKind](../../src/extract/php.ts#L199) (node: Node) → "function" | "const" | null <!-- internal -->
+    - fn [usesOf](../../src/extract/php.ts#L209) (decl: Node, names: Names) → ImportFact[] <!-- internal -->
+      - calls extract.treesitter.located, extract.php.useKind, extract.php.lastSegment, base.languages.asciiLowerCase, extract.php.firstLine
+    - fn [canonicalClass](../../src/extract/php.ts#L237) (written: string, names: Names) → { local: string; qualified: string | null; explicit: boolean } <!-- internal -->
+      - calls base.languages.asciiLowerCase, extract.php.qualify
+    - fn [canonicalFunction](../../src/extract/php.ts#L253) (written: string, names: Names) → { local: string; spec: string; explicit: boolean } <!-- internal -->
+      - calls extract.php.canonicalClass, base.languages.asciiLowerCase
+    - fn [exportRow](../../src/extract/php.ts#L264) (facts: FileFacts, name: string, kind: ExportRow["kind"]) → void <!-- internal -->
+    - fn [classNameOf](../../src/extract/php.ts#L271) (node: Node | null) → string | null <!-- internal -->
+    - fn [declarationOf](../../src/extract/php.ts#L276) (node: Node, names: Names, collector: Collector) → DeclFact | null <!-- internal -->
+      - calls extract.php.fnDecl, extract.treesitter.located, extract.php.classNameOf, extract.php.Collector.klass, extract.php.typeRef, extract.php.docOf, extract.treesitter.fingerprint, extract.php.singleClass, extract.php.namedTypes, base.languages.asciiLowerCase
+    - fn [singleClass](../../src/extract/php.ts#L357) (type: Node | null) → string | null <!-- internal -->
+      - calls extract.php.classNameOf, base.languages.asciiLowerCase
+    - fn [namedTypes](../../src/extract/php.ts#L366) (type: Node | null) → { text: string; node: Node }[] <!-- internal -->
+      - calls extract.php.classNameOf, base.languages.asciiLowerCase
+    - fn [typeRef](../../src/extract/php.ts#L381) (name: string, node: Node) → TypeRefFact <!-- internal -->
       - calls extract.treesitter.located, extract.php.firstLine
-    - type [Scope](../../src/extract/php.ts#L380) <!-- internal -->
-    - fn [fnDecl](../../src/extract/php.ts#L392) (node: Node, name: string, names: Names, ctx: ClassContext | null, collector: Collector, symbol: string) → DeclFact <!-- internal -->
-      - calls extract.treesitter.located, extract.php.singleClass, extract.php.Collector.klass, extract.php.namedTypes, extract.php.typeRef, extract.php.walkScope, extract.php.classNameOf, extract.php.callsIn, extract.php.docOf, extract.treesitter.fingerprint
-    - fn [walkScope](../../src/extract/php.ts#L463) (node: Node, visit: (n: Node) => void) → void <!-- internal -->
-    - fn [callsIn](../../src/extract/php.ts#L476) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
-      - calls extract.php.callOf, extract.treesitter.located, extract.php.classNameOf, extract.php.Collector.value, extract.php.Collector.klass, extract.php.arrayCallable
-    - fn [arrayCallable](../../src/extract/php.ts#L503) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - type [Scope](../../src/extract/php.ts#L387) <!-- internal -->
+    - fn [fnDecl](../../src/extract/php.ts#L399) (node: Node, name: string, names: Names, ctx: ClassContext | null, collector: Collector, symbol: string) → DeclFact <!-- internal -->
+      - calls extract.treesitter.located, extract.php.singleClass, extract.php.Collector.klass, extract.php.namedTypes, extract.php.typeRef, extract.php.walkScope, extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.callsIn, extract.php.docOf, extract.treesitter.fingerprint
+    - fn [walkScope](../../src/extract/php.ts#L470) (node: Node, visit: (n: Node) => void) → void <!-- internal -->
+    - fn [callsIn](../../src/extract/php.ts#L483) (node: Node, scope: Scope, collector: Collector, closure: boolean) → CallFact[] <!-- internal -->
+      - calls extract.php.callOf, extract.treesitter.located, extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.value, extract.php.Collector.klass, extract.php.arrayCallable
+    - fn [arrayCallable](../../src/extract/php.ts#L510) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       - calls extract.php.stringValue, extract.php.Collector.value
-    - fn [stringValue](../../src/extract/php.ts#L514) (node: Node) → string | null <!-- internal -->
-    - fn [firstClassCallable](../../src/extract/php.ts#L521) (n: Node) → boolean <!-- internal -->
-    - fn [callOf](../../src/extract/php.ts#L535) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque"> | null <!-- internal -->
-      - calls extract.php.classNameOf, extract.php.Collector.klass, extract.php.variableCall, extract.php.firstClassCallable, extract.php.callableValue, extract.php.lastSegment, extract.php.Collector.hole, extract.php.Collector.fn
-    - fn [variableCall](../../src/extract/php.ts#L610) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
-    - fn [callableValue](../../src/extract/php.ts#L616) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
+    - fn [stringValue](../../src/extract/php.ts#L521) (node: Node) → string | null <!-- internal -->
+    - fn [firstClassCallable](../../src/extract/php.ts#L528) (n: Node) → boolean <!-- internal -->
+    - fn [callOf](../../src/extract/php.ts#L544) (n: Node, scope: Scope, collector: Collector) → Pick<CallFact, "callee" | "bound" | "receiver" | "opaque"> | null <!-- internal -->
+      - calls extract.php.classNameOf, base.languages.asciiLowerCase, extract.php.Collector.klass, extract.php.variableCall, extract.php.firstClassCallable, extract.php.callableValue, extract.php.lastSegment, extract.php.Collector.hole, extract.php.Collector.fn, extract.php.unparenthesized
+    - fn [unparenthesized](../../src/extract/php.ts#L622) (node: Node) → Node <!-- internal -->
+    - fn [variableCall](../../src/extract/php.ts#L629) (callee: string, scope: Scope) → Pick<CallFact, "callee" | "bound"> <!-- internal -->
+    - fn [callableValue](../../src/extract/php.ts#L635) (n: Node, scope: Scope, collector: Collector) → void <!-- internal -->
       - calls extract.php.Collector.value, extract.php.Collector.fn
-    - fn [includesIn](../../src/extract/php.ts#L632) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
+    - fn [includesIn](../../src/extract/php.ts#L651) (root: Node, path: string, collector: Collector) → ImportFact[] <!-- internal -->
       - calls extract.php.includedPath, extract.treesitter.located, extract.php.Collector.hole, extract.php.firstLine
-    - fn [includedPath](../../src/extract/php.ts#L653) (expr: Node | null, file: string) → string | null <!-- internal -->
-      - calls extract.php.stringValue, extract.php.normalize
-    - fn [normalize](../../src/extract/php.ts#L686) (path: string) → string <!-- internal -->
-    - fn [docOf](../../src/extract/php.ts#L701) (node: Node, header: number | null) → string | undefined <!-- internal -->
+    - fn [includedPath](../../src/extract/php.ts#L672) (expr: Node | null, file: string) → string | null <!-- internal -->
+      - calls extract.php.stringValue, base.languages.asciiLowerCase, extract.php.normalize
+    - fn [normalize](../../src/extract/php.ts#L705) (path: string) → string <!-- internal -->
+    - fn [docOf](../../src/extract/php.ts#L720) (node: Node, header: number | null) → string | undefined <!-- internal -->
       - calls extract.doc-comments.jsdocDescription, extract.doc-comments.blockCommentBody, extract.doc-comments.isLicense, extract.doc-comments.nonEmpty
-    - fn [fileDoc](../../src/extract/php.ts#L714) (root: Node) → { doc: string; id: number } | null <!-- internal -->
+    - fn [fileDoc](../../src/extract/php.ts#L733) (root: Node) → { doc: string; id: number } | null <!-- internal -->
       - calls extract.doc-comments.jsdocDescription, extract.doc-comments.blockCommentBody, extract.doc-comments.isLicense, extract.doc-comments.nonEmpty
-    - fn [unsupported](../../src/extract/php.ts#L724) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/php.ts#L743) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.treesitter.located, extract.php.firstLine
   - module [python](../../src/extract/python.ts#L1)
     - facts extract.facts
@@ -128,35 +131,39 @@
     - fn [docstring](../../src/extract/python.ts#L218) (body: Node | null) → string | undefined <!-- internal -->
       - calls extract.python.cleandoc, extract.doc-comments.isLicense, extract.doc-comments.nonEmpty
     - fn [cleandoc](../../src/extract/python.ts#L229) (text: string) → string <!-- internal -->
-    - fn [boundNames](../../src/extract/python.ts#L237) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
-    - type [CallScope](../../src/extract/python.ts#L262) <!-- internal -->
-    - fn [typedValues](../../src/extract/python.ts#L279) (fn: Node) → Map<string, string> <!-- internal -->
-      - calls extract.python.annotatedClass, extract.python.constructedClass
-    - fn [annotatedClass](../../src/extract/python.ts#L322) (type: Node | null) → string | null <!-- internal -->
+    - fn [walkBindings](../../src/extract/python.ts#L246) (fn: Node, visit: (target: Node, kind: "parameter" | "local" | "declared", by: Node) => void) → void <!-- internal -->
+      - calls extract.python.captures
+    - fn [captures](../../src/extract/python.ts#L274) (name: Node) → boolean <!-- internal -->
+    - fn [boundNames](../../src/extract/python.ts#L280) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
+      - calls extract.python.walkBindings
+    - type [CallScope](../../src/extract/python.ts#L297) <!-- internal -->
+    - fn [typedValues](../../src/extract/python.ts#L314) (fn: Node) → Map<string, string> <!-- internal -->
+      - calls extract.python.annotatedClass, extract.python.walkBindings, extract.python.constructedClass
+    - fn [annotatedClass](../../src/extract/python.ts#L340) (type: Node | null) → string | null <!-- internal -->
       - calls extract.python.classInAnnotation
-    - fn [classInAnnotation](../../src/extract/python.ts#L326) (text: string) → string | null <!-- internal -->
-    - fn [constructedClass](../../src/extract/python.ts#L340) (value: Node | null) → string | null <!-- internal -->
-    - fn [bodyCalls](../../src/extract/python.ts#L345) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
+    - fn [classInAnnotation](../../src/extract/python.ts#L344) (text: string) → string | null <!-- internal -->
+    - fn [constructedClass](../../src/extract/python.ts#L358) (value: Node | null) → string | null <!-- internal -->
+    - fn [bodyCalls](../../src/extract/python.ts#L363) (body: Node, scope: CallScope) → CallFact[] <!-- internal -->
       - calls extract.treesitter.located, extract.python.callOf
-    - fn [callOf](../../src/extract/python.ts#L366) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
-    - fn [moduleCalls](../../src/extract/python.ts#L395) (root: Node) → CallFact[] <!-- internal -->
+    - fn [callOf](../../src/extract/python.ts#L384) (fn: Node | null, scope: CallScope) → Pick<CallFact, "callee" | "bound" | "receiver"> <!-- internal -->
+    - fn [moduleCalls](../../src/extract/python.ts#L413) (root: Node) → CallFact[] <!-- internal -->
       - calls extract.treesitter.located, extract.python.callOf
-    - fn [valueRefs](../../src/extract/python.ts#L419) (root: Node, names: ReadonlySet<string>) → ValueRefFact[] <!-- internal -->
+    - fn [valueRefs](../../src/extract/python.ts#L438) (root: Node, names: ReadonlySet<string>, glob: boolean) → ValueRefFact[] <!-- internal -->
       - calls extract.python.boundNames, extract.python.bindsOrCalls, extract.python.assigned
-    - fn [bindsOrCalls](../../src/extract/python.ts#L447) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [bindsOrCalls](../../src/extract/python.ts#L466) (node: Node, parent: Node) → boolean <!-- internal -->
       - calls extract.python.assigned
-    - fn [assigned](../../src/extract/python.ts#L460) (node: Node, parent: Node) → boolean <!-- internal -->
-    - fn [collectDynamic](../../src/extract/python.ts#L469) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [assigned](../../src/extract/python.ts#L479) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [collectDynamic](../../src/extract/python.ts#L488) (root: Node, facts: FileFacts) → void <!-- internal -->
       - calls extract.python.enclosingFn, extract.python.unsupported
-    - fn [isDeclarationLevel](../../src/extract/python.ts#L484) (node: Node) → boolean <!-- internal -->
-    - fn [enclosingFn](../../src/extract/python.ts#L494) (node: Node) → string | null <!-- internal -->
-    - fn [importsIn](../../src/extract/python.ts#L516) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [isDeclarationLevel](../../src/extract/python.ts#L503) (node: Node) → boolean <!-- internal -->
+    - fn [enclosingFn](../../src/extract/python.ts#L513) (node: Node) → string | null <!-- internal -->
+    - fn [importsIn](../../src/extract/python.ts#L536) (root: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       - calls extract.python.importsOf
-    - fn [importsOf](../../src/extract/python.ts#L529) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
+    - fn [importsOf](../../src/extract/python.ts#L549) (node: Node, reexported: (local: string | null) => boolean) → ImportFact[] <!-- internal -->
       - calls extract.python.isDeclarationLevel, extract.python.importAt
-    - fn [importAt](../../src/extract/python.ts#L573) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/python.ts#L594) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
       - calls extract.treesitter.located
-    - fn [unsupported](../../src/extract/python.ts#L578) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/python.ts#L599) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.treesitter.located
   - module [rust](../../src/extract/rust.ts#L1)
     - facts extract.facts
@@ -194,33 +201,33 @@
     - fn [takesSelf](../../src/extract/rust.ts#L283) (params: Node | null) → boolean <!-- internal -->
     - fn [fnDecl](../../src/extract/rust.ts#L287) (node: Node, name: string, exported: boolean, owner: string | null, names: ReadonlySet<string>, facts: FileFacts) → DeclFact <!-- internal -->
       - calls extract.treesitter.located, extract.rust.takesSelf, extract.rust.bodyCalls, extract.rust.boundNames, extract.rust.itemDoc, extract.treesitter.fingerprint
-    - fn [boundNames](../../src/extract/rust.ts#L303) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
-    - type [CallScope](../../src/extract/rust.ts#L323) <!-- internal -->
-    - fn [bodyCalls](../../src/extract/rust.ts#L332) (body: Node, scope: CallScope, facts: FileFacts) → CallFact[] <!-- internal -->
+    - fn [boundNames](../../src/extract/rust.ts#L308) (fn: Node) → Map<string, "parameter" | "local"> <!-- internal -->
+    - type [CallScope](../../src/extract/rust.ts#L340) <!-- internal -->
+    - fn [bodyCalls](../../src/extract/rust.ts#L349) (body: Node, scope: CallScope, facts: FileFacts) → CallFact[] <!-- internal -->
       - calls extract.rust.callOf, extract.treesitter.located, extract.rust.macroName, extract.rust.unsupported
-    - type [Callee](../../src/extract/rust.ts#L355) = Pick<CallFact, "callee" | "bound"> <!-- internal -->
-    - fn [callOf](../../src/extract/rust.ts#L367) (fn: Node | null, scope: CallScope, facts: FileFacts) → Callee | null <!-- internal -->
+    - type [Callee](../../src/extract/rust.ts#L372) = Pick<CallFact, "callee" | "bound"> <!-- internal -->
+    - fn [callOf](../../src/extract/rust.ts#L384) (fn: Node | null, scope: CallScope, facts: FileFacts) → Callee | null <!-- internal -->
       - calls extract.rust.throughValue, extract.rust.pathCall
-    - fn [pathCall](../../src/extract/rust.ts#L401) (fn: Node, scope: CallScope, facts: FileFacts) → Callee | null <!-- internal -->
+    - fn [pathCall](../../src/extract/rust.ts#L418) (fn: Node, scope: CallScope, facts: FileFacts) → Callee | null <!-- internal -->
       - calls extract.rust.pathSegments, extract.rust.compact, extract.rust.throughValue, extract.treesitter.located
-    - fn [throughValue](../../src/extract/rust.ts#L433) (fn: Node) → Callee <!-- internal -->
+    - fn [throughValue](../../src/extract/rust.ts#L450) (fn: Node) → Callee <!-- internal -->
       - calls extract.rust.compact
-    - fn [compact](../../src/extract/rust.ts#L437) (text: string) → string <!-- internal -->
-    - fn [pathSegments](../../src/extract/rust.ts#L442) (node: Node) → string[] | null <!-- internal -->
-    - fn [valueRefs](../../src/extract/rust.ts#L458) (items: Node[], names: ReadonlySet<string>, facts: FileFacts) → ValueRefFact[] <!-- internal -->
+    - fn [compact](../../src/extract/rust.ts#L454) (text: string) → string <!-- internal -->
+    - fn [pathSegments](../../src/extract/rust.ts#L459) (node: Node) → string[] | null <!-- internal -->
+    - fn [valueRefs](../../src/extract/rust.ts#L476) (items: Node[], names: ReadonlySet<string>, facts: FileFacts) → ValueRefFact[] <!-- internal -->
       - calls extract.rust.testOnly, extract.rust.boundNames, extract.rust.bindsOrCalls, extract.rust.calledPath, extract.rust.pathCall
-    - fn [calledPath](../../src/extract/rust.ts#L487) (node: Node) → boolean <!-- internal -->
-    - fn [bindsOrCalls](../../src/extract/rust.ts#L497) (node: Node) → boolean <!-- internal -->
+    - fn [calledPath](../../src/extract/rust.ts#L506) (node: Node) → boolean <!-- internal -->
+    - fn [bindsOrCalls](../../src/extract/rust.ts#L516) (node: Node) → boolean <!-- internal -->
       - calls extract.rust.calledPath
-    - type [UseLeaf](../../src/extract/rust.ts#L512) <!-- internal -->
-    - fn [useLeaves](../../src/extract/rust.ts#L519) (node: Node | null, prefix: string[]) → UseLeaf[] <!-- internal -->
+    - type [UseLeaf](../../src/extract/rust.ts#L531) <!-- internal -->
+    - fn [useLeaves](../../src/extract/rust.ts#L538) (node: Node | null, prefix: string[]) → UseLeaf[] <!-- internal -->
       - calls extract.rust.pathSegments
-    - fn [useImport](../../src/extract/rust.ts#L552) (node: Node, leaf: UseLeaf, exported: boolean, facts: FileFacts) → ImportFact <!-- internal -->
+    - fn [useImport](../../src/extract/rust.ts#L571) (node: Node, leaf: UseLeaf, exported: boolean, facts: FileFacts) → ImportFact <!-- internal -->
       - calls extract.rust.importAt, extract.rust.exportRow
-    - fn [importAt](../../src/extract/rust.ts#L564) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/rust.ts#L583) (node: Node, source: string, bindings: ImportFact["bindings"], reexport: boolean) → ImportFact <!-- internal -->
       - calls extract.treesitter.located
-    - fn [macroName](../../src/extract/rust.ts#L569) (node: Node) → string <!-- internal -->
-    - fn [unsupported](../../src/extract/rust.ts#L573) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [macroName](../../src/extract/rust.ts#L588) (node: Node) → string <!-- internal -->
+    - fn [unsupported](../../src/extract/rust.ts#L592) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.treesitter.located
   - module [treesitter](../../src/extract/treesitter.ts#L1)
     - node external.node
@@ -249,125 +256,138 @@
     - doc-comments extract.doc-comments
     - treesitter extract.treesitter
     - fn [extractTs](../../src/extract/ts.ts#L34) (path: string, src: string) → Promise<FileFacts>
-      - calls extract.treesitter.grammarFor, extract.treesitter.withTree, extract.ts.extractTree
-    - fn [parentOf](../../src/extract/ts.ts#L55) (node: Node) → Node | null <!-- internal -->
-    - fn [parentIndex](../../src/extract/ts.ts#L59) (root: Node) → Map<number, Node> <!-- internal -->
-    - fn [extractTree](../../src/extract/ts.ts#L72) (path: string, root: Node, language: Language, g: Grammar) → FileFacts <!-- internal -->
+      - calls extract.treesitter.grammarFor, extract.ts.withTsTree, extract.ts.extractTree
+    - fn [withTsTree](../../src/extract/ts.ts#L47) (path: string, src: string, use: (tree: Tree, language: Language, typeStars: ReadonlyMap<number, string>) => T) → Promise<T>
+      - calls extract.treesitter.grammarFor, extract.treesitter.withTree, extract.ts.typeStarKeywords
+    - type [TypeStar](../../src/extract/ts.ts#L61) <!-- internal -->
+    - fn [typeStarKeywords](../../src/extract/ts.ts#L69) (root: Node) → TypeStar[] <!-- internal -->
+    - fn [parentOf](../../src/extract/ts.ts#L97) (node: Node) → Node | null <!-- internal -->
+    - fn [parentIndex](../../src/extract/ts.ts#L101) (root: Node) → Map<number, Node> <!-- internal -->
+    - fn [extractTree](../../src/extract/ts.ts#L114) (path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>) → FileFacts <!-- internal -->
       - calls extract.ts.parentIndex, extract.ts.moduleHeader, extract.ts.extractIndexed
-    - fn [docOf](../../src/extract/ts.ts#L100) (node: Node) → string | undefined <!-- internal -->
+    - fn [docOf](../../src/extract/ts.ts#L142) (node: Node) → string | undefined <!-- internal -->
       - calls extract.doc-comments.isLicense, extract.doc-comments.nonEmpty, extract.doc-comments.jsdocDescription, extract.doc-comments.blockCommentBody, extract.ts.parentOf
-    - fn [moduleHeader](../../src/extract/ts.ts#L121) (root: Node) → { doc: string | null; nodes: Set<number> } <!-- internal -->
+    - fn [moduleHeader](../../src/extract/ts.ts#L163) (root: Node) → { doc: string | null; nodes: Set<number> } <!-- internal -->
       - calls extract.doc-comments.isLicense, extract.doc-comments.nonEmpty, extract.doc-comments.jsdocDescription, extract.doc-comments.lineCommentsBody, extract.doc-comments.blockCommentBody
-    - fn [extractIndexed](../../src/extract/ts.ts#L150) (path: string, root: Node, language: Language, g: Grammar) → FileFacts <!-- internal -->
-      - calls extract.treesitter.located, extract.ts.lineDeeperThan, extract.treesitter.query, extract.ts.calleeOfCall, extract.ts.parentOf, extract.ts.passesOf, extract.ts.insideClosure, extract.ts.componentOfFactory, extract.ts.componentOfTag, extract.ts.requireSource, extract.ts.reactWrapperFn, extract.ts.moduleSource, extract.ts.typeSignature, extract.ts.reactBindings, extract.ts.importStatement, extract.ts.stringValue, extract.ts.importAt, extract.ts.unwrapValue, extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs, extract.ts.classDecl, extract.ts.commonJsExports, extract.ts.collectDynamicImports, extract.ts.collectUnsupported, extract.ts.collectValueRefs, extract.treesitter.errorLine
-    - type [ReactBindings](../../src/extract/ts.ts#L429) <!-- internal -->
-    - fn [reactBindings](../../src/extract/ts.ts#L443) (root: Node) → ReactBindings <!-- internal -->
+    - fn [extractIndexed](../../src/extract/ts.ts#L192) (path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>) → FileFacts <!-- internal -->
+      - calls extract.treesitter.located, extract.ts.lineDeeperThan, extract.treesitter.query, extract.ts.calleeOfCall, extract.ts.parentOf, extract.ts.passesOf, extract.ts.insideClosure, extract.ts.componentOfFactory, extract.ts.componentOfTag, extract.ts.requireSource, extract.ts.reactWrapperFn, extract.ts.moduleSource, extract.ts.typeSignature, extract.ts.reactBindings, extract.ts.importStatement, extract.ts.stringValue, extract.ts.importAt, extract.ts.typeKeyword, extract.ts.inlineTypesOnly, extract.ts.unwrapValue, extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs, extract.ts.classDecl, extract.ts.commonJsExports, extract.ts.collectDynamicImports, extract.ts.collectUnsupported, extract.ts.collectValueRefs, extract.treesitter.errorLine
+    - type [ReactBindings](../../src/extract/ts.ts#L477) <!-- internal -->
+    - fn [reactBindings](../../src/extract/ts.ts#L491) (root: Node) → ReactBindings <!-- internal -->
       - calls extract.ts.typeKeyword, extract.ts.importStatement, extract.ts.typeOnlySpecifier
-    - fn [reactExportOf](../../src/extract/ts.ts#L462) (callee: Node, react: ReactBindings) → { name: string; local: string } | null <!-- internal -->
-    - fn [typeKeyword](../../src/extract/ts.ts#L475) (node: Node) → boolean <!-- internal -->
-    - fn [typeOnlySpecifier](../../src/extract/ts.ts#L480) (stmt: Node, local: string) → boolean <!-- internal -->
+    - fn [reactExportOf](../../src/extract/ts.ts#L510) (callee: Node, react: ReactBindings) → { name: string; local: string } | null <!-- internal -->
+    - fn [typeKeyword](../../src/extract/ts.ts#L523) (node: Node) → boolean <!-- internal -->
+    - fn [inlineTypesOnly](../../src/extract/ts.ts#L533) (list: Node, specifier: "import_specifier" | "export_specifier") → boolean <!-- internal -->
+    - fn [typeOnlySpecifier](../../src/extract/ts.ts#L539) (stmt: Node, local: string) → boolean <!-- internal -->
       - calls extract.ts.typeKeyword
-    - fn [decl](../../src/extract/ts.ts#L491) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]) → DeclFact <!-- internal -->
+    - fn [decl](../../src/extract/ts.ts#L550) (kind: DeclFact["kind"], name: string, node: Node, signature: string | null, exported: boolean, calls: CallFact[], types: TypeRefFact[], members: DeclFact[]) → DeclFact <!-- internal -->
       - calls extract.treesitter.located, extract.ts.docOf, extract.treesitter.fingerprint
-    - fn [boundCall](../../src/extract/ts.ts#L497) (call: CallFact, bound: "parameter" | "local" | null) → CallFact <!-- internal -->
-    - fn [callFact](../../src/extract/ts.ts#L501) (callee: string, node: Node) → CallFact <!-- internal -->
+    - fn [boundCall](../../src/extract/ts.ts#L556) (call: CallFact, bound: "parameter" | "local" | null) → CallFact <!-- internal -->
+    - fn [callFact](../../src/extract/ts.ts#L560) (callee: string, node: Node) → CallFact <!-- internal -->
       - calls extract.treesitter.located
-    - fn [opaqueCall](../../src/extract/ts.ts#L507) (node: Node) → CallFact <!-- internal -->
+    - fn [opaqueCall](../../src/extract/ts.ts#L566) (node: Node) → CallFact <!-- internal -->
       - calls extract.ts.collapse, extract.ts.callFact
-    - fn [calleeOfCall](../../src/extract/ts.ts#L520) (node: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [calleeOfCall](../../src/extract/ts.ts#L579) (node: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       - calls extract.ts.unwrapValue, extract.ts.parentOf, extract.ts.requireKind, extract.ts.boundCall, extract.ts.callFact, extract.ts.bindingOf, extract.ts.localHook, extract.ts.calleeFact, extract.ts.opaqueCall
-    - fn [componentOfTag](../../src/extract/ts.ts#L560) (name: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [componentOfTag](../../src/extract/ts.ts#L619) (name: Node, body: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       - calls extract.ts.calleeFact, extract.ts.collapse, extract.ts.callFact, extract.ts.opaqueCall
-    - fn [componentOfFactory](../../src/extract/ts.ts#L588) (call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, react: ReactBindings) → CallFact | null <!-- internal -->
+    - fn [componentOfFactory](../../src/extract/ts.ts#L647) (call: Node, calleeNode: Node, body: Node, cls: ClassScope | null, react: ReactBindings) → CallFact | null <!-- internal -->
       - calls extract.ts.factoryCallee, extract.ts.componentOfTag, extract.ts.unwrapValue
-    - fn [factoryCallee](../../src/extract/ts.ts#L595) (node: Node, body: Node, react: ReactBindings) → boolean <!-- internal -->
+    - fn [factoryCallee](../../src/extract/ts.ts#L654) (node: Node, body: Node, react: ReactBindings) → boolean <!-- internal -->
       - calls extract.ts.unwrapValue, extract.ts.reactExportOf, extract.ts.bindingOf
-    - fn [requireKind](../../src/extract/ts.ts#L607) (node: Node) → "global" | "created" | "shadowed" <!-- internal -->
+    - fn [requireKind](../../src/extract/ts.ts#L666) (node: Node) → "global" | "created" | "shadowed" <!-- internal -->
       - calls extract.ts.declarationOf, extract.ts.unwrapValue
-    - fn [importAt](../../src/extract/ts.ts#L617) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
+    - fn [importAt](../../src/extract/ts.ts#L676) (node: Node, source: string, bindings: ImportBinding[], reexport: boolean) → ImportFact <!-- internal -->
       - calls extract.treesitter.located
-    - fn [lineDeeperThan](../../src/extract/ts.ts#L625) (root: Node, limit: number) → number | null <!-- internal -->
-    - fn [walkNamed](../../src/extract/ts.ts#L649) (root: Node, enter: (node: Node) => boolean | void) → void <!-- internal -->
-    - fn [collectTypeRefs](../../src/extract/ts.ts#L662) (node: Node) → TypeRefFact[] <!-- internal -->
-      - calls extract.ts.walkNamed, extract.treesitter.located
-    - fn [classDecl](../../src/extract/ts.ts#L690) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node, scope: ClassScope | null) => CallFact[], facts: FileFacts) → DeclFact <!-- internal -->
-      - calls extract.ts.classScope, extract.ts.unsupported, extract.ts.memberName, extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs, extract.ts.unwrapValue, extract.ts.initializer, extract.ts.heritage, extract.ts.baseClass
-    - fn [baseClass](../../src/extract/ts.ts#L753) (heritage: Node) → string | null <!-- internal -->
+    - fn [nestedDeclaration](../../src/extract/ts.ts#L688) (node: Node) → boolean <!-- internal -->
+    - fn [lineDeeperThan](../../src/extract/ts.ts#L693) (root: Node, limit: number) → number | null <!-- internal -->
+    - fn [walkNamed](../../src/extract/ts.ts#L717) (root: Node, enter: (node: Node) => boolean | void) → void <!-- internal -->
+    - fn [collectTypeRefs](../../src/extract/ts.ts#L737) (node: Node, bound: ReadonlySet<string> = NO_NAMES) → TypeRefFact[] <!-- internal -->
+      - calls extract.ts.nestedDeclaration, extract.treesitter.located, extract.ts.typeNamesBound
+    - fn [typeNamesBound](../../src/extract/ts.ts#L765) (node: Node, bound: ReadonlySet<string>) → ReadonlySet<string> <!-- internal -->
+      - calls extract.ts.walkNamed
+    - fn [classDecl](../../src/extract/ts.ts#L800) (name: string, cls: Node, at: Node, exported: boolean, declCalls: (n: Node, scope: ClassScope | null) => CallFact[], facts: FileFacts) → DeclFact <!-- internal -->
+      - calls extract.ts.classScope, extract.ts.typeNamesBound, extract.ts.collectTypeRefs, extract.ts.unsupported, extract.ts.memberName, extract.ts.decl, extract.ts.signature, extract.ts.unwrapValue, extract.ts.initializer, extract.ts.heritage, extract.ts.baseClass
+    - fn [baseClass](../../src/extract/ts.ts#L874) (heritage: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse
-    - fn [unwrapValue](../../src/extract/ts.ts#L760) (node: Node) → Node <!-- internal -->
-    - fn [reactWrapperFn](../../src/extract/ts.ts#L780) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
+    - fn [unwrapValue](../../src/extract/ts.ts#L881) (node: Node) → Node <!-- internal -->
+    - fn [reactWrapperFn](../../src/extract/ts.ts#L901) (value: Node, react: ReactBindings) → Node | null <!-- internal -->
       - calls extract.ts.reactExportOf, extract.ts.unwrapValue
-    - fn [initializer](../../src/extract/ts.ts#L791) (name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]) → DeclFact <!-- internal -->
+    - fn [initializer](../../src/extract/ts.ts#L912) (name: "constructor" | "static", items: { node: Node; calls: CallFact[] }[]) → DeclFact <!-- internal -->
       - calls extract.treesitter.located, extract.treesitter.fingerprint
-    - fn [memberName](../../src/extract/ts.ts#L798) (node: Node) → string <!-- internal -->
+    - fn [memberName](../../src/extract/ts.ts#L919) (node: Node) → string <!-- internal -->
       - calls extract.ts.stringValue
-    - type [ClassScope](../../src/extract/ts.ts#L804) <!-- internal -->
-    - fn [classScope](../../src/extract/ts.ts#L811) (items: readonly Node[]) → ClassScope <!-- internal -->
+    - type [ClassScope](../../src/extract/ts.ts#L925) <!-- internal -->
+    - fn [classScope](../../src/extract/ts.ts#L932) (items: readonly Node[]) → ClassScope <!-- internal -->
       - calls extract.ts.typeName, extract.ts.newClass, extract.ts.memberName, extract.ts.fallbackCallee, extract.ts.fallbackOf
-    - fn [importStatement](../../src/extract/ts.ts#L865) (node: Node) → ImportFact[] <!-- internal -->
-      - calls extract.ts.stringValue, extract.ts.importAt
-    - fn [collectDynamicImports](../../src/extract/ts.ts#L897) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [importStatement](../../src/extract/ts.ts#L986) (node: Node) → ImportFact[] <!-- internal -->
+      - calls extract.ts.stringValue, extract.ts.importAt, extract.ts.typeKeyword, extract.ts.inlineTypesOnly
+    - fn [collectDynamicImports](../../src/extract/ts.ts#L1024) (root: Node, facts: FileFacts) → void <!-- internal -->
       - calls extract.ts.importAt, extract.ts.walkNamed, extract.ts.moduleUrlSpecs, extract.ts.unsupported, extract.ts.requireKind, extract.ts.stringValue
-    - fn [collectUnsupported](../../src/extract/ts.ts#L932) (root: Node, facts: FileFacts) → void <!-- internal -->
+    - fn [collectUnsupported](../../src/extract/ts.ts#L1059) (root: Node, facts: FileFacts) → void <!-- internal -->
       - calls extract.ts.walkNamed, extract.ts.parentOf, extract.ts.unsupported, extract.ts.unwrapValue
-    - fn [unsupported](../../src/extract/ts.ts#L945) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
+    - fn [unsupported](../../src/extract/ts.ts#L1072) (node: Node, reason: string) → UnsupportedFact <!-- internal -->
       - calls extract.treesitter.located
-    - fn [calleeFact](../../src/extract/ts.ts#L955) (n: Node, stop: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
+    - fn [calleeFact](../../src/extract/ts.ts#L1082) (n: Node, stop: Node, cls: ClassScope | null) → CallFact | null <!-- internal -->
       - calls extract.ts.boundCall, extract.ts.callFact, extract.ts.bindingOf, extract.ts.classThis, extract.ts.memberName, extract.ts.localClass, extract.ts.newClass, extract.ts.unwrapValue, extract.ts.collapse
-    - fn [classThis](../../src/extract/ts.ts#L987) (n: Node) → boolean <!-- internal -->
+    - fn [classThis](../../src/extract/ts.ts#L1114) (n: Node) → boolean <!-- internal -->
       - calls extract.ts.parentOf
-    - fn [passesOf](../../src/extract/ts.ts#L996) (call: Node, stop: Node, cls: ClassScope | null) → PassFact[] <!-- internal -->
+    - fn [passesOf](../../src/extract/ts.ts#L1123) (call: Node, stop: Node, cls: ClassScope | null) → PassFact[] <!-- internal -->
       - calls extract.ts.calleeFact, extract.ts.memberName
-    - fn [insideClosure](../../src/extract/ts.ts#L1022) (n: Node, stop: Node) → boolean <!-- internal -->
+    - fn [insideClosure](../../src/extract/ts.ts#L1149) (n: Node, stop: Node) → boolean <!-- internal -->
       - calls extract.ts.parentOf
-    - fn [typeName](../../src/extract/ts.ts#L1028) (annotation: Node | null) → string | null <!-- internal -->
-    - fn [newClass](../../src/extract/ts.ts#L1034) (value: Node | null) → string | null <!-- internal -->
-    - type [Declaration](../../src/extract/ts.ts#L1039) <!-- internal -->
-    - fn [declarationOf](../../src/extract/ts.ts#L1046) (from: Node, name: string, stop: Node) → Declaration | null <!-- internal -->
-      - calls extract.ts.parentOf, extract.ts.patternNames, extract.ts.declaredNames
-    - fn [localClass](../../src/extract/ts.ts#L1089) (from: Node, name: string, stop: Node) → string | null <!-- internal -->
+    - fn [typeName](../../src/extract/ts.ts#L1155) (annotation: Node | null) → string | null <!-- internal -->
+    - fn [newClass](../../src/extract/ts.ts#L1161) (value: Node | null) → string | null <!-- internal -->
+    - type [Declaration](../../src/extract/ts.ts#L1166) <!-- internal -->
+    - fn [declarationOf](../../src/extract/ts.ts#L1173) (from: Node, name: string, stop: Node) → Declaration | null <!-- internal -->
+      - calls extract.ts.parentOf, extract.ts.patternNames, extract.ts.blockStatements, extract.ts.declaredNames
+    - fn [localClass](../../src/extract/ts.ts#L1216) (from: Node, name: string, stop: Node) → string | null <!-- internal -->
       - calls extract.ts.declarationOf, extract.ts.typeName, extract.ts.newClass, extract.ts.bindingOf
-    - fn [fallbackOf](../../src/extract/ts.ts#L1099) (expr: Node, stop: Node) → { source: Node; fallback: string } | null <!-- internal -->
+    - fn [fallbackOf](../../src/extract/ts.ts#L1226) (expr: Node, stop: Node) → { source: Node; fallback: string } | null <!-- internal -->
       - calls extract.ts.fallbackCallee
-    - fn [fallbackCallee](../../src/extract/ts.ts#L1110) (node: Node, stop: Node) → string | null <!-- internal -->
+    - fn [fallbackCallee](../../src/extract/ts.ts#L1237) (node: Node, stop: Node) → string | null <!-- internal -->
       - calls extract.ts.bindingOf
-    - fn [localHook](../../src/extract/ts.ts#L1126) (from: Node, name: string, stop: Node) → HookFact | null <!-- internal -->
+    - fn [localHook](../../src/extract/ts.ts#L1253) (from: Node, name: string, stop: Node) → HookFact | null <!-- internal -->
       - calls extract.ts.declarationOf, extract.ts.defaultIn, extract.ts.fallbackCallee, extract.ts.fallbackOf, extract.ts.plainParameter
-    - fn [plainParameter](../../src/extract/ts.ts#L1163) (node: Node) → boolean <!-- internal -->
-    - fn [defaultIn](../../src/extract/ts.ts#L1170) (node: Node, name: string, path: string) → { value: Node; path: string } | null <!-- internal -->
+    - fn [plainParameter](../../src/extract/ts.ts#L1290) (node: Node) → boolean <!-- internal -->
+    - fn [defaultIn](../../src/extract/ts.ts#L1297) (node: Node, name: string, path: string) → { value: Node; path: string } | null <!-- internal -->
       - calls extract.ts.memberName
-    - fn [collectValueRefs](../../src/extract/ts.ts#L1211) (root: Node, facts: FileFacts) → void <!-- internal -->
-      - calls extract.treesitter.startCol, extract.ts.walkNamed, extract.ts.parentOf, extract.ts.bindsOrCalls, extract.ts.exportedValue, extract.ts.bindingOf, extract.ts.moduleSource, extract.ts.memberName
-    - fn [exportedValue](../../src/extract/ts.ts#L1247) (node: Node) → boolean <!-- internal -->
+    - fn [collectValueRefs](../../src/extract/ts.ts#L1338) (root: Node, facts: FileFacts) → void <!-- internal -->
+      - calls extract.treesitter.startCol, extract.ts.walkNamed, extract.ts.parentOf, extract.ts.bindsOrCalls, extract.ts.exportedValue, extract.ts.memberObject, extract.ts.bindingOf, extract.ts.calledMember, extract.ts.moduleSource, extract.ts.memberName
+    - fn [memberObject](../../src/extract/ts.ts#L1375) (node: Node, parent: Node | null, facts: FileFacts) → boolean <!-- internal -->
+      - calls extract.ts.calledMember, extract.ts.moduleSource
+    - fn [calledMember](../../src/extract/ts.ts#L1383) (member: Node) → boolean <!-- internal -->
       - calls extract.ts.parentOf
-    - fn [bindsOrCalls](../../src/extract/ts.ts#L1269) (node: Node, parent: Node) → boolean <!-- internal -->
-    - fn [stringsOf](../../src/extract/ts.ts#L1285) (node: Node) → string[] | null <!-- internal -->
+    - fn [exportedValue](../../src/extract/ts.ts#L1393) (node: Node) → boolean <!-- internal -->
+      - calls extract.ts.parentOf
+    - fn [bindsOrCalls](../../src/extract/ts.ts#L1415) (node: Node, parent: Node) → boolean <!-- internal -->
+    - fn [stringsOf](../../src/extract/ts.ts#L1431) (node: Node) → string[] | null <!-- internal -->
       - calls extract.ts.stringValue, extract.ts.declarationOf, extract.ts.parentOf
-    - fn [isImportMetaUrl](../../src/extract/ts.ts#L1307) (node: Node | undefined) → boolean <!-- internal -->
-    - fn [moduleUrlSpecs](../../src/extract/ts.ts#L1320) (node: Node) → { spec: string; optional: boolean }[] | null <!-- internal -->
+    - fn [isImportMetaUrl](../../src/extract/ts.ts#L1453) (node: Node | undefined) → boolean <!-- internal -->
+    - fn [moduleUrlSpecs](../../src/extract/ts.ts#L1466) (node: Node) → { spec: string; optional: boolean }[] | null <!-- internal -->
       - calls extract.ts.isImportMetaUrl, extract.ts.stringsOf, extract.ts.staticSuffix, extract.ts.extensionless
-    - fn [extensionless](../../src/extract/ts.ts#L1336) (spec: string) → boolean <!-- internal -->
-    - fn [staticSuffix](../../src/extract/ts.ts#L1344) (node: Node) → string <!-- internal -->
+    - fn [extensionless](../../src/extract/ts.ts#L1482) (spec: string) → boolean <!-- internal -->
+    - fn [staticSuffix](../../src/extract/ts.ts#L1490) (node: Node) → string <!-- internal -->
       - calls extract.ts.stringValue
-    - fn [bindingOf](../../src/extract/ts.ts#L1368) (call: Node, name: string, stop: Node) → "parameter" | "local" | null <!-- internal -->
+    - fn [bindingOf](../../src/extract/ts.ts#L1514) (call: Node, name: string, stop: Node) → "parameter" | "local" | null <!-- internal -->
       - calls extract.ts.parentOf, extract.ts.patternNames, extract.ts.blockDeclares, extract.ts.declaredNames
-    - fn [blockDeclares](../../src/extract/ts.ts#L1397) (block: Node, name: string) → boolean <!-- internal -->
-      - calls extract.ts.declaredNames
-    - fn [declaredNames](../../src/extract/ts.ts#L1406) (stmt: Node) → string[] <!-- internal -->
+    - fn [blockStatements](../../src/extract/ts.ts#L1544) (block: Node) → Node[] <!-- internal -->
+    - fn [blockDeclares](../../src/extract/ts.ts#L1549) (block: Node, name: string) → boolean <!-- internal -->
+      - calls extract.ts.blockStatements, extract.ts.declaredNames
+    - fn [declaredNames](../../src/extract/ts.ts#L1558) (stmt: Node) → string[] <!-- internal -->
       - calls extract.ts.patternNames
-    - fn [patternNames](../../src/extract/ts.ts#L1421) (node: Node) → string[] <!-- internal -->
+    - fn [patternNames](../../src/extract/ts.ts#L1573) (node: Node) → string[] <!-- internal -->
       - calls extract.ts.declaredNames
-    - fn [moduleSource](../../src/extract/ts.ts#L1454) (facts: FileFacts, local: string, orDefault = false) → string | null <!-- internal -->
-    - fn [requireSource](../../src/extract/ts.ts#L1462) (value: Node, requires: ReturnType<typeof query>) → string | null <!-- internal -->
+    - fn [moduleSource](../../src/extract/ts.ts#L1606) (facts: FileFacts, local: string, orDefault = false) → string | null <!-- internal -->
+    - fn [requireSource](../../src/extract/ts.ts#L1616) (value: Node, requires: ReturnType<typeof query>) → { source: string; namespace: boolean } | null <!-- internal -->
       - calls extract.ts.parentOf, extract.ts.requireKind
-    - fn [commonJsExports](../../src/extract/ts.ts#L1485) (stmt: Node, facts: FileFacts, declCalls: (n: Node) => CallFact[]) → void <!-- internal -->
+    - fn [commonJsExports](../../src/extract/ts.ts#L1639) (stmt: Node, facts: FileFacts, declCalls: (n: Node) => CallFact[]) → void <!-- internal -->
       - calls extract.ts.unwrapValue, extract.ts.decl, extract.ts.signature, extract.ts.collectTypeRefs
-    - fn [stringValue](../../src/extract/ts.ts#L1534) (n: Node) → string | null <!-- internal -->
-    - fn [signature](../../src/extract/ts.ts#L1539) (fn: Node) → string <!-- internal -->
+    - fn [stringValue](../../src/extract/ts.ts#L1688) (n: Node) → string | null <!-- internal -->
+    - fn [signature](../../src/extract/ts.ts#L1693) (fn: Node) → string <!-- internal -->
       - calls extract.ts.collapse
-    - fn [typeSignature](../../src/extract/ts.ts#L1548) (n: Node) → string | null <!-- internal -->
+    - fn [typeSignature](../../src/extract/ts.ts#L1702) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse, extract.ts.heritage
-    - fn [heritage](../../src/extract/ts.ts#L1557) (n: Node) → string | null <!-- internal -->
+    - fn [heritage](../../src/extract/ts.ts#L1711) (n: Node) → string | null <!-- internal -->
       - calls extract.ts.collapse
-    - fn [collapse](../../src/extract/ts.ts#L1562) (s: string) → string <!-- internal -->
-    - fn [isNodeBuiltin](../../src/extract/ts.ts#L1567) (spec: string) → boolean
+    - fn [collapse](../../src/extract/ts.ts#L1716) (s: string) → string <!-- internal -->
+    - fn [isNodeBuiltin](../../src/extract/ts.ts#L1721) (spec: string) → boolean

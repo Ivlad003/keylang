@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=69e3d9ec368fb1726dad7e80b7ad84fefcf430d7dbd64b17a34162e42183aae9 lang=en detail=brief -->
-Dispatches keystrokes in view/read mode: after `tui.app.App.common` declines, it maps Ctrl/Alt chords to navigation like `tui.app.App.goToSpec` and `tui.app.App.goBack`, and plain keys to cursor moves, mode switches, hover, merge, undo via `tui.merge-session.MergeSession.undo`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f1a1ef164ddb74e76191b03b7d7517a4dd40d33564c1b16747845030ce53be66 lang=en detail=brief -->
+Dispatches keystrokes in view/read mode: cursor motion, jumps via `tui.app.App.goToCode`/`tui.app.App.goToSpec`, toggling read/edit modes (blocking read-only buffers), and opening merge, zoom, search, palette or help.

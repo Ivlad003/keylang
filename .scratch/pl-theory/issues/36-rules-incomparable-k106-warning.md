@@ -25,7 +25,7 @@
 K106 — warning (`severityOf`, src/diag.ts:42-44), тож не валить `check` і не впливає на `--strict`, `feature_status` чи Stop-хук (фільтр `isError`, src/feature-status.ts:99). LSP і MCP отримують її через спільний `assess`.
 
 Документація:
-- format.md §7: рядок `| K106 | warning |` у таблиці, яку читає tests/cli.test.ts:1232;
+- semantics.md §7: рядок `| K106 | warning |` у таблиці, яку читає tests/cli.test.ts:1232;
 - абзац allow/deny (format.md:262) описує частковий порядок, тобто порівнювані, рівні й непорівнювані правила, і те, що у форматі 1 сума глибин вирішує лише непорівнювані пари;
 - курс 05-rules (en і uk) і tests/core.test.ts:403 більше не називають перехресну пару «рівною»;
 - `keylang explain K106` дає причину, приклад і виправлення. Без цього не пройде typecheck: `EXPLANATIONS: Record<Code, …>` (src/explain.ts:5).

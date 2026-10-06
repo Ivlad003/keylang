@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d0dae4713734b300903cbbaff4c5899a45e80e623a0d7ea30a4360ce3ce1d508 lang=en detail=brief -->
-Splits markdown text into lines and emits styled, width-wrapped rows for fenced code, pipe tables (via `tui.markdown.tableRows`), headings, bullet items, blanks and prose, skipping HTML comments. Each row keeps its source line number; `tui.markdown.inline` styles spans and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=55534ed74c6222282ad63b453baf36476d3b2c4e810a8a9ed7929fe91fa7d930 lang=en detail=brief -->
+Converts markdown text into styled, width-wrapped display rows tagged with source line numbers, handling code fences, headings, bullets and blank lines, delegating tables to `tui.markdown.tableRows` and dropping HTML comments.

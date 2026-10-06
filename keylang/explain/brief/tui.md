@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=62ba4fc0a5d51984d6fc63c83cc519f907ca2ca270d1ab638f7708fcbbc5aeb3 lang=en detail=brief -->
-The interactive editor: a session (`tui.app`, `tui.state`) decodes input (`tui.input`), draws frames into a grid (`tui.view`, `tui.screen`), and runs analysis in workers (`tui.background`). The same session serves a terminal (`tui.terminal`) or a browser over WebSocket…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0041fe09e35c08f940752e82f456846dd5dfe2d278a9363e134addcf70eaf762 lang=en detail=brief -->
+The interactive editor shared by terminal and browser: a session with spec buffers, an evidence gutter, navigation, merge, zoom and off-thread analysis, drawn as ANSI frames. It must not use `extract` or web-tree-sitter directly.

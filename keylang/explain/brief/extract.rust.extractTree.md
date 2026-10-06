@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=93178261631ac785da42574abec483f11be5a4fbab89379ff8e2866463491775 lang=en detail=brief -->
-Walks a parsed Rust file's top-level items, skipping test-only code, to collect imports, fn/type declarations, exports, impl members attached to their struct, and calls from code outside any fn via `extract.rust.bodyCalls`. Records inline modules, unnamed impls and module-level…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=85eb5e84da63c52af8fcc9f1aa0c009055aa8560aeb14b027a33e24e41c9d986 lang=en detail=brief -->
+Walks a parsed Rust file's non-test top-level items to build its facts: `use` imports, fn and type declarations, exports, impl methods attached to local types, and unsupported constructs. Marks the result opaque on syntax errors.

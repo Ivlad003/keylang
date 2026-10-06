@@ -1,6 +1,6 @@
 # 27: Trace-адаптер Python
 
-**Етап:** M5 · **Джерело:** design §9 M5 («trace-адаптери з явними можливостями»), §4.3; `docs/format.md` §7 «Trace»
+**Етап:** M5 · **Джерело:** design §9 M5 («trace-адаптери з явними можливостями»), §4.3; `docs/semantics.md` §7 «Trace»
 
 **What to build:** `python -m keylang_trace <script>` (модуль у пакеті keylang, без сторонніх залежностей) з тими самими змінними `KEYLANG_TRACE`, `KEYLANG_TRACE_FLOW`, `KEYLANG_TRACE_TEST`, `KEYLANG_TRACE_RUN`: читає `.keylang/index.json` (snapshotId і вузли fn із файлом і рядком), інструментує через `sys.setprofile` лише `trigger`/`step` потоку й пише JSONL схеми 1. Файл, хеш якого не збігається з manifest знімка, не інструментується. `check` зіставляє trace так само, як для TS.
 

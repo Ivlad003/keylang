@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=51c8f054e27d9ae7d0c0d4639b9edb4120b247d9442081512f5f506458f07089 lang=en detail=brief -->
-Dispatches a single source line based on parser state: continues an open code fence or HTML block, else classifies it as blank, generated marker, heading, fence start, bullet, item description, or prose. Delegates to `lang.parser.Parser.heading`, `lang.parser.Parser.item`, and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=178508c4110d550e624750470d2a29a84f8d65a2b773ce3a896f25e5422b88de lang=en detail=brief -->
+Dispatches one source line by parser state: collects fenced code and multi-line HTML blocks, records the generated marker, and routes to `lang.parser.Parser.heading`, `lang.parser.Parser.item`, item descriptions or prose, flagging tab indentation.

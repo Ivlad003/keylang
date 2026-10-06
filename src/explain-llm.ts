@@ -14,8 +14,9 @@ import { formatSummary, summarizeNode, type NodeSummary } from "./explain-node.t
 import { explainDir, explanationOf, explanationPath, loadBriefs, OLD_EXPLAIN_DIR, ownLayers, readStoredExplanation, snapshotBaseline, storedIds, SYSTEM_ID, systemBaseline, type ExplanationDetail, type StoredExplanation } from "./explanations.ts";
 import { EXTERNAL } from "./graph.ts";
 import type { LlmRequest } from "./llm.ts";
-import { plannedDecl } from "./lsp-features.ts";
 import { compareText } from "./span.ts";
+import { plannedDeclaration as plannedDecl } from "./spec-ir.ts";
+import { leavesUnresolved } from "./snapshot.ts";
 
 export type Explanation = StoredExplanation;
 
@@ -55,9 +56,51 @@ export function isStale(analysis: Analysis, id: string, e: Explanation): boolean
   return currentBaseline(analysis, id) !== e.closure;
 }
 
-/** A model's brief as saved: one or two sentences in one paragraph, cut by the rule doc comments follow. */
+/** A model's brief as saved: one or two sentences in one paragraph of `answerText`, cut by the rule doc comments follow. */
 export function briefText(answer: string): string {
-  return briefOf(answer) ?? answer.trim();
+  const text = answerText(answer);
+  return briefOf(text) ?? text;
+}
+
+/**
+ * A model's explanation as saved (`short`, `full`, and the text a brief is
+ * cut from): without the wrappers a chatty answer puts around it — a
+ * leading remark paragraph that ends with `:` or has fewer than four words
+ * («Sure, here is the brief:», «Certainly!») while more follows, and one
+ * fenced block (```, ```markdown, ```text) that holds the whole answer. A
+ * heading, a list, a quote or code is never a remark, and a fence among
+ * other text is the answer's own code block, so both stay.
+ */
+export function answerText(answer: string): string {
+  let text = answer.trim();
+  for (;;) {
+    const next = withoutRemark(unfenced(text));
+    if (next === text) return text;
+    text = next;
+  }
+}
+
+/** The inside of one fenced block of Markdown or plain text that is the whole of `text`; `text` itself otherwise. */
+function unfenced(text: string): string {
+  const open = /^(`{3,}|~{3,})[ \t]*(?:markdown|md|text|txt|plaintext)?[ \t]*\n/i.exec(text);
+  if (!open) return text;
+  const lines = text.slice(open[0].length).split("\n");
+  const fence = open[1]!;
+  // CommonMark: a closing fence is the fence character, at least as many, and nothing after it.
+  const closer = new RegExp(`^ {0,3}${fence[0] === "`" ? "`" : "~"}{${fence.length},}[ \\t]*$`);
+  const close = lines.findIndex((line) => closer.test(line));
+  return close === lines.length - 1 ? lines.slice(0, close).join("\n").trim() : text;
+}
+
+/** `text` without its first paragraph when that is a remark before the answer and another paragraph follows. */
+function withoutRemark(text: string): string {
+  const cut = /\n[ \t]*\n/.exec(text);
+  if (!cut) return text;
+  const first = text.slice(0, cut.index).trim();
+  // Markdown structure is the answer's own: a heading, a list item, a quote, a table row, a fence.
+  if (/^(?:#|[-*+>|]|\d+[.)]|`{3}|~{3})/.test(first)) return text;
+  const words = first.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
+  return /:\**$/.test(first) || words < 4 ? text.slice(cut.index + cut[0].length).trim() : text;
 }
 
 /**
@@ -128,9 +171,13 @@ const FULL_SECTIONS = [
 /** Most unresolved constructs a `full` prompt lists; the summary already counts them all. */
 const MAX_UNRESOLVED = 20;
 
-/** The constructs inside the node keylang did not turn into edges, with their line and code, for the calls section of `full`. */
+/**
+ * The constructs inside the node keylang did not turn into edges, with their
+ * line and code, for the calls section of `full`. An import of a file
+ * `assume` names is no such construct: the architecture leaves it unread.
+ */
 function unresolved(analysis: Analysis, id: string): string[] {
-  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id);
+  const items = (analysis.snapshot?.coverage ?? []).filter((c) => c.source === id && leavesUnresolved(c));
   if (items.length === 0) return [];
   const lines = items.slice(0, MAX_UNRESOLVED).map((c) => `- ${c.file}:${c.line}: \`${c.text.replace(/\s+/g, " ").trim()}\` — ${c.reason}`);
   if (items.length > MAX_UNRESOLVED) lines.push(`… (${items.length - MAX_UNRESOLVED} more not shown)`);

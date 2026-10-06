@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=132f536de133bee645e7f699770b51e82265559d81203e052c11c95c604418cb lang=en detail=brief -->
-Builds the LSP outline for a document by converting each section's IR nodes (via `lang.ir.sectionNodes`) into nested symbols, grouping flow and rules sections under a heading symbol. Each symbol's detail carries the worst verdict status among the node and its children, computed…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9cb361fb35311182e6ed71a0b5a29507bd6a6c1e276f28fb17d348f851e63359 lang=en detail=brief -->
+Builds the LSP outline tree for a document, grouping flow and rules sections and tagging each symbol with its worst verification status from `features.lsp-features.statusOf`; served via `cli.lsp.Server.request`.

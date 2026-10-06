@@ -122,7 +122,7 @@ node bin/keylang.js web                  # той самий інтерфейс 
 
 keylang — це структурований список, а не мова програмування. У ньому немає змінних і циклів, тож будь-який файл можна прочитати від початку до кінця, нічого не запускаючи. Хибний рядок отримує код діагностики (K001–K302), і розбір іде далі; що означає кожен код, пояснює `keylang explain`.
 
-Мова виросла з Markdown-форми архітектурної мови Тимура Шемсединова. Як вона співвідноситься з import-linter, ArchUnit, Structurizr та подібними інструментами, розповідає [`docs/research-pl.md`](docs/research-pl.md).
+Мова виросла з Markdown-форми архітектурної мови Тимура Шемсединова. Як вона співвідноситься з import-linter, ArchUnit, Structurizr та подібними інструментами, розповідає [`docs/research-pl.md`](docs/archive/research-pl.md).
 
 ## Що вже є
 
@@ -147,6 +147,6 @@ npm test            # node:test, через справжній CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-Інтерфейс у терміналі тестується без справжнього термінала (`tests/tui.test.ts`), а `keylang web` — через CLI і WebSocket (`tests/web.test.ts`).
+Інтерфейс у терміналі тестується без справжнього термінала (`tests/tui-*.test.ts`), а `keylang web` — через CLI і WebSocket (`tests/web.test.ts`).
 
 Щоб опублікувати пакет, почніть із чистого клону: виконайте `npm test && npm run typecheck`, далі `npm version patch` (або minor, або major) і `npm publish`. `prepack` сам збере `dist/`. Перед публікацією варто переглянути архів через `npm pack`.

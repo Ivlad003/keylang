@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2ecda34deaf009b9898631b8c446398a87fe057fd0ddc9f1b79be2dbbe58cc9e lang=en detail=brief -->
-Caches per-file extraction results keyed by path and content hash, serving them from process memory or `FACT_CACHE_FILE` on disk when the hash matches and calling `extract` otherwise, while counting hits and misses. `map.fact-cache.FactCache.serialize` writes back only the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b680214b4e90fc56642c09375903b607208e9460ea80b63f23568b14d92aa239 lang=en detail=brief -->
+Caches per-file extracted facts keyed by content hash, checking process memory then the on-disk store before extracting, via `map.fact-cache.FactCache.facts`. `map.fact-cache.FactCache.changed` detects drift and `map.fact-cache.FactCache.serialize` writes this run's facts.

@@ -1,10 +1,48 @@
 // `keylang explain <id>` without a model: what the snapshot and the specs
 // say about one node. Deterministic and offline; the LLM explanation (§5.4)
-// builds on it and falls back to it.
+// builds on it and falls back to it. `nodeFacts` is also what hover says a
+// node is (`lsp-features.ts`): one source for kind, signature, place, state.
 
 import type { Analysis } from "./analyze.ts";
 import type { Node, Ref } from "./ir.ts";
-import { flowsUsing, plannedDecl } from "./lsp-features.ts";
+import { flowsUsing, plannedDeclaration } from "./spec-ir.ts";
+import { leavesUnresolved } from "./snapshot.ts";
+
+/** What a node is by the snapshot and the specs, before any view of it shows it. */
+export interface NodeFacts {
+  /** The ID as declared: the spec's spelling when only a spec declares it. */
+  id: string;
+  /** The code (the snapshot has it), a `planned` line the code does not have yet, or only a spec line. */
+  source: "code" | "planned" | "spec";
+  /** `fn`, `module`, … as the snapshot or the spec has it; `planned <kind>` for a plan without code. */
+  kind: string;
+  /** A module that is a class in the code. */
+  isClass: boolean;
+  signature: string | null;
+  /** Where it is declared; null for a node without a file (a layer, a package). */
+  file: string | null;
+  /** 1-based line and column in code points; 1 where the snapshot has none. */
+  line: number;
+  col: number;
+  /** Its members are unknown to the snapshot. */
+  opaque: boolean;
+  /** A `planned` line names this node of the code: the plan is implemented. */
+  implementsPlan: boolean;
+}
+
+/** The facts of `id`: from the snapshot, else from its `planned` line, else from the spec line that declares it; null when nothing does. */
+export function nodeFacts(analysis: Analysis, id: string): NodeFacts | null {
+  const node = analysis.snapshot?.nodes[id];
+  const plan = plannedDeclaration(analysis.docs, id);
+  if (node) {
+    return { id, source: "code", kind: node.kind, isClass: node.kind === "module" && node.class === true, signature: node.signature ?? null, file: node.file, line: node.line ?? 1, col: node.col ?? 1, opaque: node.members === "opaque", implementsPlan: plan !== null };
+  }
+  if (plan) return { id, source: "planned", kind: `planned ${plan.kind}`, isClass: false, signature: plan.signature, file: plan.file, line: plan.line, col: plan.col, opaque: false, implementsPlan: false };
+  const declared = analysis.index.lookup(id);
+  if (declared.kind === "missing") return null;
+  const { decl } = declared;
+  return { id: decl.id, source: "spec", kind: decl.kind, isClass: false, signature: null, file: decl.file, line: decl.span.start.line, col: decl.span.start.col, opaque: declared.kind === "opaque", implementsPlan: false };
+}
 
 export interface NodeSummary {
   id: string;
@@ -32,8 +70,43 @@ export interface NodeSummary {
 export type ExplainResult = { summary: NodeSummary } | { unknown: string; suggestion: string | null };
 
 export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
+  const facts = nodeFacts(analysis, id);
+  // The code or a plan says what a node is; an ID only a spec line declares has nothing to summarize.
+  if (facts === null || facts.source === "spec") return { unknown: id, suggestion: analysis.index.suggest(id) ?? null };
+  const rules = rulesNaming(analysis, id);
+  const flows = flowsUsing(analysis.spec, id);
+  const at = facts.file ? `${facts.file}:${facts.line}` : null;
   const node = analysis.snapshot?.nodes[id];
-  const plan = plannedDecl(analysis.docs, id);
+  if (facts.source === "code" && node) {
+    const holes: Record<string, number> = {};
+    for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id && leavesUnresolved(c)) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
+    return {
+      summary: {
+        id,
+        kind: facts.isClass ? "class" : facts.kind,
+        signature: facts.signature,
+        doc: node.doc ?? null,
+        at,
+        exported: node.exported ?? null,
+        calls: node.calls ?? [],
+        callers: node.callers ?? [],
+        deps: node.deps ?? [],
+        dependents: node.dependents ?? [],
+        flows,
+        rules,
+        holes,
+        fingerprint: node.fingerprint && node.closure ? { own: node.fingerprint, closure: node.closure.fingerprint, complete: node.closure.complete } : null,
+        planned: facts.implementsPlan,
+      },
+    };
+  }
+  return {
+    summary: { id, kind: facts.kind, signature: facts.signature, doc: null, at, exported: null, calls: [], callers: [], deps: [], dependents: [], flows, rules, holes: {}, fingerprint: null, planned: true },
+  };
+}
+
+/** `file:line: rule text` of the rule and module lines that name `id` or a scope around it, sorted; the generated map's are left out. */
+function rulesNaming(analysis: Analysis, id: string): string[] {
   const within = (scope: string): boolean => id === scope || id.startsWith(`${scope}.`);
   const skipped = new Set(analysis.docs.filter((doc) => doc.generated !== null).map((doc) => doc.path));
   const seen = new Set<Node>();
@@ -58,37 +131,7 @@ export function summarizeNode(analysis: Analysis, id: string): ExplainResult {
   }
   for (const line of analysis.spec.rejectedLayers) consider(line.file, line.source, line.nested);
   for (const mod of analysis.spec.modules) consider(mod.file, mod.source, [mod.target]);
-  const flows = flowsUsing(analysis.spec, id);
-  if (node) {
-    const holes: Record<string, number> = {};
-    for (const c of analysis.snapshot?.coverage ?? []) if (c.source === id) holes[c.kind] = (holes[c.kind] ?? 0) + 1;
-    const isClass = node.kind === "module" && node.class === true;
-    return {
-      summary: {
-        id,
-        kind: isClass ? "class" : node.kind,
-        signature: node.signature ?? null,
-        doc: node.doc ?? null,
-        at: node.file ? `${node.file}:${node.line ?? 1}` : null,
-        exported: node.exported ?? null,
-        calls: node.calls ?? [],
-        callers: node.callers ?? [],
-        deps: node.deps ?? [],
-        dependents: node.dependents ?? [],
-        flows,
-        rules: rules.sort(),
-        holes,
-        fingerprint: node.fingerprint && node.closure ? { own: node.fingerprint, closure: node.closure.fingerprint, complete: node.closure.complete } : null,
-        planned: plan !== null,
-      },
-    };
-  }
-  if (plan) {
-    return {
-      summary: { id, kind: `planned ${plan.kind}`, signature: plan.signature, doc: null, at: `${plan.file}:${plan.line}`, exported: null, calls: [], callers: [], deps: [], dependents: [], flows, rules: rules.sort(), holes: {}, fingerprint: null, planned: true },
-    };
-  }
-  return { unknown: id, suggestion: analysis.index.suggest(id) ?? null };
+  return rules.sort();
 }
 
 /** The allow, deny, entry item, nested layer, or module line that holds `ref`. */

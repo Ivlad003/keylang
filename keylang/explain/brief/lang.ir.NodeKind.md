@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ef3b0ed15e826ace10b0f4d616312dea6e1ee5e5be7c3b70dc05c2893abbb5e6 lang=en detail=brief -->
-A string union listing every item kind the parsed IR can hold, grouped by map, rules, flows, and wiring sections, with `"unknown"` reserved for items that failed to interpret.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7f2b56f9a1f1bf779f32455bfc3776060b0b1477b57160d9885980a07bccb73b lang=en detail=brief -->
+Union of string tags classifying every IR item across map, rules, flows and wiring sections, from layers, modules and deps to flow steps, open questions and planned items, plus an `unknown` tag for uninterpretable items.

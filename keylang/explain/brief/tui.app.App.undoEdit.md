@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9b35c187c2190205d0cb0a5e90622327103855bffc394e6836d2f97b0eb8d538 lang=en detail=brief -->
-Clears any pending completion, pops the latest snapshot from the buffer's undo stack, and if none exists sets a "nothing to undo" message. Otherwise restores the text via `tui.buffer.setText`, resets the cursor, then runs `tui.app.App.clampCursor`, `tui.app.App.keepVisible`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=1d48356b09bbb2f5e08870436e3bcb127a555740bceab4c62c3e5ec5511be8d1 lang=en detail=brief -->
+Clears any completion, pops the last undo snapshot from the active buffer and restores its text via `tui.buffer.setText` and its cursor, then clamps, scrolls into view and schedules reanalysis; reports "nothing to undo" if empty.

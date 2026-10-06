@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a56d16382f5218d7ba51551bb563e842d8ea11eeda8f0d147ad71b9bb294a50f lang=en detail=brief -->
-Maps a parsing context to the fixed list of keywords permitted there, e.g. `module`/`fn`/`type`/`event` inside a module block, with `map-top` prepending `layer` to `RULES`; unknown contexts yield an empty list. Used by `lang.parser.Parser.bare` and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d284407161ed9352f64fb471695d0e6a7fa62cf2cea62059406adec4d201e23e lang=en detail=brief -->
+Maps a parser context to the keywords allowed there, e.g. block keywords at a section's top level or `calls` inside a function, returning an empty list for unknown contexts. Used by `lang.parser.Parser.interpret` and `lang.parser.placeHint`.

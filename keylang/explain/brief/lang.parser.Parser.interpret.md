@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=74a5b981177ea6a94ffc29fa219646c888410a8f965447b518602e2816193680 lang=en detail=brief -->
-Dispatches a parsed item on its leading keyword (checked via `lang.parser.keywordsOf` for the current context), delegating to `lang.parser.Parser.decl`, `lang.parser.Parser.refList`, `lang.parser.Parser.oneRef`, `lang.parser.Parser.freeText` or inline handling to fill the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7fc67cfe136f1a4a7f5cfcec2c5516af21e100a51cfe7bdc091a87cc28aa0db7 lang=en detail=brief -->
+Classifies an item by its leading keyword, sending non-keyword items to `lang.parser.Parser.bare`, and parses the remaining tokens per kind into declarations, references, or text. Malformed arguments raise K005 errors.

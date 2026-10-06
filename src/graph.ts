@@ -3,15 +3,15 @@
 // a local or missing callee stays a gap instead of a confirmed edge.
 
 import { posix } from "node:path";
-import { isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
+import { isAssumed, isExcluded, isOutside, layerName, OUTSIDE_LAYER, type Config } from "./config.ts";
 import { readManifests, type DeclaredPackage } from "./declared-packages.ts";
-import { resolveExports, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
+import { resolveExports, UNKNOWN_EXPORT, type ExportEntry, type ExportForm, type ExportKind, type ExportRowInput, type ExportTarget, type ModuleExportsInput } from "./exports.ts";
 import type { CallFact, DeclFact, ExportRow, FileFacts, HookFact, ImportBinding, TypeRefFact } from "./extract/facts.ts";
 import { assignExternalIds, EXTERNAL, externalSegment } from "./external-ids.ts";
 import { globPrefix, matchesGlob } from "./glob.ts";
 import { frontendFor, frontendOf, type Frontend, type SourceResolver } from "./frontends.ts";
-import type { Resolution } from "./imports.ts";
-import { constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
+import { assumedTarget, type Resolution } from "./imports.ts";
+import { asciiLowerCase, caselessNames, constructorName, implicitMember, LANGUAGES, languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
 
 export { EXTERNAL };
@@ -25,6 +25,8 @@ export interface Graph {
   warnings: string[];
   /** Analysis holes kept beside the graph so a clean edge list is not a claim of full coverage. */
   gaps: Gap[];
+  /** Imports of files `assume` lists: neither an edge nor a hole (`assumed-import` coverage). */
+  assumed: AssumedImport[];
   /** Type edges and calls with more than one target. Confirmed calls stay on functions. */
   openEdges: OpenEdge[];
   /** Config files import resolution read (`tsconfig.json`, `package.json`), with their text or null. */
@@ -47,6 +49,9 @@ export interface Gap {
   /** Module or function that contains the gap, when there is one. */
   source: string | null;
 }
+
+/** An import of a file `assume` lists: the architecture imports it, and keylang neither reads nor requires it. */
+export type AssumedImport = Omit<Gap, "kind">;
 
 export interface OpenEdge {
   kind: "call" | "type";
@@ -107,6 +112,12 @@ export interface Dep {
   endCol: number;
   text: string;
   reexport: boolean;
+  /**
+   * Every import of this kind from the module names types only (TypeScript `import type`,
+   * `export type … from`, or every name `type` without `verbatimModuleSyntax`): erased from
+   * the code that runs, so `no-cycles` skips it.
+   */
+  typeOnly?: true;
 }
 
 export interface Fn {
@@ -226,6 +237,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const stats: Stats = { files: files.length, modules: 0, fns: 0, types: 0, deps: 0, callsResolved: 0, callsUnresolved: 0, callsExternal: 0, callsDynamic: 0, importsUnresolved: 0, unassignedFiles: 0 };
   const warnings: string[] = [];
   const gaps: Gap[] = [];
+  const assumedImports: AssumedImport[] = [];
   const openEdges: OpenEdge[] = [];
   for (const name of config.layers.keys()) layers.set(name, { name, modules: [] });
 
@@ -304,17 +316,37 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     if (!placed) gaps.push({ kind: "unassigned-file", file: f.path, line: 1, col: 1, endLine: f.endLine, endCol: f.endCol, text: "", reason: "outside any layer", source: m.id });
   }
 
-  // 2. Declarations.
-  // Module id → name → node id; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
+  // 2. Declarations. A file is a scope of its own: in a module of several files (`module: "dir"`,
+  // `x.ts` beside `x/index.ts`) a name one file declares is not in scope in another, and the same
+  // name declared by two files is two symbols.
+  const moduleFiles = new Map<string, FileEntry[]>();
+  for (const entry of byFile.values()) moduleFiles.set(entry.module.id, [...(moduleFiles.get(entry.module.id) ?? []), entry]);
+  // Module id → name → the node that keeps the name; class id → member key (`m`, `static m`, `#m`, `static #m`) → fn id.
   const declModule = new Map<string, Map<string, string>>();
+  /** File → name → node id: the file's own top-level declarations, the only ones its code names without an import. */
+  const fileDecls = new Map<string, Map<string, string>>();
   const decls: Decls = { ids: new Map(), fns: new Map(), classes: new Map(), types: new Set(), members: new Map() };
+  const segments = new Map<DeclFact, string>();
+  for (const [id, entries] of moduleFiles) {
+    declModule.set(id, new Map());
+    for (const [d, segment] of topSegments(entries[0]!.module, entries.map((e) => e.facts), warnings)) segments.set(d, segment);
+  }
   for (const { facts, module } of byFile.values()) {
-    const names = declModule.get(module.id) ?? new Map<string, string>();
-    declModule.set(module.id, names);
-    for (const d of facts.decls) addDecl(module, d, names, declModule, decls, stats, facts.path);
+    const scope = new Map<string, string>();
+    fileDecls.set(facts.path, scope);
+    const names = declModule.get(module.id)!;
+    for (const d of facts.decls) {
+      const key = layerName(d.name);
+      const segment = segments.get(d) ?? key;
+      addDecl(module, d, scope, declModule, decls, stats, facts.path, { key, segment });
+      const id = decls.ids.get(d);
+      if (segment === key && id !== undefined && !names.has(key)) names.set(key, id);
+    }
     for (const hole of facts.unsupported) {
       // A hole in one declaration (a Python decorator that may replace a fn) belongs to that declaration.
-      const own = hole.symbol === undefined ? null : [module.id, ...hole.symbol.split(".").map(layerName)].join(".");
+      const [head = "", ...rest] = hole.symbol === undefined ? [] : hole.symbol.split(".").map(layerName);
+      const top = scope.get(head);
+      const own = top === undefined ? null : [top, ...rest].join(".");
       const source = own !== null && (decls.fns.has(own) || decls.classes.has(own)) ? own : module.id;
       gaps.push({ kind: "unsupported", file: facts.path, line: hole.line, col: hole.col, endLine: hole.endLine, endCol: hole.endCol, text: hole.text, reason: hole.reason, source });
     }
@@ -337,10 +369,33 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   const externalIds = assigned.ids;
   warnings.push(...assigned.warnings);
   const packages = manifests.packages.map((p) => ({ ...p, id: externalIds.get(p.name)! })).sort((a, b) => compareText(a.id, b.id));
+  /** The export-table key of a file's names: its module, or the file itself in a module of several files. */
+  const unitOf = (path: string): string => {
+    const module = byFile.get(path)?.module;
+    if (!module) return path;
+    return (moduleFiles.get(module.id)?.length ?? 0) > 1 ? `${FILE_UNIT}${path}` : module.id;
+  };
   const importTargets = new Map<string, Map<string, ImportTarget[]>>(); // file → local → targets
+  /** File → its `export * from` sources, as export-table keys: another file of its own module too. */
+  const fileStars = new Map<string, { target: string | null; reason: string }[]>();
+  /** File → what its glob imports (`use m::*`, `from m import *`) bring into scope. */
+  const fileGlobs = new Map<string, GlobSource[]>();
   for (const { facts, module } of byFile.values()) {
     const locals = new Map<string, ImportTarget[]>();
     importTargets.set(facts.path, locals);
+    // Keyed in NFC, as IDs are: code may write a name in NFD (`cafe` + U+0301).
+    const bind = (b: ImportBinding, target: ImportTarget): void => {
+      const key = b.local.normalize("NFC");
+      locals.set(key, [...(locals.get(key) ?? []), target]);
+    };
+    const globs: GlobSource[] = [];
+    fileGlobs.set(facts.path, globs);
+    const stars: { target: string | null; reason: string }[] = [];
+    fileStars.set(facts.path, stars);
+    const starFrom = (source: { target: string | null; reason: string }): void => {
+      stars.push(source);
+      module.starSources.push(source);
+    };
     const aliases = new Map<string, string>();
     const hole = (imp: FileFacts["imports"][number], reason: string): void => {
       stats.importsUnresolved++;
@@ -350,6 +405,24 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     for (const imp of facts.imports) {
       const r = resolve(facts.path, imp.source);
       const star = imp.reexport && imp.bindings.length === 0;
+      /**
+       * What a glob import of this source brings into scope: a module's table, or names keylang
+       * cannot list — a path that is no whole module too (`use Kind::*` of an enum's variants,
+       * Python `from .missing import *` that only the package resolves).
+       */
+      const globFrom = (unit: string | null, external: boolean): void => {
+        if (imp.glob) globs.push({ unit, external });
+      };
+      // `assume`: a file the architecture imports that keylang neither reads nor requires, present or
+      // absent. No edge and no hole; its names are bound like a package's, so calls through them are external.
+      const assumed = config.assume.length === 0 ? null : assumedTarget(r, () => resolverFor(facts.path)?.wouldName?.(facts.path, imp.source) ?? [], (path) => isAssumed(path, config));
+      if (assumed !== null) {
+        assumedImports.push({ file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reason: `assumed import \`${imp.source}\` → \`${assumed}\` (\`assume\` in keylang.json)`, source: module.id });
+        globFrom(null, true);
+        for (const b of imp.bindings) bind(b, importTarget(ASSUMED_MODULE, ASSUMED_MODULE.id, b, false));
+        if (star) starFrom({ target: null, reason: `re-export from assumed \`${imp.source}\`` });
+        continue;
+      }
       let target: Module | null = null;
       if (r.kind === "internal") {
         target = byFile.get(r.file)?.module ?? null;
@@ -357,29 +430,39 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           // A workspace package's entry (`dist/index.js`), a file of a language
           // keylang.json does not list, a file in a build directory or one that
           // appeared after the sources were read: the dependency is there, its target unknown.
+          globFrom(null, false);
           const why = r.workspace ? `workspace package entry \`${r.file}\` is not indexed` : notIndexed(config, r.file);
           if (why === null || imp.optional) {
             // Left out on purpose: tests, declaration files, `exclude`, files outside guessed layers, non-source files.
-            if (star) module.starSources.push({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
+            if (star) starFrom({ target: null, reason: `re-export from excluded \`${imp.source}\`` });
             continue;
           }
           hole(imp, `unresolved import \`${imp.source}\` (${why})`);
-          if (star) module.starSources.push({ target: null, reason: `re-export from unindexed \`${imp.source}\`` });
+          if (star) starFrom({ target: null, reason: `re-export from unindexed \`${imp.source}\`` });
           continue;
         }
-        // A file that imports itself is a self-loop; two files merged into one module are not.
-        if (target === module && r.file !== facts.path) continue;
+        // A file that imports itself is a self-loop; two files merged into one module are not:
+        // another file of this module is no dependency, but what the import names is bound here.
+        if (target === module && r.file !== facts.path) {
+          const unit = unitOf(r.file);
+          globFrom(r.whole === true && !r.nested ? unit : null, false);
+          for (const b of r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.whole === true));
+          if (star) stars.push({ target: unit, reason: "" });
+          continue;
+        }
       } else if (r.kind === "local") {
         // `crate::run()` or `self::X` in the file that declares them: the name is this module's own.
-        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(module, b, false)]);
+        for (const b of imp.bindings) bind(b, importTarget(module, unitOf(facts.path), b, false));
         continue;
       } else if (r.kind === "stdlib") {
         // Bound to a module outside the graph: calls through the name stay external, and no node or edge appears.
-        for (const b of imp.bindings) locals.set(b.local, [...(locals.get(b.local) ?? []), importTarget(STDLIB_MODULE, b, false)]);
-        if (star) module.starSources.push({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
+        globFrom(null, true);
+        for (const b of imp.bindings) bind(b, importTarget(STDLIB_MODULE, STDLIB_MODULE.id, b, false));
+        if (star) starFrom({ target: null, reason: `re-export from the standard library \`${imp.source}\`` });
         continue;
       } else if (r.kind === "generated") {
-        if (star) module.starSources.push({ target: null, reason: `re-export from generated \`${imp.source}\`` });
+        globFrom(null, false);
+        if (star) starFrom({ target: null, reason: `re-export from generated \`${imp.source}\`` });
         continue;
       } else if (r.kind === "external" || r.kind === "builtin") {
         const pkg = r.kind === "builtin" ? "node" : r.pkg;
@@ -389,21 +472,34 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       } else {
         // `new URL("./worker", import.meta.url)` without a source file behind it names no module.
         if (imp.optional) continue;
+        globFrom(null, false);
         hole(imp, `unresolved import \`${imp.source}\``);
-        if (star) module.starSources.push({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
+        if (star) starFrom({ target: null, reason: `re-export from unresolved \`${imp.source}\`` });
         continue;
       }
-      if (star) module.starSources.push(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: target.id, reason: "" });
+      const unit = r.kind === "internal" ? unitOf(r.file) : target.id;
+      if (target.layer === EXTERNAL) globFrom(null, true);
+      else if (r.kind === "internal" && r.file !== facts.path) globFrom(r.whole === true && !r.nested ? unit : null, false);
+      if (star) starFrom(target.layer === EXTERNAL ? { target: null, reason: `re-export from external \`${imp.source}\`` } : { target: unit, reason: "" });
       // Rust `a::inner::f` with `mod inner {}` in `a.rs`: `f` is not a member keylang indexed, so the name stays unbound.
-      for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) {
-        const list = locals.get(b.local) ?? [];
-        list.push(importTarget(target, b, r.kind === "internal" && r.whole === true));
-        locals.set(b.local, list);
-      }
+      for (const b of r.kind === "internal" && r.nested ? [] : imp.bindings) bind(b, importTarget(target, unit, b, r.kind === "internal" && r.whole === true));
+      // `import type`, `export type … from`: a dependency of types only, erased from the code that
+      // runs. So is `import { type A }` with every name `type`, unless the file's tsconfig sets
+      // `verbatimModuleSyntax` (then `import {} from` loads the module; a resolver that cannot
+      // tell keeps it). An edge like any other, which `no-cycles` alone skips.
+      const erased = imp.typeOnly === true || (imp.inlineTypeOnly === true && resolverFor(facts.path)?.verbatimModuleSyntax?.(facts.path) === false);
+      const typeOnly = erased ? { typeOnly: true as const } : {};
+      const at = { file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text };
       // `import { a } from "./x"` and `export { b } from "./x"`: one dependency, an edge of each kind.
       const same = module.deps.filter((d) => d.target === target.id);
       if (same.length > 0) {
-        if (!same.some((d) => d.reexport === imp.reexport)) module.deps.push({ alias: same[0]!.alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
+        const kind = same.find((d) => d.reexport === imp.reexport);
+        if (!kind) module.deps.push({ alias: same[0]!.alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
+        // `import type { A }`, then `import { a }` of the same module: the module runs, from the second import on.
+        else if (kind.typeOnly && !erased) {
+          Object.assign(kind, at);
+          delete kind.typeOnly;
+        }
         continue;
       }
       const wanted = imp.bindings.find((b) => b.kind === "module" || b.kind === "default")?.local ?? target.name;
@@ -422,30 +518,31 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         alias = `${alias}${n}`;
       }
       aliases.set(alias, target.id);
-      module.deps.push({ alias, target: target.id, file: facts.path, line: imp.line, col: imp.col, endLine: imp.endLine, endCol: imp.endCol, text: imp.text, reexport: imp.reexport });
+      module.deps.push({ alias, target: target.id, ...at, reexport: imp.reexport, ...typeOnly });
       stats.deps++;
     }
   }
 
   // 3b. Export tables: what each public name stands for, through aliases, re-exports and `export *`.
-  const moduleFiles = new Map<string, FileEntry[]>();
-  for (const entry of byFile.values()) {
-    const list = moduleFiles.get(entry.module.id) ?? [];
-    list.push(entry);
-    moduleFiles.set(entry.module.id, list);
-  }
+  // A module of several files has a table of every file's names, and each file one of its own: an
+  // import names one file, so it reads that file's table (two files may export `default`).
   const exportInputs = new Map<string, ModuleExportsInput>();
   for (const [id, entries] of moduleFiles) {
     const module = entries[0]!.module;
+    const opaque = module.members === "opaque";
     const rows: ExportRowInput[] = [];
     for (const { facts } of entries) {
       const listed: ExportRow[] = facts.exportRows.length > 0 ? facts.exportRows : [...facts.exports].sort().map((name) => ({ name, kind: "value", local: name }));
-      for (const row of listed) if (row.name !== "*") rows.push(exportInput(row, facts, module, importTargets.get(facts.path)!, declModule));
+      const own = listed.filter((row) => row.name !== "*").map((row) => exportInput(row, facts, fileDecls.get(facts.path)!, importTargets.get(facts.path)!));
+      rows.push(...own);
+      if (entries.length > 1) exportInputs.set(`${FILE_UNIT}${facts.path}`, { rows: own, stars: fileStars.get(facts.path)!, opaque });
     }
-    exportInputs.set(id, { rows, stars: module.starSources, opaque: module.members === "opaque" });
+    exportInputs.set(id, { rows, stars: module.starSources, opaque });
   }
   const symbolKind = (id: string): ExportKind | null => (decls.classes.has(id) ? "class" : decls.fns.has(id) ? "fn" : decls.types.has(id) ? "type" : null);
-  const exportTables = resolveExports(exportInputs, symbolKind, (module, name) => declModule.get(module)?.get(layerName(name)) ?? null);
+  const exportTables = resolveExports(exportInputs, symbolKind, (unit, name) => (unit.startsWith(FILE_UNIT) ? fileDecls.get(unit.slice(FILE_UNIT.length)) : declModule.get(unit))?.get(layerName(name)) ?? null);
+  /** A module ID for an export-table key: the module of a file's own table. */
+  const moduleOfUnit = (unit: string): string => (unit.startsWith(FILE_UNIT) ? (byFile.get(unit.slice(FILE_UNIT.length))?.module.id ?? unit) : unit);
 
   // 4. Calls. Hook calls and the values callers pass are collected for step 5.
   /** What a call of the class runs: `constructor` in JS, `__init__` in Python. */
@@ -457,30 +554,138 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // `x.run()` in module-level code with a receiver keylang does not know: any fn named `run`.
   const calledNames = new Map<string, Escape>();
   // Class → its internal base class, or the `extends` text when keylang has not read the base.
-  const classBase = new Map<string, { internal: string | null; text: string }>();
-  const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
+  const classBase = new Map<string, BaseLink>();
+  /** Class → the traits it uses (PHP `use Logs;`), resolved in its file. */
+  const classTraits = new Map<string, string[]>();
   /**
-   * The symbol a public name of a module stands for: `export { a as b }`,
-   * `export default f`, `export { x } from`, `export { x as y } from`, an
-   * imported name exported again, `export * as ns from` (the module), and
-   * `export * from`. A name without an export row (CommonJS, an unexported
-   * helper) is the declaration of that name.
+   * A member of a class by name: its own, then a used trait's (PHP), then its
+   * bases' — as the language looks a method up. `staticToo`: an instance may
+   * reach a static member (Python, PHP). `last`: the base link the chain
+   * ended at, null when the class has no base; an unread base may declare it.
    */
-  const resolveExport = (target: Module, name: string): string | null => exportTables.symbolOf(target.id, name);
-  /** A module that a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
-  const namespaceModule = (id: string | null): Module | null => {
-    const m = id === null ? undefined : modules.get(id);
-    return m && !m.class && m.layer !== EXTERNAL ? m : null;
+  const findMember = (start: string, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+    // PHP finds `total()` for `$o->TOTAL()`; its bases and traits are PHP too.
+    const caseless = caselessNames(decls.classes.get(start)?.path);
+    const keys = [member === "constructor" ? "constructor" : memberKey(member, isStatic, caseless), ...(staticToo && !isStatic ? [memberKey(member, true, caseless)] : [])];
+    const seen = new Set<string>();
+    const inClass = (id: string): string | null => {
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const members = declModule.get(id);
+      for (const key of keys) {
+        const hit = members?.get(key);
+        if (hit) return hit;
+      }
+      for (const trait of classTraits.get(id) ?? []) {
+        const hit = inClass(trait);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    let last: BaseLink | null = null;
+    for (let at: string | null = start; at !== null && !seen.has(at); ) {
+      const hit = inClass(at);
+      if (hit) return { target: hit, last };
+      const base = classBase.get(at);
+      if (!base) break;
+      last = base;
+      at = base.internal;
+    }
+    return { target: null, last };
+  };
+  /** The base a class's chain of bases ends at when keylang has not read it (a package's, a global, an unknown name); null when it has read them all. */
+  const unreadBase = (id: string): BaseLink | null => {
+    const seen = new Set<string>();
+    for (let at = classBase.get(id); at; at = at.internal ? classBase.get(at.internal) : undefined) {
+      if (!at.internal) return at;
+      if (seen.has(at.internal)) return null;
+      seen.add(at.internal);
+    }
+    return null;
+  };
+  const injections = new Map<string, { arg: number; path: string; target: string; site: string }[]>();
+  /** Per export table of a language whose names compare without case: name in ASCII lower case → the names of its declarations; null for any other table. */
+  const caselessTables = new Map<string, Map<string, string[]> | null>();
+  /**
+   * PHP finds a class or a function whatever the case its name is written in: `new ORDER()`
+   * makes an `Order`, `HELPER()` runs `helper()`. The symbol of the one declaration of `unit`
+   * whose name is `name` in another case; null when the unit's language keeps case, or when no
+   * declaration or two of them (`class Twin`, `function twin`) match.
+   */
+  const caselessExport = (unit: string, name: string): string | null => {
+    let table = caselessTables.get(unit);
+    if (table === undefined) {
+      const file = unit.startsWith(FILE_UNIT) ? unit.slice(FILE_UNIT.length) : moduleFiles.get(unit)?.[0]?.facts.path;
+      table = caselessNames(file) ? caselessIndex(exportInputs.get(unit)?.rows ?? []) : null;
+      caselessTables.set(unit, table);
+    }
+    const names = table?.get(asciiLowerCase(name)) ?? [];
+    return names.length === 1 && names[0] !== name ? exportTables.symbolOf(unit, names[0]!) : null;
+  };
+  /**
+   * The symbol a public name stands for in an export table (`unit`: a module, or one file of a
+   * module of several files): `export { a as b }`, `export default f`, `export { x } from`,
+   * `export { x as y } from`, an imported name exported again, `export * as ns from` (the
+   * module), and `export * from`. A name without an export row (CommonJS, an unexported helper)
+   * is the declaration of that name. PHP may write the name in another case.
+   */
+  const exportOf = (unit: string, name: string): string | null => exportTables.symbolOf(unit, name) ?? caselessExport(unit, name);
+  /** The export table of what a symbol names as a namespace (`export * as ns`, `import * as ns; export { ns }`); null for a class or a declaration. */
+  const namespaceUnit = (id: string | null): string | null => {
+    if (id === null) return null;
+    if (id.startsWith(FILE_UNIT)) return id;
+    const m = modules.get(id);
+    return m && !m.class && m.layer !== EXTERNAL ? id : null;
   };
   /** A symbol a call can run: a fn, or a class (its constructor). */
   const callable = (id: string): boolean => decls.fns.has(id) || decls.classes.has(id);
-  /** Per file: how its names resolve to symbols. */
-  const scopeOf = (facts: FileFacts, module: Module) => {
-    const locals = importTargets.get(facts.path)!;
-    const localDecls = declModule.get(module.id)!;
-    /** The symbol an import binds: the named export, or the default export of a default or whole-module binding. */
-    const importedSymbol = (imp: ImportTarget): string | null => resolveExport(imp.module, imp.imported ?? "default");
-    /** A class by the name this file uses for it: a local declaration or an import. */
+  /** Callable symbols of an export table: what a namespace object holds. Grouped once, on first use. */
+  let callablesByUnit: Map<string, string[]> | null = null;
+  const exportedCallables = (unit: string): string[] => {
+    if (!callablesByUnit) {
+      const byUnit = new Map<string, string[]>();
+      for (const e of exportTables.entries()) if (e.symbol !== null && callable(e.symbol)) byUnit.set(e.module, [...(byUnit.get(e.module) ?? []), e.symbol]);
+      callablesByUnit = byUnit;
+    }
+    return callablesByUnit.get(unit) ?? [];
+  };
+  /** Per file: how its names resolve to symbols. The file is the scope: its own declarations and its imports. */
+  const scopeOf = (facts: FileFacts) => {
+    // A name as the code writes it, which may be NFD (`cafe` + U+0301): IDs are NFC, so the file's
+    // declarations are keyed by their ID segment and its imports by their NFC name.
+    const imports = importTargets.get(facts.path)!;
+    const locals = { get: (name: string) => imports.get(name.normalize("NFC")), has: (name: string) => imports.has(name.normalize("NFC")) };
+    const declared = fileDecls.get(facts.path)!;
+    const localDecls = { get: (name: string) => declared.get(layerName(name)), has: (name: string) => declared.has(layerName(name)) };
+    /**
+     * The symbol an import binds: the named export, or the default export of a default binding or
+     * of `module.exports`. An ESM namespace object stands for no symbol: it is no function.
+     */
+    const importedSymbol = (imp: ImportTarget): string | null => (imp.namespace ? null : exportOf(imp.unit, imp.imported ?? "default"));
+    const globs = fileGlobs.get(facts.path) ?? [];
+    /**
+     * What a name the file neither declares nor imports stands for through its glob imports
+     * (`use m::*`, `from m import *`): the public name of each source that has it; two may.
+     */
+    const globbed = (name: string): string[] => {
+      if (globs.length === 0 || localDecls.has(name) || locals.has(name)) return [];
+      const out = new Set<string>();
+      for (const g of globs) {
+        const symbol = g.unit === null ? null : (exportTables.lookup(g.unit, name)?.symbol ?? null);
+        if (symbol) out.add(symbol);
+      }
+      return [...out];
+    };
+    /**
+     * Where a name no declaration or import binds may come from, when the glob imports do not
+     * list it: `unknown` — a source whose names keylang cannot list; `external` — only a package
+     * or the standard library can bind it; null — no glob import can.
+     */
+    const globOrigin = (): "unknown" | "external" | null => {
+      if (globs.some((g) => (g.unit === null ? !g.external : exportInputs.get(g.unit)?.opaque === true || exportTables.lookup(g.unit, UNKNOWN_EXPORT) !== null))) return "unknown";
+      return globs.some((g) => g.external) ? "external" : null;
+    };
+    /** A class by the name this file uses for it: a local declaration, an import or a glob import. */
     const classNamed = (name: string): string | null => {
       const ids = new Set<string>();
       const local = localDecls.get(name);
@@ -489,6 +694,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         const id = importedSymbol(imp);
         if (id) ids.add(id);
       }
+      for (const id of globbed(name)) ids.add(id);
       // Only a class has members of its own; a fn or a type does not.
       const classes = [...ids].filter((id) => decls.classes.has(id));
       return classes.length === 1 ? classes[0]! : null;
@@ -503,9 +709,10 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (!head) return [];
       const found = new Set<string>();
       if (head === "this") {
+        // `this.m()`: the class's member, a used trait's, or one of a base, as `super.m()` finds it.
         const member = rest[0];
         if (!cls || !member || rest.length !== 1) return [];
-        const id = declModule.get(cls.id)?.get(memberKey(member, isStatic));
+        const id = findMember(cls.id, member, isStatic, staticThroughInstance(facts.path)).target;
         return id ? [id] : [];
       }
       if (rest.length === 0) {
@@ -515,53 +722,56 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           const id = importedSymbol(imp);
           if (id && callable(id)) found.add(id);
         }
+        for (const id of globbed(head)) if (callable(id)) found.add(id);
         return [...found];
       }
       if (rest.length === 1) {
         const member = rest[0]!;
-        // `X.m()` on a class names its static member.
-        const staticOf = (clsId: string | null): string | undefined => (clsId && decls.classes.has(clsId) ? declModule.get(clsId)?.get(memberKey(member, true)) : undefined);
+        // `X.m()` on a class names its static member, its own or a base's.
+        const staticOf = (clsId: string | null): string | undefined => (clsId && decls.classes.has(clsId) ? (findMember(clsId, member, true, false).target ?? undefined) : undefined);
         for (const imp of locals.get(head) ?? []) {
           if (imp.kind === "module") {
             // `import * as ns`, `require()`: a named export; for `require`, also a static member of `module.exports`.
-            const id = resolveExport(imp.module, member) ?? staticOf(resolveExport(imp.module, "default"));
+            const id = exportOf(imp.unit, member) ?? (imp.namespace ? undefined : staticOf(exportOf(imp.unit, "default")));
             if (id) found.add(id);
             continue;
           }
           const name = imp.imported ?? "default";
-          const symbol = resolveExport(imp.module, name);
+          const symbol = exportOf(imp.unit, name);
           const id = staticOf(symbol);
           if (id) found.add(id);
           // `import { ns } from "./barrel"` with `export * as ns from "./x"`.
-          const ns = namespaceModule(symbol);
-          const nsId = ns ? resolveExport(ns, member) : null;
+          const ns = namespaceUnit(symbol);
+          const nsId = ns ? exportOf(ns, member) : null;
           if (nsId) found.add(nsId);
           // A default import of a module without `export default` (CommonJS) is its `module.exports`.
-          if (imp.kind === "default" && symbol === null && exportTables.lookup(imp.module.id, "default") === null) {
-            const cjs = resolveExport(imp.module, member);
+          if (imp.kind === "default" && symbol === null && exportTables.lookup(imp.unit, "default") === null) {
+            const cjs = exportOf(imp.unit, member);
             if (cjs) found.add(cjs);
           }
         }
         const id = staticOf(localDecls.get(head) ?? null);
         if (id) found.add(id);
+        // `Order::new()` with `use other::*`: a class or a namespace a glob import brings in.
+        for (const symbol of globbed(head)) {
+          const viaGlob = staticOf(symbol);
+          if (viaGlob) found.add(viaGlob);
+          const ns = namespaceUnit(symbol);
+          const nsId = ns ? exportOf(ns, member) : null;
+          if (nsId) found.add(nsId);
+        }
         return [...found];
       }
       return [];
     };
     /**
      * `this.decoder.feed` with `decoder: InputDecoder` → `InputDecoder.feed`,
-     * when that class or a base keylang has read declares the member.
+     * when that class, a trait it uses or a base keylang has read declares the
+     * member. In Python and PHP an instance reaches a static member too.
      */
     const receiverTarget = (callee: string, receiver: string | undefined): string | null => {
-      if (!receiver) return null;
-      const member = memberKey(callee.slice(callee.lastIndexOf(".") + 1), false);
-      const seen = new Set<string>();
-      for (let cls = classNamed(receiver); cls && !seen.has(cls); cls = classBase.get(cls)?.internal ?? null) {
-        seen.add(cls);
-        const id = declModule.get(cls)?.get(member);
-        if (id) return id;
-      }
-      return null;
+      const cls = receiver ? classNamed(receiver) : null;
+      return cls ? findMember(cls, callee.slice(callee.lastIndexOf(".") + 1), false, staticThroughInstance(facts.path)).target : null;
     };
     /** One target for a callee that names a declaration; null for locals, gaps and ambiguity. */
     const single = (fact: { callee: string; bound?: string; receiver?: string; opaque?: true }, cls: Module | null, isStatic: boolean): string | null => {
@@ -574,42 +784,39 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     };
     /** A name of the language or of a package: calls through it are external. */
     const external = (head: string): boolean => globalsOf(facts.path).values.has(head) || (locals.get(head) ?? []).some((imp) => imp.module.layer === EXTERNAL);
-    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external };
+    return { locals, localDecls, importedSymbol, classNamed, resolveCallees, receiverTarget, single, external, globOrigin };
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>();
-  for (const { facts, module } of byFile.values()) scopes.set(facts.path, scopeOf(facts, module));
-  // Every class's base first: `super()` in one file may run the constructor of a base in another.
+  for (const { facts } of byFile.values()) scopes.set(facts.path, scopeOf(facts));
+  // Every class's base and traits first: `super()` in one file may run the constructor of a base in another.
   for (const { facts } of byFile.values()) {
-    const { resolveCallees, classNamed } = scopes.get(facts.path)!;
+    const { resolveCallees, classNamed, external } = scopes.get(facts.path)!;
     const visit = (factDecls: readonly DeclFact[]): void => {
       for (const d of factDecls) {
         const id = d.kind === "class" ? decls.ids.get(d) : undefined;
-        if (!id || !d.base) continue;
+        if (!id) continue;
+        if (d.traits) classTraits.set(id, d.traits.map(classNamed).filter((t): t is string => t !== null));
+        if (!d.base) continue;
         const internal = d.base.includes(".") ? resolveCallees(d.base, null, false).filter((t) => decls.classes.has(t)) : [classNamed(d.base)].filter((t): t is string => t !== null);
-        classBase.set(id, { internal: internal.length === 1 ? internal[0]! : null, text: d.base });
+        // Whether an unread base is a package's or the language's is known in the class's own file.
+        classBase.set(id, internal.length === 1 ? { internal: internal[0]!, text: d.base, external: false } : { internal: null, text: d.base, external: external(d.base.split(".")[0]!) });
       }
     };
     visit(facts.decls);
   }
   /**
    * `super()` / `super.m()` in a class: the base's member, looked up through
-   * bases that do not declare it. `last`: the last base on that chain, null
-   * when the class has none.
+   * its traits and the bases that do not declare it. `last`: the last base on
+   * that chain, null when the class has none.
    */
-  const superTarget = (cls: Module, member: string, isStatic: boolean): { target: string | null; last: { internal: string | null; text: string } | null } => {
-    const seen = new Set<string>();
-    let last: { internal: string | null; text: string } | null = null;
-    for (let at = classBase.get(cls.id); at; at = at.internal ? classBase.get(at.internal) : undefined) {
-      last = at;
-      if (!at.internal || seen.has(at.internal)) break;
-      seen.add(at.internal);
-      const id = declModule.get(at.internal)?.get(member === "constructor" ? "constructor" : memberKey(member, isStatic));
-      if (id) return { target: id, last };
-    }
-    return { target: null, last };
+  const superTarget = (cls: Module, member: string, isStatic: boolean, staticToo: boolean): { target: string | null; last: BaseLink | null } => {
+    const base = classBase.get(cls.id);
+    if (!base?.internal) return { target: null, last: base ?? null };
+    const found = findMember(base.internal, member, isStatic, staticToo);
+    return { target: found.target, last: found.last ?? base };
   };
   for (const { facts, module } of byFile.values()) {
-    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external } = scopes.get(facts.path)!;
+    const { locals, localDecls, importedSymbol, resolveCallees, receiverTarget, single, external, globOrigin } = scopes.get(facts.path)!;
     const attach = (factDecls: DeclFact[], cls: Module | null): void => {
       for (const d of factDecls) {
         if (d.kind === "class") {
@@ -645,11 +852,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (head === "super" && cls && c.callee.split(".").length <= 2) {
             // `super()` runs the base constructor; `super.m()` the base's `m`.
             const member = c.callee === "super" ? "constructor" : c.callee.slice("super.".length);
-            const { target, last } = superTarget(cls, member, isStatic);
+            const { target, last } = superTarget(cls, member, isStatic, staticThroughInstance(facts.path));
             if (target) push(target, c);
             // Bases of this repository without a constructor of their own: the implicit ones run nothing keylang indexes.
             else if (last?.internal && member === "constructor") continue;
-            else if (last && !last.internal && external(last.text.split(".")[0]!)) stats.callsExternal++;
+            else if (last && !last.internal && last.external) stats.callsExternal++;
             else dynamic(c, `call through \`super\` of ${last ? `\`${last.text}\`` : "a class without a base keylang resolved"}`);
             continue;
           }
@@ -705,12 +912,23 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
           if (!target) {
             const imported = (locals.get(head) ?? [])[0];
             if (imported?.module.layer === EXTERNAL || globalsOf(facts.path).values.has(head)) stats.callsExternal++;
+            // `this.setState()` in a class over a package's base: the package's member, as `super.setState()` is.
+            else if (head === "this" && cls && c.callee.split(".").length === 2 && unreadBase(cls.id)?.external === true) stats.callsExternal++;
             else if (head !== "this" && !locals.has(head) && !localDecls.has(head)) {
-              stats.callsDynamic++;
-              gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: holeReason(c), source: fn.id });
+              // A name no table of the file's glob imports lists: a package's, or one keylang cannot see.
+              const glob = globOrigin();
+              if (glob === "external") stats.callsExternal++;
+              else {
+                stats.callsDynamic++;
+                const reason = glob === "unknown" && !c.hook ? `call through \`${c.callee}\`, a name from a glob import keylang does not follow` : holeReason(c);
+                gaps.push({ kind: "dynamic-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
+              }
             } else {
               stats.callsUnresolved++;
-              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason: c.hook ? holeReason(c) : `unresolved call \`${c.callee}\``, source: fn.id });
+              // `ns()` with `import * as ns`: a TypeError at run time, and no edge to the default export.
+              const object = languageOf(facts.path) === "typescript" || languageOf(facts.path) === "javascript" ? "namespace object" : "module object";
+              const reason = c.hook ? holeReason(c) : c.callee === head && imported?.namespace ? `call of the ${object} \`${head}\`, which is no function` : `unresolved call \`${c.callee}\``;
+              gaps.push({ kind: "unresolved-call", file: facts.path, line: c.line, col: c.col, endLine: c.endLine, endCol: c.endCol, text: c.callee, reason, source: fn.id });
             }
             continue;
           }
@@ -734,13 +952,23 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       if (targets.length > 0 || !c.callee.includes(".")) continue;
       if (external(head)) continue;
       const member = c.callee.slice(c.callee.lastIndexOf(".") + 1).replace(/^#/, "");
-      if (IDENTIFIER.test(member) && !calledNames.has(member)) calledNames.set(member, escape);
+      const key = member.normalize("NFC");
+      if (IDENTIFIER.test(member) && !calledNames.has(key)) calledNames.set(key, escape);
     }
     for (const ref of facts.valueRefs ?? []) {
       const escape = { file: facts.path, line: ref.line, col: ref.col, reason: `\`${ref.name}\` is read as a value` };
       if (ref.member) {
-        if (!readMembers.has(ref.name)) readMembers.set(ref.name, escape);
+        const key = ref.name.normalize("NFC");
+        if (!readMembers.has(key)) readMembers.set(key, escape);
         continue;
+      }
+      // A namespace object read as a value (`keep(ns)`) hands on every export of its module.
+      for (const imp of ref.name.includes(".") ? [] : (locals.get(ref.name) ?? [])) {
+        if (!imp.namespace) continue;
+        for (const id of exportedCallables(imp.unit)) {
+          const target = decls.classes.has(id) ? constructorOf(id) : id;
+          if (!readIds.has(target)) readIds.set(target, escape);
+        }
       }
       // A class read as a value (`extends A`, a factory argument) may be constructed anywhere.
       for (const id of resolveCallees(ref.name, null, false)) {
@@ -760,7 +988,7 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
       for (const imp of locals.get(head) ?? []) {
         // `NS.Id` with `import * as NS`: the named export `Id`, not a member of the default export.
         if (imp.kind === "module" && segments.length === 2) {
-          const id = resolveExport(imp.module, member);
+          const id = exportOf(imp.unit, member);
           if (id) narrowed.add(id);
           continue;
         }
@@ -768,11 +996,11 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
         if (id) found.add(id);
       }
       // A namespace (`export * as T`) is not a type.
-      if (!member) return [...found].filter((id) => namespaceModule(id) === null);
+      if (!member) return [...found].filter((id) => namespaceUnit(id) === null);
       for (const id of found) {
-        const ns = namespaceModule(id);
+        const ns = namespaceUnit(id);
         // `T.Id` with `import { T }` of `export * as T from "./t"`.
-        const child = ns ? (segments.length === 2 ? resolveExport(ns, member) : null) : declModule.get(id)?.get(layerName(member));
+        const child = ns ? (segments.length === 2 ? exportOf(ns, member) : null) : declModule.get(id)?.get(layerName(member));
         if (child) narrowed.add(child);
       }
       return [...narrowed];
@@ -821,14 +1049,8 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
   // A method of a class whose base keylang has not read (a package, a global,
   // an unresolved name) may be called by that base: `_read` of a `Readable`,
   // `render` of a component, `connectedCallback` of an element.
-  const unknownBase = (id: string, seen: Set<string>): string | null => {
-    const base = classBase.get(id);
-    if (!base || seen.has(id)) return null;
-    seen.add(id);
-    return base.internal === null ? base.text : unknownBase(base.internal, seen);
-  };
   for (const id of classBase.keys()) {
-    const base = unknownBase(id, new Set());
+    const base = unreadBase(id)?.text;
     const cls = decls.classes.get(id);
     if (!base || !cls) continue;
     for (const fn of cls.fns) if (fn.name !== constructorName(fn.file ?? cls.path)) fn.escapes ??= { file: fn.file ?? cls.path ?? "", line: fn.line, col: fn.col, reason: `\`${fn.name}\` may be called by the base class \`${base}\`` };
@@ -846,63 +1068,92 @@ export function buildGraph(config: Config, files: FileFacts[]): Graph {
     stats,
     warnings,
     gaps,
+    assumed: assumedImports,
     openEdges,
     // Manifests are inputs too: the snapshot id (and the MCP cache keyed on it) covers them.
     resolverInputs: new Map([...manifests.inputs, ...resolverInputs()]),
-    exports: exportTables.entries(),
+    // A file's own table is how imports resolve; the snapshot lists the modules' tables, by module IDs.
+    exports: exportTables
+      .entries()
+      .filter((e) => !e.module.startsWith(FILE_UNIT))
+      .map((e) => ({ ...e, symbol: e.symbol === null ? null : moduleOfUnit(e.symbol), ...(e.from !== undefined ? { from: moduleOfUnit(e.from) } : {}) })),
     packages,
   };
 }
 
 const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}_$]*$/u;
 
+/**
+ * The export-table key of one file of a module made of several files (`module: "dir"`, `x.ts`
+ * beside `x/index.ts`): `file:<path>`. No module ID has a `:`, so the keys never meet.
+ */
+const FILE_UNIT = "file:";
+
+/** What one glob import (`use m::*`, `from m import *`) brings into a file's scope. */
+interface GlobSource {
+  /** The export table of the source; null when keylang cannot list its names. */
+  unit: string | null;
+  /** A package or the standard library: a name only it can bind is called outside the graph. */
+  external: boolean;
+}
+
+/** A class's `extends`: the base keylang has read, or the text of one it has not, and whether that names a package's or the language's class. */
+interface BaseLink {
+  internal: string | null;
+  text: string;
+  external: boolean;
+}
+
+/** Python and PHP reach a static member through an instance (`s.make()`, `$this->make()`); JavaScript does not. */
+function staticThroughInstance(file: string): boolean {
+  const language = languageOf(file);
+  return language === "python" || language === "php";
+}
+
 /** What one import binding names in the file: a declaration of the module (`named`, `default`) or the module itself. */
 interface ImportTarget {
   module: Module;
+  /** The export table the binding's names resolve in: the module's, or the imported file's in a module of several files. */
+  unit: string;
   kind: ImportBinding["kind"];
   /** The export the binding names: its name, `default`, or null for the whole module. */
   imported: string | null;
+  /** An ESM namespace object (`import * as ns`): no function and no default value, unlike `module.exports` of `require()`. */
+  namespace: boolean;
 }
 
 /**
- * What a standard-library import (Python `typing`) binds: an external module
- * that is never added to the graph. Its ID is no valid ID, so it names no node.
+ * A module an import may bind that is never added to the graph: an external
+ * one, so calls through its names are external. Its ID is no valid ID, so it
+ * names no node.
  */
-const STDLIB_MODULE: Module = {
-  id: `${EXTERNAL}.<stdlib>`,
-  layer: EXTERNAL,
-  name: "<stdlib>",
-  path: null,
-  line: null,
-  col: null,
-  endLine: null,
-  endCol: null,
-  synthetic: true,
-  class: false,
-  comment: null,
-  doc: null,
-  deps: [],
-  fns: [],
-  types: [],
-  children: [],
-  members: "opaque",
-  starSources: [],
-};
+function unindexedModule(name: string): Module {
+  return { id: `${EXTERNAL}.<${name}>`, layer: EXTERNAL, name: `<${name}>`, path: null, line: null, col: null, endLine: null, endCol: null, synthetic: true, class: false, comment: null, doc: null, deps: [], fns: [], types: [], children: [], members: "opaque", starSources: [] };
+}
 
-/** A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`) binds the module. */
-function importTarget(module: Module, binding: ImportBinding, whole: boolean): ImportTarget {
-  if (whole || binding.kind === "module") return { module, kind: "module", imported: null };
-  return binding.kind === "default" ? { module, kind: "default", imported: "default" } : { module, kind: "named", imported: binding.imported };
+/** What a standard-library import (Python `typing`) binds. */
+const STDLIB_MODULE = unindexedModule("stdlib");
+
+/** What an import of a file `assume` lists binds: code keylang deliberately leaves unread, as it leaves a package. */
+const ASSUMED_MODULE = unindexedModule("assumed");
+
+/**
+ * A specifier that names the module itself (Rust `use crate::a`, Python `from pkg import mod`)
+ * binds the module object, which is no function, like an ESM namespace.
+ */
+function importTarget(module: Module, unit: string, binding: ImportBinding, whole: boolean): ImportTarget {
+  if (whole || binding.kind === "module") return { module, unit, kind: "module", imported: null, namespace: whole || (binding.kind === "module" && binding.namespace === true) };
+  return binding.kind === "default" ? { module, unit, kind: "default", imported: "default", namespace: false } : { module, unit, kind: "named", imported: binding.imported, namespace: false };
 }
 
 /**
  * One export row of a file, with what it stands for: a declaration of the
- * module, a name or the namespace of the module an import binds, or nothing
- * keylang indexes. A re-export (`export { a } from`, Rust `pub use`) goes
- * through its own import; any other name through a declaration of the module
- * or an import of the file.
+ * file (`scope`), a name or the namespace of the module an import binds, or
+ * nothing keylang indexes. A re-export (`export { a } from`, Rust `pub use`)
+ * goes through its own import; any other name through a declaration of the
+ * file or an import of the file.
  */
-function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported: ReadonlyMap<string, ImportTarget[]>, declModule: ReadonlyMap<string, ReadonlyMap<string, string>>): ExportRowInput {
+function exportInput(row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>): ExportRowInput {
   const name = row.name;
   // Rows of frontends that say how a name is exported in `kind`.
   const legacy: ExportForm | undefined = row.kind === "default" || (row.kind === "alias" && name === "default") ? "default" : row.kind === "alias" && row.local !== null && row.local !== name ? "alias" : row.kind === "reexport" ? "reexport" : undefined;
@@ -910,12 +1161,13 @@ function exportInput(row: ExportRow, facts: FileFacts, module: Module, imported:
   const kind: ExportKind = row.kind === "fn" || row.kind === "class" || row.kind === "type" ? row.kind : "value";
   const reexported = facts.imports.some((imp) => imp.reexport && imp.bindings.some((b) => b.local === name));
   const local = row.local ?? name;
-  const declared = reexported ? undefined : declModule.get(module.id)?.get(layerName(local));
-  const found = declared === undefined ? imported.get(reexported ? name : local)?.[0] : undefined;
-  const from = found?.module.id;
+  const declared = reexported ? undefined : scope.get(layerName(local));
+  const found = declared === undefined ? imported.get((reexported ? name : local).normalize("NFC"))?.[0] : undefined;
+  // The standard library and an assumed file are no nodes: such a name comes from no module of the snapshot.
+  const from = found?.module.synthetic ? undefined : found?.module.id;
   let target: ExportTarget = { kind: "none" };
   if (declared !== undefined) target = { kind: "symbol", id: declared };
-  else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.module.id } : { kind: "name", module: found.module.id, name: found.imported ?? "default" };
+  else if (found && found.module.layer !== EXTERNAL) target = found.kind === "module" ? { kind: "namespace", module: found.unit } : { kind: "name", module: found.unit, name: found.imported ?? "default" };
   if (target.kind === "namespace" && form !== "default") form = "namespace";
   return { name, kind, ...(form ? { form } : {}), ...(row.local !== null && row.local !== name ? { local: row.local } : {}), ...(from ? { from } : {}), target };
 }
@@ -974,21 +1226,35 @@ function holeReason(c: CallFact): string {
  * Functions that code may reach without naming them in a call: read as a value
  * (`later(save)` names the declaration `save` resolves to; `obj.save` any
  * method `save`), called implicitly, or the constructor of a class read as a
- * value (`extends A` runs `A`'s constructor).
+ * value (`extends A` runs `A`'s constructor). Names read and called are keyed in NFC;
+ * a fn of PHP matches them in any ASCII case (`[$o, 'SAVE']` reads `save`).
  */
 function markEscapes(modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]): void {
+  const caselessReads = foldCase(readMembers);
+  const caselessCalls = foldCase(calledNames);
   const visit = (m: Module, isClass: boolean): void => {
     for (const fn of m.fns) {
       if (fn.escapes) continue;
       // A member is named in code as written (`go`), whatever suffix its ID has (`go-private`).
-      const name = members.get(fn.id)?.name ?? fn.name;
-      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(fn.file ?? m.path) ? readMembers.get(name) : undefined) ?? calledNames.get(name);
+      const name = members.get(fn.id)?.name ?? fn.written ?? fn.name;
+      const key = name.normalize("NFC");
+      const file = fn.file ?? m.path;
+      const caseless = caselessNames(file);
+      const named = (exact: ReadonlyMap<string, Escape>, folded: ReadonlyMap<string, Escape>): Escape | undefined => exact.get(key) ?? (caseless ? folded.get(asciiLowerCase(key)) : undefined);
+      const ref = readIds.get(fn.id) ?? (isClass && fn.name !== constructorName(file) ? named(readMembers, caselessReads) : undefined) ?? named(calledNames, caselessCalls);
       if (ref) fn.escapes = ref;
-      else if (isClass && !members.get(fn.id)?.hash && implicitMember(fn.file ?? m.path, name)) fn.escapes = { file: fn.file ?? m.path ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
+      else if (isClass && !members.get(fn.id)?.hash && implicitMember(file, name)) fn.escapes = { file: file ?? "", line: fn.line, col: fn.col, reason: `\`${name}\` is called implicitly` };
     }
     for (const child of m.children) if (child.class) visit(child, true);
   };
   for (const m of modules.values()) visit(m, false);
+}
+
+/** Names keyed in ASCII lower case, each with the escape of its first spelling: what a language whose names compare without case looks up. */
+function foldCase(names: ReadonlyMap<string, Escape>): Map<string, Escape> {
+  const out = new Map<string, Escape>();
+  for (const [name, escape] of names) if (!out.has(asciiLowerCase(name))) out.set(asciiLowerCase(name), escape);
+  return out;
 }
 
 function markOpaque(m: Module): void {
@@ -1007,10 +1273,26 @@ interface Decls {
   members: Map<string, { name: string; hash: boolean }>;
 }
 
-/** Lookup key of a class member: `this.#m` in a static method is `static #m`. */
-export function memberKey(member: string, isStatic: boolean): string {
+/**
+ * Name in ASCII lower case → the names of the declarations an export table lists under it. A row that
+ * stands for no declaration (a PHP constant, which keeps its case) is left out.
+ */
+function caselessIndex(rows: readonly ExportRowInput[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.target.kind !== "symbol") continue;
+    const key = asciiLowerCase(row.name);
+    const names = out.get(key) ?? [];
+    if (!names.includes(row.name)) out.set(key, [...names, row.name]);
+  }
+  return out;
+}
+
+/** Lookup key of a class member: `this.#m` in a static method is `static #m`. `caseless`: a language whose method names compare without ASCII case (PHP). */
+export function memberKey(member: string, isStatic: boolean, caseless = false): string {
   const hash = member.startsWith("#");
-  return `${isStatic ? "static " : ""}${hash ? "#" : ""}${layerName(hash ? member.slice(1) : member)}`;
+  const key = `${isStatic ? "static " : ""}${hash ? "#" : ""}${layerName(hash ? member.slice(1) : member)}`;
+  return caseless ? asciiLowerCase(key) : key;
 }
 
 /** Suffixes of a member whose name another member of the class already has. */
@@ -1020,15 +1302,16 @@ const MEMBER_SUFFIX = ["", "-static", "-private", "-static-private"];
  * ID segments of class members. An instance member keeps its name; a static
  * or `#private` member of the same name as another gets a suffix (`m-static`,
  * `go-private`, `go-static-private`), which no JS name can collide with.
- * Priority: instance, static, `#private`, static `#private`.
+ * Priority: instance, static, `#private`, static `#private`. A segment keeps
+ * the case of the declaration; a `caseless` key does not (PHP).
  */
-function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: string; segment: string }> {
+function memberSegments(members: readonly DeclFact[], caseless: boolean): Map<DeclFact, { key: string; segment: string }> {
   const rank = (m: DeclFact): number => (m.static ? 1 : 0) + (m.hash ? 2 : 0);
   const out = new Map<DeclFact, { key: string; segment: string }>();
   const byKey = new Map<string, string>();
   const used = new Set<string>();
   for (const m of [...members].sort((a, b) => rank(a) - rank(b))) {
-    const key = memberKey(`${m.hash ? "#" : ""}${m.name}`, m.static === true);
+    const key = memberKey(`${m.hash ? "#" : ""}${m.name}`, m.static === true, caseless);
     let segment = byKey.get(key);
     if (segment === undefined) {
       const name = layerName(m.name);
@@ -1037,6 +1320,43 @@ function memberSegments(members: readonly DeclFact[]): Map<DeclFact, { key: stri
       byKey.set(key, segment);
     }
     out.set(m, { key, segment });
+  }
+  return out;
+}
+
+/**
+ * ID segments of a module's top-level declarations. One file's declarations
+ * of a name share a node (overloads, a class merged with its interface); the
+ * same name in another file of the module (`module: "dir"`, `x.ts` beside
+ * `x/index.ts`) is another symbol, whose segment gets `-2`, `-3`… (no
+ * declaration name has a `-`): an exported declaration keeps the plain
+ * segment before an internal one, then the first file by path. A second
+ * exported declaration of a name is worth a warning; file-private helpers of
+ * the same name are common in a directory, and their IDs show it.
+ */
+function topSegments(module: Module, files: readonly FileFacts[], warnings: string[]): Map<DeclFact, string> {
+  const groups = new Map<string, { file: string; decls: DeclFact[]; exported: boolean }[]>();
+  for (const f of [...files].sort((a, b) => compareText(a.path, b.path))) {
+    const own = new Map<string, DeclFact[]>();
+    for (const d of f.decls) own.set(layerName(d.name), [...(own.get(layerName(d.name)) ?? []), d]);
+    for (const [key, list] of own) groups.set(key, [...(groups.get(key) ?? []), { file: f.path, decls: list, exported: list.some((d) => d.exported) }]);
+  }
+  const taken = new Set([...groups.keys(), ...module.children.map((c) => c.name)]);
+  const out = new Map<DeclFact, string>();
+  for (const [key, list] of groups) {
+    // A stable sort: files keep their path order among exported and among internal declarations.
+    const ordered = [...list].sort((a, b) => Number(b.exported) - Number(a.exported));
+    ordered.forEach((group, i) => {
+      let segment = key;
+      if (i > 0) {
+        let n = 2;
+        while (taken.has(`${key}-${n}`)) n++;
+        segment = `${key}-${n}`;
+        taken.add(segment);
+        if (group.exported) warnings.push(`${group.file}: \`${group.decls[0]!.name}\` is also exported by \`${ordered[0]!.file}\`, another file of module \`${module.id}\`; its ID here is \`${module.id}.${segment}\``);
+      }
+      for (const d of group.decls) out.set(d, segment);
+    });
   }
   return out;
 }
@@ -1051,7 +1371,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
   lastKeys.set(names, key);
   const existing = names.get(key);
   if (existing !== undefined) {
-    // Overloads and duplicate declarations: the implementation's calls join the first node.
+    // Overloads and duplicate declarations of one scope (a file, a class): the implementation's calls join the first node.
     if (d.kind === "fn" && decls.fns.has(existing)) {
       decls.ids.set(d, existing);
       const fn = decls.fns.get(existing)!;
@@ -1084,7 +1404,7 @@ function addDecl(module: Module, d: DeclFact, names: Map<string, string>, declMo
     decls.classes.set(id, cls);
     const members = new Map<string, string>();
     declModule.set(id, members);
-    const segments = memberSegments(d.members);
+    const segments = memberSegments(d.members, caselessNames(file));
     for (const m of d.members) {
       addDecl(cls, m, members, declModule, decls, stats, file, segments.get(m));
       const fnId = decls.ids.get(m);

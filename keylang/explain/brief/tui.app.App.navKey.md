@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7c2ff7d15da19b426b100e30c2f4e08bc93f11a19b430872c894c6f654a37be9 lang=en detail=brief -->
-Handles keyboard input while the navigation panel has focus: moves the selection through `tui.view.navEntries` with `tui.app.App.fixNavIndex`, toggles expansion of layers and entries, and on enter opens the item's spec or code via `tui.app.App.open` or `tui.app.App.jump`. Tab…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=ce11558d417666b758f5d656827f827f6b1e37b7782f509591b920d65605f596 lang=en detail=brief -->
+Handles keyboard input in the navigation tree: arrows or j/k move the selection via `tui.app.App.fixNavIndex`, and left/right collapse or expand entries. Enter jumps to code or spec, and tab, escape, z, q and ? switch focus, zoom, quit or show help.

@@ -15,4 +15,4 @@
 
 ## Answer
 
-`src/lsp.ts` (сервер) + `src/lsp-features.ts` (чисті функції). Тести `tests/lsp.test.ts`: діагностики відкритого `rules.md` = `check --format json` (push і pull), буфери без запису й заміна покоління, hover із доказами й planned, definition з карти в декодований файл і колонку коду, дерево documentSymbol зі статусами, життєвий цикл, скасування. `vscode-languageserver` не додано — обґрунтування в шапці `src/lsp.ts` і `format.md` §9; `npm ls --omit=dev` — 2 пакети. Стан `stale` у hover чекає тікета 21.
+`src/lsp.ts` (сервер) + `src/lsp-features.ts` (чисті функції). Тести `tests/lsp.test.ts`: діагностики відкритого `rules.md` = `check --format json` (push і pull), буфери без запису й заміна покоління, hover із доказами й planned, definition з карти в декодований файл і колонку коду, дерево documentSymbol зі статусами, життєвий цикл, скасування. `vscode-languageserver` не додано — обґрунтування в шапці `src/lsp.ts` і `grammar.md` §9; `npm ls --omit=dev` — 2 пакети. Стан `stale` у hover чекає тікета 21.

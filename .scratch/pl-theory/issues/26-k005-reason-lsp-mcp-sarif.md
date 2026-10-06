@@ -19,7 +19,7 @@ Human-вивід і `--format github` не змінюються.
 - [x] tests/lsp.test.ts: pull-діагностика K005 має `data.reason` і `data.verdict`, діагностика з іншим кодом `data.reason` не має.
 - [x] tests/mcp.test.ts: `validate_spec` на тексті з незакритою лапкою повертає K005 з `reason: "quote"`, MCP `check` повертає `reason` у результаті K005.
 - [x] `check --format sarif` на фікстурі `spec-forms/invalid` (17): кожен результат K005 має `properties.reason`, результати з іншими кодами — ні. Human-вивід і `--format github` байт у байт ті самі.
-- [x] Документацію оновлено там, де LSP, MCP і SARIF описано на момент злиття (format.md §7/§9 або docs/tools.md після 30). Зокрема, інваріант «збігаються з `check --format json`» називає `data.reason`.
+- [x] Документацію оновлено там, де LSP, MCP і SARIF описано на момент злиття (semantics.md §7/§9 або docs/tools.md після 30). Зокрема, інваріант «збігаються з `check --format json`» називає `data.reason`.
 - [ ] `npm run typecheck` і `npm test` зелені.
 - [ ] `node bin/keylang.js map` виконано, diff `keylang/map/` і `keylang/map-explained/` переглянуто.
 - [x] `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.

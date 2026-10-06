@@ -281,7 +281,8 @@ test("items: tabs matter only where they decide the tree, free text is canonical
   assert.match(keylang(dir, ["parse", "rules.md"]).stderr, /rules\.md:4:3: K005 `exports` needs at least one name/);
   const nfd = keylang(dir, ["parse", "nfd.md"]);
   assert.equal(nfd.status, 0, nfd.stderr);
-  assert.match(nfd.stdout, new RegExp(`module ${decomposed}\\.order`));
+  // A decomposed letter is a letter; the ID is its NFC form (grammar.md §4).
+  assert.match(nfd.stdout, new RegExp(`module ${decomposed.normalize("NFC")}\\.order`));
 });
 
 test("a duplicate planned ID is K002 with or without code", (t) => {
@@ -576,7 +577,7 @@ test("a source directory keylang cannot read is a hole of its scope, not a crash
     assert.equal(check.status, 1, "unverified under --strict");
     assert.match(check.stdout, /rules\.md:4:1: unverified directory is not readable \(EACCES\) \(src\/domain\/locked:1:1\)/, "deny over the scope is not ok");
     assert.match(check.stdout, /rules\.md:5:1: unverified no cycle among the known imports, but directory is not readable/);
-    assert.match(check.stderr, /0 fail, 3 unverified, 0 ok/);
+    assert.match(check.stderr, /0 fail, 3 unverified \(from 1 hole\), 0 ok/, "one hole leaves three rules unverified");
   } finally {
     // Before the temporary copy is removed.
     chmodSync(locked, 0o755);

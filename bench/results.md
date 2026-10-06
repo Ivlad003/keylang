@@ -180,7 +180,7 @@ Node v24.20.0, keylang 0.1.0, ті самі коміти репозиторії�
 
 ### Самоопис keylang
 
-`keylang.json` + `keylang/rules.md` + `keylang/flows/check.md`: 29 файлів, 29 модулів, 215 fn, 78 типів, 105 залежностей. `map --check` — 0; `check --strict` — 0, без `unverified` у правилах (виклики через локальні значення не роблять `deny` неповним, див. `docs/format.md` §7).
+`keylang.json` + `keylang/rules.md` + `keylang/flows/check.md`: 29 файлів, 29 модулів, 215 fn, 78 типів, 105 залежностей. `map --check` — 0; `check --strict` — 0, без `unverified` у правилах (виклики через локальні значення не роблять `deny` неповним, див. `docs/semantics.md` §7).
 
 ### Виклики після резолвінгу з областями видимості (тікет 10)
 

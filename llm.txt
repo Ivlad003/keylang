@@ -35,9 +35,9 @@ npx -y keylang map
 
 The first `npx` needs a network. Later `check` and `map` do not.
 
-`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone.
+`init` guesses a layer from each folder that has source. If `src/` or `lib/` exists, the guess is the folders inside it. It writes `keylang.json`, a generated map under `keylang/map/`, `keylang/rules.baseline.md`, and a short block in `AGENTS.md` between `<!-- keylang:begin -->` and `<!-- keylang:end -->`. Leave text outside those markers alone. It also adds `.keylang/` to the root `.gitignore` when that file does not list it yet.
 
-3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude.
+3. Register the tool you actually are, if `init` did not see it. `init` looks for `.claude/`, `.codex/`, `.cursor/`, or `opencode.json` / `opencode.jsonc`. A skill directory that keylang itself created does not count as Claude. When it finds none, `init` writes only the `AGENTS.md` block and says so on stderr.
 
 ```sh
 npx -y keylang agents --agents=claude
@@ -67,7 +67,7 @@ After install, these rules apply to every task in that repository. keylang check
 - **Find the code.** Read the map first: layer, module, signature, calls. Then MCP `search`, `node`, and `code`. Take ids from `keylang map`.
 - **Keep a boundary in CI.** One `deny` line. `check` looks at imports, calls, type mentions, and re-exports. A confirmed forbidden edge is `fail` (K102) and exit 1. CI runs `check` and `map --check`.
 - **Keep a scenario.** A flow step names an id. The static check looks for a call from the parent step. The trigger is a plain named function.
-- **Know when a feature is done.** `keylang feature <slug>`: every `planned` in that file is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` remains anywhere, including the baseline.
+- **Know when a feature is done.** `keylang feature <slug>`: every `planned` in that file is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` of this change remains, including the baseline. An older `fail` that touches no file changed since the base commit and no id of the feature is a `hint:` line and does not block. Without git every rule `fail` blocks.
 - **Change a hand-written rule in the open.** `rules.md` and the baseline change only as a proposal the person merges. When the person asks for a feature, you may write `keylang/features/<slug>.md`.
 - **Read a finding.** `npx -y keylang explain K001`, or MCP `explain`, says why. That text is not a second verdict.
 
@@ -82,7 +82,7 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Decide that the program does the right thing | An invariant sentence stays text. check does not parse "the total is price times quantity." Put that in a test. keylang only records that a named test passed |
 | Treat exit 0 as "everything is proved" | Exit 0 means no `fail`. `unverified` is still a gap. `ok` means the claim held where keylang looked. `--strict` is how CI refuses a gap. The default does not |
 | Let tests or traces decide a feature | They are printed. `feature` ignores them. A stale trace stays `unverified` until the report matches this snapshot |
-| Invent a call the extractor did not see | `obj[k]()`, an unknown decorator, a Rust macro: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
+| Invent a call the extractor did not see | `obj[k]()`, a Rust macro, a step into a function under a Python decorator keylang does not know: no confirmed edge. Leave `unverified`. For `ok`, put the call in a plain named function |
 | Check that prose still matches the code | check will not mark a description stale. A saved explanation prints `fresh` or `stale`. A green gutter is not "the paragraph is true" |
 | Watch deploys, SLOs, threat models, ADRs, or two services sharing a database | Write that in the other document. keylang will not notice |
 | Index Go, Java, Ruby, and the rest | Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Another language is absent. Absence is not a pass |
@@ -90,8 +90,9 @@ keylang leaves these jobs to another tool. Do the thing on the right.
 | Start you, install a package, store a token, or scaffold Nest `@Module` / `main.ts` | You do that with your own tools when the person asked. keylang does not |
 | Click through the terminal UI | No subcommand opens a UI for a person at the keyboard. You use the CLI and MCP |
 | Quiet a failure by editing the spec in place | Ask, then `apply_diff`. `draft rules` describes what the code already does, or tags the model's lines `agree`, `conflict`, `llm-only`. The person chooses the `deny` |
+| Accept your own proposal | `keylang proposals accept` and `reject` are the person's. You propose. You may list (`proposals`) and print one (`proposals show <path>`) |
 | Call a stub finished | `scaffold` and `spec-to-code` give a signature and a failing test. You write the body. Done is `feature_status` |
-| Commit `.keylang/` | The index, proposals, and traces are a local cache and gitignored. Commit the spec and the generated map |
+| Commit `.keylang/` | The index, fact cache, proposals, and traces are a local cache. `init` lists `.keylang/` in `.gitignore`, and `init --check` exits 1 when it is missing. Commit the spec and the generated map |
 | Bump `format` | Leave the field as it is. `3` or higher exits 2 and names the field |
 | Read `calls` order as a timeline | Sibling flow steps are "this, then that." Nested steps are "this happens inside" |
 
@@ -101,12 +102,14 @@ If the bug the person cares about never shows up as an import or a call, say so.
 
 The person writes the spec: `keylang/rules.md`, flows, and feature files. You write the program from that spec.
 
+This file names the default spec directory, `keylang/`. When `keylang.json` sets `dir` (for example `"dir": "spec"`), every `keylang/…` path here is under that directory instead. The `AGENTS.md` block, the skill and the deny rules that `agents` writes already name it.
+
 When the person asks you to add a feature, you may create `keylang/features/<slug>.md` yourself. The slug matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`. You still do not hand-edit the rules.
 
 Do not edit these by hand:
 
 - `keylang/map/` and any file whose first lines contain `keylang:generated`. Regenerate the map with `npx -y keylang map`.
-- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`. Where your tool can deny edits, deny `Edit` and `Write` on both rule files.
+- `keylang/rules.md` and `keylang/rules.baseline.md`. Propose the full new text with MCP `apply_diff`. That writes `.keylang/proposals/<path>`. It does not change the spec. A person merges it in the terminal UI with `m`, or accepts it whole with `keylang proposals accept <path>` where there is no terminal UI. Never run `proposals accept` or `proposals reject` yourself. Where your tool can deny edits, deny `Edit` and `Write` on both rule files and Bash `* proposals accept *` / `* proposals reject *`; `keylang agents` writes those entries for Claude.
 - `keylang.gen.ts` (the `keylang wire` output). You do not need `wire` to check a feature.
 
 A deny in the baseline that forbids a call the person still needs is a conversation. It is not a bug in the tool. Ask, then propose the rule change. After the new import is accepted, `npx -y keylang baseline` rewrites the baseline from the graph.
@@ -130,15 +133,15 @@ The buyer sends an order back. The order rules build a refund. The screen does n
     - step domain.orderAggregate.refund
 ```
 
-Use ids from the map of the repository you are in. The names above are only the shape.
+Use ids from the map of the repository you are in. The names above are only the shape. Every keyword, where it may stand, and its arguments are on one English page with examples: https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md
 
 2. Call MCP `validate_spec` with that path and the full text before you rely on it. Fix every diagnostic. K001 includes a line and a column. A missing function is not K001 while it is `planned`.
 3. Call MCP `scaffold` for each `planned fn`. It returns a path, a stub, and failing tests. It does not write files and does not call a model. An id that already exists is an error and names the file. A planned module is not a stub. You create that file.
-4. Implement the bodies with your own edits. Keep the declared name and signature. Spaces do not matter, and `->` is the same as `→`. A different kind or signature is K201. A match is warning K202.
-5. Call `feature_status` or run `npx -y keylang feature <slug>`. Exit 0 and `done` on stderr means all three: every `planned` in **that file** is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` remains anywhere, including the baseline. Tests and traces are printed. They do not decide. Until then the exit code is 1 and stdout lists the gaps.
+4. Implement the bodies with your own edits. Keep the declared name and signature. Spaces do not matter, and `->` is the same as `→`. A plan with only a parameter list promises only the parameters: `(order: Order)` matches code `(order: Order) → Refund`; a plan with a return type must match in full. A different kind or signature is K201. A match is warning K202.
+5. Call `feature_status` or run `npx -y keylang feature <slug>`. Exit 0 and `done` on stderr means all three: every `planned` in **that file** is implemented (K202, not K201), every step in that file is static `ok`, and no rule `fail` of this change remains, including the baseline. A rule `fail` is this change's when it touches a file changed since the base commit, as `check --changed --since <base>` reports it, or an end of its edge is an id the feature names. The base is `since` if given; otherwise the merge-base of HEAD with the main branch (`origin/HEAD`, else `main`, `master`, `origin/main`, `origin/master`), or HEAD on the main branch itself: a `fail` you committed on your branch still blocks. An older `fail` elsewhere is a `hint: … rule … inherited` line and an entry of `info.rules`; it does not block. Without git every rule `fail` blocks. Tests and traces are printed. They do not decide. Until then the exit code is 1 and stdout lists the gaps.
 6. When K202 names a `planned` line, delete that line. Leave the feature file.
 
-`npx -y keylang spec-to-code <id> --print` prints the same stub and writes nothing. Without `--print` the files become proposals under `.keylang/proposals/`; a person merges them with `m` in the terminal UI. `--apply` writes the files directly. It only builds a `planned fn`. For TypeScript and JavaScript the test is `node:test`. For Python and Rust it tells you to write the test yourself. It will not add a dependency to `package.json`, and it will not store a token.
+`npx -y keylang spec-to-code <id> --print` prints the same stub and writes nothing. Without `--print` the files become proposals under `.keylang/proposals/`; a person merges them with `m` in the terminal UI, or with `keylang proposals accept <path>`. `--apply` writes the files directly. It only builds a `planned fn`. For TypeScript and JavaScript the test is `node:test`. For Python and Rust it tells you to write the test yourself. It will not add a dependency to `package.json`, and it will not store a token.
 
 Prefer MCP `scaffold`, then your own edit, over `--apply`.
 
@@ -174,16 +177,20 @@ The trigger of a flow should be a plain named function whose body calls the next
 These stay `unverified`, and `feature` stays not done:
 
 - `bot.start(() => add(...))` with no named function in between
-- a body that only exists under a decorator keylang does not know (`@app.post`, `@Controller`, `@Get`, `@Injectable`)
+- a step whose function has a Python decorator keylang does not know (`@retry`, `@app.post`) or a Rust attribute macro it does not know: the decorator may replace the function, so its body may not run ("may not run its own body"). Decorators that keep the function (`@staticmethod`, `@classmethod`, `@property`, `@dataclass`, `@functools.wraps`, `@lru_cache`, `@total_ordering`) are fine
 - `obj[k]()`
 
 Put the real call in a plain function. The framework function calls that plain function.
+
+A decorated function as the trigger is fine: the framework calls it, and the steps under it are judged from its body. A FastAPI `@router.post` route as the trigger gives `static ok` to the step it calls.
+
+TypeScript decorators (`@Controller`, `@Get`, `@Injectable`) are not gaps: keylang assumes the decorated method's body runs, so a NestJS controller or service method is a trigger or a step like any other function. A call inside a decorator's arguments (`@Get(route())`) runs when the module loads, not inside the method, so it is not a call from the method.
 
 A route or a controller that calls the database directly never makes a flow `ok` if the flow goes through another function. There is no static path.
 
 ## MCP tools
 
-Server name: `keylang`. Only `apply_diff` writes, and only a proposal.
+Server name: `keylang`. Only `apply_diff` writes to the repository, and only a proposal. Besides that, the server keeps the local fact cache `.keylang/cache/facts.json` current. It writes no spec.
 
 | Tool | Use |
 |---|---|
@@ -209,21 +216,29 @@ npx -y keylang spec-to-code <id> --print
 npx -y keylang baseline
 ```
 
-`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. The Stop hook prints JSON and exits 0 either way: `{"decision":"block"}` on a new fail, otherwise `{}`.
+Proposals wait in `.keylang/proposals/`. `npx -y keylang proposals` lists them and `npx -y keylang proposals show <path>` prints one; both write nothing. Accepting or rejecting one is the person's decision.
+
+`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) gets `{"systemMessage":"keylang: this turn was not checked: <reason>"}`, with the same line on stderr: the harness shows the person that warning, and it does not block you. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
 
 ## Exit codes and answers
 
 - `0` — no blocking finding. `unverified` is still allowed, except `map --check` on a stale map, and `check --strict`.
-- `1` — a real break, a feature that is not done, or a stale generated file under `--check`.
+- `1` — a real break, a feature that is not done, or a stale generated file under `--check`. From `draft`, `code-to-spec` and `spec-to-code`: a file changed while the proposal was prepared, and nothing was written; run it again.
 - `2` — bad invocation or I/O. The message names the file and the field.
 
 On a line: `ok` the claim held where keylang looked, `fail` a break was shown, `unverified` neither. Warnings include K006, K008, K103, K106, K202. A warning is not a failed verdict.
+
+A static `fail` ends with the fix: add a call to the step in its parent or in a function the parent reaches; for `calls`, a direct call in the parent. In `check --format json` an unverified rule names its `hole` (`file:line:col`). One hole can leave several rules unverified; the summary then reads `M unverified (from H holes)`. Fix the hole once.
 
 `parse --json` writes only JSON to stdout. Diagnostics go to stderr. `check` writes findings to stdout and the summary to stderr.
 
 ## Languages and layers
 
 Indexed languages are a subset of JavaScript, TypeScript, Python, Rust, and PHP. Other files are absent, not a quiet success. In PHP a module is a file and its class a member: `src/Domain/Order.php` with `class Order` gives `Domain.Order.Order.place`.
+
+Each file is its own scope, also with `module: "dir"`: import a sibling file's function to call it. Two same-named functions of one directory module get the IDs `name` and `name-2`; an exported one keeps the plain name. IDs are NFC: a name typed in NFD (some macOS paths) means the same ID.
+
+In TypeScript, `import type …`, `export type … from`, and an import whose every name is inline `type` (`import { type A }`, `export { type A } from`) when the file's tsconfig does not set `verbatimModuleSyntax`, are still dependencies for the map, `deny` and `layers` (an edge with `typeOnly: true`), but `no-cycles` ignores them. With `verbatimModuleSyntax: true`, `import { type A }` stays `import {} from` and loads the module, so it is an import that runs; `import type` is erased either way, so it is the one that breaks a cycle that exists only in types. A tsconfig keylang cannot read to the end counts as setting the option. Nor do type-only imports prove a flow step to `external.<pkg>`: only an import that loads the package does. `import * as ns` is a namespace object, not the default export: `ns.f()` resolves, `ns()` is a hole. A decorator is not a hole; see the TypeScript subsection of snapshot.md §11. Calls through names imported from a file that `assume` in keylang.json lists are external calls, not gaps. PHP class, function and method names match without case for ASCII letters only, as in PHP: `ORDER::make()` calls `Order::make()`, `äpfel::make()` does not call `Äpfel::make()`. Calling a Python module object (`import m; m()`) is a gap, not a call.
 
 `keylang.json` `layers` maps a name to a glob or a list of globs. The first matching glob wins. `**`, `*`, `?`, and `{a,b}` work. A folder named `external` is renamed `external_` because that word is reserved. The new name is printed at `init`.
 
@@ -247,7 +262,10 @@ The course is the guide. This file is the install and the working cycle.
 - Course, Ukrainian: https://github.com/Ivlad003/keylang/blob/master/docs/course/uk/README.md
 - Adding a feature to a repository that already exists: https://github.com/Ivlad003/keylang/blob/master/docs/course/existing/README.md
 - A new Telegram bot, Python CRUD, or NestJS app: https://github.com/Ivlad003/keylang/blob/master/docs/course/from-scratch/README.md
-- Grammar (Ukrainian, normative): https://github.com/Ivlad003/keylang/blob/master/docs/format.md
-- Commands: https://github.com/Ivlad003/keylang/blob/master/docs/tools.md
+- Grammar on one page (English, for agents): https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md
+- Grammar (Ukrainian, normative): https://github.com/Ivlad003/keylang/blob/master/docs/grammar.md
+- IDs, diagnostics, rules, flows and evidence (Ukrainian, normative): https://github.com/Ivlad003/keylang/blob/master/docs/semantics.md
+- What keylang reads from code, by language (Ukrainian): https://github.com/Ivlad003/keylang/blob/master/docs/snapshot.md
+- Commands: https://github.com/Ivlad003/keylang/blob/master/docs/cli.md; MCP and LSP: https://github.com/Ivlad003/keylang/blob/master/docs/mcp-lsp.md
 
-If this file and `docs/format.md` disagree about a diagnostic, the spec wins.
+If this file and `docs/semantics.md` disagree about a diagnostic, the spec wins.

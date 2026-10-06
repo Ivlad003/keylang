@@ -24,7 +24,7 @@
 
 - [x] фікстура: застарілий baseline після перейменування шару — новий текст K001 з `keylang baseline`; K001 у ручному `rules.md` — старий текст із `planned`
 - [x] `check --format json` (`evidence`), LSP і MCP `check` несуть той самий текст
-- [x] format.md §7 (K001) і `explain K001` згадують згенеровані файли
+- [x] semantics.md §7 (K001) і `explain K001` згадують згенеровані файли
 
 Ключові файли: `src/resolve.ts`, `src/explain.ts`, `docs/format.md`, `tests/cli.test.ts`
 
@@ -33,5 +33,5 @@
 - Відтворено на `e87f808` через CLI (TS-репо `src/db`, `src/users`, `src/main.ts`, `init --agents=none`, шар `db` → `storage`): `rules.baseline.md:5:8` і `:6:13` — K001 з `declare \`planned\``.
 - Зміна: `danglingMessage` у `src/resolve.ts`. Для документа з `generated !== null` текст — `` dangling reference `<id>` in a generated file; run `<команда>` ``, команда — перший `` `keylang …` `` у рядку маркера; без команди в маркері — `regenerate it`. Код, рівень, позиція та `target` K001 не змінились; для ручних файлів текст і `did you mean` ті самі.
 - Припущення: K001 у `keylang/map/*.md` на практиці не виникає — `check` пропускає згенеровані карти в каталозі карти (`src/analyze.ts:78`). Тому тест на `keylang map` бере копію карти з маркером поза `map/` (`keylang/old-users.md`): він показує, що команда береться з маркера, а не з таблиці файл → команда.
-- Тести: CLI (`tests/cli.test.ts`: baseline + ручний `rules.md` + копія карти, людський вивід і `check --format json` `evidence`), LSP (`tests/lsp.test.ts`: відкритий baseline, push = `check --format json`), MCP (`tests/mcp.test.ts`: `check` = CLI і несе новий текст). `explain K001` і format.md §7 (таблиця й виконуваний приклад після правила пошуку ID) згадують згенеровані файли; `tests/fixtures/diagnostics.expected` не змінився.
+- Тести: CLI (`tests/cli.test.ts`: baseline + ручний `rules.md` + копія карти, людський вивід і `check --format json` `evidence`), LSP (`tests/lsp.test.ts`: відкритий baseline, push = `check --format json`), MCP (`tests/mcp.test.ts`: `check` = CLI і несе новий текст). `explain K001` і semantics.md §7 (таблиця й виконуваний приклад після правила пошуку ID) згадують згенеровані файли; `tests/fixtures/diagnostics.expected` не змінився.
 - Перевірки: `npm run typecheck` — ok; `npm test` — 657/659 pass, 1 fail: `explain --llm: an Anthropic request that never answers …` (таймінг: `took 2360 ms` при межі 2000 мс, load average ~13–16 від паралельних агентів; так само падає з `src/` майстра — не регресія). `map --check`, `check` — ok.

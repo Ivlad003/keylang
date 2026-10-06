@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=dd499bb137edfe0915c13253722c0ef70675cd1447630d14648ee5280035ce22 lang=en detail=brief -->
-Turns one leaf of a Rust `use` tree into an import record via `extract.rust.importAt`, joining the path with `::` and binding the alias or last segment unless it is a glob or `_`. When the use is `pub`, it also records a re-export through `extract.rust.exportRow` or in the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e1fa84c296b2a6165fddc9c2e29c7c724648100eb0f81d08c9263d62b2da576e lang=en detail=brief -->
+Turns one Rust `use` leaf into an import fact via `extract.rust.importAt`, marking glob imports and binding the alias or last path segment unless it is `_`. For `pub use`, it records a re-export through `extract.rust.exportRow` or a glob re-export.

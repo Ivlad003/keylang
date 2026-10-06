@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7dc42bf573666e397a360643637bd703c98b63bc4cc0ded3a6eb5701b892a914 lang=en detail=brief -->
-Sums the terminal column width of a string by splitting it into grapheme clusters via `tui.width.graphemes` and adding each cluster's 0/1/2 width from `tui.width.graphemeWidth`. Layout code across `tui.view` and `tui.markdown` relies on it for wrapping, padding, and overflow…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9443e032c727183400c99205c5d8bd976f84b70fe9b8785a2926d190c2f5bc91 lang=en detail=brief -->
+Computes a string's terminal display width by splitting it with `tui.width.graphemes` and summing each cluster's 0/1/2-column width from `tui.width.graphemeWidth`; used throughout layout, padding and wrapping.

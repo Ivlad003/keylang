@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ae923822654f54c39e02ae9010110fadbaf6d771f2cf9f780f68d2f3f7f61ca6 lang=en detail=brief -->
-Paints the read-only source panel: a title bar with the clickable `file:line` link and an Esc hint, then each visible line from `code.top` with a line number, a marker and highlight on the target line, and token colors from `tui.code-highlight.highlightCode` drawn via…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=38f59ef86e4ce5c787ee301d010b090a1d261ace564265f452df558ef9c5c141 lang=en detail=brief -->
+Renders the read-only source panel: a title bar with a file:line link and an Esc hint, then line-numbered rows from the scroll offset, marking the target line and painting `tui.code-highlight.highlightCode` runs via `tui.view.drawRuns`.

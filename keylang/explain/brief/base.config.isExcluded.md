@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=9099a73ac19e6b748f3c8017e69bad9cbb929419ae8b2ae20ed86961f77d3a35 lang=en detail=brief -->
-Returns true when the relative path matches any glob in the built-in exclude list combined with the caller-supplied extra patterns, delegating each pattern check to `base.glob.matchesGlob`; it is the shared filter used by `base.config.isAnalysed`, `base.config.hasSource`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=21c5d60c9c043a705de33e89888e795a9ac72d97d82668d21e6ca13cfbe274a9 lang=en detail=brief -->
+Reports whether a relative path matches the built-in default exclude globs or any caller-supplied extra globs, via `base.config.matchesAny`. Used by `base.config.hasSource`, `base.config.hasRootFiles` and `map.graph.notIndexed`.

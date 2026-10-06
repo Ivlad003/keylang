@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2ff8499525c266a25c129493f20b7e02b5c4e4daaacb96c2598c14fd67f7710d lang=en detail=brief -->
-The shared operations every entry point builds on: check reporting and `--changed` filtering (`features.check-results`, `features.changed`), drafting and explaining through a model or offline (`features.draft`, `features.explain-llm`), proposals, staleness, git and voice. Each…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f61d7bd99b341a64e2d6107a65f6026f70f92b449a6d1ea0b2de64293a6cdeb2 lang=en detail=brief -->
+The user-facing capabilities behind the CLI, TUI, LSP and MCP: check reporting (`features.check-results`), node explanations (`features.explain-node`), flow drafting (`features.draft`), model calls (`features.llm`), and voice input (`features.voice`).

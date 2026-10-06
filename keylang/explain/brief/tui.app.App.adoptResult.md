@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b9b34f03a16e9d42a70a7c005f6105dd038fbca7a1e4634a42896854de9fa987 lang=en detail=brief -->
-Clears the updating/error state, flags the marks as outdated when the edit count changed during the run, and installs the analysis via `tui.app.App.adopt`. Then re-locates the previously selected finding in the new visible list with `tui.findings.sameResult` and clamps the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=fb6647c837518c46f515b819f6c16f6293065dc9b2422ab9a769450f60a7ebf6 lang=en detail=brief -->
+Installs a finished analysis via `tui.app.App.adopt`, clears the updating and error state, and marks results outdated if the text was edited during the run. It keeps the previously selected finding selected when still reported, then clamps the selection.

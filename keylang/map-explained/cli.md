@@ -5,7 +5,7 @@
 # map
 
 - cli
-  <a id="cli"></a><br>Entry points that expose the keylang core ([`cli.index`](cli.md#cli.index)) to users and tools: the command line and TUI in [`cli.cli`](cli.md#cli.cli), a stdio language server in [`cli.lsp`](cli.md#cli.lsp), an MCP server in [`cli.mcp`](cli.md#cli.mcp), and shell completions in [`cli.completions`](cli.md#cli.completions). It also holds the test-run adapters: a `node:test`… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+  <a id="cli"></a><br>Entry points around the core ([`cli.index`](cli.md#cli.index)): the [`cli.cli`](cli.md#cli.cli) commands and TUI, shell completions, an LSP server ([`cli.lsp`](cli.md#cli.lsp)), MCP tools for agents ([`cli.mcp`](cli.md#cli.mcp)), and test reporting and `@flow` trace adapters for Node runs. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [keylang](../../bin/keylang.js#L1)
     <a id="cli.keylang"></a><br>Checkout entry. `npm pack` rewrites this file to import ../dist/cli.js and restores this copy afterwards (scripts/pack-entry.mjs).
     - cli [cli.cli](cli.md#cli.cli)
@@ -20,7 +20,7 @@
     - type [TestEvent](../../src/adapters/node-test.ts#L17) <!-- internal -->
       <a id="cli.node-test.TestEvent"></a><br>Shape of a single event emitted by Node's test runner stream, carrying the event kind plus the test's name, nesting depth, optional file path, skip/todo markers and detail type. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [keylangReporter](../../src/adapters/node-test.ts#L22) (source: AsyncIterable<TestEvent>) → AsyncGenerator<string>
-      <a id="cli.node-test.keylangReporter"></a><br>Consumes node:test events, tracking open suites per file to record each pass/fail/skip result with its root-relative path and suite chain, then writes a JSON report to `.keylang/reports/node-test.json` (or `KEYLANG_TEST_REPORT`). It takes the map snapshot ID via… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      <a id="cli.node-test.keylangReporter"></a><br>Node test-runner reporter that collects pass/fail/skip results with suite paths, then writes a JSON report with a [`cli.run-id.runId`](cli.md#cli.run-id.runId) ID. Its snapshot ID comes from [`map.map.generateMap`](map.md#map.map.generateMap) and is kept only if code didn't change during the run. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.map.generateMap](map.md#map.map.generateMap), [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.toPosix](base.md#base.config.toPosix), [cli.run-id.runId](cli.md#cli.run-id.runId)
   - module [run-id](../../src/adapters/run-id.ts#L1)
     <a id="cli.run-id"></a><br>One id for the reports and traces of a test run: KEYLANG_TRACE_RUN when the runner sets it, otherwise the time and the process.
@@ -36,194 +36,196 @@
     - trace-plan [map.trace-plan](map.md#map.trace-plan)
     - type [TraceHooksData](../../src/adapters/trace-hooks.ts#L16)
       <a id="cli.trace-hooks.TraceHooksData"></a><br>Describes the payload handed to the trace-hooks worker thread: the repository root path, the flow identifier being traced, and a `MessagePort` over which the worker reports hook events back to the parent. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L28)
-      <a id="cli.trace-hooks.TracePlanMessage"></a><br>Hooks → adapter. `plan` once from `initialize`: the flow's functions a wrapper was planned for. `loaded` from `load` for each file the plan was actually applied to: only those symbols are instrumented, so a file that loaded under another URL or with other content never counts…
-    - type [FilePlan](../../src/adapters/trace-hooks.ts#L32) <!-- internal -->
+    - type [TracePlanMessage](../../src/adapters/trace-hooks.ts#L29)
+      <a id="cli.trace-hooks.TracePlanMessage"></a><br>Hooks → adapter. `plan` once from `initialize`: the flow's functions a wrapper was planned for, and the real path of each file that holds them. `loaded` from `load` for each file the plan was applied to (`commonjs` when Node compiles it as CommonJS); `skipped` for a planned…
+    - type [FilePlan](../../src/adapters/trace-hooks.ts#L34) <!-- internal -->
       <a id="cli.trace-hooks.FilePlan"></a><br>Holds the per-file record used when wrapping a source file for tracing: the `sha256` of the file as the snapshot saw it, the `source` text with wrappers inserted, and the `ids` of the nodes instrumented in it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [initialize](../../src/adapters/trace-hooks.ts#L42) (data: TraceHooksData) → Promise<void>
-      <a id="cli.trace-hooks.initialize"></a><br>Builds the instrumentation plan for a trace run: resolves the flow's function symbols via [`map.trace-plan.flowSymbols`](map.md#map.trace-plan.flowSymbols), wraps each non-generator body with [`cli.trace-hooks.wrap`](cli.md#cli.trace-hooks.wrap), and stores the rewritten source per module URL. Files that fail [`extract.bodies.parsesCleanly`](extract.md#extract.bodies.parsesCleanly) are… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [initialize](../../src/adapters/trace-hooks.ts#L44) (data: TraceHooksData) → Promise<void>
+      <a id="cli.trace-hooks.initialize"></a><br>Builds the map, picks the flow's functions via [`map.trace-plan.flowSymbols`](map.md#map.trace-plan.flowSymbols), wraps their bodies with [`cli.trace-hooks.wrap`](cli.md#cli.trace-hooks.wrap), keeps files that still parse, and posts the instrumentation plan (or error) to the port. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [base.config.loadConfig](base.md#base.config.loadConfig), [map.map.generateMap](map.md#map.map.generateMap), [map.trace-plan.flowSymbols](map.md#map.trace-plan.flowSymbols), [extract.bodies.functionBodies](extract.md#extract.bodies.functionBodies), [cli.trace-hooks.wrap](cli.md#cli.trace-hooks.wrap), [cli.trace-hooks.applyEdits](cli.md#cli.trace-hooks.applyEdits), [extract.bodies.parsesCleanly](extract.md#extract.bodies.parsesCleanly), [map.snapshot.sha256](map.md#map.snapshot.sha256)
-    - type [Edit](../../src/adapters/trace-hooks.ts#L82) <!-- internal -->
+    - type [Edit](../../src/adapters/trace-hooks.ts#L87) <!-- internal -->
       <a id="cli.trace-hooks.Edit"></a><br>Text inserted at an offset of the original source.
-    - fn [wrap](../../src/adapters/trace-hooks.ts#L88) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
+    - fn [wrap](../../src/adapters/trace-hooks.ts#L93) (id: string, body: FunctionBody) → Edit[] <!-- internal -->
       <a id="cli.trace-hooks.wrap"></a><br>`{ BODY }` → `{ return __keylangTrace.run(id, () => { BODY }); }`; an arrow keeps `this` and `arguments`.
-    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L104) (src: string, edits: readonly Edit[]) → string <!-- internal -->
+    - fn [applyEdits](../../src/adapters/trace-hooks.ts#L109) (src: string, edits: readonly Edit[]) → string <!-- internal -->
       <a id="cli.trace-hooks.applyEdits"></a><br>Insert every edit; edits at one offset keep the order they were made in.
-    - type [LoadResult](../../src/adapters/trace-hooks.ts#L111) <!-- internal -->
+    - type [LoadResult](../../src/adapters/trace-hooks.ts#L116) <!-- internal -->
       <a id="cli.trace-hooks.LoadResult"></a><br>Shape of the value a module-load hook returns: an optional module `format`, the loaded `source` as string or binary buffer, and a `shortCircuit` flag telling the loader chain to stop at this result. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [load](../../src/adapters/trace-hooks.ts#L113) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
-      <a id="cli.trace-hooks.load"></a><br>Module loader hook that lets the next loader fetch the source, then, if a plan exists for the URL and the source's hash via [`map.snapshot.sha256`](map.md#map.snapshot.sha256) matches it, substitutes the plan's instrumented source. It posts a "loaded" message with the plan's ids to the port before… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [load](../../src/adapters/trace-hooks.ts#L118) (url: string, context: unknown, nextLoad: (url: string, context: unknown) => Promise<LoadResult>) → Promise<LoadResult>
+      <a id="cli.trace-hooks.load"></a><br>Node module loader hook that swaps in instrumented trace source for planned files whose [`map.snapshot.sha256`](map.md#map.snapshot.sha256) hash matches the snapshot, reporting loaded or skipped, and tags CommonJS modules for the adapter. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [map.snapshot.sha256](map.md#map.snapshot.sha256)
   - module [trace](../../src/adapters/trace.ts#L1)
-    <a id="cli.trace"></a><br>Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …` (in this repository: `--import ./src/adapters/trace.ts`). Environment: KEYLANG_TRACE JSONL file to append to (required) KEYLANG_TRACE_FLOW flow name whose trigger and steps are instrumented (required)…
+    <a id="cli.trace"></a><br>Trace adapter for TS/JS `@flow` tests: `node --import keylang/trace …` (in this repository: `--import ./src/adapters/trace.ts`). Environment: KEYLANG_TRACE JSONL file to append to; without it the adapter does nothing KEYLANG_TRACE_FLOW flow name whose trigger and steps are…
     - node [external.node](external.md#external.node)
     - trace-evidence [check.trace-evidence](check.md#check.trace-evidence)
     - run-id [cli.run-id](cli.md#cli.run-id)
     - trace-hooks [cli.trace-hooks](cli.md#cli.trace-hooks)
     - type [Span](../../src/adapters/trace.ts#L22) <!-- internal -->
       <a id="cli.trace.Span"></a><br>Describes the shape of a tracing span record held by [`cli.trace`](cli.md#cli.trace): a string identifier for the span plus a boolean flag marking whether the span has already been closed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [planned](../../src/adapters/trace.ts#L40) () → typeof plan <!-- internal -->
-      <a id="cli.trace.planned"></a><br>Reads what the hooks thread sent so far: the plan, then the files it was applied to.
-    - fn [write](../../src/adapters/trace.ts#L59) (event: Record<string, unknown>) → void <!-- internal -->
-      <a id="cli.trace.write"></a><br>Serializes a trace event to a JSON line and appends it to the in-memory buffer, merging in the schema version, run and test IDs, flow, a composite trace ID, and the snapshot ID obtained from [`cli.trace.planned`](cli.md#cli.trace.planned). It is the shared sink used by [`cli.trace.start`](cli.md#cli.trace.start) and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [cli.trace.planned](cli.md#cli.trace.planned)
-    - fn [start](../../src/adapters/trace.ts#L63) (symbolId: string) → Span <!-- internal -->
-      <a id="cli.trace.start"></a><br>Opens a new tracing span under the current async-local parent, emitting a "start" event through [`cli.trace.write`](cli.md#cli.trace.write) with ids, sequence number and timestamp. If the parent has already ended, it is attached as a link instead, and the span id is tracked as open. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [cli.trace.write](cli.md#cli.trace.write)
-    - fn [finish](../../src/adapters/trace.ts#L71) (span: Span, outcome: "ok" | "error") → void <!-- internal -->
-      <a id="cli.trace.finish"></a><br>Marks a span as ended, removes it from the open-span set, and emits an "end" record with the outcome, clock id, next sequence number, and timestamp via [`cli.trace.write`](cli.md#cli.trace.write). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - calls [cli.trace.write](cli.md#cli.trace.write)
+    - type [Plan](../../src/adapters/trace.ts#L27) = Extract<TracePlanMessage, { kind: "plan" }> <!-- internal -->
+      <a id="cli.trace.Plan"></a>
+    - fn [record](../../src/adapters/trace.ts#L33) (file: string) → void <!-- internal -->
+      <a id="cli.trace.record"></a>
+      - calls [cli.run-id.runId](cli.md#cli.run-id.runId), [cli.trace.instrumented](cli.md#cli.trace.instrumented)
+    - type [Loads](../../src/adapters/trace.ts#L141) <!-- internal -->
+      <a id="cli.trace.Loads"></a><br>What the hooks did with the planned files in this process.
+    - fn [instrumented](../../src/adapters/trace.ts#L159) (plan: Plan, loads: Loads) → string[] <!-- internal -->
+      <a id="cli.trace.instrumented"></a><br>The plan's functions this process would have recorded had it called them: every function a wrapper was planned for, whether or not the process loaded its file (code it never loaded never ran here). Left out: a file that loaded with other content than the snapshot saw, and a…
   - module [cli](../../src/cli.ts#L1)
-    <a id="cli.cli"></a><br>`keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.
+    <a id="cli.cli"></a><br>`keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
     - node [external.node](external.md#external.node)
-    - completions [cli.completions](cli.md#cli.completions)
-    - git-hook [features.git-hook](features.md#features.git-hook)
     - safe-write [base.safe-write](base.md#base.safe-write)
-    - new-spec [tui.new-spec](tui.md#tui.new-spec)
     - harness [features.harness](features.md#features.harness)
-    - clone [features.clone](features.md#features.clone)
     - changed [features.changed](features.md#features.changed)
     - config [base.config](base.md#base.config)
-    - assess [check.assess](check.md#check.assess)
     - diag [base.diag](base.md#base.diag)
     - analyze [map.analyze](map.md#map.analyze)
     - explain-offline [features.explain-offline](features.md#features.explain-offline)
-    - agent-cli [features.agent-cli](features.md#features.agent-cli)
     - check-format [features.check-format](features.md#features.check-format)
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explain-inventory [features.explain-inventory](features.md#features.explain-inventory)
     - explanations [map.explanations](map.md#map.explanations)
     - git-changes [features.git-changes](features.md#features.git-changes)
-    - proposals [features.proposals](features.md#features.proposals)
-    - lsp [cli.lsp](cli.md#cli.lsp)
-    - terminal [tui.terminal](tui.md#tui.terminal)
-    - web [tui.web](tui.md#tui.web)
     - operations [operations.operations](operations.md#operations.operations)
-    - verdict [check.verdict](check.md#check.verdict)
-    - stale [features.stale](features.md#features.stale)
+    - terminal [tui.terminal](tui.md#tui.terminal)
+    - lsp [cli.lsp](cli.md#cli.lsp)
     - mcp [cli.mcp](cli.md#cli.mcp)
-    - fn [main](../../src/cli.ts#L248) (argv: readonly string[]) → Promise<number>
+    - web [tui.web](tui.md#tui.web)
+    - proposals [features.proposals](features.md#features.proposals)
+    - git-hook [features.git-hook](features.md#features.git-hook)
+    - new-spec [tui.new-spec](tui.md#tui.new-spec)
+    - completions [cli.completions](cli.md#cli.completions)
+    - stale [features.stale](features.md#features.stale)
+    - fn [main](../../src/cli.ts#L251) (argv: readonly string[]) → Promise<number>
       <a id="cli.cli.main"></a><br>Runs the CLI and returns the exit code: 0 ok, 1 findings, 2 usage or I/O error.
       - calls [cli.cli.run](cli.md#cli.cli.run)
-    - fn [run](../../src/cli.ts#L257) (argv: readonly string[]) → Promise<number> <!-- internal -->
-      <a id="cli.cli.run"></a><br>Parses flags and the first positional into a subcommand, handling `--help`/`--version` inline and opening [`tui.terminal.runTerminal`](tui.md#tui.terminal.runTerminal) when no command is given on a TTY. Dispatches to the matching `cmd*` handler (e.g. [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck), [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp)) and returns its exit… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [tui.terminal.runTerminal](tui.md#tui.terminal.runTerminal), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [cli.cli.cmdFeature](cli.md#cli.cli.cmdFeature), [cli.cli.cmdHook](cli.md#cli.cli.cmdHook), [cli.cli.cmdNew](cli.md#cli.cli.cmdNew), [cli.cli.cmdCompletions](cli.md#cli.cli.cmdCompletions), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap), [cli.cli.cmdCheck](cli.md#cli.cli.cmdCheck), [cli.cli.cmdExplain](cli.md#cli.cli.cmdExplain), [cli.lsp.serveLsp](cli.md#cli.lsp.serveLsp), [cli.cli.cmdDoctor](cli.md#cli.cli.cmdDoctor), [cli.cli.cmdDraft](cli.md#cli.cli.cmdDraft), [cli.cli.cmdSpecToCode](cli.md#cli.cli.cmdSpecToCode), [cli.cli.cmdCodeToSpec](cli.md#cli.cli.cmdCodeToSpec), [cli.cli.cmdWire](cli.md#cli.cli.cmdWire), [cli.cli.cmdTracePlan](cli.md#cli.cli.cmdTracePlan), [cli.cli.cmdExport](cli.md#cli.cli.cmdExport), [cli.cli.prepareClone](cli.md#cli.cli.prepareClone), [cli.cli.cmdWeb](cli.md#cli.cli.cmdWeb), [cli.cli.needPaths](cli.md#cli.cli.needPaths), [cli.cli.cmdParse](cli.md#cli.cli.cmdParse), [cli.cli.cmdFmt](cli.md#cli.cli.cmdFmt)
-    - fn [cmdWeb](../../src/cli.ts#L362) (root: string, portText: string, host: string) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdWeb"></a><br>Validates the port text, starts the browser UI via [`tui.web.serveWeb`](tui.md#tui.web.serveWeb) on the repository found by [`map.analyze.findRoot`](map.md#map.analyze.findRoot), and prints the URL. Waits for SIGINT/SIGTERM, requiring a second Ctrl+C when unsaved buffers exist, then closes the server. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [tui.web.serveWeb](tui.md#tui.web.serveWeb)
-    - type [ExplainOptions](../../src/cli.ts#L392) <!-- internal -->
+    - fn [run](../../src/cli.ts#L260) (argv: readonly string[]) → Promise<number> <!-- internal -->
+      <a id="cli.cli.run"></a><br>Parses CLI arguments, handles help/version, opens the terminal UI when no command is given, and dispatches each subcommand to its handler such as [`cli.cli.cmdCheck`](cli.md#cli.cli.cmdCheck) or [`cli.cli.cmdExplain`](cli.md#cli.cli.cmdExplain), returning an exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [cli.cli.cmdAgents](cli.md#cli.cli.cmdAgents), [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [cli.cli.cmdBaseline](cli.md#cli.cli.cmdBaseline), [cli.cli.cmdFeature](cli.md#cli.cli.cmdFeature), [cli.cli.cmdHook](cli.md#cli.cli.cmdHook), [cli.cli.cmdNew](cli.md#cli.cli.cmdNew), [cli.cli.cmdCompletions](cli.md#cli.cli.cmdCompletions), [cli.cli.cmdMap](cli.md#cli.cli.cmdMap), [cli.cli.cmdCheck](cli.md#cli.cli.cmdCheck), [cli.cli.cmdExplain](cli.md#cli.cli.cmdExplain), [cli.cli.cmdDoctor](cli.md#cli.cli.cmdDoctor), [cli.cli.cmdDraft](cli.md#cli.cli.cmdDraft), [cli.cli.cmdProposals](cli.md#cli.cli.cmdProposals), [cli.cli.cmdSpecToCode](cli.md#cli.cli.cmdSpecToCode), [cli.cli.cmdCodeToSpec](cli.md#cli.cli.cmdCodeToSpec), [cli.cli.cmdWire](cli.md#cli.cli.cmdWire), [cli.cli.cmdTracePlan](cli.md#cli.cli.cmdTracePlan), [cli.cli.cmdExport](cli.md#cli.cli.cmdExport), [cli.cli.cmdWeb](cli.md#cli.cli.cmdWeb), [cli.cli.needPaths](cli.md#cli.cli.needPaths), [cli.cli.cmdParse](cli.md#cli.cli.cmdParse), [cli.cli.cmdFmt](cli.md#cli.cli.cmdFmt)
+    - fn [cmdWeb](../../src/cli.ts#L364) (portText: string, host: string) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdWeb"></a><br>Validates the port, starts the browser UI server on the repo root from [`map.analyze.findRoot`](map.md#map.analyze.findRoot), and prints its URL. Runs until SIGTERM or Ctrl+C, which asks once more when unsaved buffers exist, then closes the server. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot)
+    - type [ExplainOptions](../../src/cli.ts#L395) <!-- internal -->
       <a id="cli.cli.ExplainOptions"></a><br>Shape of the parsed flags for the explain command: booleans toggling LLM use, full/brief output, stale/missing filtering and dry-run, plus optional raw string values for a result limit and parallel job count. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdExplain](../../src/cli.ts#L403) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdExplain"></a><br>Validates the `explain` flag combinations, then routes to [`cli.cli.cmdExplainBatch`](cli.md#cli.cli.cmdExplainBatch) for `--missing`/`--stale` runs, [`cli.cli.explainPlanPrinter`](cli.md#cli.cli.explainPlanPrinter) for a plain stale listing, or [`operations.operations.runOperation`](operations.md#operations.operations.runOperation) with an offline or LLM request. Writes the resulting text to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.explainPlanPrinter](cli.md#cli.cli.explainPlanPrinter), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [cmdExplainBatch](../../src/cli.ts#L442) (root: string, batch: BriefBatch, opts: Pick<ExplainOptions, "llm" | "dryRun" | "limit" | "jobs">) → Promise<number> <!-- internal -->
+    - fn [cmdExplain](../../src/cli.ts#L406) (subject: string | undefined, opts: ExplainOptions) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdExplain"></a><br>Validates explain flags, then routes to [`cli.cli.cmdExplainBatch`](cli.md#cli.cli.cmdExplainBatch) for missing/stale batches, [`cli.cli.explainPlanPrinter`](cli.md#cli.cli.explainPlanPrinter) for stale listings, or [`operations.operations.runOperation`](operations.md#operations.operations.runOperation) for offline or model explanations, printing the text. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [cli.cli.explainPlanPrinter](cli.md#cli.cli.explainPlanPrinter), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [cmdExplainBatch](../../src/cli.ts#L445) (batch: BriefBatch, opts: ExplainOptions) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExplainBatch"></a><br>`explain --missing|--stale [--llm] [--dry-run] [--limit N] [--jobs N]`: briefs for the explained map, bottom-up. Without `--llm` it lists the nodes; `--dry-run` counts them and estimates tokens.
-      - calls [cli.cli.positiveInteger](cli.md#cli.cli.positiveInteger), [cli.cli.explainPlanPrinter](cli.md#cli.cli.explainPlanPrinter), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [explainPlanPrinter](../../src/cli.ts#L462) (request: ExplainPlanRequest) → Promise<number> <!-- internal -->
+      - calls [cli.cli.positiveInteger](cli.md#cli.cli.positiveInteger), [cli.cli.explainPlanPrinter](cli.md#cli.cli.explainPlanPrinter), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [explainPlanPrinter](../../src/cli.ts#L465) (request: ExplainPlanRequest) → Promise<number> <!-- internal -->
       <a id="cli.cli.explainPlanPrinter"></a><br>`explain --stale`, and a brief plan without `--llm`: the note on stderr, the stdout of the shared operation; a failure is the CLI's error.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [prepareClone](../../src/cli.ts#L477) (sourceText: string | undefined, opts: { dir: string | undefined; explain: string | undefined; dryRun: boolean }) → Promise<{ code: number; root: string | null }> <!-- internal -->
-      <a id="cli.cli.prepareClone"></a><br>`clone <source> [--dir D] [--explain MODE] [--dry-run]`, and the first half of `web <source>`: the clone, then the existing printers of init (`--agents=none`: a clone gets no harness files), the brief batch, the layers' full explanations and the map, each over the clone's root.…
-      - calls [features.clone.isCloneExplain](features.md#features.clone.isCloneExplain), [features.clone.parseRepoSource](features.md#features.clone.parseRepoSource), [features.clone.cloneCacheRoot](features.md#features.clone.cloneCacheRoot), [features.clone.syncClone](features.md#features.clone.syncClone), [cli.cli.cmdInit](cli.md#cli.cli.cmdInit), [base.config.loadConfig](base.md#base.config.loadConfig), [cli.cli.cmdExplainBatch](cli.md#cli.cli.cmdExplainBatch), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [features.clone.enableExplainedMap](features.md#features.clone.enableExplainedMap), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [positiveInteger](../../src/cli.ts#L522) (flag: string, text: string) → number <!-- internal -->
+    - fn [positiveInteger](../../src/cli.ts#L473) (flag: string, text: string) → number <!-- internal -->
       <a id="cli.cli.positiveInteger"></a><br>Validates a CLI flag's text via [`features.explain-inventory.positiveIntegerProblem`](features.md#features.explain-inventory.positiveIntegerProblem), throwing an Error with the returned message when it fails. Otherwise converts the text to a number for [`cli.cli.cmdExplainBatch`](cli.md#cli.cli.cmdExplainBatch). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [features.explain-inventory.positiveIntegerProblem](features.md#features.explain-inventory.positiveIntegerProblem)
-    - fn [cmdDraft](../../src/cli.ts#L528) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdDraft"></a><br>Dispatches the `draft` subcommand: `rules`/`map` go to [`cli.cli.cmdDraftLayout`](cli.md#cli.cli.cmdDraftLayout), while `flow <trigger>` validates the trigger and `--mode` (algo/llm/hybrid) then runs [`cli.cli.draftFlowPrinter`](cli.md#cli.cli.draftFlowPrinter) from the root found by [`map.analyze.findRoot`](map.md#map.analyze.findRoot). Any other target or invalid option… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [cmdDraft](../../src/cli.ts#L479) (args: string[], opts: { mode: string; name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdDraft"></a><br>Dispatches the draft subcommand: `rules` or `map` go to `cmdDraftLayout`, while `flow <trigger>` checks the trigger and mode (algo, llm or hybrid) and then calls `draftFlowPrinter` from the root that `findRoot` locates. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [cli.cli.cmdDraftLayout](cli.md#cli.cli.cmdDraftLayout), [cli.cli.draftFlowPrinter](cli.md#cli.cli.draftFlowPrinter), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [draftFlowPrinter](../../src/cli.ts#L543) (root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftFlowPrinter](../../src/cli.ts#L494) (root: string, trigger: string, mode: "algo" | "llm" | "hybrid", opts: { name: string | undefined; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.draftFlowPrinter"></a><br>`draft flow <trigger> --mode algo|llm|hybrid`: a printer over the shared `draft-flow` operation. The proposal replaces one already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdSpecToCode](../../src/cli.ts#L568) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdSpecToCode"></a><br>Validates the spec-to-code flags (rejecting --apply with --print, a missing id, or a mode other than algo/llm), then locates the repo via [`map.analyze.findRoot`](map.md#map.analyze.findRoot) and normalizes `--into` with [`base.config.toPosix`](base.md#base.config.toPosix). Dispatches to [`cli.cli.specToCodeApplyPrinter`](cli.md#cli.cli.specToCodeApplyPrinter) when applying… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [cmdSpecToCode](../../src/cli.ts#L519) (id: string | undefined, opts: { into: string | undefined; apply: boolean; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdSpecToCode"></a><br>Validates the spec-to-code options (planned id required, mode `algo` or `llm`, not both apply and print), then locates the repo root via [`map.analyze.findRoot`](map.md#map.analyze.findRoot). Dispatches to [`cli.cli.specToCodeApplyPrinter`](cli.md#cli.cli.specToCodeApplyPrinter) or [`cli.cli.specToCodePrinter`](cli.md#cli.cli.specToCodePrinter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.specToCodeApplyPrinter](cli.md#cli.cli.specToCodeApplyPrinter), [cli.cli.specToCodePrinter](cli.md#cli.cli.specToCodePrinter)
-    - fn [specToCodeApplyPrinter](../../src/cli.ts#L586) (root: string, id: string, into: string | undefined, mode: "algo" | "llm") → Promise<number> <!-- internal -->
-      <a id="cli.cli.specToCodeApplyPrinter"></a><br>`spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is built as a preview (stdout and the test notes as `--print`), then the shared `apply-code` operation writes its files; a proposal waiting for one stays, as it always did. Any file not written ends with 2…
+    - fn [specToCodeApplyPrinter](../../src/cli.ts#L539) (root: string, id: string, into: string | undefined, mode: "algo" | "llm") → Promise<number> <!-- internal -->
+      <a id="cli.cli.specToCodeApplyPrinter"></a><br>`spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is built as a preview (stdout and the test notes as `--print`), then the shared `apply-code` operation writes its files; a proposal waiting for one stays, as it always did. The operation's code is the CLI's…
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [specToCodePrinter](../../src/cli.ts#L614) (root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm") → Promise<number> <!-- internal -->
+    - fn [specToCodePrinter](../../src/cli.ts#L567) (root: string, id: string, into: string | undefined, print: boolean, mode: "algo" | "llm") → Promise<number> <!-- internal -->
       <a id="cli.cli.specToCodePrinter"></a><br>`spec-to-code <id> [--into] [--mode algo|llm] [--print]`: a printer over the shared `spec-to-code` operation. stdout is the candidate's files and findings, stderr the test notes and then what was (not) written. The proposals replace ones already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [cmdCodeToSpec](../../src/cli.ts#L628) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdCodeToSpec"></a><br>Validates that exactly one of a path (optionally `:line`) or `--since` ref was given, then locates the repo via [`map.analyze.findRoot`](map.md#map.analyze.findRoot) and runs [`map.analyze.analyze`](map.md#map.analyze.analyze) without evidence. Builds a `CodeToSpecSource` from the path (made root-relative via [`base.config.toPosix`](base.md#base.config.toPosix)) or… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [cmdCodeToSpec](../../src/cli.ts#L581) (at: string | undefined, opts: { into: string | undefined; print: boolean; mode: string; since: string | undefined }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdCodeToSpec"></a><br>Validates that exactly one of a `path[:line]` or a `--since` git ref is given, runs [`map.analyze.analyze`](map.md#map.analyze.analyze) from the project root, and hands the resolved file/line or ref source to [`cli.cli.codeToSpecPrinter`](cli.md#cli.cli.codeToSpecPrinter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.codeToSpecPrinter](cli.md#cli.cli.codeToSpecPrinter)
-    - fn [codeToSpecPrinter](../../src/cli.ts#L655) (root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }) → Promise<number> <!-- internal -->
+    - fn [codeToSpecPrinter](../../src/cli.ts#L608) (root: string, source: CodeToSpecSource, analysis: Analysis, opts: { into: string | undefined; print: boolean; mode: string }) → Promise<number> <!-- internal -->
       <a id="cli.cli.codeToSpecPrinter"></a><br>`code-to-spec <path[:line]> | --since <ref> [--mode] [--into] [--print]`: a printer over the shared `code-to-spec` operation, on the analysis already made. The path is relative to the working directory, `--into` to the root.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDraftLayout](../../src/cli.ts#L689) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdDraftLayout"></a><br>Validates that the mode is algo, llm or hybrid, throwing otherwise, then locates the repository root via [`map.analyze.findRoot`](map.md#map.analyze.findRoot). Dispatches to [`cli.cli.draftMapPrinter`](cli.md#cli.cli.draftMapPrinter) for maps or [`cli.cli.draftRulesPrinter`](cli.md#cli.cli.draftRulesPrinter) for rules, returning its exit code. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [cmdDraftLayout](../../src/cli.ts#L642) (what: "rules" | "map", opts: { mode: string; into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdDraftLayout"></a><br>Validates that the draft mode is algo, llm or hybrid, locates the project root via [`map.analyze.findRoot`](map.md#map.analyze.findRoot), then dispatches to [`cli.cli.draftMapPrinter`](cli.md#cli.cli.draftMapPrinter) or [`cli.cli.draftRulesPrinter`](cli.md#cli.cli.draftRulesPrinter) and returns its exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [cli.cli.draftMapPrinter](cli.md#cli.cli.draftMapPrinter), [cli.cli.draftRulesPrinter](cli.md#cli.cli.draftRulesPrinter)
-    - fn [draftMapPrinter](../../src/cli.ts#L701) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
+    - fn [draftMapPrinter](../../src/cli.ts#L654) (root: string, mode: "algo" | "llm" | "hybrid") → Promise<number> <!-- internal -->
       <a id="cli.cli.draftMapPrinter"></a><br>`draft map [--mode algo|llm|hybrid]`: a printer over the shared `draft-layout` operation. Stdout: the config with the drafted layers; on stderr the fallback of a hybrid without a model, then that nothing was written. keylang.json never changes.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [draftRulesPrinter](../../src/cli.ts#L719) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
+    - fn [draftRulesPrinter](../../src/cli.ts#L672) (root: string, mode: "algo" | "llm" | "hybrid", opts: { into: string | undefined; print: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.draftRulesPrinter"></a><br>`draft rules [--mode algo|llm|hybrid] [--into] [--print]`: a printer over the shared `draft-rules` operation. The proposal replaces one already waiting, as the CLI always did.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdExport](../../src/cli.ts#L747) (args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }) → Promise<number> <!-- internal -->
+    - fn [cmdExport](../../src/cli.ts#L700) (args: readonly string[], options: { format: string | undefined; level: string | undefined; layer: string | undefined; out: string | undefined }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdExport"></a><br>`keylang export c4` (c4-zoom/12): the diagram on stdout, or written to `--out` with a note on stderr and nothing on stdout. Exit code 0 or 2.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdWire](../../src/cli.ts#L764) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdProposals](../../src/cli.ts#L724) (args: readonly string[]) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdProposals"></a><br>`proposals [show|accept|reject <target>]`: a person takes or drops a proposal without the TUI. A printer over `src/proposals.ts`: the list, a diff and what was written to stdout; notes and refusals to stderr. 0 done; 1 nothing pending for the target, or an accept refused…
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix), [base.config.loadConfig](base.md#base.config.loadConfig)
+    - fn [cmdWire](../../src/cli.ts#L778) (out: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdWire"></a>
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [cmdDoctor](../../src/cli.ts#L778) () → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdDoctor"></a><br>What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0.
+    - fn [cmdDoctor](../../src/cli.ts#L792) () → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdDoctor"></a><br>What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [cmdTracePlan](../../src/cli.ts#L793) (flow: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdTracePlan](../../src/cli.ts#L807) (flow: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdTracePlan"></a><br>A printer over the shared trace-plan operation: the plan's JSON to stdout and nothing else.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - fn [needPaths](../../src/cli.ts#L801) (cmd: string, paths: string[]) → void <!-- internal -->
+    - fn [needPaths](../../src/cli.ts#L815) (cmd: string, paths: string[]) → void <!-- internal -->
       <a id="cli.cli.needPaths"></a><br>Guard that throws an `Error` naming the offending command when the argument list is empty, so [`cli.cli.run`](cli.md#cli.cli.run) can reject subcommands invoked without any path operands before doing any work. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdInit](../../src/cli.ts#L806) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
+    - fn [cmdInit](../../src/cli.ts#L820) (dir: string, opts: { agents: string | undefined; check: boolean }) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdInit"></a><br>`init [dir] [--agents=LIST] [--check]`: a printer over the shared init operation, stage by stage in the order the stages ran.
-      - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.operations.initSources](operations.md#operations.operations.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [cmdAgents](../../src/cli.ts#L849) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls [features.harness.harnessChoice](features.md#features.harness.harnessChoice), [operations.generate.initSources](operations.md#operations.generate.initSources), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [cli.cli.printAgents](cli.md#cli.cli.printAgents), [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [cli.cli.printGitignore](cli.md#cli.cli.printGitignore), [cli.cli.printMap](cli.md#cli.cli.printMap)
+    - fn [printGitignore](../../src/cli.ts#L872) (stage: GitignoreStage) → void <!-- internal -->
+      <a id="cli.cli.printGitignore"></a><br>The `.gitignore` line of init: an I/O error to stderr; added, not listed, or a refusal's reason to stdout, as the file lines of the other stages.
+      - calls [operations.generate.gitignoreMessage](operations.md#operations.generate.gitignoreMessage)
+    - fn [cmdAgents](../../src/cli.ts#L880) (root: string, harnesses: HarnessChoice, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdAgents"></a><br>`agents [--agents=LIST] [--check]`: a printer over the shared agents operation.
       - calls [cli.cli.printAgents](cli.md#cli.cli.printAgents), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printAgents](../../src/cli.ts#L854) (result: OperationEnvelope<"agents">) → number <!-- internal -->
+    - fn [printAgents](../../src/cli.ts#L885) (result: OperationEnvelope<"agents">) → number <!-- internal -->
       <a id="cli.cli.printAgents"></a><br>File lines to stdout (`stale`, `written`, `removed`, a refusal's reasons); failures to stderr.
-    - fn [cmdBaseline](../../src/cli.ts#L873) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdBaseline](../../src/cli.ts#L904) (root: string, checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdBaseline"></a><br>`baseline [--check]`: a printer over the shared baseline operation. Lines for the file go to stdout; failures to stderr.
       - calls [cli.cli.printBaseline](cli.md#cli.cli.printBaseline), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
-    - fn [printBaseline](../../src/cli.ts#L877) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
+    - fn [printBaseline](../../src/cli.ts#L908) (result: OperationEnvelope<"baseline">) → number <!-- internal -->
       <a id="cli.cli.printBaseline"></a><br>Writes the messages of a baseline operation envelope to stdout or stderr, routing them to stderr with a `keylang:` prefix when the payload is missing, errored, or lists refused entries, then returns the envelope's exit code (defaulting to 2). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdFeature](../../src/cli.ts#L892) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
+    - fn [cmdFeature](../../src/cli.ts#L923) (slug: string | undefined, format: string, since: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFeature"></a><br>Whether a feature is done, on the saved files. The CLI is a printer over the shared feature operation.
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.operations.featureSummary](operations.md#operations.operations.featureSummary)
-    - fn [cmdHook](../../src/cli.ts#L907) (name: string | undefined, checkOnly: boolean) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdHook"></a><br>Dispatches the `hook` subcommand: `install` delegates to [`cli.cli.cmdHookInstall`](cli.md#cli.cli.cmdHookInstall), while `stop` reads a hook event from stdin and emits a decision via [`features.changed.hookDecision`](features.md#features.changed.hookDecision). For `stop`, unless the hook is already active, it runs [`map.analyze.analyze`](map.md#map.analyze.analyze), narrows… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [cli.cli.cmdHookInstall](cli.md#cli.cli.cmdHookInstall), [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
-    - fn [cmdHookInstall](../../src/cli.ts#L933) (checkOnly: boolean) → number <!-- internal -->
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.feature.featureSummary](operations.md#operations.feature.featureSummary)
+    - fn [cmdHook](../../src/cli.ts#L939) (args: readonly string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdHook"></a><br>`hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2).
+      - calls [cli.cli.cmdHookInstall](cli.md#cli.cli.cmdHookInstall), [cli.cli.cmdHookStop](cli.md#cli.cli.cmdHookStop)
+    - fn [cmdHookStop](../../src/cli.ts#L954) () → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdHookStop"></a><br>`hook stop`: once the invocation is valid, exactly one JSON object on stdout and code 0. A harness reads code 2 of a Stop hook as a blocking error the agent cannot act on, so a failure — stdin that is not a JSON event, git missing or refused, a broken keylang.json, an analysis…
+      - calls [cli.cli.stopDecision](cli.md#cli.cli.stopDecision), [cli.cli.readStdin](cli.md#cli.cli.readStdin), [features.changed.uncheckedTurn](features.md#features.changed.uncheckedTurn)
+    - fn [stopDecision](../../src/cli.ts#L968) (input: string, cwd: string) → Promise<string> <!-- internal -->
+      <a id="cli.cli.stopDecision"></a><br>The Stop decision for the event on stdin: the fails of `check --changed` in `cwd`'s repository. Throws when the turn cannot be checked.
+      - calls [features.changed.parseHookEvent](features.md#features.changed.parseHookEvent), [features.changed.hookDecision](features.md#features.changed.hookDecision), [map.analyze.findRoot](map.md#map.analyze.findRoot), [map.analyze.analyze](map.md#map.analyze.analyze), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [features.git-changes.changedPathSet](features.md#features.git-changes.changedPathSet), [features.changed.filterChanged](features.md#features.changed.filterChanged), [features.git-changes.deletedModuleIds](features.md#features.git-changes.deletedModuleIds), [features.changed.hookFails](features.md#features.changed.hookFails)
+    - fn [cmdHookInstall](../../src/cli.ts#L989) (checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdHookInstall"></a><br>`hook install [--check]`: keylang's pre-commit hook in git's hooks directory. A hook without keylang's marker is someone else's: install refuses with 2 and names the line to add; --check counts it as not installed.
-      - calls [cli.cli.packageVersion](cli.md#cli.cli.packageVersion), [features.git-hook.gitHooksDir](features.md#features.git-hook.gitHooksDir), [base.config.toPosix](base.md#base.config.toPosix), [features.git-hook.preCommitState](features.md#features.git-hook.preCommitState), [features.git-hook.preCommitCommand](features.md#features.git-hook.preCommitCommand), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [features.git-hook.preCommitText](features.md#features.git-hook.preCommitText)
-    - fn [cmdNew](../../src/cli.ts#L961) (args: readonly string[], layer: string | undefined) → number <!-- internal -->
+      - calls [cli.cli.packageVersion](cli.md#cli.cli.packageVersion), [base.config.toPosix](base.md#base.config.toPosix), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic)
+    - fn [cmdNew](../../src/cli.ts#L1018) (args: readonly string[], layer: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdNew"></a><br>`new flow <name>`, `new module <name> --layer <layer>`: a skeleton spec, never over an existing file.
-      - calls [tui.new-spec.flowNameProblem](tui.md#tui.new-spec.flowNameProblem), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [tui.new-spec.defaultSpecPath](tui.md#tui.new-spec.defaultSpecPath), [tui.new-spec.specTemplate](tui.md#tui.new-spec.specTemplate), [cli.cli.plannedModuleTemplate](cli.md#cli.cli.plannedModuleTemplate), [base.config.toPosix](base.md#base.config.toPosix), [tui.new-spec.newSpecProblem](tui.md#tui.new-spec.newSpecProblem), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
-    - fn [plannedModuleTemplate](../../src/cli.ts#L1002) (layer: string, name: string) → string <!-- internal -->
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [cli.cli.plannedModuleTemplate](cli.md#cli.cli.plannedModuleTemplate), [base.config.toPosix](base.md#base.config.toPosix), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite)
+    - fn [plannedModuleTemplate](../../src/cli.ts#L1060) (layer: string, name: string) → string <!-- internal -->
       <a id="cli.cli.plannedModuleTemplate"></a><br>A module that has no code yet is an intention: `planned module` at the top of a flow section (format §5), in a feature file named after it. The prose says why a module request gets a flow heading; it is not part of the grammar.
-    - fn [cmdCompletions](../../src/cli.ts#L1010) (shell: string | undefined) → number <!-- internal -->
+    - fn [cmdCompletions](../../src/cli.ts#L1068) (shell: string | undefined) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCompletions"></a><br>`completions <shell>`: commands from the help text, flags from the parser's table.
-      - calls [cli.completions.isShell](cli.md#cli.completions.isShell), [cli.completions.completionScript](cli.md#cli.completions.completionScript), [cli.completions.helpCommands](cli.md#cli.completions.helpCommands)
-    - fn [packageVersion](../../src/cli.ts#L1017) () → string <!-- internal -->
+    - fn [packageVersion](../../src/cli.ts#L1076) () → string <!-- internal -->
       <a id="cli.cli.packageVersion"></a><br>Reads the repository's `package.json` via a CommonJS `require` built from the module URL and returns its `version` field. Used by [`cli.cli.cmdHookInstall`](cli.md#cli.cli.cmdHookInstall) to stamp the installed hook with the current version. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [readStdin](../../src/cli.ts#L1021) () → Promise<string> <!-- internal -->
+    - fn [readStdin](../../src/cli.ts#L1080) () → Promise<string> <!-- internal -->
       <a id="cli.cli.readStdin"></a><br>Drains `process.stdin` to completion, buffering each chunk and decoding the concatenated bytes as UTF-8 into a single string. Used by [`cli.cli.cmdHook`](cli.md#cli.cli.cmdHook) to receive the hook payload piped in by the caller. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [cmdMap](../../src/cli.ts#L1027) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdMap"></a><br>Resolves the target directory and runs it through [`operations.operations.runOperation`](operations.md#operations.operations.runOperation): in check mode it prints warnings and conflict/stale lines from [`operations.operations.mapCheckLines`](operations.md#operations.operations.mapCheckLines) with cwd-relative paths; otherwise it hands the result to [`cli.cli.printMap`](cli.md#cli.cli.printMap). Returns the… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.mapCheckLines](operations.md#operations.operations.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
-    - fn [printMap](../../src/cli.ts#L1045) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
+    - fn [cmdMap](../../src/cli.ts#L1086) (dir: string, checkOnly: boolean) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdMap"></a><br>Runs the map operation via [`operations.operations.runOperation`](operations.md#operations.operations.runOperation) and prints it with [`cli.cli.printMap`](cli.md#cli.cli.printMap). In check mode, it prints errors or warnings plus [`operations.generate.mapCheckLines`](operations.md#operations.generate.mapCheckLines) output and returns the exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.generate.mapCheckLines](operations.md#operations.generate.mapCheckLines), [base.config.toPosix](base.md#base.config.toPosix), [cli.cli.printMap](cli.md#cli.cli.printMap)
+    - fn [printMap](../../src/cli.ts#L1104) (result: OperationEnvelope<"map">, root: string) → number <!-- internal -->
       <a id="cli.cli.printMap"></a><br>The lines of a map write: paths relative to the working directory; failures and the summary to stderr.
-      - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.operations.mapConflictLines](operations.md#operations.operations.mapConflictLines), [operations.operations.mapStepLines](operations.md#operations.operations.mapStepLines), [operations.operations.mapSummary](operations.md#operations.operations.mapSummary)
-    - fn [cmdParse](../../src/cli.ts#L1076) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
+      - calls [base.config.toPosix](base.md#base.config.toPosix), [operations.generate.mapConflictLines](operations.md#operations.generate.mapConflictLines), [operations.generate.mapStepLines](operations.md#operations.generate.mapStepLines), [operations.generate.mapSummary](operations.md#operations.generate.mapSummary)
+    - fn [cmdParse](../../src/cli.ts#L1135) (paths: string[], json: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdParse"></a><br>A printer over the shared parse operation: the tree or the JSON to stdout and nothing else; the notes on skipped explanations and the diagnostics to stderr.
       - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.diag.formatDiagnostic](base.md#base.diag.formatDiagnostic)
-    - fn [cmdCheck](../../src/cli.ts#L1087) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
-      <a id="cli.cli.cmdCheck"></a><br>Validates the `check` flag combinations, then delegates to [`cli.cli.cmdCheckStale`](cli.md#cli.cli.cmdCheckStale) for stale mode or runs the explain-edge or check operation via [`operations.operations.runOperation`](operations.md#operations.operations.runOperation). Prints the report in the chosen format plus a summary, returning the exit code. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [cli.cli.cmdCheckStale](cli.md#cli.cli.cmdCheckStale), [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.operations.checkSkipNote](operations.md#operations.operations.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.operations.checkSummary](operations.md#operations.operations.checkSummary)
-    - fn [cmdCheckStale](../../src/cli.ts#L1144) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
+    - fn [cmdCheck](../../src/cli.ts#L1146) (paths: string[], opts: { strict: boolean; format: string; explain: boolean; static: string | undefined; changed: boolean; since: string | undefined; stale: boolean; accept: boolean }) → Promise<number> <!-- internal -->
+      <a id="cli.cli.cmdCheck"></a><br>Validates check flags and runs the check through [`operations.operations.runOperation`](operations.md#operations.operations.runOperation), delegating stale-baseline mode to [`cli.cli.cmdCheckStale`](cli.md#cli.cli.cmdCheckStale) and edge explanation separately. It prints the formatted report and summary, then returns the exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [cli.cli.cmdCheckStale](cli.md#cli.cli.cmdCheckStale), [features.check-format.isCheckFormat](features.md#features.check-format.isCheckFormat), [map.analyze.findRoot](map.md#map.analyze.findRoot), [base.config.loadConfig](base.md#base.config.loadConfig), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [operations.spec.checkSkipNote](operations.md#operations.spec.checkSkipNote), [features.check-format.checkReportText](features.md#features.check-format.checkReportText), [operations.spec.checkSummary](operations.md#operations.spec.checkSummary)
+    - fn [cmdCheckStale](../../src/cli.ts#L1203) (paths: string[], accept: boolean, strict: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdCheckStale"></a><br>`check --stale`: one line per statement to review on stdout (stale, new, or unchanged but incomplete) and per obsolete baseline entry, the counts on stderr. Stale is a warning: the code is 0 unless the invocation or I/O fails; with `strict`, any such line is 1, so CI can gate…
-      - calls [features.stale.runStaleCheck](features.md#features.stale.runStaleCheck), [map.analyze.findRoot](map.md#map.analyze.findRoot), [features.stale.staleLine](features.md#features.stale.staleLine), [features.stale.staleSummary](features.md#features.stale.staleSummary)
-    - fn [cmdFmt](../../src/cli.ts#L1163) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
+      - calls [map.analyze.findRoot](map.md#map.analyze.findRoot)
+    - fn [cmdFmt](../../src/cli.ts#L1224) (paths: string[], checkOnly: boolean) → Promise<number> <!-- internal -->
       <a id="cli.cli.cmdFmt"></a><br>Each file is formatted on its own, so one that cannot be read or written does not stop the rest: every such failure is reported, and the code is 2; otherwise 1 for diagnostics or, with `--check`, an unformatted file. The CLI is a printer over the shared fmt operation: stdout…
-      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot)
+      - calls [operations.operations.runOperation](operations.md#operations.operations.runOperation), [map.analyze.findRoot](map.md#map.analyze.findRoot), [operations.spec.fmtGeneratedNote](operations.md#operations.spec.fmtGeneratedNote)
   - module [completions](../../src/completions.ts#L1)
     <a id="cli.completions"></a><br>`keylang completions <shell>`: a completion script for bash, zsh or fish. The words come from the help text (commands and their subcommands) and the option table of the argument parser, so a new command or flag is completed as soon as `--help` and the parser know it.
     - type [Shell](../../src/completions.ts#L7) = (typeof SHELLS)[number]
@@ -260,60 +262,77 @@
     - resolve [check.resolve](check.md#check.resolve)
     - span [base.span](base.md#base.span)
   - module [lsp](../../src/lsp.ts#L1)
-    <a id="cli.lsp"></a><br>Stdio language server. It keeps the open buffers, runs one analysis per generation of changes (the same `analyze()` as `keylang check`, with the buffers as an overlay; nothing is written), and answers from the latest generation only: a request waits while a reanalysis is…
+    <a id="cli.lsp"></a><br>Stdio language server. It keeps the open buffers and analyses them (the same `analyze()` as `keylang check`, with the buffers as an overlay; nothing is written).
     - node [external.node](external.md#external.node)
     - analyze [map.analyze](map.md#map.analyze)
     - config [base.config](base.md#base.config)
     - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - explanations [map.explanations](map.md#map.explanations)
-    - type [Rpc](../../src/lsp.ts#L18) <!-- internal -->
+    - type [Rpc](../../src/lsp.ts#L20) <!-- internal -->
       <a id="cli.lsp.Rpc"></a><br>Describes the shape of a single JSON-RPC message with all fields optional, so one type covers requests, notifications, and success or error responses exchanged over the language server channel. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [serveLsp](../../src/lsp.ts#L31) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<number>
-      <a id="cli.lsp.serveLsp"></a><br>Reads Content-Length-framed JSON-RPC messages from a stream and feeds each to a [`cli.lsp.Server`](cli.md#cli.lsp.Server), writing its replies back in the same framing. Malformed JSON is answered via [`cli.lsp.Server.reject`](cli.md#cli.lsp.Server.reject); a missing length header ends the session with exit code 2. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [serveLsp](../../src/lsp.ts#L33) (read: NodeJS.ReadableStream = process.stdin, write: NodeJS.WritableStream = process.stdout) → Promise<number>
+      <a id="cli.lsp.serveLsp"></a><br>Runs the language server over a byte stream, framing `Content-Length` messages and passing them to [`cli.lsp.Server.receive`](cli.md#cli.lsp.Server.receive), rejecting malformed JSON via [`cli.lsp.Server.reject`](cli.md#cli.lsp.Server.reject), and returning an exit code. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [cli.lsp.Server](cli.md#cli.lsp.Server), [cli.lsp.Server.drain](cli.md#cli.lsp.Server.drain), [cli.lsp.Server.reject](cli.md#cli.lsp.Server.reject), [cli.lsp.Server.receive](cli.md#cli.lsp.Server.receive)
-    - module [Server](../../src/lsp.ts#L78) <!-- internal -->
-      <a id="cli.lsp.Server"></a><br>Handles LSP JSON-RPC traffic: [`cli.lsp.Server.receive`](cli.md#cli.lsp.Server.receive) routes notifications to [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify) and requests to [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request), keeping open-buffer overlays and cancellation state. Edits bump a generation that debounces reanalysis in [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed)… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - fn [constructor](../../src/lsp.ts#L101) (send: (message: Rpc) => void)
+    - type [Finished](../../src/lsp.ts#L81) <!-- internal -->
+      <a id="cli.lsp.Finished"></a><br>An analysis of the buffers as they were at `generation`, or why it failed.
+    - module [Server](../../src/lsp.ts#L83) <!-- internal -->
+      <a id="cli.lsp.Server"></a><br>Keylang's JSON-RPC language server: it holds open-file text as an overlay, debounces edits into analyses that run one at a time, publishes diagnostics, and answers or cancels requests via [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [constructor](../../src/lsp.ts#L110) (send: (message: Rpc) => void)
         <a id="cli.lsp.Server.constructor"></a><br>Stores the injected callback for emitting outgoing JSON-RPC messages so the server can later push responses and notifications without owning the transport itself. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [reject](../../src/lsp.ts#L105) (id: number | string | null, code: number, message: string) → void
+      - fn [reject](../../src/lsp.ts#L114) (id: number | string | null, code: number, message: string) → void
         <a id="cli.lsp.Server.reject"></a><br>Builds a JSON-RPC 2.0 error response with the given id, error code and message, and sends it to the client. [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) uses it, with a null id, to answer a message it cannot parse or that is not a JSON object; a failed request is answered elsewhere. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [receive](../../src/lsp.ts#L109) (message: Rpc) → void
-        <a id="cli.lsp.Server.receive"></a><br>Dispatches an incoming JSON-RPC message: ignores responses, routes id-less notifications to [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify) (logging failures to stderr), and runs requests through [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request). Request outcomes become result or error replies, tracked in the open/pending… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-        - calls [cli.lsp.Server.notify](cli.md#cli.lsp.Server.notify), [cli.lsp.Server.request](cli.md#cli.lsp.Server.request)
-      - fn [drain](../../src/lsp.ts#L140) () → Promise<void>
+      - fn [receive](../../src/lsp.ts#L118) (message: Rpc) → void
+        <a id="cli.lsp.Server.receive"></a><br>Dispatches each incoming JSON-RPC message: invalid ids or methods go to [`cli.lsp.Server.reject`](cli.md#cli.lsp.Server.reject), notifications to [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify) (errors logged), and requests to [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request), sending replies unless cancelled. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [cli.lsp.Server.reject](cli.md#cli.lsp.Server.reject), [cli.lsp.Server.notify](cli.md#cli.lsp.Server.notify), [cli.lsp.Server.request](cli.md#cli.lsp.Server.request)
+      - fn [drain](../../src/lsp.ts#L162) () → Promise<void>
         <a id="cli.lsp.Server.drain"></a><br>Repeatedly awaits every in-flight request promise until the pending set is empty, then cancels any scheduled timer so the server can shut down cleanly; [`cli.lsp.serveLsp`](cli.md#cli.lsp.serveLsp) calls it at the end of a session. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [notify](../../src/lsp.ts#L145) (method: string, params: Record<string, unknown>) → void <!-- internal -->
-        <a id="cli.lsp.Server.notify"></a><br>Handles LSP notifications: sets the exit code on `exit`, ignores everything before initialize, and keeps the open-document overlay in sync on didOpen/didChange/didClose via [`cli.lsp.filePath`](cli.md#cli.lsp.filePath), triggering [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed). Also replies with a cancelled error to… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-        - calls [cli.lsp.filePath](cli.md#cli.lsp.filePath), [cli.lsp.Server.changed](cli.md#cli.lsp.Server.changed)
-      - fn [changed](../../src/lsp.ts#L188) () → void <!-- internal -->
-        <a id="cli.lsp.Server.changed"></a><br>A new generation: the running analysis, if any, is superseded.
+      - fn [notify](../../src/lsp.ts#L167) (method: string, params: Record<string, unknown>) → void <!-- internal -->
+        <a id="cli.lsp.Server.notify"></a><br>Handles incoming LSP notifications: syncs the open-file buffer overlay, triggers [`cli.lsp.Server.changed`](cli.md#cli.lsp.Server.changed), sets the exit code on exit, and errors cancelled requests. Ignored before initialization. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [cli.lsp.filePath](cli.md#cli.lsp.filePath), [cli.lsp.Server.changed](cli.md#cli.lsp.Server.changed), [cli.lsp.Server.edited](cli.md#cli.lsp.Server.edited)
+      - fn [edited](../../src/lsp.ts#L215) (text: string | null, changes: unknown) → string | null <!-- internal -->
+        <a id="cli.lsp.Server.edited"></a><br>The text of a buffer after a `didChange`. The server asks for the whole text (`change: 1`); a client that sends ranges anyway gets them applied in order to the text it has (an unopened buffer has none) and a note in stderr, once.
+        - calls [cli.lsp.isRange](cli.md#cli.lsp.isRange), [cli.lsp.replaceRange](cli.md#cli.lsp.replaceRange)
+      - fn [changed](../../src/lsp.ts#L233) () → void <!-- internal -->
+        <a id="cli.lsp.Server.changed"></a><br>A new generation: the analysis running now, if any, no longer covers the buffers.
         - calls [cli.lsp.Server.publish](cli.md#cli.lsp.Server.publish)
-      - fn [analysis](../../src/lsp.ts#L197) () → Promise<Analysis> <!-- internal -->
-        <a id="cli.lsp.Server.analysis"></a><br>Reuses the in-flight analysis if the generation counter is unchanged, otherwise builds an overlay from the open editor buffers and starts [`map.analyze.analyze`](map.md#map.analyze.analyze) on the workspace root. On rejection it forwards the error message via [`cli.lsp.Server.report`](cli.md#cli.lsp.Server.report); on success it clears… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - fn [analyse](../../src/lsp.ts#L243) () → Promise<void> <!-- internal -->
+        <a id="cli.lsp.Server.analyse"></a><br>Starts an analysis of the buffers as they are now; one runs at a time.
         - calls [map.analyze.analyze](map.md#map.analyze.analyze), [cli.lsp.Server.report](cli.md#cli.lsp.Server.report)
-      - fn [current](../../src/lsp.ts#L213) () → Promise<Workspace> <!-- internal -->
-        <a id="cli.lsp.Server.current"></a><br>The analysis of the current buffers; waits again when they change meanwhile.
-        - calls [cli.lsp.Server.analysis](cli.md#cli.lsp.Server.analysis), [features.lsp-features.workspace](features.md#features.lsp-features.workspace)
-      - fn [publish](../../src/lsp.ts#L221) () → Promise<void> <!-- internal -->
-        <a id="cli.lsp.Server.publish"></a><br>Awaits the latest workspace via [`cli.lsp.Server.current`](cli.md#cli.lsp.Server.current), bailing out if it fails or a newer generation superseded it; in pull mode it only requests a client refresh. Otherwise it pushes [`features.lsp-features.diagnosticsFor`](features.md#features.lsp-features.diagnosticsFor) results for every open buffer and clears diagnostics… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+      - fn [current](../../src/lsp.ts#L264) (needed: number, cancelled: () => boolean = () => false) → Promise<Workspace> <!-- internal -->
+        <a id="cli.lsp.Server.current"></a><br>The newest finished analysis that includes generation `needed`. While another analysis runs, this waits for it and then starts one for all the changes so far; a request cancelled meanwhile starts none.
+        - calls [features.lsp-features.workspace](features.md#features.lsp-features.workspace), [cli.lsp.LspError](cli.md#cli.lsp.LspError), [cli.lsp.Server.analyse](cli.md#cli.lsp.Server.analyse)
+      - fn [publish](../../src/lsp.ts#L282) () → Promise<void> <!-- internal -->
+        <a id="cli.lsp.Server.publish"></a><br>Waits for the workspace at the current generation via [`cli.lsp.Server.current`](cli.md#cli.lsp.Server.current), then either asks pull-mode clients to refresh diagnostics or pushes [`features.lsp-features.diagnosticsFor`](features.md#features.lsp-features.diagnosticsFor) results for each open buffer, clearing closed ones. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [cli.lsp.Server.current](cli.md#cli.lsp.Server.current), [features.lsp-features.diagnosticsFor](features.md#features.lsp-features.diagnosticsFor), [cli.lsp.Server.relative](cli.md#cli.lsp.Server.relative)
-      - fn [relative](../../src/lsp.ts#L245) (abs: string) → string <!-- internal -->
+      - fn [relative](../../src/lsp.ts#L307) (abs: string) → string <!-- internal -->
         <a id="cli.lsp.Server.relative"></a><br>Converts an absolute file path into a POSIX-style path relative to the server root when [`map.analyze.within`](map.md#map.analyze.within) confirms it lies under that root, otherwise returns the path unchanged through [`base.config.toPosix`](base.md#base.config.toPosix). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [base.config.toPosix](base.md#base.config.toPosix), [map.analyze.within](map.md#map.analyze.within)
-      - fn [report](../../src/lsp.ts#L250) (message: string) → void <!-- internal -->
+      - fn [report](../../src/lsp.ts#L312) (message: string) → void <!-- internal -->
         <a id="cli.lsp.Server.report"></a><br>In stderr (the client's log) and as a message the editor shows, once while the same failure lasts.
-      - fn [request](../../src/lsp.ts#L257) (method: string, params: Record<string, unknown>) → Promise<unknown> <!-- internal -->
-        <a id="cli.lsp.Server.request"></a><br>Enforces the LSP lifecycle (rejecting calls before [`cli.lsp.Server.initialize`](cli.md#cli.lsp.Server.initialize) or after shutdown), caches any inline buffer text, then dispatches each method to the matching features.lsp-features handler over the workspace from [`cli.lsp.Server.current`](cli.md#cli.lsp.Server.current). Unknown methods raise… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-        - calls [cli.lsp.Server.initialize](cli.md#cli.lsp.Server.initialize), [cli.lsp.LspError](cli.md#cli.lsp.LspError), [cli.lsp.filePath](cli.md#cli.lsp.filePath), [cli.lsp.Server.relative](cli.md#cli.lsp.Server.relative), [features.lsp-features.diagnosticsFor](features.md#features.lsp-features.diagnosticsFor), [cli.lsp.Server.current](cli.md#cli.lsp.Server.current), [features.lsp-features.hover](features.md#features.lsp-features.hover), [features.lsp-features.definition](features.md#features.lsp-features.definition), [features.lsp-features.references](features.md#features.lsp-features.references), [features.lsp-features.documentSymbols](features.md#features.lsp-features.documentSymbols), [features.lsp-features.completions](features.md#features.lsp-features.completions), [features.lsp-features.signatureHelp](features.md#features.lsp-features.signatureHelp), [features.lsp-features.codeLenses](features.md#features.lsp-features.codeLenses), [features.lsp-features.workspaceSymbols](features.md#features.lsp-features.workspaceSymbols), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
-      - fn [initialize](../../src/lsp.ts#L306) (params: Record<string, unknown>) → unknown <!-- internal -->
-        <a id="cli.lsp.Server.initialize"></a><br>Handles the LSP initialize request: records whether the client supports pull diagnostics and refresh, then resolves the workspace root from rootUri/workspaceFolders/rootPath via [`cli.lsp.filePath`](cli.md#cli.lsp.filePath) and [`map.analyze.findRoot`](map.md#map.analyze.findRoot). Returns the server's capability set (sync… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+      - fn [request](../../src/lsp.ts#L319) (method: string, params: Record<string, unknown>, cancelled: () => boolean) → Promise<unknown> <!-- internal -->
+        <a id="cli.lsp.Server.request"></a><br>Dispatches an LSP request after enforcing the initialize/shutdown lifecycle, syncing any inline buffer text, then waits on [`cli.lsp.Server.current`](cli.md#cli.lsp.Server.current) and routes to feature handlers like [`features.lsp-features.hover`](features.md#features.lsp-features.hover). Unknown methods raise [`cli.lsp.LspError`](cli.md#cli.lsp.LspError). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [cli.lsp.LspError](cli.md#cli.lsp.LspError), [cli.lsp.Server.initialize](cli.md#cli.lsp.Server.initialize), [cli.lsp.filePath](cli.md#cli.lsp.filePath), [cli.lsp.Server.current](cli.md#cli.lsp.Server.current), [cli.lsp.Server.relative](cli.md#cli.lsp.Server.relative), [features.lsp-features.diagnosticsFor](features.md#features.lsp-features.diagnosticsFor), [features.lsp-features.hover](features.md#features.lsp-features.hover), [features.lsp-features.definition](features.md#features.lsp-features.definition), [features.lsp-features.references](features.md#features.lsp-features.references), [features.lsp-features.documentSymbols](features.md#features.lsp-features.documentSymbols), [features.lsp-features.completions](features.md#features.lsp-features.completions), [features.lsp-features.signatureHelp](features.md#features.lsp-features.signatureHelp), [features.lsp-features.codeLenses](features.md#features.lsp-features.codeLenses), [features.lsp-features.workspaceSymbols](features.md#features.lsp-features.workspaceSymbols), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs)
+      - fn [initialize](../../src/lsp.ts#L375) (params: Record<string, unknown>) → unknown <!-- internal -->
+        <a id="cli.lsp.Server.initialize"></a><br>The capabilities; the server's state changes only once everything else succeeded.
         - calls [cli.lsp.filePath](cli.md#cli.lsp.filePath), [map.analyze.findRoot](map.md#map.analyze.findRoot)
-    - module [LspError](../../src/lsp.ts#L338) <!-- internal -->
+    - module [LspError](../../src/lsp.ts#L409) <!-- internal -->
       <a id="cli.lsp.LspError"></a><br>Error subclass carrying a numeric JSON-RPC-style code alongside the message, so callers catching failures from the language server can branch on the code rather than parsing text. Construction via [`cli.lsp.LspError.constructor`](cli.md#cli.lsp.LspError.constructor) just forwards the message and stores the code. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [constructor](../../src/lsp.ts#L340) (code: number, message: string)
+      - fn [constructor](../../src/lsp.ts#L411) (code: number, message: string)
         <a id="cli.lsp.LspError.constructor"></a><br>Builds a JSON-RPC style error by passing the message to the base `Error` constructor and storing the numeric code on the instance for callers to inspect. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [filePath](../../src/lsp.ts#L346) (uri: string) → string <!-- internal -->
+    - fn [filePath](../../src/lsp.ts#L417) (uri: string) → string <!-- internal -->
       <a id="cli.lsp.filePath"></a><br>Converts an LSP document URI into an absolute filesystem path: `file:` URIs are decoded via `fileURLToPath`, anything else is resolved relative to the current working directory. Used by [`cli.lsp.Server.initialize`](cli.md#cli.lsp.Server.initialize), [`cli.lsp.Server.notify`](cli.md#cli.lsp.Server.notify), and [`cli.lsp.Server.request`](cli.md#cli.lsp.Server.request) to map… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - type [LspRange](../../src/lsp.ts#L421) <!-- internal -->
+      <a id="cli.lsp.LspRange"></a>
+    - fn [isRange](../../src/lsp.ts#L426) (value: unknown) → value is LspRange <!-- internal -->
+      <a id="cli.lsp.isRange"></a>
+    - fn [replaceRange](../../src/lsp.ts#L432) (text: string, range: LspRange, insert: string) → string <!-- internal -->
+      <a id="cli.lsp.replaceRange"></a><br>`text` with `range` replaced by `insert`. Characters are UTF-16 code units, as JavaScript counts them.
+      - calls [cli.lsp.offsetAt](cli.md#cli.lsp.offsetAt)
+    - fn [offsetAt](../../src/lsp.ts#L438) (text: string, position: LspPosition) → number <!-- internal -->
+      <a id="cli.lsp.offsetAt"></a><br>The offset of a position; past the end of its line is the line's end, past the last line the text's end.
+      - calls [cli.lsp.lineBreak](cli.md#cli.lsp.lineBreak)
+    - fn [lineBreak](../../src/lsp.ts#L450) (text: string, from: number) → { at: number; after: number } | null <!-- internal -->
+      <a id="cli.lsp.lineBreak"></a><br>The first line break at or after `from`: `\r\n`, `\n` or `\r`, as LSP counts lines.
   - module [mcp](../../src/mcp.ts#L1)
     <a id="cli.mcp"></a><br>`keylang mcp`: the analysis for external agents over MCP (stdio), design §7.3. The graph by default, code on request: `search`, `node`, `code`, `flows`, `check` (the same results as `check --format json`), `explain` (a saved explanation or the offline summary) and `apply_diff`…
     - modelcontextprotocol-sdk [external.modelcontextprotocol-sdk](external.md#external.modelcontextprotocol-sdk)
@@ -322,32 +341,34 @@
     - agent-context [features.agent-context](features.md#features.agent-context)
     - analyze [map.analyze](map.md#map.analyze)
     - check-results [features.check-results](features.md#features.check-results)
+    - fact-cache [map.fact-cache](map.md#map.fact-cache)
     - feature-status [features.feature-status](features.md#features.feature-status)
-    - git-changes [features.git-changes](features.md#features.git-changes)
+    - operations [operations.operations](operations.md#operations.operations)
     - spec-to-code [features.spec-to-code](features.md#features.spec-to-code)
     - config [base.config](base.md#base.config)
     - explain-llm [features.explain-llm](features.md#features.explain-llm)
     - explain-node [features.explain-node](features.md#features.explain-node)
     - explanations [map.explanations](map.md#map.explanations)
+    - diag [base.diag](base.md#base.diag)
     - files [lang.files](lang.md#lang.files)
     - ir [lang.ir](lang.md#lang.ir)
     - map [map.map](map.md#map.map)
     - node-search [features.node-search](features.md#features.node-search)
     - proposals [features.proposals](features.md#features.proposals)
-    - type [ToolResult](../../src/mcp.ts#L31) <!-- internal -->
+    - type [ToolResult](../../src/mcp.ts#L34) <!-- internal -->
       <a id="cli.mcp.ToolResult"></a><br>Shape of the value an MCP tool handler returns: a list of text-only content blocks plus an optional flag marking the response as an error. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [json](../../src/mcp.ts#L33) (value: unknown) → ToolResult <!-- internal -->
+    - fn [json](../../src/mcp.ts#L36) (value: unknown) → ToolResult <!-- internal -->
       <a id="cli.mcp.json"></a><br>Wraps any value into an MCP tool result whose single content item is the value pretty-printed as 2-space-indented JSON text. Used by [`cli.mcp.mcpServer`](cli.md#cli.mcp.mcpServer) to format tool responses. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [failure](../../src/mcp.ts#L34) (message: string) → ToolResult <!-- internal -->
+    - fn [failure](../../src/mcp.ts#L37) (message: string) → ToolResult <!-- internal -->
       <a id="cli.mcp.failure"></a><br>Wraps an error message into a `ToolResult` with a single text content block and `isError` set to true, giving [`cli.mcp.mcpServer`](cli.md#cli.mcp.mcpServer) a uniform way to report tool failures to MCP clients. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [currentAnalysis](../../src/mcp.ts#L45) (root: string) → () => Promise<Analysis>
+    - fn [currentAnalysis](../../src/mcp.ts#L50) (root: string) → () => Promise<Analysis>
       <a id="cli.mcp.currentAnalysis"></a><br>The analysis of the current inputs, cheaper than a new `analyze()` per call. The snapshot is rebuilt every time: its id hashes all the graph depends on (sources, configuration, the files import resolution read).
-      - calls [base.config.loadConfig](base.md#base.config.loadConfig), [map.map.generateMap](map.md#map.map.generateMap), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [map.analyze.analyze](map.md#map.analyze.analyze)
-    - fn [explanationJson](../../src/mcp.ts#L65) (e: NodeExplanation | null) → { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null <!-- internal -->
+      - calls [lang.files.existingText](lang.md#lang.files.existingText), [base.config.loadConfig](base.md#base.config.loadConfig), [map.map.generateMap](map.md#map.map.generateMap), [map.fact-cache.keepsFactCache](map.md#map.fact-cache.keepsFactCache), [map.fact-cache.saveFactCache](map.md#map.fact-cache.saveFactCache), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [base.config.evidenceFiles](base.md#base.config.evidenceFiles), [map.analyze.analyze](map.md#map.analyze.analyze)
+    - fn [explanationJson](../../src/mcp.ts#L71) (e: NodeExplanation | null) → { text: string; origin: "doc" | "llm"; stale: boolean; agent?: string; date?: string } | null <!-- internal -->
       <a id="cli.mcp.explanationJson"></a><br>A node's explanation for an agent: its text, where it comes from, and for a model's brief the model, the date and whether the code changed since.
-    - fn [mcpServer](../../src/mcp.ts#L70) (root: string, version: string) → McpServer
-      <a id="cli.mcp.mcpServer"></a><br>Builds the MCP server, registering tools (search, node, code, flows, check, explain, apply_diff, context, validate_spec, scaffold, and more) that each re-run [`cli.mcp.currentAnalysis`](cli.md#cli.mcp.currentAnalysis) and answer with [`cli.mcp.json`](cli.md#cli.mcp.json) or [`cli.mcp.failure`](cli.md#cli.mcp.failure). Tools read the snapshot, verdicts and… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
-      - calls [cli.mcp.currentAnalysis](cli.md#cli.mcp.currentAnalysis), [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [cli.mcp.json](cli.md#cli.mcp.json), [cli.mcp.explanationJson](cli.md#cli.mcp.explanationJson), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [cli.mcp.failure](cli.md#cli.mcp.failure), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.check-results.checkResults](features.md#features.check-results.checkResults), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.agent-context.contextForIds](features.md#features.agent-context.contextForIds), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.specToCode](features.md#features.spec-to-code.specToCode), [features.git-changes.readFeatureBase](features.md#features.git-changes.readFeatureBase), [features.feature-status.featureStatus](features.md#features.feature-status.featureStatus)
-    - fn [serveMcp](../../src/mcp.ts#L314) (root: string, version: string) → Promise<number>
-      <a id="cli.mcp.serveMcp"></a><br>Builds the MCP server via [`cli.mcp.mcpServer`](cli.md#cli.mcp.mcpServer) and connects it over a stdio transport, then blocks until the client closes stdin before resolving with exit code 0. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+    - fn [mcpServer](../../src/mcp.ts#L76) (root: string, version: string) → McpServer
+      <a id="cli.mcp.mcpServer"></a><br>Builds the keylang MCP server, registering tools for search, node details, source code, flows, checks, explanations, context bundles, spec validation, scaffolds and spec proposals, each over a fresh [`cli.mcp.currentAnalysis`](cli.md#cli.mcp.currentAnalysis). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [cli.mcp.currentAnalysis](cli.md#cli.mcp.currentAnalysis), [features.node-search.searchNodes](features.md#features.node-search.searchNodes), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [cli.mcp.json](cli.md#cli.mcp.json), [cli.mcp.explanationJson](cli.md#cli.mcp.explanationJson), [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode), [cli.mcp.failure](cli.md#cli.mcp.failure), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [features.check-results.checkResults](features.md#features.check-results.checkResults), [features.explain-llm.readExplanation](features.md#features.explain-llm.readExplanation), [features.explain-llm.isStale](features.md#features.explain-llm.isStale), [base.config.toPosix](base.md#base.config.toPosix), [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [lang.files.existingText](lang.md#lang.files.existingText), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [features.proposals.lineDiff](features.md#features.proposals.lineDiff), [features.agent-context.contextForIds](features.md#features.agent-context.contextForIds), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [map.analyze.within](map.md#map.analyze.within), [map.analyze.analyze](map.md#map.analyze.analyze), [features.spec-to-code.specToCode](features.md#features.spec-to-code.specToCode), [base.diag.errorText](base.md#base.diag.errorText), [operations.operations.runOperation](operations.md#operations.operations.runOperation)
+    - fn [serveMcp](../../src/mcp.ts#L309) (root: string, version: string) → Promise<number>
+      <a id="cli.mcp.serveMcp"></a><br>Builds the MCP server via [`cli.mcp.mcpServer`](cli.md#cli.mcp.mcpServer), connects it over a stdio transport, and waits until the client closes stdin, then resolves with exit code 0. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [cli.mcp.mcpServer](cli.md#cli.mcp.mcpServer)

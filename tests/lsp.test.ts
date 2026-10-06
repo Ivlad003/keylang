@@ -440,7 +440,7 @@ test("lsp: hover on a flow step shows the signature and each kind of evidence; p
   assert.match(later.contents.value, /- static: unverified domain\.order\.later: planned fn, not implemented/);
 });
 
-// A line's role depends on its parent (format.md §5): hover on a keyword, or on
+// A line's role depends on its parent (grammar.md §5): hover on a keyword, or on
 // the text of a line without an ID, says what the line does there.
 const PILOT = '# flow pilot\n\n- trigger app.checkout.checkout\n- step domain.order.createOrder\n  - calls infra.db.save\n  - test tests/nope.test.ts "creates order"\n- invariant total is the sum of items\n  - test tests/missing.test.ts "sums"\n- when items are empty\n  - then Rejected\n  - then domain.order.total\n';
 const ROLE_RULES = "# rules\n\n- layers domain < app\n- module domain.order\n  - no-cycles\n- entry\n  - app.checkout\n";

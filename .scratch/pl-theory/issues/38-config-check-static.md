@@ -57,7 +57,7 @@
 - [ ] З `check.static: "shape"` запуск `check --static=behavior` дає той самий stdout і код 0, що й запуск без поля й без прапорця.
 - [x] `{ "static": "runtime" }` і `{ "static": 1 }` дають код 2 для `check` і `map`. stderr називає `keylang.json` і містить `` `check.static` must be "behavior" or "shape", got … ``. `--static=runtime` дає код 2 з нинішнім `unknown --static`.
 - [ ] З `check.static: "shape"` `keylang feature <slug>` видає прогалину `static` і код 1. У tests/lsp.test.ts одна перевірка: pull-діагностики LSP мають `data.verdict: "unverified"` на кроці через хук.
-- [x] `keylang --help` у рядку `--static` називає `check.static` і пріоритет «прапорець > конфіг > behavior». format.md §7 (:277, :283) і design §4.2 (:213, :228) описують поле й правило про типове значення. Тести `init` не змінилися.
+- [x] `keylang --help` у рядку `--static` називає `check.static` і пріоритет «прапорець > конфіг > behavior». semantics.md §7 (:277, :283) і design §4.2 (:213, :228) описують поле й правило про типове значення. Тести `init` не змінилися.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено; `StaticMode` переїжджає в `base`), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/config.ts`, `src/analyze.ts`, `src/cli.ts`, `src/flows.ts`, `tests/flows.test.ts`, `tests/lsp.test.ts`, `docs/format.md`, `docs/design.md`

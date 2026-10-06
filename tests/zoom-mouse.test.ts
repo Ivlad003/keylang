@@ -12,7 +12,7 @@ import { VirtualTerminal } from "./vt.ts";
 function session(root: string, cols = 120, rows = 30): { app: App; send: (keys: string) => void; lines: () => string[] } {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, send: (keys) => app.input(keys), lines: () => vt.lines() };
 }
 

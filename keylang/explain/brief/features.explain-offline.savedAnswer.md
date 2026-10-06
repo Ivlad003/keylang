@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=73d3b0d2b98b64507534cccc8fc3028906c7cd920054c447218b9024884dc103 lang=en detail=brief -->
-Packages a stored explanation into a result record, copying its text and metadata and adding a freshness flag from `features.explain-llm.isStale`, unrecognized IDs from `features.explain-llm.unknownIds`, and the file path from `map.explanations.explanationPath`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=cbde4b4963255d7e3b3bf804460f8ffa9fed618f14a89443fdfb29fa2306ec82 lang=en detail=brief -->
+Converts a stored explanation into a reply record, marking freshness via `features.explain-llm.isStale`, listing unrecognized IDs via `features.explain-llm.unknownIds`, and attaching its file path from `map.explanations.explanationPath`.

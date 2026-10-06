@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { OUTSIDE_LAYER, type StaticMode, type StaticSource } from "./config.ts";
 import { diagnostic, type Diagnostic } from "./diag.ts";
-import { constructorName } from "./languages.ts";
+import { asciiLowerCase, caselessNames, constructorName } from "./languages.ts";
 import type { Index } from "./resolve.ts";
 import { compareText, type Span } from "./span.ts";
 import type { ClaimItem, FlowItem, SpecIR, TestItem, ThenItem, Trigger, WhenItem } from "./spec-ir.ts";
@@ -29,6 +29,8 @@ interface SnapshotEdge {
   hook?: string;
   site?: string;
   closure?: true;
+  /** An `import` or `reexport` of types only (`import type`, `export type … from`): erased from the code that runs. */
+  typeOnly?: true;
 }
 
 interface SnapshotNodeView {
@@ -271,6 +273,8 @@ interface CallGraph {
   callers: Map<string, Step[]>;
   /** Fns by the name code calls them (`callName`), for calls whose receiver is unknown. */
   byName: Map<string, string[]>;
+  /** Fns of a language whose names compare without case (PHP), by that name in ASCII lower case. */
+  byCaselessName: Map<string, string[]>;
   /** Unsupported constructs by file. */
   unsupported: Map<string, NonNullable<FlowInput["coverage"]>>;
   /**
@@ -310,11 +314,16 @@ function callGraph(input: FlowInput): CallGraph {
     }
   }
   const byName = new Map<string, string[]>();
-  for (const [id, node] of Object.entries(input.nodes)) if (node.kind === "fn") add(byName, callName(id), id);
+  const byCaselessName = new Map<string, string[]>();
+  for (const [id, node] of Object.entries(input.nodes)) {
+    if (node.kind !== "fn") continue;
+    add(byName, callName(id), id);
+    if (caselessNames(node.file)) add(byCaselessName, asciiLowerCase(callName(id)), id);
+  }
   const unsupported = new Map<string, NonNullable<FlowInput["coverage"]>>();
   for (const item of input.coverage ?? []) if (item.kind === "unsupported") add(unsupported, item.file, item);
   const opaque = Object.entries(input.nodes).find(([, node]) => node.kind === "module" && node.members === "opaque" && node.layer !== "external" && node.layer !== OUTSIDE_LAYER)?.[0] ?? null;
-  return { resolved, open, callers, byName, unsupported, opaque, callable, ...doubtfulBodies(input) };
+  return { resolved, open, callers, byName, byCaselessName, unsupported, opaque, callable, ...doubtfulBodies(input) };
 }
 
 /**
@@ -359,10 +368,13 @@ function callName(id: string): string {
   return suffix[1] === "static" ? name : `#${name}`;
 }
 
-/** Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member whose ID has no suffix. */
+/**
+ * Fns a call by `name` (`feed`, `#work`) may run. A `#work` call also matches a private member
+ * whose ID has no suffix; a fn of PHP matches the name in any ASCII case (`x.RUN` may run `run`).
+ */
 function namedLike(graph: CallGraph, name: string): string[] {
-  const plain = graph.byName.get(name) ?? [];
-  return name.startsWith("#") ? [...plain, ...(graph.byName.get(name.slice(1)) ?? [])] : plain;
+  const named = (key: string): string[] => [...(graph.byName.get(key) ?? []), ...(graph.byCaselessName.get(asciiLowerCase(key)) ?? [])];
+  return [...new Set([...named(name), ...(name.startsWith("#") ? named(name.slice(1)) : [])])];
 }
 
 function describeVia(edge: SnapshotEdge): string {
@@ -460,7 +472,7 @@ function reachability(graph: CallGraph, input: FlowInput, parent: string | null,
   // Calls read from a file that does not parse may be missing: an absence there is not confirmed.
   const unread = [...depth.keys()].map((id) => graph.unreadable.get(id)).find((reason) => reason !== undefined);
   if (unread) return { verdict: "unverified", message: `no call path from ${parent} in the static graph; ${unread}` };
-  return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them` };
+  return { verdict: "fail", message: `absence: no call path from ${parent}; \`${target}\` and its callers are called only by name, and no call from ${parent}'s reachable code can reach them; add a call to \`${target}\` in \`${parent}\` or in a function it reaches` };
 }
 
 /**
@@ -500,7 +512,10 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
     const names = edge.resolution === "ambiguous" ? (edge.candidates ?? []).map(graph.callable) : namedLike(graph, lastSegment(edge.text ?? ""));
     if (names.includes(target)) return { verdict: "unverified", message: `${lead}; ${describeHole(edge, target, input)} at ${at(edge)} may be it` };
   }
-  const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && callName(step.to) === callName(target));
+  // An override has the name of the method the call resolved to; in PHP, in any ASCII case.
+  const caseless = caselessNames(to?.file);
+  const sameName = (id: string): boolean => callName(id) === callName(target) || (caseless && asciiLowerCase(callName(id)) === asciiLowerCase(callName(target)));
+  const override = own.find((step) => step.edge.text?.includes(".") && !step.edge.via && step.to !== target && sameName(step.to));
   if (override) return { verdict: "unverified", message: `${lead}; ${describeHole(override.edge, target, input)} at ${at(override.edge)}` };
   const blocker = escapeOf(graph, input, new Set([target]), new Set([parent]));
   if (blocker) return { verdict: "unverified", message: `${lead}; ${blocker.reason}` };
@@ -508,7 +523,7 @@ function directCall(graph: CallGraph, input: FlowInput, parent: string | null, t
   const { route } = search(graph, parent, target, proves);
   const via = route ? routeSteps(parent, target, route).slice(0, -1).map((step) => step.to) : [];
   const hint = via.length > 0 ? ` (it reaches it via ${via.join(" → ")}; \`step\` proves a path)` : "";
-  return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}` };
+  return { verdict: "fail", message: `absence: \`${parent}\` does not call \`${target}\`${hint}; add a direct call in \`${parent}\`` };
 }
 
 /**
@@ -563,15 +578,20 @@ function fileModule(nodes: FlowInput["nodes"], id: string): string | null {
   }
 }
 
-/** Static proof for `external.<pkg>`: a resolved import from the parent fn's own module. */
+/**
+ * Static proof for `external.<pkg>`: a resolved import from the parent fn's own module that
+ * loads the package. A type-only one (`import type`, `export type … from`) is erased from the
+ * code that runs, so it proves nothing.
+ */
 function externalImport(input: FlowInput, parent: string, target: string): { verdict: Verdict["verdict"]; message: string } {
   const moduleId = fileModule(input.nodes, parent);
   if (moduleId === null) return { verdict: "unverified", message: `no module of \`${parent}\` imports \`${target}\`` };
-  const edge = input.edges.find(
+  const imports = input.edges.filter(
     (item) => (item.kind === "import" || item.kind === "reexport") && item.resolution === "resolved" && item.source === moduleId && item.target === target,
   );
-  if (edge) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
-  return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`` };
+  if (imports.some((edge) => !edge.typeOnly)) return { verdict: "ok", message: `imported by \`${moduleId}\`` };
+  const erased = imports[0] ? `; the type-only import at ${at(imports[0])} is erased from the code that runs` : "";
+  return { verdict: "unverified", message: `no import of \`${target}\` from \`${moduleId}\`${erased}` };
 }
 
 function routeMessage(parent: string, target: string, previous: Map<string, Step>): string {
@@ -642,7 +662,15 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
     const closure = (graph.callers.get(id) ?? []).find((step) => step.edge.closure);
     if (closure) return { reason: `\`${id}\` is called from a closure in \`${closure.from}\` at ${at(closure.edge)}, which code keylang cannot follow may run`, from: closure.from };
   }
-  const names = [...new Set([...routes].map((id) => callName(id).replace(/^#/, "")))].map(identifierPattern);
+  // PHP names a fn in any ASCII case: `call_user_func('HELPER')` mentions `helper`.
+  const patterns = new Map<string, RegExp>();
+  for (const id of routes) {
+    const name = callName(id).replace(/^#/, "");
+    const caseless = caselessNames(input.nodes[id]?.file);
+    const key = `${caseless ? "i" : ""}:${name}`;
+    if (!patterns.has(key)) patterns.set(key, identifierPattern(name, caseless));
+  }
+  const names = [...patterns.values()];
   for (const [file, items] of [...graph.unsupported].sort(([a], [b]) => compareText(a, b))) {
     for (const item of items) {
       // `eval`, `new Function`, `obj[key]()`, `import(expr)` in reachable code may call anything.
@@ -658,9 +686,15 @@ function escapeOf(graph: CallGraph, input: FlowInput, routes: Set<string>, reach
   return null;
 }
 
-/** `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit. */
-function identifierPattern(name: string): RegExp {
-  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
+/**
+ * `name` as a whole identifier: `$save` and `зберегти` too, which `\b` does not delimit;
+ * `caseless`: in any ASCII case, as PHP compares names (`HELPER` is `helper`, `ÄNDERN` is no `ändern`),
+ * which the flag `i` would not keep apart.
+ */
+function identifierPattern(name: string, caseless = false): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const body = caseless ? escaped.replace(/[A-Za-z]/g, (letter) => `[${letter.toLowerCase()}${letter.toUpperCase()}]`) : escaped;
+  return new RegExp(`(?<![\\p{ID_Continue}$\\u200c\\u200d])${body}(?![\\p{ID_Continue}$\\u200c\\u200d])`, "u");
 }
 
 /** The innermost fn whose declaration holds `file:line`. */
@@ -759,13 +793,29 @@ export function plannedMismatch(item: { decl: string; signature: string | null }
 /**
  * Signatures match without spaces, `->` as `→`. A Python method shows its
  * receiver (`(self, to: str)`), a plan may name only what the caller passes
- * (`(to: str)`): both match.
+ * (`(to: str)`): both match. A plan that is only a parameter list, with no
+ * return part, claims only the parameters: `(order: Order)` matches the code
+ * `(order: Order) → Refund`. A plan with a return part must match in full.
  */
 function sameSignature(planned: string, code: string, file: string | null): boolean {
   const plan = normalizeSignature(planned);
   const written = normalizeSignature(code);
-  if (plan === written) return true;
-  return file !== null && file.endsWith(".py") && written.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") === plan;
+  const receiverless = (text: string): string => (file !== null && file.endsWith(".py") ? text.replace(/^\((?:self|cls)(?:,|(?=\)))/, "(") : text);
+  if (plan === written || plan === receiverless(written)) return true;
+  if (parameterList(plan) !== plan) return false;
+  const params = parameterList(written);
+  return params !== null && (plan === params || plan === receiverless(params));
+}
+
+/** The leading `(…)` of a normalized signature, up to the parenthesis that closes the first; null when there is none. */
+function parameterList(signature: string): string | null {
+  if (!signature.startsWith("(")) return null;
+  let depth = 0;
+  for (let i = 0; i < signature.length; i++) {
+    if (signature[i] === "(") depth++;
+    else if (signature[i] === ")" && --depth === 0) return signature.slice(0, i + 1);
+  }
+  return null;
 }
 
 function normalizeSignature(text: string): string {

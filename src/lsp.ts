@@ -1,8 +1,10 @@
-// Stdio language server. It keeps the open buffers, runs one analysis per
-// generation of changes (the same `analyze()` as `keylang check`, with the
-// buffers as an overlay; nothing is written), and answers from the latest
-// generation only: a request waits while a reanalysis is pending, and results
-// of a superseded generation are never published.
+// Stdio language server. It keeps the open buffers and analyses them (the
+// same `analyze()` as `keylang check`, with the buffers as an overlay; nothing
+// is written). Every change is a new generation. One analysis runs at a time:
+// the changes that arrive meanwhile are analysed together after it. A request
+// is answered from the newest finished analysis that includes the changes
+// that came before it, and results of a superseded generation are never
+// published.
 //
 // Hand-written on purpose: framing and lifecycle are stricter than
 // `vscode-languageserver` (docs/adr/0006-lsp-transport.md).
@@ -75,6 +77,9 @@ export async function serveLsp(read: NodeJS.ReadableStream = process.stdin, writ
   return server.exitCode ?? 0;
 }
 
+/** An analysis of the buffers as they were at `generation`, or why it failed. */
+type Finished = { generation: number; overlay: ReadonlyMap<string, string> } & ({ analysis: Analysis } | { analysis: null; error: unknown });
+
 class Server {
   exitCode: number | null = null;
   private root = process.cwd();
@@ -86,10 +91,12 @@ class Server {
   private readonly published = new Set<string>();
   private readonly send: (message: Rpc) => void;
   private generation = 0;
-  private running: { generation: number; result: Promise<Analysis> } | null = null;
+  /** The newest analysis that has finished, and the one running now (at most one). */
+  private finished: Finished | null = null;
+  private running: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private shutdown = false;
-  /** False until `initialize` has been accepted. Requests before that are not served. */
+  /** False until `initialize` has succeeded. Requests before that are not served. */
   private initialized = false;
   /** The client pulls diagnostics (`textDocument/diagnostic`), so pushing them too would show each twice. */
   private pulls = false;
@@ -97,6 +104,8 @@ class Server {
   private serverRequests = 0;
   /** The last analysis failure shown to the client (an invalid keylang.json); shown again only when it changes. */
   private failure: string | null = null;
+  /** A ranged `didChange` despite full sync was logged: once is enough. */
+  private rangedLogged = false;
 
   constructor(send: (message: Rpc) => void) {
     this.send = send;
@@ -107,9 +116,23 @@ class Server {
   }
 
   receive(message: Rpc): void {
-    // A response to one of our requests (`workspace/diagnostic/refresh`) needs nothing.
-    if (typeof message.method !== "string") return;
-    if (message.id === undefined || message.id === null) {
+    const id = message.id;
+    // JSON-RPC: an id is a string, a number or null; any other cannot be echoed in a reply.
+    if (id !== undefined && id !== null && typeof id !== "string" && typeof id !== "number") {
+      this.reject(null, ERRORS.invalidRequest, "`id` must be a string, a number or null");
+      return;
+    }
+    if (message.method === undefined) {
+      // A response to one of our requests (`workspace/diagnostic/refresh`) needs nothing.
+      if ("result" in message || "error" in message) return;
+      this.reject(id ?? null, ERRORS.invalidRequest, "a message needs `method` (a request or notification) or `result` or `error` (a response)");
+      return;
+    }
+    if (typeof message.method !== "string") {
+      this.reject(id ?? null, ERRORS.invalidRequest, "`method` must be a string");
+      return;
+    }
+    if (id === undefined || id === null) {
       // A notification has no reply channel: a failure (a URI that is not a local file) is logged.
       try {
         this.notify(message.method, message.params ?? {});
@@ -118,9 +141,8 @@ class Server {
       }
       return;
     }
-    const id = message.id;
     this.open.add(id);
-    const task = this.request(message.method, message.params ?? {})
+    const task = this.request(message.method, message.params ?? {}, () => this.cancelled.has(id))
       .then(
         (result): Rpc => ({ jsonrpc: "2.0", id, result }),
         (error: unknown): Rpc => {
@@ -156,10 +178,11 @@ class Server {
         this.changed();
         return;
       case "textDocument/didChange": {
-        const changes = params.contentChanges as { text?: string; range?: unknown }[] | undefined;
-        // Full sync: the last change without a range is the whole text.
-        const full = [...(changes ?? [])].reverse().find((change) => change.range === undefined && change.text !== undefined);
-        if (doc?.uri !== undefined && full?.text !== undefined) this.buffers.set(filePath(doc.uri), { uri: doc.uri, version: doc.version ?? 0, text: full.text });
+        if (doc?.uri !== undefined) {
+          const path = filePath(doc.uri);
+          const text = this.edited(this.buffers.get(path)?.text ?? null, params.contentChanges);
+          if (text !== null) this.buffers.set(path, { uri: doc.uri, version: doc.version ?? 0, text });
+        }
         this.changed();
         return;
       }
@@ -184,7 +207,29 @@ class Server {
     }
   }
 
-  /** A new generation: the running analysis, if any, is superseded. */
+  /**
+   * The text of a buffer after a `didChange`. The server asks for the whole
+   * text (`change: 1`); a client that sends ranges anyway gets them applied in
+   * order to the text it has (an unopened buffer has none) and a note in stderr, once.
+   */
+  private edited(text: string | null, changes: unknown): string | null {
+    let out = text;
+    for (const change of Array.isArray(changes) ? (changes as { text?: unknown; range?: unknown }[]) : []) {
+      if (typeof change?.text !== "string") continue;
+      if (change.range === undefined) {
+        out = change.text;
+        continue;
+      }
+      if (!this.rangedLogged) {
+        this.rangedLogged = true;
+        process.stderr.write("keylang lsp: textDocument/didChange sent a range although the server asked for the full text (textDocumentSync.change 1); the ranges are applied\n");
+      }
+      if (out !== null && isRange(change.range)) out = replaceRange(out, change.range, change.text);
+    }
+    return out;
+  }
+
+  /** A new generation: the analysis running now, if any, no longer covers the buffers. */
   private changed(): void {
     this.generation++;
     if (this.timer) clearTimeout(this.timer);
@@ -194,27 +239,43 @@ class Server {
     }, SETTLE_MS);
   }
 
-  private analysis(): Promise<Analysis> {
-    if (this.running?.generation === this.generation) return this.running.result;
+  /** Starts an analysis of the buffers as they are now; one runs at a time. */
+  private analyse(): Promise<void> {
+    const generation = this.generation;
     const overlay = new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text]));
-    const result = analyze({ root: this.root, overlay });
-    this.running = { generation: this.generation, result };
-    // A failure (an invalid keylang.json) would otherwise reach the client only as errors of later requests.
-    result.then(
-      () => {
+    return analyze({ root: this.root, overlay }).then(
+      (analysis) => {
+        this.finished = { generation, overlay, analysis };
         this.failure = null;
       },
-      (error: unknown) => this.report(error instanceof Error ? error.message : String(error)),
+      (error: unknown) => {
+        this.finished = { generation, overlay, analysis: null, error };
+        // A failure (an invalid keylang.json) would otherwise reach the client only as errors of later requests.
+        this.report(error instanceof Error ? error.message : String(error));
+      },
     );
-    return result;
   }
 
-  /** The analysis of the current buffers; waits again when they change meanwhile. */
-  private async current(): Promise<Workspace> {
+  /**
+   * The newest finished analysis that includes generation `needed`. While
+   * another analysis runs, this waits for it and then starts one for all the
+   * changes so far; a request cancelled meanwhile starts none.
+   */
+  private async current(needed: number, cancelled: () => boolean = () => false): Promise<Workspace> {
     for (;;) {
-      const generation = this.generation;
-      const analysis = await this.analysis();
-      if (generation === this.generation) return workspace(this.root, analysis, new Map([...this.buffers].map(([path, buffer]) => [path, buffer.text])));
+      const done = this.finished;
+      if (done !== null && done.generation >= needed) {
+        if (done.analysis === null) throw done.error;
+        return workspace(this.root, done.analysis, done.overlay);
+      }
+      if (cancelled()) throw new LspError(ERRORS.cancelled, "request cancelled");
+      if (this.running === null) {
+        const running = this.analyse().finally(() => {
+          if (this.running === running) this.running = null;
+        });
+        this.running = running;
+      }
+      await this.running;
     }
   }
 
@@ -222,10 +283,11 @@ class Server {
     const generation = this.generation;
     let ws: Workspace;
     try {
-      ws = await this.current();
+      ws = await this.current(generation);
     } catch {
       return;
     }
+    // A newer change publishes its own generation.
     if (generation !== this.generation) return;
     if (this.pulls) {
       // Ask the client to pull again: a change in one file can change another's findings.
@@ -254,10 +316,13 @@ class Server {
     this.send({ jsonrpc: "2.0", method: "window/showMessage", params: { type: 1, message: `keylang: ${message}` } });
   }
 
-  private async request(method: string, params: Record<string, unknown>): Promise<unknown> {
+  private async request(method: string, params: Record<string, unknown>, cancelled: () => boolean): Promise<unknown> {
     if (method === "initialize") {
+      // LSP: `initialize` is sent once. It counts only when it succeeds: a failed one may be sent again.
+      if (this.initialized) throw new LspError(ERRORS.invalidRequest, "the server is already initialized");
+      const result = this.initialize(params);
       this.initialized = true;
-      return this.initialize(params);
+      return result;
     }
     // LSP: a request before `initialize` is not served, shutdown included.
     if (!this.initialized) throw new LspError(ERRORS.notInitialized, "server not initialized");
@@ -276,46 +341,52 @@ class Server {
         this.generation++;
       }
     }
+    // The request is about the buffers as they are now: any analysis that includes them answers it.
+    const needed = this.generation;
+    const ready = (): Promise<Workspace> => this.current(needed, cancelled);
     const path = doc?.uri ? this.relative(filePath(doc.uri)) : "";
     const position = params.position as LspPosition | undefined;
     switch (method) {
       case "textDocument/diagnostic":
-        return { kind: "full", items: diagnosticsFor(await this.current(), path) };
+        return { kind: "full", items: diagnosticsFor(await ready(), path) };
       case "textDocument/hover":
-        return position ? hover(await this.current(), path, position) : null;
+        return position ? hover(await ready(), path, position) : null;
       case "textDocument/definition":
-        return position ? definition(await this.current(), path, position) : null;
+        return position ? definition(await ready(), path, position) : null;
       case "textDocument/references":
-        return position ? references(await this.current(), path, position, (params.context as { includeDeclaration?: unknown } | undefined)?.includeDeclaration !== false) : [];
+        return position ? references(await ready(), path, position, (params.context as { includeDeclaration?: unknown } | undefined)?.includeDeclaration !== false) : [];
       case "textDocument/documentSymbol":
-        return documentSymbols(await this.current(), path);
+        return documentSymbols(await ready(), path);
       case "textDocument/completion":
-        return { isIncomplete: false, items: position ? completions(await this.current(), path, position) : [] };
+        return { isIncomplete: false, items: position ? completions(await ready(), path, position) : [] };
       case "textDocument/signatureHelp":
-        return position ? signatureHelp(await this.current(), path, position) : null;
+        return position ? signatureHelp(await ready(), path, position) : null;
       case "textDocument/codeLens":
-        return codeLenses(await this.current(), path);
+        return codeLenses(await ready(), path);
       case "workspace/symbol":
-        const ws = await this.current();
+        const ws = await ready();
         return workspaceSymbols(ws, loadBriefs(ws.analysis.config), typeof params.query === "string" ? params.query : "");
       default:
         throw new LspError(ERRORS.methodNotFound, `unsupported method \`${method}\``);
     }
   }
 
+  /** The capabilities; the server's state changes only once everything else succeeded. */
   private initialize(params: Record<string, unknown>): unknown {
     const capabilities = (params.capabilities ?? {}) as { textDocument?: { diagnostic?: unknown }; workspace?: { diagnostics?: { refreshSupport?: boolean } } };
-    this.pulls = capabilities.textDocument?.diagnostic !== undefined;
-    this.refreshes = capabilities.workspace?.diagnostics?.refreshSupport === true;
     const folders = params.workspaceFolders as { uri?: string }[] | null | undefined;
     const hinted = typeof params.rootUri === "string" ? params.rootUri : (folders?.[0]?.uri ?? (typeof params.rootPath === "string" ? pathToFileURL(params.rootPath).href : null));
+    let root = this.root;
     if (hinted) {
       // `resolve` drops a trailing slash (`file:///repo/`), so root-relative paths stay relative.
       const path = resolve(filePath(hinted));
-      if (existsSync(path)) this.root = findRoot(statSync(path).isDirectory() ? path : dirname(path));
+      if (existsSync(path)) root = findRoot(statSync(path).isDirectory() ? path : dirname(path));
     } else {
-      this.root = findRoot(this.root);
+      root = findRoot(root);
     }
+    this.root = root;
+    this.pulls = capabilities.textDocument?.diagnostic !== undefined;
+    this.refreshes = capabilities.workspace?.diagnostics?.refreshSupport === true;
     return {
       capabilities: {
         positionEncoding: "utf-16",
@@ -345,4 +416,42 @@ class LspError extends Error {
 
 function filePath(uri: string): string {
   return uri.startsWith("file:") ? fileURLToPath(uri) : resolve(uri);
+}
+
+interface LspRange {
+  start: LspPosition;
+  end: LspPosition;
+}
+
+function isRange(value: unknown): value is LspRange {
+  const position = (p: unknown): boolean => typeof p === "object" && p !== null && Number.isInteger((p as LspPosition).line) && Number.isInteger((p as LspPosition).character);
+  return typeof value === "object" && value !== null && position((value as LspRange).start) && position((value as LspRange).end);
+}
+
+/** `text` with `range` replaced by `insert`. Characters are UTF-16 code units, as JavaScript counts them. */
+function replaceRange(text: string, range: LspRange, insert: string): string {
+  const start = offsetAt(text, range.start);
+  return text.slice(0, start) + insert + text.slice(Math.max(start, offsetAt(text, range.end)));
+}
+
+/** The offset of a position; past the end of its line is the line's end, past the last line the text's end. */
+function offsetAt(text: string, position: LspPosition): number {
+  let start = 0;
+  for (let line = 0; line < position.line; line++) {
+    const next = lineBreak(text, start);
+    if (next === null) return text.length;
+    start = next.after;
+  }
+  const end = lineBreak(text, start)?.at ?? text.length;
+  return Math.min(start + Math.max(0, position.character), end);
+}
+
+/** The first line break at or after `from`: `\r\n`, `\n` or `\r`, as LSP counts lines. */
+function lineBreak(text: string, from: number): { at: number; after: number } | null {
+  for (let i = from; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === 10) return { at: i, after: i + 1 };
+    if (code === 13) return { at: i, after: text.charCodeAt(i + 1) === 10 ? i + 2 : i + 1 };
+  }
+  return null;
 }

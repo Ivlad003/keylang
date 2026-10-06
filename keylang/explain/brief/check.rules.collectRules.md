@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b3855ff6f0f98a60e69a951675019f521006dc1d2d7ac2e8c1ad07bc940a003d lang=en detail=brief -->
-Walks a spec's rules once, sorting them into allow/deny edges, entry points, no-cycles and exports lists, and merging `layers` chains into a layer order via `check.rules.combineOrders`. Dependency rules naming a function rather than a module are dropped with a K005 diagnostic…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9165e7f6f68123ada840a0b68dcdf636494f6fc852365265bd38bf3f112910f0 lang=en detail=brief -->
+Sorts spec rules into allow/deny, entry, no-cycles and exports lists, flagging K005 via `base.diag.diagnostic` when a dependency rule names a function or member, and merges layer chains through `check.rules.combineOrders`.

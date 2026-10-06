@@ -29,6 +29,8 @@ export interface CheckResult {
   testId?: string;
   /** Set on a K005 result only. */
   reason?: K005Reason;
+  /** Set on an `unverified` rule result only: `file:line:col` of the coverage entry (the hole) that left it unverified. */
+  hole?: string;
 }
 
 /** Diagnostics and verdicts as one list; a verdict that repeats a diagnostic lends it its criterion, hash, and provenance. */
@@ -64,6 +66,7 @@ export function checkResults(verdicts: Verdict[], snapshotId: string | null, dia
       code: verdict.code,
       specHash: verdict.specHash,
       ...(verdict.evidence ?? { provenance: "syntactic" }),
+      ...(verdict.hole !== undefined ? { hole: verdict.hole } : {}),
     }));
   return [...fromDiags, ...fromVerdicts];
 }
@@ -74,8 +77,19 @@ export interface CheckReport {
   results: CheckResult[];
   /** The `--format human` lines: every diagnostic, then the verdicts that repeat none (an `ok` only for an evidence channel). */
   lines: string[];
-  /** The summary on stderr: errors and failed verdicts, unverified and ok verdicts. */
-  counts: { fail: number; unverified: number; ok: number };
+  counts: CheckCounts;
+}
+
+/** The summary on stderr: errors and failed verdicts, unverified and ok verdicts. */
+export interface CheckCounts {
+  fail: number;
+  unverified: number;
+  ok: number;
+  /**
+   * Only when two or more unverified verdicts name one hole: how many
+   * unverified verdicts name a hole, and how many different holes they name.
+   */
+  holes?: { unverified: number; holes: number };
 }
 
 /** Evidence channels whose `ok` the human lines keep. */
@@ -83,6 +97,9 @@ const CHANNELS: ReadonlySet<string> = new Set(["ID", "static", "tests", "trace"]
 
 export function checkReport(verdicts: Verdict[], snapshotId: string | null, diags: Diagnostic[]): CheckReport {
   const own = verdicts.filter((verdict) => !sameFinding(verdict, diags));
+  // One hole leaves every rule whose area holds it unverified: the summary counts it once.
+  const fromHoles = verdicts.filter((verdict) => verdict.verdict === "unverified" && verdict.hole !== undefined);
+  const holes = new Set(fromHoles.map((verdict) => verdict.hole)).size;
   return {
     results: checkResults(verdicts, snapshotId, diags),
     lines: [...diags.map(formatDiagnostic), ...own.filter((verdict) => verdict.verdict !== "ok" || CHANNELS.has(verdict.criterion)).map(formatVerdict)],
@@ -90,11 +107,12 @@ export function checkReport(verdicts: Verdict[], snapshotId: string | null, diag
       fail: diags.filter(isError).length + own.filter((verdict) => verdict.verdict === "fail").length,
       unverified: verdicts.filter((verdict) => verdict.verdict === "unverified").length,
       ok: verdicts.filter((verdict) => verdict.verdict === "ok").length,
+      ...(fromHoles.length > holes ? { holes: { unverified: fromHoles.length, holes } } : {}),
     },
   };
 }
 
 /** The exit code of `keylang check`: 1 for a failure, or with `strict` for an unverified verdict; else 0 — an unverified one stays visible. */
-export function checkExitCode(counts: CheckReport["counts"], strict: boolean): 0 | 1 {
+export function checkExitCode(counts: CheckCounts, strict: boolean): 0 | 1 {
   return counts.fail > 0 || (strict && counts.unverified > 0) ? 1 : 0;
 }

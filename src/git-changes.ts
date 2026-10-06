@@ -1,18 +1,20 @@
 // What git says changed in the working tree since a ref: the inputs of
-// `check --changed`, `hook stop` and `code-to-spec --since`, and the feature
-// file at its base commit for `feature`. Git runs as an
-// argument array in the given root, never through a shell; a ref that looks
-// like an option is refused before git sees it. Every failure (no git, not a
-// repository, an unknown ref) is an error naming the caller, never an empty
-// change set.
+// `check --changed`, `hook stop` and `code-to-spec --since`, and for
+// `feature` its base commit (the merge-base with the main branch unless
+// `--since` names one), the feature file there with the files changed
+// since. Git runs as an argument array in the given root, never through a
+// shell; a ref that looks like an option is refused before git sees it.
+// Every failure (no git, not a repository, an unknown ref) is an error naming
+// the caller, never an empty change set.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { join, relative } from "node:path";
 import { toPosix, type Config } from "./config.ts";
 import { deletedDiffPaths, diffHunks, type ChangedLines } from "./draft.ts";
-import type { FeatureBase } from "./feature-status.ts";
+import { HEAD_BASE, type BaseOrigin, type FeatureBase } from "./feature-status.ts";
 import { placeFile } from "./graph.ts";
 import { parse } from "./parser.ts";
+import { compareText } from "./span.ts";
 
 /** Files changed since a ref. Paths are POSIX, relative to the root. */
 export interface ChangedFiles {
@@ -61,7 +63,14 @@ const untracked = (git: (args: string[]) => string): string[] =>
     .split("\0")
     .filter((file) => file !== "");
 
-/** Files changed since `ref` in the working tree, plus files git does not track yet. */
+/**
+ * keylang's own local state under `.keylang/` — the index, the fact cache an
+ * analysis saves, proposals, reports — is never a source or a spec, so it is
+ * never a change, tracked or not, gitignored or not.
+ */
+const ownState = (path: string): boolean => path === ".keylang" || path.startsWith(".keylang/");
+
+/** Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out. */
 export function gitChangedFiles(root: string, ref: string, label = "check --changed"): ChangedFiles {
   assertRef(ref, label);
   const { run, git } = gitIn(root, label);
@@ -70,9 +79,9 @@ export function gitChangedFiles(root: string, ref: string, label = "check --chan
   // `--stdin` reads the null device: the empty tree of this repository's hash.
   const base = unborn ? git(["hash-object", "-t", "tree", "--stdin"]).trim() : ref;
   const diff = git(diffArgs(base));
-  const deleted = deletedDiffPaths(diff);
-  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted]);
-  for (const file of untracked(git)) paths.add(file);
+  const deleted = deletedDiffPaths(diff).filter((path) => !ownState(path));
+  const paths = new Set<string>([...diffHunks(diff).keys(), ...deleted].filter((path) => !ownState(path)));
+  for (const file of untracked(git)) if (!ownState(file)) paths.add(file);
   return { paths, deleted, unborn };
 }
 
@@ -115,21 +124,72 @@ export function gitFileAt(root: string, ref: string, path: string, label: string
 }
 
 /**
- * The feature file at its base commit (`since`, else `HEAD`). Without an
- * explicit `since`, a failure to read git is an informational state, not an
- * error; with it, the error is thrown.
+ * The feature file at its base commit, and the files changed since that
+ * commit as `check --changed --since <base>` reads them: a rule fail of this
+ * change is one that touches them. The base is `since`, else
+ * `featureBaseOrigin`. With a merge-base the file at HEAD is read too: the
+ * plan is compared with both. Without an explicit `since`, a failure to read
+ * git is an informational state, not an error; with it, the error is thrown.
  */
 export function readFeatureBase(root: string, path: string, since: string | undefined, label: string): FeatureBase {
-  const ref = since ?? "HEAD";
+  let origin: BaseOrigin = since === undefined ? HEAD_BASE : { ref: since, source: "since", label: since };
   let text: string | null;
+  // Undefined: HEAD is the base, or `since` is; null: HEAD has no such file.
+  let headText: string | null | undefined;
+  let changed: ChangedFiles;
   try {
-    text = gitFileAt(root, ref, path, label);
+    if (since === undefined) origin = featureBaseOrigin(root, label);
+    text = gitFileAt(root, origin.ref, path, label);
+    if (origin.source === "merge-base") headText = gitFileAt(root, "HEAD", path, label);
+    changed = gitChangedFiles(root, origin.ref, label);
   } catch (error) {
     if (since !== undefined) throw error;
-    return { ref, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
+    return { ...origin, state: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
-  if (text === null) return { ref, state: "absent" };
-  return { ref, state: "compared", doc: parse(path, text) };
+  const changes = { files: [...changed.paths].sort(compareText), deleted: [...changed.deleted].sort(compareText) };
+  const atHead = headText === undefined ? {} : { head: headText === null ? null : parse(path, headText) };
+  if (text === null) return { ...origin, state: "absent", changes, ...atHead };
+  return { ...origin, state: "compared", doc: parse(path, text), changes, ...atHead };
+}
+
+/** Where to look for the main branch after `origin/HEAD`, in order: the ref, and how a sentence names it. */
+const MAIN_BRANCHES: readonly (readonly [ref: string, name: string])[] = [
+  ["refs/heads/main", "main"],
+  ["refs/heads/master", "master"],
+  ["refs/remotes/origin/main", "origin/main"],
+  ["refs/remotes/origin/master", "origin/master"],
+];
+
+/**
+ * The base `feature` judges a change against when no `since` is given: the
+ * merge-base of HEAD with the main branch, so a fail committed on a feature
+ * branch is still the change's own. The main branch is the one
+ * `refs/remotes/origin/HEAD` points at, else a local `main`, `master`, else
+ * `origin/main`, `origin/master`. HEAD when there is none, when HEAD and it
+ * have no merge-base (no commit yet, unrelated histories), or when the
+ * merge-base is HEAD itself (on the main branch, or behind it). No git, or no
+ * repository, is an error naming the caller.
+ */
+export function featureBaseOrigin(root: string, label: string): BaseOrigin {
+  const { run, git } = gitIn(root, label);
+  git(["rev-parse", "--is-inside-work-tree"]);
+  const commit = (ref: string): string | null => {
+    const out = run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    return out.status === 0 ? out.stdout.trim() : null;
+  };
+  // A dangling `origin/HEAD` (the remote branch was deleted) is passed over like a missing one.
+  const remote = run(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  const target = remote.status === 0 ? remote.stdout.trim() : "";
+  const candidates = target.startsWith("refs/remotes/") ? [[target, target.slice("refs/remotes/".length)] as const, ...MAIN_BRANCHES] : MAIN_BRANCHES;
+  const main = candidates.find(([ref]) => commit(ref) !== null);
+  if (main === undefined) return HEAD_BASE;
+  const [ref, name] = main;
+  const found = run(["merge-base", "HEAD", ref]);
+  const fork = found.status === 0 ? found.stdout.trim() : "";
+  if (fork === "" || fork === commit("HEAD")) return { ...HEAD_BASE, main: name };
+  // Git's own abbreviation: unambiguous in this repository, so `--since` takes it back.
+  const short = run(["rev-parse", "--short", fork]).stdout.trim() || fork.slice(0, 7);
+  return { ref: fork, source: "merge-base", main: name, label: `merge-base ${short} with ${name}` };
 }
 
 /** Module id a deleted source file had, so a flow step that named it is still "changed". */

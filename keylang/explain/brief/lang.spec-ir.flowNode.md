@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0b9e89ca4617571ad12a0cbfac3ae53dc442c974eeae36fd3d18ca30608b72d8 lang=en detail=brief -->
-Converts one parsed flow node into typed `FlowItem` entries by its kind (step, when, then, invariant/reads/emits, calls, test), recursing into children via `lang.spec-ir.flowItems` and attaching location from `lang.spec-ir.flowAt`. Nodes lacking a required ref or text collapse…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7a7f7a7c708b9d149cd6fa4de737c5a183ad67d36ada4abb53e07c0d3c16ccf8 lang=en detail=brief -->
+Converts one parsed spec node into flow items (step, when, then, invariant/reads/emits, calls, question, test) with source location via `lang.spec-ir.flowAt`, recursing through `lang.spec-ir.flowItems`. Nodes lacking required data are flattened into their children or dropped.

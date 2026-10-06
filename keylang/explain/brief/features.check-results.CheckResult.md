@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=83f584fddab4fa0bbfe8f076d83abe49b840815add60563cda4307e86a5b9d6b lang=en detail=brief -->
-Record of a single check outcome: the criterion and area it covers, a verdict (`ok`, `fail`, `unverified`, or non-failing `warning`), evidence text, and the source file/line/column it points at. Also carries the spec line's SHA-256, a `Provenance` marker, optional test run/test…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=61d69dd7e78e3597bc29ed26b63e828a0c158e47f4682c7a1aadc5b5eef02730 lang=en detail=brief -->
+Shape of one check outcome: a criterion's verdict (ok, fail, unverified, or non-failing warning) with evidence, source location, spec hash and provenance. Optional fields carry test/run IDs, a K005 reason, or the coverage hole.

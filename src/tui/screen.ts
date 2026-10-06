@@ -72,15 +72,6 @@ export class Grid {
     }
   }
 
-  /** Restyles cells without changing their text (selection, highlight). */
-  restyle(x: number, y: number, width: number, patch: Style): void {
-    if (y < 0 || y >= this.rows) return;
-    for (let col = Math.max(0, x); col < Math.min(this.cols, x + width); col++) {
-      const cell = this.cells[y]![col]!;
-      this.cells[y]![col] = { ch: cell.ch, style: { ...cell.style, ...patch } };
-    }
-  }
-
   /** A wide character split by an overwrite leaves no half behind. */
   private clearWide(col: number, row: number): void {
     const line = this.cells[row]!;

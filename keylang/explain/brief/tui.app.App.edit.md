@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=45f09896e64c0c336def4fe5ed769b53e45ae66b1706e09ef21ecc6da14843b1 lang=en detail=brief -->
-Applies a caller-supplied mutation to the current buffer's lines and cursor, refusing read-only buffers with a message and recording an undo snapshot (capped at 200, optionally coalesced with the previous one). Afterwards it writes the text via `tui.buffer.setText`, clamps and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e9a0408df825f5c50af25bdbc0c447f3a911c2abc76d6c5150bb5ca5e96b8c5d lang=en detail=brief -->
+Applies a line-level change to the current buffer, refusing read-only files via `tui.app.App.readOnlyReason` and pushing capped, optionally coalesced undo snapshots, then writes text with `tui.buffer.setText` and schedules reanalysis.

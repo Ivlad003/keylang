@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8604c9b060890892a07cbb911eb84732940cbee1efbc598df0da7a1c97c2df8b lang=en detail=brief -->
-Builds a result envelope for a baseline run that produced no payload, carrying the given status and exit code with empty written/removed/proposals lists. If an error string is supplied it becomes the single error-level message; otherwise messages is empty.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=56124a877f8ae7f3054fb1918474d31028fb7c07f97c2f201fcc50acbb25a37b lang=en detail=brief -->
-Loads the stats JSON file from the given root, returning a default empty record when the file is missing, unparsable, or fails the schema-1 shape check. Used by `features.stats.updateStats` as the baseline before applying a change.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=cc440e92051882d44789426b740f5a3730feacd0720f4b80719bd39ed0ccd927 lang=en detail=brief -->
+Returns the parsed stats for a repository root by delegating to `features.stats.readStatsFile` and discarding the raw file text it also yields.

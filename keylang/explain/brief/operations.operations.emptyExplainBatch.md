@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a8459553fcd34c8aa50508315e860725691268e66cec6bd2034a411ee9ed7222 lang=en detail=brief -->
-Builds a result envelope for a batch explain run that produced nothing: null payload, empty written/removed/proposals lists, and a single error message only when `error` is supplied. `operations.operations.runExplainBatch` uses it for early exits and failures.

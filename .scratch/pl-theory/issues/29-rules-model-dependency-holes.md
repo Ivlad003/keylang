@@ -2,7 +2,7 @@
 
 **Джерело:** research-pl §5 Р-3 і Р-4; знахідка 2; рішення Q6, Q7 (spec)
 
-**What to build:** Модель 27–28 і Datalog у format.md §7 описують, коли правило стає `unverified`. Після цього модель сама гарантує властивість монотонності з Q6 (метаморфний тест 05): менше інформації переводить `ok`/`fail` лише в `unverified` і ніколи не міняє `ok` на `fail` чи навпаки.
+**What to build:** Модель 27–28 і Datalog у semantics.md §7 описують, коли правило стає `unverified`. Після цього модель сама гарантує властивість монотонності з Q6 (метаморфний тест 05): менше інформації переводить `ok`/`fail` лише в `unverified` і ніколи не міняє `ok` на `fail` чи навпаки.
 
 Генератор додає нерозв'язані імпорти (`import { z } from "./missing.ts"`) і `exclude` для 0–1 файла.
 
@@ -31,11 +31,11 @@ Datalog визначає:
 - [x] `unverified` моделі збігається з CLI за вердиктом і за файлом прогалини в evidence. Якщо прогалин в області кілька, береться перша за відсортованим ID модуля, як у `holeAmong` (rules.ts:162).
 - [x] `exclude` єдиного імпортера пакета не дає K001 для `external.<pkg>` ні в моделі, ні в CLI.
 - [x] На згенерованому випадку з прогалиною й без порушень `check` дає код 0, а `check --strict` — 1.
-- [x] Datalog у format.md §7 описує `hole` і `area` для кожного виду правила. Якщо 05 злито, його нормативне речення про монотонність посилається на них.
+- [x] Datalog у semantics.md §7 описує `hole` і `area` для кожного виду правила. Якщо 05 злито, його нормативне речення про монотонність посилається на них.
 - [ ] `npm run typecheck` і `npm test` зелені, `src/` не змінено.
 
 Ключові файли: `tests/rules-model.test.ts`, `docs/format.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; tests/rules-model.test.ts (unresolved `./missing.ts`, exclude, external.left-pad, «a dependency hole without a violation is exit 0 and strict exit 1», «excluding the only importer of a declared package is not K001»), format.md §7 `hole`/`area`/`unverified`; прогін файлу — 6 pass. Бюджет часу — див. коментар 27.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; tests/rules-model.test.ts (unresolved `./missing.ts`, exclude, external.left-pad, «a dependency hole without a violation is exit 0 and strict exit 1», «excluding the only importer of a declared package is not K001»), semantics.md §7 `hole`/`area`/`unverified`; прогін файлу — 6 pass. Бюджет часу — див. коментар 27.

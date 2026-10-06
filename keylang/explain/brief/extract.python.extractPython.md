@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=210e498a1b8ed665a7ed71f83d0000da4dd648cb9ff2f34f0ba698fc292e9a80 lang=en detail=brief -->
-Parses Python source into a tree-sitter tree via `extract.treesitter.withTree` and hands the root node to `extract.python.extractTree`, returning the resulting file facts for the given path.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=5a61c7ad4616f45151ca7babf49874d4c783bf736b24aa51efc34eb603ad77e9 lang=en detail=brief -->
+Parses Python source text with the tree-sitter grammar via `extract.treesitter.withTree` and passes the syntax tree's root node to `extract.python.extractTree`, asynchronously yielding the file's extracted facts.

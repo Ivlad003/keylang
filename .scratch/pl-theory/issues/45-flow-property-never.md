@@ -36,7 +36,7 @@
 
   `check --format json` пише в stdout лише JSON, підсумок — у stderr. Код 1 дає лише `fail`.
 - [ ] `keylang trace-plan <flow>` містить символ із `never`, і адаптер `node --import keylang/trace` його інструментує. Для цього достатньо одного e2e на тимчасовій копії.
-- [ ] EBNF-блок format.md і перелік K004 оновлено, тест 33 зелений. format.md §5 і «Flows: докази кроку» описують форму, «Дорожня карта» більше не згадує `never`.
+- [ ] EBNF-блок format.md і перелік K004 оновлено, тест 33 зелений. grammar.md §5 і «Flows: докази кроку» описують форму, «Дорожня карта» більше не згадує `never`.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `src/ir.ts`, `src/fmt.ts`, `src/spec-ir.ts`, `src/flows.ts`, `src/trace-evidence.ts`, `src/trace-plan.ts`, `src/adapters/trace-hooks.ts`, `src/lsp-features.ts`, `docs/format.md`, `tests/flows.test.ts`

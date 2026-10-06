@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=25fa2e73c1fa9bb2367c447d444e97d5bd776e58c91d177af2270f916cd863be lang=en detail=brief -->
-Builds a bare "init" result envelope with the given status and exit code, a null payload, and empty file/proposal lists, attaching a single error-level message only when an error string is supplied. Used by `operations.operations.runInit` to return early outcomes.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4994cc32df3a24ad863f726c87cf4e68629881da9d1393da8f6d0d3412a113e5 lang=en detail=brief -->
-Validates a node id against the current analysis via `features.explain-node.summarizeNode`, setting a status message (with a suggestion) if unknown or analysis is pending. Otherwise it un-removes the node from the TUI context and appends it to the added list.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=42173d2d2022bcdbfdc87aa9c619217b546c844c57f3b0108c78d1d785a3470a lang=en detail=brief -->
+Validates a node ID via `features.explain-node.summarizeNode` and adds it to the TUI's context list, clearing any prior removal; reports a status message for pending analysis or unknown IDs with suggestions.

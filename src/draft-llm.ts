@@ -347,7 +347,8 @@ function judgeRule(analysis: Analysis, others: readonly Document[], target: stri
  * `draft map --mode llm|hybrid`: the model proposes layers (name → globs),
  * validated as `keylang.json` would be. Never written: layers are never
  * assigned without a person (design §5.1 p.4) — the CLI prints them, the
- * TUI moves them into the config buffer on an explicit action.
+ * TUI moves them into the config buffer on an explicit action. An answer
+ * without one JSON object (`answerObject`) is refused like invalid layers.
  */
 export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient, files: readonly string[], options: LlmCallOptions = {}): Promise<Record<string, string[]>> {
   const answer = await client.complete({
@@ -355,8 +356,55 @@ export async function draftLayoutWithModel(analysis: Analysis, client: LlmClient
     prompt: `Current layers: ${JSON.stringify(Object.fromEntries(analysis.config.layers))}\n\nSource files:\n${files.slice(0, 400).join("\n")}${files.length > 400 ? `\n… ${files.length - 400} more files not shown` : ""}`,
     maxTokens: 2048,
   }, options);
-  const json = /\{[\s\S]*\}/.exec(answer)?.[0] ?? "";
+  const layers = answerObject(answer);
+  if (layers === null) throw new Error("draft map: the model did not answer with one JSON object");
   // The same validation as a written keylang.json: names, globs, shape.
-  const raw = parseConfig("proposed layers", JSON.stringify({ layers: JSON.parse(json) as unknown }));
+  const raw = parseConfig("proposed layers", JSON.stringify({ layers }));
   return Object.fromEntries(Object.entries(raw.layers ?? {}).map(([name, globs]) => [name, Array.isArray(globs) ? globs : [globs]]));
+}
+
+/**
+ * The JSON object a model answered with: the first ```json block that holds
+ * one, else the first balanced `{…}` of the answer that parses as one (a
+ * brace in a JSON string does not count); null when there is none. Prose
+ * around it and a second object after it are left out.
+ */
+export function answerObject(answer: string): Record<string, unknown> | null {
+  for (const block of answer.matchAll(/^[ \t]*```[ \t]*json[^\n]*\n([\s\S]*?)^[ \t]*```/gim)) {
+    const value = jsonObject(block[1]!);
+    if (value !== null) return value;
+  }
+  for (let start = answer.indexOf("{"); start !== -1; start = answer.indexOf("{", start + 1)) {
+    const end = balancedEnd(answer, start);
+    const value = end === null ? null : jsonObject(answer.slice(start, end));
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+/** `text` as a JSON object, or null: not JSON, or JSON of another shape. */
+function jsonObject(text: string): Record<string, unknown> | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/** Where the `{` at `start` closes (the index after its `}`), skipping JSON strings; null when it never does. */
+function balancedEnd(text: string, start: number): number | null {
+  let depth = 0;
+  let string = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (string) {
+      if (ch === "\\") i++;
+      else if (ch === '"') string = false;
+    } else if (ch === '"') string = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) return i + 1;
+  }
+  return null;
 }

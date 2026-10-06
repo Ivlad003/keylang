@@ -4,7 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync, type Dirent } from "node:fs";
 import { join, posix, relative } from "node:path";
-import { globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
+import { firstMatchingGlob, globPrefix, globToRegExp, matchesGlob } from "./glob.ts";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGES, languageOf, type Language } from "./languages.ts";
 
 
@@ -56,6 +56,12 @@ export interface Config {
    * Architecture code must not depend on them (K107).
    */
   outside: string[];
+  /**
+   * Globs of files the architecture imports but keylang neither reads nor
+   * requires (generated code, configuration outside git): never indexed, even
+   * when present; an import of one is no edge and no hole (`assumed-import`).
+   */
+  assume: string[];
   check: { tests?: string; trace?: string; static?: StaticMode };
   /** `anthropic:<model>`, `openrouter:<model>` or `cli:<name>[:<model>]` (an agent CLI); null: no model is configured. */
   agent: string | null;
@@ -78,9 +84,11 @@ export const AGENT_CLI_PRESETS = ["claude", "codex", "opencode", "cursor"] as co
 /** What a valid `agent` looks like, for error messages. */
 export const AGENT_FORMS = '"anthropic:<model>", "openrouter:<model>" or "cli:<name>[:<model>]" (a model has no spaces, `<`, `>` or `--` and does not start with `-`)';
 
-// A model is one argv element after `--model` and a value in comment headers:
-// a leading `-` would be read as a flag, `--`/`<`/`>` would break `<!-- … -->`.
-const AGENT_PATTERN = /^(anthropic|openrouter):\S+$|^cli:[a-z][a-z0-9-]*(:(?!-)(?!.*--)[^\s<>]+)?$/;
+// A model is one argv element after `--model` and, for every provider, a value
+// in the header of a saved explanation: a leading `-` would be read as a flag,
+// `--`/`<`/`>` would break `<!-- keylang:explain agent=… -->`.
+const MODEL = String.raw`(?!-)(?!.*--)[^\s<>]+`;
+const AGENT_PATTERN = new RegExp(String.raw`^(?:anthropic|openrouter):${MODEL}$|^cli:[a-z][a-z0-9-]*(?::${MODEL})?$`);
 
 /** `agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it. */
 export function isAgent(value: string): boolean {
@@ -150,6 +158,7 @@ export interface RawConfig {
   layers?: Record<string, string | string[]>;
   exclude?: string[];
   outside?: string[];
+  assume?: string[];
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number | null };
@@ -165,12 +174,13 @@ export function loadConfig(root: string): Config {
   const languages = raw.languages ?? detectLanguages(root);
   const exclude = raw.exclude ?? [];
   const outside = raw.outside ?? [];
+  const assume = raw.assume ?? [];
   let layers: Map<string, string[]>;
   let guessed = false;
   if (raw.layers) {
     layers = new Map(Object.entries(raw.layers).map(([k, v]) => [k, Array.isArray(v) ? v : [v]]));
   } else {
-    layers = guessLayers(root, [...exclude, ...outside]);
+    layers = guessLayers(root, [...exclude, ...outside, ...assume]);
     guessed = true;
   }
   return {
@@ -182,6 +192,7 @@ export function loadConfig(root: string): Config {
     layers,
     exclude,
     outside,
+    assume,
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? null },
@@ -217,7 +228,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "check", "agent", "explain", "ghost", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -241,7 +252,13 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.layers !== undefined) {
     if (!isObject(value.layers)) return fail("layers", "an object of layer → glob or globs", value.layers);
     const layers: Record<string, string | string[]> = {};
-    for (const [name, globs] of Object.entries(value.layers)) {
+    const written = new Map<string, string>();
+    for (const [key, globs] of Object.entries(value.layers)) {
+      // IDs are NFC: a name typed in NFD is the same layer as the one a spec names.
+      const name = key.normalize("NFC");
+      const other = written.get(name);
+      if (other !== undefined) throw new Error(`${file}: \`layers.${key}\` is the layer \`layers.${other}\` written in another Unicode normalization; keep one`);
+      written.set(name, key);
       // A layer is the first segment of every ID under it; `core.domain` would be two.
       if (layerName(name) !== name) throw new Error(`${file}: layer name \`${name}\` must be one ID segment (letters, digits, \`_\`, \`$\`, \`-\`), e.g. \`${layerName(name)}\``);
       if (RESERVED_LAYER_NAMES.has(name)) throw new Error(`${file}: \`layers.${name}\`: ${reservedReason(name)}; rename the layer, e.g. \`${name}_\``);
@@ -258,6 +275,10 @@ export function parseConfig(file: string, text: string): RawConfig {
   if (value.outside !== undefined) {
     if (!Array.isArray(value.outside) || !value.outside.every((glob) => typeof glob === "string")) return fail("outside", "an array of globs", value.outside);
     raw.outside = (value.outside as string[]).map((glob, i) => validGlob(`outside[${i}]`, glob));
+  }
+  if (value.assume !== undefined) {
+    if (!Array.isArray(value.assume) || !value.assume.every((glob) => typeof glob === "string")) return fail("assume", "an array of globs", value.assume);
+    raw.assume = (value.assume as string[]).map((glob, i) => validGlob(`assume[${i}]`, glob));
   }
   if (value.check !== undefined) {
     if (!isObject(value.check)) return fail("check", "an object", value.check);
@@ -376,7 +397,7 @@ export function withLayers(file: string, text: string, layers: Readonly<Record<s
 
 /** All indexable source files under root, POSIX paths relative to root, sorted. */
 export function sourceFiles(c: Config): string[] {
-  return walkSources(c, (rel) => isAnalysed(rel, c)).files;
+  return classifySources(c).analysed;
 }
 
 /**
@@ -384,65 +405,145 @@ export function sourceFiles(c: Config): string[] {
  * (no permission): their files are unknown, which is a hole, not an absence.
  */
 export function sourceTree(c: Config): { files: string[]; unreadable: { dir: string; reason: string }[] } {
-  return walkSources(c, (rel) => isAnalysed(rel, c));
+  const sources = classifySources(c);
+  return { files: sources.analysed, unreadable: sources.unreadable };
 }
 
-/** A source file keylang reads: not left out by the built-in list, `exclude` or `outside`. */
-export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside">): boolean {
-  return !isExcluded(rel, c.exclude) && !isOutside(rel, c.outside);
+/** Every source file of the configured languages by what keylang does with it; paths in walk order. */
+export interface SourceClasses {
+  /** Read and indexed. */
+  analysed: string[];
+  /** Left out by `exclude` only: opaque modules of their layer, a dependency hole. */
+  excluded: string[];
+  /** Put outside the architecture by `outside`: opaque modules of the layer `outside`, no hole. */
+  outside: string[];
+  /** Named by `assume`: never indexed, and an import of one is no hole. */
+  assumed: string[];
+  /** Directories that could not be listed (no permission): their files are unknown, a hole, not an absence. */
+  unreadable: { dir: string; reason: string }[];
 }
 
-/** Source files left out only by the `exclude` of `keylang.json`: their modules are opaque. */
-export function excludedSourceFiles(c: Config): string[] {
-  if (c.exclude.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isExcluded(rel, c.exclude) && !isOutside(rel, c.outside)).files;
+/** The source files by class, from one walk of the tree. */
+export function classifySources(c: Config): SourceClasses {
+  const sources: SourceClasses = { analysed: [], excluded: [], outside: [], assumed: [], unreadable: [] };
+  for (const rel of walkSources(c, sources.unreadable)) {
+    const kind = sourceClass(rel, c);
+    if (kind !== null) sources[kind].push(rel);
+  }
+  return sources;
 }
 
 /**
- * Source files `outside` of `keylang.json` puts outside the architecture; the
- * built-in list (tests) wins, and `outside` wins over `exclude`.
+ * What keylang does with a source file; null when the built-in list leaves it
+ * out (tests, declaration files). The built-in list wins over `assume`,
+ * `assume` over `outside`, and `outside` over `exclude`.
  */
-export function outsideSourceFiles(c: Config): string[] {
-  if (c.outside.length === 0) return [];
-  return walkSources(c, (rel) => !isExcluded(rel, []) && isOutside(rel, c.outside)).files;
+export function sourceClass(rel: string, c: Pick<Config, "exclude" | "outside" | "assume">): "analysed" | "excluded" | "outside" | "assumed" | null {
+  if (matchesAny(rel, DEFAULT_EXCLUDE)) return null;
+  if (matchesAny(rel, c.assume)) return "assumed";
+  if (matchesAny(rel, c.outside)) return "outside";
+  return matchesAny(rel, c.exclude) ? "excluded" : "analysed";
+}
+
+/** A source file keylang reads: not left out by the built-in list, `assume`, `exclude` or `outside`. */
+export function isAnalysed(rel: string, c: Pick<Config, "exclude" | "outside" | "assume">): boolean {
+  return sourceClass(rel, c) === "analysed";
+}
+
+/** A path `assume` names: keylang neither reads nor requires it. */
+export function isAssumed(rel: string, c: Pick<Config, "assume">): boolean {
+  return matchesAny(rel, c.assume);
 }
 
 export function isOutside(rel: string, outside: readonly string[]): boolean {
-  return outside.some((g) => matchesGlob(rel, g));
+  return matchesAny(rel, outside);
 }
 
-function walkSources(c: Config, keep: (rel: string) => boolean): { files: string[]; unreadable: { dir: string; reason: string }[] } {
+function matchesAny(rel: string, globs: readonly string[]): boolean {
+  return firstMatchingGlob(rel, globs) !== null;
+}
+
+/**
+ * Layer globs of keylang.json that likely do not say what was meant: files
+ * the globs of two layers both match — the layer listed first takes them —
+ * and a glob that matches no source file. `files` are the files layers place:
+ * read or excluded. Warnings, not errors: the layout works as written. One
+ * line per pair of layers and the glob that won, then per unmatched glob, in
+ * the order of keylang.json.
+ */
+export function layerGlobWarnings(c: Pick<Config, "layers">, files: readonly string[]): string[] {
+  const layers = [...c.layers];
+  const matched = new Set<string>();
+  const overlaps = new Map<string, { winner: number; glob: number; other: number; count: number; example: string }>();
+  for (const file of files) {
+    let winner: { layer: number; glob: number } | null = null;
+    for (const [layer, [, globs]] of layers.entries()) {
+      let first = -1;
+      for (const [i, glob] of globs.entries()) {
+        if (!matchesGlob(file, glob)) continue;
+        matched.add(`${layer}/${i}`);
+        if (first === -1) first = i;
+      }
+      if (first === -1) continue;
+      if (winner === null) {
+        winner = { layer, glob: first };
+        continue;
+      }
+      const key = `${winner.layer}/${winner.glob}/${layer}`;
+      const known = overlaps.get(key);
+      if (known) known.count++;
+      else overlaps.set(key, { winner: winner.layer, glob: winner.glob, other: layer, count: 1, example: file });
+    }
+  }
+  const name = (layer: number): string => layers[layer]![0];
+  const warnings = [...overlaps.values()]
+    .sort((a, b) => a.winner - b.winner || a.glob - b.glob || a.other - b.other)
+    .map(
+      (o) =>
+        `${CONFIG_FILE}: ${o.count} file(s) match the globs of both \`layers.${name(o.winner)}\` and \`layers.${name(o.other)}\` (e.g. \`${o.example}\`); the layer listed first takes them: \`${name(o.winner)}\` by \`${layers[o.winner]![1][o.glob]}\``,
+    );
+  for (const [i, [layer, globs]] of layers.entries()) {
+    for (const [j, glob] of globs.entries()) {
+      if (!matched.has(`${i}/${j}`)) warnings.push(`${CONFIG_FILE}: \`layers.${layer}\`: \`${glob}\` matches no source file`);
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Source files of the configured languages under the root, depth first with
+ * names in code-unit order; the spec directory, hidden and build directories
+ * and nested repositories are skipped. A subdirectory that cannot be listed
+ * goes to `unreadable`; the root itself is an I/O error.
+ */
+function walkSources(c: Config, unreadable: { dir: string; reason: string }[]): string[] {
   const out: string[] = [];
-  const unreadable: { dir: string; reason: string }[] = [];
   const specDir = c.dir.replace(/\/$/, "");
-  const walk = (dir: string): void => {
+  const walk = (abs: string, rel: string): void => {
     let listed: Dirent[];
     try {
-      listed = readdirSync(dir, { withFileTypes: true });
+      listed = readdirSync(abs, { withFileTypes: true });
     } catch (error) {
-      // A subdirectory without permission: the rest of the tree is still read. The root itself is an I/O error.
       const code = error instanceof Error && "code" in error ? error.code : undefined;
-      if (dir === c.root || (code !== "EACCES" && code !== "EPERM")) throw error;
-      unreadable.push({ dir: toPosix(relative(c.root, dir)), reason: `directory is not readable (${code})` });
+      if (abs === c.root || (code !== "EACCES" && code !== "EPERM")) throw error;
+      unreadable.push({ dir: rel, reason: `directory is not readable (${code})` });
       return;
     }
     const entries = listed.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const e of entries) {
-      const abs = join(dir, e.name);
-      const rel = toPosix(relative(c.root, abs));
+      const path = rel === "" ? e.name : `${rel}/${e.name}`;
       if (e.isDirectory()) {
-        if (rel === specDir || skipDir(abs, e.name)) continue;
-        walk(abs);
+        const child = join(abs, e.name);
+        if (path === specDir || skipDir(child, e.name)) continue;
+        walk(child, path);
       } else if (e.isFile()) {
         const lang = languageOf(e.name);
-        if (!lang || !c.languages.includes(lang)) continue;
-        if (!keep(rel)) continue;
-        out.push(rel);
+        if (lang && c.languages.includes(lang)) out.push(path);
       }
     }
   };
-  walk(c.root);
-  return { files: out, unreadable };
+  walk(c.root, "");
+  return out;
 }
 
 /**
@@ -472,7 +573,7 @@ export function evidenceFiles(c: Config, field: "tests" | "trace"): string[] | n
 }
 
 export function isExcluded(rel: string, extra: readonly string[]): boolean {
-  return [...DEFAULT_EXCLUDE, ...extra].some((g) => matchesGlob(rel, g));
+  return matchesAny(rel, DEFAULT_EXCLUDE) || matchesAny(rel, extra);
 }
 
 export function toPosix(p: string): string {
@@ -698,11 +799,14 @@ export function decodeLayerName(segment: string): string {
 }
 
 /**
- * Make a directory or file name a valid ID segment.
+ * Make a directory or file name a valid ID segment, in Unicode NFC.
  * An existing segment is kept. Without `()[]`, any other character becomes `_`.
  * Brackets (and the rest of that name) are encoded reversibly — see `decodeLayerName`.
  */
-export function layerName(name: string): string {
+export function layerName(written: string): string {
+  // IDs are NFC: a directory macOS stores in NFD (`cafe` + U+0301) and the
+  // same name typed in a spec (`café`) look alike, so they are one ID.
+  const name = written.normalize("NFC");
   // Only a name that is not already a segment, and only when it has brackets.
   // `cats.controller` still collapses the dot; `_shop_` is already a segment.
   if (/[()[\]]/.test(name) && !isIdSegment(name)) return encodeBracketSegment(name);

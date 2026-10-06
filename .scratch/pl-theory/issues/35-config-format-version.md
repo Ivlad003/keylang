@@ -14,7 +14,7 @@
 
 `Config` отримує поле `format`, а `configToJson` (src/config.ts:234-244) пише його першим ключем. `init` на свіжому репо записує поточну версію, а наявний `keylang.json` лишає байт у байт (src/cli.ts:815-816). `draft map` друкує версію наявного конфігу, а без нього — поточну. `keylang.json` самого репозиторію отримує `"format": 1`.
 
-`format` не входить у `snapshotId`: маніфест хешує лише `dir`, `languages`, `module`, `layers`, `exclude` і `guessed` (src/snapshot.ts:173-180). Речення format.md §11 «зміна файла або `keylang.json` змінює його» (format.md:408) суперечить коду. Треба виправити: `snapshotId` змінюють лише перелічені поля конфігурації.
+`format` не входить у `snapshotId`: маніфест хешує лише `dir`, `languages`, `module`, `layers`, `exclude` і `guessed` (src/snapshot.ts:173-180). Речення snapshot.md §11 «зміна файла або `keylang.json` змінює його» (format.md:408) суперечить коду. Треба виправити: `snapshotId` змінюють лише перелічені поля конфігурації.
 
 Розділ «Версії формату» у мовній частині format.md (межа за Q22):
 - формат 1 — мова цього документа (v0.2). До заморожування v1 (design-v0.2/28; після 43 — design-v0.2/40) він ще змінний;

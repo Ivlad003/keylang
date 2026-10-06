@@ -17,7 +17,7 @@
 
 Тікети 02–04 від цього не залежать, тож allowlist фіксує стан на момент злиття: клас із уже злитого тікета записується з очікуваннями того тікета.
 
-format.md §1 після Р1 отримує абзац «Розбіжність з CommonMark»: що порівнюється, які класи прибирає fmt, які ще відомі й у якому тікеті виправляються. mdast із цього тікета використовує й тікет 32 (виконувані приклади у format.md).
+grammar.md §1 після Р1 отримує абзац «Розбіжність з CommonMark»: що порівнюється, які класи прибирає fmt, які ще відомі й у якому тікеті виправляються. mdast із цього тікета використовує й тікет 32 (виконувані приклади у format.md).
 
 **Blocked by:** None (can start immediately)
 
@@ -30,11 +30,11 @@ format.md §1 після Р1 отримує абзац «Розбіжність 
 - [x] Для кожної фікстури `tests/fixtures/commonmark/*.md` allowlist задає точні рядки `файл:рядок: вид` до і після fmt. Для лінивого продовження й `<details>` — 1 розбіжність до fmt і 0 після.
 - [x] Розбіжність поза allowlist або запис, що більше не відтворюється, валить тест. Повідомлення містить `файл:рядок` і обидва прочитання (mdast і keylang).
 - [ ] Сюїта запускає сталу кількість процесів CLI (по одному `parse --json` на теку до й після fmt, один `fmt`) і додає ≤ ~3 с — частка спільного бюджету нових сюїт (≤ ~20 с у `npm test` з `--test-concurrency=1`, spec «Тестові шви»).
-- [x] format.md §1 перелічує відомі класи з посиланнями на тікети 02–04. Якщо allowlist «після fmt» не порожній, речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 більше не обіцяє повного збігу після fmt і посилається на цей перелік. Якщо 02–04 уже злито й він порожній, речення лишається як є.
+- [x] grammar.md §1 перелічує відомі класи з посиланнями на тікети 02–04. Якщо allowlist «після fmt» не порожній, речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 більше не обіцяє повного збігу після fmt і посилається на цей перелік. Якщо 02–04 уже злито й він порожній, речення лишається як є.
 - [ ] `npm run typecheck` і `npm test` зелені.
 
-Ключові файли: `package.json`, `package-lock.json`, `tests/commonmark.test.ts` (новий), `tests/fixtures/commonmark/*.md` (нові), `docs/format.md` §1, `docs/course/03-the-language.md`, `docs/course/uk/03-the-language.md`
+Ключові файли: `package.json`, `package-lock.json`, `tests/commonmark.test.ts` (новий), `tests/fixtures/commonmark/*.md` (нові), `docs/grammar.md` §1, `docs/course/03-the-language.md`, `docs/course/uk/03-the-language.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 070068d; tests/commonmark.test.ts (allowlist лише до fmt, після fmt порожній), tests/fixtures/commonmark/*.md, `mdast-util-from-markdown` у devDependencies package.json, docs/format.md §1 «Розбіжність з CommonMark»; `node --test tests/commonmark.test.ts` зелений. Не перевірено окремо: бюджет ≤ ~3 с і `npm ls --omit=dev`.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 070068d; tests/commonmark.test.ts (allowlist лише до fmt, після fmt порожній), tests/fixtures/commonmark/*.md, `mdast-util-from-markdown` у devDependencies package.json, docs/grammar.md §1 «Розбіжність з CommonMark»; `node --test tests/commonmark.test.ts` зелений. Не перевірено окремо: бюджет ≤ ~3 с і `npm ls --omit=dev`.

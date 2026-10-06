@@ -4,12 +4,316 @@
 
 - operations
   - module [operations](../../src/operations.ts#L1)
+    - types operations.types
+    - generate operations.generate
+    - spec operations.spec
+    - feature operations.feature
+    - explain operations.explain
+    - draft operations.draft
+    - code operations.code
+    - export operations.export
+    - doctor operations.doctor
+    - shared operations.shared
+    - fn [runOperation](../../src/operations.ts#L32) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
+      - calls operations.doctor.runDoctor, operations.feature.runFeature, operations.feature.runFeatureQuestions, operations.export.runExportC4, operations.generate.runMapCheck, operations.generate.runMap, operations.generate.runBaseline, operations.generate.runAgents, operations.spec.runFmt, operations.generate.runWire, operations.spec.runCheck, operations.spec.runExplainEdge, operations.explain.runExplain, operations.explain.runExplainLlm, operations.explain.runExplainPlan, operations.explain.runExplainBatch, operations.generate.runInit, operations.export.runExport, operations.spec.runParse, operations.spec.runTracePlan, operations.draft.runDraftFlow, operations.draft.runDraftRules, operations.draft.runDraftLayout, operations.draft.runCodeToSpec, operations.code.runSpecToCode, operations.code.runApplyCode
+  - module [code](../../src/operations/code.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - proposals features.proposals
+    - spec-to-code features.spec-to-code
+    - map map.map
+    - safe-write base.safe-write
+    - types operations.types
+    - shared operations.shared
+    - llm features.llm
+    - fn [specToCodeCandidate](../../src/operations/code.ts#L20) (root: string, built: CodeCandidate, basis: CandidateBasis) → SpecToCodeCandidate <!-- internal -->
+      - calls base.safe-write.writeProblem, lang.files.existingText, features.spec-to-code.fileDiffText, features.spec-to-code.specToCodeText
+    - fn [runSpecToCode](../../src/operations/code.ts#L64) (request: SpecToCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"spec-to-code">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, operations.shared.specHashes, base.config.toPosix, operations.shared.modelSetup, features.spec-to-code.plannedCodeTarget, base.safe-write.writeProblem, lang.files.existingText, operations.code.specToCodeCandidate, features.spec-to-code.specToCode, features.proposals.codeProposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, operations.shared.specProblems, features.proposals.writeProposal
+    - fn [applyProblems](../../src/operations/code.ts#L214) (request: ApplyCodeRequest) → { policy: string | null; refused: string[] } <!-- internal -->
+      - calls features.proposals.codeProposalProblem, base.safe-write.writeProblem, lang.files.readTextOrNull, map.map.sourceInputProblems, base.config.loadConfig, operations.shared.specProblems
+    - fn [runApplyCode](../../src/operations/code.ts#L254) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">>
+      - calls operations.shared.empty, operations.code.applyProblems, base.diag.errorText, base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
+  - module [doctor](../../src/operations/doctor.ts#L1)
+    - node external.node
+    - config base.config
+    - diag base.diag
+    - explain-llm features.explain-llm
+    - agent-cli features.agent-cli
+    - types operations.types
+    - shared operations.shared
+    - llm features.llm
+    - voice-local features.voice-local
+    - voice features.voice
+    - fn [runDoctor](../../src/operations/doctor.ts#L21) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">>
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, operations.doctor.agentState, features.agent-cli.probeAgentClis, operations.doctor.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.doctor.doctorLines
+    - fn [agentState](../../src/operations/doctor.ts#L76) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
+      - calls features.agent-cli.resolveAgent, base.diag.errorText, features.agent-cli.cliVersion
+    - fn [engineState](../../src/operations/doctor.ts#L99) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
+      - calls base.diag.errorText
+    - fn [doctorLines](../../src/operations/doctor.ts#L116) (payload: DoctorPayload) → string[] <!-- internal -->
+  - module [draft](../../src/operations/draft.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - ir lang.ir
+    - parser lang.parser
+    - proposals features.proposals
+    - draft features.draft
+    - stats features.stats
+    - map map.map
+    - scc check.scc
+    - safe-write base.safe-write
+    - git-changes features.git-changes
+    - types operations.types
+    - shared operations.shared
+    - llm features.llm
+    - draft-llm features.draft-llm
+    - fn [flowCandidate](../../src/operations/draft.ts#L31) (root: string, specDir: string, generated: (path: string) => boolean, draft: FlowDraft, into?: string) → FlowCandidate
+      - calls base.config.toPosix, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, features.draft.withFlow
+    - fn [runDraftFlow](../../src/operations/draft.ts#L57) (request: DraftFlowRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-flow">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, features.draft.draftFlow, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, operations.draft.flowCandidate, operations.shared.proposalRefusal, operations.draft.modelDraft, features.draft.withFlow, operations.draft.draftCountsText, operations.draft.draftNotes, operations.shared.commitProposal, operations.draft.countProposed
+    - fn [rulesCandidate](../../src/operations/draft.ts#L154) (root: string, specDir: string, generated: (path: string) => boolean, rules: string, into?: string) → RulesCandidate
+      - calls base.config.toPosix, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, features.draft.withRules
+    - fn [runDraftRules](../../src/operations/draft.ts#L175) (request: DraftRulesRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-rules">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, check.scc.stronglyConnected, features.draft.draftRules, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, operations.draft.rulesCandidate, base.config.toPosix, operations.shared.proposalRefusal, operations.draft.rulesCountText, features.draft.withRules, operations.draft.draftCountsText, operations.shared.commitProposal, operations.draft.countProposed
+    - fn [runDraftLayout](../../src/operations/draft.ts#L279) (request: DraftLayoutRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-layout">>
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, operations.shared.modelSetup, base.config.guessLayout, base.config.configToJson
+    - type [CodeDrafted](../../src/operations/draft.ts#L327) <!-- internal -->
+    - fn [codeToSpecCandidate](../../src/operations/draft.ts#L342) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
+      - calls operations.draft.codePosition, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.draft.mergedFlows
+    - fn [mergedFlows](../../src/operations/draft.ts#L353) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
+      - calls features.draft.withFlow
+    - fn [codePosition](../../src/operations/draft.ts#L360) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
+    - fn [describedIds](../../src/operations/draft.ts#L366) (docs: readonly Document[]) → Set<string> <!-- internal -->
+      - calls lang.ir.sectionNodes, lang.ir.walk
+    - fn [runCodeToSpec](../../src/operations/draft.ts#L397) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.sourceInputs, features.draft.changedFlows, features.git-changes.gitChangedLines, operations.draft.describedIds, features.draft.codeToSpec, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, base.config.toPosix, operations.draft.codeToSpecCandidate, operations.draft.codePosition, operations.draft.codeSummary, operations.shared.proposalRefusal, operations.draft.modelFlows, operations.draft.mergedFlows, operations.shared.commitProposal, operations.draft.countProposed
+    - fn [codeSummary](../../src/operations/draft.ts#L514) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
+      - calls operations.draft.draftCountsText
+    - fn [modelFlows](../../src/operations/draft.ts#L525) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+      - calls operations.draft.flowSteps, base.diag.errorText
+    - fn [rulesCountText](../../src/operations/draft.ts#L559) (rules: string) → string <!-- internal -->
+    - fn [countProposed](../../src/operations/draft.ts#L564) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
+      - calls features.stats.updateStats, features.stats.addDrafts, base.diag.errorText
+    - fn [modelDraft](../../src/operations/draft.ts#L574) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
+      - calls operations.draft.flowSteps, base.diag.errorText
+    - fn [flowSteps](../../src/operations/draft.ts#L592) (text: string, trigger: string) → string[] <!-- internal -->
+      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
+    - fn [draftCountsText](../../src/operations/draft.ts#L604) (counts: Record<string, number>) → string <!-- internal -->
+    - fn [draftNotes](../../src/operations/draft.ts#L609) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
+  - module [explain](../../src/operations/explain.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - diag base.diag
+    - explain-llm features.explain-llm
+    - agent-cli features.agent-cli
+    - explain-inventory features.explain-inventory
+    - explain-node features.explain-node
+    - explain-offline features.explain-offline
+    - explanations map.explanations
+    - files lang.files
+    - map map.map
+    - safe-write base.safe-write
+    - span base.span
+    - types operations.types
+    - shared operations.shared
+    - llm features.llm
+    - fn [runExplain](../../src/operations/explain.ts#L29) (request: ExplainRequest, context: OperationContext) → Promise<OperationEnvelope<"explain">>
+      - calls operations.shared.empty, features.explain-offline.isDiagnosticCode, features.explain-offline.codeExplanation, features.explain-offline.offlineExplanationText, map.analyze.analyze, base.diag.errorText, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-offline.nodeExplanation, features.explain-offline.unknownIdMessage
+    - fn [runExplainLlm](../../src/operations/explain.ts#L77) (request: ExplainLlmRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-llm">>
+      - calls operations.shared.empty, features.explain-offline.isDiagnosticCode, base.diag.errorText, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-offline.nodeExplanation, features.explain-offline.unknownIdMessage, map.explanations.explanationPath, lang.files.readTextOrNull, features.explain-llm.readExplanation, features.explain-offline.savedAnswer, features.explain-offline.savedAnswerMiss, features.agent-cli.selectedAgent, features.explain-offline.savedAnswerText, features.explain-node.formatSummary, map.map.sourceInputs, operations.shared.specHashes, features.explain-llm.explanationRequest, map.explanations.loadBriefs, features.explain-llm.briefText, features.explain-llm.answerText, features.explain-llm.currentBaseline, base.safe-write.writeProblem, map.explanations.explainDir, map.map.sourceInputProblems, operations.shared.specProblems, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation
+    - fn [runExplainPlan](../../src/operations/explain.ts#L203) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">>
+      - calls operations.shared.empty, map.analyze.analyze, base.diag.errorText, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.staleInventory, features.explain-inventory.staleInventoryText, features.explain-inventory.briefPlan, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlanText
+    - fn [explainBatchText](../../src/operations/explain.ts#L237) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
+    - fn [runExplainBatch](../../src/operations/explain.ts#L260) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">>
+      - calls operations.shared.empty, base.diag.errorText, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlan, map.map.sourceInputs, operations.shared.specHashes, map.map.sourceInputProblems, operations.shared.specProblems, map.explanations.explanationPath, lang.files.readTextOrNull, map.explanations.loadBriefs, features.explain-llm.briefRequest, features.explain-llm.briefText, base.safe-write.writeProblem, map.explanations.explainDir, map.explanations.systemBaseline, features.explain-llm.currentBaseline, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation, base.span.compareText, operations.explain.explainBatchText
+  - module [export](../../src/operations/export.ts#L1)
+    - node external.node
+    - analyze map.analyze
+    - c4-export map.c4-export
+    - check-format features.check-format
+    - config base.config
+    - diag base.diag
+    - explanations map.explanations
+    - files lang.files
+    - parse-format lang.parse-format
+    - fact-cache map.fact-cache
+    - proposals features.proposals
+    - map map.map
+    - safe-write base.safe-write
+    - trace-plan map.trace-plan
+    - types operations.types
+    - shared operations.shared
+    - fn [exportFormatOf](../../src/operations/export.ts#L23) (source: ExportSource) → ExportFormat
+    - fn [exportText](../../src/operations/export.ts#L28) (source: ExportSource) → string
+      - calls features.check-format.checkReportText, lang.parse-format.parseReportText, map.trace-plan.tracePlanText
+    - fn [exportTargetProblem](../../src/operations/export.ts#L44) (root: string, path: string, dir: string = savedSpecDir(root)) → string | null
+      - calls operations.export.savedSpecDir, base.safe-write.writeProblem, base.safe-write.landing, base.config.toPosix
+    - fn [savedSpecDir](../../src/operations/export.ts#L61) (root: string) → string <!-- internal -->
+      - calls base.config.parseConfig
+    - fn [runExport](../../src/operations/export.ts#L78) (request: ExportRequest, context: OperationContext) → Promise<OperationEnvelope<"export">>
+      - calls operations.shared.empty, operations.export.exportText, operations.export.exportFormatOf, base.diag.errorText, operations.export.exportTargetProblem, base.safe-write.writeProblem, base.safe-write.landing, base.safe-write.writeAtomic
+    - fn [c4OutProblem](../../src/operations/export.ts#L132) (root: string, out: string) → string | null
+      - calls operations.shared.rootRelative, base.safe-write.writeProblem, base.diag.errorText
+    - fn [runExportC4](../../src/operations/export.ts#L149) (request: ExportC4Request, context: OperationContext) → Promise<OperationEnvelope<"export-c4">>
+      - calls operations.shared.empty, operations.export.c4OutProblem, base.diag.errorText, map.explanations.loadBriefs, map.explanations.explanationOf, map.c4-export.renderC4, operations.shared.rootRelative, lang.files.existingText, map.c4-export.isC4Diagram, base.safe-write.safeWrite
+  - module [feature](../../src/operations/feature.ts#L1)
     - node external.node
     - agent-context features.agent-context
     - analyze map.analyze
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - proposals features.proposals
+    - feature-status features.feature-status
+    - map map.map
+    - safe-write base.safe-write
+    - git-changes features.git-changes
+    - types operations.types
+    - shared operations.shared
+    - llm features.llm
+    - fn [featureSlugOf](../../src/operations/feature.ts#L23) (path: string, dir: string) → string | null
+    - fn [runFeature](../../src/operations/feature.ts#L37) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">>
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.readFeatureBase, operations.feature.featureReportOf, operations.feature.gapLine, operations.feature.hintLine, operations.feature.featureSummary
+    - fn [featureReportOf](../../src/operations/feature.ts#L83) (analyzed: Analysis, slug: string, base: FeatureBase) → FeatureReport | null
+      - calls features.git-changes.deletedModuleIds, features.feature-status.featureStatus
+    - fn [gapLine](../../src/operations/feature.ts#L106) (gap: Gap) → string
+    - fn [hintLine](../../src/operations/feature.ts#L111) (hint: Hint) → string
+    - fn [featureSummary](../../src/operations/feature.ts#L116) (report: FeatureReport) → string
+    - fn [questionLines](../../src/operations/feature.ts#L124) (answer: string) → { questions: string[]; dropped: number }
+    - fn [withQuestions](../../src/operations/feature.ts#L137) (text: string, questions: readonly string[], slug: string) → string
+    - fn [runFeatureQuestions](../../src/operations/feature.ts#L161) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">>
+      - calls operations.shared.empty, base.diag.errorText, operations.shared.modelSetup, operations.shared.rootRelative, operations.shared.generatedIn, features.proposals.proposalProblem, lang.files.existingText, base.safe-write.writeProblem, operations.shared.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.feature.questionLines, operations.shared.commitProposal, operations.feature.withQuestions
+  - module [generate](../../src/operations/generate.ts#L1)
+    - node external.node
+    - analyze map.analyze
     - baseline features.baseline
-    - c4-export map.c4-export
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - harness features.harness
+    - map map.map
+    - safe-write base.safe-write
+    - snapshot map.snapshot
+    - wire-gen map.wire-gen
+    - types operations.types
+    - shared operations.shared
+    - fn [runMapCheck](../../src/operations/generate.ts#L26) (request: MapCheckRequest, context: OperationContext) → Promise<OperationEnvelope<"map-check">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.diffMap, base.config.toPosix, operations.generate.mapCheckLines
+    - fn [runMap](../../src/operations/generate.ts#L69) (request: MapRequest, context: OperationContext) → Promise<OperationEnvelope<"map">>
+      - calls operations.shared.empty, base.diag.errorText, map.map.planMap, operations.generate.mapConflictLines, map.map.mapPlanProblems, map.map.commitMap, operations.generate.mapStepLines
+    - fn [mapConflictLines](../../src/operations/generate.ts#L145) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapStepLines](../../src/operations/generate.ts#L154) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
+    - fn [mapSummary](../../src/operations/generate.ts#L160) (payload: MapPayload) → string
+    - fn [mapCheckLines](../../src/operations/generate.ts#L177) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
+      - calls operations.generate.mapConflictLines
+    - fn [runBaseline](../../src/operations/generate.ts#L195) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">>
+      - calls operations.shared.empty, base.diag.errorText, features.baseline.planBaseline, features.baseline.baselinePlanProblems, features.baseline.commitBaseline
+    - fn [runAgents](../../src/operations/generate.ts#L274) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">>
+      - calls operations.shared.empty, features.harness.planAgents, base.diag.errorText, features.harness.agentsPlanProblems, features.harness.commitAgents
+    - fn [initSources](../../src/operations/generate.ts#L347) (root: string, label = ".") → { config: Config } | { error: string }
+      - calls base.config.loadConfig, base.diag.errorText
+    - fn [ignoresKeylangCache](../../src/operations/generate.ts#L366) (text: string) → boolean <!-- internal -->
+    - fn [withKeylangCacheIgnored](../../src/operations/generate.ts#L375) (current: string | null) → string <!-- internal -->
+      - calls base.safe-write.allCrlf
+    - type [GitignorePlan](../../src/operations/generate.ts#L385) <!-- internal -->
+    - fn [planGitignore](../../src/operations/generate.ts#L392) (root: string) → GitignorePlan <!-- internal -->
+      - calls base.safe-write.writeProblem, base.safe-write.landing, lang.files.existingText, base.diag.errorText, operations.generate.ignoresKeylangCache, operations.generate.withKeylangCacheIgnored
+    - fn [commitGitignore](../../src/operations/generate.ts#L408) (root: string, plan: GitignorePlan) → string | null <!-- internal -->
+      - calls base.safe-write.writeProblem, base.safe-write.landing, base.safe-write.writeAtomic
+    - fn [gitignoreCode](../../src/operations/generate.ts#L419) (stage: GitignoreStage) → 0 | 1 | 2 <!-- internal -->
+    - fn [gitignoreMessage](../../src/operations/generate.ts#L425) (stage: GitignoreStage) → OperationMessage | null
+    - fn [runInit](../../src/operations/generate.ts#L451) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">>
+      - calls operations.shared.empty, operations.generate.initSources, base.config.guessLayout, operations.generate.runAgents, operations.generate.runBaseline, operations.generate.planGitignore, operations.generate.gitignoreMessage, operations.generate.gitignoreCode, base.diag.errorText, base.safe-write.writeAtomic, base.config.configToJson, operations.generate.commitGitignore, operations.generate.runMap
+    - fn [runWire](../../src/operations/generate.ts#L570) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">>
+      - calls operations.shared.empty, operations.generate.wireOutProblem, operations.generate.wireSpecInputs, base.config.loadConfig, base.diag.errorText, operations.generate.wiringErrors, map.wire-gen.generateWire, base.safe-write.landing, lang.files.existingText, map.map.sourceInputs, base.safe-write.writeProblem, map.map.sourceInputProblems, operations.generate.wireSpecProblems, base.safe-write.writeAtomic
+    - fn [wireOutProblem](../../src/operations/generate.ts#L661) (root: string, out: string) → string | null
+      - calls base.safe-write.writeProblem, base.diag.errorText
+    - fn [wiringErrors](../../src/operations/generate.ts#L672) (analysis: Analysis) → Diagnostic[] <!-- internal -->
+      - calls base.diag.isError
+    - type [WireSpecInputs](../../src/operations/generate.ts#L685) <!-- internal -->
+    - fn [wireSpecInputs](../../src/operations/generate.ts#L691) (config: Config) → WireSpecInputs <!-- internal -->
+      - calls lang.files.collectMdFiles, map.analyze.within, lang.files.readTextOrNull, base.config.toPosix, map.snapshot.sha256
+    - fn [wireSpecProblems](../../src/operations/generate.ts#L707) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
+      - calls operations.generate.wireSpecInputs
+  - module [shared](../../src/operations/shared.ts#L1)
+    - node external.node
+    - config base.config
+    - diag base.diag
+    - files lang.files
+    - ir lang.ir
+    - proposals features.proposals
+    - map map.map
+    - safe-write base.safe-write
+    - snapshot map.snapshot
+    - types operations.types
+    - llm features.llm
+    - fn [resultWithout](../../src/operations/shared.ts#L22) (kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationResult
+      - calls operations.shared.empty
+    - type [EnvelopeOf](../../src/operations/shared.ts#L27) = { [K in OperationRequest["kind"]]: OperationEnvelope<K> } <!-- internal -->
+    - fn [empty](../../src/operations/shared.ts#L35) (kind: K, status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → EnvelopeOf[K]
+    - fn [rootRelative](../../src/operations/shared.ts#L41) (root: string, path: string) → string
+      - calls base.config.toPosix
+    - fn [generatedIn](../../src/operations/shared.ts#L46) (docs: readonly Document[]) → (path: string) => boolean
+    - fn [specHashes](../../src/operations/shared.ts#L51) (root: string, docs: readonly Document[]) → CandidateBasis["specs"]
+      - calls operations.shared.hashOrNull, lang.files.readTextOrNull
+    - fn [hashOrNull](../../src/operations/shared.ts#L56) (text: string | null) → string | null <!-- internal -->
+      - calls map.snapshot.sha256
+    - fn [specProblems](../../src/operations/shared.ts#L61) (root: string, specs: CandidateBasis["specs"], subject = "the candidate") → string[]
+      - calls operations.shared.hashOrNull, lang.files.readTextOrNull
+    - fn [modelSetup](../../src/operations/shared.ts#L70) (mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }>
+    - fn [proposalRefusal](../../src/operations/shared.ts#L85) (root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft") → { exitCode: 1 | 2; error: string; refused: string[] } | null
+      - calls base.safe-write.writeProblem
+    - type [ProposalCommit](../../src/operations/shared.ts#L98) <!-- internal -->
+    - fn [commitProposal](../../src/operations/shared.ts#L118) (commit: ProposalCommit, context: OperationContext) → Promise<{ proposal: string } | { refused: string[] } | { failed: string; writing: boolean } | { cancelled: true }>
+      - calls base.diag.errorText, features.proposals.proposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, features.proposals.writeProposal
+  - module [spec](../../src/operations/spec.ts#L1)
+    - node external.node
+    - analyze map.analyze
     - changed features.changed
+    - check-results features.check-results
+    - config base.config
+    - diag base.diag
+    - explain-edge features.explain-edge
+    - explanations map.explanations
+    - files lang.files
+    - fmt lang.fmt
+    - ir lang.ir
+    - parser lang.parser
+    - parse-format lang.parse-format
+    - safe-write base.safe-write
+    - span base.span
+    - git-changes features.git-changes
+    - trace-plan map.trace-plan
+    - types operations.types
+    - shared operations.shared
+    - fn [runFmt](../../src/operations/spec.ts#L40) (request: FmtRequest, context: OperationContext) → Promise<OperationEnvelope<"fmt">>
+      - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, base.config.toPosix, base.diag.errorText, map.explanations.isStoredExplanation, base.safe-write.isGeneratedText, operations.spec.generatorCommand, lang.fmt.formatSource, base.safe-write.allCrlf, operations.spec.fmtMessages, operations.spec.commitFormatted
+    - fn [commitFormatted](../../src/operations/spec.ts#L135) (root: string, abs: string, source: string, text: string) → void <!-- internal -->
+      - calls base.safe-write.landing, map.analyze.within, base.safe-write.writeAtomic
+    - fn [generatorCommand](../../src/operations/spec.ts#L145) (source: string) → string | null <!-- internal -->
+    - fn [fmtGeneratedNote](../../src/operations/spec.ts#L151) (file: FmtFile) → string
+    - fn [fmtMessages](../../src/operations/spec.ts#L161) (payload: FmtPayload) → OperationMessage[]
+      - calls base.diag.formatDiagnostic, operations.spec.fmtGeneratedNote
+    - fn [runCheck](../../src/operations/spec.ts#L188) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">>
+      - calls operations.shared.empty, base.config.loadConfig, base.diag.errorText, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.config.resolveStatic, operations.spec.checkSkipNote, operations.spec.checkSummary, features.check-results.checkExitCode
+    - fn [checkSkipNote](../../src/operations/spec.ts#L271) (path: string) → string
+    - fn [checkSummary](../../src/operations/spec.ts#L281) (counts: CheckCounts) → string
+    - fn [runExplainEdge](../../src/operations/spec.ts#L295) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">>
+      - calls operations.shared.empty, map.analyze.analyze, base.diag.errorText, features.explain-edge.edgeIdKnown, features.explain-edge.explainEdge, features.explain-edge.edgeExplanationLines
+    - fn [runParse](../../src/operations/spec.ts#L328) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">>
+      - calls operations.shared.empty, base.config.assertFormatOnly, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, base.diag.errorText, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
+    - fn [runTracePlan](../../src/operations/spec.ts#L373) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">>
+      - calls operations.shared.empty, map.trace-plan.tracePlan, base.config.loadConfig, base.diag.errorText, map.trace-plan.tracePlanText
+  - module [types](../../src/operations/types.ts#L1)
+    - analyze map.analyze
+    - c4-export map.c4-export
     - check-format features.check-format
     - check-results features.check-results
     - config base.config
@@ -21,276 +325,95 @@
     - explain-node features.explain-node
     - explain-offline features.explain-offline
     - explanations map.explanations
-    - files lang.files
-    - fmt lang.fmt
     - ir lang.ir
-    - parser lang.parser
     - parse-format lang.parse-format
-    - fact-cache map.fact-cache
-    - proposals features.proposals
-    - spec-to-code features.spec-to-code
     - verdict check.verdict
-    - draft features.draft
     - feature-status features.feature-status
     - harness features.harness
     - graph map.graph
-    - llm features.llm
     - draft-llm features.draft-llm
-    - stats features.stats
     - map map.map
-    - scc check.scc
-    - safe-write base.safe-write
     - snapshot map.snapshot
-    - span base.span
     - voice-local features.voice-local
-    - voice features.voice
-    - git-changes features.git-changes
-    - wire-gen map.wire-gen
     - trace-plan map.trace-plan
-    - type [DoctorRequest](../../src/operations.ts#L55)
-    - type [FeatureQuestionsRequest](../../src/operations.ts#L62)
-    - type [FeatureRequest](../../src/operations.ts#L71)
-    - type [MapCheckRequest](../../src/operations.ts#L82)
-    - type [MapRequest](../../src/operations.ts#L91)
-    - type [BaselineRequest](../../src/operations.ts#L103)
-    - type [AgentsRequest](../../src/operations.ts#L116)
-    - type [FmtRequest](../../src/operations.ts#L131)
-    - type [ParseRequest](../../src/operations.ts#L148)
-    - type [WireRequest](../../src/operations.ts#L168)
-    - type [CheckRequest](../../src/operations.ts#L183)
-    - type [ExplainEdgeRequest](../../src/operations.ts#L209)
-    - type [ExplainRequest](../../src/operations.ts#L224)
-    - type [ExplainLlmRequest](../../src/operations.ts#L243)
-    - type [ExplainPlanRequest](../../src/operations.ts#L259)
-    - type [ExplainBatchRequest](../../src/operations.ts#L287)
-    - type [ExportSource](../../src/operations.ts#L304)
-    - type [ExportFormat](../../src/operations.ts#L311) = CheckFormat | ParseFormat
-    - type [TracePlanRequest](../../src/operations.ts#L318)
-    - type [DraftFlowRequest](../../src/operations.ts#L338)
-    - type [DraftRulesRequest](../../src/operations.ts#L377)
-    - type [CodeToSpecRequest](../../src/operations.ts#L408)
-    - type [CodeToSpecSource](../../src/operations.ts#L424)
-    - type [SpecToCodeRequest](../../src/operations.ts#L449)
-    - type [ApplyCodeRequest](../../src/operations.ts#L475)
-    - type [DraftLayoutRequest](../../src/operations.ts#L501)
-    - type [ExportRequest](../../src/operations.ts#L516)
-    - type [ExportC4Request](../../src/operations.ts#L531)
-    - type [InitRequest](../../src/operations.ts#L551)
-    - type [OperationRequest](../../src/operations.ts#L563)
-    - type [OperationContext](../../src/operations.ts#L569)
-    - type [OperationProgress](../../src/operations.ts#L591)
-    - type [BatchStep](../../src/operations.ts#L597)
-    - type [CommitPlan](../../src/operations.ts#L608)
-    - type [CommitGate](../../src/operations.ts#L614) = void | { refused: string[] }
-    - type [OperationStatus](../../src/operations.ts#L616) = "completed" | "failed" | "cancelled"
-    - type [OperationMessage](../../src/operations.ts#L618)
-    - type [DoctorPayload](../../src/operations.ts#L625)
-    - type [FeatureQuestionsPayload](../../src/operations.ts#L674)
-    - type [ExportC4Payload](../../src/operations.ts#L688)
-    - type [FeaturePayload](../../src/operations.ts#L698)
-    - type [MapCheckPayload](../../src/operations.ts#L709)
-    - type [MapPayload](../../src/operations.ts#L728)
-    - type [BaselinePayload](../../src/operations.ts#L744)
-    - type [AgentsPayload](../../src/operations.ts#L772)
-    - type [FmtFile](../../src/operations.ts#L797)
-    - type [FmtPayload](../../src/operations.ts#L810)
-    - type [ParsePayload](../../src/operations.ts#L816)
-    - type [TracePlanPayload](../../src/operations.ts#L831)
-    - type [FlowCandidate](../../src/operations.ts#L845)
-    - type [DraftFlowPayload](../../src/operations.ts#L865)
-    - type [RulesCandidate](../../src/operations.ts#L890)
-    - type [DraftRulesPayload](../../src/operations.ts#L906)
-    - type [CodeFlow](../../src/operations.ts#L930)
-    - type [CodeToSpecCandidate](../../src/operations.ts#L944)
-    - type [CodeToSpecPayload](../../src/operations.ts#L969)
-    - type [CodeModelInfo](../../src/operations.ts#L996)
-    - type [CodeProposalTarget](../../src/operations.ts#L1005)
-    - type [SpecToCodeCandidate](../../src/operations.ts#L1021)
-    - type [CandidateBasis](../../src/operations.ts#L1037) extends SourceInputs
-    - type [AppliedFile](../../src/operations.ts#L1043)
-    - type [ApplyCodePayload](../../src/operations.ts#L1052)
-    - type [SpecCodeModelInfo](../../src/operations.ts#L1063)
-    - type [SpecToCodePayload](../../src/operations.ts#L1070)
-    - type [DraftLayoutPayload](../../src/operations.ts#L1087)
-    - type [RulesModelInfo](../../src/operations.ts#L1103)
-    - type [DraftModelInfo](../../src/operations.ts#L1111)
-    - type [WirePayload](../../src/operations.ts#L1122)
-    - type [CheckPayload](../../src/operations.ts#L1150)
-    - type [ChangedSlice](../../src/operations.ts#L1175)
-    - type [ExplainEdgePayload](../../src/operations.ts#L1190) extends EdgeExplanation
-    - type [ExplainPayload](../../src/operations.ts#L1198)
-    - type [ExplainLlmPayload](../../src/operations.ts#L1211)
-    - type [ExplainPlanPayload](../../src/operations.ts#L1241)
-    - type [ExplainBatchPayload](../../src/operations.ts#L1256)
-    - type [ExportPayload](../../src/operations.ts#L1281)
-    - type [InitPayload](../../src/operations.ts#L1303)
-    - type [OperationPayloads](../../src/operations.ts#L1329)
-    - type [OperationResult](../../src/operations.ts#L1359)
-    - type [OperationEnvelope](../../src/operations.ts#L1361)
-    - fn [runOperation](../../src/operations.ts#L1382) (request: DoctorRequest, context?: OperationContext) → Promise<OperationEnvelope<"doctor">>
-      - calls operations.operations.runDoctor, operations.operations.runFeature, operations.operations.runFeatureQuestions, operations.operations.runExportC4, operations.operations.runMapCheck, operations.operations.runMap, operations.operations.runBaseline, operations.operations.runAgents, operations.operations.runFmt, operations.operations.runWire, operations.operations.runCheck, operations.operations.runExplainEdge, operations.operations.runExplain, operations.operations.runExplainLlm, operations.operations.runExplainPlan, operations.operations.runExplainBatch, operations.operations.runInit, operations.operations.runExport, operations.operations.runParse, operations.operations.runTracePlan, operations.operations.runDraftFlow, operations.operations.runDraftRules, operations.operations.runDraftLayout, operations.operations.runCodeToSpec, operations.operations.runSpecToCode, operations.operations.runApplyCode
-    - fn [resultWithout](../../src/operations.ts#L1470) (kind: OperationRequest["kind"], status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationResult
-    - fn [emptyMapCheck](../../src/operations.ts#L1528) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map-check"> <!-- internal -->
-    - fn [runMapCheck](../../src/operations.ts#L1538) (request: MapCheckRequest, context: OperationContext) → Promise<OperationEnvelope<"map-check">> <!-- internal -->
-      - calls operations.operations.emptyMapCheck, operations.operations.messageOf, map.map.diffMap, base.config.toPosix, operations.operations.mapCheckLines
-    - fn [emptyMap](../../src/operations.ts#L1570) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"map"> <!-- internal -->
-    - fn [runMap](../../src/operations.ts#L1585) (request: MapRequest, context: OperationContext) → Promise<OperationEnvelope<"map">> <!-- internal -->
-      - calls operations.operations.emptyMap, operations.operations.messageOf, map.map.planMap, operations.operations.mapConflictLines, map.map.mapPlanProblems, map.map.commitMap, operations.operations.mapStepLines
-    - fn [mapConflictLines](../../src/operations.ts#L1661) (conflicts: readonly string[], path: (file: string) => string = (file) => file) → string[]
-    - fn [mapStepLines](../../src/operations.ts#L1670) (steps: readonly CommittedStep[], path: (file: string) => string = (file) => file) → string[]
-    - fn [mapSummary](../../src/operations.ts#L1676) (payload: MapPayload) → string
-    - fn [mapCheckLines](../../src/operations.ts#L1693) (diff: { conflicts: readonly string[]; stale: readonly string[] }, path: (file: string) => string = (file) => file) → string[]
-      - calls operations.operations.mapConflictLines
-    - fn [emptyBaseline](../../src/operations.ts#L1699) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"baseline"> <!-- internal -->
-    - fn [runBaseline](../../src/operations.ts#L1715) (request: BaselineRequest, context: OperationContext) → Promise<OperationEnvelope<"baseline">> <!-- internal -->
-      - calls operations.operations.emptyBaseline, operations.operations.messageOf, features.baseline.planBaseline, features.baseline.baselinePlanProblems, features.baseline.commitBaseline
-    - fn [emptyAgents](../../src/operations.ts#L1782) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"agents"> <!-- internal -->
-    - fn [runAgents](../../src/operations.ts#L1798) (request: AgentsRequest, context: OperationContext) → Promise<OperationEnvelope<"agents">> <!-- internal -->
-      - calls operations.operations.emptyAgents, features.harness.planAgents, operations.operations.messageOf, features.harness.agentsPlanProblems, features.harness.commitAgents
-    - fn [emptyInit](../../src/operations.ts#L1865) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"init"> <!-- internal -->
-    - fn [initSources](../../src/operations.ts#L1875) (root: string, label = ".") → { config: Config } | { error: string }
-      - calls base.config.loadConfig, operations.operations.messageOf
-    - fn [runInit](../../src/operations.ts#L1902) (request: InitRequest, context: OperationContext) → Promise<OperationEnvelope<"init">> <!-- internal -->
-      - calls operations.operations.emptyInit, operations.operations.initSources, base.config.guessLayout, operations.operations.runAgents, operations.operations.runBaseline, operations.operations.messageOf, base.safe-write.writeAtomic, base.config.configToJson, operations.operations.runMap
-    - fn [emptyFmt](../../src/operations.ts#L1987) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"fmt"> <!-- internal -->
-    - fn [runFmt](../../src/operations.ts#L2003) (request: FmtRequest, context: OperationContext) → Promise<OperationEnvelope<"fmt">> <!-- internal -->
-      - calls operations.operations.emptyFmt, base.config.assertFormatOnly, lang.files.collectMdFiles, base.config.toPosix, operations.operations.messageOf, map.explanations.isStoredExplanation, lang.fmt.formatSource, operations.operations.fmtMessages, operations.operations.commitFormatted
-    - fn [commitFormatted](../../src/operations.ts#L2089) (abs: string, source: string, text: string) → void <!-- internal -->
-      - calls base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [fmtMessages](../../src/operations.ts#L2101) (payload: FmtPayload) → OperationMessage[]
-      - calls base.diag.formatDiagnostic
-    - fn [emptyWire](../../src/operations.ts#L2115) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"wire"> <!-- internal -->
-    - fn [runWire](../../src/operations.ts#L2134) (request: WireRequest, context: OperationContext) → Promise<OperationEnvelope<"wire">> <!-- internal -->
-      - calls operations.operations.emptyWire, operations.operations.wireOutProblem, operations.operations.wireSpecInputs, base.config.loadConfig, operations.operations.messageOf, operations.operations.wiringErrors, map.wire-gen.generateWire, base.safe-write.landing, map.map.sourceInputs, base.safe-write.writeProblem, map.map.sourceInputProblems, operations.operations.wireSpecProblems, base.safe-write.writeAtomic
-    - fn [wireOutProblem](../../src/operations.ts#L2225) (root: string, out: string) → string | null
-      - calls base.safe-write.writeProblem, operations.operations.messageOf
-    - fn [wiringErrors](../../src/operations.ts#L2236) (analysis: Analysis) → Diagnostic[] <!-- internal -->
-      - calls base.diag.isError
-    - type [WireSpecInputs](../../src/operations.ts#L2249) <!-- internal -->
-    - fn [wireSpecInputs](../../src/operations.ts#L2255) (config: Config) → WireSpecInputs <!-- internal -->
-      - calls lang.files.collectMdFiles, map.analyze.within, operations.operations.readTextOrNull, base.config.toPosix, map.snapshot.sha256
-    - fn [wireSpecProblems](../../src/operations.ts#L2271) (config: Config, before: WireSpecInputs) → string[] <!-- internal -->
-      - calls operations.operations.wireSpecInputs
-    - fn [readTextOrNull](../../src/operations.ts#L2284) (abs: string) → string | null <!-- internal -->
-    - fn [emptyCheck](../../src/operations.ts#L2292) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"check"> <!-- internal -->
-    - fn [runCheck](../../src/operations.ts#L2306) (request: CheckRequest, context: OperationContext) → Promise<OperationEnvelope<"check">> <!-- internal -->
-      - calls operations.operations.emptyCheck, base.config.loadConfig, operations.operations.messageOf, features.git-changes.gitChangedFiles, map.analyze.within, base.config.toPosix, map.analyze.analyze, features.check-results.checkReport, features.git-changes.deletedModuleIds, features.changed.filterChanged, features.git-changes.changedPathSet, base.config.resolveStatic, operations.operations.checkSkipNote, operations.operations.checkSummary, features.check-results.checkExitCode
-    - fn [emptyExplainEdge](../../src/operations.ts#L2387) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-edge"> <!-- internal -->
-    - fn [runExplainEdge](../../src/operations.ts#L2399) (request: ExplainEdgeRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-edge">> <!-- internal -->
-      - calls operations.operations.emptyExplainEdge, map.analyze.analyze, operations.operations.messageOf, features.explain-edge.edgeIdKnown, features.explain-edge.explainEdge, features.explain-edge.edgeExplanationLines
-    - fn [emptyExplain](../../src/operations.ts#L2424) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain"> <!-- internal -->
-    - fn [runExplain](../../src/operations.ts#L2436) (request: ExplainRequest, context: OperationContext) → Promise<OperationEnvelope<"explain">> <!-- internal -->
-      - calls operations.operations.emptyExplain, features.explain-offline.isDiagnosticCode, features.explain-offline.codeExplanation, features.explain-offline.offlineExplanationText, map.analyze.analyze, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-offline.nodeExplanation, features.explain-offline.unknownIdMessage
-    - fn [emptyExplainLlm](../../src/operations.ts#L2468) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-llm"> <!-- internal -->
-    - fn [runExplainLlm](../../src/operations.ts#L2487) (request: ExplainLlmRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-llm">> <!-- internal -->
-      - calls operations.operations.emptyExplainLlm, features.explain-offline.isDiagnosticCode, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-offline.nodeExplanation, features.explain-offline.unknownIdMessage, map.explanations.explanationPath, operations.operations.readTextOrNull, features.explain-llm.readExplanation, features.explain-offline.savedAnswer, features.explain-offline.savedAnswerMiss, features.agent-cli.selectedAgent, features.explain-offline.savedAnswerText, features.explain-node.formatSummary, map.map.sourceInputs, operations.operations.specHashes, features.explain-llm.explanationRequest, map.explanations.loadBriefs, features.explain-llm.briefText, features.explain-llm.currentBaseline, base.safe-write.writeProblem, map.explanations.explainDir, map.map.sourceInputProblems, operations.operations.specProblems, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation
-    - fn [emptyExplainPlan](../../src/operations.ts#L2606) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-plan"> <!-- internal -->
-    - fn [runExplainPlan](../../src/operations.ts#L2617) (request: ExplainPlanRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-plan">> <!-- internal -->
-      - calls operations.operations.emptyExplainPlan, map.analyze.analyze, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.staleInventory, features.explain-inventory.staleInventoryText, features.explain-inventory.briefPlan, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlanText
-    - fn [emptyExplainBatch](../../src/operations.ts#L2650) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"explain-batch"> <!-- internal -->
-    - fn [explainBatchText](../../src/operations.ts#L2655) (payload: Pick<ExplainBatchPayload, "done" | "failed" | "plan">) → string <!-- internal -->
-    - fn [runExplainBatch](../../src/operations.ts#L2674) (request: ExplainBatchRequest, context: OperationContext) → Promise<OperationEnvelope<"explain-batch">> <!-- internal -->
-      - calls operations.operations.emptyExplainBatch, operations.operations.messageOf, features.explain-llm.oldExplanations, features.explain-llm.moveHint, features.explain-inventory.defaultBriefJobs, features.agent-cli.selectedAgent, features.explain-inventory.briefPlan, map.map.sourceInputs, operations.operations.specHashes, map.explanations.explanationPath, operations.operations.readTextOrNull, map.explanations.loadBriefs, features.explain-llm.briefRequest, features.explain-llm.briefText, base.safe-write.writeProblem, map.explanations.explainDir, map.map.sourceInputProblems, operations.operations.specProblems, map.explanations.systemBaseline, features.explain-llm.currentBaseline, base.safe-write.writeAtomic, base.safe-write.landing, map.explanations.formatStoredExplanation, base.span.compareText, operations.operations.explainBatchText
-    - fn [emptyExport](../../src/operations.ts#L2823) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"export"> <!-- internal -->
-    - fn [exportFormatOf](../../src/operations.ts#L2828) (source: ExportSource) → ExportFormat
-    - fn [exportText](../../src/operations.ts#L2833) (source: ExportSource) → string
-      - calls features.check-format.checkReportText, lang.parse-format.parseReportText, map.trace-plan.tracePlanText
-    - fn [exportTargetProblem](../../src/operations.ts#L2847) (root: string, path: string) → string | null
-      - calls base.safe-write.writeProblem, base.safe-write.landing, base.config.toPosix, operations.operations.specDirOf
-    - fn [specDirOf](../../src/operations.ts#L2860) (root: string) → string <!-- internal -->
-    - fn [runExport](../../src/operations.ts#L2878) (request: ExportRequest, context: OperationContext) → Promise<OperationEnvelope<"export">> <!-- internal -->
-      - calls operations.operations.emptyExport, operations.operations.exportText, operations.operations.exportFormatOf, operations.operations.messageOf, operations.operations.exportTargetProblem, base.safe-write.writeProblem, base.safe-write.landing, base.safe-write.writeAtomic
-    - fn [emptyParse](../../src/operations.ts#L2923) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"parse"> <!-- internal -->
-    - fn [runParse](../../src/operations.ts#L2935) (request: ParseRequest, context: OperationContext) → Promise<OperationEnvelope<"parse">> <!-- internal -->
-      - calls operations.operations.emptyParse, base.config.assertFormatOnly, lang.files.collectMdFiles, map.explanations.isStoredExplanation, lang.parser.parse, operations.operations.messageOf, base.diag.isError, base.diag.formatDiagnostic, lang.parse-format.parseReportText
-    - fn [emptyTracePlan](../../src/operations.ts#L2973) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"trace-plan"> <!-- internal -->
-    - fn [runTracePlan](../../src/operations.ts#L2984) (request: TracePlanRequest, context: OperationContext) → Promise<OperationEnvelope<"trace-plan">> <!-- internal -->
-      - calls operations.operations.emptyTracePlan, map.trace-plan.tracePlan, base.config.loadConfig, operations.operations.messageOf, map.trace-plan.tracePlanText
-    - fn [emptyDraftFlow](../../src/operations.ts#L3002) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-flow"> <!-- internal -->
-    - fn [flowCandidate](../../src/operations.ts#L3012) (root: string, specDir: string, generated: (path: string) => boolean, draft: FlowDraft, into?: string) → FlowCandidate
-      - calls base.config.toPosix, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, features.draft.withFlow
-    - fn [runDraftFlow](../../src/operations.ts#L3038) (request: DraftFlowRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-flow">> <!-- internal -->
-      - calls operations.operations.emptyDraftFlow, operations.operations.messageOf, map.map.sourceInputs, features.draft.draftFlow, operations.operations.modelSetup, base.config.toPosix, operations.operations.flowCandidate, operations.operations.proposalRefusal, operations.operations.modelDraft, features.draft.withFlow, operations.operations.draftCountsText, operations.operations.draftNotes, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptyDraftRules](../../src/operations.ts#L3129) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-rules"> <!-- internal -->
-    - fn [rulesCandidate](../../src/operations.ts#L3139) (root: string, specDir: string, generated: (path: string) => boolean, rules: string, into?: string) → RulesCandidate
-      - calls base.config.toPosix, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, features.draft.withRules
-    - fn [runDraftRules](../../src/operations.ts#L3160) (request: DraftRulesRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-rules">> <!-- internal -->
-      - calls operations.operations.emptyDraftRules, operations.operations.messageOf, map.map.sourceInputs, check.scc.stronglyConnected, features.draft.draftRules, operations.operations.modelSetup, base.config.toPosix, operations.operations.rulesCandidate, operations.operations.proposalRefusal, operations.operations.rulesCountText, features.draft.withRules, operations.operations.draftCountsText, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptyDraftLayout](../../src/operations.ts#L3255) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"draft-layout"> <!-- internal -->
-    - fn [runDraftLayout](../../src/operations.ts#L3268) (request: DraftLayoutRequest, context: OperationContext) → Promise<OperationEnvelope<"draft-layout">> <!-- internal -->
-      - calls operations.operations.emptyDraftLayout, base.config.loadConfig, operations.operations.messageOf, operations.operations.modelSetup, base.config.guessLayout, base.config.configToJson
-    - fn [emptyCodeToSpec](../../src/operations.ts#L3315) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"code-to-spec"> <!-- internal -->
-    - type [CodeDrafted](../../src/operations.ts#L3320) <!-- internal -->
-    - fn [codeToSpecCandidate](../../src/operations.ts#L3335) (root: string, specDir: string, generated: (path: string) => boolean, drafted: CodeDrafted, target: string) → CodeToSpecCandidate
-      - calls operations.operations.codePosition, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, operations.operations.mergedFlows
-    - fn [mergedFlows](../../src/operations.ts#L3346) (before: string | null, drafts: readonly FlowDraft[]) → string | null <!-- internal -->
-      - calls features.draft.withFlow
-    - fn [codePosition](../../src/operations.ts#L3353) (drafted: CodeDrafted, target: string) → Pick<CodeToSpecCandidate, "file" | "line" | "since" | "name" | "flows" | "print" | "target"> <!-- internal -->
-    - fn [describedIds](../../src/operations.ts#L3359) (docs: readonly Document[]) → Set<string> <!-- internal -->
-      - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [runCodeToSpec](../../src/operations.ts#L3390) (request: CodeToSpecRequest, context: OperationContext) → Promise<OperationEnvelope<"code-to-spec">> <!-- internal -->
-      - calls operations.operations.emptyCodeToSpec, operations.operations.messageOf, map.map.sourceInputs, features.draft.changedFlows, features.git-changes.gitChangedLines, operations.operations.describedIds, features.draft.codeToSpec, operations.operations.modelSetup, base.config.toPosix, operations.operations.codeToSpecCandidate, operations.operations.codePosition, operations.operations.codeSummary, operations.operations.proposalRefusal, operations.operations.modelFlows, operations.operations.mergedFlows, operations.operations.commitProposal, operations.operations.countProposed
-    - fn [emptySpecToCode](../../src/operations.ts#L3506) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"spec-to-code"> <!-- internal -->
-    - fn [specToCodeCandidate](../../src/operations.ts#L3511) (root: string, built: CodeCandidate, basis: CandidateBasis) → SpecToCodeCandidate <!-- internal -->
-      - calls base.safe-write.writeProblem, operations.operations.existingText, features.spec-to-code.fileDiffText, features.spec-to-code.specToCodeText
-    - fn [specHashes](../../src/operations.ts#L3529) (root: string, docs: readonly Document[]) → CandidateBasis["specs"] <!-- internal -->
-      - calls operations.operations.hashOrNull, operations.operations.readTextOrNull
-    - fn [hashOrNull](../../src/operations.ts#L3533) (text: string | null) → string | null <!-- internal -->
-      - calls map.snapshot.sha256
-    - fn [specProblems](../../src/operations.ts#L3538) (root: string, specs: CandidateBasis["specs"], subject = "the candidate") → string[] <!-- internal -->
-      - calls operations.operations.hashOrNull, operations.operations.readTextOrNull
-    - fn [runSpecToCode](../../src/operations.ts#L3569) (request: SpecToCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"spec-to-code">> <!-- internal -->
-      - calls operations.operations.emptySpecToCode, operations.operations.messageOf, map.map.sourceInputs, operations.operations.specHashes, base.config.toPosix, operations.operations.modelSetup, features.spec-to-code.plannedCodeTarget, base.safe-write.writeProblem, operations.operations.existingText, operations.operations.specToCodeCandidate, features.spec-to-code.specToCode, features.proposals.codeProposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, operations.operations.specProblems, features.proposals.writeProposal
-    - fn [emptyApplyCode](../../src/operations.ts#L3710) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"apply-code"> <!-- internal -->
-    - fn [applyProblems](../../src/operations.ts#L3723) (request: ApplyCodeRequest) → { policy: string | null; refused: string[] } <!-- internal -->
-      - calls features.proposals.codeProposalProblem, base.safe-write.writeProblem, operations.operations.readTextOrNull, map.map.sourceInputProblems, base.config.loadConfig, operations.operations.specProblems
-    - fn [runApplyCode](../../src/operations.ts#L3763) (request: ApplyCodeRequest, context: OperationContext) → Promise<OperationEnvelope<"apply-code">> <!-- internal -->
-      - calls operations.operations.emptyApplyCode, operations.operations.applyProblems, operations.operations.messageOf, base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
-    - fn [codeSummary](../../src/operations.ts#L3840) (flows: readonly CodeFlow[], model: CodeModelInfo | null) → string <!-- internal -->
-      - calls operations.operations.draftCountsText
-    - fn [modelFlows](../../src/operations.ts#L3851) ( request: CodeToSpecRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, algo: readonly FlowDraft[], notes: OperationMessage[], context: OperationContext, ) → Promise<{ drafts: FlowDraft[]; model: CodeModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
-      - calls operations.operations.flowSteps, operations.operations.messageOf
-    - fn [rulesCountText](../../src/operations.ts#L3885) (rules: string) → string <!-- internal -->
-    - fn [proposalRefusal](../../src/operations.ts#L3895) (root: string, candidate: { target: string; problem: string | null; pending: string | null }, pending: "refuse" | "replace" | undefined, command = "draft") → { exitCode: 1 | 2; error: string; refused: string[] } | null <!-- internal -->
-      - calls base.safe-write.writeProblem
-    - type [ProposalCommit](../../src/operations.ts#L3908) <!-- internal -->
-    - fn [commitProposal](../../src/operations.ts#L3928) (commit: ProposalCommit, context: OperationContext) → Promise<{ proposal: string } | { refused: string[] } | { failed: string; writing: boolean } | { cancelled: true }> <!-- internal -->
-      - calls operations.operations.messageOf, features.proposals.proposalProblem, features.proposals.proposalWriteProblem, map.map.sourceInputProblems, features.proposals.writeProposal
-    - fn [countProposed](../../src/operations.ts#L3959) (root: string, counts: Record<DraftStatus, number>) → string | null <!-- internal -->
-      - calls features.stats.updateStats, features.stats.addDrafts, operations.operations.messageOf
-    - fn [modelSetup](../../src/operations.ts#L3973) (mode: "algo" | "llm" | "hybrid", config: Pick<Config, "agent" | "root">, command = "draft") → Promise<{ client: LlmClient | null; fallback: string | null } | { error: string }> <!-- internal -->
-    - fn [modelDraft](../../src/operations.ts#L3983) (request: DraftFlowRequest, mode: "llm" | "hybrid", analyzed: Analysis, client: LlmClient, context: OperationContext) → Promise<{ draft: FlowDraft; model: DraftModelInfo } | { error: string } | { cancelled: true }> <!-- internal -->
-      - calls operations.operations.flowSteps, operations.operations.messageOf
-    - fn [flowSteps](../../src/operations.ts#L4001) (text: string, trigger: string) → string[] <!-- internal -->
-      - calls lang.parser.parse, lang.ir.sectionNodes, lang.ir.walk
-    - fn [draftCountsText](../../src/operations.ts#L4013) (counts: Record<string, number>) → string <!-- internal -->
-    - fn [draftNotes](../../src/operations.ts#L4018) (payload: DraftFlowPayload) → OperationMessage[] <!-- internal -->
-    - fn [existingText](../../src/operations.ts#L4028) (abs: string) → string | null <!-- internal -->
-    - fn [checkSkipNote](../../src/operations.ts#L4032) (path: string) → string
-    - fn [checkSummary](../../src/operations.ts#L4037) (counts: CheckPayload["counts"]) → string
-    - fn [featureSlugOf](../../src/operations.ts#L4045) (path: string, dir: string) → string | null
-    - fn [emptyFeature](../../src/operations.ts#L4052) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature"> <!-- internal -->
-    - fn [runFeature](../../src/operations.ts#L4062) (request: FeatureRequest, context: OperationContext) → Promise<OperationEnvelope<"feature">> <!-- internal -->
-      - calls operations.operations.emptyFeature, base.config.loadConfig, operations.operations.messageOf, features.git-changes.readFeatureBase, operations.operations.featureReportOf, operations.operations.gapLine, operations.operations.hintLine, operations.operations.featureSummary
-    - fn [featureReportOf](../../src/operations.ts#L4103) (analyzed: Analysis, slug: string, base: FeatureBase) → FeatureReport | null
-      - calls features.feature-status.featureStatus
-    - fn [emptyFeatureQuestions](../../src/operations.ts#L4114) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"feature-questions"> <!-- internal -->
-    - fn [questionLines](../../src/operations.ts#L4119) (answer: string) → { questions: string[]; dropped: number }
-    - fn [withQuestions](../../src/operations.ts#L4132) (text: string, questions: readonly string[], slug: string) → string
-    - fn [runFeatureQuestions](../../src/operations.ts#L4156) (request: FeatureQuestionsRequest, context: OperationContext) → Promise<OperationEnvelope<"feature-questions">> <!-- internal -->
-      - calls operations.operations.emptyFeatureQuestions, operations.operations.messageOf, operations.operations.modelSetup, base.config.toPosix, features.proposals.proposalProblem, operations.operations.existingText, base.safe-write.writeProblem, operations.operations.proposalRefusal, map.map.sourceInputs, features.agent-context.contextText, features.agent-context.contextForIds, features.feature-status.idsIn, operations.operations.questionLines, operations.operations.commitProposal, operations.operations.withQuestions
-    - fn [emptyExportC4](../../src/operations.ts#L4226) (status: OperationStatus, exitCode: 0 | 1 | 2 | null, error?: string) → OperationEnvelope<"export-c4"> <!-- internal -->
-    - fn [runExportC4](../../src/operations.ts#L4236) (request: ExportC4Request, context: OperationContext) → Promise<OperationEnvelope<"export-c4">> <!-- internal -->
-      - calls operations.operations.emptyExportC4, operations.operations.messageOf, map.explanations.loadBriefs, map.explanations.explanationOf, map.c4-export.renderC4, base.config.toPosix, operations.operations.existingText, map.c4-export.isC4Diagram, base.safe-write.safeWrite
-    - fn [gapLine](../../src/operations.ts#L4295) (gap: Gap) → string
-    - fn [hintLine](../../src/operations.ts#L4300) (hint: Hint) → string
-    - fn [featureSummary](../../src/operations.ts#L4305) (report: FeatureReport) → string
-    - fn [emptyDoctor](../../src/operations.ts#L4309) (status: OperationStatus, exitCode: 0 | 1 | 2 | null) → OperationEnvelope<"doctor"> <!-- internal -->
-    - fn [runDoctor](../../src/operations.ts#L4313) (request: DoctorRequest, context: OperationContext) → Promise<OperationEnvelope<"doctor">> <!-- internal -->
-      - calls operations.operations.emptyDoctor, base.config.loadConfig, operations.operations.messageOf, operations.operations.agentState, features.agent-cli.probeAgentClis, operations.operations.engineState, features.explain-llm.oldExplanations, features.explain-llm.explainedIds, features.explain-llm.moveHint, operations.operations.doctorLines
-    - fn [agentState](../../src/operations.ts#L4368) (config: Config, llmClient: (agent: string | null, options: LlmClientOptions) => LlmSetup) → Promise<DoctorPayload["agent"]> <!-- internal -->
-      - calls features.agent-cli.resolveAgent, operations.operations.messageOf, features.agent-cli.cliVersion
-    - fn [engineState](../../src/operations.ts#L4391) ( config: Config, nativeAvailable: boolean, voiceEngine: (config: Config["voice"], localAvailable: boolean) => VoiceEngine, ) → { resolved: DoctorPayload["voice"]["resolved"]; missing: string | null; error: string | null } <!-- internal -->
-      - calls operations.operations.messageOf
-    - fn [doctorLines](../../src/operations.ts#L4408) (payload: DoctorPayload) → string[] <!-- internal -->
-    - fn [messageOf](../../src/operations.ts#L4437) (error: unknown) → string <!-- internal -->
+    - type [DoctorRequest](../../src/operations/types.ts#L32)
+    - type [FeatureQuestionsRequest](../../src/operations/types.ts#L39)
+    - type [FeatureRequest](../../src/operations/types.ts#L48)
+    - type [MapCheckRequest](../../src/operations/types.ts#L63)
+    - type [MapRequest](../../src/operations/types.ts#L72)
+    - type [BaselineRequest](../../src/operations/types.ts#L84)
+    - type [AgentsRequest](../../src/operations/types.ts#L97)
+    - type [FmtRequest](../../src/operations/types.ts#L112)
+    - type [ParseRequest](../../src/operations/types.ts#L129)
+    - type [WireRequest](../../src/operations/types.ts#L149)
+    - type [CheckRequest](../../src/operations/types.ts#L165)
+    - type [ExplainEdgeRequest](../../src/operations/types.ts#L191)
+    - type [ExplainRequest](../../src/operations/types.ts#L206)
+    - type [ExplainLlmRequest](../../src/operations/types.ts#L225)
+    - type [ExplainPlanRequest](../../src/operations/types.ts#L241)
+    - type [ExplainBatchRequest](../../src/operations/types.ts#L271)
+    - type [ExportSource](../../src/operations/types.ts#L288)
+    - type [ExportFormat](../../src/operations/types.ts#L295) = CheckFormat | ParseFormat
+    - type [TracePlanRequest](../../src/operations/types.ts#L302)
+    - type [DraftFlowRequest](../../src/operations/types.ts#L322)
+    - type [DraftRulesRequest](../../src/operations/types.ts#L361)
+    - type [CodeToSpecRequest](../../src/operations/types.ts#L392)
+    - type [CodeToSpecSource](../../src/operations/types.ts#L408)
+    - type [SpecToCodeRequest](../../src/operations/types.ts#L433)
+    - type [ApplyCodeRequest](../../src/operations/types.ts#L459)
+    - type [DraftLayoutRequest](../../src/operations/types.ts#L485)
+    - type [ExportRequest](../../src/operations/types.ts#L500)
+    - type [ExportC4Request](../../src/operations/types.ts#L515)
+    - type [InitRequest](../../src/operations/types.ts#L535)
+    - type [OperationRequest](../../src/operations/types.ts#L548)
+    - type [OperationContext](../../src/operations/types.ts#L554)
+    - type [OperationProgress](../../src/operations/types.ts#L576)
+    - type [BatchStep](../../src/operations/types.ts#L582)
+    - type [CommitPlan](../../src/operations/types.ts#L593)
+    - type [CommitGate](../../src/operations/types.ts#L599) = void | { refused: string[] }
+    - type [OperationStatus](../../src/operations/types.ts#L602) = "completed" | "failed" | "cancelled"
+    - type [OperationMessage](../../src/operations/types.ts#L605)
+    - type [DoctorPayload](../../src/operations/types.ts#L612)
+    - type [FeatureQuestionsPayload](../../src/operations/types.ts#L661)
+    - type [ExportC4Payload](../../src/operations/types.ts#L675)
+    - type [FeaturePayload](../../src/operations/types.ts#L685)
+    - type [MapCheckPayload](../../src/operations/types.ts#L696)
+    - type [MapPayload](../../src/operations/types.ts#L715)
+    - type [BaselinePayload](../../src/operations/types.ts#L731)
+    - type [AgentsPayload](../../src/operations/types.ts#L759)
+    - type [FmtFile](../../src/operations/types.ts#L786)
+    - type [FmtPayload](../../src/operations/types.ts#L801)
+    - type [ParsePayload](../../src/operations/types.ts#L807)
+    - type [TracePlanPayload](../../src/operations/types.ts#L822)
+    - type [FlowCandidate](../../src/operations/types.ts#L836)
+    - type [DraftFlowPayload](../../src/operations/types.ts#L856)
+    - type [RulesCandidate](../../src/operations/types.ts#L881)
+    - type [DraftRulesPayload](../../src/operations/types.ts#L897)
+    - type [CodeFlow](../../src/operations/types.ts#L921)
+    - type [CodeToSpecCandidate](../../src/operations/types.ts#L935)
+    - type [CodeToSpecPayload](../../src/operations/types.ts#L960)
+    - type [CodeModelInfo](../../src/operations/types.ts#L987)
+    - type [CodeProposalTarget](../../src/operations/types.ts#L996)
+    - type [SpecToCodeCandidate](../../src/operations/types.ts#L1012)
+    - type [CandidateBasis](../../src/operations/types.ts#L1028) extends SourceInputs
+    - type [AppliedFile](../../src/operations/types.ts#L1034)
+    - type [ApplyCodePayload](../../src/operations/types.ts#L1043)
+    - type [SpecCodeModelInfo](../../src/operations/types.ts#L1054)
+    - type [SpecToCodePayload](../../src/operations/types.ts#L1061)
+    - type [DraftLayoutPayload](../../src/operations/types.ts#L1078)
+    - type [RulesModelInfo](../../src/operations/types.ts#L1094)
+    - type [DraftModelInfo](../../src/operations/types.ts#L1102)
+    - type [WirePayload](../../src/operations/types.ts#L1113)
+    - type [CheckPayload](../../src/operations/types.ts#L1141)
+    - type [ChangedSlice](../../src/operations/types.ts#L1166)
+    - type [ExplainEdgePayload](../../src/operations/types.ts#L1181) extends EdgeExplanation
+    - type [ExplainPayload](../../src/operations/types.ts#L1189)
+    - type [ExplainLlmPayload](../../src/operations/types.ts#L1202)
+    - type [ExplainPlanPayload](../../src/operations/types.ts#L1232)
+    - type [ExplainBatchPayload](../../src/operations/types.ts#L1248)
+    - type [ExportPayload](../../src/operations/types.ts#L1273)
+    - type [InitPayload](../../src/operations/types.ts#L1295)
+    - type [GitignoreStage](../../src/operations/types.ts#L1327)
+    - type [OperationPayloads](../../src/operations/types.ts#L1341)
+    - type [OperationResult](../../src/operations/types.ts#L1371)
+    - type [OperationEnvelope](../../src/operations/types.ts#L1374)

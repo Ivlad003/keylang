@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7e5b342d1d6a9093d4440fdf3d0aac81a57e677c34e0fae78c9095b088463ccd lang=en detail=brief -->
-Builds a map of a class's field names to their declared or constructed types by scanning field definitions, constructor parameter properties, and `this.x = ...` assignments in the constructor body. Also records injectable hooks where a field defaults to a fallback via…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=102bddca73175112bd9dcc5037662909d226ce9ae634a89ed19e623a1fd454ac lang=en detail=brief -->
+Maps a class's field names to types from field declarations, constructor parameter properties and `this.x =` assignments, and records constructor fallbacks found via `extract.ts.fallbackOf` as injectable hooks.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a919dbb39a285096f74300c7caf0d8ba19e68e4db5d853addc619846487843a3 lang=en detail=brief -->
-Turns a parsed TS/JS import node into import facts, handling `import x = require("…")` as a whole-module binding and otherwise collecting default, namespace, and named (aliased) bindings. Resolves the module specifier via `extract.ts.stringValue` and builds the fact with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=bdf972a9db0d5f0035f61d96ad002790c9b4938207596727005e0ef880cdb894 lang=en detail=brief -->
+Turns a TypeScript import statement into an import fact via `extract.ts.importAt`, recording default, namespace, named, and `import = require` bindings. It flags type-only imports using `extract.ts.typeKeyword` and `extract.ts.inlineTypesOnly`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4beca1d71f8e12464e51a01be98c8088502b9cf1c4def2c154bba351ad2a9eaa lang=en detail=brief -->
-Reads the line at the cursor from `ws`, takes the last dotted identifier before the cursor, and resolves it via `features.lsp-features.describe`. Returns one signature labelled with the id and signature, with file:line as documentation, or null if nothing resolves.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=daa0248f999cb270bb87bb43975abb1c098e3ed7f5ba05d0cdb28f5bbfe276c3 lang=en detail=brief -->
+Finds the last dotted identifier before the cursor on the current line, looks it up via `features.lsp-features.describe`, and returns its signature as the label with its file:line as documentation, or null.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ccbcb952c4fb08e7d35ff1763d8bddfd519e44aaa301f0ebb3ebf40c08a50eb7 lang=en detail=brief -->
-Walks a flow section's child nodes via `lang.ir.sectionNodes`, collecting planned declarations, the first business/technical kind, triggers, and flow items into a Flow record. Trigger nodes that `lang.spec-ir.triggerItem` rejects have their children hoisted as items through…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0284b9d548473f67e87ce6418a4ef6b623eae1992a3408d4e7f6a31ac2b9bdd5 lang=en detail=brief -->
+Turns a spec section into a flow record, taking the first business/technical kind, triggers via `lang.spec-ir.triggerItem` and steps via `lang.spec-ir.flowNode`. Planned declarations go into the shared list via `lang.spec-ir.plannedDecl`.

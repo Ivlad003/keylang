@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4d77b3143d4a9f2a664aa192cf22142ac11df6f8263e842dbcb1152f5010dd00 lang=en detail=brief -->
-Dependency-free foundation shared by every other layer: source spans, diagnostics with stable codes, config and glob matching, language data, external package IDs, brief extraction and the atomic in-repository write protocol. It is denied access to `external.web-tree-sitter`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=cc794e2c651e9d76d65180f56492206cda8bd405f3d143d38f43eab325b19bbb lang=en detail=brief -->
+Dependency-free foundations shared across keylang: config and glob matching, language data, external package IDs, spans, diagnostics, briefs and safe file writes, barred from importing `external.web-tree-sitter`.

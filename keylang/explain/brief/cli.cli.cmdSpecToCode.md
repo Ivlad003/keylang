@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d34590f0111baa75cf774763f5c1509364ff50aecfdbfc7479319b14a276042d lang=en detail=brief -->
-Validates the spec-to-code flags (rejecting --apply with --print, a missing id, or a mode other than algo/llm), then locates the repo via `map.analyze.findRoot` and normalizes `--into` with `base.config.toPosix`. Dispatches to `cli.cli.specToCodeApplyPrinter` when applying…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4aec89f4e7eb3b7d836b4b55e0ed5c3611743c31ad4c1c6e53be076aec38eff5 lang=en detail=brief -->
+Validates the spec-to-code options (planned id required, mode `algo` or `llm`, not both apply and print), then locates the repo root via `map.analyze.findRoot`. Dispatches to `cli.cli.specToCodeApplyPrinter` or `cli.cli.specToCodePrinter`.

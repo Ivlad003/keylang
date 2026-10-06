@@ -85,7 +85,7 @@ test("zoom model: children, neighbors by depth, crumbs, the more row, and where 
 function session(root: string, cols = 120, rows = 30): { app: App; vt: VirtualTerminal; send: (keys: string) => void; text: () => string; lines: () => string[] } {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 

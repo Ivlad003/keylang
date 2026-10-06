@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=44c314e6713268ede3638da911ac88946376dae87c3c1b21cb45d592adb52ca9 lang=en detail=brief -->
-Union type naming a single element of a feature's execution plan, which is either a `Trigger` or a `FlowStep`. It lets plan-building and status code handle both kinds of entries in one list without separate collections.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=f519b0dc8f5080fd262242df3d5ededa6f7dd708f09efde60299ed097dd5a4c3 lang=en detail=brief -->
+Internal union type for a single feature-plan entry, which can be a trigger, a flow step, or a question item, so code in feature status handling can treat all three kinds of plan entry uniformly.

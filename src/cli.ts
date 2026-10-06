@@ -1,20 +1,21 @@
 // `keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.
+//
+// A module only one command needs (the terminal TUI, web, LSP, MCP, `new`,
+// `hook install`, `completions`, `check --stale`) is imported in that
+// command's handler, so `--version` and `check` do not compile it. The
+// specifiers stay literal: the map keeps the import edge.
 
 import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { SHELLS, completionScript, helpCommands, isShell } from "./completions.ts";
-import { gitHooksDir, preCommitCommand, preCommitState, preCommitText } from "./git-hook.ts";
 import { safeWrite, writeAtomic } from "./safe-write.ts";
-import { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } from "./tui/new-spec.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
-import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
+import { filterChanged, hookDecision, hookFails, parseHookEvent, uncheckedTurn } from "./changed.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
-import { sameFinding } from "./assess.ts";
-import { formatDiagnostic, type Diagnostic } from "./diag.ts";
+import { formatDiagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
 import { selectedAgent } from "./agent-cli.ts";
@@ -23,13 +24,7 @@ import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
 import type { ExplanationDetail } from "./explanations.ts";
 import { changedPathSet, deletedModuleIds, gitChangedFiles } from "./git-changes.ts";
-import { lineDiff } from "./proposals.ts";
-import { serveLsp } from "./lsp.ts";
-import { runTerminal } from "./tui/terminal.ts";
-import { serveWeb } from "./tui/web.ts";
-import { checkSkipNote, checkSummary, featureSummary, gapLine, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type OperationEnvelope } from "./operations.ts";
-import { formatVerdict, type Verdict } from "./verdict.ts";
-import { runStaleCheck, staleLine, staleSummary } from "./stale.ts";
+import { checkSkipNote, checkSummary, featureSummary, fmtGeneratedNote, gapLine, gitignoreMessage, hintLine, initSources, mapCheckLines, mapConflictLines, mapStepLines, mapSummary, runOperation, type CodeToSpecSource, type ExplainPlanRequest, type GitignoreStage, type OperationEnvelope } from "./operations.ts";
 
 const USAGE = `keylang: architecture description bound to a repository
 
@@ -55,12 +50,14 @@ Commands:
                             --dry-run: the token estimate of the model's part, no
                             request. A directory keylang did not clone is refused
   init [dir] [--agents=LIST] [--check]
-                            Detect languages and layers, write keylang.json, build the map,
+                            Detect languages and layers, write keylang.json, add
+                            .keylang/ (the local cache) to .gitignore, build the map,
                             write rules.baseline.md, and install harness files
                             (AGENTS.md, MCP, skill, hooks). --agents is
                             claude,codex,opencode,cursor or none (no harness files
-                            outside keylang/). --check writes nothing and fails when a
-                            managed block, MCP command, skill, or baseline is stale
+                            outside <dir>/). --check writes nothing and fails when a
+                            managed block, MCP command, skill, or baseline is stale,
+                            or .gitignore does not list .keylang/
   agents [--agents=LIST] [--check]
                             Install the same harness files on an initialized repo
   baseline [--check]        Write <dir>/rules.baseline.md from the current layer graph
@@ -70,14 +67,28 @@ Commands:
                             Whether <dir>/features/<slug>.md is done: it declares
                             something to check and has no spec errors (K001-K005),
                             every planned id is implemented (K202, not K201), every
-                            flow step is static ok, no rule fail remains, and the
-                            plan was not weakened since <ref> (default HEAD; without
-                            git only info.base says so). The last line names its
-                            stage: idea, behavior, structure, ready; hint: lines say
-                            what the spec still lacks. 0 done, 1 gaps, 2 missing
-                            file, unreadable --since ref, or bad invocation
+                            flow step is static ok, no rule fail of this change
+                            remains (one on a file changed since <ref> or on an id
+                            the feature names; without git, any), and the plan was
+                            not weakened since <ref> (without git only info.base
+                            says so). Default <ref>: the merge-base of HEAD with the
+                            main branch (origin/HEAD, else main, master, origin/main,
+                            origin/master), so a fail committed on the branch is
+                            still this change's; HEAD when there is none or it is
+                            HEAD itself; with a merge-base the plan at HEAD is
+                            compared too. The last line names its stage: idea,
+                            behavior, structure, ready; hint: lines say what the spec
+                            still lacks, or name an inherited rule fail. 0 done,
+                            1 gaps, 2 missing file, unreadable --since ref, or bad
+                            invocation. Writes only the fact cache .keylang/cache/
   hook stop                 Read a harness Stop event (JSON) from stdin, run
-                            check --changed, and print a JSON decision. Writes nothing
+                            check --changed, and print a JSON decision; writes
+                            only the fact cache .keylang/cache/. Exit 0 once
+                            started: a turn it cannot check (stdin not JSON, no
+                            git, a broken keylang.json) prints {"systemMessage":
+                            "keylang: this turn was not checked: <reason>"}, a
+                            warning the harness shows the person without
+                            blocking the agent, and the same line on stderr
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
                             git's hooks directory (core.hooksPath is honoured); rerun to
                             update it. A pre-commit hook keylang did not write is left
@@ -136,13 +147,23 @@ Commands:
   draft map                 Print the layer layout keylang would guess as keylang.json;
                             writes nothing: the layout changes only when you edit it
                             (--mode llm|hybrid: the model's layout, validated, printed)
+  proposals                 List .keylang/proposals/: each target with the lines it adds
+                            and removes, or why it cannot be accepted; writes nothing
+  proposals show <target>   Print the line diff of a proposal against its target
+  proposals accept <target> For a person, never an agent: write the proposal's full text
+                            to the target with the checks of MERGE in the TUI, then
+                            remove the proposal
+  proposals reject <target> Remove the proposal; the target stays as it is. 0 done,
+                            1 nothing pending for the target or accept refused, 2 bad
+                            invocation or I/O
   lsp [--stdio]             Speak LSP over stdio (--stdio is accepted for clients)
   doctor                    What is set up: languages, the agent (its source, and its
                             credentials or its CLI binary and version), the agent CLIs
                             on PATH, voice (engine, local model, microphone); changes nothing
   mcp                       Serve MCP over stdio for agents: search, node, code, flows,
                             check, explain, context, validate_spec, scaffold,
-                            feature_status, apply_diff (proposals only; nothing else is written)
+                            feature_status, apply_diff (proposals only; no spec is
+                            written, the fact cache .keylang/cache/ is kept current)
   wire [--check] [--out f]  Generate keylang.gen.ts (or f: a .ts/.mts/.cts path relative to
                             the root, inside it) from \`# wiring\`: a typed wire() that builds
                             each factory once, dependencies first
@@ -160,7 +181,8 @@ Commands:
                             Resolve IDs and check rules (default: ./keylang)
                             Given files, it prints verdicts and the summary for those
                             files only (e.g. check keylang/flows/buy.md)
-                            Rebuilds the analysis in memory; does not write the map.
+                            Rebuilds the analysis in memory; does not write the map
+                            (only the fact cache .keylang/cache/, for the next run).
                             --changed reports only findings that touch files changed
                             since <ref> (default HEAD) plus untracked files
   check --stale [paths…] [--accept | --strict]
@@ -203,7 +225,10 @@ a request (default 600000).
 
 Exit codes: 0 no blocking findings, 1 violations (or unverified with --strict,
 or prose to review with check --stale --strict) or a stale map with --check,
-2 usage or I/O error.
+2 usage or I/O error. draft flow, draft rules, code-to-spec, spec-to-code: 1
+when an input changed on disk while the proposal was prepared (nothing is
+written; spec-to-code --apply too). hook stop: 0 once started; 2 only for a
+bad invocation.
 `;
 
 /** The flags of every command; `completions` completes this same table. */
@@ -277,6 +302,7 @@ async function run(argv: readonly string[]): Promise<number> {
       process.stderr.write(USAGE);
       return 2;
     }
+    const { runTerminal } = await import("./tui/terminal.ts");
     return runTerminal(findRoot(process.cwd()));
   }
   switch (cmd) {
@@ -289,7 +315,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case "feature":
       return cmdFeature(paths[0], values.format ?? "human", values.since);
     case "hook":
-      return cmdHook(paths[0], values.check === true);
+      return cmdHook(paths, values.check === true);
     case "new":
       return cmdNew(paths, values.layer);
     case "completions":
@@ -318,8 +344,10 @@ async function run(argv: readonly string[]): Promise<number> {
         limit: values.limit,
         jobs: values.jobs,
       });
-    case "lsp":
+    case "lsp": {
+      const { serveLsp } = await import("./lsp.ts");
       return serveLsp();
+    }
     case "doctor":
       return cmdDoctor();
     case "mcp": {
@@ -330,6 +358,8 @@ async function run(argv: readonly string[]): Promise<number> {
     }
     case "draft":
       return cmdDraft(paths, { mode: values.mode ?? "hybrid", name: values.name, into: values.into, print: values.print === true });
+    case "proposals":
+      return cmdProposals(paths);
     case "spec-to-code":
       return cmdSpecToCode(paths[0], { into: values.into, apply: values.apply === true, print: values.print === true, mode: values.mode ?? "algo" });
     case "code-to-spec":
@@ -362,6 +392,7 @@ async function run(argv: readonly string[]): Promise<number> {
 async function cmdWeb(root: string, portText: string, host: string): Promise<number> {
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
+  const { serveWeb } = await import("./tui/web.ts");
   const server = await serveWeb({ root, port, host });
   process.stdout.write(`keylang web: ${server.url}\n`);
   process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
@@ -579,9 +610,11 @@ async function cmdSpecToCode(id: string | undefined, opts: { into: string | unde
  * `spec-to-code <id> [--into] [--mode algo|llm] --apply`: the candidate is
  * built as a preview (stdout and the test notes as `--print`), then the
  * shared `apply-code` operation writes its files; a proposal waiting for one
- * stays, as it always did. Any file not written ends with 2, as `--apply`
- * always did — a file changed meanwhile too; part way, the error is followed
- * by what was written and what was not.
+ * stays, as it always did. The operation's code is the CLI's: a file or an
+ * input changed meanwhile (while the model answered too) is 1 with nothing
+ * written, as a refused proposal is; a file no write may change and an I/O
+ * error are 2; part way, the error is followed by what was written and what
+ * was not.
  */
 async function specToCodeApplyPrinter(root: string, id: string, into: string | undefined, mode: "algo" | "llm"): Promise<number> {
   const built = await runOperation({ kind: "spec-to-code", root, id, ...(into !== undefined ? { into } : {}), output: "preview", ...(mode === "llm" ? { mode } : {}) });
@@ -602,7 +635,7 @@ async function specToCodeApplyPrinter(root: string, id: string, into: string | u
   if (applied.payload?.error != null) {
     for (const file of applied.payload.files) if (file.state !== "failed") process.stderr.write(`keylang: ${file.file}: ${file.state === "completed" ? "written" : "not written"}\n`);
   }
-  return 2;
+  return applied.exitCode ?? 2;
 }
 
 /**
@@ -761,6 +794,67 @@ async function cmdExport(args: readonly string[], options: { format: string | un
   return result.exitCode ?? 2;
 }
 
+/**
+ * `proposals [show|accept|reject <target>]`: a person takes or drops a
+ * proposal without the TUI. A printer over `src/proposals.ts`: the list, a
+ * diff and what was written to stdout; notes and refusals to stderr. 0 done;
+ * 1 nothing pending for the target, or an accept refused (nothing written);
+ * 2 a bad invocation, a broken keylang.json or an I/O error.
+ */
+async function cmdProposals(args: readonly string[]): Promise<number> {
+  const { acceptProposal, listProposals, proposalDiff, proposalTarget, PROPOSALS_DIR, rejectProposal } = await import("./proposals.ts");
+  const [action, name, ...rest] = args;
+  if (action !== undefined && action !== "show" && action !== "accept" && action !== "reject") throw new Error(`proposals: unknown \`${action}\`; expected show, accept or reject <target>`);
+  if (action !== undefined && name === undefined) throw new Error(`proposals ${action}: a target is required, as \`keylang proposals\` lists it`);
+  if (rest.length > 0) throw new Error(`proposals ${action}: unexpected \`${rest[0]}\`; one target at a time`);
+  const root = findRoot(process.cwd());
+  const specDir = toPosix(relative(root, resolve(root, loadConfig(root).dir)));
+  if (action === undefined) {
+    const pending = listProposals(root, specDir);
+    for (const item of pending) {
+      const what = item.problem !== null ? `cannot be accepted: ${item.problem}` : `+${item.added} -${item.removed}${item.newFile ? " (new file)" : ""}`;
+      process.stdout.write(`${item.target}: ${what}\n`);
+    }
+    process.stderr.write(pending.length === 0 ? `no proposals under ${PROPOSALS_DIR}/\n` : `${pending.length} proposal(s); \`keylang proposals show <target>\` prints one; a person accepts or rejects it\n`);
+    return 0;
+  }
+  const target = proposalTarget(name!);
+  if (target === null) throw new Error(`proposals ${action}: \`${name}\` is not a plain relative path`);
+  const store = `${PROPOSALS_DIR}/${target}`;
+  const none = (): number => {
+    process.stderr.write(`keylang: no proposal for ${target} under ${PROPOSALS_DIR}/\n`);
+    return 1;
+  };
+  const refused = (reason: string, written: string): number => {
+    process.stderr.write(`keylang: ${target}: cannot be accepted: ${reason}; ${written}\n`);
+    return 1;
+  };
+  if (action === "show") {
+    const diff = proposalDiff(root, specDir, target);
+    if (diff.state === "none") return none();
+    if (diff.state === "refused") return refused(diff.reason, "`keylang proposals reject` drops it");
+    process.stdout.write(diff.text);
+    return 0;
+  }
+  if (action === "reject") {
+    const result = rejectProposal(root, specDir, target);
+    if (result.state === "none") return none();
+    if (result.state === "refused") {
+      process.stderr.write(`keylang: ${result.reason}; nothing removed\n`);
+      return 1;
+    }
+    process.stdout.write(`${store}: removed; ${target} is unchanged\n`);
+    return 0;
+  }
+  const result = acceptProposal(root, specDir, target);
+  if (result.state === "none") return none();
+  if (result.state === "refused") return refused(result.reason, "nothing written");
+  if (result.state === "unchanged") process.stdout.write(`${target}: the proposal matches the file; nothing written${result.kept === null ? ", the proposal is removed" : ""}\n`);
+  else process.stdout.write(`${target}: written from ${store} (+${result.added} -${result.removed})${result.kept === null ? "; the proposal is removed" : ""}\n`);
+  if (result.kept !== null) process.stderr.write(`keylang: ${result.kept}\n`);
+  return 0;
+}
+
 async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   const result = await runOperation({ kind: "wire", root: findRoot(process.cwd()), out: toPosix(out), check: checkOnly });
   const payload = result.payload;
@@ -774,7 +868,7 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. The CLI is a printer over the shared doctor operation. */
+/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0. The CLI is a printer over the shared doctor operation. */
 async function cmdDoctor(): Promise<number> {
   const result = await runOperation({ kind: "doctor", root: findRoot(process.cwd()) });
   if (result.status === "failed") {
@@ -826,6 +920,7 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
   if (payload.check) {
     if (payload.agents) printAgents(payload.agents);
     if (payload.baseline) printBaseline(payload.baseline);
+    if (payload.gitignore) printGitignore(payload.gitignore);
     return result.exitCode ?? 2;
   }
   if (payload.preflight?.status === "failed") return printAgents(payload.preflight);
@@ -839,10 +934,26 @@ async function cmdInit(dir: string, opts: { agents: string | undefined; check: b
     }
     if (payload.config.written) process.stdout.write(`${config}: written (${payload.languages.join(", ")}; layers: ${payload.config.layers.join(", ")})\n`);
   }
+  if (payload.gitignore) printGitignore(payload.gitignore);
   if (payload.map) printMap(payload.map, root);
   if (payload.baseline) printBaseline(payload.baseline);
   if (payload.agents) printAgents(payload.agents);
+  // Auto found no harness: only the AGENTS.md block was written, and a person would not learn what else there is.
+  const agents = payload.agents?.payload;
+  if (payload.agents?.status === "completed" && agents?.choice === "auto" && agents.harnesses.length === 0) {
+    process.stderr.write(
+      "keylang: no harness detected (.claude/, .codex/, .cursor/, opencode.json), so only the AGENTS.md block was written; for MCP, the skill, deny rules and the Stop hook run `keylang agents --agents=claude,codex,cursor,opencode` with the ones you use\n",
+    );
+  }
   return result.exitCode ?? 2;
+}
+
+/** The `.gitignore` line of init: an I/O error to stderr; added, not listed, or a refusal's reason to stdout, as the file lines of the other stages. */
+function printGitignore(stage: GitignoreStage): void {
+  const line = gitignoreMessage(stage);
+  if (line === null) return;
+  if (stage.error !== null) process.stderr.write(`keylang: ${line.text}\n`);
+  else process.stdout.write(`${line.text}\n`);
 }
 
 /** `agents [--agents=LIST] [--check]`: a printer over the shared agents operation. */
@@ -904,25 +1015,50 @@ async function cmdFeature(slug: string | undefined, format: string, since: strin
   return result.exitCode ?? 2;
 }
 
-async function cmdHook(name: string | undefined, checkOnly: boolean): Promise<number> {
+/** `hook stop` and `hook install [--check]`. A missing or unknown subcommand and an extra argument are a bad invocation (2). */
+async function cmdHook(args: readonly string[], checkOnly: boolean): Promise<number> {
+  const [name, ...rest] = args;
+  if (name !== "stop" && name !== "install") throw new Error(`hook: expected \`stop\` or \`install\`${name === undefined ? "" : `, got \`${name}\``}`);
+  if (rest.length > 0) throw new Error(`hook ${name}: unexpected argument \`${rest[0]}\``);
   if (name === "install") return cmdHookInstall(checkOnly);
-  if (name !== "stop") throw new Error("hook: expected `stop` or `install`");
-  const event = parseHookEvent(await readStdin());
-  if (event.stop_hook_active === true) {
-    process.stdout.write(hookDecision(event, []));
-    return 0;
+  return cmdHookStop();
+}
+
+/**
+ * `hook stop`: once the invocation is valid, exactly one JSON object on
+ * stdout and code 0. A harness reads code 2 of a Stop hook as a blocking
+ * error the agent cannot act on, so a failure — stdin that is not a JSON
+ * event, git missing or refused, a broken keylang.json, an analysis error —
+ * is a `systemMessage` the harness shows the person, and the same line on stderr.
+ */
+async function cmdHookStop(): Promise<number> {
+  let decision: string;
+  try {
+    decision = await stopDecision(await readStdin(), process.cwd());
+  } catch (error) {
+    const unchecked = uncheckedTurn(error instanceof Error ? error.message : String(error));
+    process.stderr.write(`${unchecked.line}\n`);
+    decision = unchecked.decision;
   }
-  const root = findRoot(process.cwd());
-  const analyzed = await analyze({ root });
-  const gitChanged = gitChangedFiles(root, "HEAD");
-  const changed = changedPathSet(root, gitChanged.paths, process.cwd());
+  process.stdout.write(decision);
+  return 0;
+}
+
+/** The Stop decision for the event on stdin: the fails of `check --changed` in `cwd`'s repository. Throws when the turn cannot be checked. */
+async function stopDecision(input: string, cwd: string): Promise<string> {
+  const event = parseHookEvent(input);
+  if (event.stop_hook_active === true) return hookDecision(event, []);
+  const root = findRoot(cwd);
+  // The next turn's hook parses only what changed: the fact cache is saved best-effort.
+  const analyzed = await analyze({ root, saveFacts: true });
+  const gitChanged = gitChangedFiles(root, "HEAD", "hook stop");
+  const changed = changedPathSet(root, gitChanged.paths, cwd);
   const filtered = filterChanged(
     { docs: analyzed.docs, spec: analyzed.spec, diagnostics: analyzed.diagnostics, verdicts: analyzed.verdicts, nodes: analyzed.snapshot?.nodes ?? {} },
     changed,
     deletedModuleIds(analyzed.config, gitChanged.deleted),
   );
-  process.stdout.write(hookDecision(event, hookFails(filtered)));
-  return 0;
+  return hookDecision(event, hookFails(filtered));
 }
 
 /**
@@ -930,7 +1066,8 @@ async function cmdHook(name: string | undefined, checkOnly: boolean): Promise<nu
  * directory. A hook without keylang's marker is someone else's: install
  * refuses with 2 and names the line to add; --check counts it as not installed.
  */
-function cmdHookInstall(checkOnly: boolean): number {
+async function cmdHookInstall(checkOnly: boolean): Promise<number> {
+  const { gitHooksDir, preCommitCommand, preCommitState, preCommitText } = await import("./git-hook.ts");
   const version = packageVersion();
   const file = join(gitHooksDir(process.cwd()), "pre-commit");
   const shown = toPosix(relative(process.cwd(), file));
@@ -958,7 +1095,8 @@ function cmdHookInstall(checkOnly: boolean): number {
 }
 
 /** `new flow <name>`, `new module <name> --layer <layer>`: a skeleton spec, never over an existing file. */
-function cmdNew(args: readonly string[], layer: string | undefined): number {
+async function cmdNew(args: readonly string[], layer: string | undefined): Promise<number> {
+  const { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } = await import("./tui/new-spec.ts");
   const [what, name, ...rest] = args;
   if (what !== "flow" && what !== "module") throw new Error("new: expected `new flow <name>` or `new module <name> --layer <layer>`");
   if (name === undefined) throw new Error(`new ${what}: a name is required`);
@@ -1007,7 +1145,8 @@ function plannedModuleTemplate(layer: string, name: string): string {
 }
 
 /** `completions <shell>`: commands from the help text, flags from the parser's table. */
-function cmdCompletions(shell: string | undefined): number {
+async function cmdCompletions(shell: string | undefined): Promise<number> {
+  const { SHELLS, completionScript, helpCommands, isShell } = await import("./completions.ts");
   if (shell === undefined || !isShell(shell)) throw new Error(`completions: expected a shell: ${SHELLS.join(", ")}${shell === undefined ? "" : `; got \`${shell}\``}`);
   const flags = Object.entries(OPTIONS).map(([long, option]) => ("short" in option ? { long, short: option.short } : { long }));
   process.stdout.write(completionScript(shell, { commands: helpCommands(USAGE), flags }));
@@ -1142,6 +1281,7 @@ async function cmdCheck(paths: string[], opts: { strict: boolean; format: string
  * fails; with `strict`, any such line is 1, so CI can gate on review.
  */
 async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean): Promise<number> {
+  const { runStaleCheck, staleLine, staleSummary } = await import("./stale.ts");
   const cwd = process.cwd();
   const { report, path, accepted } = await runStaleCheck({ root: findRoot(cwd), base: cwd, paths, accept });
   const toReview = report.findings.filter((f) => f.state !== "fresh" || f.incomplete.length > 0);
@@ -1158,7 +1298,8 @@ async function cmdCheckStale(paths: string[], accept: boolean, strict: boolean):
  * does not stop the rest: every such failure is reported, and the code is 2;
  * otherwise 1 for diagnostics or, with `--check`, an unformatted file. The
  * CLI is a printer over the shared fmt operation: stdout for what changed,
- * stderr for diagnostics and failures; a saved explanation passes silently.
+ * stderr for diagnostics and failures and a note per generated file it
+ * leaves; a saved explanation passes silently.
  */
 async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
   const cwd = process.cwd();
@@ -1171,6 +1312,7 @@ async function cmdFmt(paths: string[], checkOnly: boolean): Promise<number> {
     if (message.level === "info") process.stdout.write(`${message.text}\n`);
     else if (message.level === "error") process.stderr.write(`${message.text}\n`);
   }
+  for (const file of result.payload.files) if (file.state === "generated") process.stderr.write(`keylang: note: ${fmtGeneratedNote(file)}\n`);
   return result.exitCode ?? 2;
 }
 

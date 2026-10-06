@@ -39,13 +39,14 @@
   "scripts": {
     "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/copy-wasm.mjs && node scripts/copy-web.mjs && node scripts/pack-entry.mjs publish",
     "postpack": "node scripts/pack-entry.mjs restore",
-    "test": "node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./src/adapters/node-test.ts --test-reporter-destination=stdout tests/*.test.ts",
+    "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./src/adapters/node-test.ts --test-reporter-destination=stdout tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "keylang": "node bin/keylang.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
+    "@vscode/tree-sitter-wasm": "^0.3.1",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "6.0.0",
@@ -56,21 +57,28 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
     "@modelcontextprotocol/sdk": "^1.30.1",
-    "@vscode/tree-sitter-wasm": "^0.3.1",
     "eventsource-parser": "^4.1.1",
     "smol-toml": "^1.9.0",
     "web-tree-sitter": "^0.27.0",
     "ws": "^8.22.0",
     "zod": "^4.6.5"
   },
+  "peerDependencies": {
+    "@fugood/whisper.node": "^1.1.3",
+    "decibri": "^5.7.0"
+  },
+  "peerDependenciesMeta": {
+    "@fugood/whisper.node": {
+      "optional": true
+    },
+    "decibri": {
+      "optional": true
+    }
+  },
   "exports": {
     ".": "./dist/index.js",
     "./node-test-reporter": "./dist/adapters/node-test.js",
     "./trace": "./dist/adapters/trace.js",
     "./package.json": "./package.json"
-  },
-  "optionalDependencies": {
-    "@fugood/whisper.node": "^1.1.3",
-    "decibri": "^5.7.0"
   }
 }

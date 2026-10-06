@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3afc4e95478353f49ee0b194bbbcc4567f98464655703ab653e22d93d70949ff lang=en detail=brief -->
-Builds lookup maps over the `call` edges: resolved steps per source, unresolved edges per source, callers per target (including candidates), and functions grouped by `check.flows.callName`, redirecting class targets to their constructor via `base.languages.constructorName`.…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=9e4631bf9bbd0451ecfee04e80622234ce924f6610a17b9a410309be735d1fd5 lang=en detail=brief -->
+Indexes call edges into resolved, unresolved and caller maps (mapping class targets to their constructors), plus function lookups by name and caseless name, unsupported coverage, and doubtful bodies via `check.flows.doubtfulBodies`.

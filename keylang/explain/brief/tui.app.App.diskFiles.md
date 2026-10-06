@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fc13b89b1d94923e8fbcc612af8dd9d09d4997bf3a0dc8e29ad4fc9678e8797d lang=en detail=brief -->
-Lists the editable spec files on disk: every `.md` under the spec directory from `tui.app.App.specDir` (via `lang.files.collectMdFiles`), excluding the `explain` store filtered with `map.analyze.within`, as root-relative POSIX paths through `base.config.toPosix`. Appends the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=2cc9efe13deca4ba3f2905d1cba9c5ab0b1233ad3baf7d8361ee444b1cfa79b0 lang=en detail=brief -->
+Lists the editable files for the editor: Markdown specs under `tui.app.App.specDir`, excluding the saved `explain` store, plus `keylang.json` if present, as root-relative POSIX paths ordered by `tui.app.sortFiles`.

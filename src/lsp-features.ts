@@ -2,7 +2,6 @@
 // document, and a position to LSP results. Positions are LSP's: 0-based line,
 // UTF-16 character. The server (`lsp.ts`) owns buffers, freshness, and I/O.
 
-import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Analysis } from "./analyze.ts";
@@ -11,13 +10,15 @@ import { CONFIG_FILE } from "./config.ts";
 import type { Diagnostic } from "./diag.ts";
 import { isGeneratedMap } from "./emit.ts";
 import { capText } from "./brief.ts";
+import { nodeFacts, type NodeFacts } from "./explain-node.ts";
 import type { StoredExplanation } from "./explanations.ts";
+import { readTextOrNull } from "./files.ts";
 import { kindLabel, sectionNodes, walk, type Document, type Node, type Section, type SectionKind } from "./ir.ts";
 import { EXPLAINED_MAP_DIR } from "./map.ts";
 import { searchNodes, type NodeHit } from "./node-search.ts";
 import { keywordsAt, parse, roleAt } from "./parser.ts";
 import { blocksDependency, dependencyKindOf } from "./rules.ts";
-import { walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
+import { flowsUsing, plannedDeclaration, walkFlow, type FlowItem, type SpecIR, type Trigger } from "./spec-ir.ts";
 import { spanContains, type Pos, type Span } from "./span.ts";
 import type { Verdict } from "./verdict.ts";
 
@@ -65,18 +66,14 @@ export function workspace(root: string, analysis: Analysis, buffers: ReadonlyMap
       // The explained map as this analysis renders it, unless a hand-written file stands there.
       const rendered = path.startsWith(explainedDir) ? analysis.map?.explained?.get(path.slice(explainedDir.length)) : undefined;
       if (rendered !== undefined) {
-        const disk = readOrNull(abs);
+        const disk = readTextOrNull(abs);
         return disk === null || isGeneratedMap(disk) ? rendered : disk;
       }
       if (path.startsWith(mapDir) && analysis.map?.files.has(path.slice(mapDir.length))) {
         const doc = analysis.docs.find((d) => d.path === path);
         if (doc && doc.generated !== null) return analysis.map.files.get(path.slice(mapDir.length)) ?? null;
       }
-      try {
-        return readFileSync(abs, "utf8");
-      } catch {
-        return null;
-      }
+      return readTextOrNull(abs);
     },
   };
 }
@@ -158,14 +155,6 @@ function docOf(ws: Workspace, path: string): Document | undefined {
   return ws.analysis.docs.find((doc) => doc.path === path) ?? readingDoc(ws, path);
 }
 
-function readOrNull(abs: string): string | null {
-  try {
-    return readFileSync(abs, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 /** The last parse of each explained map file: a frame asks for it many times over one text. */
 const readingDocs = new Map<string, { text: string; doc: Document }>();
 
@@ -229,80 +218,117 @@ export function diagnosticsFor(ws: Workspace, path: string): LspDiagnostic[] {
 
 // ---------- hover, definition, signature ----------
 
-interface Described {
-  kind: string;
-  id: string;
-  signature: string | null;
-  file: string | null;
-  line: number;
-  col: number;
-  state: string[];
+/** The facts of an ID (`explain-node.ts`) with the state hover names: opaque, and a plan with or without code. */
+function describe(ws: Workspace, id: string): (NodeFacts & { state: string[] }) | null {
+  const facts = nodeFacts(ws.analysis, id);
+  if (!facts) return null;
+  const state = facts.source === "planned" ? ["planned, not implemented"] : [...(facts.opaque ? ["opaque"] : []), ...(facts.implementsPlan ? ["planned, implemented"] : [])];
+  return { ...facts, state };
 }
 
-function describe(ws: Workspace, id: string): Described | null {
-  const node = ws.analysis.snapshot?.nodes[id];
-  const plan = plannedDecl(ws.analysis.docs, id);
-  if (node) {
-    const state = node.members === "opaque" ? ["opaque"] : [];
-    if (plan) state.push("planned, implemented");
-    return { kind: node.kind, id, signature: node.signature ?? null, file: node.file, line: node.line ?? 1, col: node.col ?? 1, state };
-  }
-  if (plan) return { kind: `planned ${plan.kind}`, id, signature: plan.signature, file: plan.file, line: plan.line, col: plan.col, state: ["planned, not implemented"] };
-  const decl = ws.analysis.index.lookup(id);
-  if (decl.kind === "missing") return null;
-  return { kind: decl.decl.kind, id: decl.decl.id, signature: null, file: decl.decl.file, line: decl.decl.span.start.line, col: decl.decl.span.start.col, state: decl.kind === "opaque" ? ["opaque"] : [] };
+/** A piece of hover text: code (an ID, a keyword, a signature, a message's code span) is in backticks in Markdown, `strong` in bold. */
+export interface HoverRun {
+  text: string;
+  code?: true;
+  strong?: true;
 }
 
-export function plannedDecl(docs: readonly Document[], id: string): { kind: string; signature: string | null; file: string; line: number; col: number } | null {
-  for (const doc of docs) {
-    for (const { node } of nodesOf(doc)) {
-      if (node.kind === "planned" && node.id === id) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
-    }
-  }
-  return null;
-}
-
-export function flowsUsing(spec: SpecIR, id: string): string[] {
-  const flows = new Set<string>();
-  for (const flow of spec.flows) {
-    walkFlow(flow, (item) => {
-      if ((item.kind === "step" || item.kind === "trigger") && item.target.target === id) flows.add(flow.name);
-    });
-  }
-  return [...flows].sort();
+/**
+ * A hover before it is Markdown: `hover()` renders it for an LSP client, and
+ * the TUI draws its parts as they are, so neither parses the other's text.
+ */
+export interface HoverContent {
+  /** The ID the hover is about; null for the role of a keyword or of a line without an ID. */
+  id: string | null;
+  /** The kind, the ID and its signature; or the keyword and its role under its parent. */
+  title: HoverRun[];
+  /** Where the node is declared, with its state (`src/a.ts:3 · planned, implemented`), or the state alone. */
+  place: string | null;
+  /** The file and 1-based line that declare the node (code, or a spec for a plan), for a view that shows them. */
+  declaration: { file: string; line: number } | null;
+  /** One line per diagnostic and verdict: `criterion: message`, `K001: message`. */
+  evidence: HoverRun[][];
+  /** The flows whose steps or trigger name the ID. */
+  flows: string[];
+  /** The text the hover is about. */
+  range: LspRange;
 }
 
 type HoverResult = { contents: { kind: "markdown"; value: string }; range: LspRange };
 
 export function hover(ws: Workspace, path: string, position: LspPosition): HoverResult | null {
+  const content = hoverContent(ws, path, position);
+  return content === null ? null : { contents: { kind: "markdown", value: hoverMarkdown(content) }, range: content.range };
+}
+
+/** The hover as LSP Markdown: title, place, a `- ` line per evidence, the flows; a blank line between them. */
+export function hoverMarkdown(content: HoverContent): string {
+  const flows = content.flows.length > 0 ? [`flows: ${content.flows.join(", ")}`] : [];
+  return [runsMarkdown(content.title), ...(content.place === null ? [] : [content.place]), ...content.evidence.map((line) => `- ${runsMarkdown(line)}`), ...flows].join("\n\n");
+}
+
+function runsMarkdown(runs: readonly HoverRun[]): string {
+  return runs
+    .map((run) => {
+      const text = run.code ? `\`${run.text}\`` : run.text;
+      return run.strong ? `**${text}**` : text;
+    })
+    .join("");
+}
+
+/** The text of runs without the Markdown: what a terminal shows. */
+export function runsText(runs: readonly HoverRun[]): string {
+  return runs.map((run) => run.text).join("");
+}
+
+/**
+ * Text as keylang writes roles and messages — `code spans` in backticks — as
+ * runs; an unpaired backtick stays text. Rendered back, it is the same text.
+ */
+function inlineRuns(text: string): HoverRun[] {
+  const runs: HoverRun[] = [];
+  let at = 0;
+  for (const match of text.matchAll(/`([^`]*)`/g)) {
+    if (match.index > at) runs.push({ text: text.slice(at, match.index) });
+    runs.push({ text: match[1]!, code: true });
+    at = match.index + match[0].length;
+  }
+  if (at < text.length) runs.push({ text: text.slice(at) });
+  return runs;
+}
+
+/** An evidence line: the criterion (or the diagnostic's code), then the message. */
+function evidenceLine(label: string, message: string): HoverRun[] {
+  return [{ text: `${label}: ` }, ...inlineRuns(message)];
+}
+
+/** What hover says at a position: the ID under it (kind, signature, place, evidence, flows), else the role of the line. */
+export function hoverContent(ws: Workspace, path: string, position: LspPosition): HoverContent | null {
   const target = at(ws, path, position);
   if (!target) return roleHover(ws, path, position);
   if (target.kind !== "id") return null;
   const info = describe(ws, target.id);
   if (!info) return null;
-  const lines = [`**${info.kind}** \`${info.id}\`${info.signature ? ` \`${info.signature}\`` : ""}`];
-  if (info.file) lines.push(`${info.file}:${info.line}${info.state.length > 0 ? ` · ${info.state.join(", ")}` : ""}`);
-  else if (info.state.length > 0) lines.push(info.state.join(", "));
+  const title: HoverRun[] = [{ text: info.kind, strong: true }, { text: " " }, { text: info.id, code: true }];
+  if (info.signature) title.push({ text: " " }, { text: info.signature, code: true });
+  const state = info.state.join(", ");
+  const place = info.file ? `${info.file}:${info.line}${state === "" ? "" : ` · ${state}`}` : state === "" ? null : state;
   const own = ws.analysis.verdicts.filter((verdict) => verdict.area === target.id && verdict.file === path && verdict.line === target.span.start.line);
-  const evidence = own.length > 0 ? own : ws.analysis.verdicts.filter((verdict) => verdict.area === target.id);
-  const seen = new Set<string>();
-  for (const verdict of evidence) {
-    const text = `- ${verdict.criterion}: ${verdict.message}`;
-    if (!seen.has(text)) lines.push(text);
-    seen.add(text);
-  }
-  const flows = flowsUsing(ws.analysis.spec, target.id);
-  if (flows.length > 0) lines.push(`flows: ${flows.join(", ")}`);
-  return { contents: { kind: "markdown", value: lines.join("\n\n") }, range: fromSpan(ws.text(path), target.span) };
+  const verdicts = own.length > 0 ? own : ws.analysis.verdicts.filter((verdict) => verdict.area === target.id);
+  // The same line twice (one verdict per area and line) is said once.
+  const lines = new Map(verdicts.map((verdict) => [`${verdict.criterion}: ${verdict.message}`, verdict] as const));
+  const evidence = [...lines.values()].map((verdict) => evidenceLine(verdict.criterion, verdict.message));
+  const declaration = info.file ? { file: info.file, line: info.line } : null;
+  return { id: target.id, title, place, declaration, evidence, flows: flowsUsing(ws.analysis.spec, target.id), range: fromSpan(ws.text(path), target.span) };
 }
 
 const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flow: "a flow", wiring: "wiring" };
 
 /**
  * Hover on a keyword, or on a line without an ID: what the line does under
- * its parent (format.md §5), then the diagnostics and verdicts of that line.
+ * its parent (grammar.md §5), then the diagnostics and verdicts of that line.
  */
-function roleHover(ws: Workspace, path: string, position: LspPosition): HoverResult | null {
+function roleHover(ws: Workspace, path: string, position: LspPosition): HoverContent | null {
   const doc = docOf(ws, path);
   const text = ws.text(path);
   if (!doc || text === null) return null;
@@ -314,21 +340,22 @@ function roleHover(ws: Workspace, path: string, position: LspPosition): HoverRes
   if (!onKeyword && (node.id !== null || node.refs.length > 0)) return null;
   const role = roleAt(section.kind, parent?.kind, node.kind);
   if (role === null) return null;
-  const where = parent ? `under \`${kindLabel(parent.kind)}\`` : `in ${PLACE[section.kind]}`;
-  let detail = "";
+  const where: HoverRun[] = parent ? [{ text: " under " }, { text: kindLabel(parent.kind), code: true }] : [{ text: ` in ${PLACE[section.kind]}` }];
+  let detail: HoverRun[] = [];
   if (node.kind === "then") {
     const ref = node.refs[0];
-    detail = ref ? `: a reference to \`${ref.target}\`` : ": text, not a reference";
+    detail = ref ? [{ text: ": a reference to " }, { text: ref.target, code: true }] : [{ text: ": text, not a reference" }];
   }
-  if (node.kind === "test" && section.kind === "flow" && ws.analysis.config.check.tests === undefined) detail = "; no evidence is checked: `check.tests` is not set";
-  const lines = [`**\`${kindLabel(node.kind)}\`** ${where} — ${role}${detail}`];
+  if (node.kind === "test" && section.kind === "flow" && ws.analysis.config.check.tests === undefined) detail = [{ text: "; no evidence is checked: " }, { text: "check.tests", code: true }, { text: " is not set" }];
+  const title: HoverRun[] = [{ text: kindLabel(node.kind), code: true, strong: true }, ...where, { text: " — " }, ...inlineRuns(role), ...detail];
   const line = node.span.start.line;
   const { diagnostics, verdicts } = ws.analysis;
-  for (const diag of diagnostics) if (diag.file === path && diag.span.start.line === line) lines.push(`- ${diag.code}: ${diag.message}`);
+  const evidence: HoverRun[][] = [];
+  for (const diag of diagnostics) if (diag.file === path && diag.span.start.line === line) evidence.push(evidenceLine(diag.code, diag.message));
   for (const verdict of verdicts) {
-    if (verdict.file === path && verdict.line === line && !sameFinding(verdict, diagnostics)) lines.push(`- ${verdict.criterion}: ${verdict.message}`);
+    if (verdict.file === path && verdict.line === line && !sameFinding(verdict, diagnostics)) evidence.push(evidenceLine(verdict.criterion, verdict.message));
   }
-  return { contents: { kind: "markdown", value: lines.join("\n\n") }, range: fromSpan(text, onKeyword && node.keyword ? node.keyword : node.span) };
+  return { id: null, title, place: null, declaration: null, evidence, flows: [], range: fromSpan(text, onKeyword && node.keyword ? node.keyword : node.span) };
 }
 
 export function definition(ws: Workspace, path: string, position: LspPosition): Location | null {
@@ -432,7 +459,7 @@ function symbolLocation(ws: Workspace, hit: NodeHit): Location | null {
     return { uri: uriOf(ws.root, CONFIG_FILE), range: lineRange(text, line, 1) };
   }
   if (hit.file === null || hit.line === null) return null;
-  const col = ws.analysis.snapshot?.nodes[hit.id]?.col ?? plannedDecl(ws.analysis.docs, hit.id)?.col ?? 1;
+  const col = ws.analysis.snapshot?.nodes[hit.id]?.col ?? plannedDeclaration(ws.analysis.docs, hit.id)?.col ?? 1;
   const start = lspPoint(ws.text(hit.file), hit.line, col);
   return { uri: uriOf(ws.root, hit.file), range: { start, end: start } };
 }

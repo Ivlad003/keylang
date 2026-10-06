@@ -101,6 +101,8 @@ if (!class_exists('KeylangTrace', false)) {
             $test = getenv('KEYLANG_TRACE_TEST');
             $run = getenv('KEYLANG_TRACE_RUN');
             $run = $run !== false && $run !== '' ? $run : dechex((int) (microtime(true) * 1000)) . '-' . getmypid();
+            // Child processes inherit the id, so the processes of one test are one run.
+            putenv("KEYLANG_TRACE_RUN={$run}");
             $trace = new self($output, $plan['flow'], $plan['snapshotId'], $run, 'php-' . getmypid() . '-' . bin2hex(random_bytes(4)), $test !== false && $test !== '' ? $test : null);
             $trace->prepare($plan['symbols'], $root);
             self::$active = $trace;
@@ -362,7 +364,10 @@ if (!class_exists('KeylangTrace', false)) {
 
         /**
          * A `yield` in the body between the brackets at `$open` and `$close`,
-         * not in a function nested in it: the function is a generator.
+         * not in a function nested in it: the function is a generator. An
+         * arrow function (`fn () => …`) has no braces to end a nested scope,
+         * so a `yield` in one counts as the body's own: the function is then
+         * left uninstrumented, which loses evidence but never interleaves spans.
          *
          * @param list<mixed> $tokens
          */
@@ -374,7 +379,7 @@ if (!class_exists('KeylangTrace', false)) {
             for ($i = $open + 1; $i < $close; $i++) {
                 $token = $tokens[$i];
                 $t = is_array($token) ? $token[1] : $token;
-                if (is_array($token) && ($token[0] === T_FUNCTION || $token[0] === T_FN)) {
+                if (is_array($token) && $token[0] === T_FUNCTION) {
                     $marks[] = $depth;
                     $nested++;
                 } elseif ($t === '{' || (is_array($token) && in_array($token[0], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true))) {

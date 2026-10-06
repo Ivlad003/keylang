@@ -41,7 +41,7 @@ test("flow overlay model: steps numbered in the order written on the level's uni
 function session(root: string, cols = 140, rows = 32): { app: App; send: (keys: string) => void; text: () => string; lines: () => string[] } {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, send: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
 }
 

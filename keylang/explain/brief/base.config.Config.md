@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=e0f1895c17f316a0e8a94306fb3c4597d9f031ffd89cd3363692947ac957eeb4 lang=en detail=brief -->
-Shape of the resolved per-repository settings read from `keylang.json`: the absolute root, the rules edition (`RuleFormat`), the map directory, languages, whether a module is a file or a directory, layer globs in map order, excluded and `outside` globs, check modes (including…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=5c0f959a87c193a3e21d57a385a9ca0534b8d0679a1d8f62f22f70416c02a425 lang=en detail=brief -->
+Resolved repository settings loaded from `keylang.json`: absolute root, rules edition, languages, module granularity, layer globs, exclude/outside/assume globs, check options, plus agent, voice, ghost-text and explanation preferences.

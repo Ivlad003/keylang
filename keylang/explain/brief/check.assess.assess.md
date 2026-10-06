@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=743c60d84b62e3050f7b651e1cf0579dffe52f17b24d46e0f5c7d2eee0e30716 lang=en detail=brief -->
-Compiles the spec via `lang.spec-ir.compileSpec`, resolves references with `check.resolve.check`, then runs `check.rules.evaluateRules`, `check.flows.evaluateFlows` and `check.wiring.checkWiring` against the snapshot. Merges and sorts all diagnostics, drops K001 for planned…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=fc64eecdc013e2fd7f47d8730c2e7aa1c270a8d67fec7a45690422456cc77c65 lang=en detail=brief -->
+Compiles the spec and resolves IDs against the snapshot, then runs rule, flow and wiring checks via `check.rules.evaluateRules`, `check.flows.evaluateFlows` and `check.wiring.checkWiring`. Returns sorted diagnostics and merged verdicts.

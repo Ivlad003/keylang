@@ -4,7 +4,8 @@
 // (a saved explanation or the offline summary) and `apply_diff`, which only
 // writes a proposal a person merges. Every call answers for the current
 // inputs (`currentAnalysis`), so an answer never describes code that changed
-// since. stdout carries the protocol only.
+// since; the local fact cache follows the snapshot, best-effort, as for
+// `check`. No spec is written. stdout carries the protocol only.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -13,16 +14,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { contextForIds } from "./agent-context.ts";
-import { analyze, type Analysis } from "./analyze.ts";
+import { analyze, within, type Analysis } from "./analyze.ts";
 import { checkResults } from "./check-results.ts";
-import { featureStatus, idsIn, type FeatureBase } from "./feature-status.ts";
-import { readFeatureBase } from "./git-changes.ts";
+import { keepsFactCache, saveFactCache } from "./fact-cache.ts";
+import { idsIn } from "./feature-status.ts";
+import { runOperation } from "./operations.ts";
 import { specToCode } from "./spec-to-code.ts";
 import { CONFIG_FILE, evidenceFiles, loadConfig, toPosix } from "./config.ts";
 import { isStale, readExplanation } from "./explain-llm.ts";
 import { summarizeNode } from "./explain-node.ts";
 import { explanationOf, loadBriefs, type NodeExplanation } from "./explanations.ts";
-import { collectMdFiles } from "./files.ts";
+import { errorText } from "./diag.ts";
+import { collectMdFiles, existingText } from "./files.ts";
 import { sectionNodes, walk } from "./ir.ts";
 import { generateMap } from "./map.ts";
 import { searchNodes } from "./node-search.ts";
@@ -41,14 +44,17 @@ const failure = (message: string): ToolResult => ({ content: [{ type: "text", te
  * reused while the snapshot id, keylang.json, the specs and the evidence
  * files are those of the last call. Each part of the key is read before the
  * analysis reads it, so a change in between only costs a rebuild next time.
+ * The fact cache is saved best-effort whenever the facts differ from it, so
+ * the next process (a Stop hook, `check`) parses only what changed.
  */
 export function currentAnalysis(root: string): () => Promise<Analysis> {
   let last: { key: string; analysis: Analysis } | null = null;
   return async () => {
     const configFile = join(root, CONFIG_FILE);
-    const raw = existsSync(configFile) ? readFileSync(configFile, "utf8") : null;
+    const raw = existingText(configFile);
     const config = loadConfig(root);
-    const map = config.languages.length > 0 ? await generateMap(config) : null;
+    const map = config.languages.length > 0 ? await generateMap(config, keepsFactCache(root) ? { persist: "changed" } : {}) : null;
+    if (map?.factCache) saveFactCache(root, map.factCache);
     const specDir = join(root, config.dir);
     const specs = existsSync(specDir) ? collectMdFiles([specDir]) : [];
     const evidence = [...(evidenceFiles(config, "tests") ?? []), ...(evidenceFiles(config, "trace") ?? [])].map((file) => join(root, file));
@@ -186,7 +192,7 @@ export function mcpServer(root: string, version: string): McpServer {
     "apply_diff",
     {
       description:
-        "Propose the full new text of one hand-written spec (a Markdown file under the spec directory). Nothing is written to the spec: the text becomes a proposal a person merges hunk by hunk in the keylang TUI (key m). Returns the proposal path, status `pending`, and the line diff.",
+        "Propose the full new text of one hand-written spec (a Markdown file under the spec directory; not the generated map, the explained map, saved explanations or the baseline). Nothing is written to the spec: the text becomes a proposal a person merges hunk by hunk in the keylang TUI (key m) or accepts whole with `keylang proposals accept <path>`; never run that command yourself. Returns the proposal path, status `pending`, and the line diff.",
       inputSchema: { path: z.string().min(1), text: z.string() },
     },
     async ({ path, text }) => {
@@ -196,7 +202,7 @@ export function mcpServer(root: string, version: string): McpServer {
       const problem = proposalProblem(root, specDir, target, (p) => analysis.docs.some((doc) => doc.path === p && doc.generated !== null));
       if (problem) return failure(`${target}: ${problem}`);
       const abs = join(root, target);
-      const before = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+      const before = existingText(abs) ?? "";
       writeProposal(root, target, text);
       return json({ status: "pending", proposal: `${PROPOSALS_DIR}/${target}`, diff: lineDiff(before, text) });
     },
@@ -234,7 +240,8 @@ export function mcpServer(root: string, version: string): McpServer {
     async ({ path, text }) => {
       const abs = resolve(root, path);
       const rel = toPosix(relative(root, abs));
-      if (rel.startsWith("..") || rel === "") return failure(`${path}: outside the repository`);
+      // Inside the root by path segments: `..specs/x.md` is a directory named `..specs`, not a way out.
+      if (!within(abs, root) || rel === "") return failure(`${path}: outside the repository`);
       const analysis = await analyze({ root, overlay: new Map([[abs, text]]) });
       const diagnostics = analysis.diagnostics
         .filter((diag) => diag.file === rel)
@@ -276,7 +283,7 @@ export function mcpServer(root: string, version: string): McpServer {
           })),
         });
       } catch (error) {
-        return failure(error instanceof Error ? error.message : String(error));
+        return failure(errorText(error));
       }
     },
   );
@@ -285,26 +292,14 @@ export function mcpServer(root: string, version: string): McpServer {
     "feature_status",
     {
       description:
-        "Whether keylang/features/<slug>.md is done, and how far it got: `stage` is idea (no flow yet), behavior (a flow without a trigger or steps), structure (the spec itself has gaps), ready (only the implementation is missing) or done. Done means the file declares something to check (else an `empty` gap), keylang reads it without errors (K001-K005 in it are `diagnostic` gaps), every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail remains, and the plan was not weakened since the base commit (`since`, default HEAD): a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. Every gap has the stage where it is fixed. `hints` (a flow without a trigger or steps) say what the spec still lacks and do not block. Tests, trace, and the base (info.base) are informational and do not block.",
+        "Whether keylang/features/<slug>.md is done, and how far it got: `stage` is idea (no flow yet), behavior (a flow without a trigger or steps), structure (the spec itself has gaps), ready (only the implementation is missing) or done. Done means the file declares something to check (else an `empty` gap), keylang reads it without errors (K001-K005 in it are `diagnostic` gaps), every planned id is implemented (K202, not K201), every flow step is static ok, no rule fail of this change remains, and the plan was not weakened since the base commit: a planned removed without being implemented, or a trigger or step changed or removed, is a spec gap. The base is `since`; without it, the merge-base of HEAD with the main branch (origin/HEAD, else main, master, origin/main, origin/master), so a fail committed on a feature branch is still this change's, and the plan at HEAD is compared too; HEAD when there is no main branch or the merge-base is HEAD. A rule fail is this change's when it touches a file changed since the base (as `check --changed --since <base>` reports it) or an end of its edge is an id the feature names; any other is inherited: a `rule` hint and an entry of info.rules, not blocking. Without git (info.base unavailable) every rule fail blocks and info.rules is null. Every gap has the stage where it is fixed. `hints` (a flow without a trigger or steps, an inherited rule fail) do not block. Tests, trace, and the base (info.base: ref, state, source since|merge-base|HEAD, main) are informational and do not block.",
       inputSchema: { slug: z.string().min(1), since: z.string().min(1).optional() },
     },
     async ({ slug, since }) => {
-      const analysis = await fresh();
-      const path = `${analysis.config.dir}/features/${slug}.md`;
-      // Only a feature keylang read is looked up in the history: the slug never names another path.
-      if (!analysis.docs.some((doc) => doc.path === path)) return failure(`no feature \`${slug}\``);
-      let base: FeatureBase;
-      try {
-        base = readFeatureBase(root, path, since, "feature_status");
-      } catch (error) {
-        return failure(error instanceof Error ? error.message : String(error));
-      }
-      const report = featureStatus(
-        { dir: analysis.config.dir, docs: analysis.docs, spec: analysis.spec, diagnostics: analysis.diagnostics, verdicts: analysis.verdicts, nodes: analysis.snapshot?.nodes ?? {}, base, index: analysis.index, format: analysis.config.format, layers: [...analysis.config.layers.keys()] },
-        slug,
-      );
-      if (report === null) return failure(`no feature \`${slug}\``);
-      return json(report);
+      // The shared operation of `keylang feature` and the TUI's readiness screen, on this server's analysis.
+      const result = await runOperation({ kind: "feature", root, slug, ...(since !== undefined ? { since } : {}) }, { analyze: () => fresh() });
+      if (result.payload === null) return failure(result.messages.find((message) => message.level === "error")?.text ?? `no feature \`${slug}\``);
+      return json(result.payload.report);
     },
   );
 

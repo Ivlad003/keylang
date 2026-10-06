@@ -4,7 +4,7 @@
 
 As before, you write the spec and an agent generates the functions, so you do not write them yourself. keylang does not start the agent; the commands in this lesson are what check the result.
 
-You need Node.js ≥ 22.18. The package does not compile any native code during installation. The optional voice modules (`@fugood/whisper.node`, `decibri`) install only when a prebuilt binary exists for your platform, and keylang works without them.
+You need Node.js ≥ 22.18. The package does not compile any native code during installation. Voice input is optional: the voice modules (`@fugood/whisper.node`, `decibri`) are not installed with keylang, and keylang works without them. To enable local voice, install them next to keylang; `keylang doctor` prints the command.
 
 ```sh
 npx keylang init .     # layers, keylang.json, the map, a baseline, harness files

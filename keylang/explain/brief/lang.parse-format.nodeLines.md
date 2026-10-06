@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=26b5530e8eb5e1212dc32b518b6727eb9860663067d09a4afa8df97639cbab30 lang=en detail=brief -->
-Appends one indented debug line per node to `out`, combining the label from `lang.ir.kindLabel` with the node's id, link target, quoted text/label, ref targets, and start position. It then recurses into each child at depth+1.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b77fa2798de9672c46bcfe76311daa290cb7e097365d1434f7e1468cac64d171 lang=en detail=brief -->
+Recursively renders a parse node and its children as indented text lines, appending kind label (via `lang.ir.kindLabel`), id, link target, text, label, refs and start position to the output array.

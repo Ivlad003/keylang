@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=46dcca53041c6e9ad43a009751edb7ee72da5244b7de5db415d50114fc80a6cc lang=en detail=brief -->
-Scans a block's statements, unwrapping `export_statement` to its declaration, and reports whether any of them declares the given name according to `extract.ts.declaredNames`. Used by `extract.ts.bindingOf` to decide if a name is a local binding.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bc79dc7c8d32d4079273eb5534659bacef04e4f2fd12169eb826a2b5ce943b46 lang=en detail=brief -->
+Checks whether any statement in a block, including the inner declaration of an export statement, declares the given name, using `extract.ts.blockStatements` and `extract.ts.declaredNames`; used by `extract.ts.bindingOf` to detect local bindings.

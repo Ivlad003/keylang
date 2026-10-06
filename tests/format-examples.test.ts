@@ -1,4 +1,5 @@
-// Executable examples and the grammar appendix in docs/format.md.
+// Executable examples and the grammar appendix of the format spec:
+// docs/grammar.md, docs/semantics.md and docs/snapshot.md.
 //
 // A group is the fences a reader sees: `keylang` (and other `path=` files), an
 // optional `fmt` fence immediately after its `keylang` fence, and a closing
@@ -16,7 +17,8 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = join(root, "bin/keylang.js");
-const formatPath = join(root, "docs/format.md");
+/** The format spec, split by section; every executable example lives in one of these. */
+const specSources = ["docs/grammar.md", "docs/semantics.md", "docs/snapshot.md"];
 
 interface Md {
   type: string;
@@ -375,11 +377,13 @@ async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>
   await Promise.all(workers);
 }
 
-test("format.md examples run through check and fmt, and the ebnf matches the parser", async () => {
-  const text = readFileSync(formatPath, "utf8");
-  const source = "docs/format.md";
-  const { groups, errors } = collectGroups(text, source);
-  assert.deepEqual(errors, []);
+test("format spec examples run through check and fmt, and the ebnf matches the parser", async () => {
+  const docs = specSources.map((source) => ({ source, text: readFileSync(join(root, source), "utf8") }));
+  const collected = docs.map((doc) => ({ source: doc.source, ...collectGroups(doc.text, doc.source) }));
+  assert.deepEqual(collected.flatMap((c) => c.errors), []);
+  const groups = collected.flatMap((c) => c.groups);
+  const sourceOf = new Map(collected.flatMap((c) => c.groups.map((group) => [group, c.source] as const)));
+  const text = docs.map((doc) => doc.text).join("\n");
   const bodies = groups.flatMap((group) => group.files.map((file) => file.body)).join("\n");
   const diagnostics = groups.map((group) => group.diagnostics).join("\n");
   assert.ok(groups.length >= 4);
@@ -407,10 +411,12 @@ test("format.md examples run through check and fmt, and the ebnf matches the par
   assert.match(continued?.diagnostics ?? "", /K002/);
   assert.match(continued?.diagnostics ?? "", /first declared at/);
 
-  const ebnfNodes = codes(text).filter((node) => node.lang === "ebnf");
+  assert.equal(codes(text).filter((node) => node.lang === "ebnf").length, 1);
+  const grammar = docs.find((doc) => doc.source === "docs/grammar.md")!.text;
+  const ebnfNodes = codes(grammar).filter((node) => node.lang === "ebnf");
   assert.equal(ebnfNodes.length, 1);
-  const section12 = text.split("\n").findIndex((line) => line.startsWith("## 12."));
-  assert.ok((ebnfNodes[0]?.position?.start.line ?? 0) > section12 + 1);
+  const appendix = grammar.split("\n").findIndex((line) => line.startsWith("## Додаток А"));
+  assert.ok(appendix >= 0 && (ebnfNodes[0]?.position?.start.line ?? 0) > appendix + 1, "the ebnf is in Appendix A of grammar.md");
   assert.equal(text.includes("heading  :="), false);
   assert.equal(text.includes("item     :="), false);
   const ebnf = ebnfNodes[0]!.value ?? "";
@@ -418,7 +424,9 @@ test("format.md examples run through check and fmt, and the ebnf matches the par
   for (const name of POSITION_NAMES) assert.ok(names.includes(name), `ebnf production ${name}`);
   for (const bit of ["→", "business", "technical", "planned", "emits", "exports", "compose"]) assert.ok(ebnf.includes(bit), bit);
 
-  const mutatedDoc = text.replace("K005 unexpected arguments after layer `options`", "K005 not the message check prints");
+  const k005 = docs.find((doc) => doc.text.includes("K005 unexpected arguments after layer `options`"))!;
+  const source = k005.source;
+  const mutatedDoc = k005.text.replace("K005 unexpected arguments after layer `options`", "K005 not the message check prints");
   const mutatedGroups = collectGroups(mutatedDoc, source);
   assert.deepEqual(mutatedGroups.errors, []);
   const mutated = mutatedGroups.groups.find((group) => group.diagnostics.includes("K005 not the message check prints"));
@@ -434,7 +442,7 @@ test("format.md examples run through check and fmt, and the ebnf matches the par
     "```",
     "```diagnostics",
     "keylang/map/a.md:1:11: K005 unexpected arguments after layer `options` (a dependency `<alias> <path>` must be nested under a module)",
-    "keylang/rules.md:2:3: K004 unknown keyword `layer` here; expected one of: layers, allow, deny, entry, module, no-cycles",
+    "keylang/rules.md:2:3: K004 unknown keyword `layer` here; expected one of: layers, allow, deny, entry, module, no-cycles; `layer` goes at the top of a map",
     "```",
     "",
   ].join("\n");
@@ -450,7 +458,7 @@ test("format.md examples run through check and fmt, and the ebnf matches the par
 
   const problems: string[] = [];
   const jobs: (() => Promise<void>)[] = [
-    ...groups.map((group) => async () => checkGroup(group, source)),
+    ...groups.map((group) => async () => checkGroup(group, sourceOf.get(group)!)),
     async () => checkGroup(mutated!, source),
     async () => checkGroup(synthetic.groups[0]!, "synthetic.md"),
     async () => {

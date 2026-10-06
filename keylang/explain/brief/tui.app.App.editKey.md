@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=bb3f1b910b2932bf3161f72c68b5c17b2ef2dfdb2a2fff4b3964169d31ad6880 lang=en detail=brief -->
-Routes a keystroke while a ghost suggestion is shown: Alt+] cycles its variants, Tab (with no completion open) hands it to `tui.assist.Assist.acceptGhost`, anything else clears it via `tui.assist.Assist.dropGhost`. Otherwise it defers to `tui.app.App.editKeyWithoutGhost` and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=3858abcdecd555c13f05914d72c1e9fe2171a7919a998d77cd5c4ae233ecca08 lang=en detail=brief -->
+Handles edit-mode keys while a ghost suggestion is shown: Alt+] cycles variants, Tab accepts via `tui.assist.Assist.acceptGhost`, other keys drop it and fall through to `tui.app.App.editKeyWithoutGhost`, then re-arm suggestions.

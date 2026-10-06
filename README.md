@@ -122,7 +122,7 @@ Finally, exit code 0 only means that nothing blocks. Without `--strict`, a run c
 
 keylang is a structured list, not a programming language. It has no variables and no loops, so any file can be read from top to bottom without running anything. A bad line gets a diagnostic code (K001–K302), and parsing carries on past it; `keylang explain` tells you what each code means.
 
-The language grew out of the Markdown form of Timur Shemsedinov's architecture language. How it compares with import-linter, ArchUnit, Structurizr and similar tools is discussed in [`docs/research-pl.md`](docs/research-pl.md) (in Ukrainian).
+The language grew out of the Markdown form of Timur Shemsedinov's architecture language. How it compares with import-linter, ArchUnit, Structurizr and similar tools is discussed in [`docs/research-pl.md`](docs/archive/research-pl.md) (in Ukrainian).
 
 ## What is built
 
@@ -147,6 +147,6 @@ npm test            # node:test, through the real CLI
 npm run typecheck   # tsc --noEmit
 ```
 
-The terminal UI is tested without a real terminal (`tests/tui.test.ts`), and `keylang web` is tested through the CLI and a WebSocket (`tests/web.test.ts`).
+The terminal UI is tested without a real terminal (`tests/tui-*.test.ts`), and `keylang web` is tested through the CLI and a WebSocket (`tests/web.test.ts`).
 
 To publish, start from a clean clone: run `npm test && npm run typecheck`, then `npm version patch` (or minor, or major) and `npm publish`. `prepack` builds `dist/` for you. Before publishing, it is worth inspecting the tarball with `npm pack`.

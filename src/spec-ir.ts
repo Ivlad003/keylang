@@ -567,3 +567,51 @@ function at(file: string, node: Node, text: string): Located {
 function flowAt(file: string, flow: string, node: Node): Located {
   return at(file, node, `${flow}\0${node.kind} ${renderMeaning(node)}`);
 }
+
+// ---------- queries over the specs ----------
+
+/** A `planned` line as hover, explain and spec-to-code read it: its declared kind (`fn` without one), contract and place. */
+export interface PlannedDeclaration {
+  kind: string;
+  signature: string | null;
+  file: string;
+  /** 1-based line and column (code points) of the item. */
+  line: number;
+  col: number;
+}
+
+/**
+ * The first `planned` item that declares `id`, in document order and at any
+ * depth of any section, whatever its label: `SpecIR.planned` keeps only the
+ * valid ones of flows.
+ */
+export function plannedDeclaration(docs: readonly Document[], id: string): PlannedDeclaration | null {
+  const find = (node: Node): Node | null => {
+    if (node.kind === "planned" && node.id === id) return node;
+    for (const child of node.children) {
+      const found = find(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const doc of docs) {
+    for (const section of doc.sections) {
+      for (const top of sectionNodes(section)) {
+        const node = find(top);
+        if (node) return { kind: node.label?.value ?? "fn", signature: node.text?.value ?? null, file: doc.path, line: node.span.start.line, col: node.span.start.col };
+      }
+    }
+  }
+  return null;
+}
+
+/** The names of the flows whose steps or trigger name `id`, sorted. */
+export function flowsUsing(spec: SpecIR, id: string): string[] {
+  const flows = new Set<string>();
+  for (const flow of spec.flows) {
+    walkFlow(flow, (item) => {
+      if ((item.kind === "step" || item.kind === "trigger") && item.target.target === id) flows.add(flow.name);
+    });
+  }
+  return [...flows].sort();
+}

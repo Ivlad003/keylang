@@ -20,12 +20,12 @@ fmt знімає з рядків огорожі, відкривної й зак�
 - [x] На виводі нинішнього fmt (порожній рядок уже є, огорожа з відступом 4) `fmt --check` дає код 1 і `<файл>: not formatted`, файл не змінюється. Зараз він дає 0.
 - [x] Вміст блоку (рядки між огорожами після зняття відступу) однаковий до і після fmt; якщо 01 злито, mdast дає той самий `code.value`. `check --format json` на фікстурі дає ті самі results і `specHash` до і після fmt.
 - [x] Регресія: `fmt --check` на `examples` (tests/cli.test.ts:90) лишається 0, фікстури fmt не змінились.
-- [x] format.md §8 («проза й код — дослівно, крім відступу огорожі») і текст Р9 оновлено. Якщо 01 злито, запис allowlist для фікстури Р9 має розбіжності лише до fmt і 0 після.
-- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а format.md §1 більше не перелічує невиправлених класів.
+- [x] grammar.md §8 («проза й код — дослівно, крім відступу огорожі») і текст Р9 оновлено. Якщо 01 злито, запис allowlist для фікстури Р9 має розбіжності лише до fmt і 0 після.
+- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а grammar.md §1 більше не перелічує невиправлених класів.
 - [ ] `npm run typecheck` і `npm test` зелені. `node bin/keylang.js map` перегенеровано й diff переглянуто (`keylang/map/` і, бо увімкнено `explain.map`, `keylang/map-explained/`); `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/fmt.ts`, `docs/format.md`, `tests/cli.test.ts`, `tests/commonmark.test.ts`, `tests/fixtures/commonmark/*.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/fmt.ts); docs/format.md §8 (відступ огорожі знімається); tests/commonmark.test.ts («fmt dedents a fence under a list item…», «a tab in the fence indent is left as written»), allowlist fence-indent.md лише до fmt; `map --check` = 0.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/fmt.ts); docs/grammar.md §8 (відступ огорожі знімається); tests/commonmark.test.ts («fmt dedents a fence under a list item…», «a tab in the fence indent is left as written»), allowlist fence-indent.md лише до fmt; `map --check` = 0.

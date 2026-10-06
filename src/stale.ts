@@ -7,11 +7,13 @@
 // reason to reread it, not a proof that it is wrong.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { analyze, within } from "./analyze.ts";
 import { loadConfig, toPosix, type Config } from "./config.ts";
+import { errorText } from "./diag.ts";
 import { snapshotBaseline } from "./explanations.ts";
+import { existingText } from "./files.ts";
 import { sectionNodes, type Document, type Node, type Section } from "./ir.ts";
 import { safeWrite } from "./safe-write.ts";
 import type { AnalysisSnapshot } from "./snapshot.ts";
@@ -200,7 +202,7 @@ export function parseBaseline(text: string, path: string): StaleBaseline {
   try {
     value = JSON.parse(text);
   } catch (error) {
-    throw new Error(`${path}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${path}: not valid JSON: ${errorText(error)}`);
   }
   if (!isRecord(value)) throw new Error(`${path}: expected an object of spec files`);
   const out = new Map<string, Map<string, string>>();
@@ -268,7 +270,7 @@ export async function runStaleCheck(request: { root: string; base: string; paths
   }
   const path = staleBaselinePath(config);
   const abs = join(root, path);
-  const current = existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  const current = existingText(abs);
   const baseline = current === null ? new Map() : parseBaseline(current, path);
   // `display` relative to the root: the paths are the baseline's keys.
   const analysis = await analyze({ root, specs, withoutEvidence: true });

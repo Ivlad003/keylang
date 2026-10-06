@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=398bfb32d08f3dbd6d75fb22a9fce0fb0c08d0d71dba79c5b57582a2fdbb8a04 lang=en detail=brief -->
-Module loader hook that lets the next loader fetch the source, then, if a plan exists for the URL and the source's hash via `map.snapshot.sha256` matches it, substitutes the plan's instrumented source. It posts a "loaded" message with the plan's ids to the port before…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=8e1b603dbfdc18357a2130f52215bc4c977b529c2c569e9a4981934b0f24066a lang=en detail=brief -->
+Node module loader hook that swaps in instrumented trace source for planned files whose `map.snapshot.sha256` hash matches the snapshot, reporting loaded or skipped, and tags CommonJS modules for the adapter.

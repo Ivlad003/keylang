@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2a695107d226570c210e7ad884e24d7caf43f4504c4e644bc2b26e52b4746e1b lang=en detail=brief -->
-Paints the visible slice of a buffer's wrapped lines from `tui.view.readRows` onto the grid, highlighting the cursor's line and prefixing each source line's first row with an evidence glyph from `tui.view.markCell`. Evidence comes from `tui.evidence.evidenceOf` and is drawn…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0457e58b0aaa3cfd2046d40737d5c6e73c198423fcd7fc07a25ebe42bc0f098d lang=en detail=brief -->
+Renders the visible rows of a source buffer into the grid via `tui.view.readRows`, highlighting the cursor line and placing an evidence gutter mark from `tui.view.markCell` on each line's first row.

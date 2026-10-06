@@ -4,7 +4,7 @@
 import { builtinModules } from "node:module";
 import type { CallFact, DeclFact, FileFacts, HookFact, ImportBinding, ImportFact, PassFact, TypeRefFact, UnsupportedFact, ValueRefFact } from "./facts.ts";
 import { blockCommentBody, isLicense, jsdocDescription, lineCommentsBody, nonEmpty } from "./doc-comments.ts";
-import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node } from "./treesitter.ts";
+import { errorLine, fingerprint, grammarFor, located, query, startCol, withTree, type Grammar, type Language, type Node, type Tree } from "./treesitter.ts";
 
 // Every call and `new`, whatever its callee: each becomes an edge or a hole, never nothing.
 const CALLS_QUERY = `
@@ -33,7 +33,49 @@ const MAX_CALLEE = 80;
 
 export function extractTs(path: string, src: string): Promise<FileFacts> {
   const g = grammarFor(path);
-  return withTree(g, src, (tree, language) => extractTree(path, tree.rootNode, language, g));
+  return withTsTree(path, src, (tree, language, typeStars) => extractTree(path, tree.rootNode, language, g, typeStars));
+}
+
+/**
+ * Parse a TypeScript or JavaScript source and run `use` on the tree.
+ * `export type * from` and `export type * as NS from` (TypeScript 5.0) are
+ * syntax errors for the bundled grammar, while the same statement without
+ * `type` is `export * from`: such a `type` is blanked with spaces — the same
+ * length, so every position stays — and the source parsed again.
+ * `typeStars`: the start offset of each such statement → its text as written.
+ */
+export async function withTsTree<T>(path: string, src: string, use: (tree: Tree, language: Language, typeStars: ReadonlyMap<number, string>) => T): Promise<T> {
+  const g = grammarFor(path);
+  const first = await withTree(g, src, (tree, language): { done: T } | { keywords: TypeStar[] } => {
+    const keywords = typeStarKeywords(tree.rootNode);
+    return keywords.length === 0 ? { done: use(tree, language, new Map()) } : { keywords };
+  });
+  if ("done" in first) return first.done;
+  let blanked = src;
+  for (const k of first.keywords) blanked = `${blanked.slice(0, k.start)}${" ".repeat(k.end - k.start)}${blanked.slice(k.end)}`;
+  const typeStars = new Map(first.keywords.map((k) => [k.statement, k.text]));
+  return withTree(g, blanked, (tree, language) => use(tree, language, typeStars));
+}
+
+/** The `type` of an `export type * from` statement the grammar could not read: offsets in the source (UTF-16 code units). */
+interface TypeStar {
+  start: number;
+  end: number;
+  statement: number;
+  text: string;
+}
+
+/** `export type * from "./t"` read as `export`, an error node holding `type`, then `*` or `* as NS`. */
+function typeStarKeywords(root: Node): TypeStar[] {
+  if (!root.hasError) return [];
+  const out: TypeStar[] = [];
+  for (const stmt of root.namedChildren) {
+    if (stmt.type !== "export_statement") continue;
+    const [keyword, error, next] = stmt.children;
+    if (keyword?.type !== "export" || error?.type !== "ERROR" || error.text !== "type" || (next?.type !== "*" && next?.type !== "namespace_export")) continue;
+    out.push({ start: error.startIndex, end: error.endIndex, statement: stmt.startIndex, text: stmt.text });
+  }
+  return out;
 }
 
 /**
@@ -69,12 +111,12 @@ function parentIndex(root: Node): Map<number, Node> {
   return index;
 }
 
-function extractTree(path: string, root: Node, language: Language, g: Grammar): FileFacts {
+function extractTree(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   parents = parentIndex(root);
   const head = moduleHeader(root);
   header = head.nodes;
   try {
-    const facts = extractIndexed(path, root, language, g);
+    const facts = extractIndexed(path, root, language, g, typeStars);
     if (head.doc !== null) facts.doc = head.doc;
     return facts;
   } finally {
@@ -147,7 +189,7 @@ function moduleHeader(root: Node): { doc: string | null; nodes: Set<number> } {
   return { doc: null, nodes: new Set() };
 }
 
-function extractIndexed(path: string, root: Node, language: Language, g: Grammar): FileFacts {
+function extractIndexed(path: string, root: Node, language: Language, g: Grammar, typeStars: ReadonlyMap<number, string>): FileFacts {
   const facts: FileFacts = { path, endLine: 1, endCol: 1, imports: [], decls: [], exports: new Set(), reexportsAll: [], exportRows: [], unsupported: [], valueRefs: [], moduleCalls: [], completeness: "complete", parseError: null };
   const end = located(root);
   facts.endLine = end.endLine;
@@ -215,7 +257,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const name = nameNode.text;
           const req = value ? requireSource(value, requires) : null;
           if (req) {
-            facts.imports.push(importAt(d, req, [{ kind: "module", local: name }], false));
+            facts.imports.push(importAt(d, req.source, [{ kind: "module", local: name, ...(req.namespace ? { namespace: true as const } : {}) }], false));
             continue;
           }
           // `(() => …) as Handler` and `(function () {}) satisfies T` are the function itself.
@@ -240,7 +282,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           const value = d.childForFieldName("value");
           if (d.type !== "variable_declarator" || !nameNode || nameNode.type !== "object_pattern" || !value) continue;
           // `const { a } = mod;` where `mod` is an imported module binding.
-          const req = requireSource(value, requires) ?? (value.type === "identifier" ? moduleSource(facts, value.text) : null);
+          const req = requireSource(value, requires)?.source ?? (value.type === "identifier" ? moduleSource(facts, value.text) : null);
           if (!req) continue;
           const bindings: ImportBinding[] = [];
           for (const p of nameNode.namedChildren) {
@@ -333,7 +375,7 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
           } else if (ns) {
             const alias = ns.namedChildren[0]?.text;
             if (alias) {
-              bindings.push({ kind: "module", local: alias });
+              bindings.push({ kind: "module", local: alias, namespace: true });
               facts.exports.add(alias);
               facts.exportRows.push({ name: alias, kind: "value", local: null, form: "namespace", from: spec });
             }
@@ -341,7 +383,13 @@ function extractIndexed(path: string, root: Node, language: Language, g: Grammar
             facts.reexportsAll.push(spec);
             facts.exportRows.push({ name: "*", kind: "reexport", local: null, form: "reexport", from: spec });
           }
-          facts.imports.push(importAt(node, spec, bindings, true));
+          // `export type { A } from`, `export type * from` (read without its blanked `type`): types only.
+          const written = typeStars.get(node.startIndex);
+          const fact = importAt(node, spec, bindings, true);
+          if (written !== undefined) fact.text = written;
+          if (written !== undefined || typeKeyword(node)) fact.typeOnly = true;
+          else if (clause && inlineTypesOnly(clause, "export_specifier")) fact.inlineTypeOnly = true;
+          facts.imports.push(fact);
           break;
         }
         const declaration = node.childForFieldName("declaration");
@@ -474,6 +522,17 @@ function reactExportOf(callee: Node, react: ReactBindings): { name: string; loca
 /** The `type` keyword of `import type` or `import { type name }` — an unnamed child, not an identifier. */
 function typeKeyword(node: Node): boolean {
   return node.children.some((c) => c.type === "type");
+}
+
+/**
+ * `{ type A, type B as C }` of an import or an `export … from`: at least one
+ * name, and every one of them `type`. Whether such a statement runs is the
+ * tsconfig's to say (`ImportFact.inlineTypeOnly`), so it stays a fact of the
+ * syntax here.
+ */
+function inlineTypesOnly(list: Node, specifier: "import_specifier" | "export_specifier"): boolean {
+  const names = list.namedChildren.filter((c) => c.type === specifier);
+  return names.length > 0 && names.every(typeKeyword);
 }
 
 /** `import { type memo as m }`: the specifier that binds `local` is type-only. */
@@ -619,7 +678,16 @@ function importAt(node: Node, source: string, bindings: ImportBinding[], reexpor
   return { source, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text, bindings, reexport };
 }
 
-const NESTED_DECL = new Set(["function_declaration", "generator_function_declaration", "function_signature", "class_declaration", "abstract_class_declaration", "method_definition", "method_signature", "interface_declaration", "type_alias_declaration", "enum_declaration", "internal_module"]);
+const NESTED_DECL = new Set(["function_declaration", "generator_function_declaration", "function_signature", "class_declaration", "abstract_class_declaration", "method_definition", "interface_declaration", "type_alias_declaration", "enum_declaration", "internal_module"]);
+
+/**
+ * A declaration of its own below the one whose type names are collected. A method signature
+ * is one in a class body (an overload of a member); in an interface or an object type
+ * (`{ save(o: Order): void }`) it is part of that type.
+ */
+function nestedDeclaration(node: Node): boolean {
+  return NESTED_DECL.has(node.type) || (node.type === "method_signature" && node.parent?.type === "class_body");
+}
 
 /** 1-based line of the first node nested deeper than `limit` below `root`; null when none is. */
 function lineDeeperThan(root: Node, limit: number): number | null {
@@ -658,29 +726,71 @@ function walkNamed(root: Node, enter: (node: Node) => boolean | void): void {
   }
 }
 
-/** Type names used by `node`, excluding its own declared name and nested declarations. */
-function collectTypeRefs(node: Node): TypeRefFact[] {
+const NO_NAMES: ReadonlySet<string> = new Set();
+
+/**
+ * Type names used by `node`, excluding its own declared name, nested
+ * declarations and the names a generic binds in its scope: a type parameter
+ * (`<T>`), a mapped type's key (`[K in keyof T]`), an `infer U`. `bound`: the
+ * type parameters already in scope, a class's for its members.
+ */
+function collectTypeRefs(node: Node, bound: ReadonlySet<string> = NO_NAMES): TypeRefFact[] {
   const skip = node.childForFieldName("name");
   const out: TypeRefFact[] = [];
-  walkNamed(node, (current) => {
-    if (current.id !== node.id && NESTED_DECL.has(current.type)) return false;
+  // An explicit stack, as in `walkNamed`, with the names bound at each node.
+  const stack: { node: Node; bound: ReadonlySet<string> }[] = [{ node, bound }];
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    const current = item.node;
+    if (current.id !== node.id && nestedDeclaration(current)) continue;
     if (current.type === "nested_type_identifier") {
       const at = located(current);
       out.push({ name: at.text.replace(/\s+/g, ""), line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
-      return false;
+      continue;
     }
-    if (current.type === "type_identifier" && current.id !== skip?.id) {
+    const scope = typeNamesBound(current, item.bound);
+    if (current.type === "type_identifier" && current.id !== skip?.id && !scope.has(current.text)) {
       const at = located(current);
       out.push({ name: at.text, line: at.line, col: at.col, endLine: at.endLine, endCol: at.endCol, text: at.text });
     }
-    return true;
-  });
+    const children = current.namedChildren;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child) stack.push({ node: child, bound: scope });
+    }
+  }
   return out;
+}
+
+/** `bound` and the type names `node` binds for its subtree: its type parameters, a mapped type's key, the `infer` names of a conditional type. */
+function typeNamesBound(node: Node, bound: ReadonlySet<string>): ReadonlySet<string> {
+  const names: string[] = [];
+  for (const param of node.childForFieldName("type_parameters")?.namedChildren ?? []) {
+    const name = param.type === "type_parameter" ? param.childForFieldName("name") : null;
+    if (name) names.push(name.text);
+  }
+  if (node.type === "index_signature") {
+    for (const clause of node.namedChildren) {
+      const name = clause.type === "mapped_type_clause" ? clause.childForFieldName("name") : null;
+      if (name) names.push(name.text);
+    }
+  }
+  // `T extends Array<infer U> ? U : never`: `U` is bound in the whole conditional type.
+  const tested = node.type === "conditional_type" ? node.childForFieldName("right") : null;
+  if (tested) {
+    walkNamed(tested, (n) => {
+      const name = n.type === "infer_type" ? n.namedChildren[0] : undefined;
+      if (name?.type === "type_identifier") names.push(name.text);
+    });
+  }
+  return names.length === 0 ? bound : new Set([...bound, ...names]);
 }
 
 /**
  * Members of a class. Methods and function-valued fields (`handler = () => …`)
- * are fns with their own calls. Instance field initializers run on
+ * are fns with their own calls and types. Any other field is no node: the
+ * types its annotation and initializer name (`repo!: Order`,
+ * `s = new Map<string, Item>()`), and an index signature's, are the
+ * class's. Instance field initializers run on
  * construction: their calls belong to `constructor`, synthesized when the
  * class has none. Static field initializers and `static {}` blocks run once
  * when the class is evaluated: their calls belong to a synthesized `static`
@@ -691,13 +801,20 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
   const body = cls.childForFieldName("body");
   const items = body?.namedChildren ?? [];
   const scope = classScope(items);
+  // `class C<T>`: `T` is no type reference in its heritage or its members.
+  const typeParams = typeNamesBound(cls, NO_NAMES);
   const members: DeclFact[] = [];
+  const fieldTypes: TypeRefFact[] = [];
   const instance: { node: Node; calls: CallFact[] }[] = [];
   const statics: { node: Node; calls: CallFact[] }[] = [];
   for (const m of items) {
     const isField = m.type === "public_field_definition" || m.type === "field_definition";
     if (m.type === "class_static_block") {
       statics.push({ node: m, calls: declCalls(m, scope) });
+      continue;
+    }
+    if (m.type === "index_signature") {
+      fieldTypes.push(...collectTypeRefs(m, typeParams));
       continue;
     }
     if (!isField && m.type !== "method_definition" && m.type !== "method_signature" && m.type !== "abstract_method_signature") continue;
@@ -717,18 +834,19 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
       return member;
     };
     if (!isField) {
-      const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m), []));
+      const member = flag(decl("fn", mname, m, signature(m), !isPrivate, m.type === "method_definition" ? declCalls(m, scope) : [], collectTypeRefs(m, typeParams), []));
       if (m.children.some((c) => c.type === "get" || c.type === "set")) member.accessor = true;
       members.push(member);
       continue;
     }
     const written = m.childForFieldName("value");
     const value = written ? unwrapValue(written) : null;
-    if (!value) continue;
-    if (FUNCTION_VALUES.has(value.type)) {
-      members.push(flag(decl("fn", mname, m, signature(value), !isPrivate, declCalls(value, scope), collectTypeRefs(m), [])));
+    if (value && FUNCTION_VALUES.has(value.type)) {
+      members.push(flag(decl("fn", mname, m, signature(value), !isPrivate, declCalls(value, scope), collectTypeRefs(m, typeParams), [])));
       continue;
     }
+    fieldTypes.push(...collectTypeRefs(m, typeParams));
+    if (!value) continue;
     const calls = declCalls(value, scope);
     if (calls.length === 0) continue;
     (m.children.some((c) => c.type === "static") ? statics : instance).push({ node: m, calls });
@@ -743,7 +861,10 @@ function classDecl(name: string, cls: Node, at: Node, exported: boolean, declCal
     else members.push(initializer("static", statics));
   }
   const heritageNode = cls.namedChildren.find((c) => c.type === "class_heritage" || c.type === "extends_type_clause" || c.type === "extends_clause");
-  const out = decl("class", name, at, heritage(cls), exported, [], heritageNode ? collectTypeRefs(heritageNode) : [], members);
+  // `class C<T extends Order, U = Item>`: a constraint and a default name types; the parameters themselves do not.
+  const typeParamsNode = cls.childForFieldName("type_parameters");
+  const types = [...(typeParamsNode ? collectTypeRefs(typeParamsNode, typeParams) : []), ...(heritageNode ? collectTypeRefs(heritageNode, typeParams) : []), ...fieldTypes];
+  const out = decl("class", name, at, heritage(cls), exported, [], types, members);
   const base = heritageNode ? baseClass(heritageNode) : null;
   if (base) out.base = base;
   return out;
@@ -880,7 +1001,7 @@ function importStatement(node: Node): ImportFact[] {
     if (c.type === "identifier") bindings.push({ kind: "default", local: c.text });
     else if (c.type === "namespace_import") {
       const id = c.namedChildren.find((x) => x.type === "identifier");
-      if (id) bindings.push({ kind: "module", local: id.text });
+      if (id) bindings.push({ kind: "module", local: id.text, namespace: true });
     } else if (c.type === "named_imports") {
       for (const s of c.namedChildren) {
         if (s.type !== "import_specifier") continue;
@@ -890,7 +1011,13 @@ function importStatement(node: Node): ImportFact[] {
       }
     }
   }
-  return [importAt(node, spec, bindings, false)];
+  // `import type …` is erased from the code that runs. `import { type A }` is erased unless
+  // `verbatimModuleSyntax` keeps it as `import {} from`: the graph decides, with the tsconfig.
+  const fact = importAt(node, spec, bindings, false);
+  const parts = clause?.namedChildren.filter((c) => c.type !== "comment") ?? [];
+  if (typeKeyword(node)) fact.typeOnly = true;
+  else if (parts.length === 1 && parts[0]!.type === "named_imports" && inlineTypesOnly(parts[0]!, "import_specifier")) fact.inlineTypeOnly = true;
+  return [fact];
 }
 
 /** Literal `import("…")` / `require("…")` anywhere in the file. A non-literal specifier is coverage, not an edge. */
@@ -1053,7 +1180,7 @@ function declarationOf(from: Node, name: string, stop: Node): Declaration | null
       if (at.id !== stop.id && at.type !== "arrow_function" && at.childForFieldName("name")?.text === name) return { kind: "other" };
     }
     if (BLOCK_NODES.has(at.type) || at.type === "program") {
-      for (const stmt of at.namedChildren) {
+      for (const stmt of blockStatements(at)) {
         const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
         if (!target) continue;
         if (target.type === "lexical_declaration" || target.type === "variable_declaration") {
@@ -1217,14 +1344,14 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
   walkNamed(root, (node) => {
     const parent = parentOf(node);
     // A local binding of the name is not the module-level declaration; exporting a name is not reading it.
-    if (((node.type === "identifier" && parent && !bindsOrCalls(node, parent)) || node.type === "shorthand_property_identifier") && !exportedValue(node)) {
+    if (((node.type === "identifier" && parent && !bindsOrCalls(node, parent)) || node.type === "shorthand_property_identifier") && !exportedValue(node) && !memberObject(node, parent, facts)) {
       if (bindingOf(node, node.text, root) === null) note(node.text, node, false);
     }
     // Destructuring reads properties: `const { feed } = decoder` takes the method as a value.
     if (node.type === "shorthand_property_identifier_pattern" || (node.type === "property_identifier" && parent?.type === "pair_pattern" && parent.childForFieldName("key")?.id === node.id)) note(node.text, node, true);
     if ((node.type === "property_identifier" || node.type === "private_property_identifier") && parent?.type === "member_expression" && parent.childForFieldName("property")?.id === node.id) {
       const grand = parentOf(parent);
-      const called = grand?.type === "call_expression" && grand.childForFieldName("function")?.id === parent.id;
+      const called = calledMember(parent);
       const written = grand?.type === "assignment_expression" && grand.childForFieldName("left")?.id === parent.id;
       const object = parent.childForFieldName("object");
       // `mod.save` of an imported module reads the module function itself.
@@ -1237,6 +1364,25 @@ function collectValueRefs(root: Node, facts: FileFacts): void {
     return true;
   });
   facts.valueRefs = [...first.values()].sort((a, b) => a.line - b.line || a.col - b.col);
+}
+
+/**
+ * The identifier is the object of a member access that uses only a member of
+ * it: `ns.helper()`, `new ns.X()`, and any `mod.x` of a module binding (the
+ * read is `mod.x`, noted on its own). `.call`, `.apply` and `.bind` use the
+ * function itself, so they read it.
+ */
+function memberObject(node: Node, parent: Node | null, facts: FileFacts): boolean {
+  if (parent?.type !== "member_expression" || parent.childForFieldName("object")?.id !== node.id) return false;
+  const property = parent.childForFieldName("property")?.text;
+  if (property === "call" || property === "apply" || property === "bind") return false;
+  return calledMember(parent) || moduleSource(facts, node.text, true) !== null;
+}
+
+/** The member expression is what a call or `new` runs: `a.b()`, `new a.B()`. */
+function calledMember(member: Node): boolean {
+  const grand = parentOf(member);
+  return (grand?.type === "call_expression" && grand.childForFieldName("function")?.id === member.id) || (grand?.type === "new_expression" && grand.childForFieldName("constructor")?.id === member.id);
 }
 
 /**
@@ -1394,8 +1540,14 @@ function bindingOf(call: Node, name: string, stop: Node): "parameter" | "local" 
   return null;
 }
 
+/** The statements of a block. A `switch` is one block: a `const` or `function` of one case is in scope in every case. */
+function blockStatements(block: Node): Node[] {
+  if (block.type !== "switch_body") return block.namedChildren;
+  return block.namedChildren.flatMap((c) => (c.type === "switch_case" || c.type === "switch_default" ? c.childrenForFieldName("body") : []));
+}
+
 function blockDeclares(block: Node, name: string): boolean {
-  for (const stmt of block.namedChildren) {
+  for (const stmt of blockStatements(block)) {
     const target = stmt.type === "export_statement" ? stmt.childForFieldName("declaration") : stmt;
     if (!target) continue;
     if (declaredNames(target).includes(name)) return true;
@@ -1458,8 +1610,10 @@ function moduleSource(facts: FileFacts, local: string, orDefault = false): strin
 /**
  * `require("./x")`, `import("./x")`, `await import("./x")` as the whole value:
  * the module a declarator binds. A `require` parameter or local is not Node's.
+ * `namespace`: `import()` gives the module's namespace object, `require()`
+ * its `module.exports`.
  */
-function requireSource(value: Node, requires: ReturnType<typeof query>): string | null {
+function requireSource(value: Node, requires: ReturnType<typeof query>): { source: string; namespace: boolean } | null {
   const call = value.type === "await_expression" ? value.namedChildren[0] : value;
   if (call?.type !== "call_expression") return null;
   for (const m of requires.matches(call)) {
@@ -1471,7 +1625,7 @@ function requireSource(value: Node, requires: ReturnType<typeof query>): string 
     if ((args ? parentOf(args) : null)?.id !== call.id) continue;
     const fn = m.captures.find((c) => c.name === "fn");
     if (fn && requireKind(fn.node) === "shadowed") continue;
-    return src.node.text;
+    return { source: src.node.text, namespace: fn === undefined };
   }
   return null;
 }

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=60e2e24b24f7a87ca0a553fe62b60dbafbb9f0ce3e76a0c3843d5df9a913fac6 lang=en detail=brief -->
-Looks up the given id in the loaded analysis index and, if it resolves to a declaration, jumps the editor to that declaration's file and position via `tui.app.App.open`, converting the column with `tui.width.clusterAt`. Sets a status message instead when there is no analysis…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=03270b411fbdba953b0ce9d706a836e134b20b2040dcac7857cfeb9fa85868cd lang=en detail=brief -->
+Jumps the editor to where an ID is declared in a spec, opening that file via `tui.app.App.open` with the cursor placed using `tui.width.clusterAt`; shows a status message if no ID is given or it's undeclared.

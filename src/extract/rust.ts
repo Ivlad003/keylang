@@ -299,18 +299,35 @@ function fnDecl(node: Node, name: string, exported: boolean, owner: string | nul
   return decl;
 }
 
-/** Parameter and `let` names in a function: a call through one of them is a call through a value. */
+/**
+ * Names a function (or closure) binds: parameters, `let`, `for`, `if let` /
+ * `while let`, `match` arm patterns and closure parameters. A call through
+ * one of them is a call through a value. The whole function is one scope
+ * here: a binding anywhere in it hides the module's item of that name.
+ */
 function boundNames(fn: Node): Map<string, "parameter" | "local"> {
   const out = new Map<string, "parameter" | "local">();
   const names = (pattern: Node | null, kind: "parameter" | "local"): void => {
     if (!pattern) return;
-    if (pattern.type === "identifier") out.set(pattern.text, kind);
-    // `Some(x)`, `Point { x, .. }`: the constructor is not a binding.
-    else for (const c of pattern.namedChildren) if (c.type !== "type_identifier" && c.type !== "scoped_identifier" && c !== pattern.childForFieldName("type")) names(c, kind);
+    // `Point { x, .. }` binds `x` through a shorthand field.
+    if (pattern.type === "identifier" || pattern.type === "shorthand_field_identifier") {
+      out.set(pattern.text, kind);
+      return;
+    }
+    // `Some(x)`, `Point { x, .. }`: the constructor is not a binding. Nodes are fresh wrappers on every access: compare ids.
+    const type = pattern.childForFieldName("type")?.id;
+    for (const c of pattern.namedChildren) if (c.type !== "type_identifier" && c.type !== "scoped_identifier" && c.id !== type) names(c, kind);
   };
-  for (const p of fn.childForFieldName("parameters")?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
+  const params = fn.childForFieldName("parameters");
+  if (params?.type === "closure_parameters") for (const c of params.namedChildren) names(c, "parameter");
+  else for (const p of params?.namedChildren ?? []) if (p.type === "parameter") names(p.childForFieldName("pattern"), "parameter");
   const walk = (node: Node): void => {
-    if (node.type === "let_declaration") names(node.childForFieldName("pattern"), "local");
+    if (node.type === "let_declaration" || node.type === "let_condition" || node.type === "for_expression") names(node.childForFieldName("pattern"), "local");
+    else if (node.type === "match_pattern") {
+      // An arm binds its pattern; its guard (`if ready()`) is an expression.
+      const guard = node.childForFieldName("condition")?.id;
+      for (const c of node.namedChildren) if (c.id !== guard) names(c, "local");
+    }
     if (node.type === "closure_parameters") for (const c of node.namedChildren) names(c, "parameter");
     for (const c of node.namedChildren) walk(c);
   };
@@ -454,8 +471,10 @@ function pathSegments(node: Node): string[] | null {
  * Functions read as values: `later(hit)`, `.map(Order::total)`,
  * `Handler { run: crate::a::go }`. Code holding the value may call it, so
  * such a fn escapes. Names bound in the enclosing fn are locals, not the item.
+ * A `use m::*` may bind any name, so then every free name read is noted.
  */
 function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts): ValueRefFact[] {
+  const glob = facts.imports.some((imp) => imp.glob);
   const first = new Map<string, ValueRefFact>();
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
@@ -465,7 +484,7 @@ function valueRefs(items: Node[], names: ReadonlySet<string>, facts: FileFacts):
     if (node.type === "use_declaration" || node.type === "attribute_item" || node.type === "macro_definition" || node.type === "lifetime" || node.type === "label" || testOnly(node)) return;
     if (node.type === "function_item" || node.type === "closure_expression") scope = { ...scope, bound: new Map([...scope.bound, ...boundNames(node)]) };
     if (node.type === "mod_item") scope = { ...scope, imports: false };
-    if (node.type === "identifier" && !bindsOrCalls(node) && /^[a-z_]/.test(node.text) && !scope.bound.has(node.text) && names.has(node.text)) note(node.text, node, false);
+    if (node.type === "identifier" && !bindsOrCalls(node) && /^[a-z_]/.test(node.text) && !scope.bound.has(node.text) && (glob || names.has(node.text))) note(node.text, node, false);
     if (node.type === "scoped_identifier") {
       if (!calledPath(node)) {
         const callee = pathCall(node, scope, facts);
@@ -553,7 +572,7 @@ function useImport(node: Node, leaf: UseLeaf, exported: boolean, facts: FileFact
   const source = leaf.path.join("::");
   if (leaf.glob) {
     if (exported) facts.reexportsAll.push(source);
-    return importAt(node, source, [], exported);
+    return { ...importAt(node, source, [], exported), glob: true };
   }
   const imported = leaf.path.at(-1)!;
   const local = leaf.alias ?? imported;

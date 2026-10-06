@@ -70,6 +70,21 @@ export interface ImportFact {
   bindings: ImportBinding[];
   /** `export … from`: the import is re-exported. */
   reexport: boolean;
+  /** `use a::*`, `from a import *`: every public name of the source is in scope in this file, with no binding of its own. */
+  glob?: true;
+  /**
+   * TypeScript `import type …`, `export type … from`, `export type * from`: the statement names
+   * types only and is erased from the code that runs, so its edge forms no cycle that runs.
+   */
+  typeOnly?: true;
+  /**
+   * TypeScript `import { type A, type B as C } from`, `export { type A } from`: every name in the
+   * braces is `type` (at least one, with no default or namespace binding beside them). tsc and
+   * esbuild erase the statement unless the tsconfig that governs the file sets
+   * `verbatimModuleSyntax`, which keeps it as `import {} from`: a fact of the syntax, whose
+   * `typeOnly` edge the graph decides with the tsconfig, so cached facts do not depend on it.
+   */
+  inlineTypeOnly?: true;
   /**
    * The specifier may name a module or another file: `new URL("./worker", import.meta.url)`
    * without an extension. An edge when it resolves to a source file, nothing otherwise.
@@ -78,8 +93,14 @@ export interface ImportFact {
 }
 
 export type ImportBinding =
-  /** `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module (its namespace). */
-  | { kind: "module"; local: string }
+  /**
+   * `import * as x from`, `const x = require()`, `import x = require()` — `x` is the whole module:
+   * `x.m` is its export `m`. `namespace`: a module object that is no function and holds no default
+   * value — an ESM namespace object (`import * as x`, `export * as x`, `await import()`), a Python
+   * module (`import x`); without it the binding is the module's value (`module.exports` of
+   * `require()`), which `x()` calls as its `default`.
+   */
+  | { kind: "module"; local: string; namespace?: true }
   /** `import x from` — `x` is the export `default` (for a CommonJS module without one, `module.exports`). */
   | { kind: "default"; local: string }
   /** `import { a as b } from` — `b` is the export `a`. */
@@ -115,6 +136,8 @@ export interface DeclFact {
   hash?: true;
   /** Classes: the `extends` expression as written (`Readable`, `React.Component`). */
   base?: string;
+  /** Classes: the traits the class uses, as written (PHP `use Logs;`): their methods are the class's own. */
+  traits?: string[];
   /** The declaration's documentation comment without comment syntax, lines kept; absent when it has none. */
   doc?: string;
 }

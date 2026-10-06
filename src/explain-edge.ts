@@ -3,7 +3,7 @@
 // then back, or — with no edge — whether that absence is proven. Only the
 // snapshot's own edges and coverage count; nothing is inferred from the map text.
 
-import type { AnalysisSnapshot, CoverageItem, SnapshotEdge } from "./snapshot.ts";
+import { leavesUnresolved, type AnalysisSnapshot, type CoverageItem, type SnapshotEdge } from "./snapshot.ts";
 import { compareText } from "./span.ts";
 
 /** One edge between the two ids: `forward` is `from → to`, `backward` is `to → from`. */
@@ -50,7 +50,7 @@ export function explainEdge(snapshot: AnalysisSnapshot, from: string, to: string
     .map((edge): EdgeEvidence => ({ direction: forward(edge) ? "forward" : "backward", edge }));
   if (edges.length > 0) return { from, to, edges, holes: [], conclusion: "edges" };
   const holes = snapshot.coverage
-    .filter((item) => item.source !== null && under(item.source, from))
+    .filter((item) => item.source !== null && under(item.source, from) && leavesUnresolved(item))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.col - b.col || compareText(a.reason, b.reason));
   return { from, to, edges, holes, conclusion: holes.length === 0 ? "complete" : "unresolved" };
 }

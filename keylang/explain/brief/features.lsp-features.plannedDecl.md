@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f69e257c384f3730071f7ecf8c88b0cc85def8290286d2a0b72ba390bf6b81b3 lang=en detail=brief -->
-Scans every document via `features.lsp-features.nodesOf` for the first "planned" node with the given id and returns its label as kind (defaulting to "fn"), its text as signature, and the file plus start line and column. Returns null when no such planned node exists.

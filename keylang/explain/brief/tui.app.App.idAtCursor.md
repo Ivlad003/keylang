@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=62815488006f503c45f8d28616265f0bd0668d29a37c94c11760ddba31de5a3a lang=en detail=brief -->
-Resolves the identifier under the editor cursor: it snaps the cursor to a nearby target via `tui.app.App.targetNear`, converts it to a byte offset with `tui.app.App.offsetOf`, and asks `features.lsp-features.targetAt` what sits there. Returns the id only when that target is an…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7b25a1d99abc3ac1e7da7ea93d89566aff0f9de0daaa4b45e5264ede9d44ebcd lang=en detail=brief -->
+Resolves the identifier under or near the editor cursor in the current buffer's document via `features.lsp-features.targetAt`, returning its ID or null when no document, nearby target, or ID-kind target exists.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=80396395ebe12bb7f988327448ef01db1e25475c33a6a487b69603f110e5d7e3 lang=en detail=brief -->
-Line-by-line state machine that turns a markdown file into a `Document`: tracks open list items by indent depth, code fences, HTML blocks and prose, and emits sections, nodes and diagnostics. Headings (`lang.parser.Parser.heading`) open map/rules/flow/wiring sections; bullets…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e5cf2a34f21bc98f05cfa4ed7c56a807c0088eea0a2acada5db21102c6cb6816 lang=en detail=brief -->
+Line-by-line state machine that builds a keylang document from Markdown, sorting lines into sections, nested items with descriptions, prose, code fences and HTML blocks, and recording diagnostics via `lang.parser.Parser.err`.

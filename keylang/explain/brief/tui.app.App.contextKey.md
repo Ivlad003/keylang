@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5f3d1a2397e711c87685cf5290ec76957497411a67066d7798a3468c64ce4ee8 lang=en detail=brief -->
-Dispatches keypresses in the context panel: up/down (or k/j) move the selection through the items from `tui.app.App.contextPack`, x marks the selected item as removed and sets a status message, @ opens a context prompt. Tab delegates to `tui.app.App.cycleFocus` and escape to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=488843b6e9723515bc3337ea1118a37e4c991f89549be5cc9bec22547f744b50 lang=en detail=brief -->
+Handles keys in the context panel: up/down or j/k move the selection, x drops the selected item from the pack from `tui.app.App.contextPack`, and @ opens a prompt to add context. Tab calls `tui.app.App.cycleFocus` and escape calls `tui.app.App.toggleContext`.

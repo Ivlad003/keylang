@@ -2,7 +2,7 @@
 // (design §5.1 p.7, §7.3). Counts per reconciliation status of draft lines,
 // and per kind of suggestion; local, never a verdict. A damaged file starts over.
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeWrite } from "./safe-write.ts";
 
@@ -23,22 +23,45 @@ export interface Stats {
 export const STATS_FILE = ".keylang/stats.json";
 
 export function readStats(root: string): Stats {
-  const file = join(root, STATS_FILE);
+  return readStatsFile(root).stats;
+}
+
+/** The file as read — its text, null when there is none (or it cannot be read) — and the counts it holds. */
+function readStatsFile(root: string): { text: string | null; stats: Stats } {
   const empty: Stats = { schema: 1, drafts: {}, suggestions: {} };
-  if (!existsSync(file)) return empty;
+  let text: string;
   try {
-    const value = JSON.parse(readFileSync(file, "utf8")) as Partial<Stats>;
-    if (value.schema !== 1 || typeof value.drafts !== "object" || typeof value.suggestions !== "object") return empty;
-    return { schema: 1, drafts: value.drafts ?? {}, suggestions: value.suggestions ?? {} };
+    text = readFileSync(join(root, STATS_FILE), "utf8");
   } catch {
-    return empty;
+    return { text: null, stats: empty };
+  }
+  try {
+    const value = JSON.parse(text) as Partial<Stats>;
+    if (value.schema !== 1 || typeof value.drafts !== "object" || typeof value.suggestions !== "object") return { text, stats: empty };
+    return { text, stats: { schema: 1, drafts: value.drafts ?? {}, suggestions: value.suggestions ?? {} } };
+  } catch {
+    return { text, stats: empty };
   }
 }
 
+/**
+ * Applies `change` to the counts on disk. Another writer (`keylang draft` in
+ * a shell beside a MERGE in the TUI) may write between the read and the
+ * write: the write lands only over the text it read, and a lost race reads
+ * again and applies `change` once more, so neither update is lost.
+ */
 export function updateStats(root: string, change: (stats: Stats) => void): void {
-  const stats = readStats(root);
-  change(stats);
-  safeWrite(root, STATS_FILE, `${JSON.stringify(stats, null, 2)}\n`, { under: ".keylang" });
+  for (let attempt = 1; ; attempt++) {
+    const { text, stats } = readStatsFile(root);
+    change(stats);
+    try {
+      safeWrite(root, STATS_FILE, `${JSON.stringify(stats, null, 2)}\n`, { under: ".keylang", expect: text });
+      return;
+    } catch (error) {
+      // No race (an unwritable file) or a second lost one: what a lost count costs is the caller's call.
+      if (attempt >= 2 || readStatsFile(root).text === text) throw error;
+    }
+  }
 }
 
 /** `status=` of every `keylang:llm` / `keylang:algo` provenance comment in the lines. */

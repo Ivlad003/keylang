@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3994135246bbb0a24e6c9bbbb07100ac9f4f0567ffe326873b1c6dcab6cbaefe lang=en detail=brief -->
-Routes a mouse event to the panel under it via `tui.view.layout`: the wheel scrolls the report (`tui.app.App.scrollReport`), code, merge, context, nav or editor, and moves update hover through `tui.app.App.hoverAt`. A left click selects a context/nav/files row and forwards an…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4071ead996e05e0a9687c6cf43da8b2e15120086d614d964731ba384f94380aa lang=en detail=brief -->
+Routes mouse input by region: the wheel scrolls the active view and pointer moves update hover. Left clicks pick context, nav or file entries or place the editor cursor; Ctrl+click calls `tui.app.App.goToCode`.

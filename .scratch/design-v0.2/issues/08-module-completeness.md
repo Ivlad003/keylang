@@ -11,7 +11,7 @@
 - [x] відтворення RV03: flow посилається на `main.order.create`; замінити функцію на `export const marker = 1`, `map`, `check` → K001 з `did you mean`, код 1
 - [x] посилання на `external.node.readFile`-подібного члена зовнішнього модуля → `unverified` з причиною «opaque module», не K001
 - [x] `parse`/`check` на слайдовій фікстурі (без коду) зберігають поточну поведінку для `infrastructure.config.log`
-- [x] правило Р13 у `docs/format.md` §6 переписане з поділом complete/opaque
+- [x] правило Р13 у `docs/semantics.md` §6 переписане з поділом complete/opaque
 
 ## Answer
 

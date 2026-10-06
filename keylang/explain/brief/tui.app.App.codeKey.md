@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3e9a855b66d5baacbe603d0c85e9ea9083f214355cd49dc0e30214f562dde2ca lang=en detail=brief -->
-Scrolls the open code view by line or by page (sized from `tui.view.layout`), clamping to the line range. Escape, `q`, or Ctrl+O leave via `tui.app.App.goBack`; `?` opens the help overlay.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=856c43f183a7d9dead6445b89ee778112c745433b31b207195e1c607af78b9ec lang=en detail=brief -->
+Handles keys in the code viewer: scrolls by line (arrows, j/k) or by page sized from `tui.view.layout`, returns via `tui.app.App.goBack` on Escape, q or Ctrl+O, and opens help on "?".

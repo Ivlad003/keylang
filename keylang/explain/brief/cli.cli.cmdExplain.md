@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1390914579d9195d49d45bc56336b7057613481a1e984d8b0304b98879ec6b5f lang=en detail=brief -->
-Validates the `explain` flag combinations, then routes to `cli.cli.cmdExplainBatch` for `--missing`/`--stale` runs, `cli.cli.explainPlanPrinter` for a plain stale listing, or `operations.operations.runOperation` with an offline or LLM request. Writes the resulting text to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0db566aa44df328f3201b3d5f5d0a41df1f9e94883305cc27d9c2f5c738f3db6 lang=en detail=brief -->
+Validates explain flags, then routes to `cli.cli.cmdExplainBatch` for missing/stale batches, `cli.cli.explainPlanPrinter` for stale listings, or `operations.operations.runOperation` for offline or model explanations, printing the text.

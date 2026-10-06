@@ -1,6 +1,6 @@
 # 28: Trace-адаптер Rust (явні spans)
 
-**Етап:** M5 · **Джерело:** design §9 M5, §4.3; `docs/format.md` §7 «Trace»
+**Етап:** M5 · **Джерело:** design §9 M5, §4.3; `docs/semantics.md` §7 «Trace»
 
 **What to build:** Runtime-хуків у Rust немає, тому адаптер — однофайловий модуль без залежностей (`keylang_trace.rs`, поставляється з пакетом), який користувач підключає `#[path]`-модулем: `let _span = keylang_trace::span("domain.order.place");` у кроці. За `KEYLANG_TRACE` guard пише `start`/`end` JSONL схеми 1 зі `snapshotId` з `.keylang/index.json`, `run`-запис — при завершенні процесу через `keylang_trace::finish()`. Можливість задекларована явно: інструментовано лише позначені функції (`instrumented` = позначені ID).
 

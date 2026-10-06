@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=de35eaaab93d4b70a63073ad6a6bbb657b76ebb5f840f90c61ac278b2a208b0e lang=en detail=brief -->
-Handles LSP JSON-RPC traffic: `cli.lsp.Server.receive` routes notifications to `cli.lsp.Server.notify` and requests to `cli.lsp.Server.request`, keeping open-buffer overlays and cancellation state. Edits bump a generation that debounces reanalysis in `cli.lsp.Server.changed`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=adc619f7f6a8d4365153f48743a581d14f9954f59efef8c244432fa975a6b124 lang=en detail=brief -->
+Keylang's JSON-RPC language server: it holds open-file text as an overlay, debounces edits into analyses that run one at a time, publishes diagnostics, and answers or cancels requests via `cli.lsp.Server.request`.

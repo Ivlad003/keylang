@@ -34,7 +34,7 @@ type Session = { app: App; send: (keys: string) => void; lines: () => string[]; 
 function session(t: TestContext, root: string, cols = 130, rows = 32): Session {
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root, cols, rows });
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   t.after(() => app.close());
   return { app, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }

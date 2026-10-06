@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=bbad180a758c3f2addc1a4b62fe596d2b2bcf0aa3d99757a64154773245cc179 lang=en detail=brief -->
-Classifies where an import specifier resolved: a file inside the repo (optionally tagged with its workspace package, whole-module, or nested-module flags), the importing file itself, an external package, a runtime builtin, generated code, or nothing. Internal results carry the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=117954b3407fab45d489ce27d10dcb1fb8fe4464832ce5041e779ab409cccabf lang=en detail=brief -->
+Classifies where an import specifier leads: an internal file (optionally via a workspace package, as the whole module, or a nested module), the importing file itself, an external package, a builtin, stdlib, generated, or unresolved.

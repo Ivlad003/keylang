@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0782aa243b2616efb02edc3a998a2903e4507c75643e67ed803c447cf8d3d777 lang=en detail=brief -->
-Flips the files panel on or off, marking it as the last-used panel when shown and moving focus to it when `focusable`, or back to the editor if focus was there when hidden. It then calls `tui.app.App.narrowNote` and `tui.app.App.keepVisible` to re-fit the layout.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=072b6151f04c0b994a3dc768bf56608f348ad6a79e2d2b83368455d07a5d516f lang=en detail=brief -->
+Flips the files panel's visibility, moving focus to it when shown, focusable and `tui.app.App.drawable` allows, or back to the editor when hidden, then refreshes via `tui.app.App.narrowNote` and `tui.app.App.keepVisible`.

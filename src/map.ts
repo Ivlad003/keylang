@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { briefOf, readmeBrief } from "./brief.ts";
-import { CONFIG_FILE, excludedSourceFiles, isAnalysed, outsideSourceFiles, sourceTree, toPosix, type Config } from "./config.ts";
+import { classifySources, CONFIG_FILE, isAnalysed, layerGlobWarnings, sourceTree, toPosix, type Config } from "./config.ts";
 import { globDirectory } from "./glob.ts";
 import { languageOf } from "./languages.ts";
 import { compareText } from "./span.ts";
@@ -29,20 +29,23 @@ export interface MapResult {
   skipped: number;
   /** Source files whose facts were reused from a cache, and files parsed in this run. */
   facts: { reused: number; extracted: number };
-  /** The text of the fact cache for the next process (`persist`); null otherwise. Written by `commitMap`. */
+  /** The text of the fact cache for the next process (`persist`); null otherwise. Written by `commitMap`, or saved best-effort by an analysis (`saveFactCache`). */
   factCache: string | null;
 }
 
 /**
- * `persist` prepares the fact cache for the next process (`keylang map` only;
- * the commit step writes it, generation writes nothing);
+ * `persist` prepares the fact cache for the next process: `true` always
+ * (`keylang map`, whose commit step writes it), `"changed"` only when the
+ * facts of this run differ from the cache on disk (an analysis that saves it
+ * best-effort); generation writes nothing.
  * `overlay` gives unsaved text of source files by absolute path (the language server).
  */
-export async function generateMap(config: Config, options: { persist?: boolean; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
+export async function generateMap(config: Config, options: { persist?: boolean | "changed"; overlay?: ReadonlyMap<string, string> } = {}): Promise<MapResult> {
   // With an explicit config a file outside every layer is a finding
   // (`unassigned`); with guessed layers it is most likely not product code.
-  const tree = sourceTree(config);
-  const all = tree.files;
+  // One walk sorts every source file into what is read, excluded and outside.
+  const tree = classifySources(config);
+  const all = tree.analysed;
   // An unsaved or proposed file that is not on disk yet is a source too (`spec-to-code` candidates).
   const added = [...(options.overlay?.keys() ?? [])].map((abs) => toPosix(relative(config.root, abs))).filter((rel) => {
     const language = languageOf(rel);
@@ -79,15 +82,17 @@ export async function generateMap(config: Config, options: { persist?: boolean; 
     if (!frontend) continue;
     facts.push(await cache.facts(p, src.sha256, () => extractGuarded(frontend.extract, p, src.text)));
   }
-  const factCache = options.persist ? cache.serialize() : null;
+  const factCache = options.persist === true || (options.persist === "changed" && cache.changed()) ? cache.serialize() : null;
   // An explicitly excluded file is a module with unknown contents: in its layer, or in `unassigned`
   // under an explicit config. A guessed layout keeps a file outside its guessed layers out of the graph.
-  const excluded = excludedSourceFiles(config).filter((p) => !config.guessed || placeFile(config, p) !== null);
+  const excluded = tree.excluded.filter((p) => !config.guessed || placeFile(config, p) !== null);
   for (const p of excluded) facts.push(opaqueFacts(p));
   // A file `outside` the architecture is not read either, but it is no hole: a module of the layer `outside`.
-  const outside = outsideSourceFiles(config);
+  const outside = tree.outside;
   for (const p of outside) facts.push(opaqueFacts(p));
   const graph = buildGraph(config, facts);
+  // Layers written in keylang.json that overlap or match nothing: the layout still works, so a warning, first.
+  if (!config.guessed) graph.warnings.unshift(...layerGlobWarnings(config, [...all, ...excluded]));
   for (const [files, comment] of [[excluded, "excluded"], [outside, "outside"]] as const) {
     for (const p of files) {
       const module = graph.byPath.get(p);

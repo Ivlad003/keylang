@@ -3,7 +3,10 @@
 // `generated` is wall-clock metadata and is not part of `snapshotId`.
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Config } from "./config.ts";
 import type { ExportEntry } from "./exports.ts";
 import { briefOf } from "./brief.ts";
@@ -14,7 +17,7 @@ import { components } from "./scc.ts";
 
 export const SNAPSHOT_SCHEMA = 7;
 /** Bump when extraction or resolution changes the facts that `snapshotId` covers. */
-export const EXTRACTOR_VERSION = "m1.10";
+export const EXTRACTOR_VERSION = "m1.12";
 
 export type Resolution = "resolved" | "ambiguous" | "unresolved";
 export type Provenance = "syntactic";
@@ -53,6 +56,13 @@ export interface SnapshotEdge {
   site?: string;
   /** The call sits in a closure of `source`: whoever holds that function value may run it. */
   closure?: true;
+  /**
+   * An import or re-export of types only (TypeScript `import type`, `export type … from`,
+   * `export type * from`; `import { type A }` and `export { type A } from` with every name `type`
+   * when the file's tsconfig does not set `verbatimModuleSyntax`), erased from the code that
+   * runs: `no-cycles` skips it, other rules and the map see it as any import.
+   */
+  typeOnly?: true;
 }
 
 export interface SnapshotExport {
@@ -85,8 +95,11 @@ export interface SnapshotExport {
 }
 
 export interface CoverageItem {
-  /** `outside-file`: a file `outside` puts outside the architecture; listed, but no hole. */
-  kind: Gap["kind"] | "skipped-file" | "outside-file";
+  /**
+   * `outside-file`: a file `outside` puts outside the architecture; listed, but no hole.
+   * `assumed-import`: an import of a file `assume` lists — no edge, and no hole either.
+   */
+  kind: Gap["kind"] | "skipped-file" | "outside-file" | "assumed-import";
   file: string;
   line: number;
   col: number;
@@ -95,6 +108,15 @@ export interface CoverageItem {
   text: string;
   reason: string;
   source: string | null;
+}
+
+/**
+ * A coverage entry that leaves something unresolved: every kind but
+ * `assumed-import`, an import of a file `assume` lists, which names no node
+ * on purpose and so can hide no edge.
+ */
+export function leavesUnresolved(item: Pick<CoverageItem, "kind">): boolean {
+  return item.kind !== "assumed-import";
 }
 
 export interface SnapshotNode {
@@ -179,6 +201,7 @@ export interface AnalysisSnapshot {
       layers: Record<string, string[]>;
       exclude: string[];
       outside: string[];
+      assume: string[];
       guessed: boolean;
     };
     files: { path: string; sha256: string }[];
@@ -211,6 +234,7 @@ export function buildSnapshot(
     layers: Object.fromEntries(config.layers),
     exclude: [...config.exclude],
     outside: [...config.outside],
+    assume: [...config.assume],
     guessed: config.guessed,
   };
   const snapshotId = sha256(
@@ -316,6 +340,7 @@ export function buildSnapshot(
         text: d.text,
         resolution: "resolved",
         provenance: "syntactic",
+        ...(d.typeOnly ? { typeOnly: true as const } : {}),
       });
     }
     for (const f of m.fns) {
@@ -383,6 +408,7 @@ export function buildSnapshot(
   for (const { file, reason, source, kind } of skipped) {
     coverage.push({ kind: kind ?? "skipped-file", file, line: 1, col: 1, endLine: 1, endCol: 1, text: "", reason, source: source ?? graph.byPath.get(file)?.id ?? null });
   }
+  for (const item of graph.assumed) coverage.push({ kind: "assumed-import", ...item });
   coverage.sort(compareCoverage);
   closures(ordered, coverage);
 
@@ -491,18 +517,59 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** Where prepack writes the version of the grammars it copies into `dist/wasm` (scripts/copy-wasm.mjs). */
+export const GRAMMARS_MANIFEST = "grammars.json";
+
+/**
+ * What parses the code, in `snapshotId` and the fact-cache key: the
+ * web-tree-sitter runtime as Node resolves it, and the grammars as the
+ * extractor loads them — from `dist/wasm` in the package, whose version
+ * prepack writes beside them, else from the installed
+ * `@vscode/tree-sitter-wasm` of a checkout. `unknown` when neither is found.
+ */
 export function grammarVersions(): Record<string, string> {
+  // `require.resolve`, not `import.meta.resolve`: the trace adapter builds its snapshot on
+  // Node's module hooks thread, which has no `import.meta.resolve`, and its id must match.
   const require = createRequire(import.meta.url);
-  // Literal specifiers: the import graph sees which packages the snapshot id depends on.
-  const version = (load: () => unknown): string => {
-    try {
-      return (load() as { version?: string }).version ?? "unknown";
-    } catch {
-      return "unknown";
-    }
-  };
   return {
-    "web-tree-sitter": version(() => require("web-tree-sitter/package.json")),
-    "@vscode/tree-sitter-wasm": version(() => require("@vscode/tree-sitter-wasm/package.json")),
+    "web-tree-sitter": installedVersion("web-tree-sitter", () => require.resolve("web-tree-sitter")) ?? "unknown",
+    "@vscode/tree-sitter-wasm": bundledGrammarsVersion() ?? installedVersion("@vscode/tree-sitter-wasm", () => require.resolve("@vscode/tree-sitter-wasm/package.json")) ?? "unknown",
   };
+}
+
+/** The version prepack recorded beside the grammars in `dist/wasm`; null in a checkout. */
+function bundledGrammarsVersion(): string | null {
+  const manifest = readJson(join(dirname(fileURLToPath(import.meta.url)), "wasm", GRAMMARS_MANIFEST));
+  return typeof manifest?.version === "string" ? manifest.version : null;
+}
+
+/**
+ * The version in the nearest `package.json` of that name above the file
+ * `resolve` finds: a package's `exports` may not list `./package.json`
+ * (web-tree-sitter does not), so reading it by name fails. Null when the
+ * package is not installed.
+ */
+function installedVersion(name: string, resolve: () => string): string | null {
+  let dir: string;
+  try {
+    dir = dirname(resolve());
+  } catch {
+    return null;
+  }
+  for (;;) {
+    const manifest = readJson(join(dir, "package.json"));
+    if (manifest?.name === name) return typeof manifest.version === "string" ? manifest.version : null;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }

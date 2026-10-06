@@ -1,4 +1,4 @@
-// Diagnostics with stable codes.
+// Diagnostics with stable codes, and the text of a thrown error.
 
 import type { Span } from "./span.ts";
 
@@ -108,4 +108,9 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   if (a.span.start.col !== b.span.start.col) return a.span.start.col - b.span.start.col;
   if (a.span.start.offset !== b.span.start.offset) return a.span.start.offset - b.span.start.offset;
   return a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
+}
+
+/** The text of a thrown value: an `Error`'s message, anything else as a string. */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

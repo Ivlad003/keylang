@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f4a5e07aad3ca4371e89933cbda67b118ba8e27ee3dac4e1d59525ff85d2fc0d lang=en detail=brief -->
-Bundles everything needed to assess one feature: its directory, parsed documents, spec IR, diagnostics, and verdicts. Optional `nodes` and `base` fields enable checking removed `planned` items against the snapshot and diffing the plan against its base commit.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1797f815737d0cd039008e15e23439689dfafcdacad99845e6fcaaa31b88c198 lang=en detail=brief -->
+Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks.

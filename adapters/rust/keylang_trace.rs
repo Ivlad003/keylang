@@ -36,9 +36,12 @@
 //! stack of each thread. An `instrument`ed future is on that stack only while
 //! it is being polled; its span's parent is the span current where the future
 //! was created, with a link when that span has already ended. A `span()`
-//! guard in a fn with `async` or `.await` is not recorded and not
+//! guard in async code (an `async fn`, an `async` block or closure in the
+//! body, or beside a `.await` outside them) is not recorded and not
 //! instrumented: while the future is suspended the guard would stay on the
-//! stack and adopt the spans of other futures polled on that thread. A span
+//! stack and adopt the spans of other futures polled on that thread. A guard
+//! in a synchronous fn that only starts async code (`rt.spawn(async move {
+//! … })`) is synchronous. A span
 //! that ends while a span begun after it is still open (a guard kept across
 //! a suspension) makes the run incomplete. A span begun on another thread is
 //! a root.
@@ -289,7 +292,7 @@ fn init() -> Option<Tracer> {
 #[derive(PartialEq)]
 enum Mark {
     None,
-    /// `span("<id>")` in a fn without `async` or `.await`: the guard lives in one synchronous call.
+    /// `span("<id>")` in synchronous code (not an `async fn`, not in an `async` block or closure): the guard lives in one call.
     Guard,
     /// `span("<id>")` in async code: the guard may stay on the thread's stack while the future is suspended, so its nesting is unknown.
     AsyncGuard,
@@ -307,22 +310,25 @@ fn marks(source: &str, line: usize, id: &str) -> Mark {
     }
     // The body is the first `{` after the signature; a `;` first means the fn has none.
     let Some(open) = (start..s.len()).find(|&i| class[i] == CODE && (s[i] == b'{' || s[i] == b';')).filter(|&i| s[i] == b'{') else { return Mark::None };
-    let mut depth = 0usize;
-    let mut end = s.len();
-    for i in open..s.len() {
-        if class[i] != CODE {
-            continue;
-        }
-        if s[i] == b'{' {
-            depth += 1;
-        } else if s[i] == b'}' {
-            depth -= 1;
-            if depth == 0 {
-                end = i;
-                break;
+    // The `}` that closes the `{` at `from`, in code; the end of the source when there is none.
+    let closing = |from: usize| {
+        let mut depth = 0usize;
+        for i in from..s.len() {
+            if class[i] != CODE {
+                continue;
+            }
+            if s[i] == b'{' {
+                depth += 1;
+            } else if s[i] == b'}' {
+                depth -= 1;
+                if depth == 0 {
+                    return i;
+                }
             }
         }
-    }
+        s.len()
+    };
+    let end = closing(open);
     let quoted = format!("\"{id}\"");
     let skip = |mut i: usize| {
         while i < end && s[i].is_ascii_whitespace() {
@@ -331,9 +337,36 @@ fn marks(source: &str, line: usize, id: &str) -> Mark {
         i
     };
     let word = |i: usize, name: &[u8]| {
-        class[i] == CODE && s[i..end].starts_with(name) && (i == 0 || !(s[i - 1].is_ascii_alphanumeric() || s[i - 1] == b'_')) && !s.get(i + name.len()).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        i < end && class[i] == CODE && s[i..end].starts_with(name) && (i == 0 || !(s[i - 1].is_ascii_alphanumeric() || s[i - 1] == b'_' || s[i - 1] == b'#')) && !s.get(i + name.len()).is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
     };
-    let asynchronous = (start..end).any(|i| word(i, b"async") || (word(i, b"await") && i > 0 && s[i - 1] == b'.'));
+    // Async code: the whole body of an `async fn`; in the body of a synchronous fn, each `async` block or
+    // closure (`rt.spawn(async move { … })` leaves the fn's own guard synchronous). A closure with an
+    // expression body (`async || f().await`) is taken to run to the end of the fn body.
+    let async_fn = (start..open).any(|i| word(i, b"async"));
+    let mut blocks: Vec<(usize, usize)> = Vec::new();
+    for i in open + 1..end {
+        if !word(i, b"async") {
+            continue;
+        }
+        let mut at = skip(i + b"async".len());
+        if word(at, b"move") {
+            at = skip(at + b"move".len());
+        }
+        if at < end && s[at] == b'|' {
+            let params = (at + 1..end).find(|&k| class[k] == CODE && s[k] == b'|').unwrap_or(end);
+            at = skip((params + 1).min(end));
+            // A return type needs a block body: `async |x| -> T { … }`.
+            if s[at..end].starts_with(b"->") {
+                at = (at..end).find(|&k| class[k] == CODE && s[k] == b'{').unwrap_or(end);
+            }
+            blocks.push(if at < end && s[at] == b'{' { (at, closing(at)) } else { (i, end) });
+        } else if at < end && s[at] == b'{' {
+            blocks.push((at, closing(at)));
+        }
+    }
+    let in_async = |i: usize| blocks.iter().any(|&(from, to)| from < i && i < to);
+    // Outside every `async` block of a synchronous fn, a `.await` is in async code that a macro made.
+    let macro_await = (open..end).any(|i| word(i, b"await") && i > 0 && s[i - 1] == b'.' && !in_async(i));
     let mut mark = Mark::None;
     for i in open..end {
         for (name, close) in [(&b"span"[..], b')'), (&b"instrument"[..], b',')] {
@@ -355,7 +388,7 @@ fn marks(source: &str, line: usize, id: &str) -> Mark {
             if name == b"instrument" {
                 return Mark::Instrument;
             }
-            mark = if asynchronous { Mark::AsyncGuard } else { Mark::Guard };
+            mark = if async_fn || macro_await || in_async(i) { Mark::AsyncGuard } else { Mark::Guard };
         }
     }
     mark

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f27e21bd913913d7eb7c4af4bcd3697889c70c57cbe377dbee76a76ddf9ed8b5 lang=en detail=brief -->
-Picks a grammar for the file via `extract.treesitter.grammarFor`, parses the source with `extract.treesitter.withTree`, and hands the root node to `extract.ts.extractTree` to produce the file's facts.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=f4a7d74b2fc777eda89286c63da1bdcefd66434c871150dcebb2d7132e8b5f31 lang=en detail=brief -->
+Resolves the grammar for a TS/JS source file, parses it via `extract.ts.withTsTree`, and hands the syntax tree root to `extract.ts.extractTree` to produce the file's extracted facts asynchronously.

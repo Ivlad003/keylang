@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=80107a6c83842e703a76857156ebca16f8e0db9996634cd747a61533cd8f39a7 lang=en detail=brief -->
-Walks a node and its children, resolving each reference through `check.resolve.Index.lookup`: unknown targets not in the external set become K001 diagnostics with a suggestion, while opaque modules are recorded as unverified. It skips refs of `exports` nodes and stops…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=85436a8174d20f3f37cb2cb8f0fbb1fa1e4bd0c5de91651a4910fb3cb40f3abb lang=en detail=brief -->
+Recursively walks a node tree, reporting dangling reference targets as K001 errors via `base.diag.diagnostic` and logging refs to opaque snapshot modules as unverified; children of a failing rule-module are skipped.

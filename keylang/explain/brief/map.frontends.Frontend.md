@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c797e867661c1c54dc40a6c7f050838a6952bab2dca7fc131905372e8826b1ae lang=en detail=brief -->
-Contract a per-language analyzer fulfils: extracting facts from one file, building a per-graph resolver over the set of analyzed sources, and declaring which edge kinds it reports plus which global names count as external rather than unresolved.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=902a87a4dc1a9020b8c4278fe3480b887024b857117d8ab4e9149a3e2c8c1a58 lang=en detail=brief -->
+Contract for a language plugin: extracts per-file facts from source, builds one shared import resolver per graph, declares which edge kinds it reports, and lists platform globals treated as external.

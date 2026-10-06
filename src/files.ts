@@ -1,6 +1,6 @@
 // File discovery and loading.
 
-import { readdirSync, readFileSync, realpathSync, statSync, type Dirent } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import type { Document } from "./ir.ts";
 import { parse } from "./parser.ts";
@@ -78,4 +78,18 @@ function realPath(path: string): string {
 /** Read and parse files. */
 export function load(files: readonly string[]): Document[] {
   return files.map((f) => parse(f, readFileSync(f, "utf8")));
+}
+
+/** A file's text, or null when it cannot be read for any reason: missing, a directory, no permission. */
+export function readTextOrNull(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** A file's text, or null when there is no file; a directory or an unreadable file throws, so the caller names it. */
+export function existingText(path: string): string | null {
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
 }

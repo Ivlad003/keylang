@@ -356,7 +356,8 @@ export class MergeSession {
     this.host.reanalyze();
 
     // 4. Metrics: how often model lines are taken calibrates how drafts are shown (design §5.1 p.7).
-    if (!code) {
+    // Browse (no keylang.json) writes only what was asked for: no `.keylang/` for a count.
+    if (!code && state.config.kind !== "missing-config") {
       try {
         updateStats(state.root, (stats) => {
           merge.hunks.forEach((hunk, i) => {

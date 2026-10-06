@@ -47,7 +47,7 @@
 - MCP зараз має `search`, `node`, `code`, `flows`, `check`, `explain`, `apply_diff` (`src/mcp.ts`).
 - Пакети вже є вузлами `external.<pkg>` синтетичного шару `external` (`src/imports.ts:23`); правила їх називають (`keylang/rules.md:18`).
 - `planned module external.stripe` і крок потоку на модуль приймаються: `ID unverified … planned module`, `static unverified … not implemented` (перевірено на тимчасовому репо).
-- Baseline виражається наявною граматикою: `deny <шар> <шари…>` + точкові `allow` (перемагає конкретніше правило, format.md §7).
+- Baseline виражається наявною граматикою: `deny <шар> <шари…>` + точкові `allow` (перемагає конкретніше правило, semantics.md §7).
 - Формати харнесів (офіційна документація, 2026-09-28):
   - Claude Code читає `AGENTS.md` лише без `CLAUDE.md`, тому потрібен `@AGENTS.md`. MCP — `.mcp.json`. Хуки — `.claude/settings.json`: `Stop` з exit 2 чи `decision:"block"` повертає агента до роботи. Є `stop_hook_active`.
   - Codex: `AGENTS.md` (32 KiB), `.codex/config.toml` і `.codex/hooks.json` лише в trusted-проєкті; кожен хук схвалюється в `/hooks`. Skills — `.agents/skills`.

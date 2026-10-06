@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e0c5a3c5136451ff15f585229a5a625f8bcddc30f37457020938dd68f6b813fc lang=en detail=brief -->
-Options bundle for one analysis run: the repository root, which spec files to check, unsaved editor buffers, and switches that skip code or evidence, persist the fact cache, or override `static` mode. It also lets the caller swap in its own snapshot builder via `generate`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=34ce81160e562077882a636a79d8413201ad38ef72c777f689ba0650a52f8abb lang=en detail=brief -->
+Options for one analysis run: an absolute repository root, optional spec paths and unsaved buffer overlays, flags to skip code or evidence and to persist or save the fact cache, plus a pluggable snapshot generator and static-mode override.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7b053cdb3255f8b64af37655cfd3a15e22110e70e8cbc36ce882aceabc4e33e7 lang=en detail=brief -->
-Walks the snapshot's import/call/type edges between module units, letting `check.rules.decide` on each `check.rules.ruleHits` set and `check.rules.layerViolation` decide fail/ok/unverified verdicts (K101, K102, K107) for layer orders, denies and cycles via…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b460c820ef29a520404700d39e72882f40a7200908fb463193a358ddb7a31988 lang=en detail=brief -->
+Checks a snapshot's module dependency edges against deny/allow/layer rules, emitting K101/K102/K107 failures and ok or unverified verdicts that account for coverage holes, using `check.scc.stronglyConnected` for cycles.

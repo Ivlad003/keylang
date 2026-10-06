@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b13dbdd6369ce22f5b7a5e7a3001382ce7fdf450db4c90a1e6e6638751c33978 lang=en detail=brief -->
-Renders the FILES panel by turning each open file into a list entry, appending " +" when `tui.buffer.isDirty` reports unsaved changes and " ≈" when the file has a pending proposal, and bolding the current file. It then hands the entries to `tui.view.drawPanelList` with the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b63a3c204971f05bb901783ee52eeaebfd79eb7c712fb960d806ec2ae4d95f10 lang=en detail=brief -->
+Renders the FILES panel listing open files, appending " +" for dirty buffers (`tui.buffer.isDirty`) and " ≈" for pending proposals, highlighting the current file via `tui.view.drawPanelList` scrolled by `tui.view.filesTop`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=43fdff5fe4379a4713b2a360bb9f23b01e221fa3d9538f544e035ecb155c02df lang=en detail=brief -->
-Stores the remaining tokens of a line as the node's description, re-rendered via `lang.parser.renderTokens` into canonical spacing with a span relative to the line from `lang.parser.Line.span`. When no tokens remain, it reports error K005 through `lang.parser.Parser.err`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=70174e074b3f6d5973d44a5c76839b39d3f7c8ad55d1bad5aef3cd02d05900ec lang=en detail=brief -->
+Stores a node's trailing tokens as canonical description text via `lang.parser.renderTokens`, spanning first to last token so reformatting won't change it. If none remain, reports K005 that the node kind needs a description.

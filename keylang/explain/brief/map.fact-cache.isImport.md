@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=de8539bb8a0716bae8769ad0c0c5619d457f001ed7a6d401ebb1d00558fa9fd8 lang=en detail=brief -->
-Validates that an unknown value from the cache has the shape of an import record: a plain object via `map.fact-cache.isRecord` with string source and text, a boolean reexport, a range checked by `map.fact-cache.isRange`, an optional flag via `map.fact-cache.optionalTrue`, and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=c2a878398df0b6b549e0d3d75cd85179b7bc0b4967067dcc0dd347512ae8256f lang=en detail=brief -->
+Type guard that validates a cached import fact: a record with string source and text, a valid range via `map.fact-cache.isRange`, boolean reexport, optional true-only flags, and well-formed module, default or named bindings.

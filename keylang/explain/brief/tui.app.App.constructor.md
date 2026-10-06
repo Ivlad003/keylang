@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=cb0bd7365a7da9ac3526d3ebc73d474ecd345858361c7c13866375c1baa97be6 lang=en detail=brief -->
-Builds the editor's initial state, routes doctor requests to `operations.operations.runOperation` and the rest to `tui.app.App.worker`, and wires `tui.merge-session.MergeSession` and `tui.assist.Assist` through closures. It then lists files via `tui.app.App.diskFiles`, opens…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=7bb857e9dd73447aa6aa1da05dfd6bcac978d6f80f90c9bf6f409fc778ca5b50 lang=en detail=brief -->
+Builds the editor's initial state and wires helpers (`tui.merge-session.MergeSession`, `tui.assist.Assist`, forms, `tui.results-panel.ResultsPanel`) through closures, opens a first file from disk, then shows the start screen, config error, or `tui.app.App.reanalyze`.

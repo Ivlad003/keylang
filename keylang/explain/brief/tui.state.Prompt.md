@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=bb39916c23850a2132d494acbb0bfc0d8bce6d8b5b4b41af979190940e4b1aaf lang=en detail=brief -->
-Holds the state of the TUI's active input prompt: which command it belongs to (`kind`), the typed `text`, the matching `items` with their `ids` and `notes`, and the selected `index`. Optional per-kind sub-forms (`form`, `checkOptions`, `draft`, `exportForm`, etc.) carry the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a810c779e88eab3772168743bac978c87982a508c151f0cf035e5e3aeca9f811 lang=en detail=brief -->
+State of the TUI's active input prompt: which command form or picker is open, the typed text, matching items with ids and notes, the selected index, and optional per-command form fields for checks, drafts, exports and explanations.

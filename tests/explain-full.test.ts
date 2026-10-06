@@ -109,3 +109,22 @@ test("a full answer is saved with its headings, shown as written offline, and ke
   assert.equal(offline.status, 0, offline.stderr);
   assert.ok(offline.stdout.includes(`${FULL}\n`), offline.stdout);
 });
+
+test("explain leaves an import of a file `assume` names out of what keylang did not resolve: the summary and the --full prompt", async (t) => {
+  const { dir, mock, env } = await repo(t);
+  const config = JSON.parse(readFileSync(join(dir, "keylang.json"), "utf8")) as Record<string, unknown>;
+  writeFileSync(join(dir, "keylang.json"), JSON.stringify({ ...config, assume: ["src/domain/settings.ts"] }));
+  const order = readFileSync(join(dir, "src/domain/order.ts"), "utf8");
+  writeFileSync(join(dir, "src/domain/order.ts"), order.replace('import type { Money } from "./money.ts";', 'import type { Money } from "./money.ts";\nimport { settings } from "./settings";\nexport const rounding = settings;'));
+  const index = await run(dir, ["map"], env);
+  assert.equal(index.status, 0, index.stderr);
+  const assumed = (JSON.parse(readFileSync(join(dir, ".keylang/index.json"), "utf8")) as { coverage: { kind: string; source: string | null }[] }).coverage.filter((item) => item.kind === "assumed-import");
+  assert.deepEqual(assumed.map((item) => item.source), ["domain.order"], "the module's import is assumed");
+  // The offline summary's "not resolved" line does not count it.
+  const offline = await run(dir, ["explain", "domain.order"], env);
+  assert.equal(offline.status, 0, offline.stderr);
+  assert.doesNotMatch(offline.stdout, /assumed-import/);
+  const full = await run(dir, ["explain", "domain.order", "--llm", "--full"], env);
+  assert.equal(full.status, 0, full.stderr);
+  assert.doesNotMatch(mock.requests[0]!.prompt, /assumed import|assumed-import|settings`/);
+});

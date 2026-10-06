@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f63c8200e14368c43f7cef25b83ef331cb5f577b2d863d46830922b46cd10f1e lang=en detail=brief -->
-Builds the module-level parent map via `extract.ts.parentIndex` and header node set via `extract.ts.moduleHeader`, then runs `extract.ts.extractIndexed` and attaches the module doc comment. The shared module state is reset afterward regardless of errors.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=906cc4ceb8a2e2c9f0b2ba6e98b32dd8fbbd5c2bfa7141560965ab11e5312ba1 lang=en detail=brief -->
+Sets up module-level parent and header-node state via `extract.ts.parentIndex` and `extract.ts.moduleHeader`, then runs `extract.ts.extractIndexed` and attaches the module doc comment to the returned facts. Always resets that shared state afterwards.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=913e142a4b793a482a7efb82f701998b469addfdc60c795e74fb204d299bd0f2 lang=en detail=brief -->
-Routes one input event to a handler by precedence: drops a pending ghost line via `tui.assist.Assist.dropGhost`, sends mouse/paste to `tui.app.App.mouse`, `tui.app.App.promptType` or `tui.app.App.insert`, then checks modal states (quit, help, barrier, prompt, results, start)…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=7b862cf370d89487b9eac575d7d5de6d666424a1656cf9b4a3f8300a8a7aeaad lang=en detail=brief -->
+Central input dispatcher: routes mouse, paste and key events through modal layers (quit, help, save barrier, prompts, results panel) to function keys and per-mode handlers like `tui.app.App.editKey` or `tui.merge-session.MergeSession.key`.

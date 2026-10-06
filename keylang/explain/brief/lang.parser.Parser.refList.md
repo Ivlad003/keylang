@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=89606852de6a82f688548f2bb7e3c87d1101c2c78453c95e90763766c6cf306d lang=en detail=brief -->
-Walks the remaining tokens, skipping commas, and resolves each one through `lang.parser.Parser.makeRef`, appending the successful references to the node. If fewer non-comma tokens than the required minimum were seen, it reports a K005 diagnostic via `lang.parser.Parser.err`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=98e21837476977d2297bc28b469eb979cf678eaa28031a98e0dfa13d32c07556 lang=en detail=brief -->
+Skips commas in the trailing tokens, converts each remaining token into a reference via `lang.parser.Parser.makeRef` and appends it to the node. Reports a K005 error through `lang.parser.Parser.err` if fewer than the minimum IDs appear.

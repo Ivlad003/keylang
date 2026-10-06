@@ -25,18 +25,18 @@
 
 **Status:** resolved
 
-**Контракт:** семантика розпізнавання огорож (нове рішення Р15 у format.md §1). Рядки після такої прози, довшої закривної огорожі чи огорожі з відступом ≥ 4 поза списком знову стають вузлами й можуть дати нові діагностики та код 1. Для таких текстів це несумісно: зараз вони мовчки не перевіряються. Форма IR і `parse --json`, коди діагностик не змінюються.
+**Контракт:** семантика розпізнавання огорож (нове рішення Р15 у grammar.md §1). Рядки після такої прози, довшої закривної огорожі чи огорожі з відступом ≥ 4 поза списком знову стають вузлами й можуть дати нові діагностики та код 1. Для таких текстів це несумісно: зараз вони мовчки не перевіряються. Форма IR і `parse --json`, коди діагностик не змінюються.
 
 - [x] Відтворення вище: `check` дає `keylang/rules.md:5:8: K001` для `a`, `keylang/rules.md:5:10: K001` для `b` і код 1. Зараз він дає `0 fail, 0 unverified, 0 ok` і код 0.
 - [x] Огорожа з трьох бектиків, закрита рядком із чотирьох, далі порожній рядок і `- layer a`: `layer a` — вузол у `parse --json`.
 - [x] У `# rules` рядок `text`, порожній, рядок із чотирьох пробілів і трьох бектиків, `- deny a b`: рядок з відступом 4 — проза, `check` дає K001 для `a` і `b` на рядку 6 і код 1 (зараз — код 0).
 - [x] Регресія: `~~~` з трьома бектиками всередині й огорожа з чотирьох бектиків з трьома всередині лишаються одним блоком `code`; огорожа з відступом під відкритим елементом, як і раніше, закриває список (Р9). fmt ідемпотентний, `tests/fixtures/diagnostics.expected` і фікстури fmt не змінились.
-- [x] format.md §1: рядок таблиці «огорожа коду» описує умови відкриття й закриття, рішення Р15 записано. Якщо 01 злито, записи allowlist для фікстур цього класу видалено, і звірка з CommonMark на них дає 0 розбіжностей до й після fmt.
-- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а format.md §1 більше не перелічує невиправлених класів.
+- [x] grammar.md §1: рядок таблиці «огорожа коду» описує умови відкриття й закриття, рішення Р15 записано. Якщо 01 злито, записи allowlist для фікстур цього класу видалено, і звірка з CommonMark на них дає 0 розбіжностей до й після fmt.
+- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а grammar.md §1 більше не перелічує невиправлених класів.
 - [ ] `npm run typecheck` і `npm test` зелені. `node bin/keylang.js map` перегенеровано й diff переглянуто (`keylang/map/` і, бо увімкнено `explain.map`, `keylang/map-explained/`); `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `docs/format.md`, `tests/cli.test.ts`, `tests/commonmark.test.ts`, `tests/fixtures/commonmark/*.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/parser.ts, Р15 у docs/format.md §1, tests/commonmark.test.ts («a backtick info string, a longer closer, and an indent-of-4 fence…»), фікстури fence-info/fence-longer/fence-col4 без записів allowlist; `map --check` = 0, `check` на репозиторії — 0 fail.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/parser.ts, Р15 у docs/grammar.md §1, tests/commonmark.test.ts («a backtick info string, a longer closer, and an indent-of-4 fence…»), фікстури fence-info/fence-longer/fence-col4 без записів allowlist; `map --check` = 0, `check` на репозиторії — 0 fail.

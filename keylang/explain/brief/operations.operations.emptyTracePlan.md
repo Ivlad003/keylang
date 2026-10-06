@@ -1,2 +1,0 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d27fee350fc8a5965f6a4297c276b2074549b016933daf65bfa46b6ecdf9ec83 lang=en detail=brief -->
-Builds a result envelope with a null payload and empty written/removed/proposals lists, attaching the optional error as a single error-level message. Used by `operations.operations.runTracePlan` to report early exits without a plan.

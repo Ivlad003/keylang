@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9cf1c946f2b99347fc0acc7979484c39131f5651cfe4436e4b1d034256fa6ddf lang=en detail=brief -->
-Record of one extracted declaration: its kind, name, span, signature, export flag, body calls (`CallFact`), referenced types (`TypeRefFact`), and nested members. Optional flags mark accessors, implicit, static, or `#private` members, plus base class, doc comment, and body…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=ff5b45560c250ab5e8bb0d3db32b28730551924581c9b4b6a377577034980550 lang=en detail=brief -->
+Records one extracted declaration: its kind, source span, signature, export status, outgoing calls, referenced types, nested members, body fingerprint, doc comment, and modifiers like accessor, static, or private.

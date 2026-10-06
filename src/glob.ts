@@ -1,8 +1,21 @@
 // Minimal glob matching for `keylang.json` (no dependency, no experimental
-// Node API). Supports `**`, `*`, `?` and `{a,b}`; paths are POSIX-relative.
+// Node API). Supports `**`, `*`, `?` and `{a,b}`; `[` is a literal (Next.js
+// `app/[id]/page.tsx`). Paths are POSIX-relative.
 
+/** Compiled globs: a map matches every file against every layer glob, so each compiles once per process. */
+const compiled = new Map<string, RegExp>();
+/** Globs come from configuration, so few are distinct; the bound only keeps a long session from growing without end. */
+const COMPILED_LIMIT = 4096;
+
+/** The anchored RegExp of a glob, compiled once. It has no `g` or `y` flag, so sharing it keeps `test` stateless. */
 export function globToRegExp(glob: string): RegExp {
-  return new RegExp(`^${source(glob)}$`);
+  let re = compiled.get(glob);
+  if (re === undefined) {
+    re = new RegExp(`^${source(glob)}$`);
+    if (compiled.size >= COMPILED_LIMIT) compiled.clear();
+    compiled.set(glob, re);
+  }
+  return re;
 }
 
 /** The regex body of a glob; each `{a,b}` alternative is a glob itself (`{src/**,lib/*.ts}`). */
@@ -71,6 +84,12 @@ function escape(s: string): string {
 
 export function matchesGlob(path: string, glob: string): boolean {
   return globToRegExp(glob).test(path);
+}
+
+/** The first of `globs` that matches `path`, or null. */
+export function firstMatchingGlob(path: string, globs: readonly string[]): string | null {
+  for (const glob of globs) if (globToRegExp(glob).test(path)) return glob;
+  return null;
 }
 
 /**

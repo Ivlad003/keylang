@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b61f29914eb347161f0b24b6145838cf0ab568e3a6116fe2c73f16c25d564623 lang=en detail=brief -->
-Shifts the cursor by a relative line count, then clamps it via `tui.app.App.clampCursor` and scrolls it into view with `tui.app.App.keepVisible`. Any hover popup that was opened by keyboard is dismissed afterward.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=06d2e15b0642b8d4778c0c996ba18558342814f38867be85eecac4a3b74ae937 lang=en detail=brief -->
+Shifts the cursor line by the given offset, clamps it via `tui.app.App.clampCursor` and scrolls via `tui.app.App.keepVisible`. Clears any hover state that was triggered by the keyboard.

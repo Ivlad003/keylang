@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d9c49f4007edca3f49d030fbcd14daeb0bc00e422d73daf8d44173d3d7145b5e lang=en detail=brief -->
-Shape of the result produced when checking a feature's status: a completion flag, a list of `Gap` entries describing what is missing, and the collected `FeatureInfo` records for tests and trace plus an optional `FeatureBaseInfo`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6f258e401de94c7520683aa4b3bab09d38e39a0c47197c0ff9df5449a8a0ad6b lang=en detail=brief -->
+Result of checking a feature: whether it is done, its current stage, blocking gaps and hints, plus test, trace and base details and inherited rule failures that do not block (null without git, making every rule failure a gap).

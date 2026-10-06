@@ -18,7 +18,7 @@ export type Focus = "editor" | "nav" | "files" | "context" | "results";
 export interface Cursor {
   /** 0-based line. */
   line: number;
-  /** 0-based column in code points. */
+  /** 0-based column in grapheme clusters: a letter with its marks, a ZWJ emoji or a flag is one column. */
   col: number;
 }
 

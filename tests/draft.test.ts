@@ -466,7 +466,8 @@ test("spec-to-code --apply: an edit made while the model answers is kept and not
   const edited = "export const policy = 2; // changed by hand meanwhile\n";
   const model = await mockModel(t, ["```ts\nexport function refund(order: Order): Order {\n  return order;\n}\n```"], () => writeFileSync(file, edited));
   const o = await run(dir, ["spec-to-code", "app.refund.refund", "--mode", "llm", "--apply"], { ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "k", HOME: dir });
-  assert.equal(o.status, 2, o.stderr);
+  // Refused, nothing written: 1, as a draft refused for a change is (2 is for usage and I/O).
+  assert.equal(o.status, 1, o.stderr);
   assert.match(o.stderr, /src\/app\/refund\.ts: changed on disk while the change was prepared; nothing written/);
   assert.equal(readFileSync(file, "utf8"), edited);
 });

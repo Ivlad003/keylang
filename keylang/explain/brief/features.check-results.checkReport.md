@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=cc73d36c14b158b4de3841d58433a923efb38ea7c61863e1c08095c1d453b015 lang=en detail=brief -->
-Builds the full check report by combining diagnostics with verdicts not already covered by `check.assess.sameFinding`, producing structured results via `features.check-results.checkResults`, formatted lines, and fail/unverified/ok counts. Passing verdicts are only listed as…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7d6c32677b4a61ebccf54734e4b5e550d7b4b38210961c16c2e875caab6fc229 lang=en detail=brief -->
+Builds the check report: structured results via `features.check-results.checkResults`, printable lines for diagnostics and non-duplicate verdicts (deduped with `check.assess.sameFinding`), plus fail/unverified/ok counts and distinct holes.

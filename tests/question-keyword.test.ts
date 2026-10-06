@@ -79,8 +79,8 @@ test("parse: `- ? <text>` is a question at the top of a flow, under trigger, ste
   ]);
   assert.deepEqual(questions(dir, "keylang/flows/step.md"), [["does it pay?", 4, 3]]);
   const elsewhere = keylang(dir, ["check", "keylang/flows/elsewhere.md"]);
-  assert.match(elsewhere.stdout, /^keylang\/flows\/elsewhere\.md:4:5: K004 unknown keyword `\?` here; expected one of: test$/m);
-  assert.match(elsewhere.stdout, /^keylang\/flows\/elsewhere\.md:7:7: K004 unknown keyword `\?` here; expected one of: test$/m);
+  assert.match(elsewhere.stdout, /^keylang\/flows\/elsewhere\.md:4:5: K004 unknown keyword `\?` here; expected one of: test; `\?` goes at the top of `# flow`, under `- step`, under `- trigger` or under `- when`$/m);
+  assert.match(elsewhere.stdout, /^keylang\/flows\/elsewhere\.md:7:7: K004 unknown keyword `\?` here; expected one of: test; `\?` goes at the top of `# flow`, under `- step`, under `- trigger` or under `- when`$/m);
 });
 
 test("check: a question is no claim: no diagnostic and no verdict; fmt keeps it canonical and is idempotent", (t) => {

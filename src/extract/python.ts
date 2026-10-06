@@ -63,7 +63,7 @@ function extractTree(path: string, root: Node): FileFacts {
   }
   const names = new Set([...facts.decls.map((d) => d.name), ...facts.imports.flatMap((imp) => imp.bindings.map((b) => b.local))]);
   facts.moduleCalls = moduleCalls(root);
-  facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names)].sort((a, b) => a.line - b.line || a.col - b.col);
+  facts.valueRefs = [...facts.valueRefs, ...valueRefs(root, names, facts.imports.some((imp) => imp.glob))].sort((a, b) => a.line - b.line || a.col - b.col);
   collectDynamic(root, facts);
   const doc = docstring(root);
   if (doc !== undefined) facts.doc = doc;
@@ -233,29 +233,64 @@ function cleandoc(text: string): string {
   return [head.trim(), ...rest.map((line) => line.slice(cut).trimEnd())].join("\n").trim();
 }
 
+/**
+ * Every binding a function makes, nested scopes included — one scope for the
+ * whole function, as `boundNames` and `typedValues` read it: its parameters,
+ * assignments, loop and comprehension variables, `with … as x`,
+ * `except … as x`, `:=`, `case` captures (`case (x,)`, `case {"k": x}`,
+ * `case [*x]`, `case P(k=x)`, `case str() as x`), nested `def` and `class`
+ * names and the parameters of nested functions and lambdas. `global` and
+ * `nonlocal` are `declared`: the name lives outside the function. `by` is
+ * the node that binds (an `assignment` may name the class).
+ */
+function walkBindings(fn: Node, visit: (target: Node, kind: "parameter" | "local" | "declared", by: Node) => void): void {
+  const params = (owner: Node): void => {
+    for (const p of owner.childForFieldName("parameters")?.namedChildren ?? []) visit(p, "parameter", owner);
+  };
+  params(fn);
+  const walk = (node: Node): void => {
+    const field = (name: string): void => {
+      const target = node.childForFieldName(name);
+      if (target) visit(target, "local", node);
+    };
+    if (node.type === "assignment" || node.type === "augmented_assignment" || node.type === "for_statement" || node.type === "for_in_clause") field("left");
+    else if (node.type === "named_expression" || node.type === "function_definition" || node.type === "class_definition") field("name");
+    else if (node.type === "as_pattern") {
+      // `with … as x` and `except … as x` name an alias; `case … as x` ends with the name.
+      const alias = node.childForFieldName("alias") ?? node.namedChildren.at(-1);
+      if (alias && (alias.type === "as_pattern_target" || alias.type === "identifier")) visit(alias, "local", node);
+    } else if (node.type === "splat_pattern" || (node.type === "dotted_name" && captures(node))) {
+      const name = node.namedChildren[0];
+      if (name?.type === "identifier") visit(name, "local", node);
+    } else if (node.type === "global_statement" || node.type === "nonlocal_statement") visit(node, "declared", node);
+    if (node.type === "function_definition" || node.type === "lambda") params(node);
+    for (const c of node.namedChildren) walk(c);
+  };
+  const body = fn.childForFieldName("body");
+  if (body) walk(body);
+}
+
+/** A bare name in a `case` pattern binds it (`case x:`, `P(k=x)`); a dotted one (`Color.RED`) and a class (`case P():`) are values. */
+function captures(name: Node): boolean {
+  const parent = name.parent;
+  return name.namedChildren.length === 1 && (parent?.type === "case_pattern" || parent?.type === "keyword_pattern");
+}
+
 /** Parameter and assigned names in a function: a call through one of them is a call through a value. */
 function boundNames(fn: Node): Map<string, "parameter" | "local"> {
   const out = new Map<string, "parameter" | "local">();
   const names = (target: Node | null, kind: "parameter" | "local"): void => {
     if (!target) return;
     if (target.type === "identifier") out.set(target.text, kind);
-    else if (target.type === "pattern_list" || target.type === "tuple_pattern" || target.type === "list_pattern" || target.type === "list_splat_pattern" || target.type === "dictionary_splat_pattern") {
+    else if (target.type === "pattern_list" || target.type === "tuple_pattern" || target.type === "list_pattern" || target.type === "list_splat_pattern" || target.type === "dictionary_splat_pattern" || target.type === "as_pattern_target") {
       for (const c of target.namedChildren) names(c, kind);
     } else if (target.type === "typed_parameter" || target.type === "default_parameter" || target.type === "typed_default_parameter") {
       names(target.childForFieldName("name") ?? target.namedChildren[0] ?? null, kind);
     }
   };
-  for (const p of fn.childForFieldName("parameters")?.namedChildren ?? []) names(p, "parameter");
-  const walk = (node: Node): void => {
-    if (node.type === "assignment" || node.type === "augmented_assignment") names(node.childForFieldName("left"), "local");
-    else if (node.type === "for_statement" || node.type === "for_in_clause") names(node.childForFieldName("left"), "local");
-    else if (node.type === "as_pattern") names(node.childForFieldName("alias")?.namedChildren[0] ?? node.childForFieldName("alias"), "local");
-    else if (node.type === "function_definition" || node.type === "class_definition") names(node.childForFieldName("name"), "local");
-    else if (node.type === "lambda") for (const p of node.childForFieldName("parameters")?.namedChildren ?? []) names(p, "parameter");
-    for (const c of node.namedChildren) walk(c);
-  };
-  const body = fn.childForFieldName("body");
-  if (body) walk(body);
+  walkBindings(fn, (target, kind) => {
+    if (kind !== "declared") names(target, kind);
+  });
   return out;
 }
 
@@ -289,27 +324,10 @@ function typedValues(fn: Node): Map<string, string> {
     else if (target.type === "default_parameter") targets(target.childForFieldName("name"), null);
     else for (const c of target.namedChildren) targets(c, null);
   };
-  const params = (owner: Node): void => {
-    for (const p of owner.childForFieldName("parameters")?.namedChildren ?? []) targets(p, null);
-  };
-  params(fn);
-  const walk = (node: Node): void => {
-    if (node.type === "assignment") {
-      const left = node.childForFieldName("left");
-      const cls = left?.type === "identifier" ? (annotatedClass(node.childForFieldName("type")) ?? constructedClass(node.childForFieldName("right"))) : null;
-      targets(left, cls);
-    } else if (node.type === "augmented_assignment" || node.type === "for_statement" || node.type === "for_in_clause") targets(node.childForFieldName("left"), null);
-    else if (node.type === "named_expression") targets(node.childForFieldName("name"), null);
-    else if (node.type === "as_pattern") targets(node.childForFieldName("alias"), null);
-    else if (node.type === "global_statement" || node.type === "nonlocal_statement") targets(node, null);
-    else if (node.type === "function_definition" || node.type === "class_definition") {
-      targets(node.childForFieldName("name"), null);
-      if (node.type === "function_definition") params(node);
-    } else if (node.type === "lambda") params(node);
-    for (const c of node.namedChildren) walk(c);
-  };
-  const body = fn.childForFieldName("body");
-  if (body) walk(body);
+  walkBindings(fn, (target, _kind, by) => {
+    const cls = by.type === "assignment" && target.type === "identifier" ? (annotatedClass(by.childForFieldName("type")) ?? constructedClass(by.childForFieldName("right"))) : null;
+    targets(target, cls);
+  });
   const out = new Map<string, string>();
   // A class shadowed in the function is not the module's class.
   for (const [name, cls] of evidence) if (cls && !evidence.has(cls)) out.set(name, cls);
@@ -414,9 +432,10 @@ function moduleCalls(root: Node): CallFact[] {
 /**
  * Functions read as values: `later(hit)`, `{"save": save}`, `callback=self.save`,
  * `mod.save` without a call. Code holding the value may call it. Names bound
- * in an enclosing `def` are locals, not the module's.
+ * in an enclosing `def` are locals, not the module's. `glob`: a `from m import *`
+ * may bind any name, so every free name read is noted.
  */
-function valueRefs(root: Node, names: ReadonlySet<string>): ValueRefFact[] {
+function valueRefs(root: Node, names: ReadonlySet<string>, glob: boolean): ValueRefFact[] {
   const first = new Map<string, ValueRefFact>();
   const note = (name: string, node: Node, member: boolean): void => {
     const key = `${member ? "." : ""}${name}`;
@@ -426,7 +445,7 @@ function valueRefs(root: Node, names: ReadonlySet<string>): ValueRefFact[] {
     if (node.type === "import_statement" || node.type === "import_from_statement" || node.type === "future_import_statement" || node.type === "type") return;
     if (node.type === "function_definition" || node.type === "lambda") bound = new Set([...bound, ...boundNames(node).keys()]);
     const parent = node.parent;
-    if (node.type === "identifier" && parent && names.has(node.text) && !bound.has(node.text) && !bindsOrCalls(node, parent)) note(node.text, node, false);
+    if (node.type === "identifier" && parent && (glob || names.has(node.text)) && !bound.has(node.text) && !bindsOrCalls(node, parent)) note(node.text, node, false);
     // `@app.route` is called with the function, not read.
     if (node.type === "attribute" && parent && parent.type !== "decorator" && !(parent.type === "call" && parent.childForFieldName("function")?.id === node.id) && !assigned(node, parent)) {
       const member = node.childForFieldName("attribute")?.text;
@@ -510,7 +529,8 @@ function enclosingFn(node: Node): string | null {
 /**
  * Every import of the file, in source order, wherever it is written.
  * `import a.b as c` → `a.b` bound to `c`; `import a.b` → `a` bound to `a`
- * plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`.
+ * plus `a.b` bound to the path `a.b`; `from .m import x` → `.m.x` bound to `x`;
+ * `from .m import *` → `.m.*`, which binds no name of its own.
  * `reexported(local)`: the name (null for `*`) is part of this module's public API.
  */
 function importsIn(root: Node, reexported: (local: string | null) => boolean): ImportFact[] {
@@ -536,10 +556,11 @@ function importsOf(node: Node, reexported: (local: string | null) => boolean): I
       if (item.type === "aliased_import") {
         const name = item.childForFieldName("name")?.text;
         const alias = item.childForFieldName("alias")?.text;
-        if (name && alias) out.push(at(name, [{ kind: "module", local: alias }], reexported(alias)));
+        // A module object: `alias.f()` is its function `f`, and `alias()` no call of anything.
+        if (name && alias) out.push(at(name, [{ kind: "module", local: alias, namespace: true }], reexported(alias)));
       } else if (item.type === "dotted_name") {
         const head = item.text.split(".")[0]!;
-        out.push(at(head, [{ kind: "module", local: head }], reexported(head)));
+        out.push(at(head, [{ kind: "module", local: head, namespace: true }], reexported(head)));
         // `a.b.f()` goes through the path; the dependency alias stays the module's own name.
         if (item.text !== head) out.push(at(item.text, [{ kind: "named", local: item.text, imported: item.text.slice(item.text.lastIndexOf(".") + 1) }]));
       }
@@ -554,7 +575,7 @@ function importsOf(node: Node, reexported: (local: string | null) => boolean): I
     // Nodes are fresh wrappers on every access: compare ids, not objects.
     if (item.id === moduleNode?.id) continue;
     if (item.type === "wildcard_import") {
-      out.push(at(from, [], reexported(null)));
+      out.push({ ...at(join("*"), [], reexported(null)), glob: true });
       named = true;
     } else if (item.type === "dotted_name") {
       out.push(at(join(item.text), [{ kind: "named", local: item.text, imported: item.text }], reexported(item.text)));

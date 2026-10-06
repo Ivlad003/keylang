@@ -1,11 +1,13 @@
 // The optional native parts of voice (design §7.4): `decibri` for the
 // microphone and `@fugood/whisper.node` (whisper.cpp) for local recognition.
-// Both ship prebuilt binaries and are loaded only when present; without them
-// voice uses the browser's microphone (`keylang web`) and OpenRouter, or says
-// what to install. The shapes used here are those of the packages' READMEs,
-// checked at run time rather than trusted. Any failure to load one — absent,
-// no prebuilt binary for this platform, an unexpected shape — makes it
-// unavailable with the reason, never an error of the command.
+// Both ship prebuilt binaries and are optional peer dependencies: npm installs
+// them only when the user adds them next to keylang, and they are loaded only
+// when present. Without them voice uses the browser's microphone (`keylang
+// web`) and OpenRouter, or says what to install. The shapes used here are
+// those of the packages' READMEs, checked at run time rather than trusted.
+// Any failure to load one — absent, no prebuilt binary for this platform, an
+// unexpected shape — makes it unavailable with the reason, never an error of
+// the command.
 
 import { createRequire } from "node:module";
 import { windows, joinWindows } from "./voice.ts";

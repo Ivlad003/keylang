@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=534631754cf4142bfd80885e7f7615170626222e2e857337e0f921a42b0b3945 lang=en detail=brief -->
-Takes the highlighted item from the open completion list, records the acceptance via `tui.assist.countSuggestion`, and closes the list. If the cursor is still at or past the word's start, it replaces that word's graphemes with the item label through `tui.app.App.edit` and moves…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=8cf35bdc32ecc0c39bd8da3fd1281635f022b56c2062a7194cfeba3402524585 lang=en detail=brief -->
+Closes the open completion list, records the acceptance via `tui.assist.countSuggestion`, and, if the cursor hasn't moved before the word's start, replaces the typed prefix with the selected label through `tui.app.App.edit`.

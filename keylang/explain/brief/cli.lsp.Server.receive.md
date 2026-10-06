@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=89a19b4fbe150dc520c7113b20c951840c8e6ce4588762c347ed4f45e0c6831b lang=en detail=brief -->
-Dispatches an incoming JSON-RPC message: ignores responses, routes id-less notifications to `cli.lsp.Server.notify` (logging failures to stderr), and runs requests through `cli.lsp.Server.request`. Request outcomes become result or error replies, tracked in the open/pending…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=cc5e8d4196732318374954ba248c77bad56334b4e50f8a1e7dc97bb06c68d57d lang=en detail=brief -->
+Dispatches each incoming JSON-RPC message: invalid ids or methods go to `cli.lsp.Server.reject`, notifications to `cli.lsp.Server.notify` (errors logged), and requests to `cli.lsp.Server.request`, sending replies unless cancelled.

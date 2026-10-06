@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ba05a4c18a30b725ee18eab665ddbdb38b04f621f77968f1e20e14bca9dffb97 lang=en detail=brief -->
-Consumes node:test events, tracking open suites per file to record each pass/fail/skip result with its root-relative path and suite chain, then writes a JSON report to `.keylang/reports/node-test.json` (or `KEYLANG_TEST_REPORT`). It takes the map snapshot ID via…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=982735404130f2bba1eb9205b12922467616667a9959dfc796168d5a850e66bd lang=en detail=brief -->
+Node test-runner reporter that collects pass/fail/skip results with suite paths, then writes a JSON report with a `cli.run-id.runId` ID. Its snapshot ID comes from `map.map.generateMap` and is kept only if code didn't change during the run.

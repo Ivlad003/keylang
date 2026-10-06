@@ -173,7 +173,7 @@ test("web: check.static shape is the same unverified step the terminal shows", a
   const terminal = new VirtualTerminal(cols, rows);
   const app = new App({ root: dir, cols, rows });
   t.after(() => app.close());
-  app.attach({ kind: "terminal", write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();
   for (let i = 0; i < 8 && !terminal.text().includes("keylang.json check.static"); i++) app.input(KEY.down);
   assert.match(terminal.text(), /not followed in static mode shape, set by keylang\.json check\.static/);
@@ -199,7 +199,7 @@ test("web: flow → hover a step → go to the code gives the terminal's screen"
   const terminal = new VirtualTerminal(cols, rows);
   const app = new App({ root: repo, cols, rows });
   t.after(() => app.close());
-  app.attach({ kind: "terminal", write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();
   const at = locate(terminal.lines(), "application.purchase.buy");
   app.input(mouseMove(at.x + 2, at.y));
@@ -502,7 +502,7 @@ test("web: t switches the map to the explained map on the same node, the screen 
   const terminal = new VirtualTerminal(cols, rows);
   const app = new App({ root: repo, cols, rows });
   t.after(() => app.close());
-  app.attach({ kind: "terminal", write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
   await app.idle();
   for (let i = 0; i < 5; i++) app.input(KEY.down);
   app.input(KEY.altEnter);
@@ -630,7 +630,7 @@ test("web: init → new feature → edit → read → map → feature over the r
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root: terminalRoot, cols, rows });
   t.after(() => app.close());
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   const inTerminal = await firstProject({ input: (keys) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() });
 
   // An editor that leaves a mark if anything ever ran it.
@@ -682,7 +682,7 @@ test("web: the whole cycle — init → config → new feature → check → spe
   const vt = new VirtualTerminal(cols, rows);
   const app = new App({ root: terminalRoot, cols, rows });
   t.after(() => app.close());
-  app.attach({ kind: "terminal", write: (ansi) => vt.feed(ansi) }, cols, rows);
+  app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   const terminal = { input: (keys: string) => app.input(keys), text: () => vt.text(), lines: () => vt.lines() };
   await refundCycle(terminal, author(terminalRoot));
   terminal.input(KEY.f6);

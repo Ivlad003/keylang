@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=51499c144aa06cd54e0234213e1061431ecf85c0bcc67b63a0a70ca115900520 lang=en detail=brief -->
-Returns true when the given relative path matches any of the supplied glob patterns, delegating each comparison to `base.glob.matchesGlob`; it is the shared test used by `base.config.isAnalysed`, `base.config.excludedSourceFiles`, `base.config.outsideSourceFiles`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a73b60bf6e3890c201860edffd2b0fbae8fa1064304e85bf6120c134575e6c7d lang=en detail=brief -->
+Reports whether a repo-relative path matches any of the configured "outside" glob patterns by delegating to `base.config.matchesAny`; used by `map.graph.placeFile` and `map.graph.notIndexed` to exclude files.

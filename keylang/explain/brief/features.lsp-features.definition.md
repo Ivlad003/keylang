@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f21f96ec2a34011bc60005920a37640d318ec7c759fba0e7a41256e636d32518 lang=en detail=brief -->
-Resolves what sits under a cursor via `features.lsp-features.at`: a link becomes a file URL pointing at its line, otherwise the symbol is looked up with `features.lsp-features.describe` and its source position converted through `features.lsp-features.lspPoint`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d181107d32ad198a8312ae758d8e8f2d9286211a2d3ce5eab3884afa05222771 lang=en detail=brief -->
+Resolves the target under the cursor via `features.lsp-features.at` into a go-to location: links open the referenced file at their line, and nodes jump to their source position from `features.lsp-features.describe`, otherwise null.
