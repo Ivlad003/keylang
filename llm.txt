@@ -218,7 +218,7 @@ npx -y keylang baseline
 
 Proposals wait in `.keylang/proposals/`. `npx -y keylang proposals` lists them and `npx -y keylang proposals show <path>` prints one; both write nothing. Accepting or rejecting one is the person's decision.
 
-`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) also gets `{}`, with the reason on stderr, not a block. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
+`check --changed` blocks a turn only on a new fail. An `unverified` line does not block. Read those yourself. Once started, the Stop hook prints one JSON object and exits 0: `{"decision":"block"}` on a new fail, otherwise `{}`. A turn it cannot check (no git, stdin that is not JSON, a broken `keylang.json`) gets `{"systemMessage":"keylang: this turn was not checked: <reason>"}`, with the same line on stderr: the harness shows the person that warning, and it does not block you. The hook is a safety net: run `check --changed` yourself before you say the work is done. Only a bad invocation (`keylang hook` with an unknown subcommand or an extra argument) exits 2.
 
 ## Exit codes and answers
 

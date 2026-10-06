@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
-import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
+import { filterChanged, hookDecision, hookFails, parseHookEvent, uncheckedTurn } from "./changed.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
 import { formatDiagnostic } from "./diag.ts";
@@ -62,8 +62,10 @@ Commands:
                             check --changed, and print a JSON decision; writes
                             only the fact cache .keylang/cache/. Exit 0 once
                             started: a turn it cannot check (stdin not JSON, no
-                            git, a broken keylang.json) prints {} and the reason
-                            on stderr
+                            git, a broken keylang.json) prints {"systemMessage":
+                            "keylang: this turn was not checked: <reason>"}, a
+                            warning the harness shows the person without
+                            blocking the agent, and the same line on stderr
   hook install [--check]    Write the git pre-commit hook that runs check --changed, in
                             git's hooks directory (core.hooksPath is honoured); rerun to
                             update it. A pre-commit hook keylang did not write is left
@@ -942,16 +944,16 @@ async function cmdHook(args: readonly string[], checkOnly: boolean): Promise<num
  * stdout and code 0. A harness reads code 2 of a Stop hook as a blocking
  * error the agent cannot act on, so a failure — stdin that is not a JSON
  * event, git missing or refused, a broken keylang.json, an analysis error —
- * is `{}` with one stderr line saying the turn was not checked.
+ * is a `systemMessage` the harness shows the person, and the same line on stderr.
  */
 async function cmdHookStop(): Promise<number> {
   let decision: string;
   try {
     decision = await stopDecision(await readStdin(), process.cwd());
   } catch (error) {
-    const reason = (error instanceof Error ? error.message : String(error)).replace(/^hook stop: /, "");
-    process.stderr.write(`keylang: hook stop: ${reason}; this turn was not checked\n`);
-    decision = "{}\n";
+    const unchecked = uncheckedTurn(error instanceof Error ? error.message : String(error));
+    process.stderr.write(`${unchecked.line}\n`);
+    decision = unchecked.decision;
   }
   process.stdout.write(decision);
   return 0;

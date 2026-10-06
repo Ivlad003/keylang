@@ -74,6 +74,20 @@ export function hookDecision(event: { stop_hook_active?: boolean }, fails: reado
   return `${JSON.stringify({ decision: "block", reason })}\n`;
 }
 
+/**
+ * A turn the hook could not check — stdin that is no event, no git, a broken
+ * keylang.json, a failed analysis — as the line a person reads and the JSON
+ * that carries it: a `systemMessage`, which Claude Code and Codex show the
+ * person as a warning without blocking the agent (stderr of a hook that exits
+ * 0 reaches only Claude Code's debug log). The command's own `hook stop: `
+ * prefix is dropped; a reason of several lines is kept on one.
+ */
+export function uncheckedTurn(error: string): { line: string; decision: string } {
+  const reason = error.replace(/^hook stop: /, "").trim().replace(/\s*\n\s*/g, " ");
+  const line = `keylang: this turn was not checked: ${reason}`;
+  return { line, decision: `${JSON.stringify({ systemMessage: line })}\n` };
+}
+
 /** The object on stdin. Empty stdin is an event with no `stop_hook_active`. */
 export function parseHookEvent(text: string): { stop_hook_active?: boolean } {
   if (text.trim() === "") return {};

@@ -81,7 +81,17 @@ function deniedRepo(t: { after: (fn: () => void) => void }): string {
   return dir;
 }
 
-test("hook stop: once started it prints one JSON object and exits 0; a failure is {} and a stderr line that the turn was not checked", (t) => {
+/** A turn `hook stop` could not check: code 0, one `systemMessage` object on one stdout line, and the same line on stderr. Returns the line. */
+function uncheckedLine(run: Run, what: string): string {
+  assert.equal(run.status, 0, `${what}: ${run.stderr}`);
+  assert.match(run.stdout, /^\{[^\n]*\}\n$/, `${what}: one JSON object on one line`);
+  const body = JSON.parse(run.stdout) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(body), ["systemMessage"], `${what}: a warning, never a decision`);
+  assert.equal(run.stderr, `${String(body.systemMessage)}\n`, `${what}: the same line on stderr`);
+  return String(body.systemMessage);
+}
+
+test("hook stop: once started it prints one JSON object and exits 0; a turn it cannot check is a systemMessage the person sees, and the same line on stderr", (t) => {
   const dir = deniedRepo(t);
   const blocked = keylang(dir, ["hook", "stop"], { input: STOP });
   assert.equal(blocked.status, 0, blocked.stderr);
@@ -90,9 +100,7 @@ test("hook stop: once started it prints one JSON object and exits 0; a failure i
 
   // No git on PATH: the changed files cannot be listed, so the turn is not checked rather than blocked.
   const noGit = keylang(dir, ["hook", "stop"], { input: STOP, env: { ...process.env, PATH: tempDir(t, "keylang-empty-path-") } });
-  assert.equal(noGit.status, 0, noGit.stderr);
-  assert.equal(noGit.stdout, "{}\n");
-  assert.match(noGit.stderr, /^keylang: hook stop: git is not available \([^)]*\); this turn was not checked\n$/);
+  assert.match(uncheckedLine(noGit, "no git"), /^keylang: this turn was not checked: git is not available \([^)]*\)$/);
 
   // Stdin that is not JSON, or not an object, or a non-boolean stop_hook_active.
   for (const [input, reason] of [
@@ -100,18 +108,13 @@ test("hook stop: once started it prints one JSON object and exits 0; a failure i
     ["[1]", "stdin is not a JSON object"],
     ['{"stop_hook_active":"yes"}', "stop_hook_active is not a boolean"],
   ] as const) {
-    const bad = keylang(dir, ["hook", "stop"], { input });
-    assert.equal(bad.status, 0, `${input}: ${bad.stderr}`);
-    assert.equal(bad.stdout, "{}\n", input);
-    assert.equal(bad.stderr, `keylang: hook stop: ${reason}; this turn was not checked\n`, input);
+    assert.equal(uncheckedLine(keylang(dir, ["hook", "stop"], { input }), input), `keylang: this turn was not checked: ${reason}`);
   }
 
   // A broken keylang.json: the analysis cannot start.
   writeFileSync(join(dir, "keylang.json"), "{ broken\n");
   const config = keylang(dir, ["hook", "stop"], { input: STOP });
-  assert.equal(config.status, 0, config.stderr);
-  assert.equal(config.stdout, "{}\n");
-  assert.match(config.stderr, /^keylang: hook stop: .*keylang\.json: invalid JSON.*; this turn was not checked\n$/);
+  assert.match(uncheckedLine(config, "broken keylang.json"), /^keylang: this turn was not checked: .*keylang\.json: invalid JSON/);
   writeFileSync(join(dir, "keylang.json"), `${JSON.stringify(LAYERS)}\n`);
   assert.deepEqual(treeBytes(dir), before, "hook stop writes nothing, on success or failure");
 
