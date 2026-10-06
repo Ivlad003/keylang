@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=43b5f873ca62d3e6a3e4ceb528823036f6e56011a077d1130bc6ff98baa404f6 lang=en detail=brief -->
-Turns per-file facts into the whole map graph: places files into layer modules via `map.graph.placeFile`, records declarations with `map.graph.addDecl`, resolves imports into dependencies and external packages, then links calls and exports. Collisions, unresolved imports and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4064c59f46c9e719f9fb64ed60518068a2c4cc2df702e8759fc6e7d9b72c1ce7 lang=en detail=brief -->
+Turns parsed file facts into the architecture graph: places files into layer modules, registers declarations, resolves imports to dependencies and external packages via `map.declared-packages.readManifests`, and records gaps and warnings.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d46764747322c26e8e3418fa5d9a95d0c21494b048dfdd175e7b45992fae4847 lang=en detail=brief -->
-Stores the repository root and known source set, then builds a name→crate map by reading the root crate via `map.rust-imports.RustResolver.crateAt` and each directory returned by `map.rust-imports.RustResolver.workspaceMembers`. Crates lacking a name are skipped, and the root…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=07d7d3850cda2cab6ae0d01a51f3bd96151e01f920ba842a56f70aedb6fd8a01 lang=en detail=brief -->
+Stores the repository root and known source files, then registers every named workspace member crate found via `map.rust-imports.RustResolver.workspaceMembers` and `map.rust-imports.RustResolver.crateAt`, plus the top-level crate, by crate name.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=91341d0fdebc2cd8499f9a581ca84a6c9b28db06bec42684ec26d016ab585d3c lang=en detail=brief -->
-Opens a new document section from a `#` heading line: it flushes pending prose via `lang.parser.Parser.flushProse`, closes open lists, lexes the title with `lang.parser.lex`, and picks the kind (`map`, `rules`, `flow`, `wiring`). Unknown kinds fall back to `map` with a K006…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=574bf8149238a77172d0141b2cafff6b0a6c803a098ac594eccc0f737eb63f90 lang=en detail=brief -->
+Ends pending prose and lists, then lexes a `#` line into a new section of kind map, rules, flow or wiring, defaulting to map with a K006 error. Only a flow takes a name, checked by `lang.parser.isSegment`; missing names or extra words raise K005.

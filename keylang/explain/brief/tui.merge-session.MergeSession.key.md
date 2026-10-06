@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d239ad4d14bd1d4e5f01be465dbf6eacebad9bb2a08dde9ac4a1ccde84ff88b5 lang=en detail=brief -->
-Dispatches keystrokes on the active merge: `a`/`r` record a decision and jump to the next pending hunk, `u` undoes via history, navigation keys refocus and scroll the view. `w` hands off to `tui.merge-session.MergeSession.write`, while escape/`q` call…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=67aeb45d17bdc3dbb190823f920fd90854a002da5dfbb3a0456944edff80aee8 lang=en detail=brief -->
+Handles keys during an interactive merge: accept/reject the current hunk and jump to the next pending one, undo, navigate hunks, write via `tui.merge-session.MergeSession.write`, or cancel via `tui.merge-session.MergeSession.leave`.

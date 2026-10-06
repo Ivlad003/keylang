@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=023af8f36d959357a131f3ddedccc7dfbfcfc604caff16bf30f9146708fac6e9 lang=en detail=brief -->
-Builds the MCP server via `cli.mcp.mcpServer` and connects it over a stdio transport, then blocks until the client closes stdin before resolving with exit code 0.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=90dc1e96998665ac4147645f3ac9a451c88ca5b82038b951c41d293e19951aab lang=en detail=brief -->
+Builds the MCP server via `cli.mcp.mcpServer`, connects it over a stdio transport, and blocks until the client closes stdin. Then it resolves with exit code 0.

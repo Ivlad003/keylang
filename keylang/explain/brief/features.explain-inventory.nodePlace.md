@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4e826e8db67637cca60806cd59f0e7bcfceb08ed510dc6df166e19619e493412 lang=en detail=brief -->
-Resolves a node ID to a file position, preferring the snapshot's recorded file/line/col (defaulting line and col to 1) and returning null for snapshot nodes without a file. When the snapshot has no such node, it falls back to the declaration location that…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=77f445102b566449120ec2fab25e15635c06280da2d3982bf4b8ee8400f0a48b lang=en detail=brief -->
+Resolves a node ID to a source location from the analysis snapshot, defaulting line/col to 1, or null if it lacks a file. Unknown IDs fall back to `lang.spec-ir.plannedDeclaration` in the docs.

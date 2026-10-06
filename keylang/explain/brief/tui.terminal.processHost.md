@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=614fdd485b36167c821cccc1c799ae163617014bb148caafa5140c8bd6c79862 lang=en detail=brief -->
-Builds the real-process adapter that `tui.terminal.runTerminal` uses by default, exposing stdin/stdout/stderr/env plus `suspend` via SIGSTOP. Its `listen` registers signal, uncaughtException and unhandledRejection handlers and returns a function that removes them.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=3d6e7c9d6f631e148c8a9e0f1f3b43818f7b5f700aef83cbca867e24f8b33687 lang=en detail=brief -->
+Builds the real-process terminal host for `tui.terminal.runTerminal`: wires stdio and env, registers and removes signal and crash handlers, and suspends by sending SIGSTOP to the whole process group.

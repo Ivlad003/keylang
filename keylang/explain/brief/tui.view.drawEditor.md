@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=7a3e98a42443c34637b4a0ba5a113810bb42798fbf384485f1a0204f8c36e196 lang=en detail=brief -->
-Paints the visible rows of a buffer into `grid`: a gutter with per-line evidence marks and numbers, highlighted text runs via `tui.view.drawRuns`, expandable detail rows, selection and cursor-line backgrounds. Also overlays a dimmed ghost completion suffix in edit mode and sets…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=f4dfff281bb76789da6b0c3545676d2793412bf08119d6159fee45fe039fe3ef lang=en detail=brief -->
+Paints the editor pane: per-line evidence marks, line numbers, syntax runs from `tui.view.runsOf`, selection and cursor-line highlighting, and expanded detail rows. In edit mode it also overlays ghost-completion text and positions the cursor.

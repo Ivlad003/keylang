@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5f9f3388a90a434835132e9ce896967d9bf293314d1f7c8ccf56871bf2514380 lang=en detail=brief -->
-Wraps an analysis for editor use, re-parsing generated map docs under `${analysis.config.dir}/map/` via `lang.parser.parse` when an open buffer differs from the fresh render. Its `text` resolver prefers open buffers, then rendered explained/generated maps (checked with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1b10b8211069e8489639a8e47a6f8f8ca0a65aaac4d80f6b66d2a0cb113a7238 lang=en detail=brief -->
+Builds an editor view of an analysis, reparsing generated map docs with `lang.parser.parse` when an open buffer differs from the fresh render. Its text lookup prefers open buffers, then rendered map content, then disk.

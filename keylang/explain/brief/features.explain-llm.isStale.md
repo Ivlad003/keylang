@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=68b4f4655f5a1ded227cb2769f4c2a30cdb2c3be0d789298d8ca3e9587145146 lang=en detail=brief -->
-Reports whether a saved explanation no longer matches the node's current closure hash by comparing `features.explain-llm.currentBaseline` against `e.closure`. Used to decide when cached answers must be regenerated.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0679319f093a006c357dd95a9a033204134685eaacc2b8a3094cfa636ec48b7d lang=en detail=brief -->
+Reports whether a saved explanation is outdated by comparing its stored closure hash against the node's current baseline from `features.explain-llm.currentBaseline`; any mismatch, including a missing baseline, counts as stale.

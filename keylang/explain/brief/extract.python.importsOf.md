@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5d81c1764d69820e4e2cf371aa9a198719dbb49eb26c4244d654b9172a0a6373 lang=en detail=brief -->
-Turns one Python `import`/`from … import` statement into import facts: each imported or aliased name (and wildcard) becomes a binding record via `extract.python.importAt`, with dotted paths also yielding a named entry. Re-export is marked only when the statement is top-level…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bba1c485cbe18e76a112592a119fed91727ae0f15770e7227165fb7896928906 lang=en detail=brief -->
+Turns one Python `import` or `from … import` statement into import facts with module, named, aliased or wildcard bindings, built via `extract.python.importAt`. Re-export applies only to top-level imports, per `extract.python.isDeclarationLevel`.

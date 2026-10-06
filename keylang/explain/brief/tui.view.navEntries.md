@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=ed14ab84028f055f0a08cc3171fa6549bd5796e8846740f86a7daef5a9fc1a13 lang=en detail=brief -->
-Builds the current navigation list by passing the state's analysis and set of expanded node keys to `tui.nav.navItems`, so drawing, mouse, and key handlers all see the same ordered entries.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b6ea1d04969c49d878aceeaa0936005c30b21837afcca01722b22749347a1678 lang=en detail=brief -->
+Builds the visible navigation list from the state's analysis and expanded-node set by delegating to `tui.nav.navItems`, giving rendering and input handlers like `tui.view.drawNav` and `tui.app.App.navKey` one shared source.

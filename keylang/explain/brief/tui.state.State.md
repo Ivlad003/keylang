@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=56d157108d09c6df1f2ba8768977d5e54bfcea7f2b35029e5f49c9401d945be6 lang=en detail=brief -->
-Holds the whole terminal UI's mutable state in one object: open files and buffers, cursor and scroll positions, mode and focus, side panels, the current analysis and its staleness flags, completion and ghost suggestions, merge and prompt steps, operation records, and the F6…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a738c5a73223197bca245a2637f300cd7f7662288bb561158b424005f0e9adde lang=en detail=brief -->
+The whole terminal UI's mutable state: open buffers, cursor and scroll, panels and focus, the latest analysis with its staleness and error, and modal steps (merge, save barrier, quit), plus completion, ghost suggestions and operation records.

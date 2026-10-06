@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b1933c7e23dd8f2c82a5fbb2c724d04d5ade9df1b8a4b0555437d490b034ce17 lang=en detail=brief -->
-Maps an import specifier from a given file to a repository source file, a Node builtin, an external or generated module, or unresolved, honoring tsconfig `paths`/`baseUrl`, `#` subpath imports, and workspace packages. It records every config file and `node_modules` lookup it…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9862632964db39d50ac9d5a18ab65cb7125320925c4af6d41a48ff1bf1027f75 lang=en detail=brief -->
+Classifies an import specifier as an internal file, builtin, external package or unresolved, using tsconfig paths, package.json imports, workspaces and node_modules, and caches the results.

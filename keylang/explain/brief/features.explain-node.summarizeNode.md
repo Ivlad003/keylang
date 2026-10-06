@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6c307045e9b4ed438ba941cdddd5e249ba73ff229d0352f33bef93535e3327ca lang=en detail=brief -->
-Builds an explanation record for one ID by combining its snapshot node (kind, signature, callers, deps, coverage holes, fingerprint) with spec rule lines that reference it, flows from `features.lsp-features.flowsUsing`, and any planned declaration from…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=f71ece6a6f7d651e23d1df3518103b77d70298e641e799313baeb366656351e3 lang=en detail=brief -->
+Builds a node's structured summary from `features.explain-node.nodeFacts`, rules, flows, graph links, unresolved-coverage counts and fingerprints; plan-only nodes get a bare summary, while unknown or spec-only IDs get a suggestion instead.

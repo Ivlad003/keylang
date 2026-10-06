@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=50a27b4598f046b909a4b2b7f55a18cdf9ae9cc0495b252ee1e6387e377b1547 lang=en detail=brief -->
-Renders the autocomplete popup: picks a window of up to eight items around the selected index, sizes and anchors a box near the cursor column via `tui.view.cellsBetween` and `tui.view.gutterWidth`, flipping above the row if it would overflow. Each row is written with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=8b2cc4fe0602d34d215687c3d85cf6f13fc7c2c80168c9ff365bf5cf36557b0b lang=en detail=brief -->
+Renders the autocomplete popup as a boxed window of up to eight items near the cursor, below it when space allows, otherwise above, via `tui.view.drawBox`. The selected entry is highlighted and "planned" items are tagged.

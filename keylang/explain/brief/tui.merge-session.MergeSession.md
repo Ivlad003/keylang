@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6bdb1e722088c3b5c214adec70a71e1f0d941a1771e6893dd48320d618cccc0e lang=en detail=brief -->
-Lists the files under `.keylang/proposals/`, checks each against the spec-directory and code limits via `problem`, and opens a chosen one as a hunk-by-hunk merge against the file on disk. Handles the merge keys, writes accepted hunks to disk or the buffer, drops the matching…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=c83220e5537c3622a07905c1a5f114ab322cf19ed31322945272d41f2e75d64e lang=en detail=brief -->
+Drives the TUI's merge mode for agent proposals: lists and validates files under the proposals directory, opens one as a hunk diff against disk, and handles accept/reject/undo keys before writing via `tui.merge-session.MergeSession.write`.

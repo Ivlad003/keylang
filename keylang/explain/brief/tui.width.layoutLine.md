@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e144921a7b8c275b904f48d30f9ba816b37a5b8896addca4fb6a8fc97688d197 lang=en detail=brief -->
-Splits a line into grapheme clusters via `tui.width.graphemes` and builds three prefix-sum arrays mapping each cluster boundary to its terminal cell offset (via `tui.width.cellWidth`), code point offset, and UTF-16 unit offset. Used by `tui.buffer.lineLayout` to convert between…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=9431cb454063e1e0f58c01f650ec74572c5ab4380b536c12b84f7c577b652431 lang=en detail=brief -->
+Splits a line into grapheme clusters via `tui.width.graphemes` and builds prefix-sum arrays of terminal cell widths (from `tui.width.cellWidth`), code points, and UTF-16 units for each cluster boundary.

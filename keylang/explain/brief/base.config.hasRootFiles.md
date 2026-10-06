@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=eb0a04c80b357fc0e9102e2f0dc908c2c1e42d31d122e4613222a83c88623afa lang=en detail=brief -->
-Reads the entries of `dir` under `root` (synchronously, not recursing) and returns true if at least one is a regular file whose extension `base.languages.languageOf` recognizes and whose relative path is not rejected by `base.config.isExcluded`, giving `base.config.guessLayout`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e4a558990a91b0bb52d94a3a48252199345e53aca95069803f7e9410f9c44673 lang=en detail=brief -->
+Reports whether a directory directly holds at least one source file whose language `base.languages.languageOf` recognizes and that `base.config.isExcluded` does not filter out; `base.config.guessLayout` uses it.

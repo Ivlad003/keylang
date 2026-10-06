@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2ff8499525c266a25c129493f20b7e02b5c4e4daaacb96c2598c14fd67f7710d lang=en detail=brief -->
-The shared operations every entry point builds on: check reporting and `--changed` filtering (`features.check-results`, `features.changed`), drafting and explaining through a model or offline (`features.draft`, `features.explain-llm`), proposals, staleness, git and voice. Each…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=da583c4a1ed8b6256c01aec3ca9de0a2a11f6f25f7c520fcb9b6716e8c5459a0 lang=en detail=brief -->
+User-facing capabilities on top of the analysis: check reports and filtering (`features.check-results`, `features.changed`), flow drafting, explanations, and editor support (`features.lsp-features`). Model calls go through `features.llm`.

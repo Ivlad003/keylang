@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3268d6a055ec1765261e72385f2d4d6302748a079bc4ee61714cb521141a6282 lang=en detail=brief -->
-Handles LSP notifications: sets the exit code on `exit`, ignores everything before initialize, and keeps the open-document overlay in sync on didOpen/didChange/didClose via `cli.lsp.filePath`, triggering `cli.lsp.Server.changed`. Also replies with a cancelled error to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=53082b96901482db3fc17cedae7bd2e47f3dd68dc1d457346ade622256a9669b lang=en detail=brief -->
+Handles LSP notifications: sets the exit code, keeps the open-document overlay in sync on open/change/close via `cli.lsp.Server.edited` and `cli.lsp.Server.changed`, and answers cancelled in-flight requests with an error.

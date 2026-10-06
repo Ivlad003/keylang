@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fd653da4b4522d25c1cabe0eee00a8457c77656f7e5bcaebcf722f4c679b3f61 lang=en detail=brief -->
-Runs map generation on a lazily spawned worker thread so the terminal and web UIs stay responsive, matching replies to pending promises by id and falling back to in-process `generateMap` if the worker cannot start. Errors or a non-zero exit reject all pending requests and mark…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=313ccdd00538134d0d863343f33f2d68510da5d9684ad7fde0d76599fd85d78b lang=en detail=brief -->
+Runs map generation on a lazily started analysis worker thread, matching replies to pending requests by id and failing all of them on worker error; falls back to in-process generation once the worker fails.

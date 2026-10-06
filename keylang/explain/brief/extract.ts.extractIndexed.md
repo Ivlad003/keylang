@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4428402a6fab7df1c73709217f2b59ab5d11c83cb6c3dab28d30a65d312cd873 lang=en detail=brief -->
-Walks a parsed JS/TS tree and builds a `FileFacts` record: imports and require bindings via `extract.ts.importStatement`/`extract.ts.importAt`, declarations with their calls, JSX components and type refs via `extract.ts.decl`/`extract.ts.classDecl`, plus exports and re-exports.…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6b7b5873e657df7fe67876050bd0847937bd1956471eae2767a768ff7d63e079 lang=en detail=brief -->
+Walks a parsed TS/JS syntax tree's top-level statements to build its file facts: imports, requires, re-exports, declarations with their calls and JSX/React component uses, and exports. It marks the file opaque when nesting is too deep.

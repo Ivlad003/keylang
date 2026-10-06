@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=7538ca012bc2228369e0508d2820221e70c48247079faf65849eb5c4e299d89b lang=en detail=brief -->
-Describes a supported language's per-language settings: its file extensions, whether a module defaults to a file or a directory when `keylang.json` is silent, which file names (like `index`) stand in for their directory, which member a type call runs (or `null` where calling a…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=cbcd7ae129456261da22834e0dc57160586205b05bf893e0e1dbe26bfc877f5e lang=en detail=brief -->
+Per-language settings: file extensions, default module granularity, index file names, the constructor member a class call runs, which members get called implicitly, and whether names compare case-insensitively.

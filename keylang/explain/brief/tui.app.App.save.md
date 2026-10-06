@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d045600bdc4260f077cd123e030b92a8e1097f12e6203aa10eaa9a96dd66db22 lang=en detail=brief -->
-Writes the current buffer to disk via `tui.app.App.persist` and then `tui.app.App.reanalyze`, skipping read-only buffers, in-progress writes, and new files whose path is already occupied per `tui.app.App.newFileProblem`. If `tui.app.App.changedOnDisk` reports external changes…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6e4d984b13369d9a995b36583df5f2e44a30ec5b739e5d2bf52361af8ef567b8 lang=en detail=brief -->
+Writes the active editable buffer to disk via `tui.app.App.persist`, refusing new files whose path now exists and requiring a second press to overwrite external changes, then re-runs analysis via `tui.app.App.reanalyze`.

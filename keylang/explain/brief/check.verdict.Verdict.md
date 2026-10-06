@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=67f4199af6c6732dd9350a3a6cf61d91916efa53d8646dc07e5b6b3a7921f60e lang=en detail=brief -->
-Record of one check outcome: a `VerdictKind` plus the criterion and area it covers, the snapshot and spec hash it was computed against, a file/line/col location, an optional diagnostic code, and a message. An optional evidence field tags the source as the syntactic graph, a…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a0478e0d8df49a38eb7b674da7af1ae23264f42643901b59250aa20cab8b2a75 lang=en detail=brief -->
+The result record for one checked criterion: its kind, the rule text and area it covers, source location, optional diagnostic code and message, plus optional evidence provenance and the coverage hole behind an unverified outcome.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a70658cb3b88d348f6d3a9d79e66653caf7a2cb2614c6e0a9ff7e283741c9fc1 lang=en detail=brief -->
-Turns source files into facts, a graph and a versioned snapshot (`map.frontends`, `map.graph`, `map.snapshot`), then renders generated map files with explanations (`map.emit`, `map.explanations`). Also derives wiring code and trace plans from that snapshot (`map.wire-gen`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=24346e977ac618131fc194f4dd3e7edbb3f39bd0c8616cac68da9634c6736a84 lang=en detail=brief -->
+Turns source files into extracted facts, a dependency graph and the `.keylang/index.json` snapshot, resolving imports per language, then renders the Markdown map, explanations, C4 diagrams and generated wiring.

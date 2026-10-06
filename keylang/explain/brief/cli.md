@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=53a4a4b8ecf1b878d57fb1a391cf6412b48dab41253c6aac82f3f6f33946c750 lang=en detail=brief -->
-Entry points that expose the keylang core (`cli.index`) to users and tools: the command line and TUI in `cli.cli`, a stdio language server in `cli.lsp`, an MCP server in `cli.mcp`, and shell completions in `cli.completions`. It also holds the test-run adapters: a `node:test`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=5dcd6beebd6ac8d66c986416dc292f6403e74b1bf92291546507f321ee91e047 lang=en detail=brief -->
+Entry points and adapters: the command line `cli.cli` with shell completions, the stdio language server `cli.lsp` and MCP server `cli.mcp`, plus test reporting and flow tracing via `cli.node-test`, `cli.trace` and `cli.trace-hooks`.

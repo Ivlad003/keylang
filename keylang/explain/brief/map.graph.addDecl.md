@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6ed7d11ae44629c9cddbe6b007d43915716e5aa4fe631bbf5efdf4447d560478 lang=en detail=brief -->
-Registers one declaration fact as a graph node under `module`: merging duplicate or overloaded fns into the first node (extending its range, joining fingerprints), resolving interface/class name clashes, and creating class child modules whose members it recurses into via…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bcd291585f5b86838eeade20e42e33fd44b349ac20cf6f94b837596dc3c595f0 lang=en detail=brief -->
+Registers a declaration in a module as a function, type or class node (recursing into class members via `map.graph.memberSegments`), merging overloads and duplicates into the first node and letting a class or function replace a same-named type.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9791e10d72c2eebcb423f056d4c29596fd3ded9915a1f10bea6ddebd5694fa3b lang=en detail=brief -->
-Dispatches a key press in edit mode when no ghost text is showing: it cycles or accepts/rejects the completion popup, maps ctrl shortcuts to `tui.app.App.save`, `tui.assist.Assist.voice`, `tui.app.App.undoEdit`, `tui.app.App.textToSpec`, `tui.app.App.complete` and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1501689954b0668aa0bf07a587ccc71060659afdf006731c45de5524f496334b lang=en detail=brief -->
+Handles edit-mode keys: navigates or accepts an open completion list, maps Ctrl shortcuts to `tui.app.App.save`, `tui.assist.Assist.voice` and others, and edits text with indent- and bullet-preserving Enter.

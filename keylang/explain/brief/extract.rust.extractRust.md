@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e1f05503831c3ecdd25d721bf105ca53bef0607c2f62b8eac1ec255fcea95e54 lang=en detail=brief -->
-Parses Rust source with the tree-sitter grammar via `extract.treesitter.withTree` and hands the root node to `extract.rust.extractTree` to build the file's facts. Returns a promise resolving to those facts.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d992958fb65f77d49065047ff0dd46eebd46ef7720dd3d9f292ebc870071ccb7 lang=en detail=brief -->
+Parses Rust source with the tree-sitter Rust grammar via `extract.treesitter.withTree`, then hands the syntax tree's root to `extract.rust.extractTree` to produce the file's facts asynchronously.

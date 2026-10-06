@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a><br>Dependency-free foundation shared by every other layer: source spans, diagnostics with stable codes, config and glob matching, language data, external package IDs, brief extraction and the atomic in-repository write protocol. It is denied access to [`external.web-tree-sitter`](external.md#external.web-tree-sitter)… _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+  <a id="base"></a><br>Dependency-free foundations shared across keylang: config and glob matching, language data, spans, diagnostics, briefs, external package IDs ([`base.external-ids`](base.md#base.external-ids)) and safe file writes. It may not import [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -38,7 +38,7 @@
     - fn [resolveStatic](../../src/config.ts#L30) (flag: StaticMode | undefined, configured: StaticMode | undefined) → { mode: StaticMode; setBy?: StaticSource }
       <a id="base.config.resolveStatic"></a><br>Flag, then `check.static`, then `behavior`.
     - type [Config](../../src/config.ts#L36)
-      <a id="base.config.Config"></a><br>Shape of the resolved per-repository settings read from `keylang.json`: the absolute root, the rules edition (`RuleFormat`), the map directory, languages, whether a module is a file or a directory, layer globs in map order, excluded and `outside` globs, check modes (including… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.Config"></a><br>Resolved repository settings loaded from `keylang.json`: absolute root, rules edition, languages, module granularity, layer globs, exclude/outside/assume globs, check options, plus agent, voice, ghost-text and explanation preferences. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
     - fn [isAgent](../../src/config.ts#L94) (value: string) → boolean
       <a id="base.config.isAgent"></a><br>`agent` as `keylang.json`, `KEYLANG_AGENT` and `agents.json` "use" accept it.
     - fn [isCliAgent](../../src/config.ts#L99) (agent: string | null) → boolean
@@ -46,7 +46,7 @@
     - fn [skipDir](../../src/config.ts#L149) (abs: string, name: string) → boolean <!-- internal -->
       <a id="base.config.skipDir"></a><br>A directory we never descend into: hidden, build output, or a nested repository.
     - type [RawConfig](../../src/config.ts#L153)
-      <a id="base.config.RawConfig"></a><br>Shape of `keylang.json` as written, before defaults: every field is optional — rules edition, spec directory (`dir`), languages, module granularity, layers as a glob or globs, `exclude` and `outside` globs, `check`, `agent`, `ghost`, `voice` and `explain` settings. _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.RawConfig"></a><br>Unvalidated shape of the user's keylang configuration, with every field optional: rule format and directory, languages, module granularity, layer globs, exclusions, check settings, and agent, ghost, voice and explain options. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
     - fn [loadConfig](../../src/config.ts#L170) (root: string) → Config
       <a id="base.config.loadConfig"></a><br>Load `<root>/keylang.json`, or guess a config for `root`.
       - calls [base.config.parseConfig](base.md#base.config.parseConfig), [base.config.detectLanguages](base.md#base.config.detectLanguages), [base.config.guessLayers](base.md#base.config.guessLayers), [base.config.defaultModule](base.md#base.config.defaultModule)
@@ -88,7 +88,7 @@
       <a id="base.config.isAssumed"></a><br>A path `assume` names: keylang neither reads nor requires it.
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
     - fn [isOutside](../../src/config.ts#L458) (rel: string, outside: readonly string[]) → boolean
-      <a id="base.config.isOutside"></a><br>Returns true when the given relative path matches any of the supplied glob patterns, delegating each comparison to [`base.glob.matchesGlob`](base.md#base.glob.matchesGlob); it is the shared test used by [`base.config.isAnalysed`](base.md#base.config.isAnalysed), `base.config.excludedSourceFiles`, `base.config.outsideSourceFiles`… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.isOutside"></a><br>Reports whether a repo-relative path matches any of the configured "outside" glob patterns by delegating to [`base.config.matchesAny`](base.md#base.config.matchesAny); used by [`map.graph.placeFile`](map.md#map.graph.placeFile) and [`map.graph.notIndexed`](map.md#map.graph.notIndexed) to exclude files. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
     - fn [matchesAny](../../src/config.ts#L462) (rel: string, globs: readonly string[]) → boolean <!-- internal -->
       <a id="base.config.matchesAny"></a>
@@ -103,7 +103,7 @@
       <a id="base.config.evidenceFiles"></a><br>Files named by `check.tests` / `check.trace`: a plain path (which must exist) or a glob (which may match nothing yet, before the first test run).
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.config.toPosix](base.md#base.config.toPosix), [base.glob.matchesGlob](base.md#base.glob.matchesGlob)
     - fn [isExcluded](../../src/config.ts#L575) (rel: string, extra: readonly string[]) → boolean
-      <a id="base.config.isExcluded"></a><br>Returns true when the relative path matches any glob in the built-in exclude list combined with the caller-supplied extra patterns, delegating each pattern check to [`base.glob.matchesGlob`](base.md#base.glob.matchesGlob); it is the shared filter used by [`base.config.isAnalysed`](base.md#base.config.isAnalysed), [`base.config.hasSource`](base.md#base.config.hasSource)… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.isExcluded"></a><br>Reports whether a relative path matches the built-in default exclude globs or any caller-supplied extra globs, via [`base.config.matchesAny`](base.md#base.config.matchesAny). Used by [`base.config.hasSource`](base.md#base.config.hasSource), [`base.config.hasRootFiles`](base.md#base.config.hasRootFiles) and [`map.graph.notIndexed`](map.md#map.graph.notIndexed). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.config.matchesAny](base.md#base.config.matchesAny)
     - fn [toPosix](../../src/config.ts#L579) (p: string) → string
       <a id="base.config.toPosix"></a><br>Replaces every backslash in a path string with a forward slash, normalizing Windows-style separators into the POSIX form used for relative paths across the codebase; it is a pure one-liner with no filesystem access, so the "2 dynamic-call" entries keylang could not resolve are… _(llm · claude · 2026-10-04)_
@@ -130,10 +130,10 @@
     - fn [reservedReason](../../src/config.ts#L709) (name: string) → string <!-- internal -->
       <a id="base.config.reservedReason"></a><br>Produces the human-readable explanation of why a given layer name cannot be used: it returns a specific message for `external`, `unassigned`, and the `OUTSIDE_LAYER` constant, and otherwise a generic message saying the name is a top-of-map keyword. [`base.config.guessLayout`](base.md#base.config.guessLayout) and… _(llm · claude · 2026-10-04)_
     - fn [hasRootFiles](../../src/config.ts#L716) (root: string, dir: string, exclude: readonly string[]) → boolean <!-- internal -->
-      <a id="base.config.hasRootFiles"></a><br>Reads the entries of `dir` under `root` (synchronously, not recursing) and returns true if at least one is a regular file whose extension [`base.languages.languageOf`](base.md#base.languages.languageOf) recognizes and whose relative path is not rejected by [`base.config.isExcluded`](base.md#base.config.isExcluded), giving [`base.config.guessLayout`](base.md#base.config.guessLayout)… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.hasRootFiles"></a><br>Reports whether a directory directly holds at least one source file whose language [`base.languages.languageOf`](base.md#base.languages.languageOf) recognizes and that [`base.config.isExcluded`](base.md#base.config.isExcluded) does not filter out; [`base.config.guessLayout`](base.md#base.config.guessLayout) uses it. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
     - fn [hasSource](../../src/config.ts#L720) (absDir: string, rel: string, exclude: readonly string[]) → boolean <!-- internal -->
-      <a id="base.config.hasSource"></a><br>Recursively walks a directory with `readdirSync`, returning true as soon as it finds a file whose name maps to a known language via [`base.languages.languageOf`](base.md#base.languages.languageOf) and whose relative path is not rejected by [`base.config.isExcluded`](base.md#base.config.isExcluded), descending into subdirectories only when… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.config.hasSource"></a><br>Recursively walks a directory and returns true as soon as it finds a file with a recognized language ([`base.languages.languageOf`](base.md#base.languages.languageOf)) that is not excluded ([`base.config.isExcluded`](base.md#base.config.isExcluded)). Subdirectories rejected by [`base.config.skipDir`](base.md#base.config.skipDir) are not searched. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.config.skipDir](base.md#base.config.skipDir), [base.languages.languageOf](base.md#base.languages.languageOf), [base.config.isExcluded](base.md#base.config.isExcluded)
     - fn [isIdSegment](../../src/config.ts#L733) (s: string) → boolean <!-- internal -->
       <a id="base.config.isIdSegment"></a><br>Same predicate as `isSegment`. Duplicated so `base` does not import `lang`.
@@ -194,7 +194,7 @@
     - fn [escape](../../src/glob.ts#L81) (s: string) → string <!-- internal -->
       <a id="base.glob.escape"></a><br>Backslash-escapes the regex metacharacters `. + ^ $ ( ) | [ ] \ { }` in a string so it can be embedded verbatim in a regular expression; [`base.glob.source`](base.md#base.glob.source) uses it on the literal parts of a glob pattern. Keylang flags one dynamic call it could not resolve here, though the code… _(llm · claude · 2026-10-04)_
     - fn [matchesGlob](../../src/glob.ts#L85) (path: string, glob: string) → boolean
-      <a id="base.glob.matchesGlob"></a><br>Converts the glob pattern into a regular expression via [`base.glob.globToRegExp`](base.md#base.glob.globToRegExp) and tests the given path against it, returning whether it matches; it is the single matching primitive used by [`base.config.evidenceFiles`](base.md#base.config.evidenceFiles), [`base.config.guessLayout`](base.md#base.config.guessLayout), [`base.config.isExcluded`](base.md#base.config.isExcluded)… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.glob.matchesGlob"></a><br>Tests whether a file path fits a glob pattern by compiling it with [`base.glob.globToRegExp`](base.md#base.glob.globToRegExp) and running the regex. Config helpers like [`base.config.layerDirs`](base.md#base.config.layerDirs) and [`map.graph.placeFile`](map.md#map.graph.placeFile) use it to match files to layers. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [base.glob.globToRegExp](base.md#base.glob.globToRegExp)
     - fn [firstMatchingGlob](../../src/glob.ts#L90) (path: string, globs: readonly string[]) → string | null
       <a id="base.glob.firstMatchingGlob"></a><br>The first of `globs` that matches `path`, or null.
@@ -206,7 +206,7 @@
   - module [languages](../../src/languages.ts#L1)
     <a id="base.languages"></a><br>Languages keylang indexes: names, file extensions and the default module granularity. Plain data, so config and the language core know which files are source without loading any frontend or grammar.
     - type [LanguageInfo](../../src/languages.ts#L5)
-      <a id="base.languages.LanguageInfo"></a><br>Describes a supported language's per-language settings: its file extensions, whether a module defaults to a file or a directory when `keylang.json` is silent, which file names (like `index`) stand in for their directory, which member a type call runs (or `null` where calling a… _(llm · claude · 2026-10-04 · stale)_
+      <a id="base.languages.LanguageInfo"></a><br>Per-language settings: file extensions, default module granularity, index file names, the constructor member a class call runs, which members get called implicitly, and whether names compare case-insensitively. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
     - type [Language](../../src/languages.ts#L34) = keyof typeof LANGUAGES
       <a id="base.languages.Language"></a><br>A string-literal union derived from the keys of the `LANGUAGES` constant in the same file, so any value typed this way must be one of the language names registered there; the input does not show the contents of `LANGUAGES` or where this alias is consumed. _(llm · claude · 2026-10-04)_
     - fn [isLanguage](../../src/languages.ts#L38) (name: unknown) → name is Language

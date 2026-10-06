@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=607789179336c0290f9e6d44a49f142fbc498ca933cc2e5ecded4574ca456632 lang=en detail=brief -->
-Validates the `check` flag combinations, then delegates to `cli.cli.cmdCheckStale` for stale mode or runs the explain-edge or check operation via `operations.operations.runOperation`. Prints the report in the chosen format plus a summary, returning the exit code.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=01af828b0b19424eea115577bdbe610d588fc14cf0c5f6dc29c714c3f43aec4c lang=en detail=brief -->
+Validates flag combinations, then delegates to `cli.cli.cmdCheckStale` for stale mode, prints an explain-edge trace, or runs the check via `operations.operations.runOperation` and writes the formatted report and summary.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=95b95bc2c782965739af5015ecaaf3e45db558b563d2d54066ee9c68c5852279 lang=en detail=brief -->
-Shape of `keylang.json` as written, before defaults: every field is optional — rules edition, spec directory (`dir`), languages, module granularity, layers as a glob or globs, `exclude` and `outside` globs, `check`, `agent`, `ghost`, `voice` and `explain` settings.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a096fd86a4f654f7ed565023b4d005186364853b0ecb0695487ae04b7aadf4b5 lang=en detail=brief -->
+Unvalidated shape of the user's keylang configuration, with every field optional: rule format and directory, languages, module granularity, layer globs, exclusions, check settings, and agent, ghost, voice and explain options.

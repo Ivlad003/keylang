@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=376f66ba27596e0d50783634e99df42516f066473fde07987be5dc1d7f5bafe5 lang=en detail=brief -->
-Takes the leftover tokens of a line and, when exactly one remains, converts it via `lang.parser.Parser.makeRef` into a reference appended to the node. With zero or several tokens it reports a K005 error through `lang.parser.Parser.err` instead.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1081a0231921e2abcf1963cd51ef3aaed9e0bac538285da04db5ab5809d472be lang=en detail=brief -->
+Requires exactly one argument token, turning it into a reference via `lang.parser.Parser.makeRef` and appending it to the node's refs. Otherwise it reports K005 via `lang.parser.Parser.err`, at the node for a missing ID or at the second token for extras.

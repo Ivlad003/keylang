@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c58dac6e49094ce3e327e61856bfd4717e0042709da493e35a9c1a6696903e29 lang=en detail=brief -->
-Maps Python import specifiers to repository files: relative imports walk up from the importing file, absolute ones probe each existing root dir, matching `x.py` or `x/__init__.py` among indexed sources or on disk. Unmatched top-level names are reported as external packages.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=8ca97a0f7328429fb7e811bd88723d1573b720475eab01335e5d629c28fc9ce8 lang=en detail=brief -->
+Maps Python import specs to repo files by trying `.py` modules and `__init__.py` packages across source roots or relative parent dirs, counting unsaved buffers as existing; unmatched imports become stdlib or external.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=8b65e8ad50131196415f1477e9fdd906029f68a879529d23034cf916b73b5756 lang=en detail=brief -->
-Builds the context bundle for the cursor line by parsing the buffer via `lang.parser.parse`, collecting referenced and planned IDs on that line, then adding the buffer and items through `features.agent-context.addIdItems`. Results are cached per analysis by a content hash with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bda4025d06ddf00edf97b1df09bede6172bc1a8daccadf56fcf0cdf34c0217db lang=en detail=brief -->
+Builds an agent context pack from the buffer plus IDs referenced on the cursor line (via `lang.parser.parse`, `addIdItems`), with token estimates, cached per analysis in a bounded LRU keyed by a content hash.

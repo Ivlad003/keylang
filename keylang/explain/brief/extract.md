@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5c7962380251e9c7c30848cbeb8bbe18ed7f669c77d23295afda16066aa04eba lang=en detail=brief -->
-Parses source files with tree-sitter and produces language-independent facts (declarations, imports, exports, calls, bodies, doc comments) via `extract.facts`, with per-language frontends `extract.ts`, `extract.python`, and `extract.rust`. It knows nothing of layers or IDs, and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6cb5e314c8a7839b8abc6f763919940f5910e42e6ffcb135ab94d4aced03b17f lang=en detail=brief -->
+Parses TypeScript/JavaScript, Python, Rust and PHP sources with lazily loaded tree-sitter grammars into language-independent `extract.facts`, plus function bodies and doc comment text. The `lang`, `check` and `tui` layers may not depend on it.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5784510ba72da69205a5a3038c425fde952c7fe92ecfd8852f6dcdc74ae3f449 lang=en detail=brief -->
-Validates that exactly one of a path (optionally `:line`) or `--since` ref was given, then locates the repo via `map.analyze.findRoot` and runs `map.analyze.analyze` without evidence. Builds a `CodeToSpecSource` from the path (made root-relative via `base.config.toPosix`) or…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1180670c9ed64b9ad454bf7ac6380187535e9d783047632a2fcc620326302f63 lang=en detail=brief -->
+Requires either a file path (optionally `:line`) or a `--since` git ref, then runs `map.analyze.analyze` without evidence from the project root. Builds a root-relative source and delegates to `cli.cli.codeToSpecPrinter`.

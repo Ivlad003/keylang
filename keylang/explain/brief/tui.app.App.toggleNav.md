@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6933be291706ad451c60568b30b0ab58ec012944fab5bc78faddcb29d60d8fd2 lang=en detail=brief -->
-Flips the navigation panel's visibility flag, records it as the last-used panel when shown, and moves focus to the editor when hiding it while it had focus. Then re-lays out the note via `tui.app.App.narrowNote` and scrolls the cursor into view with `tui.app.App.keepVisible`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4a3a0eb60c46f8d0a5446261f686d083e28d6b02be9ae32dba887623153b815b lang=en detail=brief -->
+Flips the navigation panel's visibility, recording it as the last panel when shown and moving focus to the editor if it was on the hidden panel, then refreshes via `tui.app.App.narrowNote` and `tui.app.App.keepVisible`.

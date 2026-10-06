@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=bec333fcdd924b43c780fbb2791e1723d7eccd9e3d951e2b79eeb60e4c118a10 lang=en detail=brief -->
-Recursively walks a directory with `readdirSync`, returning true as soon as it finds a file whose name maps to a known language via `base.languages.languageOf` and whose relative path is not rejected by `base.config.isExcluded`, descending into subdirectories only when…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=49957fe092243b0a3082a74a6284dd46fb2ea4ab91ab4b1a7c63384966a06f02 lang=en detail=brief -->
+Recursively walks a directory and returns true as soon as it finds a file with a recognized language (`base.languages.languageOf`) that is not excluded (`base.config.isExcluded`). Subdirectories rejected by `base.config.skipDir` are not searched.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9ae0d2d3c0534a57aac58db0c3035a492073c947d719dbbfe280e5f6ae128810 lang=en detail=brief -->
-Builds the instrumentation plan for a trace run: resolves the flow's function symbols via `map.trace-plan.flowSymbols`, wraps each non-generator body with `cli.trace-hooks.wrap`, and stores the rewritten source per module URL. Files that fail `extract.bodies.parsesCleanly` are…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=ae5d7006ade0c66e62f0f5731b757a9c7248440ff1b4b58a08da084666f81d7b lang=en detail=brief -->
+Builds the code map, wraps the flow's non-generator functions in tracing code via `cli.trace-hooks.wrap`, and keeps only files that still parse cleanly. Posts the instrumentation plan (or an error) over the port.

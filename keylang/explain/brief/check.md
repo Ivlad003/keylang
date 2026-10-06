@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=fb3ba76cc6c1cf9cbdecc70f3b02499c42b19bb11f0aeca03b5890e3673ddcb7 lang=en detail=brief -->
-Verifies a spec against an analysis snapshot: resolves IDs across files (`check.resolve`), judges rules, flows, and wiring, and weighs test reports and trace spans as evidence (`check.test-report`, `check.trace-evidence`). Every outcome is a verdict of ok, fail, or unverified…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=269165ee547c4b52284ec4a6ec3d3f0ebfdb6e9f7082e5d39267a24dacd79bfb lang=en detail=brief -->
+Validates specs against code: resolves IDs, checks rules, flows and wiring, and turns test reports and traces into ok/fail/unverified verdicts. Must not depend on extract or web-tree-sitter.

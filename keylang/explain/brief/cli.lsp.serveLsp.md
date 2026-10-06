@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9a772649b62733a5fe318e826abdbc8d0e4957ca56f9e759e95ecc46ff1d9bb2 lang=en detail=brief -->
-Reads Content-Length-framed JSON-RPC messages from a stream and feeds each to a `cli.lsp.Server`, writing its replies back in the same framing. Malformed JSON is answered via `cli.lsp.Server.reject`; a missing length header ends the session with exit code 2.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=959426dac0c122240435e2618386b86c2a25f3d7b6c4788012341b6d469352ab lang=en detail=brief -->
+Runs the language server over a stream, framing `Content-Length` messages into `cli.lsp.Server.receive` and answering bad JSON via `cli.lsp.Server.reject`; returns the server's exit code, or 2 on unframeable input.

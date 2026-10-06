@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a6fb7d6795006f4e112326fbab52fc6c1d67beb9af6f8eae53167b6ab70ce93b lang=en detail=brief -->
-Builds a `map.rust-imports.RustResolver` for the given project root and set of known source paths, returning it as the generic SourceResolver the frontend registry hands to callers.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e0aed1e28e3c5d18f74f861af6de5c0c2b946df4422900b143bf4940e08175c8 lang=en detail=brief -->
+Factory that builds a Rust source resolver by constructing `map.rust-imports.RustResolver` from the project root and the set of known source files, returning it as a generic resolver.

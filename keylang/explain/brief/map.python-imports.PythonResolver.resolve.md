@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=da5ebec1af77d60b6fa7ac1a8cc8683a6bdbecef87b137ce2f169c7898af660b lang=en detail=brief -->
-Resolves a Python import specifier to a file: leading dots walk up from the importing file's directory, otherwise each configured root is probed via `map.python-imports.PythonResolver.moduleFile` and `map.python-imports.PythonResolver.isDir`. The first match is delegated to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=743cfeddd618d63f6a8b660ac459b7f73b87afafdc08c1df8168b333d8e7cd1f lang=en detail=brief -->
+Resolves a Python import spec from a file, walking parent dirs for relative imports or scanning source roots via `map.python-imports.PythonResolver.longest`; otherwise classifies it as stdlib or an external package.

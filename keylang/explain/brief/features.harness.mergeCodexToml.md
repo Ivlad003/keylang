@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6ca54467c3757393d2f4d3c73c2729d69852b5451cbc2070036832aa9a94c342 lang=en detail=brief -->
-Parses an existing TOML config, then adds or removes the `keylang` entry under `mcp_servers` (built via `features.harness.mcpCommand`), and re-serializes the result with a trailing newline. Returns `text: null` when nothing remains, or an error for malformed TOML or a non-table…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=51cc20e1c107d1a8fd520a95acae0025fd717a20c0563831fd6fb2b4a7c8d0b3 lang=en detail=brief -->
+Parses Codex TOML config and upserts or removes the keylang entry under `mcp_servers`, keeping user keys while setting the command from `features.harness.mcpCommand` and approval mode; returns null text if empty, or an error.

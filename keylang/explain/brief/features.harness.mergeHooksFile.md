@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3cdf44f560e3c4a0f7725c6a84dcbb116fb8ea50ca25021708689a1b97042d7a lang=en detail=brief -->
-Parses a settings file's JSON object via `features.harness.parseObject`, rewrites or removes its `hooks` key through `features.harness.mergeHooksValue` for the given version, and reserializes it with `features.harness.finishJson`. Any parse or merge failure is returned as an…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e43745e4611d06cb2d74e2fd34d0389d9144bd11b390df9451eab78b69f57c6e lang=en detail=brief -->
+Parses existing JSON text via `features.harness.parseObject`, merges its `hooks` key using `features.harness.mergeHooksValue` (removing it when undefined), and serializes via `features.harness.finishJson`, passing errors through.

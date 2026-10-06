@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3f6ac5ac48306718f2528067619703e4c74f59ae9fda0521173fa02278496be8 lang=en detail=brief -->
-Builds the full list of searchable node hits from the analysis snapshot, attaching each node's explanation via `map.explanations.explanationOf`. Then walks the docs with `lang.ir.sectionNodes` and `lang.ir.walk` to add `planned` declarations missing from the code, located at…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a41184c89105f43df8050a3c95078e5f8731f2095f61654daaf2c04b6c1dce68 lang=en detail=brief -->
+Builds the full search pool for `features.node-search.searchNodes`: every snapshot node with its explanation via `map.explanations.explanationOf`, plus `planned` spec declarations not yet in code, found by `lang.ir.walk`.

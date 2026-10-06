@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=695f7e376f314bccd854ac761237f2564d3a177545e937e4a7aae466654a8f03 lang=en detail=brief -->
-Parses a settings JSON text via `features.harness.parseObject`, then rewrites its `permissions` and `hooks` keys using `features.harness.mergeDeny` and `features.harness.mergeHooksValue`, deleting each key when the merge yields nothing. Serializes the result with…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=e28563788f002cd6860c721111a39c397cbd7d18cede8f438736a3cfb6d922b5 lang=en detail=brief -->
+Parses an existing settings JSON via `features.harness.parseObject`, updates its permission deny list (`features.harness.mergeDeny`) and hooks (`features.harness.mergeHooksValue`), dropping emptied keys, and serializes via `features.harness.finishJson`; any error short-circuits.

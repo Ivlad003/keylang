@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c378c25a822fd33aff432ffad3bc1704f734f97f51719ff3d17dd36a3a9c7b31 lang=en detail=brief -->
-Returns the cached editor buffer for a path, or builds one by reading the file via `tui.disk.readText`, preferring the analysis-side text from `features.lsp-features.workspace` when present. The content is split by `tui.disk.splitEol`, wrapped with `tui.buffer.newBuffer`, and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4390dd688d3141653d9184120b33e57d7658b8e1f9cc5528ce8b82d21588abbf lang=en detail=brief -->
+Returns a cached editor buffer for a file, or builds one from the analysis workspace text (via `features.lsp-features.workspace`) falling back to disk, splitting line endings and caching the result.

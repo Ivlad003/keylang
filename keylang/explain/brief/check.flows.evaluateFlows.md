@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=960cf2169dcf099c008545c0a6955e415c07036813290cecfa6316a7dc051cc7 lang=en detail=brief -->
-Walks every flow in the compiled spec and emits per-node verdicts on the static, trace and tests channels, using `check.flows.reachability`, `check.flows.directCall`, `check.trace-evidence.traceFlow` and `check.test-report.matchTest` as evidence. Planned or later-trigger nodes…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=360ba25dc213f0e2ed1ec146c9610cb3c57456398c5cb067deb3792a75960133 lang=en detail=brief -->
+Walks each spec flow and emits static, trace and test verdicts per step, call, claim and test, using `check.flows.reachability`, `check.trace-evidence.traceFlow` and `check.test-report.matchTest`. Planned steps stay unverified; missing test files raise K203.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=87383fb7d320213ff08306a3de49588a33699bb9be85af699be6a7e9166eda71 lang=en detail=brief -->
-Pops the most recent entry from the back stack, reloads that file via `tui.app.App.load`, restores its cursor and mode, then clamps and scrolls into view with `tui.app.App.clampCursor` and `tui.app.App.keepVisible`. With an empty stack it only drops any completion and falls…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=1795eee8d69859e2abbdb616b14d865d48ccea6df19ec422be88c1891c4d5984 lang=en detail=brief -->
+Pops the last place off the back history, reloads it via `tui.app.App.load`, restores path, cursor and mode, then re-clamps the cursor. With empty history it just switches code mode to view.

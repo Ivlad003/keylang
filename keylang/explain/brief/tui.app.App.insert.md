@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a6861597e90a3c22bfc02dfe5e5f3515d59a699d95dfd3f1c7bf31c2e0b791eb lang=en detail=brief -->
-Inserts typed text at the cursor via `tui.app.App.edit`, splitting on newlines into multiple lines and placing the cursor by grapheme cluster count from `tui.width.graphemes`. Single non-space characters coalesce into one undo step, then `tui.app.App.complete` refreshes…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=69d152b90fc998a9be88229d6a3822779a2b7450c3d17d43850c695f9e3f1058 lang=en detail=brief -->
+Splices printable text into the active buffer at the cursor's grapheme position, splitting multi-line input across lines, via `tui.app.App.edit` (coalescing single characters), then refreshes completions with `tui.app.App.complete`.

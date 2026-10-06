@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=4653959e7f75f2fc0cc2a55e2195ea8a83be3446205eaecd2d767467c0829359 lang=en detail=brief -->
-Describes one import edge in the dependency graph: the local alias, the resolved target module, the exact source position and text of the import statement, and whether it is a re-export.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=25ba4dbd387edacc4b07bdfc582e96c6acfa9f313bdbebefde4585bd3a5559a2 lang=en detail=brief -->
+Records one import edge between modules: the alias, target module, importing file with its exact source span and text, and whether it re-exports. It also flags type-only imports, which the cycle check ignores.

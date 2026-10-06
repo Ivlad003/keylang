@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b357878e3e96f3235bb7cd7208d249afd6d34de160f9e3ec7cbda9ee8bb8e13e lang=en detail=brief -->
-Builds the source text of a `node:test` file that imports one symbol from a given module and emits one placeholder test per flow entry, each asserting the symbol is a function and then failing with a "not written" message. Used by `features.spec-to-code.testCandidates` to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=912897deb49b928624f022cc3e4f59eeece5be34bd478f919b452d86983d50fd lang=en detail=brief -->
+Builds a node:test file source that imports the subject and, per flow entry, emits a test checking it is a function then failing with a "not written" placeholder; used by `features.spec-to-code.testCandidates`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0a14985413a650cb2ae1eefb5a12c30e442c3789d3e10797713b32a959192895 lang=en detail=brief -->
-Returns the terminal cell width of a single code point: zero for ZWJ, variation selectors and C0/C1 control codes, two for anything inside the `WIDE` ranges, otherwise one. It is the per-code-point building block used by `tui.width.graphemeWidth`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=afb02086fd3416e8d40ae0c00e341f4fdba0b2e6da512f620e2b172489ab130e lang=en detail=brief -->
+Gives a code point's terminal column width: 0 for control characters, Hangul vowel/final jamo and ignorable characters, 2 for wide-range characters, otherwise 1; used by `tui.width.graphemeWidth`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=aa247992b55ac231a88a7bba5bba02875ca1f4a235ccded0b4725713c3920c69 lang=en detail=brief -->
-Routes a key event to the active prompt: escape closes it, backspace trims the focused field via `tui.width.graphemes` and re-runs the matching refresh, arrows cycle options or list items, enter dispatches the per-kind submit (or `tui.app.App.findNext`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=b832644b8568966b9806059db15ae14049dd21d25fe7f2a2175b782f2a4f947d lang=en detail=brief -->
+Handles a key press while a prompt is open: Escape closes the prompt, and any other key goes to `tui.prompt-keys.promptKey` with the key bindings from `tui.app.App.keysFor`.

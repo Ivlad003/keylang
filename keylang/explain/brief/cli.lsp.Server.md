@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=de35eaaab93d4b70a63073ad6a6bbb657b76ebb5f840f90c61ac278b2a208b0e lang=en detail=brief -->
-Handles LSP JSON-RPC traffic: `cli.lsp.Server.receive` routes notifications to `cli.lsp.Server.notify` and requests to `cli.lsp.Server.request`, keeping open-buffer overlays and cancellation state. Edits bump a generation that debounces reanalysis in `cli.lsp.Server.changed`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4dbc9a2ca1bcbc426db644b92033983e36d47501c7c34f4bee23d4aab797e03d lang=en detail=brief -->
+Validates and dispatches JSON-RPC messages via `cli.lsp.Server.receive`, tracking open buffers and cancelled requests. Edits trigger a debounced, one-at-a-time re-analysis whose diagnostics `cli.lsp.Server.publish` sends.

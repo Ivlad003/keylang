@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e801657e3cf12700ee48edc935b84aaf385a25d8c2061f190a40381566436d10 lang=en detail=brief -->
-Dispatches the `draft` subcommand: `rules`/`map` go to `cli.cli.cmdDraftLayout`, while `flow <trigger>` validates the trigger and `--mode` (algo/llm/hybrid) then runs `cli.cli.draftFlowPrinter` from the root found by `map.analyze.findRoot`. Any other target or invalid option…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=8760dde613b781d14540e00f4371ef433ae5058e07c094063cfe2e09fc7ee863 lang=en detail=brief -->
+Dispatches the `draft` subcommand: hands `rules`/`map` to `cli.cli.cmdDraftLayout`, otherwise validates a `flow` trigger and mode (algo, llm, hybrid) and runs `cli.cli.draftFlowPrinter` from the root found by `map.analyze.findRoot`.

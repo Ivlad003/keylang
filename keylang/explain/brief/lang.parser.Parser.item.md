@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=5d7c5d46635e325b5cab2216c8dc6733f94cb714bf2423839f83e0fc65123040 lang=en detail=brief -->
-Parses one bullet line into a `Node`: it validates indentation (reporting K003 errors), closes deeper lists via `lang.parser.Parser.closeList`, and tokenizes the content with `lang.parser.lex`. It then builds the node with context from `lang.parser.ctxOf`, passes it to…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=437345210adc80735fbcb6400afdcc2ef3a5b28b91694cdaa06244333413b9ee lang=en detail=brief -->
+Parses a bulleted list line: checks indentation (K003), closes deeper lists, then lexes the item via `lang.parser.lex` and classifies it with `lang.parser.Parser.interpret` before pushing it onto the nesting stack.

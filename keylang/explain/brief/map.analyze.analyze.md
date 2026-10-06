@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=a476020c025ddec4bda48b48960e5621bef6df11c64a595e0af406dacfe68ad0 lang=en detail=brief -->
-Loads the repo config, optionally builds the code map via `map.map.generateMap`, gathers spec documents (skipping generated reading aids, merging fresh map renders and overlay edits), then runs `check.assess.assess` with test and trace evidence. Returns the assessment bundled…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0e68ecc3283b7c19963c8ce1fe0868ae0804124bf881bc5ea7ee315aae240f24 lang=en detail=brief -->
+Generates the code map via `map.map.generateMap`, parses spec Markdown (with unsaved overlays and freshly rendered map files), then runs `check.assess.assess` with test reports and traces as evidence.

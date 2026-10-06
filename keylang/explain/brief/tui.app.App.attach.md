@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b2af55c15c10234fc028299d25f9a3f66bd4838ddee29090f05791bbfffb3982 lang=en detail=brief -->
-Stores the given render surface on the app, clears the cached previous frame so the next draw repaints fully, and delegates to `tui.app.App.resize` to apply the new dimensions. Invoked by `tui.terminal.runTerminal` when wiring the app to a terminal.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4136c38a128bf3dde010daedd8f51994ecfd32b3dfdc6094b87d728f9312aea1 lang=en detail=brief -->
+Binds the app to a new rendering surface, discards the previously rendered frame so the next draw starts fresh, and sizes the layout via `tui.app.App.resize`; invoked by `tui.terminal.runTerminal` at startup.

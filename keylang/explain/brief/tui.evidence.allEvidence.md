@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3f4be710a1985ef72608e43c0f47a2b4efb1044826ca8ca31722f378dccba0ba lang=en detail=brief -->
-Builds a per-file, per-line index of diagnostics, criterion verdicts, and planned markers from an analysis, then derives each line's worst mark via `tui.evidence.worse`, treating unverified verdicts on areas from `tui.evidence.pendingPlanned` as planned. Results are cached per…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=33628506e7780835f635c3c89ee43ec160d7dbddb987e7c815dc275b7043a822 lang=en detail=brief -->
+Builds a cached per-file, per-line map merging diagnostics, criterion verdicts and planned/question doc lines, then assigns each line its worst mark via `tui.evidence.worse`, treating unverified verdicts in `tui.evidence.pendingPlanned` areas as planned.

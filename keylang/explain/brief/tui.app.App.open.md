@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=85fb6d15d10dadca4ae7c621b210586cdfc5440dc387e6e8d4320569e542cb0c lang=en detail=brief -->
-Switches the TUI to a file: clears the start screen, pushes the current location onto the back stack when asked, loads the buffer via `tui.app.App.load`, and resets cursor, mode, selection, and hover. Then it clamps the cursor with `tui.app.App.clampCursor` and scrolls so it…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=0a820f88f0f7ad8df9b1399711833c6c37e208452b4c295677a6320805fe5ee2 lang=en detail=brief -->
+Shows a file in the editor view at a given cursor via `tui.app.App.load`, optionally pushing the current place onto the back history, closing overlay modes and clearing selection, completion and hover state.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=f483518fd3defc862bce9aa85b306abc02af03120783bf6024edee04d53b200b lang=en detail=brief -->
-Record of everything the extractor learns from one source file: its imports, declarations, exported names and re-exports, calls that run at module load, value-level references, and constructs it cannot turn into edges. A `completeness` flag marks whether the declaration list is…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=399a3334d557c913541ac917ae71680cdc3dfecdfe41de089e05312dfdaaddaf lang=en detail=brief -->
+Per-file extraction result: imports, declarations, exports and re-exports, value references, module-level calls, unsupported constructs, and whether the declaration list is complete or opaque after a parse error.

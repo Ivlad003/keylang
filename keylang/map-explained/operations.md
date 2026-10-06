@@ -5,7 +5,7 @@
 # map
 
 - operations
-  <a id="operations"></a><br>Holds the transport-independent orchestration of application actions in [`operations.operations`](operations.md#operations.operations), taking typed requests with an explicit absolute root and returning typed domain results. Both the CLI and the TUI drive the same interface rather than duplicating logic. _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
+  <a id="operations"></a><br>Transport-independent workspace actions shared by CLI and TUI ([`operations.operations`](operations.md#operations.operations), typed by [`operations.types`](operations.md#operations.types)): generating maps and harness files, checking specs, drafting proposals, explaining nodes, exports and diagnostics. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
   - module [operations](../../src/operations.ts#L1)
     <a id="operations.operations"></a><br>Shared workspace operations (ADR 0008): transport-independent orchestration of the application-level actions. The CLI and the TUI call the same interface: a typed request with an explicit absolute root, a typed result with a domain payload.
     - types [operations.types](operations.md#operations.types)

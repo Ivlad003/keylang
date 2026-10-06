@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=38683cd411c709ac89635f25c94ffd5ded84e42dfdb6928bfd3db57b250888d3 lang=en detail=brief -->
-Walks a parsed Python module's top-level nodes to assemble its `FileFacts`: imports via `extract.python.importsIn`, function and class declarations, decorators, dynamic calls and value references. It decides public exports from `__all__` or underscore naming (re-exporting…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=df0493fcb8bd558ab99941e7197627095bf9061c7cb502fd13e14acf0792f108 lang=en detail=brief -->
+Builds a Python file's facts from its parse tree: imports, top-level functions, classes and assignments, exports governed by `__all__` or underscore privacy and package re-exports, plus calls, value refs, docstring, and syntax-error status.

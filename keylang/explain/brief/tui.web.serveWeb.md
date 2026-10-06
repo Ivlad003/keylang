@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=00573fbc690c3864251e7410648c0523d1249900e1bd930e278e3cc479bd4dd6 lang=en detail=brief -->
-Starts an HTTP server that serves the static page and assets, then accepts token-guarded WebSocket upgrades on `/ws` where each tab drives a `tui.app.App` session resumable across reconnects. Browser PCM is relayed into an `tui.web.AudioQueue` as the microphone, and the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=6cdb725b4ee8cc4aa7bf8506e075c67b2a3b064bca6443df3631d0dd96898050 lang=en detail=brief -->
+Starts a token-guarded HTTP/WebSocket server that serves the static page and assets and runs one `tui.app.App` session per tab, with reconnect takeover, idle expiry, heartbeats and browser-microphone audio via `tui.web.AudioQueue`.

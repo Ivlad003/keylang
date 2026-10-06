@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=62ba4fc0a5d51984d6fc63c83cc519f907ca2ca270d1ab638f7708fcbbc5aeb3 lang=en detail=brief -->
-The interactive editor: a session (`tui.app`, `tui.state`) decodes input (`tui.input`), draws frames into a grid (`tui.view`, `tui.screen`), and runs analysis in workers (`tui.background`). The same session serves a terminal (`tui.terminal`) or a browser over WebSocket…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=850aea25469df00519cccbe3a95239382ad970a4ec4b8cc222794b1e6aba0c94 lang=en detail=brief -->
+The interactive spec editor, served in a terminal or a browser tab via `tui.web`, with gutter evidence marks, navigation, zoom and merge review; map building runs in a worker from `tui.background`, as it may not use extraction or tree-sitter directly.

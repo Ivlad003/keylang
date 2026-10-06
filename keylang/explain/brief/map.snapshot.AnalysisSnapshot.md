@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=461868524f4e136fdbadd626da0ca1ea504b442cd15688843dd4c8532f85a3ff lang=en detail=brief -->
-Defines the serialized shape of a full analysis run: a schema tag, snapshot id and timestamp, a manifest recording extractor, grammar versions, resolved config and hashed input files, plus the graph's nodes, edges, exports, coverage items and stats.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=43c65e111984336c0ddbace1dcf343f49f9d70e2b36f99c395f0df49f211c019 lang=en detail=brief -->
+A versioned, serialisable record of one analysis run: extractor, grammars, config and file hashes, plus the resulting nodes, edges, exports, coverage and stats. It also carries the repo description, which is kept out of its ID.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=552356df459a51850291029a852acc62c263ab2a5ab16d17f5898043eb8d4dad lang=en detail=brief -->
-A string union of the five interaction modes the terminal UI can be in; it is held in the TUI state and switches which key bindings and views are active.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a2d0c8b3a257fc0404b4f200d9dc2e32c1018a3d5fadbede2433388ccd938493 lang=en detail=brief -->
+Union of the six interaction modes the terminal UI can be in: viewing, editing, reading, code, merging and zooming. It restricts the mode value held in UI state to exactly these string literals.

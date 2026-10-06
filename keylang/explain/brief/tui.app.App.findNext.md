@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2eb00a002ac5d584dc83a223bf336ef329456453a7d8a1af41ec4883ba0f311c lang=en detail=brief -->
-Scans forward from the cursor (wrapping around) for the next line containing the current search query, case-insensitively, and moves the cursor to the match using `tui.width.graphemes` for the column before calling `tui.app.App.keepVisible`. If nothing matches, it sets a "not…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=57c446a5b103a37f4cd4697400d4148e3676e11ade588e620b9e47b261f9cd98 lang=en detail=brief -->
+Moves the cursor to the next case-insensitive match of the current search query, wrapping around the `tui.app.App.lines`, then scrolls via `tui.app.App.keepVisible`; if nothing matches, sets a "not found" message.

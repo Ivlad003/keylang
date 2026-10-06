@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c8782afe6699df370309ec7c02b057bf5803fbdb84769b7d602e10a644ccbd97 lang=en detail=brief -->
-Describes a single test result parsed from a report: source file, the `>`‑joined suite path (empty at top level), test name, a `TestStatus`, optional snapshot and run identifiers, and the report file it was read from.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=41b2c1d6117332bf41e5b54df51a28c89e3fd0772cd909a9e9d117a16d6cde7c lang=en detail=brief -->
+Describes one test result parsed from a report: file, `>`-joined suite path, name, status, optional snapshot and run IDs, and source report, plus a flag for JUnit cases whose file is only a classname.

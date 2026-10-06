@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=9580129c43261da71bd40a6ee5358e2586eba6c6db996a7f881a60180f8f26b8 lang=en detail=brief -->
-Builds the MCP server, registering tools (search, node, code, flows, check, explain, apply_diff, context, validate_spec, scaffold, and more) that each re-run `cli.mcp.currentAnalysis` and answer with `cli.mcp.json` or `cli.mcp.failure`. Tools read the snapshot, verdicts and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=309f32fe9e533136d4177ac623f6845e348e890a6770a3238926d23bcf1ede65 lang=en detail=brief -->
+Builds the keylang MCP server whose tools search the map, return node details, source, flows, check results, explanations and context bundles, validate spec text, scaffold planned fns, and queue spec proposals via `features.proposals.writeProposal`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=d5343947bcb6373f6dab951154dbaf6e44a0e120c7dda536aa48d03f8934537b lang=en detail=brief -->
-Runtime type guard that checks a deserialized cache record has the full per-file facts shape: string path, valid end position, well-formed import/decl/export/call arrays, a complete/opaque completeness flag, and a null or positioned parse error. Relies on…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=4beb4b86634e8e903c9d4cca9ad0d6b3cfffb118ba2dd25d12fda45a08b0df28 lang=en detail=brief -->
+Type guard that structurally validates an unknown cached value as per-file facts (path, positions, imports, decls, exports, calls, completeness, parse error, optional doc/symbols), used by `map.fact-cache.storedFiles`.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=0ec89de679c5fc8069b2b068d21224fd3e568b755836d4f56ee44a2853810d17 lang=en detail=brief -->
-Ends the active merge by clearing `MergeState` from the session state, refreshing the proposal list via `tui.merge-session.MergeSession.scan`, and restoring the mode the merge was entered from. It then sets the given status message and asks the host to clamp the cursor to the…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=81190b7c109aab88e20a8b2216713a8abccdd58e4c3d6c4d096c8017948e8072 lang=en detail=brief -->
+Exits merge mode: clears the merge state, rescans proposals via `tui.merge-session.MergeSession.scan` since agents may have changed them, restores the prior mode, sets a status message and clamps the cursor.

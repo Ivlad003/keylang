@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=bbdb2af091e0101e8456d0d9f1b2d941a0197c3d2b7e06278a8f19a3346129c5 lang=en detail=brief -->
-Resolves the id or code link nearest the cursor via `tui.app.App.targetNear` and `features.lsp-features.definition`, then moves the cursor and opens the target file at its line with `tui.app.App.jump`. Sets a status message instead when analysis is still running or no…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d8aeb7f1374fb3b75d4e151a763fcb4fcf040dbf0afbc7a5a5cd91111140c5f7 lang=en detail=brief -->
+Resolves the id or code link near the cursor via `features.lsp-features.definition` and opens the source file at that line with `tui.app.App.jump`. If analysis is still running or nothing resolves, it shows a status message.

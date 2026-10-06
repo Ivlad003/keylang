@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=e115d8cd64f999ff3a2797731d1baae5649a858d14e0bc9bf5789423bb5dda83 lang=en detail=brief -->
-Enforces the LSP lifecycle (rejecting calls before `cli.lsp.Server.initialize` or after shutdown), caches any inline buffer text, then dispatches each method to the matching features.lsp-features handler over the workspace from `cli.lsp.Server.current`. Unknown methods raise…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=523acca92b00a30c74166ae035f737b8b5e89855beff0ec82c185391c13d9ac2 lang=en detail=brief -->
+Dispatches an LSP request after enforcing initialize/shutdown ordering, syncs any inline buffer text, then waits for an up-to-date workspace via `cli.lsp.Server.current` and routes to the matching handler such as `features.lsp-features.hover`.

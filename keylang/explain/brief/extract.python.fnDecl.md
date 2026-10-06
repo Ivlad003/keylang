@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=2b800fb9f2619b1eb832f4f4912c559a38d36a8d56174e0539a2626646c47c7d lang=en detail=brief -->
-Builds a `DeclFact` for a Python function from its tree-sitter node: whitespace-collapsed signature, position via `extract.treesitter.located`, body calls through `extract.python.bodyCalls` with the first parameter treated as receiver when `owner` has one, docstring, and…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=08f6c6e9f37cc422e41d869abcf92aa82fc5250bef2466dc0dc79859f26475d4 lang=en detail=brief -->
+Builds a function declaration fact from a Python def node: parameter/return signature, source position, docstring, fingerprint, and body calls via `extract.python.bodyCalls`, treating the first parameter as the receiver for methods.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=6a02db9642b9292c661efa7f189401b50c528928adf9776abd389e2421aaa218 lang=en detail=brief -->
-The analysis result for a repository: layers, modules keyed by ID and by owning source path, stats, warnings, and gaps marking unanalysed spots. It also carries unresolved or multi-target edges, resolver config inputs, all public exports, and declared packages.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=af12ff171da7025f0eda9c942872a48663ae0c2640ac99dbc347c52b57a0c6cf lang=en detail=brief -->
+The full analysis result: layers, modules keyed by ID and by owning source path, stats, warnings, coverage gaps, assumed imports, ambiguous open edges, resolver config inputs, sorted exports and declared packages.

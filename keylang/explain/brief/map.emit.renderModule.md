@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=1188fb64393f911d261e8e78361f191fa93014c44a0a115a31b8bda509a78394 lang=en detail=brief -->
-Produces the indented markdown block for one module in the map: a linked heading via `map.emit.linkedName` plus description from `map.emit.describe`, one line per dependency edge from `map.emit.depsOf`, then its sorted children, recursing for sub-modules and delegating other…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=f0baa2b9b94c469b8b2cff567f575e4069f2296130fd37408978db2b488bc7e8 lang=en detail=brief -->
+Renders a module as an indented markdown bullet with its linked name, comment, description and dependency edges, then recurses into nested modules or emits child declarations via `map.emit.renderDecl` in sorted order.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=3872e1929d390fe1a14e723033472c6ac4141301607f82136cc9b5d590f0d901 lang=en detail=brief -->
-Handles keystrokes while the file list has focus: up/k and down/j move the selection, enter opens the chosen file via `tui.app.App.open` and returns focus to the editor, escape just refocuses the editor. Tab delegates to `tui.app.App.cycleFocus` and q to `tui.app.App.quit`…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=03943a47a1d624ebc756c3da6c3e56f209fa48b3cf01de5f77c332d6fbf62f13 lang=en detail=brief -->
+Handles keys in the file list: up/k and down/j move the clamped selection, enter opens the chosen file at its start via `tui.app.App.open` and focuses the editor, escape returns to the editor, tab and q cycle focus or quit.

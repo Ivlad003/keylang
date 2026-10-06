@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c37cf428df28689d14950248a85b3f17236eabcca5d4059b74c769b3a2598e98 lang=en detail=brief -->
-Bundles everything the TUI shows for one source line: its mark, per-criterion verdicts with messages in channel order, attached diagnostics, and whether the line is flagged `planned` rather than asserting a current fact.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=55ee3d15ce12394126b6a128041bcb445bef88d83b58c94db4cf79dc93539b6c lang=en detail=brief -->
+Per-line evidence shown in the TUI: a mark, ordered criterion verdicts (ok/fail/unverified) with messages, diagnostics, and flags for planned lines and open questions awaiting a human answer.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=c790e808e8bf4cd3f920440a1549fd86b27f90ec1080a63fa462eea78eb370ea lang=en detail=brief -->
-The terminal session: it owns the editor state, decodes keys into edits and commands, runs analyses and operations (dropping in-flight analyses around a file-writing commit), and draws frames onto an attached surface via `tui.app.App.draw`. Proposals, merges and model-backed…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=bdf1de0b6babe7747957e8a5ca4e5a9a45775a825cf52d856d4524f43cecf1a6 lang=en detail=brief -->
+The terminal editor session holds all state, decodes and routes input, renders diffs to the surface, and edits buffers. It runs analyses and operations, gating commits, via helpers such as `tui.merge-session.MergeSession` and `tui.results-panel.ResultsPanel`.

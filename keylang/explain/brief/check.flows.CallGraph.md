@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude date=2026-10-04 closure=b0b6c62be6afd935f22595fbdbc0348abb20f72d6059f877541a5140a888da01 lang=en detail=brief -->
-The data structure the flow check builds from a snapshot: per-source maps of resolved call edges (`Step[]`, with `new X()` pointing at the class constructor) and open (unresolved or ambiguous) `SnapshotEdge[]`, a reverse `callers` index, a `byName` lookup for calls with an…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=d8b0e8a557ecde617235221dfca350f88a817dd32a82f1f948ee0657f9459e77 lang=en detail=brief -->
+Call-graph index for flow checks: resolved and open call edges by source, callers per function, name and case-insensitive lookups, and per-function flags for unread, replaced or unparsable code.

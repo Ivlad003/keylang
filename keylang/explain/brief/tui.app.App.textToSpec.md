@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=b38b54f926a8a17a6b7768682323037a69560d3534655a5a28d9d6c7e4dcac29 lang=en detail=brief -->
-Takes the selected lines or the prose paragraph around the cursor in the buffer from `tui.app.App.buffer`, converts it into spec list items via `tui.text-to-spec.textToSpec` using known node ids plus `tui.app.plannedIds`, and drops items already present below. Any remaining…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7fcced83018f4138a8a23bfa9fff2a9d2579ac1ac8deae0f12c7e7eab5364df9 lang=en detail=brief -->
+Converts the selected lines or the free-text paragraph at the cursor into spec items via `tui.text-to-spec.textToSpec`, using known and planned IDs. Items not already below the text open as a merge proposal via `tui.merge-session.MergeSession.start`.

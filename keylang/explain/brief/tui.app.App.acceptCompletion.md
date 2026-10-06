@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=534631754cf4142bfd80885e7f7615170626222e2e857337e0f921a42b0b3945 lang=en detail=brief -->
-Takes the highlighted item from the open completion list, records the acceptance via `tui.assist.countSuggestion`, and closes the list. If the cursor is still at or past the word's start, it replaces that word's graphemes with the item label through `tui.app.App.edit` and moves…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=a8eb39a49060d957543baf5f59ee1e370bc650eaad61e7946daa3b85fa9fbf96 lang=en detail=brief -->
+Inserts the selected completion item over the word typed since the list opened, via `tui.app.App.edit`, after closing the list and recording acceptance with `tui.assist.countSuggestion`; skips insertion if the cursor moved before the word.

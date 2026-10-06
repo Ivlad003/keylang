@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-fable-5-1 date=2026-10-04 closure=373a16ae4cdc4176e86765092d800f39d76e5ab248dfa98f3ac3cfa3c9e36069 lang=en detail=brief -->
-Extracts the package name via `map.imports.packageName` and, if `map.imports.ImportResolver.locate` finds it in the workspace, maps the subpath to a file with `map.imports.ImportResolver.packageEntry` as an internal result. Otherwise marks it external when…
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=97f183521e8a3ddba113711904fe3b08e8253952b1d34bb62c93f1f1f3b8ee92 lang=en detail=brief -->
+Resolves a bare package import: workspace packages map to an internal entry file via `map.imports.ImportResolver.packageEntry`, while packages found by `map.imports.ImportResolver.known` or `map.imports.ImportResolver.knownNear` are marked external, otherwise unresolved.
