@@ -21,7 +21,7 @@ import { existingText } from "../files.ts";
 import { featureSlugOf, featureSummary, gapLine, hintLine, type AssistantReplyPayload, type AssistantReplyRequest, type OperationRequest, type OperationResult } from "../operations.ts";
 import { proposalProblem, writeProposal } from "../proposals.ts";
 import { isDirty } from "./buffer.ts";
-import { openQuestions, questionRow, questionsAnswer } from "./clip-questions.ts";
+import { openQuestions, questionRows, questionsAnswer } from "./clip-questions.ts";
 import { ChatLog } from "./clip-memory.ts";
 import { totals } from "./evidence.ts";
 import { findingRow, findingsOf } from "./findings.ts";
@@ -327,7 +327,7 @@ export class ClipChat {
       file: buffer === null ? null : { path: buffer.path, text: buffer.text, line: state.cursor.line, id: this.host.idAtCursor() },
       context: pack === null ? null : contextText({ ...pack, items: pack.items.filter((item) => item.kind !== "buffer") }),
       feature: feature !== null && buffer !== null && feature.path === buffer.path ? { stage: feature.stage, gaps: feature.gaps.map(gapLine) } : null,
-      questions: openQuestions(state).map(questionRow),
+      questions: questionRows(openQuestions(state)),
     };
   }
 
