@@ -89,8 +89,17 @@ export function questionRow(question: OpenQuestion): string {
   return `${placeOf(question)} ${question.text}`;
 }
 
-/** What the clip says of the open questions: how many, and one row each; or that there are none. */
+/** At most this many questions are listed, in the chat and to the model: a changed `layers` can make hundreds of new fails at once. */
+export const QUESTION_ROWS = 20;
+
+/** The first `QUESTION_ROWS` questions as rows, and a last row saying how many more there are. */
+export function questionRows(questions: readonly OpenQuestion[], limit = QUESTION_ROWS): string[] {
+  const more = questions.length > limit ? [`… ще ${questions.length - limit}`] : [];
+  return [...questions.slice(0, limit).map(questionRow), ...more];
+}
+
+/** What the clip says of the open questions: how many, and one row each up to `QUESTION_ROWS`; or that there are none. */
 export function questionsAnswer(questions: readonly OpenQuestion[]): string {
   if (questions.length === 0) return "немає відкритих питань";
-  return [`відкриті питання: ${questions.length}`, ...questions.map(questionRow)].join("\n");
+  return [`відкриті питання: ${questions.length}`, ...questionRows(questions)].join("\n");
 }

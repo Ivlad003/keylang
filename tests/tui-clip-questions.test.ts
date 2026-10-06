@@ -205,3 +205,15 @@ test("tui-clip-questions: on a narrow terminal the badge in the status line show
   assert.equal(counter(wide.lines()), "9+");
   assert.match(small.lines().at(-1)!, /^ ◕◕ 9\+  ✗ 0 /);
 });
+
+test("tui-clip-questions: a long list shows its first rows and how many more, so hundreds of new fails make neither a wall in the chat nor a huge prompt", async () => {
+  const { QUESTION_ROWS, questionRows, questionsAnswer } = await import("../src/tui/clip-questions.ts");
+  const many = Array.from({ length: QUESTION_ROWS + 5 }, (_, i) => ({ file: "keylang/flows/checkout.md", line: i + 1, text: `? q${i + 1}` }));
+  const rows = questionRows(many);
+  assert.equal(rows.length, QUESTION_ROWS + 1);
+  assert.equal(rows.at(-1), "… ще 5");
+  const answer = questionsAnswer(many).split("\n");
+  assert.equal(answer[0], `відкриті питання: ${QUESTION_ROWS + 5}`);
+  assert.equal(answer.at(-1), "… ще 5");
+  assert.deepEqual(questionRows(many.slice(0, 3)).length, 3);
+});
