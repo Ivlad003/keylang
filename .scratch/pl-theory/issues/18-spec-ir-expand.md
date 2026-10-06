@@ -43,7 +43,7 @@
 
 Інші зміни:
 - Власний потік `keylang/flows/check.md` отримує `- step lang.spec-ir.compileSpec` під `check.assess.assess`. Лічильники в прозі потоку треба оновити: «ten steps» → «eleven», «13 in all» → «14».
-- format.md §9 отримує абзац: SpecIR — внутрішня форма, скомпільована з Text IR; у JSON-виводі її немає.
+- grammar.md §9 отримує абзац: SpecIR — внутрішня форма, скомпільована з Text IR; у JSON-виводі її немає.
 - design §2 отримує примітку про стан: design.md:27 описує компіляцію як таку, що вже відбувається.
 
 **Blocked by:** 17, 09 <!-- 17 (еталон spec-forms); 09 (specHash — одна ідентичність правила) -->
@@ -67,4 +67,4 @@
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/spec-ir.ts (compileSpec, шар lang у keylang.json), assess.ts кладе spec в Assessment, крок lang.spec-ir.compileSpec у keylang/flows/check.md, format.md §9 і design.md:27; юніт-тест compileSpec у tests/core.test.ts:611 зелений; map --check = 0, check — 0 fail. Не поставлено галочки там, де потрібен повний `npm test`/`npm run typecheck` або перегляд історичного diff — їх в аудиті не запускали.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/spec-ir.ts (compileSpec, шар lang у keylang.json), assess.ts кладе spec в Assessment, крок lang.spec-ir.compileSpec у keylang/flows/check.md, grammar.md §9 і design.md:27; юніт-тест compileSpec у tests/core.test.ts:611 зелений; map --check = 0, check — 0 fail. Не поставлено галочки там, де потрібен повний `npm test`/`npm run typecheck` або перегляд історичного diff — їх в аудиті не запускали.

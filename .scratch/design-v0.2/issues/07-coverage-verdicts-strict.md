@@ -11,9 +11,9 @@
 - [x] відтворення RV05 B (`import { missing } from "./missing.ts"` у домені + `deny domain infrastructure`): `check` → правило `unverified` з причиною та позицією імпорту, код 0; `check --strict` → код 1
 - [x] за наявності підтвердженого забороненого ребра результат `fail` навіть якщо частина області `unverified`
 - [x] стара форма підсумку `N error(s), M warning(s)` замінена на fail/unverified/ok у stderr; stdout лишається побудовно-рядковим `file:line:col: CODE …`
-- [x] `--strict` і нова семантика кодів виходу задокументовані в `--help` і `docs/format.md` §7
+- [x] `--strict` і нова семантика кодів виходу задокументовані в `--help` і `docs/semantics.md` §7
 - [x] карта keylang: `node bin/keylang.js check --strict` проходить або перелічує реальні `unverified` у `keylang/rules.md`-описі
 
 ## Answer
 
-Вердикт на кожне `deny`; `unverified` дають лише прогалини рівня залежностей. Рішення: виклик через локальне значення не робить `deny` неповним — без імпорту код іншого модуля недосяжний. Коди виходу 0/1/2 — у `--help` і `format.md` §7. `check --strict` на keylang — 0.
+Вердикт на кожне `deny`; `unverified` дають лише прогалини рівня залежностей. Рішення: виклик через локальне значення не робить `deny` неповним — без імпорту код іншого модуля недосяжний. Коди виходу 0/1/2 — у `--help` і `semantics.md` §7. `check --strict` на keylang — 0.

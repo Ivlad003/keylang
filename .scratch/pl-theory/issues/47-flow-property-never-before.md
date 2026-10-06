@@ -33,7 +33,7 @@
   - `charge` без `authorize` — `fail`;
   - без обох — `ok`.
 - [ ] `charge` на іншому годиннику без `links` дає `unverified`. `charge` поза піддеревом `authorize` з `links` на нього дає `ok`.
-- [ ] EBNF-блок оновлено, тест 33 зелений. format.md §5 і «Flows: докази кроку» описують форму.
+- [ ] EBNF-блок оновлено, тест 33 зелений. grammar.md §5 і «Flows: докази кроку» описують форму.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `src/flows.ts`, `src/trace-evidence.ts`, `docs/format.md`, `tests/flows.test.ts`

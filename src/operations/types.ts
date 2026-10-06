@@ -44,7 +44,7 @@ export interface FeatureQuestionsRequest {
   slug: string;
 }
 
-/** Whether a feature file is done, on the saved state of the repository (tools.md `feature`); a rule fail blocks only when it is this change's. */
+/** Whether a feature file is done, on the saved state of the repository (cli.md `feature`); a rule fail blocks only when it is this change's. */
 export interface FeatureRequest {
   kind: "feature";
   /** Repository root (absolute). */

@@ -7,7 +7,7 @@ description: Implement a feature or integration from a keylang spec. Use when ad
 
 keylang is the spec and the check. You write the code with your own edits. Do not treat a draft as done until `feature_status` says so.
 
-The grammar on one page, with examples that check clean: https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md (the normative text is `docs/format.md`).
+The grammar on one page, with examples that check clean: https://raw.githubusercontent.com/Ivlad003/keylang/master/docs/cheatsheet.md (the normative text is `docs/grammar.md` and `docs/semantics.md`).
 
 ## Cycle
 

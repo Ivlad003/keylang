@@ -1,7 +1,7 @@
 // Markdown → IR. A small line-oriented parser: keylang files use a strict
 // subset of Markdown (headings, bullet lists indented by 2 spaces, paragraphs,
 // fenced code), so a hand-written parser gives exact spans for every token
-// without mapping back from a CommonMark AST. See `docs/format.md`.
+// without mapping back from a CommonMark AST. See `docs/grammar.md`.
 
 import { diagnostic, type Code, type K005Reason } from "./diag.ts";
 import type { Document, Item, Link, Node, NodeKind, Ref, Section, SectionKind, Token, TokenKind } from "./ir.ts";
@@ -213,7 +213,7 @@ const TEST_ROLE = "a test that must pass in the `check.tests` report";
 const QUESTION_ROLE = "an open question: not a claim `check` judges; a feature with one is not done until a person answers it";
 
 /**
- * What an item does where it stands (format.md §5), for hover. Keyed like
+ * What an item does where it stands (grammar.md §5), for hover. Keyed like
  * `keywordsOf`, which K004 reads, so the roles follow the allowed keywords.
  */
 const ROLES: { readonly [C in Ctx]?: Partial<Record<NodeKind, string>> } = {

@@ -18,4 +18,4 @@
 
 ## Answer
 
-JSONL схеми 1 (`src/trace-evidence.ts`), приклад і правила — `format.md` §7. Адаптер `node --import keylang/trace` (`src/adapters/trace.ts` + hooks): обгортає тіла функцій потоку, spans через `AsyncLocalStorage`, `links` для асинхронних продовжень. E2E `@flow check` у `tests/cli.test.ts` пише `.keylang/trace/check.jsonl`; `check` дає `trace ok` для всіх 11 вузлів потоку. JSON має `provenance`, `runId`, `testId`. Пропозиція до v1: assertions і паралельні групи поки не входять у схему 1 (відкрите питання §10.9 лишається).
+JSONL схеми 1 (`src/trace-evidence.ts`), приклад і правила — `semantics.md` §7. Адаптер `node --import keylang/trace` (`src/adapters/trace.ts` + hooks): обгортає тіла функцій потоку, spans через `AsyncLocalStorage`, `links` для асинхронних продовжень. E2E `@flow check` у `tests/cli.test.ts` пише `.keylang/trace/check.jsonl`; `check` дає `trace ok` для всіх 11 вузлів потоку. JSON має `provenance`, `runId`, `testId`. Пропозиція до v1: assertions і паралельні групи поки не входять у схему 1 (відкрите питання §10.9 лишається).

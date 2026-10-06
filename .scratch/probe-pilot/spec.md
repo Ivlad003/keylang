@@ -1,6 +1,6 @@
 # Знахідки AI-пілоту usability-проби
 
-**Джерело:** [AI-пілот 2026-10-04](../../docs/usability-probe-results-2026-10-04-ai-pilot.md) (чотири headless-сесії Claude Code на NestJS і FastAPI RealWorld), протокол [usability-probe](../../docs/usability-probe.md), тікет design-v0.2/28. Пілот — сигнал від AI, а не від людей: тікети нижче фіксують лише те, що відтворено на master `c408f53` справжнім CLI. Рішення про семантику чекають на людину (`needs-triage`) і, де сказано, на пробу з людьми.
+**Джерело:** [AI-пілот 2026-10-04](../../docs/archive/usability-probe-results-2026-10-04-ai-pilot.md) (чотири headless-сесії Claude Code на NestJS і FastAPI RealWorld), протокол [usability-probe](../../docs/usability-probe.md), тікет design-v0.2/28. Пілот — сигнал від AI, а не від людей: тікети нижче фіксують лише те, що відтворено на master `c408f53` справжнім CLI. Рішення про семантику чекають на людину (`needs-triage`) і, де сказано, на пробу з людьми.
 
 ## Спільне відтворення
 

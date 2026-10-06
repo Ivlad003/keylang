@@ -1,5 +1,5 @@
 // What the CLI says about itself: `--help` and the commands table of
-// docs/tools.md, `explain` for every diagnostic code, and shell completions.
+// docs/cli.md, `explain` for every diagnostic code, and shell completions.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -23,7 +23,7 @@ function helpCommandKeys(help: string): string[] {
   return [...new Set(keys)];
 }
 
-/** First column of the commands table in tools.md, in backticks. */
+/** First column of the commands table in cli.md, in backticks. */
 function toolsCommandKeys(tools: string): string[] {
   const keys: string[] = [];
   for (const line of tools.split("\n")) {
@@ -42,10 +42,10 @@ function commandTableDrift(help: string, tools: string): string | null {
   return null;
 }
 
-test("the commands table in tools.md lists every command from --help", () => {
+test("the commands table in cli.md lists every command from --help", () => {
   const help = keylang(root, ["--help"]);
   assert.equal(help.status, 0, help.stderr);
-  const tools = readFileSync(join(root, "docs/tools.md"), "utf8");
+  const tools = readFileSync(join(root, "docs/cli.md"), "utf8");
   const drift = commandTableDrift(help.stdout, tools);
   assert.equal(drift, null, drift ?? "");
   assert.ok(tools.includes("| `keylang` |"), "the bare keylang row is the TUI");
@@ -59,9 +59,9 @@ test("explain covers every diagnostic code", () => {
   // The codes as `src/diag.ts` declares them, so a new code without an explanation fails here.
   const codes = [...readFileSync(join(root, "src/diag.ts"), "utf8").matchAll(/\| "(K\d{3})"/g)].map((m) => m[1]!);
   assert.ok(codes.length >= 13, codes.join(" "));
-  const table = readFileSync(join(root, "docs/format.md"), "utf8");
+  const table = readFileSync(join(root, "docs/semantics.md"), "utf8");
   for (const code of codes) {
-    assert.match(table, new RegExp(`\\| ${code} \\| (error|warning) \\|`), `format.md §7 lists ${code}`);
+    assert.match(table, new RegExp(`\\| ${code} \\| (error|warning) \\|`), `semantics.md §7 lists ${code}`);
     const explained = keylang(root, ["explain", code]);
     assert.equal(explained.status, 0, explained.stderr);
     assert.match(explained.stdout, /example:/);

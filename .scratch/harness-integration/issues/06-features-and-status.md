@@ -18,4 +18,4 @@
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 88a9ac1, 98adfa9; `src/feature-status.ts`, `src/cli.ts`, `src/mcp.ts`; tests/cli.test.ts «feature: planned, static and rule gaps, then done; JSON is the only stdout», «planned module external.<pkg>…» (static-прогалина з line 5); опис — `docs/tools.md#agents`, посилання з `docs/format.md` §7.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 88a9ac1, 98adfa9; `src/feature-status.ts`, `src/cli.ts`, `src/mcp.ts`; tests/cli.test.ts «feature: planned, static and rule gaps, then done; JSON is the only stdout», «planned module external.<pkg>…» (static-прогалина з line 5); опис — `docs/tools.md#agents`, посилання з `docs/semantics.md` §7.

@@ -10,7 +10,7 @@
 
 **Джерело:** AI-пілот 2026-10-04: кандидат 1, «Діагностика з першої спроби» (сесії 1 і 2; сесія 2 отримала K005 двічі й виправилась з третьої спроби), §10.6 («пошук синтаксису (K005)»).
 
-**What to build:** Учасник, що хоче запланований крок, пише `- step planned users.billing.charge`. Отримує `K005 expected a single ID` на слові після `planned` — без жодного натяку, що `planned` — окрема декларація на верху потоку (format.md §5: `planned fn|module|type|event <id> [signature]`), а крок потім посилається на ID звичайним `step`.
+**What to build:** Учасник, що хоче запланований крок, пише `- step planned users.billing.charge`. Отримує `K005 expected a single ID` на слові після `planned` — без жодного натяку, що `planned` — окрема декларація на верху потоку (grammar.md §5: `planned fn|module|type|event <id> [signature]`), а крок потім посилається на ID звичайним `step`.
 
 Відтворення (master `c408f53`, тимчасовий TS-репо після `init`):
 

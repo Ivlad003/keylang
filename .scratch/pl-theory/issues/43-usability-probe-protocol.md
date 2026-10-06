@@ -9,7 +9,7 @@
 **Метрики з джерелами:**
 - час до перевіреного сценарію — секундомір ведучого;
 - кількість `unverified` — `keylang check --format json` до і після;
-- прийняття доповнень. У TUI (`keylang`) його рахує `.keylang/stats.json`, поле `suggestions.completion` (format.md §12). LSP-доповнення статистики не пишуть: лічильники є лише в src/tui/assist.ts. Тож у сесії у VS Code ведучий рахує прийняті доповнення вручну;
+- прийняття доповнень. У TUI (`keylang`) його рахує `.keylang/stats.json`, поле `suggestions.completion` (tui.md). LSP-доповнення статистики не пишуть: лічильники є лише в src/tui/assist.ts. Тож у сесії у VS Code ведучий рахує прийняті доповнення вручну;
 - зрозумілість кожної K-діагностики — оцінка 1–5 до і після `keylang explain <K-код>`.
 
 **Опитувальник Cognitive Dimensions** (Blackwell і Green, research-pl §7.1 №10), адаптований під keylang. Кожен із шести вимірів research-pl §2 має своє завдання й питання:

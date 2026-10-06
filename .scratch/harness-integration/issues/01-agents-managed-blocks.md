@@ -15,10 +15,10 @@
 - [x] `agents --check` на застарілому блоці — код 1, файли не змінено; на актуальному — 0
 - [x] `--agents=none` — лише `keylang.json` і карта, як до зміни
 - [x] зіпсовані маркери (begin без end) — код 2 з назвою файла, без запису
-- [x] `--help` описує `--agents` і `agents`; format.md §7 «Команди» оновлено
+- [x] `--help` описує `--agents` і `agents`; semantics.md §7 «Команди» оновлено
 
 Ключові файли: `src/cli.ts`, новий модуль адаптерів (шар за `keylang.json`, поза ядром мови), `tests/cli.test.ts`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 88a9ac1, 4ad4aa5; `src/harness.ts` (mergeMarked/mergeClaude), `src/operations.ts`; tests/cli.test.ts «init: managed AGENTS.md block keeps foreign CRLF text…», «agents: --agents=none writes no harness files; unknown name and broken markers write nothing», tests/tui.test.ts «tui: agents auto…»; вручну: наявний `CLAUDE.md` з CRLF отримує `@AGENTS.md` у керованому блоці, застарілий блок `AGENTS.md` → `agents --check` код 1; `docs/format.md` §7 посилається на `docs/tools.md#agents`.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 88a9ac1, 4ad4aa5; `src/harness.ts` (mergeMarked/mergeClaude), `src/operations.ts`; tests/cli.test.ts «init: managed AGENTS.md block keeps foreign CRLF text…», «agents: --agents=none writes no harness files; unknown name and broken markers write nothing», tests/tui.test.ts «tui: agents auto…»; вручну: наявний `CLAUDE.md` з CRLF отримує `@AGENTS.md` у керованому блоці, застарілий блок `AGENTS.md` → `agents --check` код 1; `docs/semantics.md` §7 посилається на `docs/tools.md#agents`.

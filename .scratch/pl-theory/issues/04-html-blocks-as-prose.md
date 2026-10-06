@@ -33,11 +33,11 @@ fmt лишає блок дослівно, разом із порожніми р�
 - [x] Блок `<pre>` з двома порожніми рядками поспіль і рядком `- layer x` усередині: fmt виводить його байт у байт, повторний fmt нічого не змінює. Зараз fmt зводить порожні рядки до одного, додає порожній рядок перед `</pre>`, а `- layer x` — вузол.
 - [x] Регресія без змін: однорядкові коментарі (маркер генерації, коментар елемента, `keylang:llm`), `map --check` цього репозиторію, `tests/fixtures/diagnostics.expected`, тести карти з поясненнями (якорі `<a id>` в описах).
 - [x] format.md: §1 — новий рядок таблиці класів (рядок у HTML-блоці типів 1–5), §3 — речення «HTML-коментар в окремому рядку» замінено правилом блоку з прикладом вимкнення рядка, §8 — порожні рядки всередині блоку зберігаються. Якщо 01 злито, записи allowlist для фікстур `<!-- -->` і `<pre>` видалено (0 розбіжностей до й після fmt).
-- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а format.md §1 більше не перелічує невиправлених класів.
+- [x] Якщо 01 злито і після цього тікета allowlist «після fmt» порожній (02, 03 і 04 злито), речення docs/course/03-the-language.md:5 і docs/course/uk/03-the-language.md:5 знову обіцяє збіг після `fmt`, а grammar.md §1 більше не перелічує невиправлених класів.
 - [ ] `npm run typecheck` і `npm test` зелені. `node bin/keylang.js map` перегенеровано й diff переглянуто (`keylang/map/` і, бо увімкнено `explain.map`, `keylang/map-explained/`); `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `docs/format.md`, `tests/cli.test.ts`, `tests/commonmark.test.ts`, `tests/fixtures/commonmark/*.md`, `docs/course/03-the-language.md`, `docs/course/uk/03-the-language.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 070068d (кінець блоку типу 1 на будь-якому з чотирьох тегів); src/parser.ts; docs/format.md §1 (рядок таблиці HTML-блоку), §3, §8; tests/commonmark.test.ts («multiline HTML blocks of types 1–5 are prose…», «a type-1 HTML block ends on any of the four end tags…»), фікстури html-comment/html-pre/html-type1-*.md без записів allowlist; `map --check` = 0.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 070068d (кінець блоку типу 1 на будь-якому з чотирьох тегів); src/parser.ts; docs/grammar.md §1 (рядок таблиці HTML-блоку), §3, §8; tests/commonmark.test.ts («multiline HTML blocks of types 1–5 are prose…», «a type-1 HTML block ends on any of the four end tags…»), фікстури html-comment/html-pre/html-type1-*.md без записів allowlist; `map --check` = 0.

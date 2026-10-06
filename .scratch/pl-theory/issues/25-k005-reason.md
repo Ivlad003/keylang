@@ -49,7 +49,7 @@
 - [x] `parse --json` на файлах тієї самої фікстури дає K005 парсера з тим самим `reason`, що й `check --format json`. `test f.ts "x` дає дві K005 на одній позиції: `quote` і `arguments`.
 - [x] Human-вивід `check` і `--format github` байт у байт ті самі, `specHash` K005 не змінився. Еталон 17 відрізняється лише доданим `reason` (diff переглянуто).
 - [x] `keylang explain K005` і `explain k005` друкують перелік причин із прикладом кожної, код виходу 0.
-- [x] format.md §7: таблиця причин під рядком K005, тест таблиці K-кодів зелений. Поле `reason` описано в `json` і `parse --json` там, де ці формати живуть на момент злиття: format.md §7/§9 або docs/tools.md після 30.
+- [x] semantics.md §7: таблиця причин під рядком K005, тест таблиці K-кодів зелений. Поле `reason` описано в `json` і `parse --json` там, де ці формати живуть на момент злиття: semantics.md §7/§9 або docs/tools.md після 30.
 - [ ] `npm run typecheck` і `npm test` зелені.
 - [ ] `node bin/keylang.js map` виконано, diff `keylang/map/` і `keylang/map-explained/` переглянуто.
 - [x] `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
@@ -58,4 +58,4 @@
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/diag.ts `K005Reason`, src/check-results.ts, src/explain.ts); tests/spec-forms.test.ts (golden spec-forms/invalid, parse --json reasons, quote+arguments); format.md §7 таблиця reason; `explain k005` — код 0 з переліком; `map --check` = 0, `check` — 0 fail. Повний `npm test` під час аудиту не запускався.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/diag.ts `K005Reason`, src/check-results.ts, src/explain.ts); tests/spec-forms.test.ts (golden spec-forms/invalid, parse --json reasons, quote+arguments); semantics.md §7 таблиця reason; `explain k005` — код 0 з переліком; `map --check` = 0, `check` — 0 fail. Повний `npm test` під час аудиту не запускався.

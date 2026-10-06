@@ -2,7 +2,7 @@
 
 **Status:** resolved
 
-**Джерело:** запит користувача 2026-10-04; [research-c4-zoom-literature.md](../../docs/research-c4-zoom-literature.md) (теорія) і [research-c4-zoom-tools.md](../../docs/research-c4-zoom-tools.md) (готові рішення); design §5.4, §7.1–7.3, §7.6; ADR 0004 (карта з поясненнями), ADR 0005 (харнеси), ADR 0007 (редакції формату), ADR 0013 (baseline — нижчий шар правил); спеки `explained-map` і `harness-integration`. Терміни — `CONTEXT.md`.
+**Джерело:** запит користувача 2026-10-04; [research-c4-zoom-literature.md](../../docs/archive/research-c4-zoom-literature.md) (теорія) і [research-c4-zoom-tools.md](../../docs/archive/research-c4-zoom-tools.md) (готові рішення); design §5.4, §7.1–7.3, §7.6; ADR 0004 (карта з поясненнями), ADR 0005 (харнеси), ADR 0007 (редакції формату), ADR 0013 (baseline — нижчий шар правил); спеки `explained-map` і `harness-integration`. Терміни — `CONTEXT.md`.
 
 **Статус:** рішення людини прийнято 2026-10-04 (§1a), рев'ю тікетів — 2026-10-04 (§1b). Усі 12 тікетів у `issues/` мають статус `ready-for-agent` з 2026-10-04 (Р12). Фічу реалізувала напряму сесія Claude Code `keylang-c9` на гілці `feat/c4-zoom` (рішення користувача 2026-10-04: без shiftwork); 2026-10-05 усі 12 тікетів `resolved`, кожен — окремим комітом на master. Відхилення від тікетів записано в їхніх `## Comments`.
 

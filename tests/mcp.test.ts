@@ -39,7 +39,7 @@ async function connect(t: TestContext, fixture = "repo"): Promise<{ dir: string;
   };
 }
 
-/** Every file and its bytes but the local fact cache, which every analysis may save (tools.md, MCP). */
+/** Every file and its bytes but the local fact cache, which every analysis may save (mcp-lsp.md). */
 function treeBytes(dir: string): string {
   const out: string[] = [];
   const walk = (rel: string): void => {

@@ -32,11 +32,11 @@ ID будується тим самим відображенням імені в
 - [x] rust-shop після `init --agents=none` з `exclude: ["src/infra/store.rs"]`: K001 для `external.serde` немає, код 0.
 - [x] Регресія planned-external у тесті tests/cli.test.ts:1752. Додано проміжний крок: `stripe` є в `dependencies`, але імпорту немає. Результат — `unverified external.stripe: planned module` і `static unverified external.stripe: planned module, not implemented`, без K202 і K002. Після імпорту — K202, як і зараз.
 - [x] Після `map` на мінімальній фікстурі з `exclude` ні `keylang/map/external.md`, ні вузли `.keylang/index.json` не містять `external.pg`.
-- [x] format.md §6 пояснює, звідки беруться ID `external.<pkg>`: з імпортів, а для TS/JS і Rust — ще й з маніфестів. §7 додає до переліку винятків монотонності обмеження Python. Якщо 05 злито, `todo` цього випадку й пропуск rust-shop знято.
+- [x] semantics.md §6 пояснює, звідки беруться ID `external.<pkg>`: з імпортів, а для TS/JS і Rust — ще й з маніфестів. §7 додає до переліку винятків монотонності обмеження Python. Якщо 05 злито, `todo` цього випадку й пропуск rust-shop знято.
 - [ ] `npm run typecheck` і `npm test` зелені. `node bin/keylang.js map` виконано, diff переглянуто, зокрема карту з поясненнями (`explain.map` увімкнено). `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/resolve.ts`, `src/imports.ts`, `src/rust-imports.ts`, `src/graph.ts`, `tests/core.test.ts`, `tests/cli.test.ts`, `docs/format.md`; за умови 05 — `tests/metamorphic.test.ts`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/declared-packages.ts, src/resolve.ts); tests/rules-area.test.ts («a declared package is not K001 when its only importer is excluded…», «…with no import anywhere…», «rust: serde declared in Cargo.toml…»), tests/cli.test.ts «planned module external.<pkg> is static ok only from the importing parent module» (крок зі `stripe` у dependencies без імпорту); docs/format.md §6 (рядок 421) і §7 (виняток Python); у metamorphic.test.ts пропусків rust-shop немає.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78 (src/declared-packages.ts, src/resolve.ts); tests/rules-area.test.ts («a declared package is not K001 when its only importer is excluded…», «…with no import anywhere…», «rust: serde declared in Cargo.toml…»), tests/cli.test.ts «planned module external.<pkg> is static ok only from the importing parent module» (крок зі `stripe` у dependencies без імпорту); docs/semantics.md §6 (рядок 421) і §7 (виняток Python); у metamorphic.test.ts пропусків rust-shop немає.

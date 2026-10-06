@@ -32,11 +32,11 @@
 - [x] Та сама фікстура без `exclude` дає K105 `app.a → infra.b → app.a` (регресія).
 - [x] `src/app/a.ts` імпортує `src/infra/b.ts`, а `b.ts` має лише нерозв'язаний `./missing.ts`. Результат — `unverified` з позицією нерозв'язаного імпорту.
 - [x] Прогалина в недосяжному модулі лишає `ok`: `a.ts` → `b.ts` без циклу, `src/infra/c.ts` з `import "./missing.ts"`, який ніхто не імпортує. Файл поза шарами, досяжний з `app.a`, без інших прогалин теж лишає `ok`. Наявний тест tests/core.test.ts:75 зелений без змін очікувань.
-- [x] format.md §7, пункт «Цикли» (docs/format.md:265), визначає область `no-cycles` під модулем через досяжність і каже, що `unassigned-file` для неї прогалиною не є. Якщо 05 злито, `todo` цього випадку в tests/metamorphic.test.ts знято.
+- [x] semantics.md §7, пункт «Цикли» (docs/format.md:265), визначає область `no-cycles` під модулем через досяжність і каже, що `unassigned-file` для неї прогалиною не є. Якщо 05 злито, `todo` цього випадку в tests/metamorphic.test.ts знято.
 - [ ] `npm run typecheck` і `npm test` зелені. `node bin/keylang.js map` виконано, diff переглянуто, зокрема карту з поясненнями (`explain.map` увімкнено). `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/rules.ts`, `tests/core.test.ts`, `docs/format.md`; за умови 05 — `tests/metamorphic.test.ts`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/rules.ts; tests/rules-area.test.ts «no-cycles under a module counts a hole in a module it imports» (exclude → unverified з src/infra/b.ts:1:1, --strict = 1; нерозв'язаний ./missing.ts; недосяжна прогалина лишає ok); tests/metamorphic.test.ts «excluding the far side of a cycle is unverified, not ok» без todo; docs/format.md §7 «Цикли». Примітка: проба 2026-10-01 — якщо виключений файл циклу лежить поза всіма шарами (`src/misc/b.ts`, шари лише `app`), `exclude` досі дає K105 fail → ok; та сама причина, що й у випадку 2 тікета 07 (виключений файл поза шарами не стає прогалиною), — див. коментар у 07.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; src/rules.ts; tests/rules-area.test.ts «no-cycles under a module counts a hole in a module it imports» (exclude → unverified з src/infra/b.ts:1:1, --strict = 1; нерозв'язаний ./missing.ts; недосяжна прогалина лишає ok); tests/metamorphic.test.ts «excluding the far side of a cycle is unverified, not ok» без todo; docs/semantics.md §7 «Цикли». Примітка: проба 2026-10-01 — якщо виключений файл циклу лежить поза всіма шарами (`src/misc/b.ts`, шари лише `app`), `exclude` досі дає K105 fail → ok; та сама причина, що й у випадку 2 тікета 07 (виключений файл поза шарами не стає прогалиною), — див. коментар у 07.

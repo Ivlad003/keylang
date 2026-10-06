@@ -1,6 +1,6 @@
 # keylang grammar cheatsheet
 
-One page of the keylang language for agents: what to write where, with examples that `keylang check` reads without a spec error. The normative text is [format.md](format.md) (Ukrainian); where the two disagree, format.md wins. Commands and MCP tools are in [tools.md](tools.md).
+One page of the keylang language for agents: what to write where, with examples that `keylang check` reads without a spec error. The normative text is [grammar.md](grammar.md) and [semantics.md](semantics.md) (Ukrainian); where they disagree with this page, they win. Commands are in [cli.md](cli.md), MCP tools in [mcp-lsp.md](mcp-lsp.md).
 
 ## Files
 

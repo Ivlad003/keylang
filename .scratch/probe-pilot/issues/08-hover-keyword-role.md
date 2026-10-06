@@ -10,7 +10,7 @@
 
 **Джерело:** AI-пілот 2026-10-04: role-expressiveness (4 з 4: «you need the parent to know what the line does»; hover повертає «(no hover)» на `test`, `when`, `then`, `invariant` і ключових словах — відповіді не змінив ні в кого), кандидат 6.
 
-**What to build:** LSP `textDocument/hover` (`hover()` у `src/lsp-features.ts`) відповідає лише на ID: вид, сигнатура, файл:рядок, вердикти. На ключовому слові й на рядку без ID (`test`, `invariant`, `when`, текстовий `then`, `layers`, `entry`) — `null`. Саме там роль рядка залежить від батька (format.md §5, таблиця «Ключові слова за позицією»), і саме там протокол проби питає, чи допомагає hover.
+**What to build:** LSP `textDocument/hover` (`hover()` у `src/lsp-features.ts`) відповідає лише на ID: вид, сигнатура, файл:рядок, вердикти. На ключовому слові й на рядку без ID (`test`, `invariant`, `when`, текстовий `then`, `layers`, `entry`) — `null`. Саме там роль рядка залежить від батька (grammar.md §5, таблиця «Ключові слова за позицією»), і саме там протокол проби питає, чи допомагає hover.
 
 Відтворення (master `c408f53`): копія `tests/fixtures/repo`, потік зі [спільного відтворення](../spec.md#спільне-відтворення); скрипт шле `initialize` → `initialized` → `didOpen` → `textDocument/hover` (позиції з 0):
 
@@ -25,7 +25,7 @@
 | 10:5 | `  - then Rejected` | `null` |
 | `rules.md` 2:3, 5:3 | `- layers domain < app`, `- entry` | `null` |
 
-Після зміни hover на ключовому слові (і на тексті рядка без ID) повертає роль рядка в цьому контексті, одним-двома реченнями англійською, і вердикти рядка, якщо вони є. Роль — з пари «ключове слово × батько» за таблицею format.md §5, наприклад:
+Після зміни hover на ключовому слові (і на тексті рядка без ID) повертає роль рядка в цьому контексті, одним-двома реченнями англійською, і вердикти рядка, якщо вони є. Роль — з пари «ключове слово × батько» за таблицею grammar.md §5, наприклад:
 
 - `test` під `step` — «evidence for the parent step: a test in `tests/…` that must pass in the `check.tests` report»; під `invariant` — «evidence for the invariant»; і, якщо `check.tests` не задано, — «no evidence is checked: `check.tests` is not set»;
 - `then` — «text» або «a reference to `<id>`» за Р10, з K008-кандидатами, якщо вони є;

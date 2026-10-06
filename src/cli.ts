@@ -788,7 +788,7 @@ async function cmdWire(out: string, checkOnly: boolean): Promise<number> {
   return result.exitCode ?? 2;
 }
 
-/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: tools.md, code 0. The CLI is a printer over the shared doctor operation. */
+/** What is set up. A problem it finds (a key file others can read, a native module without its binary) is a line of the report, not a failure: cli.md, code 0. The CLI is a printer over the shared doctor operation. */
 async function cmdDoctor(): Promise<number> {
   const result = await runOperation({ kind: "doctor", root: findRoot(process.cwd()) });
   if (result.status === "failed") {

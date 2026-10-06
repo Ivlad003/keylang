@@ -326,7 +326,7 @@ const PLACE: Record<SectionKind, string> = { map: "the map", rules: "rules", flo
 
 /**
  * Hover on a keyword, or on a line without an ID: what the line does under
- * its parent (format.md §5), then the diagnostics and verdicts of that line.
+ * its parent (grammar.md §5), then the diagnostics and verdicts of that line.
  */
 function roleHover(ws: Workspace, path: string, position: LspPosition): HoverContent | null {
   const doc = docOf(ws, path);

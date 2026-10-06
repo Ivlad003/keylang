@@ -29,7 +29,7 @@
 - [ ] CLI-тест: 3 spans при `at-most 2` дають `trace fail` з кількістю, межею й тестом, так само з `complete: false`. 2 spans дають `ok`, 1 span із `complete: false` — `unverified`.
 - [ ] `at-most 0 <id>` дає ті самі вердикти, що `never <id>`, на тих самих trace.
 - [ ] Тест «a count or a negation needs its own predicate» (tests/flows.test.ts:556) оновлено під нову причину.
-- [ ] EBNF-блок і перелік K004 оновлено, тест 33 зелений. format.md §5 і «Flows: докази кроку» описують форму.
+- [ ] EBNF-блок і перелік K004 оновлено, тест 33 зелений. grammar.md §5 і «Flows: докази кроку» описують форму.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/parser.ts`, `src/flows.ts`, `src/trace-evidence.ts`, `docs/format.md`, `tests/flows.test.ts`

@@ -25,7 +25,7 @@
 - [ ] заглушка, чий `main` кидає помилку, і заглушка без `createProgram` вимикають backend: `doctor` називає причину, коди виходу `check` і `map` не змінюються. Зламаний `tsconfig.json` теж вимикає backend із причиною і не дає коду 2
 - [ ] `doctor` друкує рядок `typescript` в обох станах (тест через CLI)
 - [ ] `keylang/rules.md` має три нові `deny`, а `node bin/keylang.js check --strict` дає 0. Карту keylang перегенеровано, diff переглянуто
-- [ ] format.md §11: рядок `manifest`, номер схеми 8, перелік входів `snapshotId`. tools.md: `doctor`
+- [ ] snapshot.md §11: рядок `manifest`, номер схеми 8, перелік входів `snapshotId`. tools.md: `doctor`
 
 ## Comments
 

@@ -4,7 +4,7 @@
 
 **What to build:** Два верхні рівні C4 отримують текст без моделі.
 
-**Brief репозиторію** (рівень «система», Р1) — вузол представлення, не ID мови. Знімок отримує поле `system` (`.keylang/index.json`, format.md §11) з `brief` і `sources`. Джерела по черзі: перший абзац прози кореневого `README.md` (заголовки, HTML-блоки й рядки лише із зображеннями чи бейджами пропускаються, далі `briefOf`), інакше `description` з кореневого `package.json`, `Cargo.toml` (`[package]` або `[workspace.package]`) чи `pyproject.toml` (`[project]`). Ці файли входять у manifest знімка, тож їхня зміна робить знімок неактуальним. `<dir>/map-explained/README.md` починається абзацом brief-у з рядком походження (`README.md` або назва маніфесту); без джерела — `—` і підказка `keylang explain --missing --llm`.
+**Brief репозиторію** (рівень «система», Р1) — вузол представлення, не ID мови. Знімок отримує поле `system` (`.keylang/index.json`, snapshot.md §11) з `brief` і `sources`. Джерела по черзі: перший абзац прози кореневого `README.md` (заголовки, HTML-блоки й рядки лише із зображеннями чи бейджами пропускаються, далі `briefOf`), інакше `description` з кореневого `package.json`, `Cargo.toml` (`[package]` або `[workspace.package]`) чи `pyproject.toml` (`[project]`). Ці файли входять у manifest знімка, тож їхня зміна робить знімок неактуальним. `<dir>/map-explained/README.md` починається абзацом brief-у з рядком походження (`README.md` або назва маніфесту); без джерела — `—` і підказка `keylang explain --missing --llm`.
 
 **Модель для репозиторію.** `explain --missing --llm` питає її останньою хвилею, після шарів, і лише коли детермінованого джерела немає. Відповідь — `<dir>/explain/brief/@system.md`: `@` не може починати сегмент ID, тож файл не зіткнеться з шаром `system` (це ім'я не зарезервоване). База застарілості — хеш ID шарів і текстів їхніх brief-ів. `explain --stale` показує цей файл як `stale` за зміни бази й ніколи як `gone`.
 
@@ -28,12 +28,12 @@ Brief шару моделлю й застарілість шару від усь
 - [x] шар із `README.md` у теці → колонка Explanation і рядок шару показують документ з походженням «код»; `explain --missing --llm` з мок-провайдером цей шар не запитує
 - [x] doc-коментар `index.ts` теки шару теж дає документ; шар без документа запитується, як зараз
 - [x] шар `system` у `keylang.json` і збережений `@system.md` не конфліктують; після зміни brief-у шару `explain --stale` показує `@system` як `stale`, не `gone`
-- [x] format.md §11 (поле `system`, `doc` шару), tools.md (`explain --missing`) і design §5.4 оновлено; карту keylang перегенеровано
+- [x] snapshot.md §11 (поле `system`, `doc` шару), tools.md (`explain --missing`) і design §5.4 оновлено; карту keylang перегенеровано
 
 ## Comments
 
 - 2026-10-04 (Claude Code, сесія keylang-c9): зроблено без shiftwork. `readmeBrief` (`src/brief.ts`), `globDirectory` (`src/glob.ts`), читання README й маніфестів у `src/map.ts`, поле `system` і `doc` шару в `src/snapshot.ts`, `SYSTEM_ID`/`systemBaseline` у `src/explanations.ts`, хвиля `system` і `systemRequest` у `src/explain-llm.ts`, тести — `tests/repository-brief.test.ts`.
-- Відхилення від тексту тікета, свідомі: README й маніфести **не входять** у `snapshotId`, хоч тікет казав «у manifest знімка». `snapshotId` прив'язує звіти тестів і trace; правка README зробила б їх застарілими, хоча код не змінився. Свіжість однаково гарантована: кожен аналіз перечитує README, а `map --check` бачить правку через карту з поясненнями (тест «an edited README makes the explained map stale and keeps the snapshot id»). Записано у format.md §11.
+- Відхилення від тексту тікета, свідомі: README й маніфести **не входять** у `snapshotId`, хоч тікет казав «у manifest знімка». `snapshotId` прив'язує звіти тестів і trace; правка README зробила б їх застарілими, хоча код не змінився. Свіжість однаково гарантована: кожен аналіз перечитує README, а `map --check` бачить правку через карту з поясненнями (тест «an edited README makes the explained map stale and keeps the snapshot id»). Записано у snapshot.md §11.
 - Індекс-модуль шару — за індекс-іменами мови з `LANGUAGES` (`index`, `mod`, `__init__`), тож `lib.rs` не враховується, як і в модуля-теки.
 - README без речення (перемикач мов, бейджі) пропускається: абзац має мати щонайменше чотири слова й кінець речення. Без імені в маніфесті заголовок розділу — `## Repository`.
 - Наявні тести TUI пакетних brief-ів (`tests/tui.test.ts`) оновлено: у фікстури без README план тепер має хвилю `system` (13 brief-ів замість 12) — це новий контракт тікета.

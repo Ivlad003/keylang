@@ -1,4 +1,4 @@
-# 05: Документація backend-а: format.md §11, llm.txt, CONTEXT.md, design
+# 05: Документація backend-а: snapshot.md §11, llm.txt, CONTEXT.md, design
 
 **Status:** ready-for-agent
 
@@ -12,7 +12,7 @@
 
 **What to build:** Тікети 01–04 оновили документацію своїх контрактів: manifest, `edges`, формати, `doctor`, кеш. Цей тікет зводить решту, щоб людина й агент знали, коли backend працює і що з цього випливає.
 
-- [ ] format.md §11, «Мови» → **TypeScript**: абзац **Семантичний backend**. Що в ньому:
+- [ ] snapshot.md §11, «Мови» → **TypeScript**: абзац **Семантичний backend**. Що в ньому:
   - коли backend працює, звідки береться `typescript`, що буває без пакета;
   - що він розв'язує, а що лишає діркою (таблиця spec §4.2);
   - походження `semantic`;

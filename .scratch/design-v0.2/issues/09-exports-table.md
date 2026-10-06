@@ -12,7 +12,7 @@
 - [x] `export { a as b }` порівнюється за `b`; `export default` — за `default`; `export * from "./x"` розкривається до імен `x`
 - [x] `exports` із іменем, якого модуль не експортує, дає діагностику absence
 - [x] у карті fn без експорту й далі позначена `<!-- internal -->`, але правило від цього не залежить
-- [x] `docs/format.md` §7 уточнення для `exports` оновлене
+- [x] `docs/semantics.md` §7 уточнення для `exports` оновлене
 
 ## Answer
 

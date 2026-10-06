@@ -2,7 +2,7 @@
 
 **Джерело:** research-pl §5 Р-3; знахідка 2; рішення Q10 (spec). Баг: код розходиться з format.md:261
 
-**What to build:** Мінімальне відтворення: `keylang/rules.md` з `- layers domain < app` і `- deny domain app`, `src/domain/x.ts` імпортує `src/app/y.ts`. Зараз друкується лише K102, а рядок `layers domain < app` отримує `ok` «convergence: every dependency between `domain`, `app` points down…». Причина в тому, що гілки переможного `deny` і `allow` (src/rules.ts:201-211) виходять із циклу раніше за перевірку порядку. Шари ребра не потрапляють у `violated` (rules.ts:217-218), і рядок отримує `ok` (rules.ts:225, 234). Проте format.md §7 (format.md:261) дає `ok` лише тоді, «коли жодна залежність не порушує порядку його шарів».
+**What to build:** Мінімальне відтворення: `keylang/rules.md` з `- layers domain < app` і `- deny domain app`, `src/domain/x.ts` імпортує `src/app/y.ts`. Зараз друкується лише K102, а рядок `layers domain < app` отримує `ok` «convergence: every dependency between `domain`, `app` points down…». Причина в тому, що гілки переможного `deny` і `allow` (src/rules.ts:201-211) виходять із циклу раніше за перевірку порядку. Шари ребра не потрапляють у `violated` (rules.ts:217-218), і рядок отримує `ok` (rules.ts:225, 234). Проте semantics.md §7 (format.md:261) дає `ok` лише тоді, «коли жодна залежність не порушує порядку його шарів».
 
 Після зміни ребро, що суперечить порядку (`layerViolation` не null, rules.ts:389-395), враховується й тоді, коли його вирішило правило:
 - **переможний `deny`:** шари ребра позначено порушеними, тож рядок `layers` лишається без вердикту, як при K101. На ребро одна знахідка, K102, окремої K101 немає;
@@ -10,7 +10,7 @@
 
 Ребро вниз за порядком, яке вирішив `deny`, порядку не порушує, тож `ok` рядка `layers` лишається з незмінним evidence.
 
-format.md §7, пункт `layers`, описує випадки `deny` і `allow`.
+semantics.md §7, пункт `layers`, описує випадки `deny` і `allow`.
 
 Цей тікет і 14 правлять той самий цикл `evaluateOnSnapshot` (rules.ts:190-222). Міграція rules.ts на SpecIR (19) чекає на обидва й має зберегти цю поведінку.
 
@@ -24,11 +24,11 @@ format.md §7, пункт `layers`, описує випадки `deny` і `allow
 - [x] Та сама фікстура з `- allow domain app` замість `deny`: `layers domain < app` має `ok`, evidence містить `allow domain app`, код 0.
 - [x] `- deny app domain` при імпорті `src/app/y.ts` → `src/domain/x.ts` (ребро вниз) дає K102, а `layers domain < app` лишається `ok` з evidence «points down».
 - [x] Регресія: без `allow`/`deny` K101 `` divergence: `domain.x` depends on `app.y` (layers say `domain < app`, …) `` і рядок без вердикту, як раніше.
-- [x] format.md §7, пункт `layers`, описує обидва випадки. Якщо еталон `spec-forms` (17) уже злито, його очікувані файли змінились лише тут, diff переглянуто.
+- [x] semantics.md §7, пункт `layers`, описує обидва випадки. Якщо еталон `spec-forms` (17) уже злито, його очікувані файли змінились лише тут, diff переглянуто.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/rules.ts`, `tests/core.test.ts`, `docs/format.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; тест `tests/rules-area.test.ts` «an upward edge denied by deny is not also K101; an allow is named on the layers line» (deny, allow, ребро вниз); format.md §7, пункт `layers`. Прогін `npm test` у межах аудиту не виконувався.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; тест `tests/rules-area.test.ts` «an upward edge denied by deny is not also K101; an allow is named on the layers line» (deny, allow, ребро вниз); semantics.md §7, пункт `layers`. Прогін `npm test` у межах аудиту не виконувався.

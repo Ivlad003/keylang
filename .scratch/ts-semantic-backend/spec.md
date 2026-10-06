@@ -14,7 +14,7 @@
 
 | Що | Де | Стан |
 |---|---|---|
-| походження ребра | `Provenance` у `src/snapshot.ts` | лише `"syntactic"`; format.md §11: «`provenance: semantic` … лишаються дорожньою картою» |
+| походження ребра | `Provenance` у `src/snapshot.ts` | лише `"syntactic"`; snapshot.md §11: «`provenance: semantic` … лишаються дорожньою картою» |
 | походження вердикту | `evidence.provenance` у `src/verdict.ts` | `syntactic`, `test-report`, `trace` |
 | типізований отримувач | `receiverTarget` у `src/graph.ts` | анотація, `new X()`, тип поля. Виведений тип — дірка `dynamic-call` «call through a local value» (`holeReason`) |
 | `snapshotId` | `buildSnapshot` у `src/snapshot.ts` | схема 7, `EXTRACTOR_VERSION`, граматики, конфігурація, файли, входи резолвера (`graph.resolverInputs`: `tsconfig` `paths`, `references`, оголошені пакети) |
@@ -85,9 +85,9 @@
 
 ### 4.5 Документація (тікет 05)
 
-Кожен тікет 01–04 сам оновлює документацію свого контракту: format.md §11, tools.md. Тікет 05 зводить решту:
+Кожен тікет 01–04 сам оновлює документацію свого контракту: snapshot.md §11, tools.md. Тікет 05 зводить решту:
 
-- абзац **Семантичний backend** у format.md §11, «Мови» → **TypeScript**: коли backend працює, що розв'язує, CI після встановлення залежностей;
+- абзац **Семантичний backend** у snapshot.md §11, «Мови» → **TypeScript**: коли backend працює, що розв'язує, CI після встановлення залежностей;
 - `llm.txt` для агентів;
 - визначення Edge у `CONTEXT.md`;
 - design §7, §9, §10;
@@ -101,7 +101,7 @@
 | [02](issues/02-semantic-call-edges.md) | Резолвінг отримувачів через checker: ребра `semantic` | ready-for-agent | 01 |
 | [03](issues/03-show-semantic-provenance.md) | Походження `semantic` у `check`, explain, MCP, карті й TUI | ready-for-agent | 02 |
 | [04](issues/04-semantic-cache-and-budget.md) | Кеш результатів backend і бюджет часу | ready-for-agent | 02 |
-| [05](issues/05-docs-format-llm.md) | Документація: format.md §11, llm.txt, CONTEXT.md, design | ready-for-agent | 03, 04 |
+| [05](issues/05-docs-format-llm.md) | Документація: snapshot.md §11, llm.txt, CONTEXT.md, design | ready-for-agent | 03, 04 |
 
 Ланцюг: 01 → 02 → (03, 04) → 05.
 

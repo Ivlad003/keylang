@@ -1,6 +1,6 @@
 # Карта з поясненнями
 
-**Джерело:** запит користувача 2026-09-28, [ADR 0004](../../docs/adr/0004-explained-map.md), design §5.4, format.md §3 «Опис вузла», §4–5, §11, §12. Терміни — `CONTEXT.md` («Explained map», «Explanation», «Brief»).
+**Джерело:** запит користувача 2026-09-28, [ADR 0004](../../docs/adr/0004-explained-map.md), design §5.4, grammar.md §3 «Опис вузла», §4–5, §11, §12. Терміни — `CONTEXT.md` («Explained map», «Explanation», «Brief»).
 
 ## Мета
 

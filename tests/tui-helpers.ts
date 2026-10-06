@@ -131,7 +131,7 @@ export function fakeTerminal(env: NodeJS.ProcessEnv = {}): { host: TerminalHost;
 /** Every file under `root` with its bytes: a session that must write nothing leaves this unchanged. */
 export function treeBytes(root: string): Map<string, string> {
   const out = new Map<string, string>();
-  // The local fact cache is left out: the check and feature operations save it for the next run (tools.md).
+  // The local fact cache is left out: the check and feature operations save it for the next run (cli.md).
   const cache = join(root, ".keylang/cache");
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {

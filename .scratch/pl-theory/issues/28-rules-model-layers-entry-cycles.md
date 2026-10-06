@@ -2,7 +2,7 @@
 
 **Джерело:** research-pl §5 Р-3; знахідка 2; рішення Q10 (spec, через 15)
 
-**What to build:** Модель тікета 27 і Datalog у format.md §7 розширюються на решту правил графа. Прогалин покриття тут ще немає, їх додає 29.
+**What to build:** Модель тікета 27 і Datalog у semantics.md §7 розширюються на решту правил графа. Прогалин покриття тут ще немає, їх додає 29.
 
 - **`layers`.** Усі рядки разом — один частковий порядок із транзитивним замиканням (`above`).
   - K101 дається одна на пару файлів-модулів і має дві форми `layerViolation` (src/rules.ts:389-395): ребро вгору за порядком і ребро з шару поза будь-яким порядком у впорядкований шар.
@@ -30,11 +30,11 @@
 - [ ] `KEYLANG_MODEL_RUNS=500 node --test tests/rules-model.test.ts` проходить без розбіжностей. Типовий `npm test` лишається в частці 27–29 (≤ ~7 с разом): один запуск CLI на випадок, N не зростає.
 - [x] Модель передбачає множину K101 (пари модулів), множину K103 (модулі), кількість K105 для кожного правила `no-cycles` і `ok` кожного рядка `layers`, `entry` і `no-cycles`. Усе порівнюється з `check --format json`.
 - [x] Генеровані випадки містять ребро вгору, яке вирішив `deny`, і ребро вгору, яке дозволив `allow`. І модель, і CLI дають рядку `layers` у випадку з `deny` відсутність вердикту, а у випадку з `allow` — `ok`.
-- [x] Datalog у format.md §7 доповнено предикатами `above`, `k101`, `reach`, `k103`, `scc`, `k105`, і прозові пункти `layers`, `entry` та «Цикли» (format.md:261, 263, 265) посилаються на них.
+- [x] Datalog у semantics.md §7 доповнено предикатами `above`, `k101`, `reach`, `k103`, `scc`, `k105`, і прозові пункти `layers`, `entry` та «Цикли» (format.md:261, 263, 265) посилаються на них.
 - [ ] `npm run typecheck` і `npm test` зелені, `src/` не змінено.
 
 Ключові файли: `tests/rules-model.test.ts`, `docs/format.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; tests/rules-model.test.ts (K101/K103/K105, «an upward edge denied by deny…», «…allowed by allow keeps the layers line ok»), format.md §7 предикати above/k101/reach/k103/scc/k105 і посилання з пунктів layers/entry/Цикли; прогін файлу — 6 pass. Бюджет часу — див. коментар 27.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78; tests/rules-model.test.ts (K101/K103/K105, «an upward edge denied by deny…», «…allowed by allow keeps the layers line ok»), semantics.md §7 предикати above/k101/reach/k103/scc/k105 і посилання з пунктів layers/entry/Цикли; прогін файлу — 6 pass. Бюджет часу — див. коментар 27.

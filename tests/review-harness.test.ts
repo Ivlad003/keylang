@@ -253,7 +253,7 @@ test("the AGENTS.md block teaches the grammar: its feature example parses and ch
 
 test("docs/cheatsheet.md: every keylang example parses alone and checks with the others against its map example, without K001–K005 or a fail", (t) => {
   const sheet = readFileSync(join(root, "docs/cheatsheet.md"), "utf8");
-  assert.match(sheet, /\]\(format\.md\)/, "the cheatsheet names the normative grammar");
+  assert.match(sheet, /\]\(grammar\.md\)/, "the cheatsheet names the normative grammar");
   for (const keyword of ["layers", "allow", "deny", "entry", "exports", "no-cycles", "trigger", "step", "calls", "when", "then", "invariant", "test", "planned", "?", "wire"]) {
     assert.ok(new RegExp(`^ *- ${escaped(keyword)}(?: |$)`, "m").test(sheet), `an example of \`${keyword}\``);
   }

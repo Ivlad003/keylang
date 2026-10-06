@@ -11,7 +11,7 @@
 
 Виправлення робиться в поточному коді, до міграції rules.ts на SpecIR. Міграція 19 чекає на цей тікет і має зберегти поведінку.
 
-format.md §7 (пункт `allow`/`deny`, format.md:262, і розділ «Wiring») каже, що правило з K005 не діє ні в `check`, ні у wiring, LSP-completion чи spec-to-code. `keylang explain K005` цьому не суперечить.
+semantics.md §7 (пункт `allow`/`deny`, format.md:262, і розділ «Wiring») каже, що правило з K005 не діє ні в `check`, ні у wiring, LSP-completion чи spec-to-code. `keylang explain K005` цьому не суперечить.
 
 **Blocked by:** None (can start immediately)
 
@@ -29,11 +29,11 @@ format.md §7 (пункт `allow`/`deny`, format.md:262, і розділ «Wirin
 - [x] LSP-completion на fn-цілі: коли єдине правило — `deny app infra.db.save` (K005), `- calls ` під модулем шару `app` пропонує `infra.db.save`. З `deny app infra.db` цей кандидат не пропонується (регресія tests/lsp.test.ts:402).
 - [x] spec-to-code: `deny domain app.refund.refund`, де ціль — `planned fn` (K005), не дає відмови «`deny` forbids …». `deny domain app` відмовляє, як і раніше (tests/draft.test.ts:264).
 - [x] Регресія: K005 для правил над fn (tests/core.test.ts:416) і K102 у wiring за валідним `deny domain infra` (tests/wiring.test.ts:285) без змін.
-- [ ] format.md §7 (allow/deny і «Wiring») описує це значення. Якщо еталон `spec-forms` (17) уже злито, його очікувані файли змінились лише тут, diff переглянуто.
+- [ ] semantics.md §7 (allow/deny і «Wiring») описує це значення. Якщо еталон `spec-forms` (17) уже злито, його очікувані файли змінились лише тут, diff переглянуто.
 - [ ] `npm run typecheck`, `npm test`; `node bin/keylang.js map` (diff переглянуто, разом із картою з поясненнями: `explain.map` увімкнено), `node bin/keylang.js map --check` = 0, `node bin/keylang.js check` на репозиторії — 0 fail.
 
 Ключові файли: `src/rules.ts`, `src/wiring.ts`, `src/lsp-features.ts`, `src/spec-to-code.ts`, `tests/wiring.test.ts`, `tests/lsp.test.ts`, `docs/format.md`
 
 ## Comments
 
-- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 7e96cda; тести `tests/rules-area.test.ts` «a fn deny applies nowhere: check, wire, and a deeper module deny still does», «a type or a planned event on deny is K005 scope and applies nowhere», `tests/lsp.test.ts` «completion still offers a fn a member deny cannot scope», `tests/draft.test.ts` «a deny over a planned fn is K005 and does not refuse the stub». Не закрито дрібне: format.md §7 і розділ «Wiring» прямо не кажуть, що правило з K005 не діє у wiring, LSP-completion і spec-to-code (лише «нічого б не перевіряло»). Прогін `npm test` у межах аудиту не виконувався.
+- 2026-10-01 — аудит під shiftwork: уже реалізовано; докази: 6dcdc78, 7e96cda; тести `tests/rules-area.test.ts` «a fn deny applies nowhere: check, wire, and a deeper module deny still does», «a type or a planned event on deny is K005 scope and applies nowhere», `tests/lsp.test.ts` «completion still offers a fn a member deny cannot scope», `tests/draft.test.ts` «a deny over a planned fn is K005 and does not refuse the stub». Не закрито дрібне: semantics.md §7 і розділ «Wiring» прямо не кажуть, що правило з K005 не діє у wiring, LSP-completion і spec-to-code (лише «нічого б не перевіряло»). Прогін `npm test` у межах аудиту не виконувався.
