@@ -32,7 +32,7 @@ function activate(context) {
   const dirs = specDirs();
   const specs = dirs.map((dir) => (dir === "" ? "**/*.md" : `**/${dir}/**/*.md`));
   // Files the analysis reads: config, import resolution, sources, and the specs.
-  const watched = ["keylang.json", "tsconfig.json", "jsconfig.json", "package.json", "Cargo.toml", "*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.rs", "*.py", ...dirs.map((dir) => (dir === "" ? "*.md" : `${dir}/**/*.md`))];
+  const watched = ["keylang.json", "tsconfig.json", "jsconfig.json", "package.json", "Cargo.toml", "composer.json", "composer.lock", "*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.rs", "*.py", "*.php", ...dirs.map((dir) => (dir === "" ? "*.md" : `${dir}/**/*.md`))];
   client = new LanguageClient(
     "keylang",
     "keylang",
@@ -41,7 +41,7 @@ function activate(context) {
       documentSelector: [
         ...specs.map((pattern) => ({ scheme: "file", language: "markdown", pattern })),
         // The languages keylang reads: code lenses and rule findings on the code itself.
-        ...["typescript", "typescriptreact", "javascript", "javascriptreact", "rust", "python"].map((language) => ({ scheme: "file", language })),
+        ...["typescript", "typescriptreact", "javascript", "javascriptreact", "rust", "python", "php"].map((language) => ({ scheme: "file", language })),
       ],
       synchronize: { fileEvents: vscode.workspace.createFileSystemWatcher(`**/{${watched.join(",")}}`) },
     },
