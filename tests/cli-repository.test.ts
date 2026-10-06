@@ -1,16 +1,16 @@
-// The tests that must not run beside `npm pack`, one after another in one
-// file. While it packs, `npm pack` swaps bin/keylang.js for the published
-// entry: bin/ is a source of the repository's map, and a run of the
-// published entry hashes dist/extract/ into the fact cache's version. Here:
-// the repository's committed map, the npm package, the `@flow` tests that
-// write .keylang/trace, the check of the repository's own flows that reads
-// those traces, and `hook stop`, which must leave the fact cache as it is.
+// Tests on the repository itself, one after another in one file: the
+// repository's committed map, the npm package, the `@flow` tests that write
+// .keylang/trace, the check of the repository's own flows that reads those
+// traces, and `hook stop`, which must leave the fact cache as it is. The
+// package is packed from a copy of the repository: `npm pack` rebuilds dist/
+// and swaps bin/keylang.js for the published entry while it packs, and test
+// files running beside this one must not see either.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { GRAMMARS, wasmFile } from "../src/extract/grammars.ts";
@@ -33,11 +33,35 @@ test("generated maps of the repo and the fixture parse", () => {
   }
 });
 
+/**
+ * What `npm pack` reads, in a temporary directory: the files git tracks or
+ * would track at the top level and under bin/, src/, scripts/, adapters/ and
+ * resources/, with node_modules linked. Packing it leaves the checkout's
+ * bin/keylang.js and dist/ as they are.
+ */
+function packSource(): string {
+  const dir = mkdtempSync(join(tmpdir(), "keylang-pack-src-"));
+  const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" });
+  assert.equal(listed.status, 0, listed.stderr);
+  for (const file of listed.stdout.split("\0")) {
+    // Regular files only: a worktree may have node_modules as an untracked link.
+    if (file === "" || lstatSync(join(root, file), { throwIfNoEntry: false })?.isFile() !== true) continue;
+    const top = file.includes("/") ? file.slice(0, file.indexOf("/")) : "";
+    if (top !== "" && !["bin", "src", "scripts", "adapters", "resources"].includes(top)) continue;
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    cpSync(join(root, file), join(dir, file));
+  }
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir");
+  return dir;
+}
+
 test("packed tarball runs the CLI from node_modules", async (t) => {
-  const pack = spawnSync("npm", ["pack", "--json"], { cwd: root, encoding: "utf8" });
+  const source = packSource();
+  t.after(() => rmSync(source, { recursive: true, force: true }));
+  const pack = spawnSync("npm", ["pack", "--json"], { cwd: source, encoding: "utf8" });
   assert.equal(pack.status, 0, pack.stderr);
   const packed = JSON.parse(pack.stdout) as { filename: string }[];
-  const tarball = join(root, packed[0]!.filename);
+  const tarball = join(source, packed[0]!.filename);
   const tmp = mkdtempSync(join(tmpdir(), "keylang-pack-"));
   const localRepo = repoCopy();
   const packedRepo = repoCopy();
@@ -212,7 +236,7 @@ test("@flow check: check reports a denied import without writing the map", (t) =
   const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), bin, "check"], {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "check", KEYLANG_TRACE_TEST: "tests/cli.test.ts > @flow check", KEYLANG_TRACE_ROOT: root },
+    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "check", KEYLANG_TRACE_TEST: "tests/cli-repository.test.ts > @flow check", KEYLANG_TRACE_ROOT: root },
   });
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, /K102 divergence: `domain\.order` depends on `infra\.db`/);
@@ -235,7 +259,7 @@ test("@flow tui: F5 reanalyses with the snapshot from the worker", (t) => {
   const r = spawnSync(process.execPath, ["--import", join(root, "src/adapters/trace.ts"), join(root, "tests/fixtures/tui-session/session.ts"), dir], {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "tui", KEYLANG_TRACE_TEST: "tests/cli.test.ts > @flow tui", KEYLANG_TRACE_ROOT: root },
+    env: { ...process.env, KEYLANG_TRACE: trace, KEYLANG_TRACE_FLOW: "tui", KEYLANG_TRACE_TEST: "tests/cli-repository.test.ts > @flow tui", KEYLANG_TRACE_ROOT: root },
   });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^[0-9a-f]{64}\n$/, "the session got a snapshot");
