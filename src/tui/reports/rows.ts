@@ -1,7 +1,7 @@
 // What every report in F6 is made of: rows of text with a style, the kind
 // of operation they show, and the few row shapes most reports share. One
-// module per group of kinds (setup, check, explain, draft) describes its
-// kinds; `records.ts` puts them in one table.
+// module per group of kinds (setup, check, explain, draft, chat) describes
+// its kinds; `records.ts` puts them in one table.
 
 import type { OperationEnvelope, OperationMessage, OperationPayloads, OperationRequest } from "../../operations.ts";
 import type { Style } from "../screen.ts";

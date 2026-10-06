@@ -1,8 +1,9 @@
 // The clip (ADR 0021): the built-in agent's face in the corner of the
 // editor and the window of its chat. This module keeps where they stand,
 // what lies under a cell of the pointer, what a press, a drag and the keys
-// do to them, and the conversation; `clip-view.ts` draws them. The clip
-// never speaks by itself: its window opens on a click or F7 only.
+// do to them, and the conversation; `clip-view.ts` draws them and
+// `clip-chat.ts` answers what is sent. The clip never speaks by itself: its
+// window opens on a click or F7 only.
 
 import { MERGE_CLICK } from "./actions.ts";
 import type { KeyEvent, MouseEvent } from "./input.ts";
@@ -69,6 +70,13 @@ const NARROW_CHAT_ROWS = 8;
 /** Who said a message, before its first row; its other rows are indented under the text. */
 const SPEAKER: Record<ChatMessage["role"], string> = { you: "ти › ", clip: "◕◕ › " };
 const SPEAKER_CELLS = 5;
+
+/** The row after the last message while the model's reply is awaited: no message, and not in the conversation. */
+export const THINKING = "думаю… Esc — скасувати";
+const THINKING_SPEAKER = "◔◔ › ";
+
+/** What Enter says while the reply is awaited: one request at a time. */
+const WAIT_FOR_REPLY = "скрепка ще думає: Enter нічого не надсилає, поки вона не відповість; Esc скасовує запит";
 
 /** Rows the wheel scrolls the history by. */
 const WHEEL_ROWS = 3;
@@ -221,20 +229,43 @@ export function chatLayout(rect: Rect): { history: Rect; input: Rect } {
   };
 }
 
+/** A row of the history: a message's, or the thinking row while the model's reply is awaited. */
+export interface HistoryRow {
+  role: ChatMessage["role"] | "thinking";
+  text: string;
+}
+
 /**
  * The conversation as rows of `width` cells: each message after its
- * speaker, its lines wrapped by the shared wrap and indented under its text.
+ * speaker, its lines wrapped by the shared wrap and indented under its text;
+ * while `waiting`, the thinking row last.
  */
-export function historyRows(messages: readonly ChatMessage[], width: number): { role: ChatMessage["role"]; text: string }[] {
+export function historyRows(messages: readonly ChatMessage[], width: number, waiting = false): HistoryRow[] {
+  const rows = messages.flatMap((message) => messageRows(message, width));
+  if (waiting) rows.push(...speakerRows("thinking", THINKING_SPEAKER, THINKING, width));
+  return rows;
+}
+
+/** A message's rows at a width, kept while the message is in the history: every frame draws it, and a long paste wraps slowly. */
+const wrapped = new WeakMap<ChatMessage, { width: number; rows: readonly HistoryRow[] }>();
+
+/** One message's rows; a message never changes once it is in the history. */
+function messageRows(message: ChatMessage, width: number): readonly HistoryRow[] {
+  const known = wrapped.get(message);
+  if (known?.width === width) return known.rows;
+  const rows = speakerRows(message.role, SPEAKER[message.role], message.text, width);
+  wrapped.set(message, { width, rows });
+  return rows;
+}
+
+function speakerRows(role: HistoryRow["role"], speaker: string, text: string, width: number): HistoryRow[] {
   const room = Math.max(1, width - SPEAKER_CELLS);
-  const rows: { role: ChatMessage["role"]; text: string }[] = [];
-  for (const message of messages) {
-    let lead = SPEAKER[message.role];
-    for (const line of message.text.split("\n")) {
-      for (const row of line === "" ? [""] : wrapCells(line, room)) {
-        rows.push({ role: message.role, text: `${lead}${row}` });
-        lead = " ".repeat(SPEAKER_CELLS);
-      }
+  const rows: HistoryRow[] = [];
+  let lead = speaker;
+  for (const line of text.split("\n")) {
+    for (const row of line === "" ? [""] : wrapCells(line, room)) {
+      rows.push({ role, text: `${lead}${row}` });
+      lead = " ".repeat(SPEAKER_CELLS);
     }
   }
   return rows;
@@ -272,6 +303,10 @@ export interface ClipHost {
   editor(): Rect;
   /** The clip as this frame draws it; null when it is not drawn (off, narrow, yielding to the cursor or a popup). */
   clipOnScreen(): Rect | null;
+  /** The person sent `text`, now the last message of the history: the chat answers it (`ClipChat.said`). */
+  said(text: string): void;
+  /** Esc while the model's reply is awaited: the request is cancelled (`ClipChat.cancel`). */
+  cancelReply(): void;
 }
 
 /** What a press was on. */
@@ -336,21 +371,31 @@ export class Clip {
     this.state.completion = null;
   }
 
-  /** Esc, `✕`, or F7 on the focused window: it folds; the conversation stays. */
+  /** Esc, `✕`, or F7 on the focused window: it folds; the conversation stays, and so does a reply awaited. */
   fold(): void {
     const chat = this.state.clip.chat;
     chat.open = false;
     chat.focused = false;
   }
 
-  /** Enter: the input line goes into the history as the person's message, and the history shows its end. An empty line sends nothing. */
+  /**
+   * Enter: the input line goes into the history as the person's message, the
+   * history shows its end, and the chat answers it. An empty line sends
+   * nothing; while the model's reply is awaited nothing is sent and the
+   * line stays: one request at a time.
+   */
   send(): void {
     const chat = this.state.clip.chat;
     const text = chat.input.trim();
     if (text === "") return;
+    if (this.state.clip.waiting) {
+      this.state.message = WAIT_FOR_REPLY;
+      return;
+    }
     chat.messages.push({ role: "you", text });
     chat.input = "";
     chat.scroll = 0;
+    this.host.said(text);
   }
 
   /** The palette's «Скрепка: повернути на місце»: the clip in its corner, the window above it at its default size. */
@@ -368,8 +413,9 @@ export class Clip {
     const arrow = ARROWS[event.name];
     if (arrow !== undefined && event.alt) return this.nudge(arrow, event.shift);
     switch (event.name) {
+      // While the model answers, Esc cancels the request; otherwise it folds the window.
       case "escape":
-        return this.fold();
+        return this.state.clip.waiting ? this.host.cancelReply() : this.fold();
       case "enter":
         return this.send();
       case "pageup":
@@ -500,7 +546,7 @@ export class Clip {
   private scrollBy(rows: number): void {
     const chat = this.state.clip.chat;
     const { history } = chatLayout(chatRect(this.state, this.host.editor()));
-    const total = historyRows(chat.messages, history.width).length;
+    const total = historyRows(chat.messages, history.width, this.state.clip.waiting).length;
     chat.scroll = clamp(chat.scroll + rows, 0, Math.max(0, total - history.height));
   }
 }

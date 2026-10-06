@@ -136,7 +136,7 @@ test("tui-clip-window: the focused window takes j, q, ? and letters while the ed
   assert.match(inputRow(s.lines()), /^│ > jkq\?:ixy +│$/);
 });
 
-test("tui-clip-window: Enter puts the line into the history after ти ›, a paste is one line, a long line scrolls; the wheel and PgUp over the window scroll the history, not the editor", async (t) => {
+test("tui-clip-window: Enter puts the line into the history after ти › and the clip answers it; a paste is one line, a long line scrolls; the wheel and PgUp over the window scroll the history, not the editor", async (t) => {
   const s = session(checkoutRepo(t));
   t.after(() => s.app.close());
   await s.app.idle();
@@ -144,18 +144,25 @@ test("tui-clip-window: Enter puts the line into the history after ти ›, a pa
   for (const ch of "чому save позначено ◌?") s.send(ch);
   s.send(KEY.enter);
   assert.match(windowRow(s.lines(), 0), /^│ ти › чому save позначено ◌\? +│$/);
+  // Without a model the clip says so at once (.scratch/tui-clip/03): every free line has an answer.
+  assert.match(windowRow(s.lines(), 1), /^│ ◕◕ › немає моделі: /);
   assert.match(inputRow(s.lines()), /^│ > +│$/, "the input line is empty");
+  const sent = s.app.state.clip.chat.messages.length;
   s.send(KEY.enter);
-  assert.equal(s.app.state.clip.chat.messages.length, 1, "an empty Enter sends nothing");
+  assert.equal(s.app.state.clip.chat.messages.length, sent, "an empty Enter sends nothing");
   // A paste is one line: its breaks are spaces.
   s.send("\x1b[200~first line\nsecond line\x1b[201~");
   assert.match(inputRow(s.lines()), /^│ > first line second line +│$/);
   s.send(KEY.enter);
-  // A message longer than the window wraps under its text.
+  // A message longer than the window wraps under its text; its answer comes after it, so the wheel brings it back.
   for (const ch of "a long message about the flow checkout and its steps in the window") s.send(ch);
   s.send(KEY.enter);
-  assert.match(windowRow(s.lines(), 2), /^│ ти › a long message about the flow +│$/);
-  assert.match(windowRow(s.lines(), 3), /^│ {6}checkout and its steps in the +│$/);
+  const w = windowAt(s.lines())!;
+  s.send(wheelUp(w.x + 5, w.y + 3));
+  const rows = Array.from({ length: w.height - 3 }, (_, i) => windowRow(s.lines(), i));
+  const long = rows.findIndex((row) => /^│ ти › a long message about the flow +│$/.test(row));
+  assert.ok(long !== -1 && long + 1 < rows.length, rows.join("\n"));
+  assert.match(rows[long + 1]!, /^│ {6}checkout and its steps in the +│$/);
   // A line wider than the input scrolls: its end stays in sight, `…` marks the cut.
   for (const ch of "0123456789".repeat(5)) s.send(ch);
   assert.match(inputRow(s.lines()), /^│ > …\d{33} │$/);
@@ -169,18 +176,18 @@ test("tui-clip-window: Enter puts the line into the history after ти ›, a pa
   assert.match(s.text(), /ти › message 12/);
   assert.doesNotMatch(s.text(), /ти › чому save/);
   const top = s.app.state.top;
-  const w = windowAt(s.lines())!;
-  for (let i = 0; i < 10; i++) s.send(wheelUp(w.x + 5, w.y + 3));
+  for (let i = 0; i < 40; i++) s.send(wheelUp(w.x + 5, w.y + 3));
   assert.match(windowRow(s.lines(), 0), /^│ ти › чому save позначено/);
   assert.equal(s.app.state.top, top, "the editor did not scroll");
-  for (let i = 0; i < 5; i++) s.send(PAGE_DOWN);
+  for (let i = 0; i < 20; i++) s.send(PAGE_DOWN);
   assert.match(s.text(), /ти › message 12/);
-  // A new message shows the end of the history, wherever it was scrolled to.
+  // A new message shows the end of the history, wherever it was scrolled to: its answer on the last row.
   s.send(PAGE_UP);
   assert.doesNotMatch(s.text(), /ти › message 12/);
   for (const ch of "last") s.send(ch);
   s.send(KEY.enter);
-  assert.match(windowRow(s.lines(), 6), /^│ ти › last +│$/);
+  assert.match(s.text(), /ти › last/);
+  assert.match(windowRow(s.lines(), w.height - 4), /\/check +│$/);
   assert.equal(s.app.state.top, top);
 });
 

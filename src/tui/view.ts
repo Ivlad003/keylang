@@ -919,7 +919,7 @@ const HELP: Record<string, [string, string][]> = {
     ["s", "find a node"],
     ["Ctrl+Space", "agent draft as MERGE"],
     ["in context", "@ add id · x drop · Esc close"],
-    ["in the chat", "Enter send · Esc fold · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
+    ["in the chat", "Enter send · /help commands · Esc fold, or cancel the reply · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   edit: [
@@ -936,7 +936,7 @@ const HELP: Record<string, [string, string][]> = {
     ["Ctrl+P", "actions, help"],
     ["F6", "results"],
     ["F7 / clip click", "the clip's chat: open, focus, fold"],
-    ["in the chat", "Enter send · Esc fold · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
+    ["in the chat", "Enter send · /help commands · Esc fold, or cancel the reply · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
     ["? and :", "typed here: Ctrl+P → Keys and help opens this"],
   ],
   merge: [

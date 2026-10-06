@@ -2,7 +2,7 @@
 // window of its chat. Where they stand and what the window holds come from
 // `clip.ts`; `view.ts` calls these in its order of layers.
 
-import { chatLayout, chatTakesKeys, clipEyes, counterText, historyRows, inputTail, shownHistory, type ClipState } from "./clip.ts";
+import { chatLayout, chatTakesKeys, clipEyes, counterText, historyRows, inputTail, shownHistory, type ClipState, type HistoryRow } from "./clip.ts";
 import { drawBox, type Grid, type Style } from "./screen.ts";
 import type { State } from "./state.ts";
 import { MARK_STYLE, THEME } from "./theme.ts";
@@ -17,6 +17,9 @@ export const BADGE_STYLE: Style = { ...THEME.status, fg: 117, bold: true };
 
 /** The keys in the bottom edge of the window. */
 const CHAT_KEYS = "Enter — надіслати · Esc — згорнути";
+
+/** The person's messages, the clip's, and the dim row while it thinks. */
+const ROW_STYLE: Record<HistoryRow["role"], Style> = { you: THEME.popup, clip: { ...THEME.popup, fg: 152 }, thinking: { ...THEME.popup, fg: 244, italic: true } };
 
 /**
  * The clip, 5×3 cells over the editor, on the background of what is under
@@ -60,8 +63,8 @@ export function drawChat(grid: Grid, state: State, rect: Rect): void {
   grid.write(rect.x + rect.width - 4, rect.y, " ✕ ", THEME.popupTitle);
   grid.write(rect.x + 2, rect.y + rect.height - 1, ` ${CHAT_KEYS} `, { ...frame, fg: 245 }, rect.width - 3);
   const { history, input } = chatLayout(rect);
-  shownHistory(historyRows(chat.messages, history.width), history.height, chat.scroll).forEach((row, i) => {
-    grid.write(history.x, history.y + i, row.text, row.role === "you" ? THEME.popup : { ...THEME.popup, fg: 152 }, history.width);
+  shownHistory(historyRows(chat.messages, history.width, state.clip.waiting), history.height, chat.scroll).forEach((row, i) => {
+    grid.write(history.x, history.y + i, row.text, ROW_STYLE[row.role], history.width);
   });
   const typed = inputTail(chat.input, input.width - 2);
   grid.write(input.x, input.y, `> ${typed}`, THEME.popup, input.width);

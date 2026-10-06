@@ -7,13 +7,17 @@ import type { OperationRequest, OperationResult } from "../../operations.ts";
 import { ACTIONS } from "../actions.ts";
 import type { OperationRecord, State } from "../state.ts";
 import { THEME } from "../theme.ts";
+import { CHAT_REPORTS } from "./chat.ts";
 import { CHECK_REPORTS } from "./check.ts";
 import { DRAFT_REPORTS } from "./draft.ts";
 import { EXPLAIN_REPORTS } from "./explain.ts";
 import { messageRow, MUTED, WARNING, type Done, type Kind, type Report, type ReportItem, type ReportRow, type RequestOf } from "./rows.ts";
 import { SETUP_REPORTS } from "./setup.ts";
 
-const REPORTS: { [K in Kind]: Report<K> } = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS };
+const REPORTS: { [K in Kind]: Report<K> } = { ...SETUP_REPORTS, ...CHECK_REPORTS, ...EXPLAIN_REPORTS, ...DRAFT_REPORTS, ...CHAT_REPORTS };
+
+/** The records whose action is no palette action: a key or the clip's chat asked for them. */
+const SESSION_ACTIONS: Readonly<Record<string, string>> = { "agent-draft": "Ctrl+Space: the agent's flow draft", "clip-reply": "Clip: the model's reply" };
 
 /** A result that has its payload: the report of its kind can show it. */
 function isDone(result: OperationResult): result is Done<Kind> {
@@ -31,7 +35,7 @@ function paramsOf<K extends Kind>(request: RequestOf<K>): string | null {
 
 /** The registry label of a record's action, with its parameters (`Feature readiness · pay`), or its id. */
 export function recordLabel(record: OperationRecord): string {
-  const label = ACTIONS.find((action) => action.id === record.action)?.label ?? (record.action === "agent-draft" ? "Ctrl+Space: the agent's flow draft" : record.action);
+  const label = ACTIONS.find((action) => action.id === record.action)?.label ?? SESSION_ACTIONS[record.action] ?? record.action;
   const params = paramsOf(record.params as RequestOf<Kind>);
   return params === null ? label : `${label} · ${params}`;
 }

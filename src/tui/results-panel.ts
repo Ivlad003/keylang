@@ -96,6 +96,11 @@ export class ResultsPanel {
       this.state.message = "this operation is still running";
       return;
     }
+    // The clip's reply belongs to its conversation: a rerun from here would answer no one.
+    if (record.params.kind === "assistant-reply") {
+      this.state.message = "a reply of the clip: ask again in its chat (F7)";
+      return;
+    }
     // An export was made from the target as its form showed it: a new one shows the target again first.
     if (record.params.kind === "export") {
       this.state.message = "export: select the report and press e: the form shows the target again before Save";

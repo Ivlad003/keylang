@@ -19,7 +19,7 @@ import type { ExplanationDetail } from "../explanations.ts";
 import type { Document } from "../ir.ts";
 import type { ParseFormat } from "../parse-format.ts";
 import type { Verdict } from "../verdict.ts";
-import type { FeatureReport } from "../feature-status.ts";
+import type { FeatureReport, Stage } from "../feature-status.ts";
 import type { HarnessCategory, HarnessChoice, HarnessName, HarnessStep } from "../harness.ts";
 import type { Stats } from "../graph.ts";
 import type { DraftStatus } from "../draft-llm.ts";
@@ -544,8 +544,44 @@ export interface InitRequest {
   label?: string;
 }
 
+/** One message of the clip's conversation: the person's or the clip's. */
+export interface ChatTurn {
+  role: "you" | "clip";
+  text: string;
+}
+
+/**
+ * The clip's reply (ADR 0021): one answer of the configured model to the
+ * conversation, with what the session shows around it. The TUI is its only
+ * caller (spec П3: the chat is interactive, no CLI command asks it). It
+ * writes nothing: a `keylang path=<file>` block of the answer comes back as
+ * a candidate the TUI gates and writes as a proposal.
+ */
+export interface AssistantReplyRequest {
+  kind: "assistant-reply";
+  /** Repository root (absolute). */
+  root: string;
+  /** The conversation, oldest first, the person's new message last; the prompt keeps the newest 16 000 characters, whole messages. */
+  history: ChatTurn[];
+  /** The open file as the session shows it, unsaved edits included; the prompt keeps 400 lines around the cursor. Null: no file is open. */
+  file: {
+    path: string;
+    text: string;
+    /** The cursor's line, 0-based. */
+    line: number;
+    /** The ID under the cursor, or null. */
+    id: string | null;
+  } | null;
+  /** The F4 pack as the model reads it (`contextText`), without its buffer item: `file` is that buffer. Null without an analysis. */
+  context: string | null;
+  /** The open feature file's stage and gaps (`gapLine`), as the status line has them; null for any other file. */
+  feature: { stage: Stage; gaps: string[] } | null;
+  /** The open questions, `file:line: text` each (the clip's counter); empty when there are none. */
+  questions: string[];
+}
+
 /** Every request `runOperation` takes: its `kind` names the operation and the payload of its result. */
-export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest;
+export type OperationRequest = DoctorRequest | FeatureRequest | FeatureQuestionsRequest | ExportC4Request | MapCheckRequest | MapRequest | BaselineRequest | AgentsRequest | FmtRequest | WireRequest | CheckRequest | ExplainEdgeRequest | ExplainRequest | ExplainLlmRequest | ExplainPlanRequest | ExplainBatchRequest | InitRequest | ExportRequest | ParseRequest | TracePlanRequest | DraftFlowRequest | DraftRulesRequest | DraftLayoutRequest | CodeToSpecRequest | SpecToCodeRequest | ApplyCodeRequest | AssistantReplyRequest;
 
 /** The operation kinds that write files: they compute first and commit after `beforeCommit` (a check mode never calls it). */
 export const WRITING_KINDS: ReadonlySet<OperationRequest["kind"]> = new Set(["feature-questions", "export-c4", "map", "baseline", "agents", "fmt", "wire", "init", "export", "draft-flow", "draft-rules", "code-to-spec", "spec-to-code", "apply-code", "explain-llm", "explain-batch"]);
@@ -669,6 +705,18 @@ export interface FeatureQuestionsPayload {
   dropped: number;
   /** The proposal written, or null (nothing to propose, or nothing written). */
   proposal: string | null;
+}
+
+/** What the model answered in the clip's chat. Nothing was written. */
+export interface AssistantReplyPayload {
+  /** The model that answered (`cli:claude:<model>` when its CLI reported one). */
+  agent: string;
+  /** The answer without its `keylang path=` blocks; empty when it was only a block. */
+  reply: string;
+  /** The first `keylang path=<file>` block the answer closed, with its full text: a candidate the TUI gates and writes as a proposal. Null: none. */
+  proposal: { path: string; text: string } | null;
+  /** The paths of the answer's other `keylang path=` blocks, left out: only the first closed one is a candidate. */
+  dropped: string[];
 }
 
 /** A C4 diagram (c4-zoom/12): its text and, with `--out`, the file it went to. */
@@ -1365,6 +1413,7 @@ export interface OperationPayloads {
   "code-to-spec": CodeToSpecPayload;
   "spec-to-code": SpecToCodePayload;
   "apply-code": ApplyCodePayload;
+  "assistant-reply": AssistantReplyPayload;
 }
 
 /** The result of one operation. File paths are POSIX, relative to the request's root. */

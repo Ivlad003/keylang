@@ -49,6 +49,7 @@ import { actionLabel, applyRecord, catalog, matchActions, MERGE_CLICK, MERGE_REA
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
 import { chatTakesKeys, Clip, newClip } from "./clip.ts";
+import { ClipChat } from "./clip-chat.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -150,6 +151,8 @@ export class App {
   private readonly results: ResultsPanel;
   /** The clip in the editor's corner and its chat window: their pointer and keys. */
   private readonly clip: Clip;
+  /** What the clip answers in its chat: commands, and the model's reply as the session's operation. */
+  private readonly chat: ClipChat;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
@@ -303,10 +306,22 @@ export class App {
       openPalette: () => this.openPalette(),
       requestOperation: (action, request) => this.requestOperation(action, request),
     });
+    this.chat = new ClipChat({
+      state: this.state,
+      buffer: () => this.buffer(),
+      idAtCursor: () => this.idAtCursor(),
+      contextPack: () => this.contextPack(),
+      startOperation: (action, request, then) => this.startOperation(action, request, then),
+      requestOperation: (action, request, then) => this.requestOperation(action, request, then),
+      cancelOperation: () => this.cancelOperation(),
+      track: (work) => this.track(work),
+    });
     this.clip = new Clip({
       state: this.state,
       editor: () => layout(this.state).editor,
       clipOnScreen: () => clipOnScreen(this.state),
+      said: (text) => this.chat.said(text),
+      cancelReply: () => this.chat.cancel(),
     });
     this.results = new ResultsPanel({
       state: this.state,
@@ -426,6 +441,7 @@ export class App {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.assist.close();
+    this.chat.close();
     this.surface = null;
     // A running operation is cancelled and the worker ends: before a commit at once, during one after its
     // current file step (a signal's end of the session waits for that write, not for a rollback).
@@ -669,7 +685,7 @@ export class App {
         .then((base) => {
           if (request !== this.featureLineRequest || this.closed || base === null) return;
           const report = featureReportOf(analysis, slug, base);
-          this.state.featureLine = report === null ? null : { path, stage: report.stage, questions: report.gaps.filter((gap) => gap.kind === "question").length };
+          this.state.featureLine = report === null ? null : { path, stage: report.stage, questions: report.gaps.filter((gap) => gap.kind === "question").length, gaps: report.gaps };
         }),
     );
   }
@@ -2033,16 +2049,19 @@ export class App {
    * Starts an operation that reads the saved files: after the save step when
    * buffers it reads are dirty or it names what it writes (design §2.5), then
    * as the session's one explicit operation. A second one is refused while
-   * one runs.
+   * one runs. `then` hears the record when it ends (not when the step is left).
    */
-  private requestOperation(action: string, request: OperationRequest): void {
+  private requestOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
       return;
     }
     const step = this.saveStep(request);
-    if (step === null) return this.startOperation(action, request);
-    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), step);
+    if (step === null) {
+      this.startOperation(action, request, then);
+      return;
+    }
+    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request, then), step);
   }
 
   /**
@@ -2068,6 +2087,9 @@ export class App {
       // buffer later, so a dirty keylang.json stays dirty (only an edit after the draft refuses the move).
       case "doctor":
       case "draft-layout":
+        return null;
+      // The clip's reply reads no file: the request carries the buffer and the pack as the session shows them.
+      case "assistant-reply":
         return null;
       // A feature, the map check and an export read the saved files: every dirty buffer is saved first.
       case "feature":
@@ -2230,12 +2252,14 @@ export class App {
    * for F6. The UI never blocks: the record turns "running" and the result
    * (or a failure) lands later; a second operation is refused while one runs.
    * A failure — or a code 1 or 2 of the operation — is a visible record and a
-   * message, never the end of the session.
+   * message, never the end of the session. `then` hears the record once it
+   * ends, unless the session closed first. Returns the record, or null when
+   * another operation runs.
    */
-  private startOperation(action: string, request: OperationRequest): void {
+  private startOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): OperationRecord | null {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
-      return;
+      return null;
     }
     const record: OperationRecord = {
       id: this.nextRecord++,
@@ -2280,6 +2304,7 @@ export class App {
       this.afterProposed(record, origin);
       if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
+      then?.(record);
       this.quitAfterSettle(record);
       this.draw();
     };
@@ -2313,6 +2338,7 @@ export class App {
     }
     this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
+    return record;
   }
 
   /**
