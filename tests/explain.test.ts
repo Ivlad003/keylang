@@ -183,14 +183,15 @@ test("explain --llm: an answer without text, an OpenRouter error as plain JSON, 
   const file = join(dir, "keylang.json");
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), agent: "openrouter:some/model" }));
   const env = { OPENROUTER_API_KEY: "or-key", HOME: dir };
-  const cases: [string, (res: import("node:http").ServerResponse) => void, RegExp][] = [
-    ["JSON error", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m],
-    ["broken SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end("data: {not json\n\n"), /^keylang: openrouter: invalid JSON in the stream: \{not json$/m],
-    ["stalled stream", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Build" } }] })}\n\n`), /^keylang: openrouter: no answer within 300 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m],
+  // Only the stalled stream waits for the timeout; the others answer at once, so a loaded machine gets room.
+  const cases: [string, (res: import("node:http").ServerResponse) => void, RegExp, string][] = [
+    ["JSON error", (res) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "model is overloaded" } })), /^keylang: openrouter: model is overloaded$/m, "20000"],
+    ["broken SSE", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).end("data: {not json\n\n"), /^keylang: openrouter: invalid JSON in the stream: \{not json$/m, "20000"],
+    ["stalled stream", (res) => res.writeHead(200, { "content-type": "text/event-stream" }).write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Build" } }] })}\n\n`), /^keylang: openrouter: no answer within 300 ms \(KEYLANG_LLM_TIMEOUT_MS\)$/m, "300"],
   ];
-  for (const [what, respond, message] of cases) {
+  for (const [what, respond, message, timeout] of cases) {
     const url = await mockOpenRouter(t, respond);
-    const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url, KEYLANG_LLM_TIMEOUT_MS: "300" });
+    const o = await keylangAsync(dir, ["explain", "app.checkout.checkout", "--llm"], { ...env, OPENROUTER_BASE_URL: url, KEYLANG_LLM_TIMEOUT_MS: timeout });
     assert.equal(o.status, 2, `${what}: ${o.stdout}${o.stderr}`);
     assert.match(o.stderr, message, what);
   }
