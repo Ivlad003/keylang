@@ -48,7 +48,7 @@ import { compareText } from "../span.ts";
 import { actionLabel, applyRecord, catalog, matchActions, MERGE_CLICK, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
-import { Clip, newClip } from "./clip.ts";
+import { chatTakesKeys, Clip, newClip } from "./clip.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -370,7 +370,7 @@ export class App {
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
       const run = typedRun(events, i);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit")) {
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -1213,8 +1213,8 @@ export class App {
 
   private handle(event: InputEvent): void {
     // A ghost line answers the next key in the editor (Tab takes it, Alt+] cycles); a click, a paste,
-    // a panel key or anything outside the editor drops it, so it is never taken into other text.
-    if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
+    // a panel key or anything outside the editor (the clip's chat too) drops it, so it is never taken into other text.
+    if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
     // The save step is modal: the pointer and pasted text do not reach what is under it.
     if (event.type === "mouse") {
       if (!this.state.barrier && !this.state.quit) this.mouse(event);
@@ -1223,6 +1223,7 @@ export class App {
     if (event.type === "paste") {
       if (this.state.results.open || this.state.barrier || this.state.quit) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
+      else if (chatTakesKeys(this.state)) this.clip.paste(printable(event.text));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = pasteRefusal(this.state);
       return;
@@ -1243,6 +1244,8 @@ export class App {
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
+    // The clip's focused window takes every other key, `?` and letters as text; F2–F7 stay global.
+    if (chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name)) return this.clip.key(event);
     // In raw mode the terminal sends Ctrl+Z as a key, not SIGTSTP: outside the editor (where it undoes) and
     // MERGE (where `u` does), it stops keylang as in any shell. A surface that cannot stop (web) ignores it.
     if (event.ctrl && event.name === "z" && this.state.mode !== "edit" && this.state.mode !== "merge") return this.surface?.suspend?.();
@@ -1261,9 +1264,9 @@ export class App {
     if (event.name === "f7") return this.clip.toggle();
     if (event.name === "f5") return this.reanalyze();
     if (event.name === "f6") return this.results.openResults();
-    // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
-    // the code viewer they are shown, and the keys still go where they went.
-    const focusable = this.state.mode === "view" || this.state.mode === "read";
+    // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE,
+    // the code viewer and the clip's focused window they are shown, and the keys still go where they went.
+    const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
     if (event.name === "f2") return this.toggleFiles(focusable);
     if (event.name === "f3") return this.toggleNav(focusable);
     if (event.name === "f4") return this.toggleContext(focusable);
@@ -3158,7 +3161,7 @@ export class App {
       this.state.message = `${entry.action.label}: ${entry.reason}`;
       return;
     }
-    const focusable = this.state.mode === "view" || this.state.mode === "read";
+    const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
     switch (id) {
       case "check":
         if (this.state.start !== null) return this.browse();
@@ -3288,6 +3291,8 @@ export class App {
       case "help":
         this.state.help = true;
         return;
+      case "clip-reset":
+        return this.clip.reset();
       case "version":
         this.state.message = `keylang ${packageVersion()}`;
         return;

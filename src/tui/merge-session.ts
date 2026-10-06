@@ -214,6 +214,8 @@ export class MergeSession {
     state.mode = "merge";
     state.hover = null;
     state.completion = null;
+    // MERGE takes the keys: the clip's window gives up the focus, and after MERGE they go to the editor.
+    state.clip.chat.focused = false;
   }
 
   /** Removes the proposal of `path` while it is still `text`. */

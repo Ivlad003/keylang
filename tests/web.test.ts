@@ -19,7 +19,7 @@ import { App } from "../src/tui/app.ts";
 import { runOperation } from "../src/operations.ts";
 import type { OperationRunner } from "../src/tui/app.ts";
 import { serveWeb } from "../src/tui/web.ts";
-import { checkoutRepo, CHECKOUT_FILES, click, KEY, locate, mouseMove } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FILES, click, drag, KEY, locate, mouseMove } from "./tui-fixture.ts";
 import { HOOK_FLOW, HOOKS } from "./hooks-fixture.ts";
 import { CYCLE_AUTHOR_CODE, CYCLE_FILES, refundCycle, type CycleStage } from "./cycle-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -232,6 +232,39 @@ test("web: flow → hover a step → go to the code gives the terminal's screen"
   assert.equal(browser.modes.mouseTrackingMode, "any");
   assert.equal(browser.modes.bracketedPasteMode, true);
   browser.dispose();
+});
+
+test("web: a click on the clip opens its chat and a drag by the window's top edge moves it, as in the terminal", async (t) => {
+  const repo = checkoutRepo(t);
+  const cols = 100;
+  const rows = 28;
+  // Terminal: the session in this process, as `keylang` runs it.
+  const terminal = new VirtualTerminal(cols, rows);
+  const app = new App({ root: repo, cols, rows });
+  t.after(() => app.close());
+  app.attach({ write: (ansi) => terminal.feed(ansi) }, cols, rows);
+  await app.idle();
+  const clip = locate(terminal.lines(), "╭─◕◕╮");
+  app.input(click(clip.x + 2, clip.y + 1));
+  const title = locate(terminal.lines(), "╭─ ◕◕ скрепка ");
+  const to = { x: title.x - 20, y: title.y - 6 };
+  app.input(drag({ x: title.x + 6, y: title.y }, { x: to.x + 6, y: to.y }));
+  assert.deepEqual(locate(terminal.lines(), "╭─ ◕◕ скрепка "), to);
+  const moved = terminal.lines();
+
+  // Browser: the same pointer over the WebSocket, through xterm.js's SGR reports.
+  const { url } = await startWeb(t, repo);
+  const client = new Client(url, "session-clip", cols, rows);
+  t.after(() => client.close());
+  await client.opened;
+  await waitFor(() => /✗ 0 /.test(client.vt.lines().at(-1) ?? "") && !/updating|analyzing/.test(client.vt.text()), "the first analysis");
+  assert.deepEqual(locate(client.vt.lines(), "╭─◕◕╮"), clip);
+  client.input(click(clip.x + 2, clip.y + 1));
+  await waitFor(() => client.vt.text().includes("◕◕ скрепка"), "the chat window");
+  assert.deepEqual(locate(client.vt.lines(), "╭─ ◕◕ скрепка "), title);
+  client.input(drag({ x: title.x + 6, y: title.y }, { x: to.x + 6, y: to.y }));
+  await waitFor(() => client.vt.lines()[to.y]!.includes("╭─ ◕◕ скрепка "), "the moved window");
+  assert.deepEqual(client.vt.lines(), moved);
 });
 
 test("web: another tab takes the session over without ending it, and the old tab stops driving it", async (t) => {

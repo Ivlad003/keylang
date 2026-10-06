@@ -890,7 +890,7 @@ const HELP: Record<string, [string, string][]> = {
     ["q", "back to the view at the node"],
     [": / Ctrl+P", "actions"],
     ["F6", "results"],
-    ["F7 / clip click", "the clip's chat: open, fold"],
+    ["F7 / clip click", "the clip's chat: open, focus, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   view: [
@@ -910,7 +910,7 @@ const HELP: Record<string, [string, string][]> = {
     ["/  n", "search"],
     [": / Ctrl+P", "actions"],
     ["F6", "results"],
-    ["F7 / clip click", "the clip's chat: open, fold"],
+    ["F7 / clip click", "the clip's chat: open, focus, fold"],
     ["q / Ctrl+C", "quit"],
     ["?", "keys, explain"],
     ["e", "explain id"],
@@ -919,6 +919,7 @@ const HELP: Record<string, [string, string][]> = {
     ["s", "find a node"],
     ["Ctrl+Space", "agent draft as MERGE"],
     ["in context", "@ add id · x drop · Esc close"],
+    ["in the chat", "Enter send · Esc fold · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   edit: [
@@ -934,7 +935,8 @@ const HELP: Record<string, [string, string][]> = {
     ["Tab / Alt+]", "ghost line: take / next"],
     ["Ctrl+P", "actions, help"],
     ["F6", "results"],
-    ["F7 / clip click", "the clip's chat: open, fold"],
+    ["F7 / clip click", "the clip's chat: open, focus, fold"],
+    ["in the chat", "Enter send · Esc fold · PgUp PgDn history · Alt+arrows move · Alt+Shift+arrows size"],
     ["? and :", "typed here: Ctrl+P → Keys and help opens this"],
   ],
   merge: [
@@ -950,14 +952,14 @@ const HELP: Record<string, [string, string][]> = {
     ["Esc / Ctrl+O / q", "back"],
     ["Ctrl+P", "action palette"],
     ["F6", "results"],
-    ["F7 / clip click", "the clip's chat: open, fold"],
+    ["F7 / clip click", "the clip's chat: open, focus, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   read: [
     ["↑↓", "move"],
     ["Enter", "go to code"],
     ["v / Esc", "raw Markdown"],
-    ["F7 / clip click", "the clip's chat: open, fold"],
+    ["F7 / clip click", "the clip's chat: open, focus, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
 };
