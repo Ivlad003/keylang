@@ -96,6 +96,11 @@
       "maxWallMin": 120
     }
   },
+  "backends": {
+    "claude": {
+      "unlimited": true
+    }
+  },
   "onExceed": {
     "maxCostUsd": {
       "to": "downgrade",
