@@ -9,6 +9,7 @@ import type { Stage } from "../feature-status.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { ExportFormat, OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
+import type { ClipState } from "./clip.ts";
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
@@ -476,6 +477,8 @@ export interface State {
    * while it has unsaved edits; shown while `path` is the current file.
    */
   featureLine: FeatureLine | null;
+  /** The clip in the editor's corner and its chat window (ADR 0021). */
+  clip: ClipState;
 }
 
 /** Where a feature file stands, for the status line. */

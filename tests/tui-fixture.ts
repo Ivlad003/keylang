@@ -61,6 +61,7 @@ export const KEY = {
   ctrlP: "\x10",
   f5: "\x1b[15~",
   f6: "\x1b[17~",
+  f7: "\x1b[18~",
   tab: "\t",
   shiftDown: "\x1b[1;2B",
 };
@@ -71,6 +72,11 @@ export function mouseMove(x: number, y: number): string {
 
 export function click(x: number, y: number): string {
   return `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`;
+}
+
+/** The left button pressed at `from`, moved with it held (bit 32) to `to`, and released there: SGR, cells from 0. */
+export function drag(from: { x: number; y: number }, to: { x: number; y: number }): string {
+  return `\x1b[<0;${from.x + 1};${from.y + 1}M\x1b[<32;${to.x + 1};${to.y + 1}M\x1b[<0;${to.x + 1};${to.y + 1}m`;
 }
 
 /** Cell position of the first occurrence of `text` on screen (ASCII rows). */

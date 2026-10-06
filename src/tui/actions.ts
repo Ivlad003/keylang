@@ -63,6 +63,9 @@ export interface ActionEntry {
 /** The shared reason for actions that would drop an open MERGE. */
 export const MERGE_REASON = "finish the merge first (Esc cancels it)";
 
+/** What a click says during MERGE: a click elsewhere would open another file and drop the decisions made so far. */
+export const MERGE_CLICK = "finish the merge first: w writes the decided hunks, Esc cancels";
+
 /** The shared reason for editor actions while the start screen covers the editor. */
 export const START_REASON = "choose Browse on the start screen first (Enter)";
 

@@ -69,6 +69,8 @@ export interface Config {
   voice: { engine: "local" | "openrouter" | "auto"; model: string | null };
   /** Ghost text: pause in ms before the agent is asked for a next line (design §7.3); null: the default, 1500 ms for an agent CLI and 400 ms otherwise. */
   ghost: { delay: number | null };
+  /** The clip in the TUI (ADR 0021); `clip: false` hides it and its status-line badge, F7 still opens its chat. Not part of the snapshot. */
+  assistant: { clip: boolean };
   /**
    * Language and detail of LLM explanations (`keylang explain <id> --llm`);
    * `map`: `keylang map` also writes the explained map, `<dir>/map-explained/`.
@@ -162,6 +164,7 @@ export interface RawConfig {
   check?: { tests?: string; trace?: string; static?: StaticMode };
   agent?: string;
   ghost?: { delay?: number | null };
+  assistant?: { clip?: boolean };
   voice?: { engine?: "local" | "openrouter" | "auto"; model?: string };
   explain?: { lang?: string; detail?: "short" | "full"; map?: boolean };
 }
@@ -196,6 +199,7 @@ export function loadConfig(root: string): Config {
     check: raw.check ?? {},
     agent: raw.agent ?? null,
     ghost: { delay: raw.ghost?.delay ?? null },
+    assistant: { clip: raw.assistant?.clip ?? true },
     voice: { engine: raw.voice?.engine ?? "auto", model: raw.voice?.model ?? null },
     explain: { lang: raw.explain?.lang ?? "en", detail: raw.explain?.detail ?? "short", map: raw.explain?.map ?? false },
     guessed,
@@ -228,7 +232,7 @@ export function parseConfig(file: string, text: string): RawConfig {
     return glob;
   };
   if (!isObject(value)) return fail("(root)", "an object", value);
-  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "voice"]);
+  const known = new Set(["$schema", "format", "dir", "languages", "module", "layers", "exclude", "outside", "assume", "check", "agent", "explain", "ghost", "assistant", "voice"]);
   for (const key of Object.keys(value)) if (!known.has(key)) throw new Error(`${file}: unknown field \`${key}\``);
   const raw: RawConfig = {};
   if (value.format !== undefined) raw.format = acceptFormat(file, value.format);
@@ -305,6 +309,15 @@ export function parseConfig(file: string, text: string): RawConfig {
       if (v !== null && (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > 10000)) fail("ghost.delay", "milliseconds from 0 to 10000, or null for the default", v);
     }
     raw.ghost = value.ghost as { delay?: number | null };
+  }
+  if (value.assistant !== undefined) {
+    if (!isObject(value.assistant)) return fail("assistant", "an object", value.assistant);
+    const assistant: NonNullable<RawConfig["assistant"]> = {};
+    for (const [key, v] of Object.entries(value.assistant)) {
+      if (key !== "clip") throw new Error(`${file}: unknown field \`assistant.${key}\``);
+      assistant.clip = typeof v === "boolean" ? v : fail("assistant.clip", "true or false", v);
+    }
+    raw.assistant = assistant;
   }
   if (value.voice !== undefined) {
     if (!isObject(value.voice)) return fail("voice", "an object", value.voice);

@@ -45,9 +45,10 @@ import { PROPOSALS_DIR } from "../proposals.ts";
 import { featureReportOf, featureSlugOf, resultWithout, runOperation, WIRE_OUT, WRITING_KINDS, type CommitGate, type CommitPlan, type DraftFlowRequest, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
-import { actionLabel, applyRecord, catalog, matchActions, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, applyRecord, catalog, matchActions, MERGE_CLICK, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
+import { Clip, newClip } from "./clip.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -68,7 +69,7 @@ import type { Buffer, ConfigState, Cursor, Hover, Mode, NewSpecForm, OperationRe
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { operationLabel, recordSummary } from "./reports/records.ts";
-import { contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
+import { clipOnScreen, contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -118,8 +119,8 @@ export const MAX_ROWS = 400;
 const HELD_KEYS = 32;
 /** Outside the editor, at most this many keys of one chunk are keys typed while the session was busy; more are pasted text. */
 const TYPED_KEYS = 8;
-/** Keys handled before the mode: they show panels and reanalyse, and never edit. */
-const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6"]);
+/** Keys handled before the mode: they show panels and the clip's chat and reanalyse, and never edit. */
+const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6", "f7"]);
 
 export class App {
   readonly state: State;
@@ -147,6 +148,8 @@ export class App {
   private readonly zoomScreen: ZoomScreen;
   /** The F6 panel's keys. */
   private readonly results: ResultsPanel;
+  /** The clip in the editor's corner and its chat window: their pointer and keys. */
+  private readonly clip: Clip;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
@@ -239,6 +242,7 @@ export class App {
       briefs: new Map(),
       zoom: null,
       featureLine: null,
+      clip: newClip(),
     };
     // The helpers reach the session through closures: its private methods stay private.
     this.merges = new MergeSession({
@@ -299,6 +303,11 @@ export class App {
       openPalette: () => this.openPalette(),
       requestOperation: (action, request) => this.requestOperation(action, request),
     });
+    this.clip = new Clip({
+      state: this.state,
+      editor: () => layout(this.state).editor,
+      clipOnScreen: () => clipOnScreen(this.state),
+    });
     this.results = new ResultsPanel({
       state: this.state,
       reanalyze: () => this.reanalyze(),
@@ -323,8 +332,9 @@ export class App {
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
     if (first) this.open(first, { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
-    const config = configState(this.state.root);
+    const { config, clip } = configState(this.state.root);
     this.state.config = config;
+    if (clip !== null) this.state.clip.enabled = clip;
     // No config: the start screen, and no analysis until Browse (design §2.1). Invalid: its text, at the field.
     if (config.kind === "missing-config") this.state.start = 0;
     else if (config.kind === "invalid-config") this.openConfig(config.reason, false);
@@ -493,8 +503,9 @@ export class App {
    */
   private readConfig(explicit: boolean): boolean {
     const before = this.state.config;
-    const config = configState(this.state.root);
+    const { config, clip } = configState(this.state.root);
     this.state.config = config;
+    if (clip !== null) this.state.clip.enabled = clip;
     if (config.kind !== "invalid-config") return true;
     this.generation++;
     this.state.updating = false;
@@ -1247,6 +1258,7 @@ export class App {
       }
     }
     if (this.state.start !== null && event.name !== "f6") return this.startKey(event);
+    if (event.name === "f7") return this.clip.toggle();
     if (event.name === "f5") return this.reanalyze();
     if (event.name === "f6") return this.results.openResults();
     // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
@@ -2914,6 +2926,8 @@ export class App {
     }
     // The start screen covers the editor: a click never moves the hidden cursor.
     if (this.state.start !== null) return;
+    // The clip and its window are over the editor and the panels.
+    if (this.clip.mouse(event)) return;
     const area = layout(this.state);
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
@@ -2949,9 +2963,8 @@ export class App {
     }
     if (event.action !== "down" || event.button !== 0) return;
     this.state.message = null;
-    // A click elsewhere would open another file and drop the decisions made so far.
     if (this.state.mode === "merge") {
-      this.state.message = "finish the merge first: w writes the decided hunks, Esc cancels";
+      this.state.message = MERGE_CLICK;
       return;
     }
     if (context && area.nav) {
@@ -3416,20 +3429,24 @@ function printable(text: string): string {
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
-/** `keylang.json` as it is on disk now: missing (with the guessed layout), invalid (with the reason) or valid. */
-function configState(root: string): ConfigState {
+/**
+ * `keylang.json` as it is on disk now: missing (with the guessed layout),
+ * invalid (with the reason) or valid; and whether it shows the clip — null
+ * when an invalid file cannot say, so the clip stays as it was.
+ */
+function configState(root: string): { config: ConfigState; clip: boolean | null } {
   const file = join(root, CONFIG_FILE);
   if (!existsSync(file)) {
     const guessed = loadConfig(root);
-    return { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes };
+    return { config: { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes }, clip: true };
   }
   try {
-    parseConfig(file, readFileSync(file, "utf8"));
-    return { kind: "configured" };
+    const raw = parseConfig(file, readFileSync(file, "utf8"));
+    return { config: { kind: "configured" }, clip: raw.assistant?.clip ?? true };
   } catch (error) {
     // The file is the one open in the editor: the reason keeps only the field.
     const text = errorText(error);
-    return { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text };
+    return { config: { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text }, clip: null };
   }
 }
 

@@ -94,6 +94,22 @@ export class Grid {
   }
 }
 
+/**
+ * A box over the grid: filled with `style`, framed, its title on the top
+ * edge. `round` corners (`╭╮╰╯`) are the clip's window; the popups are square.
+ */
+export function drawBox(grid: Grid, rect: { x: number; y: number; width: number; height: number }, title: string, style: Style, titleStyle: Style, round = false): void {
+  const [tl, tr, bl, br] = round ? ["╭", "╮", "╰", "╯"] : ["┌", "┐", "└", "┘"];
+  grid.fill(rect.x, rect.y, rect.width, rect.height, style);
+  grid.write(rect.x, rect.y, `${tl}${"─".repeat(Math.max(0, rect.width - 2))}${tr}`, style);
+  for (let y = rect.y + 1; y < rect.y + rect.height - 1; y++) {
+    grid.write(rect.x, y, "│", style);
+    grid.write(rect.x + rect.width - 1, y, "│", style);
+  }
+  grid.write(rect.x, rect.y + rect.height - 1, `${bl}${"─".repeat(Math.max(0, rect.width - 2))}${br}`, style);
+  if (title) grid.write(rect.x + 2, rect.y, ` ${title} `, titleStyle, rect.width - 4);
+}
+
 const ESC = "\x1b";
 
 function sgr(style: Style): string {

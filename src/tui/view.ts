@@ -7,7 +7,10 @@ import { contextPack } from "../agent-context.ts";
 import { CONFIG_FILE } from "../config.ts";
 import { explainCode } from "../explain.ts";
 import { explanationOf, modelName, type NodeExplanation } from "../explanations.ts";
+import type { CompletionItem } from "../lsp-features.ts";
 import { ACTIONS, actionKey, catalog, exportRecord, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { assistantShown, badgeRect, badgeText, chatRect, clipRect, clipYields, type Cell } from "./clip.ts";
+import { BADGE_STYLE, drawChat, drawClip } from "./clip-view.ts";
 import { highlightCode } from "./code-highlight.ts";
 import { CHANNELS, evidenceOf, MARK_GLYPH, totals, worse, type LineEvidence, type Mark } from "./evidence.ts";
 import { FINDING_GLYPH, VERDICTS, findingCounts, findingDetailText, findingRow, findingsOf, visibleFindings } from "./findings.ts";
@@ -16,7 +19,7 @@ import { mergeRows } from "./merge.ts";
 import { navItems, type NavItem } from "./nav.ts";
 import { itemNoun, recordLabel, recordStatus, reportItems, resultsReportRows } from "./reports/records.ts";
 import { circled, flowOverlay, zoomEdges, zoomLevel, zoomSelectKey, ZOOM_ROOT, type FlowOverlay, type ZoomEdge, type ZoomRow } from "./zoom.ts";
-import { Grid, type Style } from "./screen.ts";
+import { drawBox, Grid, type Style } from "./screen.ts";
 import type { Buffer, Prompt, State } from "./state.ts";
 import { highlight, MARK_STYLE, THEME, type Run } from "./theme.ts";
 import { bufferLines, isDirty, lineLayout } from "./buffer.ts";
@@ -181,17 +184,6 @@ export function lineMessage(item: LineEvidence | undefined): { text: string; sty
   if (bad) return { text: `${bad.criterion}: ${bad.message}`, style: bad.verdict === "fail" ? THEME.error : THEME.hint };
   if (item.planned) return { text: "planned: an intention, not a fact of the snapshot", style: MARK_STYLE.planned };
   return null;
-}
-
-function drawBox(grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style): void {
-  grid.fill(rect.x, rect.y, rect.width, rect.height, style);
-  grid.write(rect.x, rect.y, `┌${"─".repeat(Math.max(0, rect.width - 2))}┐`, style);
-  for (let y = rect.y + 1; y < rect.y + rect.height - 1; y++) {
-    grid.write(rect.x, y, "│", style);
-    grid.write(rect.x + rect.width - 1, y, "│", style);
-  }
-  grid.write(rect.x, rect.y + rect.height - 1, `└${"─".repeat(Math.max(0, rect.width - 2))}┘`, style);
-  if (title) grid.write(rect.x + 2, rect.y, ` ${title} `, titleStyle, rect.width - 4);
 }
 
 /** Highlight runs per parsed document: a buffer is reparsed on every edit, so the document identifies the text. */
@@ -833,30 +825,45 @@ function drawFindings(grid: Grid, state: State, rect: Rect, dividerY: number): v
   }
 }
 
-function drawHover(grid: Grid, state: State, editor: Rect): void {
-  const hover = state.hover!;
+/** The hover's box: below its anchor where it fits, else above; inside the editor. */
+function hoverRect(hover: NonNullable<State["hover"]>, editor: Rect): Rect {
   const width = Math.min(editor.width - 2, Math.max(24, ...hover.lines.map((line) => stringWidth(line.text) + 4)), 72);
   const height = Math.min(hover.lines.length + 2, Math.max(3, editor.height - 1));
   const x = Math.max(editor.x, Math.min(hover.x, editor.x + editor.width - width));
   const below = hover.y + 1 + height <= editor.y + editor.height;
   const y = below ? hover.y + 1 : Math.max(editor.y, hover.y - height);
-  drawBox(grid, { x, y, width, height }, "", THEME.popup, THEME.popupTitle);
+  return { x, y, width, height };
+}
+
+function drawHover(grid: Grid, state: State, editor: Rect): void {
+  const hover = state.hover!;
+  const rect = hoverRect(hover, editor);
+  const { x, y, width, height } = rect;
+  drawBox(grid, rect, "", THEME.popup, THEME.popupTitle);
   hover.lines.slice(0, height - 2).forEach((line, i) => {
     const style = line.kind === "title" ? THEME.popupTitle : line.kind === "code" ? { ...THEME.popup, fg: 180 } : line.kind === "evidence" ? { ...THEME.popup, fg: 250 } : line.kind === "rule" ? { ...THEME.popup, fg: 243 } : THEME.popup;
     grid.write(x + 2, y + 1 + i, line.kind === "rule" ? "─".repeat(width - 4) : line.text, style, width - 4);
   });
 }
 
-function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer): void {
+/** The completion's box and the items it shows: under the cursor line where it fits, else above. */
+function completionBox(state: State, editor: Rect, buffer: Buffer): { rect: Rect; visible: CompletionItem[]; offset: number } {
   const completion = state.completion!;
-  const visible = completion.items.slice(Math.max(0, completion.index - 7), Math.max(0, completion.index - 7) + 8);
   const offset = Math.max(0, completion.index - 7);
+  const visible = completion.items.slice(offset, offset + 8);
   const width = Math.min(editor.width - 4, Math.max(20, ...visible.map((item) => stringWidth(item.label) + stringWidth(item.detail ?? "") + 5)), 70);
   const x = Math.min(editor.x + gutterWidth(buffer) + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, completion.from), editor.x + editor.width - width);
   const rowY = editor.y + state.cursor.line - state.top;
   const height = visible.length + 2;
   const y = rowY + 1 + height <= editor.y + editor.height ? rowY + 1 : Math.max(editor.y, rowY - height);
-  drawBox(grid, { x, y, width, height }, `${completion.items.length} ids`, THEME.popup, THEME.popupTitle);
+  return { rect: { x, y, width, height }, visible, offset };
+}
+
+function drawCompletion(grid: Grid, state: State, editor: Rect, buffer: Buffer): void {
+  const completion = state.completion!;
+  const { rect, visible, offset } = completionBox(state, editor, buffer);
+  const { x, y, width } = rect;
+  drawBox(grid, rect, `${completion.items.length} ids`, THEME.popup, THEME.popupTitle);
   visible.forEach((item, i) => {
     const selected = offset + i === completion.index;
     const style = selected ? THEME.selected : THEME.popup;
@@ -883,6 +890,7 @@ const HELP: Record<string, [string, string][]> = {
     ["q", "back to the view at the node"],
     [": / Ctrl+P", "actions"],
     ["F6", "results"],
+    ["F7 / clip click", "the clip's chat: open, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   view: [
@@ -902,6 +910,7 @@ const HELP: Record<string, [string, string][]> = {
     ["/  n", "search"],
     [": / Ctrl+P", "actions"],
     ["F6", "results"],
+    ["F7 / clip click", "the clip's chat: open, fold"],
     ["q / Ctrl+C", "quit"],
     ["?", "keys, explain"],
     ["e", "explain id"],
@@ -925,6 +934,7 @@ const HELP: Record<string, [string, string][]> = {
     ["Tab / Alt+]", "ghost line: take / next"],
     ["Ctrl+P", "actions, help"],
     ["F6", "results"],
+    ["F7 / clip click", "the clip's chat: open, fold"],
     ["? and :", "typed here: Ctrl+P → Keys and help opens this"],
   ],
   merge: [
@@ -940,12 +950,14 @@ const HELP: Record<string, [string, string][]> = {
     ["Esc / Ctrl+O / q", "back"],
     ["Ctrl+P", "action palette"],
     ["F6", "results"],
+    ["F7 / clip click", "the clip's chat: open, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
   read: [
     ["↑↓", "move"],
     ["Enter", "go to code"],
     ["v / Esc", "raw Markdown"],
+    ["F7 / clip click", "the clip's chat: open, fold"],
     ["Ctrl+Z", "stop keylang (a terminal; fg resumes it)"],
   ],
 };
@@ -1134,12 +1146,12 @@ function newSpecLabel(field: "kind" | "path" | "name" | undefined): string {
  * `?` is typed text, so the tail names Ctrl+P there.
  */
 const HINTS: Record<string, { keys: string[]; tail: string }> = {
-  view: { keys: ["Enter code", "Alt+Enter spec", "/ search", "s node", "F5 check", "F6 results", "i edit"], tail: "? keys · Ctrl+P actions" },
-  edit: { keys: ["Ctrl+S save", "Ctrl+Space complete", "Ctrl+G text→spec", "Esc view"], tail: "Ctrl+P actions, help" },
-  read: { keys: ["Enter code", "v raw", "F5 check"], tail: "? keys · Ctrl+P actions" },
-  code: { keys: ["Esc back", "↑↓ scroll"], tail: "? keys · Ctrl+P actions" },
+  view: { keys: ["Enter code", "Alt+Enter spec", "/ search", "s node", "F7 chat", "F5 check", "F6 results", "i edit"], tail: "? keys · Ctrl+P actions" },
+  edit: { keys: ["Ctrl+S save", "Ctrl+Space complete", "Ctrl+G text→spec", "Esc view", "F7 chat"], tail: "Ctrl+P actions, help" },
+  read: { keys: ["Enter code", "v raw", "F7 chat", "F5 check"], tail: "? keys · Ctrl+P actions" },
+  code: { keys: ["Esc back", "↑↓ scroll", "F7 chat"], tail: "? keys · Ctrl+P actions" },
   merge: { keys: ["a accept", "r reject", "u undo", "n next", "w write"], tail: "Esc cancel · ? keys" },
-  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "c edges", "f flow", "e explain", "s find", "q back"], tail: "? keys · Ctrl+P actions" },
+  zoom: { keys: ["Enter/+ in", "- up", "> < depth", "c edges", "f flow", "e explain", "s find", "q back", "F7 chat"], tail: "? keys · Ctrl+P actions" },
 };
 
 /** The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail. */
@@ -1240,6 +1252,34 @@ function drawStart(grid: Grid, state: State, rect: Rect): void {
   rows.slice(0, rect.height - 1).forEach((row, i) => grid.write(rect.x + 2, rect.y + 1 + i, row.text, row.style, rect.width - 3));
 }
 
+/** The hover is drawn: over the raw or the read text, or the zoom screen. */
+function hoverShown(state: State): boolean {
+  return state.hover !== null && (state.mode === "view" || state.mode === "edit" || state.mode === "read" || state.mode === "zoom");
+}
+
+/** The cell of the editor's cursor while the raw text is shown (view, edit), whether the terminal shows it or not. */
+function editorCursorCell(state: State, editor: Rect, buffer: Buffer | null): Cell | null {
+  if (!buffer || (state.mode !== "view" && state.mode !== "edit")) return null;
+  const row = state.cursor.line - state.top;
+  if (row < 0 || row >= editor.height) return null;
+  return { x: editor.x + gutterWidth(buffer) + cellsBetween(lineLayout(buffer, state.cursor.line), state.left, state.cursor.col), y: editor.y + row };
+}
+
+/**
+ * The clip as this frame draws it, or null: off, a badge on a narrow
+ * terminal, covered by the start screen or F6, or yielding to the editor's
+ * cursor or a popup under it. A click goes to the clip only where it is drawn.
+ */
+export function clipOnScreen(state: State, area: Layout = layout(state)): Rect | null {
+  const rect = assistantShown(state) ? clipRect(state, area.editor) : null;
+  if (rect === null) return null;
+  const buffer = state.current ? (state.buffers.get(state.current) ?? null) : null;
+  const popups: Rect[] = [];
+  if (hoverShown(state)) popups.push(hoverRect(state.hover!, area.editor));
+  if (state.completion && buffer && state.mode === "edit") popups.push(completionBox(state, area.editor, buffer).rect);
+  return clipYields(rect, editorCursorCell(state, area.editor, buffer), popups) ? null : rect;
+}
+
 export function render(state: State): Grid {
   const grid = new Grid(state.cols, state.rows);
   const area = layout(state);
@@ -1285,6 +1325,8 @@ export function render(state: State): Grid {
   const put = (text: string, style: Style): void => {
     x += grid.write(x, area.status.y, text, style, end - x);
   };
+  // On a narrow terminal the clip is a badge at the start of the line: a click on it opens the chat.
+  if (assistantShown(state) && badgeRect(state) !== null) put(`${badgeText(state.clip)}  `, BADGE_STYLE);
   if (state.analysis) {
     const count = totals(state.analysis);
     const stale = state.updating || state.outdated;
@@ -1320,8 +1362,12 @@ export function render(state: State): Grid {
   grid.write(Math.max(x + 2, state.cols - stringWidth(hints) - 1), area.status.y, hints, THEME.status);
   // Popups
   if (state.results.open && !state.results.viewing) drawResults(grid, state, area.panel);
-  if (state.hover && (state.mode === "view" || state.mode === "edit" || state.mode === "read" || state.mode === "zoom")) drawHover(grid, state, area.editor);
+  const clip = clipOnScreen(state, area);
+  if (clip) drawClip(grid, clip, state.clip);
+  if (hoverShown(state)) drawHover(grid, state, area.editor);
   if (state.completion && buffer && state.mode === "edit") drawCompletion(grid, state, area.editor, buffer);
+  // The chat window is not modal: the help, a form and the modal steps draw over it.
+  if (state.clip.chat.open && assistantShown(state)) drawChat(grid, state, chatRect(state, area.editor));
   if (state.help) drawHelp(grid, state);
   if (state.prompt) drawPrompt(grid, state, area.detail, area.panel);
   if (state.barrier) drawBarrier(grid, state, area.panel);
