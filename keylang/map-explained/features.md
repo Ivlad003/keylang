@@ -5,7 +5,7 @@
 # map
 
 - features
-  <a id="features"></a><br>User-facing capabilities on top of the analysis: check reports and filtering ([`features.check-results`](features.md#features.check-results), [`features.changed`](features.md#features.changed)), flow drafting, explanations, and editor support ([`features.lsp-features`](features.md#features.lsp-features)). Model calls go through [`features.llm`](features.md#features.llm). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+  <a id="features"></a><br>The user-facing capabilities behind the CLI, TUI, LSP and MCP: check reporting ([`features.check-results`](features.md#features.check-results)), node explanations ([`features.explain-node`](features.md#features.explain-node)), flow drafting ([`features.draft`](features.md#features.draft)), model calls ([`features.llm`](features.md#features.llm)), and voice input ([`features.voice`](features.md#features.voice)). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [agent-cli](../../src/agent-cli.ts#L1)
     <a id="features.agent-cli"></a><br>An agent CLI as a text model (ADR 0009): `cli:claude`, `cli:codex`, `cli:opencode`, `cli:cursor` or a command defined in `~/.config/keylang/agents.json`. One request is one run of the CLI in "answer only" form: no project hooks, MCP servers or instructions where the CLI can…
     - node [external.node](external.md#external.node)
@@ -211,13 +211,15 @@
       - calls [check.assess.sameFinding](check.md#check.assess.sameFinding)
     - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
       <a id="features.changed.hookDecision"></a><br>Stdin event plus the fails of one changed check. `stop_hook_active` never blocks. The same inputs return the same JSON.
-    - fn [parseHookEvent](../../src/changed.ts#L78) (text: string) → { stop_hook_active?: boolean }
+    - fn [uncheckedTurn](../../src/changed.ts#L85) (error: string) → { line: string; decision: string }
+      <a id="features.changed.uncheckedTurn"></a><br>A turn the hook could not check — stdin that is no event, no git, a broken keylang.json, a failed analysis — as the line a person reads and the JSON that carries it: a `systemMessage`, which Claude Code and Codex show the person as a warning without blocking the agent (stderr…
+    - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
       <a id="features.changed.parseHookEvent"></a><br>The object on stdin. Empty stdin is an event with no `stop_hook_active`.
-    - fn [covers](../../src/changed.ts#L93) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
       <a id="features.changed.covers"></a><br>Decides whether a module falls inside a scope: an empty scope matches everything, otherwise any scope entry must equal the layer name, equal the module ID, or be a dotted prefix of it. Used by [`features.changed.filterChanged`](features.md#features.changed.filterChanged) to limit which modules are considered. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ruleHits](../../src/changed.ts#L99) (spec: SpecIR) → RuleHit[] <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
       <a id="features.changed.ruleHits"></a><br>Scope and the verdict criterion `--changed` already matches. `no-cycles` stays the literal criterion, not the hashed `no-cycles <module|*>`.
-    - fn [flowLinesTouching](../../src/changed.ts#L116) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+    - fn [flowLinesTouching](../../src/changed.ts#L130) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       <a id="features.changed.flowLinesTouching"></a><br>`file:line` of every verdict in a flow that names a symbol whose file changed or was deleted.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
   - module [check-format](../../src/check-format.ts#L1)
@@ -603,54 +605,63 @@
     - span [base.span](base.md#base.span)
     - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
     - verdict [check.verdict](check.md#check.verdict)
-    - type [Stage](../../src/feature-status.ts#L32) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - type [Stage](../../src/feature-status.ts#L34) = "idea" | "behavior" | "structure" | "ready" | "done"
       <a id="features.feature-status.Stage"></a><br>How far a feature file got, the first that holds: `done` (no gaps), `idea` (no `# flow` yet), `behavior` (a flow without a trigger or steps), `structure` (the spec itself has gaps: errors, open questions, a predicted deny, a planned id outside the layers, a planned fn without a…
-    - type [Gap](../../src/feature-status.ts#L38)
+    - type [Gap](../../src/feature-status.ts#L40)
       <a id="features.feature-status.Gap"></a><br>What keeps a feature from done. Every gap blocks it; `stage` is where it is fixed.
-    - type [Hint](../../src/feature-status.ts#L52)
+    - type [Hint](../../src/feature-status.ts#L54)
       <a id="features.feature-status.Hint"></a><br>What does not keep the feature from done: the next step of a stage the spec still lacks, or a rule fail elsewhere that is not this change's (`rule`).
-    - type [FeatureInfo](../../src/feature-status.ts#L62)
+    - type [FeatureInfo](../../src/feature-status.ts#L64)
       <a id="features.feature-status.FeatureInfo"></a><br>A record describing a single feature's status entry: an identifier, the source location (file, line, column) where it is declared, and a verdict string paired with a free-text reason explaining it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [BaseChanges](../../src/feature-status.ts#L76)
+    - type [BaseChanges](../../src/feature-status.ts#L78)
       <a id="features.feature-status.BaseChanges"></a><br>What git reports changed in the working tree since the base ref, as `check --changed` reads it: changed, added, deleted and untracked files, and the deleted ones. POSIX, relative to the root, sorted.
-    - type [FeatureBase](../../src/feature-status.ts#L87)
-      <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit (`HEAD` or `--since`) and what changed since. `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet: then every file is changed); `unavailable`: the history could not be read, so the plan is not compared and…
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L93)
-      <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it.
-    - type [FeatureReport](../../src/feature-status.ts#L95)
+    - type [BaseSource](../../src/feature-status.ts#L88) = "since" | "merge-base" | "HEAD"
+      <a id="features.feature-status.BaseSource"></a><br>How the base commit was chosen: `since` — given (`--since`, MCP `since`); `merge-base` — where HEAD left the main branch, so the branch's own commits are the change; `HEAD` — no main branch, no merge-base, or HEAD itself.
+    - type [BaseOrigin](../../src/feature-status.ts#L91)
+      <a id="features.feature-status.BaseOrigin"></a><br>The commit a feature is judged against, and how a sentence names it.
+    - type [FeatureBase](../../src/feature-status.ts#L112)
+      <a id="features.feature-status.FeatureBase"></a><br>The feature file at its base commit and what changed since. `compared`: the file is there; `absent`: it is not (a new feature, or no commit yet: then every file is changed); `unavailable`: the history could not be read, so the plan is not compared and every rule fail blocks.…
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L120)
+      <a id="features.feature-status.FeatureBaseInfo"></a><br>`FeatureBase` as the report shows it: the commit, its state, and how it was chosen.
+    - type [FeatureReport](../../src/feature-status.ts#L122)
       <a id="features.feature-status.FeatureReport"></a><br>Result of checking a feature: whether it is done, its current stage, blocking gaps and hints, plus test, trace and base details and inherited rule failures that do not block (null without git, making every rule failure a gap). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [FeatureInput](../../src/feature-status.ts#L113)
+    - type [FeatureInput](../../src/feature-status.ts#L140)
       <a id="features.feature-status.FeatureInput"></a><br>Input bundle for computing a feature's status: parsed docs, spec, diagnostics and verdicts, plus optional snapshot nodes/edges, base plan, changed files, resolver index and layers that refine planned-edge and rule-fail checks. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [idsIn](../../src/feature-status.ts#L147) (doc: Document) → string[]
+    - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       <a id="features.feature-status.idsIn"></a><br>Ids declared or named in one spec, in first-seen order.
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [featureStatus](../../src/feature-status.ts#L164) (input: FeatureInput, slug: string) → FeatureReport | null
+    - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
       <a id="features.feature-status.featureStatus"></a><br>The feature report, or null when `keylang/<dir>/features/<slug>.md` is not one of the specs. Gaps are ordered by kind, then file, line, column, id.
-      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.planGaps](features.md#features.feature-status.planGaps), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf)
-    - type [RuleFail](../../src/feature-status.ts#L276) <!-- internal -->
+      - calls [base.diag.isError](base.md#base.diag.isError), [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow), [features.feature-status.denyGaps](features.md#features.feature-status.denyGaps), [features.feature-status.finding](features.md#features.feature-status.finding), [features.feature-status.claimsOf](features.md#features.feature-status.claimsOf), [features.feature-status.thisChange](features.md#features.feature-status.thisChange), [features.feature-status.idsIn](features.md#features.feature-status.idsIn), [features.feature-status.ruleFails](features.md#features.feature-status.ruleFails), [features.feature-status.weakenedPlan](features.md#features.feature-status.weakenedPlan), [base.span.compareText](base.md#base.span.compareText), [features.feature-status.stageOf](features.md#features.feature-status.stageOf), [features.feature-status.baseInfo](features.md#features.feature-status.baseInfo)
+    - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
+      <a id="features.feature-status.baseInfo"></a><br>The base as the report names it: the commit and its state first, as they always came, then how it was chosen.
+    - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
       <a id="features.feature-status.RuleFail"></a><br>A rule fail: an error diagnostic of a rule (K101, K102, K104, K105, K107), or a failed rule verdict that repeats none.
-    - fn [ruleFails](../../src/feature-status.ts#L287) (input: FeatureInput) → RuleFail[] <!-- internal -->
+    - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
       <a id="features.feature-status.ruleFails"></a><br>Every rule fail of the analysis, in the order of its diagnostics, then its verdicts.
       - calls [base.diag.isError](base.md#base.diag.isError), [check.assess.sameFinding](check.md#check.assess.sameFinding)
-    - fn [thisChange](../../src/feature-status.ts#L306) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L337) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       <a id="features.feature-status.thisChange"></a><br>Whether a rule fail is this change's. Without what changed since the base, every one is.
       - calls [features.changed.filterChanged](features.md#features.changed.filterChanged)
-    - fn [stageOf](../../src/feature-status.ts#L334) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L365) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
       <a id="features.feature-status.stageOf"></a><br>The first stage that holds, from `done` down: see `Stage`.
-    - fn [denyGaps](../../src/feature-status.ts#L354) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L385) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       <a id="features.feature-status.denyGaps"></a><br>Edges a flow of the feature asks for that a rule would deny once they are code: a `step` or `calls` target under its parent `trigger` or `step` (a top-level one under the first trigger), while one end is still `planned` and not implemented. Once both ends are code, `check`…
       - calls [check.rules.dependencyKindOf](check.md#check.rules.dependencyKindOf), [check.rules.denyingRule](check.md#check.rules.denyingRule)
-    - fn [claimsOf](../../src/feature-status.ts#L396) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L427) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       <a id="features.feature-status.claimsOf"></a><br>The static claims of a flow, in order: every `step`, and every target of a `calls` line.
       - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
-    - fn [planGaps](../../src/feature-status.ts#L413) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
-      <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `ref`: a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in a commit, never by deleting it.…
+    - fn [weakenedPlan](../../src/feature-status.ts#L442) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+      <a id="features.feature-status.weakenedPlan"></a><br>Where the plan was weakened: against the base, then — with a merge-base — against HEAD as well, so a file new on the branch keeps its committed plan. A removal both find is the base's gap alone.
+      - calls [features.feature-status.planGaps](features.md#features.feature-status.planGaps)
+    - fn [planGaps](../../src/feature-status.ts#L459) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
+      <a id="features.feature-status.planGaps"></a><br>Where the feature file weakened its plan since `at` (how a sentence names the commit): a `planned` removed while the code does not implement it (no K202), and a `trigger`, `step` or open question that is no longer there under the same flow and parents: a question is answered in…
       - calls [lang.spec-ir.compileSpec](lang.md#lang.spec-ir.compileSpec), [check.flows.plannedMismatch](check.md#check.flows.plannedMismatch), [features.feature-status.planItems](features.md#features.feature-status.planItems)
-    - type [PlanItem](../../src/feature-status.ts#L445) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L495) = Trigger | FlowStep | QuestionItem <!-- internal -->
       <a id="features.feature-status.PlanItem"></a><br>Internal union type for a single feature-plan entry, which can be a trigger, a flow step, or a question item, so code in feature status handling can treat all three kinds of plan entry uniformly. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [planItems](../../src/feature-status.ts#L448) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L498) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
       <a id="features.feature-status.planItems"></a><br>Every `trigger`, `step` and open question of a flow with a key: the flow, its parents, and itself.
-    - fn [finding](../../src/feature-status.ts#L462) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L512) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
       <a id="features.feature-status.finding"></a><br>Returns the first diagnostic whose file, starting line, and code all match the given values, or undefined when none does. Used by [`features.feature-status.featureStatus`](features.md#features.feature-status.featureStatus) to look up a specific expected finding. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [ghost](../../src/ghost.ts#L1)
     <a id="features.ghost"></a><br>Ghost text (design §7.3): one next line of a flow from the agent, shown grey after a pause and only on a cheap signal — the cursor on a new `- ` item of a flow that has a trigger. A suggestion is checked where it would stand, in the buffer: one that does not parse there (a step…
@@ -666,7 +677,7 @@
       <a id="features.ghost.ghostSuggestions"></a><br>Up to three one-line continuations; each keeps the indentation of the cursor line and names only known IDs. `signal` cancels the request (`LlmCancelled`) once the line it was asked for is gone.
       - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk), [lang.parser.parse](lang.md#lang.parser.parse)
   - module [git-changes](../../src/git-changes.ts#L1)
-    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`, and for `feature` the feature file at its base commit with the files changed since. Git runs as an argument array in the given root, never through a…
+    <a id="features.git-changes"></a><br>What git says changed in the working tree since a ref: the inputs of `check --changed`, `hook stop` and `code-to-spec --since`, and for `feature` its base commit (the merge-base with the main branch unless `--since` names one), the feature file there with the files changed…
     - node [external.node](external.md#external.node)
     - config [base.config](base.md#base.config)
     - draft [features.draft](features.md#features.draft)
@@ -674,37 +685,40 @@
     - graph [map.graph](map.md#map.graph)
     - parser [lang.parser](lang.md#lang.parser)
     - span [base.span](base.md#base.span)
-    - type [ChangedFiles](../../src/git-changes.ts#L19)
+    - type [ChangedFiles](../../src/git-changes.ts#L20)
       <a id="features.git-changes.ChangedFiles"></a><br>Files changed since a ref. Paths are POSIX, relative to the root.
-    - fn [gitIn](../../src/git-changes.ts#L29) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
+    - fn [gitIn](../../src/git-changes.ts#L30) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       <a id="features.git-changes.gitIn"></a><br>A git runner for `root`; `label` names the caller in its errors (`check --changed`).
       - calls [features.git-changes.gitUnavailable](features.md#features.git-changes.gitUnavailable)
-    - fn [gitUnavailable](../../src/git-changes.ts#L45) (label: string, error: Error & { code?: string }) → string
+    - fn [gitUnavailable](../../src/git-changes.ts#L46) (label: string, error: Error & { code?: string }) → string
       <a id="features.git-changes.gitUnavailable"></a><br>Why git did not run; a refusal (EPERM, EACCES) is most likely a sandbox, and says what still works.
-    - fn [assertRef](../../src/git-changes.ts#L52) (ref: string, label: string) → void <!-- internal -->
+    - fn [assertRef](../../src/git-changes.ts#L53) (ref: string, label: string) → void <!-- internal -->
       <a id="features.git-changes.assertRef"></a><br>A ref git would read as an option (`--output=…`) is refused: it is never passed on.
-    - fn [diffArgs](../../src/git-changes.ts#L58) (base: string) → string[] <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L59) (base: string) → string[] <!-- internal -->
       <a id="features.git-changes.diffArgs"></a><br>Builds the fixed argument list for a `git diff` against a base ref: relative paths, no renames, zero context lines, no color or external diff, and `a/`/`b/` prefixes. Shared by [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) so both parse… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [untracked](../../src/git-changes.ts#L60) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L61) (git: (args: string[]) => string) → string[] <!-- internal -->
       <a id="features.git-changes.untracked"></a><br>Lists files in the working tree that git does not track and that are not ignored, by running `ls-files` with NUL-separated output and splitting it into a path array. Both [`features.git-changes.gitChangedFiles`](features.md#features.git-changes.gitChangedFiles) and [`features.git-changes.gitChangedLines`](features.md#features.git-changes.gitChangedLines) fold these into their… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [ownState](../../src/git-changes.ts#L70) (path: string) → boolean <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L71) (path: string) → boolean <!-- internal -->
       <a id="features.git-changes.ownState"></a><br>keylang's own local state under `.keylang/` — the index, the fact cache an analysis saves, proposals, reports — is never a source or a spec, so it is never a change, tracked or not, gitignored or not.
-    - fn [gitChangedFiles](../../src/git-changes.ts#L73) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitChangedFiles](../../src/git-changes.ts#L74) (root: string, ref: string, label = "check --changed") → ChangedFiles
       <a id="features.git-changes.gitChangedFiles"></a><br>Files changed since `ref` in the working tree, plus files git does not track yet; keylang's own `.keylang/` left out.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.draft.deletedDiffPaths](features.md#features.draft.deletedDiffPaths), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.untracked](features.md#features.git-changes.untracked), [features.git-changes.ownState](features.md#features.git-changes.ownState)
-    - fn [gitChangedLines](../../src/git-changes.ts#L88) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitChangedLines](../../src/git-changes.ts#L89) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       <a id="features.git-changes.gitChangedLines"></a><br>The lines changed since `ref` in the working tree, and the files git does not track yet (`all`), relative to `root`.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn), [features.draft.diffHunks](features.md#features.draft.diffHunks), [features.git-changes.diffArgs](features.md#features.git-changes.diffArgs), [features.git-changes.untracked](features.md#features.git-changes.untracked)
-    - fn [changedPathSet](../../src/git-changes.ts#L97) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L98) (root: string, files: Iterable<string>, base: string) → Set<string>
       <a id="features.git-changes.changedPathSet"></a><br>Git paths are relative to `root`; check reports spec paths relative to `base`. Both forms match.
       - calls [base.config.toPosix](base.md#base.config.toPosix)
-    - fn [gitFileAt](../../src/git-changes.ts#L111) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L112) (root: string, ref: string, path: string, label: string) → string | null
       <a id="features.git-changes.gitFileAt"></a><br>The text of `path` (POSIX, relative to `root`) at `ref`, or null when the file is not in that commit or `HEAD` has no commit yet. An unknown ref, no git, or no repository is an error naming the caller.
       - calls [features.git-changes.assertRef](features.md#features.git-changes.assertRef), [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
-    - fn [readFeatureBase](../../src/git-changes.ts#L132) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
-      <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit (`since`, else `HEAD`), and the files changed since that commit as `check --changed` reads them: a rule fail of this change is one that touches them. Without an explicit `since`, a failure to read git is an informational state, not an error…
-      - calls [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
-    - fn [deletedModuleIds](../../src/git-changes.ts#L149) (config: Config, files: readonly string[]) → string[]
+    - fn [readFeatureBase](../../src/git-changes.ts#L134) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+      <a id="features.git-changes.readFeatureBase"></a><br>The feature file at its base commit, and the files changed since that commit as `check --changed --since <base>` reads them: a rule fail of this change is one that touches them. The base is `since`, else `featureBaseOrigin`.
+      - calls [features.git-changes.featureBaseOrigin](features.md#features.git-changes.featureBaseOrigin), [features.git-changes.gitFileAt](features.md#features.git-changes.gitFileAt), [features.git-changes.gitChangedFiles](features.md#features.git-changes.gitChangedFiles), [lang.parser.parse](lang.md#lang.parser.parse)
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L173) (root: string, label: string) → BaseOrigin
+      <a id="features.git-changes.featureBaseOrigin"></a><br>The base `feature` judges a change against when no `since` is given: the merge-base of HEAD with the main branch, so a fail committed on a feature branch is still the change's own. The main branch is the one `refs/remotes/origin/HEAD` points at, else a local `main`, `master`…
+      - calls [features.git-changes.gitIn](features.md#features.git-changes.gitIn)
+    - fn [deletedModuleIds](../../src/git-changes.ts#L196) (config: Config, files: readonly string[]) → string[]
       <a id="features.git-changes.deletedModuleIds"></a><br>Module id a deleted source file had, so a flow step that named it is still "changed".
       - calls [map.graph.placeFile](map.md#map.graph.placeFile)
   - module [git-hook](../../src/git-hook.ts#L1)
@@ -1008,7 +1022,7 @@
       <a id="features.lsp-features.hoverContent"></a><br>What hover says at a position: the ID under it (kind, signature, place, evidence, flows), else the role of the line.
       - calls [features.lsp-features.at](features.md#features.lsp-features.at), [features.lsp-features.roleHover](features.md#features.lsp-features.roleHover), [features.lsp-features.describe](features.md#features.lsp-features.describe), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [lang.spec-ir.flowsUsing](lang.md#lang.spec-ir.flowsUsing), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
     - fn [roleHover](../../src/lsp-features.ts#L331) (ws: Workspace, path: string, position: LspPosition) → HoverContent | null <!-- internal -->
-      <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (format.md §5), then the diagnostics and verdicts of that line.
+      <a id="features.lsp-features.roleHover"></a><br>Hover on a keyword, or on a line without an ID: what the line does under its parent (grammar.md §5), then the diagnostics and verdicts of that line.
       - calls [features.lsp-features.docOf](features.md#features.lsp-features.docOf), [features.lsp-features.toOffset](features.md#features.lsp-features.toOffset), [features.lsp-features.nodesOf](features.md#features.lsp-features.nodesOf), [base.span.spanContains](base.md#base.span.spanContains), [lang.parser.roleAt](lang.md#lang.parser.roleAt), [lang.ir.kindLabel](lang.md#lang.ir.kindLabel), [features.lsp-features.inlineRuns](features.md#features.lsp-features.inlineRuns), [features.lsp-features.evidenceLine](features.md#features.lsp-features.evidenceLine), [check.assess.sameFinding](check.md#check.assess.sameFinding), [features.lsp-features.fromSpan](features.md#features.lsp-features.fromSpan)
     - fn [definition](../../src/lsp-features.ts#L361) (ws: Workspace, path: string, position: LspPosition) → Location | null
       <a id="features.lsp-features.definition"></a><br>Resolves the target under the cursor via [`features.lsp-features.at`](features.md#features.lsp-features.at) into a go-to location: links open the referenced file at their line, and nodes jump to their source position from [`features.lsp-features.describe`](features.md#features.lsp-features.describe), otherwise null. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
@@ -1244,49 +1258,49 @@
     - fn [phpTestStub](../../src/spec-to-code.ts#L378) (file: string, head: string, subject: PhpSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       <a id="features.spec-to-code.phpTestStub"></a><br>A PHPUnit test class that fails until it is written: one test method per declared name.
       - calls [features.spec-to-code.lastName](features.md#features.spec-to-code.lastName), [features.spec-to-code.phpString](features.md#features.spec-to-code.phpString)
-    - fn [lastName](../../src/spec-to-code.ts#L391) (qualified: string) → string <!-- internal -->
+    - fn [lastName](../../src/spec-to-code.ts#L392) (qualified: string) → string <!-- internal -->
       <a id="features.spec-to-code.lastName"></a>
-    - fn [modelPhpTest](../../src/spec-to-code.ts#L396) (model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [modelPhpTest](../../src/spec-to-code.ts#L397) (model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelPhpTest"></a><br>The PHPUnit test class from the model; each declared test method must be in it.
-    - type [TestSubject](../../src/spec-to-code.ts#L416) <!-- internal -->
+    - type [TestSubject](../../src/spec-to-code.ts#L417) <!-- internal -->
       <a id="features.spec-to-code.TestSubject"></a><br>`imported`: the name the test imports; `value`: the function it reaches through it (`X.prototype.m` for a method).
-    - fn [testStub](../../src/spec-to-code.ts#L421) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L422) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       <a id="features.spec-to-code.testStub"></a><br>Builds a node:test file source that imports the subject and, per flow entry, emits a test checking it is a function then failing with a "not written" placeholder; used by [`features.spec-to-code.testCandidates`](features.md#features.spec-to-code.testCandidates). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - fn [modelTest](../../src/spec-to-code.ts#L429) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L430) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelTest"></a><br>The e2e test file from the model; each declared test name must be in it verbatim.
-    - fn [callersInFlows](../../src/spec-to-code.ts#L447) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L448) (analysis: Analysis, id: string) → string[] <!-- internal -->
       <a id="features.spec-to-code.callersInFlows"></a><br>IDs directly above `id` in flows: the trigger or step each of its steps is nested under.
-    - fn [newModuleFile](../../src/spec-to-code.ts#L466) (analysis: Analysis, moduleId: string) → string <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L467) (analysis: Analysis, moduleId: string) → string <!-- internal -->
       <a id="features.spec-to-code.newModuleFile"></a><br>`<layer glob prefix>/<segments>.<ext>` for a module the code lacks; one prefix per layer, or the path is ambiguous. The extension is the language most files of the layer are written in (then of the repository, then the first of `languages`); the file name follows the layer's…
       - calls [base.glob.globPrefix](base.md#base.glob.globPrefix), [base.languages.languageOf](base.md#base.languages.languageOf), [map.graph.placeFile](map.md#map.graph.placeFile), [features.spec-to-code.mostWritten](features.md#features.spec-to-code.mostWritten), [features.spec-to-code.fileStem](features.md#features.spec-to-code.fileStem)
-    - fn [mostWritten](../../src/spec-to-code.ts#L485) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
+    - fn [mostWritten](../../src/spec-to-code.ts#L486) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
       <a id="features.spec-to-code.mostWritten"></a><br>The language most of `files` are written in; a tie goes to the one `languages` lists first.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [fileStem](../../src/spec-to-code.ts#L502) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
+    - fn [fileStem](../../src/spec-to-code.ts#L503) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
       <a id="features.spec-to-code.fileStem"></a><br>The file name (without extension) of the module segment `segment`. An ID segment has `_` where the file had `.` (`bookmark.service` → `bookmark_service`), so the nearest scope whose files end in `.service` or `_service` decides; a scope with both is ambiguous.
-    - fn [stubFor](../../src/spec-to-code.ts#L526) (target: CodeTarget, id: string) → string <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L527) (target: CodeTarget, id: string) → string <!-- internal -->
       <a id="features.spec-to-code.stubFor"></a><br>`(order: Order) → Promise<Refund>` → a function of that signature that fails until written; the declared parameters and result are kept as written, so the stub's own signature matches the plan (no K201). A method comes without indentation and without its class: `placeStub` puts…
       - calls [features.spec-to-code.declared](features.md#features.spec-to-code.declared), [features.spec-to-code.phpString](features.md#features.spec-to-code.phpString)
-    - fn [declared](../../src/spec-to-code.ts#L541) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
+    - fn [declared](../../src/spec-to-code.ts#L542) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
       <a id="features.spec-to-code.declared"></a><br>The parameters and result of a declared signature, as written.
-    - fn [placeStub](../../src/spec-to-code.ts#L554) (before: string | null, target: CodeTarget, code: string, phpHead = "") → string <!-- internal -->
+    - fn [placeStub](../../src/spec-to-code.ts#L555) (before: string | null, target: CodeTarget, code: string, phpHead = "") → string <!-- internal -->
       <a id="features.spec-to-code.placeStub"></a><br>The file's text with `code` in place: appended to the module, wrapped in a new class appended to it, or inside the body of the class the code has. A new Python file gets postponed annotations: they name types it does not import, and are not evaluated when it loads.
       - calls [features.spec-to-code.intoClass](features.md#features.spec-to-code.intoClass), [features.spec-to-code.indent](features.md#features.spec-to-code.indent), [features.spec-to-code.declared](features.md#features.spec-to-code.declared)
-    - fn [intoClass](../../src/spec-to-code.ts#L579) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
+    - fn [intoClass](../../src/spec-to-code.ts#L580) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
       <a id="features.spec-to-code.intoClass"></a><br>`code` as the last member of the class whose lines `span` gives, indented as its other members are.
       - calls [features.spec-to-code.leadingSpace](features.md#features.spec-to-code.leadingSpace), [features.spec-to-code.indent](features.md#features.spec-to-code.indent)
-    - fn [leadingSpace](../../src/spec-to-code.ts#L605) (line: string) → string <!-- internal -->
+    - fn [leadingSpace](../../src/spec-to-code.ts#L606) (line: string) → string <!-- internal -->
       <a id="features.spec-to-code.leadingSpace"></a>
-    - fn [indent](../../src/spec-to-code.ts#L610) (code: string, prefix: string) → string <!-- internal -->
+    - fn [indent](../../src/spec-to-code.ts#L611) (code: string, prefix: string) → string <!-- internal -->
       <a id="features.spec-to-code.indent"></a><br>Each non-blank line of `code` with `prefix` before it.
-    - fn [dedent](../../src/spec-to-code.ts#L615) (code: string) → string <!-- internal -->
+    - fn [dedent](../../src/spec-to-code.ts#L616) (code: string) → string <!-- internal -->
       <a id="features.spec-to-code.dedent"></a><br>`code` without the indentation all its non-blank lines share.
       - calls [features.spec-to-code.leadingSpace](features.md#features.spec-to-code.leadingSpace)
-    - fn [fileExcerpt](../../src/spec-to-code.ts#L634) (text: string, owner: CodeTarget["owner"], firstDeclaration: number | null) → string <!-- internal -->
+    - fn [fileExcerpt](../../src/spec-to-code.ts#L635) (text: string, owner: CodeTarget["owner"], firstDeclaration: number | null) → string <!-- internal -->
       <a id="features.spec-to-code.fileExcerpt"></a><br>What the model is shown of the file the code goes into, never more than about `HEAD_LINES + EXCERPT_LINES` lines: a file of up to `EXCERPT_LINES` lines whole; a longer one as its head up to the first declaration (the imports, at most `HEAD_LINES` lines), then the class the…
-    - fn [firstDeclarationLine](../../src/spec-to-code.ts#L648) (analysis: Analysis, file: string) → number | null <!-- internal -->
+    - fn [firstDeclarationLine](../../src/spec-to-code.ts#L649) (analysis: Analysis, file: string) → number | null <!-- internal -->
       <a id="features.spec-to-code.firstDeclarationLine"></a><br>The first line of a declaration in `file` the snapshot knows: a fn, a type or a class; null without one.
-    - fn [modelBody](../../src/spec-to-code.ts#L658) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L659) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       <a id="features.spec-to-code.modelBody"></a><br>The function (or method, without its class) from the model, with its declared name; the rest of its answer is dropped.
       - calls [features.spec-to-code.flowsMentioning](features.md#features.spec-to-code.flowsMentioning), [features.spec-to-code.fileExcerpt](features.md#features.spec-to-code.fileExcerpt), [features.spec-to-code.firstDeclarationLine](features.md#features.spec-to-code.firstDeclarationLine), [features.spec-to-code.dedent](features.md#features.spec-to-code.dedent)
   - module [stale](../../src/stale.ts#L1)

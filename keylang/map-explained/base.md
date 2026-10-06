@@ -5,7 +5,7 @@
 # map
 
 - base
-  <a id="base"></a><br>Dependency-free foundations shared across keylang: config and glob matching, language data, spans, diagnostics, briefs, external package IDs ([`base.external-ids`](base.md#base.external-ids)) and safe file writes. It may not import [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+  <a id="base"></a><br>Dependency-free foundations shared across keylang: config and glob matching, language data, external package IDs, spans, diagnostics, briefs and safe file writes, barred from importing [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [brief](../../src/brief.ts#L1)
     <a id="base.brief"></a><br>Plain-language text → a brief: its first paragraph cut to two sentences. Doc comments (once an extractor strips their syntax) and model answers go through the same rule, so a brief reads the same whatever wrote it.
     - fn [briefOf](../../src/brief.ts#L16) (text: string) → string | null
@@ -217,9 +217,11 @@
       <a id="base.languages.constructorName"></a><br>The member a call of a class declared in `file` runs; JS `constructor` for a file of no known language.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
     - fn [caselessNames](../../src/languages.ts#L56) (file: string | null | undefined) → boolean
-      <a id="base.languages.caselessNames"></a><br>Classes, functions and methods declared in `file` compare their names without case.
+      <a id="base.languages.caselessNames"></a><br>Classes, functions and methods declared in `file` compare their names without ASCII case: by `asciiLowerCase`.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
-    - fn [implicitMember](../../src/languages.ts#L62) (file: string | null | undefined, name: string) → boolean
+    - fn [asciiLowerCase](../../src/languages.ts#L67) (name: string) → string
+      <a id="base.languages.asciiLowerCase"></a><br>`name` with A–Z lowered and every other character kept: how PHP compares class, function and method names (from 8.2 whatever the locale). `ORDER` is `order`, while `Äpfel` and `äpfel` stay two names, which `toLowerCase` would make one.
+    - fn [implicitMember](../../src/languages.ts#L72) (file: string | null | undefined, name: string) → boolean
       <a id="base.languages.implicitMember"></a><br>A member of a class in `file` that the language calls without naming it.
       - calls [base.languages.languageOf](base.md#base.languages.languageOf)
   - module [safe-write](../../src/safe-write.ts#L1)

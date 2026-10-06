@@ -131,10 +131,11 @@
     - fn [hookFails](../../src/changed.ts#L60) (report: { diagnostics: readonly Diagnostic[]; verdicts: readonly Verdict[] }) → HookFail[]
       - calls check.assess.sameFinding
     - fn [hookDecision](../../src/changed.ts#L71) (event: { stop_hook_active?: boolean }, fails: readonly HookFail[]) → string
-    - fn [parseHookEvent](../../src/changed.ts#L78) (text: string) → { stop_hook_active?: boolean }
-    - fn [covers](../../src/changed.ts#L93) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
-    - fn [ruleHits](../../src/changed.ts#L99) (spec: SpecIR) → RuleHit[] <!-- internal -->
-    - fn [flowLinesTouching](../../src/changed.ts#L116) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
+    - fn [uncheckedTurn](../../src/changed.ts#L85) (error: string) → { line: string; decision: string }
+    - fn [parseHookEvent](../../src/changed.ts#L92) (text: string) → { stop_hook_active?: boolean }
+    - fn [covers](../../src/changed.ts#L107) (scope: readonly string[], moduleId: string, layer: string) → boolean <!-- internal -->
+    - fn [ruleHits](../../src/changed.ts#L113) (spec: SpecIR) → RuleHit[] <!-- internal -->
+    - fn [flowLinesTouching](../../src/changed.ts#L130) (input: ChangedInput, changed: ReadonlySet<string>, gone: (id: string) => boolean) → Set<string> <!-- internal -->
       - calls lang.spec-ir.walkFlow
   - module [check-format](../../src/check-format.ts#L1)
     - check-results features.check-results
@@ -387,34 +388,39 @@
     - span base.span
     - spec-ir lang.spec-ir
     - verdict check.verdict
-    - type [Stage](../../src/feature-status.ts#L32) = "idea" | "behavior" | "structure" | "ready" | "done"
-    - type [Gap](../../src/feature-status.ts#L38)
-    - type [Hint](../../src/feature-status.ts#L52)
-    - type [FeatureInfo](../../src/feature-status.ts#L62)
-    - type [BaseChanges](../../src/feature-status.ts#L76)
-    - type [FeatureBase](../../src/feature-status.ts#L87)
-    - type [FeatureBaseInfo](../../src/feature-status.ts#L93)
-    - type [FeatureReport](../../src/feature-status.ts#L95)
-    - type [FeatureInput](../../src/feature-status.ts#L113)
-    - fn [idsIn](../../src/feature-status.ts#L147) (doc: Document) → string[]
+    - type [Stage](../../src/feature-status.ts#L34) = "idea" | "behavior" | "structure" | "ready" | "done"
+    - type [Gap](../../src/feature-status.ts#L40)
+    - type [Hint](../../src/feature-status.ts#L54)
+    - type [FeatureInfo](../../src/feature-status.ts#L64)
+    - type [BaseChanges](../../src/feature-status.ts#L78)
+    - type [BaseSource](../../src/feature-status.ts#L88) = "since" | "merge-base" | "HEAD"
+    - type [BaseOrigin](../../src/feature-status.ts#L91)
+    - type [FeatureBase](../../src/feature-status.ts#L112)
+    - type [FeatureBaseInfo](../../src/feature-status.ts#L120)
+    - type [FeatureReport](../../src/feature-status.ts#L122)
+    - type [FeatureInput](../../src/feature-status.ts#L140)
+    - fn [idsIn](../../src/feature-status.ts#L174) (doc: Document) → string[]
       - calls lang.ir.sectionNodes, lang.ir.walk
-    - fn [featureStatus](../../src/feature-status.ts#L164) (input: FeatureInput, slug: string) → FeatureReport | null
-      - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.planGaps, base.span.compareText, features.feature-status.stageOf
-    - type [RuleFail](../../src/feature-status.ts#L276) <!-- internal -->
-    - fn [ruleFails](../../src/feature-status.ts#L287) (input: FeatureInput) → RuleFail[] <!-- internal -->
+    - fn [featureStatus](../../src/feature-status.ts#L191) (input: FeatureInput, slug: string) → FeatureReport | null
+      - calls base.diag.isError, lang.spec-ir.walkFlow, features.feature-status.denyGaps, features.feature-status.finding, features.feature-status.claimsOf, features.feature-status.thisChange, features.feature-status.idsIn, features.feature-status.ruleFails, features.feature-status.weakenedPlan, base.span.compareText, features.feature-status.stageOf, features.feature-status.baseInfo
+    - fn [baseInfo](../../src/feature-status.ts#L301) (base: FeatureBase) → FeatureBaseInfo <!-- internal -->
+    - type [RuleFail](../../src/feature-status.ts#L307) <!-- internal -->
+    - fn [ruleFails](../../src/feature-status.ts#L318) (input: FeatureInput) → RuleFail[] <!-- internal -->
       - calls base.diag.isError, check.assess.sameFinding
-    - fn [thisChange](../../src/feature-status.ts#L306) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
+    - fn [thisChange](../../src/feature-status.ts#L337) (input: FeatureInput, path: string, named: readonly string[]) → (fail: RuleFail) => boolean <!-- internal -->
       - calls features.changed.filterChanged
-    - fn [stageOf](../../src/feature-status.ts#L334) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
-    - fn [denyGaps](../../src/feature-status.ts#L354) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
+    - fn [stageOf](../../src/feature-status.ts#L365) (hasFlow: boolean, gaps: readonly Gap[], hints: readonly Hint[]) → Stage <!-- internal -->
+    - fn [denyGaps](../../src/feature-status.ts#L385) (input: FeatureInput, path: string, flows: readonly Flow[]) → Gap[] <!-- internal -->
       - calls check.rules.dependencyKindOf, check.rules.denyingRule
-    - fn [claimsOf](../../src/feature-status.ts#L396) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
+    - fn [claimsOf](../../src/feature-status.ts#L427) (flow: Flow) → { id: string; span: Span }[] <!-- internal -->
       - calls lang.spec-ir.walkFlow
-    - fn [planGaps](../../src/feature-status.ts#L413) (input: FeatureInput, path: string, ref: string, baseDoc: Document) → Gap[] <!-- internal -->
+    - fn [weakenedPlan](../../src/feature-status.ts#L442) (input: FeatureInput, path: string, base: Extract<FeatureBase, { state: "compared" | "absent" }>) → Gap[] <!-- internal -->
+      - calls features.feature-status.planGaps
+    - fn [planGaps](../../src/feature-status.ts#L459) (input: FeatureInput, path: string, at: string, baseDoc: Document) → { key: string; gap: Gap }[] <!-- internal -->
       - calls lang.spec-ir.compileSpec, check.flows.plannedMismatch, features.feature-status.planItems
-    - type [PlanItem](../../src/feature-status.ts#L445) = Trigger | FlowStep | QuestionItem <!-- internal -->
-    - fn [planItems](../../src/feature-status.ts#L448) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
-    - fn [finding](../../src/feature-status.ts#L462) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
+    - type [PlanItem](../../src/feature-status.ts#L495) = Trigger | FlowStep | QuestionItem <!-- internal -->
+    - fn [planItems](../../src/feature-status.ts#L498) (flow: Flow) → { key: string; item: PlanItem }[] <!-- internal -->
+    - fn [finding](../../src/feature-status.ts#L512) (diagnostics: readonly Diagnostic[], file: string, line: number, code: string) → Diagnostic | undefined <!-- internal -->
   - module [ghost](../../src/ghost.ts#L1)
     - analyze map.analyze
     - agent-context features.agent-context
@@ -433,25 +439,27 @@
     - graph map.graph
     - parser lang.parser
     - span base.span
-    - type [ChangedFiles](../../src/git-changes.ts#L19)
-    - fn [gitIn](../../src/git-changes.ts#L29) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
+    - type [ChangedFiles](../../src/git-changes.ts#L20)
+    - fn [gitIn](../../src/git-changes.ts#L30) (root: string, label: string) → { run: (args: string[]) => SpawnSyncReturns<string>; git: (args: string[]) => string } <!-- internal -->
       - calls features.git-changes.gitUnavailable
-    - fn [gitUnavailable](../../src/git-changes.ts#L45) (label: string, error: Error & { code?: string }) → string
-    - fn [assertRef](../../src/git-changes.ts#L52) (ref: string, label: string) → void <!-- internal -->
-    - fn [diffArgs](../../src/git-changes.ts#L58) (base: string) → string[] <!-- internal -->
-    - fn [untracked](../../src/git-changes.ts#L60) (git: (args: string[]) => string) → string[] <!-- internal -->
-    - fn [ownState](../../src/git-changes.ts#L70) (path: string) → boolean <!-- internal -->
-    - fn [gitChangedFiles](../../src/git-changes.ts#L73) (root: string, ref: string, label = "check --changed") → ChangedFiles
+    - fn [gitUnavailable](../../src/git-changes.ts#L46) (label: string, error: Error & { code?: string }) → string
+    - fn [assertRef](../../src/git-changes.ts#L53) (ref: string, label: string) → void <!-- internal -->
+    - fn [diffArgs](../../src/git-changes.ts#L59) (base: string) → string[] <!-- internal -->
+    - fn [untracked](../../src/git-changes.ts#L61) (git: (args: string[]) => string) → string[] <!-- internal -->
+    - fn [ownState](../../src/git-changes.ts#L71) (path: string) → boolean <!-- internal -->
+    - fn [gitChangedFiles](../../src/git-changes.ts#L74) (root: string, ref: string, label = "check --changed") → ChangedFiles
       - calls features.git-changes.assertRef, features.git-changes.gitIn, features.git-changes.diffArgs, features.draft.deletedDiffPaths, features.draft.diffHunks, features.git-changes.untracked, features.git-changes.ownState
-    - fn [gitChangedLines](../../src/git-changes.ts#L88) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
+    - fn [gitChangedLines](../../src/git-changes.ts#L89) (root: string, ref: string, label = "code-to-spec --since") → ChangedLines
       - calls features.git-changes.assertRef, features.git-changes.gitIn, features.draft.diffHunks, features.git-changes.diffArgs, features.git-changes.untracked
-    - fn [changedPathSet](../../src/git-changes.ts#L97) (root: string, files: Iterable<string>, base: string) → Set<string>
+    - fn [changedPathSet](../../src/git-changes.ts#L98) (root: string, files: Iterable<string>, base: string) → Set<string>
       - calls base.config.toPosix
-    - fn [gitFileAt](../../src/git-changes.ts#L111) (root: string, ref: string, path: string, label: string) → string | null
+    - fn [gitFileAt](../../src/git-changes.ts#L112) (root: string, ref: string, path: string, label: string) → string | null
       - calls features.git-changes.assertRef, features.git-changes.gitIn
-    - fn [readFeatureBase](../../src/git-changes.ts#L132) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
-      - calls features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, lang.parser.parse
-    - fn [deletedModuleIds](../../src/git-changes.ts#L149) (config: Config, files: readonly string[]) → string[]
+    - fn [readFeatureBase](../../src/git-changes.ts#L134) (root: string, path: string, since: string | undefined, label: string) → FeatureBase
+      - calls features.git-changes.featureBaseOrigin, features.git-changes.gitFileAt, features.git-changes.gitChangedFiles, lang.parser.parse
+    - fn [featureBaseOrigin](../../src/git-changes.ts#L173) (root: string, label: string) → BaseOrigin
+      - calls features.git-changes.gitIn
+    - fn [deletedModuleIds](../../src/git-changes.ts#L196) (config: Config, files: readonly string[]) → string[]
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node
@@ -797,31 +805,31 @@
       - calls base.config.toPosix
     - fn [phpTestStub](../../src/spec-to-code.ts#L378) (file: string, head: string, subject: PhpSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
       - calls features.spec-to-code.lastName, features.spec-to-code.phpString
-    - fn [lastName](../../src/spec-to-code.ts#L391) (qualified: string) → string <!-- internal -->
-    - fn [modelPhpTest](../../src/spec-to-code.ts#L396) (model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
-    - type [TestSubject](../../src/spec-to-code.ts#L416) <!-- internal -->
-    - fn [testStub](../../src/spec-to-code.ts#L421) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
-    - fn [modelTest](../../src/spec-to-code.ts#L429) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
-    - fn [callersInFlows](../../src/spec-to-code.ts#L447) (analysis: Analysis, id: string) → string[] <!-- internal -->
-    - fn [newModuleFile](../../src/spec-to-code.ts#L466) (analysis: Analysis, moduleId: string) → string <!-- internal -->
+    - fn [lastName](../../src/spec-to-code.ts#L392) (qualified: string) → string <!-- internal -->
+    - fn [modelPhpTest](../../src/spec-to-code.ts#L397) (model: LlmClient, file: string, head: string, subject: PhpSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - type [TestSubject](../../src/spec-to-code.ts#L417) <!-- internal -->
+    - fn [testStub](../../src/spec-to-code.ts#L422) (from: string, subject: TestSubject, entries: readonly { flow: string; name: string }[]) → string <!-- internal -->
+    - fn [modelTest](../../src/spec-to-code.ts#L430) (model: LlmClient, file: string, from: string, subject: TestSubject, id: string, code: string, entries: readonly { flow: string; name: string }[], options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [callersInFlows](../../src/spec-to-code.ts#L448) (analysis: Analysis, id: string) → string[] <!-- internal -->
+    - fn [newModuleFile](../../src/spec-to-code.ts#L467) (analysis: Analysis, moduleId: string) → string <!-- internal -->
       - calls base.glob.globPrefix, base.languages.languageOf, map.graph.placeFile, features.spec-to-code.mostWritten, features.spec-to-code.fileStem
-    - fn [mostWritten](../../src/spec-to-code.ts#L485) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
+    - fn [mostWritten](../../src/spec-to-code.ts#L486) (files: readonly string[], languages: readonly string[]) → string | null <!-- internal -->
       - calls base.languages.languageOf
-    - fn [fileStem](../../src/spec-to-code.ts#L502) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
-    - fn [stubFor](../../src/spec-to-code.ts#L526) (target: CodeTarget, id: string) → string <!-- internal -->
+    - fn [fileStem](../../src/spec-to-code.ts#L503) (segment: string, scopes: readonly (readonly string[])[], ambiguous: (dotted: string, plain: string) => string) → string <!-- internal -->
+    - fn [stubFor](../../src/spec-to-code.ts#L527) (target: CodeTarget, id: string) → string <!-- internal -->
       - calls features.spec-to-code.declared, features.spec-to-code.phpString
-    - fn [declared](../../src/spec-to-code.ts#L541) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
-    - fn [placeStub](../../src/spec-to-code.ts#L554) (before: string | null, target: CodeTarget, code: string, phpHead = "") → string <!-- internal -->
+    - fn [declared](../../src/spec-to-code.ts#L542) (signature: string | null) → { params: string; result: string | null } <!-- internal -->
+    - fn [placeStub](../../src/spec-to-code.ts#L555) (before: string | null, target: CodeTarget, code: string, phpHead = "") → string <!-- internal -->
       - calls features.spec-to-code.intoClass, features.spec-to-code.indent, features.spec-to-code.declared
-    - fn [intoClass](../../src/spec-to-code.ts#L579) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
+    - fn [intoClass](../../src/spec-to-code.ts#L580) (text: string, span: { line: number; endLine: number; endCol: number | null }, code: string, python: boolean) → string <!-- internal -->
       - calls features.spec-to-code.leadingSpace, features.spec-to-code.indent
-    - fn [leadingSpace](../../src/spec-to-code.ts#L605) (line: string) → string <!-- internal -->
-    - fn [indent](../../src/spec-to-code.ts#L610) (code: string, prefix: string) → string <!-- internal -->
-    - fn [dedent](../../src/spec-to-code.ts#L615) (code: string) → string <!-- internal -->
+    - fn [leadingSpace](../../src/spec-to-code.ts#L606) (line: string) → string <!-- internal -->
+    - fn [indent](../../src/spec-to-code.ts#L611) (code: string, prefix: string) → string <!-- internal -->
+    - fn [dedent](../../src/spec-to-code.ts#L616) (code: string) → string <!-- internal -->
       - calls features.spec-to-code.leadingSpace
-    - fn [fileExcerpt](../../src/spec-to-code.ts#L634) (text: string, owner: CodeTarget["owner"], firstDeclaration: number | null) → string <!-- internal -->
-    - fn [firstDeclarationLine](../../src/spec-to-code.ts#L648) (analysis: Analysis, file: string) → number | null <!-- internal -->
-    - fn [modelBody](../../src/spec-to-code.ts#L658) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
+    - fn [fileExcerpt](../../src/spec-to-code.ts#L635) (text: string, owner: CodeTarget["owner"], firstDeclaration: number | null) → string <!-- internal -->
+    - fn [firstDeclarationLine](../../src/spec-to-code.ts#L649) (analysis: Analysis, file: string) → number | null <!-- internal -->
+    - fn [modelBody](../../src/spec-to-code.ts#L659) (analysis: Analysis, model: LlmClient, target: CodeTarget, id: string, before: string | null, options: LlmCallOptions) → Promise<string> <!-- internal -->
       - calls features.spec-to-code.flowsMentioning, features.spec-to-code.fileExcerpt, features.spec-to-code.firstDeclarationLine, features.spec-to-code.dedent
   - module [stale](../../src/stale.ts#L1)
     - node external.node

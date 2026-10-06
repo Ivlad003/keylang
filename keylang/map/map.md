@@ -190,37 +190,37 @@
       - calls map.fact-cache.isRecord, map.fact-cache.isPosition, map.fact-cache.every, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.optional
     - fn [isImport](../../src/fact-cache.ts#L68) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.every
-    - fn [isDecl](../../src/fact-cache.ts#L82) (value: unknown) → boolean <!-- internal -->
+    - fn [isDecl](../../src/fact-cache.ts#L83) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.every, map.fact-cache.optional, map.fact-cache.optionalTrue
-    - fn [isCall](../../src/fact-cache.ts#L104) (value: unknown) → boolean <!-- internal -->
+    - fn [isCall](../../src/fact-cache.ts#L105) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isRange, map.fact-cache.optionalTrue, map.fact-cache.optional, map.fact-cache.every
-    - fn [isHook](../../src/fact-cache.ts#L118) (value: unknown) → boolean <!-- internal -->
+    - fn [isHook](../../src/fact-cache.ts#L119) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.isInteger
-    - fn [isPass](../../src/fact-cache.ts#L129) (value: unknown) → boolean <!-- internal -->
+    - fn [isPass](../../src/fact-cache.ts#L130) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.optional
-    - fn [isExportRow](../../src/fact-cache.ts#L136) (value: unknown) → boolean <!-- internal -->
+    - fn [isExportRow](../../src/fact-cache.ts#L137) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isRecord, map.fact-cache.optional
-    - fn [isBound](../../src/fact-cache.ts#L140) (value: unknown) → boolean <!-- internal -->
-    - fn [isRange](../../src/fact-cache.ts#L145) (value: Record<string, unknown>) → boolean <!-- internal -->
+    - fn [isBound](../../src/fact-cache.ts#L141) (value: unknown) → boolean <!-- internal -->
+    - fn [isRange](../../src/fact-cache.ts#L146) (value: Record<string, unknown>) → boolean <!-- internal -->
       - calls map.fact-cache.isPosition
-    - fn [isPosition](../../src/fact-cache.ts#L149) (value: unknown) → boolean <!-- internal -->
+    - fn [isPosition](../../src/fact-cache.ts#L150) (value: unknown) → boolean <!-- internal -->
       - calls map.fact-cache.isInteger
-    - fn [isInteger](../../src/fact-cache.ts#L153) (value: unknown) → value is number <!-- internal -->
-    - fn [isString](../../src/fact-cache.ts#L157) (value: unknown) → boolean <!-- internal -->
-    - fn [every](../../src/fact-cache.ts#L161) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
-    - fn [optional](../../src/fact-cache.ts#L165) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
-    - fn [optionalTrue](../../src/fact-cache.ts#L169) (value: unknown) → boolean <!-- internal -->
-    - fn [isRecord](../../src/fact-cache.ts#L173) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - module [FactCache](../../src/fact-cache.ts#L179)
-      - fn [constructor](../../src/fact-cache.ts#L188) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
-      - fn [open](../../src/fact-cache.ts#L195) (root: string, version: string) → FactCache
+    - fn [isInteger](../../src/fact-cache.ts#L154) (value: unknown) → value is number <!-- internal -->
+    - fn [isString](../../src/fact-cache.ts#L158) (value: unknown) → boolean <!-- internal -->
+    - fn [every](../../src/fact-cache.ts#L162) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optional](../../src/fact-cache.ts#L166) (value: unknown, check: (item: unknown) => boolean) → boolean <!-- internal -->
+    - fn [optionalTrue](../../src/fact-cache.ts#L170) (value: unknown) → boolean <!-- internal -->
+    - fn [isRecord](../../src/fact-cache.ts#L174) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - module [FactCache](../../src/fact-cache.ts#L180)
+      - fn [constructor](../../src/fact-cache.ts#L189) (root: string, version: string, disk: Stored["files"]) <!-- internal -->
+      - fn [open](../../src/fact-cache.ts#L196) (root: string, version: string) → FactCache
         - calls map.fact-cache.storedFiles, map.fact-cache.FactCache
-      - fn [facts](../../src/fact-cache.ts#L208) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
-      - fn [changed](../../src/fact-cache.ts#L231) () → boolean
-      - fn [serialize](../../src/fact-cache.ts#L238) () → string
+      - fn [facts](../../src/fact-cache.ts#L209) (path: string, sha256: string, extract: () => Promise<FileFacts>) → Promise<FileFacts>
+      - fn [changed](../../src/fact-cache.ts#L232) () → boolean
+      - fn [serialize](../../src/fact-cache.ts#L239) () → string
         - calls base.span.compareText
-    - fn [keepsFactCache](../../src/fact-cache.ts#L251) (root: string) → boolean
-    - fn [saveFactCache](../../src/fact-cache.ts#L262) (root: string, text: string) → boolean
+    - fn [keepsFactCache](../../src/fact-cache.ts#L252) (root: string) → boolean
+    - fn [saveFactCache](../../src/fact-cache.ts#L263) (root: string, text: string) → boolean
       - calls base.safe-write.writeProblem, base.safe-write.writeAtomic, base.safe-write.landing
   - module [frontends](../../src/frontends.ts#L1)
     - facts extract.facts
@@ -264,47 +264,49 @@
     - type [Layer](../../src/graph.ts#L70)
     - type [Module](../../src/graph.ts#L76)
     - type [Dep](../../src/graph.ts#L104)
-    - type [Fn](../../src/graph.ts#L122)
-    - type [Escape](../../src/graph.ts#L146)
-    - type [Call](../../src/graph.ts#L153)
-    - type [TypeNode](../../src/graph.ts#L174)
-    - type [Stats](../../src/graph.ts#L188)
-    - fn [globalsOf](../../src/graph.ts#L211) (file: string) → Frontend["globals"] <!-- internal -->
+    - type [Fn](../../src/graph.ts#L123)
+    - type [Escape](../../src/graph.ts#L147)
+    - type [Call](../../src/graph.ts#L154)
+    - type [TypeNode](../../src/graph.ts#L175)
+    - type [Stats](../../src/graph.ts#L189)
+    - fn [globalsOf](../../src/graph.ts#L212) (file: string) → Frontend["globals"] <!-- internal -->
       - calls map.frontends.frontendFor
-    - type [FileEntry](../../src/graph.ts#L215) <!-- internal -->
-    - fn [buildGraph](../../src/graph.ts#L220) (config: Config, files: FileFacts[]) → Graph
-      - calls map.frontends.frontendOf, map.frontends.frontendFor, map.graph.placeFile, map.graph.isIndexFile, map.graph.topSegments, base.config.layerName, map.graph.addDecl, map.graph.markOpaque, map.declared-packages.readManifests, base.external-ids.assignExternalIds, map.graph.importedPackages, base.span.compareText, map.imports.assumedTarget, base.config.isAssumed, map.graph.importTarget, map.graph.notIndexed, base.external-ids.externalSegment, map.graph.exportInput, map.exports.resolveExports, base.languages.caselessNames, map.graph.memberKey, map.graph.caselessIndex, map.graph.staticThroughInstance, map.graph.globalsOf, map.graph.addCall, map.graph.holeReason, base.languages.languageOf, base.languages.constructorName, map.graph.markEscapes
-    - type [GlobSource](../../src/graph.ts#L1089) <!-- internal -->
-    - type [BaseLink](../../src/graph.ts#L1097) <!-- internal -->
-    - fn [staticThroughInstance](../../src/graph.ts#L1104) (file: string) → boolean <!-- internal -->
+    - type [FileEntry](../../src/graph.ts#L216) <!-- internal -->
+    - fn [buildGraph](../../src/graph.ts#L221) (config: Config, files: FileFacts[]) → Graph
+      - calls map.frontends.frontendOf, map.frontends.frontendFor, map.graph.placeFile, map.graph.isIndexFile, map.graph.topSegments, base.config.layerName, map.graph.addDecl, map.graph.markOpaque, map.declared-packages.readManifests, base.external-ids.assignExternalIds, map.graph.importedPackages, base.span.compareText, map.imports.assumedTarget, base.config.isAssumed, map.graph.importTarget, map.graph.notIndexed, base.external-ids.externalSegment, map.graph.exportInput, map.exports.resolveExports, base.languages.caselessNames, map.graph.memberKey, map.graph.caselessIndex, base.languages.asciiLowerCase, map.graph.staticThroughInstance, map.graph.globalsOf, map.graph.addCall, map.graph.holeReason, base.languages.languageOf, base.languages.constructorName, map.graph.markEscapes
+    - type [GlobSource](../../src/graph.ts#L1093) <!-- internal -->
+    - type [BaseLink](../../src/graph.ts#L1101) <!-- internal -->
+    - fn [staticThroughInstance](../../src/graph.ts#L1108) (file: string) → boolean <!-- internal -->
       - calls base.languages.languageOf
-    - type [ImportTarget](../../src/graph.ts#L1110) <!-- internal -->
-    - fn [unindexedModule](../../src/graph.ts#L1126) (name: string) → Module <!-- internal -->
-    - fn [importTarget](../../src/graph.ts#L1140) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
-    - fn [exportInput](../../src/graph.ts#L1152) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
+    - type [ImportTarget](../../src/graph.ts#L1114) <!-- internal -->
+    - fn [unindexedModule](../../src/graph.ts#L1130) (name: string) → Module <!-- internal -->
+    - fn [importTarget](../../src/graph.ts#L1144) (module: Module, unit: string, binding: ImportBinding, whole: boolean) → ImportTarget <!-- internal -->
+    - fn [exportInput](../../src/graph.ts#L1156) (row: ExportRow, facts: FileFacts, scope: ReadonlyMap<string, string>, imported: ReadonlyMap<string, ImportTarget[]>) → ExportRowInput <!-- internal -->
       - calls base.config.layerName
-    - fn [importedPackages](../../src/graph.ts#L1172) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
-    - fn [notIndexed](../../src/graph.ts#L1189) (config: Config, file: string) → string | null <!-- internal -->
+    - fn [importedPackages](../../src/graph.ts#L1176) (files: readonly FileFacts[], resolve: (file: string, spec: string) => Resolution) → Set<string> <!-- internal -->
+    - fn [notIndexed](../../src/graph.ts#L1193) (config: Config, file: string) → string | null <!-- internal -->
       - calls base.languages.languageOf, base.config.isExcluded, base.config.isOutside, map.graph.placeFile
-    - fn [isIndexFile](../../src/graph.ts#L1196) (file: string) → boolean <!-- internal -->
+    - fn [isIndexFile](../../src/graph.ts#L1200) (file: string) → boolean <!-- internal -->
       - calls base.languages.languageOf
-    - fn [addCall](../../src/graph.ts#L1207) (fn: Fn, call: Call) → boolean <!-- internal -->
-    - fn [holeReason](../../src/graph.ts#L1215) (c: CallFact) → string <!-- internal -->
-    - fn [markEscapes](../../src/graph.ts#L1228) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
-      - calls map.graph.foldCase, base.languages.caselessNames, base.languages.constructorName, base.languages.implicitMember
-    - fn [foldCase](../../src/graph.ts#L1250) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
-    - fn [markOpaque](../../src/graph.ts#L1256) (m: Module) → void <!-- internal -->
-    - type [Decls](../../src/graph.ts#L1262) <!-- internal -->
-    - fn [caselessIndex](../../src/graph.ts#L1276) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
-    - fn [memberKey](../../src/graph.ts#L1288) (member: string, isStatic: boolean, caseless = false) → string
-      - calls base.config.layerName
-    - fn [memberSegments](../../src/graph.ts#L1304) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
+    - fn [addCall](../../src/graph.ts#L1211) (fn: Fn, call: Call) → boolean <!-- internal -->
+    - fn [holeReason](../../src/graph.ts#L1219) (c: CallFact) → string <!-- internal -->
+    - fn [markEscapes](../../src/graph.ts#L1232) (modules: Map<string, Module>, readIds: ReadonlyMap<string, Escape>, readMembers: ReadonlyMap<string, Escape>, calledNames: ReadonlyMap<string, Escape>, members: Decls["members"]) → void <!-- internal -->
+      - calls map.graph.foldCase, base.languages.caselessNames, base.languages.asciiLowerCase, base.languages.constructorName, base.languages.implicitMember
+    - fn [foldCase](../../src/graph.ts#L1254) (names: ReadonlyMap<string, Escape>) → Map<string, Escape> <!-- internal -->
+      - calls base.languages.asciiLowerCase
+    - fn [markOpaque](../../src/graph.ts#L1260) (m: Module) → void <!-- internal -->
+    - type [Decls](../../src/graph.ts#L1266) <!-- internal -->
+    - fn [caselessIndex](../../src/graph.ts#L1280) (rows: readonly ExportRowInput[]) → Map<string, string[]> <!-- internal -->
+      - calls base.languages.asciiLowerCase
+    - fn [memberKey](../../src/graph.ts#L1292) (member: string, isStatic: boolean, caseless = false) → string
+      - calls base.config.layerName, base.languages.asciiLowerCase
+    - fn [memberSegments](../../src/graph.ts#L1308) (members: readonly DeclFact[], caseless: boolean) → Map<DeclFact, { key: string; segment: string }> <!-- internal -->
       - calls map.graph.memberKey, base.config.layerName
-    - fn [topSegments](../../src/graph.ts#L1333) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
+    - fn [topSegments](../../src/graph.ts#L1337) (module: Module, files: readonly FileFacts[], warnings: string[]) → Map<DeclFact, string> <!-- internal -->
       - calls base.span.compareText, base.config.layerName
-    - fn [addDecl](../../src/graph.ts#L1363) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
+    - fn [addDecl](../../src/graph.ts#L1367) (module: Module, d: DeclFact, names: Map<string, string>, declModule: Map<string, Map<string, string>>, decls: Decls, stats: Stats, file: string, member?: { key: string; segment: string }) → void <!-- internal -->
       - calls base.config.layerName, map.graph.memberSegments, base.languages.caselessNames
-    - fn [placeFile](../../src/graph.ts#L1449) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
+    - fn [placeFile](../../src/graph.ts#L1453) (config: Config, file: string) → { layer: string; segments: string[]; stem: string; glob: string | null } | null
       - calls base.config.isOutside, base.glob.matchesGlob, base.glob.globPrefix, base.languages.languageOf
   - module [imports](../../src/imports.ts#L1)
     - node external.node
@@ -313,61 +315,68 @@
     - languages base.languages
     - type [Resolution](../../src/imports.ts#L24)
     - type [SourceResolver](../../src/imports.ts#L38)
-    - fn [assumedTarget](../../src/imports.ts#L57) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
+    - fn [assumedTarget](../../src/imports.ts#L64) (r: Resolution, wouldName: () => readonly string[], assumed: (path: string) => boolean) → string | null
       - calls base.languages.languageOf
-    - type [PathRule](../../src/imports.ts#L67) <!-- internal -->
-    - module [ImportResolver](../../src/imports.ts#L73)
-      - fn [constructor](../../src/imports.ts#L91) (root: string, sources: ReadonlySet<string> = new Set())
+    - type [PathRule](../../src/imports.ts#L74) <!-- internal -->
+    - module [ImportResolver](../../src/imports.ts#L80)
+      - fn [constructor](../../src/imports.ts#L104) (root: string, sources: ReadonlySet<string> = new Set())
         - calls map.imports.readText, map.imports.parseJsonc, map.imports.loadTsconfig, map.imports.isObject
-      - fn [known](../../src/imports.ts#L113) (pkg: string) → boolean <!-- internal -->
-        - calls map.imports.ImportResolver.locate
-      - fn [locate](../../src/imports.ts#L124) (pkg: string) → Located <!-- internal -->
-        - calls map.imports.inside, map.imports.ImportResolver.workspaceDirs
-      - fn [workspaceDirs](../../src/imports.ts#L153) () → string[] <!-- internal -->
+      - fn [verbatimModuleSyntax](../../src/imports.ts#L140) (file: string) → boolean
+        - calls map.imports.ImportResolver.governingConfig, map.imports.ImportResolver.verbatimSetting, map.imports.isObject, base.config.toPosix
+      - fn [governingConfig](../../src/imports.ts#L160) (dir: string) → string | null <!-- internal -->
+      - fn [verbatimSetting](../../src/imports.ts#L178) (file: string, depth: number) → boolean | "unset" | "unknown" <!-- internal -->
+        - calls map.imports.isObject, map.imports.ImportResolver.extendedConfig
+      - fn [extendedConfig](../../src/imports.ts#L203) (dir: string, spec: string) → string | null <!-- internal -->
         - calls base.config.toPosix
-      - fn [packageEntry](../../src/imports.ts#L177) (dir: string, subpath: string) → string | null <!-- internal -->
+      - fn [known](../../src/imports.ts#L222) (pkg: string) → boolean <!-- internal -->
+        - calls map.imports.ImportResolver.locate
+      - fn [locate](../../src/imports.ts#L233) (pkg: string) → Located <!-- internal -->
+        - calls map.imports.inside, map.imports.ImportResolver.workspaceDirs
+      - fn [workspaceDirs](../../src/imports.ts#L262) () → string[] <!-- internal -->
+        - calls base.config.toPosix
+      - fn [packageEntry](../../src/imports.ts#L286) (dir: string, subpath: string) → string | null <!-- internal -->
         - calls map.imports.flattenTarget, map.imports.isObject, map.imports.matchPattern, map.imports.ImportResolver.probe, base.config.toPosix
-      - fn [resolve](../../src/imports.ts#L207) (fromFile: string, spec: string) → Resolution
+      - fn [resolve](../../src/imports.ts#L316) (fromFile: string, spec: string) → Resolution
         - calls map.imports.ImportResolver.resolveUncached
-      - fn [resolveUncached](../../src/imports.ts#L217) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveUncached](../../src/imports.ts#L326) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.probe, map.imports.ImportResolver.resolveSubpathImport, map.imports.bestMatch, extract.ts.isNodeBuiltin, map.imports.ImportResolver.resolvePackage
-      - fn [resolveSubpathImport](../../src/imports.ts#L246) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolveSubpathImport](../../src/imports.ts#L355) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix, map.imports.ImportResolver.resolve, map.imports.ImportResolver.probe
-      - fn [scopeImports](../../src/imports.ts#L269) (dir: string) → PathRule[] | null <!-- internal -->
+      - fn [scopeImports](../../src/imports.ts#L378) (dir: string) → PathRule[] | null <!-- internal -->
         - calls map.imports.isObject, map.imports.flattenTarget
-      - fn [resolvePackage](../../src/imports.ts#L279) (fromFile: string, spec: string) → Resolution <!-- internal -->
+      - fn [resolvePackage](../../src/imports.ts#L388) (fromFile: string, spec: string) → Resolution <!-- internal -->
         - calls map.imports.packageName, map.imports.ImportResolver.locate, map.imports.ImportResolver.packageEntry, map.imports.ImportResolver.known, map.imports.ImportResolver.knownNear
-      - fn [knownNear](../../src/imports.ts#L290) (fromFile: string, pkg: string) → boolean <!-- internal -->
+      - fn [knownNear](../../src/imports.ts#L399) (fromFile: string, pkg: string) → boolean <!-- internal -->
         - calls map.imports.isObject
-      - fn [probe](../../src/imports.ts#L309) (candidate: string) → string | null <!-- internal -->
+      - fn [probe](../../src/imports.ts#L418) (candidate: string) → string | null <!-- internal -->
         - calls map.imports.probeCandidates
-      - fn [wouldName](../../src/imports.ts#L323) (fromFile: string, spec: string) → string[]
+      - fn [wouldName](../../src/imports.ts#L432) (fromFile: string, spec: string) → string[]
         - calls map.imports.probeCandidates, map.imports.ImportResolver.scopeImports, map.imports.bestMatch, base.config.toPosix
-    - fn [probeCandidates](../../src/imports.ts#L357) (candidate: string) → string[] <!-- internal -->
-    - type [Located](../../src/imports.ts#L364) <!-- internal -->
-    - fn [inside](../../src/imports.ts#L367) (root: string, abs: string) → string | null <!-- internal -->
+    - fn [probeCandidates](../../src/imports.ts#L466) (candidate: string) → string[] <!-- internal -->
+    - type [Located](../../src/imports.ts#L473) <!-- internal -->
+    - fn [inside](../../src/imports.ts#L476) (root: string, abs: string) → string | null <!-- internal -->
       - calls base.config.toPosix
-    - fn [isObject](../../src/imports.ts#L382) (value: unknown) → value is Record<string, unknown> <!-- internal -->
-    - fn [bestMatch](../../src/imports.ts#L392) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
+    - fn [isObject](../../src/imports.ts#L491) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - fn [bestMatch](../../src/imports.ts#L501) (rules: readonly PathRule[], spec: string) → { rule: PathRule; star: string } | null <!-- internal -->
       - calls map.imports.matchPattern
-    - fn [matchPattern](../../src/imports.ts#L404) (pattern: string, spec: string) → string | null <!-- internal -->
-    - fn [flattenTarget](../../src/imports.ts#L415) (t: unknown) → string[] <!-- internal -->
-    - fn [packageName](../../src/imports.ts#L422) (spec: string) → string
-    - fn [readJsonc](../../src/imports.ts#L428) (path: string) → unknown
+    - fn [matchPattern](../../src/imports.ts#L513) (pattern: string, spec: string) → string | null <!-- internal -->
+    - fn [flattenTarget](../../src/imports.ts#L524) (t: unknown) → string[] <!-- internal -->
+    - fn [packageName](../../src/imports.ts#L531) (spec: string) → string
+    - fn [readJsonc](../../src/imports.ts#L537) (path: string) → unknown
       - calls map.imports.readText, map.imports.parseJsonc
-    - fn [parseJsonc](../../src/imports.ts#L434) (text: string) → unknown
+    - fn [parseJsonc](../../src/imports.ts#L543) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [parseJsoncStrict](../../src/imports.ts#L443) (text: string) → unknown
+    - fn [parseJsoncStrict](../../src/imports.ts#L552) (text: string) → unknown
       - calls map.imports.stripJsonc
-    - fn [readText](../../src/imports.ts#L448) (path: string) → string | null <!-- internal -->
-    - fn [stripJsonc](../../src/imports.ts#L453) (text: string) → string <!-- internal -->
-    - type [Tsconfig](../../src/imports.ts#L474) <!-- internal -->
-    - type [MergedOptions](../../src/imports.ts#L480) <!-- internal -->
-    - fn [loadTsconfig](../../src/imports.ts#L493) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
+    - fn [readText](../../src/imports.ts#L557) (path: string) → string | null <!-- internal -->
+    - fn [stripJsonc](../../src/imports.ts#L562) (text: string) → string <!-- internal -->
+    - type [Tsconfig](../../src/imports.ts#L583) <!-- internal -->
+    - type [MergedOptions](../../src/imports.ts#L589) <!-- internal -->
+    - fn [loadTsconfig](../../src/imports.ts#L602) (read: (file: string) => unknown, file: string) → Tsconfig <!-- internal -->
       - calls map.imports.mergedOptions, map.imports.placePaths, map.imports.isObject, base.config.toPosix
-    - fn [mergedOptions](../../src/imports.ts#L512) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
+    - fn [mergedOptions](../../src/imports.ts#L621) (read: (file: string) => unknown, file: string, depth: number) → MergedOptions <!-- internal -->
       - calls map.imports.isObject, base.config.toPosix
-    - fn [placePaths](../../src/imports.ts#L531) (options: MergedOptions) → PathRule[] <!-- internal -->
+    - fn [placePaths](../../src/imports.ts#L640) (options: MergedOptions) → PathRule[] <!-- internal -->
       - calls base.config.toPosix
   - module [map](../../src/map.ts#L1)
     - node external.node
@@ -434,16 +443,17 @@
     - node external.node
     - facts extract.facts
     - imports map.imports
-    - module [PhpResolver](../../src/php-imports.ts#L30)
-      - fn [constructor](../../src/php-imports.ts#L42) (root: string, sources: ReadonlySet<string> = new Set(), files: readonly FileFacts[] = [])
-        - calls map.php-imports.readText, map.php-imports.packagePrefixes
-      - fn [resolve](../../src/php-imports.ts#L64) (fromFile: string, spec: string) → Resolution
-        - calls map.php-imports.PhpResolver.include
-      - fn [include](../../src/php-imports.ts#L84) (fromFile: string, path: string) → Resolution <!-- internal -->
-    - fn [packagePrefixes](../../src/php-imports.ts#L94) (text: string) → { prefix: string; name: string }[]
-      - calls map.php-imports.isRecord
-    - fn [readText](../../src/php-imports.ts#L120) (abs: string) → string | null <!-- internal -->
-    - fn [isRecord](../../src/php-imports.ts#L128) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+    - languages base.languages
+    - module [PhpResolver](../../src/php-imports.ts#L32)
+      - fn [constructor](../../src/php-imports.ts#L44) (root: string, sources: ReadonlySet<string> = new Set(), files: readonly FileFacts[] = [])
+        - calls base.languages.asciiLowerCase, map.php-imports.readText, map.php-imports.packagePrefixes
+      - fn [resolve](../../src/php-imports.ts#L66) (fromFile: string, spec: string) → Resolution
+        - calls map.php-imports.PhpResolver.include, base.languages.asciiLowerCase
+      - fn [include](../../src/php-imports.ts#L86) (fromFile: string, path: string) → Resolution <!-- internal -->
+    - fn [packagePrefixes](../../src/php-imports.ts#L96) (text: string) → { prefix: string; name: string }[]
+      - calls map.php-imports.isRecord, base.languages.asciiLowerCase
+    - fn [readText](../../src/php-imports.ts#L122) (abs: string) → string | null <!-- internal -->
+    - fn [isRecord](../../src/php-imports.ts#L130) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [python-imports](../../src/python-imports.ts#L1)
     - node external.node
     - imports map.imports
@@ -498,33 +508,33 @@
     - type [Provenance](../../src/snapshot.ts#L23) = "syntactic"
     - type [EdgeKind](../../src/snapshot.ts#L24) = "import" | "call" | "type" | "reexport"
     - type [SnapshotEdge](../../src/snapshot.ts#L26)
-    - type [SnapshotExport](../../src/snapshot.ts#L67)
-    - type [CoverageItem](../../src/snapshot.ts#L96)
-    - fn [leavesUnresolved](../../src/snapshot.ts#L117) (item: Pick<CoverageItem, "kind">) → boolean
-    - type [SnapshotNode](../../src/snapshot.ts#L121)
-    - type [SystemDoc](../../src/snapshot.ts#L167)
-    - type [RepositoryDocs](../../src/snapshot.ts#L177)
-    - type [AnalysisSnapshot](../../src/snapshot.ts#L183)
-    - fn [sha256](../../src/snapshot.ts#L215) (text: string) → string
-    - fn [buildSnapshot](../../src/snapshot.ts#L219) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, ) → AnalysisSnapshot
+    - type [SnapshotExport](../../src/snapshot.ts#L68)
+    - type [CoverageItem](../../src/snapshot.ts#L97)
+    - fn [leavesUnresolved](../../src/snapshot.ts#L118) (item: Pick<CoverageItem, "kind">) → boolean
+    - type [SnapshotNode](../../src/snapshot.ts#L122)
+    - type [SystemDoc](../../src/snapshot.ts#L168)
+    - type [RepositoryDocs](../../src/snapshot.ts#L178)
+    - type [AnalysisSnapshot](../../src/snapshot.ts#L184)
+    - fn [sha256](../../src/snapshot.ts#L216) (text: string) → string
+    - fn [buildSnapshot](../../src/snapshot.ts#L220) ( graph: Graph, config: Config, files: readonly { path: string; sha256: string }[], /** Files (or an unreadable directory) left out; `source`: the ID scope they belong to when no module has the file. */ skipped: readonly { file: string; reason: string; source?: string; kind?: "skipped-file" | "outside-file" }[], docs: RepositoryDocs = { system: { name: null, brief: null, source: null }, layers: new Map() }, ) → AnalysisSnapshot
       - calls map.snapshot.grammarVersions, map.snapshot.sha256, map.snapshot.docBrief, map.snapshot.indexDoc, base.glob.globDirectory, map.snapshot.closures
-    - fn [closures](../../src/snapshot.ts#L434) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
+    - fn [closures](../../src/snapshot.ts#L435) (nodes: Record<string, SnapshotNode>, coverage: readonly CoverageItem[]) → void <!-- internal -->
       - calls base.languages.constructorName, check.scc.components, map.snapshot.sha256
-    - fn [docBrief](../../src/snapshot.ts#L477) (doc: string | null | undefined) → string | null <!-- internal -->
+    - fn [docBrief](../../src/snapshot.ts#L478) (doc: string | null | undefined) → string | null <!-- internal -->
       - calls base.brief.briefOf
-    - fn [indexDoc](../../src/snapshot.ts#L486) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
+    - fn [indexDoc](../../src/snapshot.ts#L487) (modules: readonly Module[], dir: string | null) → string | null <!-- internal -->
       - calls base.languages.languageOf, map.snapshot.docBrief
-    - fn [exportRow](../../src/snapshot.ts#L498) (entry: ExportEntry) → SnapshotExport <!-- internal -->
-    - fn [compareCoverage](../../src/snapshot.ts#L511) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
+    - fn [exportRow](../../src/snapshot.ts#L499) (entry: ExportEntry) → SnapshotExport <!-- internal -->
+    - fn [compareCoverage](../../src/snapshot.ts#L512) (a: CoverageItem, b: CoverageItem) → number <!-- internal -->
       - calls map.snapshot.cmp
-    - fn [cmp](../../src/snapshot.ts#L515) (a: string, b: string) → number <!-- internal -->
-    - fn [grammarVersions](../../src/snapshot.ts#L529) () → Record<string, string>
+    - fn [cmp](../../src/snapshot.ts#L516) (a: string, b: string) → number <!-- internal -->
+    - fn [grammarVersions](../../src/snapshot.ts#L530) () → Record<string, string>
       - calls map.snapshot.installedVersion, map.snapshot.bundledGrammarsVersion
-    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L540) () → string | null <!-- internal -->
+    - fn [bundledGrammarsVersion](../../src/snapshot.ts#L541) () → string | null <!-- internal -->
       - calls map.snapshot.readJson
-    - fn [installedVersion](../../src/snapshot.ts#L551) (name: string, resolve: () => string) → string | null <!-- internal -->
+    - fn [installedVersion](../../src/snapshot.ts#L552) (name: string, resolve: () => string) → string | null <!-- internal -->
       - calls map.snapshot.readJson
-    - fn [readJson](../../src/snapshot.ts#L567) (file: string) → Record<string, unknown> | null <!-- internal -->
+    - fn [readJson](../../src/snapshot.ts#L568) (file: string) → Record<string, unknown> | null <!-- internal -->
   - module [trace-plan](../../src/trace-plan.ts#L1)
     - node external.node
     - config base.config

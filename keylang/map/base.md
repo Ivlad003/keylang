@@ -130,7 +130,8 @@
       - calls base.languages.languageOf
     - fn [caselessNames](../../src/languages.ts#L56) (file: string | null | undefined) → boolean
       - calls base.languages.languageOf
-    - fn [implicitMember](../../src/languages.ts#L62) (file: string | null | undefined, name: string) → boolean
+    - fn [asciiLowerCase](../../src/languages.ts#L67) (name: string) → string
+    - fn [implicitMember](../../src/languages.ts#L72) (file: string | null | undefined, name: string) → boolean
       - calls base.languages.languageOf
   - module [safe-write](../../src/safe-write.ts#L1)
     - node external.node

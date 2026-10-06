@@ -52,13 +52,14 @@
     - type [Step](../../src/flows.ts#L261) <!-- internal -->
     - type [CallGraph](../../src/flows.ts#L267) <!-- internal -->
     - fn [callGraph](../../src/flows.ts#L293) (input: FlowInput) → CallGraph <!-- internal -->
-      - calls base.languages.constructorName, check.flows.callName, base.languages.caselessNames, check.flows.doubtfulBodies
+      - calls base.languages.constructorName, check.flows.callName, base.languages.caselessNames, base.languages.asciiLowerCase, check.flows.doubtfulBodies
     - fn [doubtfulBodies](../../src/flows.ts#L335) (input: FlowInput) → { replaced: Map<string, string>; unreadable: Map<string, string> } <!-- internal -->
       - calls base.span.compareText
     - fn [lastSegment](../../src/flows.ts#L355) (text: string) → string <!-- internal -->
     - fn [callName](../../src/flows.ts#L363) (id: string) → string <!-- internal -->
       - calls check.flows.lastSegment
     - fn [namedLike](../../src/flows.ts#L375) (graph: CallGraph, name: string) → string[] <!-- internal -->
+      - calls base.languages.asciiLowerCase
     - fn [describeVia](../../src/flows.ts#L380) (edge: SnapshotEdge) → string <!-- internal -->
     - fn [describeHole](../../src/flows.ts#L384) (edge: SnapshotEdge, target: string, input: FlowInput) → string <!-- internal -->
       - calls check.flows.describeVia, check.flows.lastSegment, check.flows.callName
@@ -66,7 +67,7 @@
     - fn [reachability](../../src/flows.ts#L423) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
       - calls check.flows.externalImport, check.flows.search, check.flows.routeMessage, check.flows.routeSteps, check.flows.possibleRoute, check.flows.at, check.flows.describeHole, check.flows.callersOf, check.flows.escapeOf, check.flows.holeNear
     - fn [directCall](../../src/flows.ts#L487) (graph: CallGraph, input: FlowInput, parent: string | null, target: string) → { verdict: Verdict["verdict"]; message: string } <!-- internal -->
-      - calls check.flows.externalImport, check.flows.routeMessage, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, base.languages.caselessNames, check.flows.callName, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
+      - calls check.flows.externalImport, check.flows.routeMessage, check.flows.at, check.flows.describeHole, check.flows.namedLike, check.flows.lastSegment, base.languages.caselessNames, check.flows.callName, base.languages.asciiLowerCase, check.flows.escapeOf, check.flows.search, check.flows.routeSteps
     - fn [search](../../src/flows.ts#L534) (graph: CallGraph, parent: string, target: string, follow: (step: Step) => boolean) → { route: Map<string, Step> | null; depth: Map<string, number> } <!-- internal -->
     - fn [routeSteps](../../src/flows.ts#L557) (parent: string, target: string, previous: Map<string, Step>) → Step[] <!-- internal -->
     - fn [fileModule](../../src/flows.ts#L570) (nodes: FlowInput["nodes"], id: string) → string | null <!-- internal -->
@@ -79,22 +80,22 @@
     - fn [callersOf](../../src/flows.ts#L638) (graph: CallGraph, target: string) → Set<string> <!-- internal -->
     - fn [escapeOf](../../src/flows.ts#L656) (graph: CallGraph, input: FlowInput, routes: Set<string>, reachable: ReadonlySet<string>) → { reason: string; from: string | null } | null <!-- internal -->
       - calls check.flows.fnAt, check.flows.at, check.flows.callName, base.languages.caselessNames, check.flows.identifierPattern, base.span.compareText
-    - fn [identifierPattern](../../src/flows.ts#L690) (name: string, caseless = false) → RegExp <!-- internal -->
-    - fn [fnAt](../../src/flows.ts#L695) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
-    - fn [holeNear](../../src/flows.ts#L709) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
+    - fn [identifierPattern](../../src/flows.ts#L694) (name: string, caseless = false) → RegExp <!-- internal -->
+    - fn [fnAt](../../src/flows.ts#L701) (input: FlowInput, file: string, line: number) → string | null <!-- internal -->
+    - fn [holeNear](../../src/flows.ts#L715) (graph: CallGraph, holes: { edge: SnapshotEdge }[], from: string) → SnapshotEdge | null <!-- internal -->
       - calls base.span.compareText
-    - fn [moduleMembers](../../src/flows.ts#L725) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
-    - fn [collectPlanned](../../src/flows.ts#L741) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
+    - fn [moduleMembers](../../src/flows.ts#L731) (nodes: FlowInput["nodes"], id: string) → "complete" | "opaque" | null <!-- internal -->
+    - fn [collectPlanned](../../src/flows.ts#L747) (spec: SpecIR, input: FlowInput, diagnostics: Diagnostic[]) → Map<string, Planned> <!-- internal -->
       - calls check.flows.codeLocation, check.flows.plannedMismatch, base.diag.diagnostic
-    - fn [codeLocation](../../src/flows.ts#L770) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
+    - fn [codeLocation](../../src/flows.ts#L776) (id: string, code: SnapshotNodeView, edges: readonly SnapshotEdge[]) → string <!-- internal -->
       - calls base.span.compareText
-    - fn [plannedMismatch](../../src/flows.ts#L781) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
+    - fn [plannedMismatch](../../src/flows.ts#L787) (item: { decl: string; signature: string | null }, code: { kind: string; signature?: string | null; file?: string | null }) → "kind" | "signature" | null
       - calls check.flows.sameSignature
-    - fn [sameSignature](../../src/flows.ts#L794) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
+    - fn [sameSignature](../../src/flows.ts#L800) (planned: string, code: string, file: string | null) → boolean <!-- internal -->
       - calls check.flows.normalizeSignature, check.flows.parameterList
-    - fn [parameterList](../../src/flows.ts#L805) (signature: string) → string | null <!-- internal -->
-    - fn [normalizeSignature](../../src/flows.ts#L815) (text: string) → string <!-- internal -->
-    - fn [specHash](../../src/flows.ts#L819) (text: string) → string <!-- internal -->
+    - fn [parameterList](../../src/flows.ts#L811) (signature: string) → string | null <!-- internal -->
+    - fn [normalizeSignature](../../src/flows.ts#L821) (text: string) → string <!-- internal -->
+    - fn [specHash](../../src/flows.ts#L825) (text: string) → string <!-- internal -->
   - module [resolve](../../src/resolve.ts#L1)
     - config base.config
     - diag base.diag
