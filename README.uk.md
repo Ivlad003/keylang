@@ -69,6 +69,8 @@ keylang — це Markdown, що лежить поруч із кодом. У нь
 npx keylang init .      # вгадати шари, записати keylang.json, зібрати карту
 npx keylang check       # імена і правила в keylang/
 npm i -g keylang        # далі просто `keylang …`
+npx keylang clone https://github.com/owner/repo   # чужий репозиторій: клон у кеш і карта
+npx keylang web https://github.com/owner/repo     # те саме, потім інтерфейс у браузері
 ```
 
 З клону цього репозиторію:

@@ -1,0 +1,16 @@
+# Only what `npm pack` needs reaches the build: sources, scripts, package files.
+.git
+node_modules
+dist
+.keylang
+.scratch
+.pi
+.claude
+logs
+bench
+design
+slides
+editors
+*.tgz
+*.mp4
+transcript_*.txt

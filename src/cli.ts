@@ -1,13 +1,15 @@
-// `keylang` command line: the TUI (no command), web, init, map, check, parse, fmt.
+// `keylang` command line: the TUI (no command), web, clone, init, map, check, parse, fmt.
 
 import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { SHELLS, completionScript, helpCommands, isShell } from "./completions.ts";
 import { gitHooksDir, preCommitCommand, preCommitState, preCommitText } from "./git-hook.ts";
 import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, specTemplate } from "./tui/new-spec.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
+import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
 import { filterChanged, hookDecision, hookFails, parseHookEvent } from "./changed.ts";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { CONFIG_FILE, STATIC_MODES, loadConfig, toPosix, type StaticMode } from "./config.ts";
@@ -15,6 +17,7 @@ import { sameFinding } from "./assess.ts";
 import { formatDiagnostic, type Diagnostic } from "./diag.ts";
 import { analyze, findRoot, type Analysis } from "./analyze.ts";
 import { isDiagnosticCode } from "./explain-offline.ts";
+import { selectedAgent } from "./agent-cli.ts";
 import { CHECK_FORMATS, checkReportText, isCheckFormat } from "./check-format.ts";
 import type { BriefBatch } from "./explain-llm.ts";
 import { positiveIntegerProblem } from "./explain-inventory.ts";
@@ -34,8 +37,23 @@ Usage: keylang                      Open the TUI in this terminal (needs a TTY)
        keylang <command> [options] [paths…]
 
 Commands:
-  web [--port N] [--host H] The TUI in a browser tab: serves http://localhost:7070
-                            with a one-time token (localhost only by default)
+  web [url] [--port N] [--host H]
+                            The TUI in a browser tab: serves http://localhost:7070
+                            with a one-time token (localhost only by default).
+                            With a repository URL or path: clone it first, as clone
+                            does, and serve the clone
+  clone <url> [--dir D] [--explain MODE] [--dry-run]
+                            Shallow-clone a repository (https, ssh, git, file URL,
+                            git@host:owner/repo or a local path) into
+                            $XDG_CACHE_HOME/keylang/repos/<host>/<path> (else
+                            ~/.cache/…; --dir: elsewhere), or update a clone keylang
+                            made there to the remote's default branch, then init
+                            with --agents=none and build the map. --explain:
+                            map-only (default, no model), map-and-ai (also model
+                            briefs and keylang/map-explained/), all (also a full
+                            explanation of every layer in keylang/explain/).
+                            --dry-run: the token estimate of the model's part, no
+                            request. A directory keylang did not clone is refused
   init [dir] [--agents=LIST] [--check]
                             Detect languages and layers, write keylang.json, build the map,
                             write rules.baseline.md, and install harness files
@@ -171,6 +189,8 @@ Options:
                             shape follows only calls written in the code
   --port <n>                web: port (default 7070; 0 picks a free one)
   --host <addr>             web: address to listen on (default 127.0.0.1)
+  --dir <path>              clone, web <url>: where the clone goes
+  --explain <mode>          clone, web <url>: map-only, map-and-ai or all
   --explain-edge <a> <b>    Print snapshot edges between ids a and b (a → b, then b → a),
                             or the unresolved constructs in a that could form one;
                             writes nothing
@@ -215,6 +235,8 @@ const OPTIONS = {
   stdio: { type: "boolean" },
   port: { type: "string" },
   host: { type: "string" },
+  dir: { type: "string" },
+  explain: { type: "string" },
   since: { type: "string" },
   agents: { type: "string" },
   changed: { type: "boolean" },
@@ -318,8 +340,14 @@ async function run(argv: readonly string[]): Promise<number> {
       return cmdTracePlan(paths[0]);
     case "export":
       return cmdExport(paths, { format: values.format, level: values.level, layer: values.layer, out: values.out });
-    case "web":
-      return cmdWeb(values.port ?? "7070", values.host ?? "127.0.0.1");
+    case "clone":
+      return (await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: values["dry-run"] === true })).code;
+    case "web": {
+      if (paths[0] === undefined) return cmdWeb(findRoot(process.cwd()), values.port ?? "7070", values.host ?? "127.0.0.1");
+      const clone = await prepareClone(paths[0], { dir: values.dir, explain: values.explain, dryRun: false });
+      if (clone.code !== 0 || clone.root === null) return clone.code;
+      return cmdWeb(clone.root, values.port ?? "7070", values.host ?? "127.0.0.1");
+    }
     case "parse":
       needPaths(cmd, paths);
       return cmdParse(paths, values.json === true);
@@ -331,10 +359,10 @@ async function run(argv: readonly string[]): Promise<number> {
   }
 }
 
-async function cmdWeb(portText: string, host: string): Promise<number> {
+async function cmdWeb(root: string, portText: string, host: string): Promise<number> {
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || port > 65535) throw new Error(`web: --port must be a number from 0 to 65535, got \`${portText}\``);
-  const server = await serveWeb({ root: findRoot(process.cwd()), port, host });
+  const server = await serveWeb({ root, port, host });
   process.stdout.write(`keylang web: ${server.url}\n`);
   process.stderr.write("open the URL in a browser; Ctrl+C stops the server\n");
   await new Promise<void>((resolve) => {
@@ -377,7 +405,7 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
   if (opts.missing && opts.stale) throw new Error("explain: --missing already includes stale briefs; pass one of --missing and --stale");
   if (opts.missing || (opts.stale && (opts.llm || opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined))) {
     if (subject !== undefined) throw new Error(`explain ${opts.missing ? "--missing" : "--stale"} explains every node it finds; it takes no id`);
-    return cmdExplainBatch(opts.missing ? "missing" : "stale", opts);
+    return cmdExplainBatch(findRoot(process.cwd()), opts.missing ? "missing" : "stale", opts);
   }
   if (opts.dryRun || opts.limit !== undefined || opts.jobs !== undefined) throw new Error("explain: --dry-run, --limit and --jobs need --missing or --stale");
   if (opts.stale) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "stale-saved" });
@@ -411,15 +439,15 @@ async function cmdExplain(subject: string | undefined, opts: ExplainOptions): Pr
  * briefs for the explained map, bottom-up. Without `--llm` it lists the nodes;
  * `--dry-run` counts them and estimates tokens. Exit 1 when some nodes failed.
  */
-async function cmdExplainBatch(batch: BriefBatch, opts: ExplainOptions): Promise<number> {
+async function cmdExplainBatch(root: string, batch: BriefBatch, opts: Pick<ExplainOptions, "llm" | "dryRun" | "limit" | "jobs">): Promise<number> {
   const limit = opts.limit === undefined ? undefined : positiveInteger("--limit", opts.limit);
   // No --jobs: the operation takes the agent's default (4, or 2 for an agent CLI).
   const jobs = opts.jobs === undefined ? undefined : positiveInteger("--jobs", opts.jobs);
   // The list and the dry run: a printer over the shared read-only plan.
-  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root: findRoot(process.cwd()), list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}), estimate: opts.dryRun });
+  if (opts.dryRun || !opts.llm) return explainPlanPrinter({ kind: "explain-plan", root, list: "briefs", batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}), estimate: opts.dryRun });
   // The batch: a printer over the shared operation; a progress line per node on stderr.
   const result = await runOperation(
-    { kind: "explain-batch", root: findRoot(process.cwd()), batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
+    { kind: "explain-batch", root, batch, ...(limit !== undefined ? { limit } : {}), ...(jobs !== undefined ? { jobs } : {}) },
     { onProgress: ({ step }) => step && process.stderr.write(`[${step.done}/${step.total}] ${step.id}${step.failed === null ? "" : `: failed: ${step.failed}`}\n`) },
   );
   for (const message of result.messages) if (message.level === "warning") process.stderr.write(`keylang: ${message.text}\n`);
@@ -437,6 +465,58 @@ async function explainPlanPrinter(request: ExplainPlanRequest): Promise<number> 
   if (result.payload === null) throw new Error(result.messages.find((message) => message.level === "error")?.text ?? "explain failed");
   process.stdout.write(result.payload.text);
   return 0;
+}
+
+/**
+ * `clone <source> [--dir D] [--explain MODE] [--dry-run]`, and the first half
+ * of `web <source>`: the clone, then the existing printers of init
+ * (`--agents=none`: a clone gets no harness files), the brief batch, the
+ * layers' full explanations and the map, each over the clone's root.
+ * `root` is null when nothing usable was made.
+ */
+async function prepareClone(sourceText: string | undefined, opts: { dir: string | undefined; explain: string | undefined; dryRun: boolean }): Promise<{ code: number; root: string | null }> {
+  const mode: CloneExplain | undefined = opts.explain === undefined ? "map-only" : isCloneExplain(opts.explain) ? opts.explain : undefined;
+  if (mode === undefined) throw new Error(`clone: --explain is one of ${CLONE_EXPLAIN_MODES.join(", ")}, got \`${opts.explain}\``);
+  if (opts.dryRun && mode === "map-only") throw new Error("clone: --dry-run estimates the model's part; pass --explain map-and-ai or all");
+  if (sourceText === undefined) throw new Error("clone: a repository URL or path is required");
+  const source = parseRepoSource(sourceText, process.cwd());
+  if ("error" in source) throw new Error(source.error);
+  const dir = opts.dir !== undefined ? resolve(process.cwd(), opts.dir) : join(cloneCacheRoot(process.env, homedir()), ...source.key);
+  const synced = syncClone(source, dir);
+  process.stdout.write(`${synced.dir}: ${synced.action} from ${source.url}\n`);
+  const initialized = await cmdInit(dir, { agents: "none", check: false });
+  if (initialized !== 0) return { code: initialized, root: null };
+  if (mode === "map-only") return { code: 0, root: dir };
+  const layers = [...loadConfig(dir).layers.keys()];
+  // The estimate leaves keylang.json as init wrote it.
+  if (opts.dryRun) {
+    const code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: true, limit: undefined, jobs: undefined });
+    if (mode === "all") process.stdout.write(`and ${layers.length} full layer explanation(s): ${layers.join(", ")}\n`);
+    return { code, root: dir };
+  }
+  // The clone's keylang.json is keylang's own, so the model comes from the environment; say so before touching it.
+  if (selectedAgent(loadConfig(dir).agent) === null) {
+    process.stderr.write(`keylang: clone --explain ${mode}: no model configured; set KEYLANG_AGENT (e.g. cli:claude or anthropic:<model>) or "use" in ~/.config/keylang/agents.json; the map above is built\n`);
+    return { code: 2, root: null };
+  }
+  const problem = enableExplainedMap(dir);
+  if (problem !== null) {
+    process.stderr.write(`keylang: ${problem}\n`);
+    return { code: 2, root: null };
+  }
+  let code = await cmdExplainBatch(dir, "missing", { llm: true, dryRun: false, limit: undefined, jobs: undefined });
+  if (mode === "all") {
+    for (const layer of layers) {
+      const result = await runOperation({ kind: "explain-llm", root: dir, id: layer, detail: "full" });
+      for (const message of result.messages) process.stderr.write(`keylang: ${layer}: ${message.text}\n`);
+      const written = result.payload?.written ?? null;
+      if (written !== null) process.stdout.write(`${toPosix(relative(process.cwd(), join(dir, written)))}: written\n`);
+      else if (result.status !== "completed") code = 1;
+    }
+  }
+  // The briefs are in; the explained map is rendered from them.
+  const mapped = printMap(await runOperation({ kind: "map", root: dir, label: dir }), dir);
+  return { code: mapped !== 0 ? mapped : code, root: dir };
 }
 
 function positiveInteger(flag: string, text: string): number {

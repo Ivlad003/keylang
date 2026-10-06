@@ -69,6 +69,8 @@ It is just as important to know what keylang does not do: it does not decide whe
 npx keylang init .      # guess layers, write keylang.json, build the map
 npx keylang check       # ids and rules under keylang/
 npm i -g keylang        # then just `keylang …`
+npx keylang clone https://github.com/owner/repo   # someone else's repo: clone into the cache, map it
+npx keylang web https://github.com/owner/repo     # the same, then the UI in a browser
 ```
 
 From a clone of this repository:
