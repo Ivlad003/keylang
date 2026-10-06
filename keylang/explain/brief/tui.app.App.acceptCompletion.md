@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=8cf35bdc32ecc0c39bd8da3fd1281635f022b56c2062a7194cfeba3402524585 lang=en detail=brief -->
-Closes the open completion list, records the acceptance via `tui.assist.countSuggestion`, and, if the cursor hasn't moved before the word's start, replaces the typed prefix with the selected label through `tui.app.App.edit`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=9ffcb534e40a4d84f7af85d0fccc067df3a6fd631ad4ce24d65f0dd169edccce lang=en detail=brief -->
+Applies the selected completion item, closing the list and recording acceptance via `tui.assist.countSuggestion`, then, unless the cursor moved before the word start, replaces that word with the item label through `tui.app.App.edit`.

@@ -1,11 +1,11 @@
 <!-- keylang:generated — не редагувати, `keylang map` -->
 
-[README](README.md) · modules: [actions](#tui.actions) · [analysis-worker](#tui.analysis-worker) · [app](#tui.app) · [assist](#tui.assist) · [background](#tui.background) · [buffer](#tui.buffer) · [code-highlight](#tui.code-highlight) · [disk](#tui.disk) · [evidence](#tui.evidence) · [findings](#tui.findings) · [forms](#tui.forms) · [forms.draft](#tui.forms.draft) · [forms.explain](#tui.forms.explain) · [forms.export](#tui.forms.export) · [forms.host](#tui.forms.host) · [forms.run](#tui.forms.run) · [input](#tui.input) · [markdown](#tui.markdown) · [merge-session](#tui.merge-session) · [merge](#tui.merge) · [nav](#tui.nav) · [new-spec](#tui.new-spec) · [operation-worker](#tui.operation-worker) · [prompt-keys](#tui.prompt-keys) · [reports](#tui.reports) · [reports.check](#tui.reports.check) · [reports.draft](#tui.reports.draft) · [reports.explain](#tui.reports.explain) · [reports.records](#tui.reports.records) · [reports.rows](#tui.reports.rows) · [reports.setup](#tui.reports.setup) · [results-panel](#tui.results-panel) · [screen](#tui.screen) · [state](#tui.state) · [terminal](#tui.terminal) · [text-to-spec](#tui.text-to-spec) · [theme](#tui.theme) · [view](#tui.view) · [web](#tui.web) · [width](#tui.width) · [zoom-screen](#tui.zoom-screen) · [zoom](#tui.zoom)
+[README](README.md) · modules: [actions](#tui.actions) · [analysis-worker](#tui.analysis-worker) · [app](#tui.app) · [assist](#tui.assist) · [background](#tui.background) · [buffer](#tui.buffer) · [clip-chat](#tui.clip-chat) · [clip-memory](#tui.clip-memory) · [clip-questions](#tui.clip-questions) · [clip-view](#tui.clip-view) · [clip](#tui.clip) · [code-highlight](#tui.code-highlight) · [disk](#tui.disk) · [evidence](#tui.evidence) · [findings](#tui.findings) · [forms](#tui.forms) · [forms.draft](#tui.forms.draft) · [forms.explain](#tui.forms.explain) · [forms.export](#tui.forms.export) · [forms.host](#tui.forms.host) · [forms.run](#tui.forms.run) · [input](#tui.input) · [markdown](#tui.markdown) · [merge-session](#tui.merge-session) · [merge](#tui.merge) · [nav](#tui.nav) · [new-spec](#tui.new-spec) · [operation-worker](#tui.operation-worker) · [prompt-keys](#tui.prompt-keys) · [reports](#tui.reports) · [reports.chat](#tui.reports.chat) · [reports.check](#tui.reports.check) · [reports.draft](#tui.reports.draft) · [reports.explain](#tui.reports.explain) · [reports.records](#tui.reports.records) · [reports.rows](#tui.reports.rows) · [reports.setup](#tui.reports.setup) · [results-panel](#tui.results-panel) · [screen](#tui.screen) · [state](#tui.state) · [terminal](#tui.terminal) · [text-to-spec](#tui.text-to-spec) · [theme](#tui.theme) · [view](#tui.view) · [web](#tui.web) · [width](#tui.width) · [zoom-screen](#tui.zoom-screen) · [zoom](#tui.zoom)
 
 # map
 
 - tui
-  <a id="tui"></a><br>The interactive editor shared by terminal and browser: a session with spec buffers, an evidence gutter, navigation, merge, zoom and off-thread analysis, drawn as ANSI frames. It must not use `extract` or web-tree-sitter directly. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+  <a id="tui"></a><br>The interactive spec editor for terminal and browser: sessions in [`tui.app`](tui.md#tui.app) render ANSI frames for a terminal or [`tui.web`](tui.md#tui.web), with evidence gutter, navigation, merge and clip chat. It may not depend on `extract` or [`external.web-tree-sitter`](external.md#external.web-tree-sitter). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
   - module [actions](../../src/tui/actions.ts#L1)
     <a id="tui.actions"></a><br>The catalogue of TUI actions: one registry used by the palette (`:` / Ctrl+P) and by the help popup. An action has a stable id, a label, a group, search aliases, an optional key hint and an availability predicate with a reason; `App.runAction(id)` executes it.
     - agent-cli [features.agent-cli](features.md#features.agent-cli)
@@ -18,51 +18,51 @@
       <a id="tui.actions.Action"></a><br>Shape of a user-invokable TUI command: identity, menu label and group, searchable aliases, an optional hotkey, plus two context-driven hooks — `when` returning a reason the command is currently blocked (or null) and `note` returning a non-blocking setup hint. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - type [ActionEntry](../../src/tui/actions.ts#L55)
       <a id="tui.actions.ActionEntry"></a><br>Pairs an `Action` with its availability status: `reason` holds the text explaining why it cannot run right now (null when runnable), and `note` carries an advisory message that does not block execution. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [mergeOnly](../../src/tui/actions.ts#L69) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [mergeOnly](../../src/tui/actions.ts#L72) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.mergeOnly"></a><br>Returns the constant reason string when the context's `merge` flag is set, and `null` otherwise; used by TUI action gating to signal that an action is blocked or applies only in merge mode. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [editor](../../src/tui/actions.ts#L70) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [editor](../../src/tui/actions.ts#L73) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.editor"></a><br>Returns a reason string explaining why the editor is unavailable: the merge reason when the context is in merge mode, else the start reason when it is starting, otherwise null. Used by [`tui.actions.bufferOrMerge`](tui.md#tui.actions.bufferOrMerge) and [`tui.actions.snapshot`](tui.md#tui.actions.snapshot) to gate their actions. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [bufferOrMerge](../../src/tui/actions.ts#L71) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [bufferOrMerge](../../src/tui/actions.ts#L74) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.bufferOrMerge"></a><br>Returns whatever blocking reason [`tui.actions.editor`](tui.md#tui.actions.editor) reports, otherwise falls back to "no file open" when no current file is set, or null when the action may proceed. Shared precondition check used by [`tui.actions.viewOnly`](tui.md#tui.actions.viewOnly) and [`tui.actions.writable`](tui.md#tui.actions.writable). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.actions.editor](tui.md#tui.actions.editor)
-    - fn [snapshot](../../src/tui/actions.ts#L72) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [snapshot](../../src/tui/actions.ts#L75) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.snapshot"></a><br>Resolves the text to display for the current context by first asking [`tui.actions.editor`](tui.md#tui.actions.editor) for a value and, when that yields nothing, falling back to the context's `noSnapshot` field. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.actions.editor](tui.md#tui.actions.editor)
-    - fn [running](../../src/tui/actions.ts#L73) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [running](../../src/tui/actions.ts#L76) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.running"></a><br>Guard that checks whether `ctx.operation` is set and, if so, returns the message "an operation is already running" so an action can be blocked; otherwise yields null to allow it. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [viewOnly](../../src/tui/actions.ts#L75) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [viewOnly](../../src/tui/actions.ts#L78) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.viewOnly"></a><br>Returns a message explaining why a view-only key is blocked: first whatever [`tui.actions.bufferOrMerge`](tui.md#tui.actions.bufferOrMerge) reports, else a hint to press Esc when the mode is "edit" or "code", else null meaning the action is allowed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.actions.bufferOrMerge](tui.md#tui.actions.bufferOrMerge)
-    - fn [writable](../../src/tui/actions.ts#L77) (ctx: ActionContext) → string | null <!-- internal -->
+    - fn [writable](../../src/tui/actions.ts#L80) (ctx: ActionContext) → string | null <!-- internal -->
       <a id="tui.actions.writable"></a><br>Returns a reason string blocking a write action, deferring first to [`tui.actions.bufferOrMerge`](tui.md#tui.actions.bufferOrMerge) and otherwise reporting read-only generated map files when `readOnly` is set. Yields null when writing is allowed. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.actions.bufferOrMerge](tui.md#tui.actions.bufferOrMerge)
-    - fn [openAction](../../src/tui/actions.ts#L391) (path: string) → Action
+    - fn [openAction](../../src/tui/actions.ts#L396) (path: string) → Action
       <a id="tui.actions.openAction"></a><br>The per-file "open" action of the palette.
-    - fn [catalog](../../src/tui/actions.ts#L396) (state: State) → ActionEntry[]
+    - fn [catalog](../../src/tui/actions.ts#L401) (state: State) → ActionEntry[]
       <a id="tui.actions.catalog"></a><br>The full catalogue for the current session: static actions plus one "open" entry per file.
       - calls [tui.actions.availabilityOf](tui.md#tui.actions.availabilityOf), [tui.actions.openAction](tui.md#tui.actions.openAction)
-    - fn [availabilityOf](../../src/tui/actions.ts#L402) (state: State) → ActionContext
+    - fn [availabilityOf](../../src/tui/actions.ts#L407) (state: State) → ActionContext
       <a id="tui.actions.availabilityOf"></a><br>The availability context of the current session state.
       - calls [tui.actions.exportRecord](tui.md#tui.actions.exportRecord), [tui.actions.applyRecord](tui.md#tui.actions.applyRecord), [tui.actions.noSnapshotReason](tui.md#tui.actions.noSnapshotReason), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf)
-    - fn [exportRecord](../../src/tui/actions.ts#L431) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
+    - fn [exportRecord](../../src/tui/actions.ts#L436) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
       <a id="tui.actions.exportRecord"></a><br>The report Export saves: the record selected in F6 while the panel is open, else the newest check, explain-edge, parse or trace-plan record — exactly that run, as it ran.
-    - fn [applyRecord](../../src/tui/actions.ts#L446) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
+    - fn [applyRecord](../../src/tui/actions.ts#L451) (state: Pick<State, "records" | "results">) → { record: OperationRecord } | { reason: string }
       <a id="tui.actions.applyRecord"></a><br>The spec-to-code run whose candidate Apply writes: the record selected in F6 while the panel is open, else the newest spec-to-code record. The file checks (unsaved edits, an open MERGE, a waiting proposal) come when it runs.
-    - fn [noSnapshotReason](../../src/tui/actions.ts#L457) (state: Pick<State, "analysis" | "config" | "error" | "updating">) → string | null
+    - fn [noSnapshotReason](../../src/tui/actions.ts#L462) (state: Pick<State, "analysis" | "config" | "error" | "updating">) → string | null
       <a id="tui.actions.noSnapshotReason"></a><br>Why the session has no code snapshot, or null when it has one. Also the status line's note.
-    - fn [actionKey](../../src/tui/actions.ts#L472) (action: Action, mode: State["mode"]) → string | null
+    - fn [actionKey](../../src/tui/actions.ts#L477) (action: Action, mode: State["mode"]) → string | null
       <a id="tui.actions.actionKey"></a><br>The key of an action as the mode has it, or null. A plain key (a letter, `?`, `/`, Enter) is a key of the view: in editing it types text, and MERGE and the code viewer give letters their own meaning, so there it is not advertised — Ctrl+P runs the action instead.
-    - fn [actionLabel](../../src/tui/actions.ts#L479) (action: Action, mode: State["mode"] = "view") → string
+    - fn [actionLabel](../../src/tui/actions.ts#L484) (action: Action, mode: State["mode"] = "view") → string
       <a id="tui.actions.actionLabel"></a><br>The palette item text of an action: its label, with the key hint when the mode has one.
       - calls [tui.actions.actionKey](tui.md#tui.actions.actionKey)
-    - fn [matchActions](../../src/tui/actions.ts#L485) (entries: readonly ActionEntry[], query: string) → ActionEntry[]
+    - fn [matchActions](../../src/tui/actions.ts#L490) (entries: readonly ActionEntry[], query: string) → ActionEntry[]
       <a id="tui.actions.matchActions"></a><br>The catalogue entries matching `query`: every query word is a subsequence of some token of the label, key or aliases.
       - calls [tui.actions.searchText](tui.md#tui.actions.searchText), [tui.actions.subsequence](tui.md#tui.actions.subsequence), [tui.actions.fileName](tui.md#tui.actions.fileName)
-    - fn [fileName](../../src/tui/actions.ts#L505) (id: string) → string <!-- internal -->
+    - fn [fileName](../../src/tui/actions.ts#L510) (id: string) → string <!-- internal -->
       <a id="tui.actions.fileName"></a><br>`rules` for `open:keylang/rules.md`: the base name without its extension, lower case.
-    - fn [searchText](../../src/tui/actions.ts#L510) (action: Action) → string <!-- internal -->
+    - fn [searchText](../../src/tui/actions.ts#L515) (action: Action) → string <!-- internal -->
       <a id="tui.actions.searchText"></a><br>Builds a single space-joined string from an action's label, optional key, and aliases, which [`tui.actions.matchActions`](tui.md#tui.actions.matchActions) uses as the haystack when filtering entries against a query. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [subsequence](../../src/tui/actions.ts#L514) (text: string, query: string) → boolean <!-- internal -->
+    - fn [subsequence](../../src/tui/actions.ts#L519) (text: string, query: string) → boolean <!-- internal -->
       <a id="tui.actions.subsequence"></a><br>Checks whether every character of the query appears in order (not necessarily adjacently) within the text, advancing a cursor on each match and returning true only if the cursor consumes the whole query. Used by [`tui.actions.matchActions`](tui.md#tui.actions.matchActions) for fuzzy filtering of action entries. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [analysis-worker](../../src/tui/analysis-worker.ts#L1)
     <a id="tui.analysis-worker"></a><br>Worker entry of `SnapshotWorker`: builds the map for a config and overlay.
@@ -95,6 +95,10 @@
     - actions [tui.actions](tui.md#tui.actions)
     - assist [tui.assist](tui.md#tui.assist)
     - background [tui.background](tui.md#tui.background)
+    - clip [tui.clip](tui.md#tui.clip)
+    - clip-chat [tui.clip-chat](tui.md#tui.clip-chat)
+    - clip-questions [tui.clip-questions](tui.md#tui.clip-questions)
+    - clip-memory [tui.clip-memory](tui.md#tui.clip-memory)
     - buffer [tui.buffer](tui.md#tui.buffer)
     - disk [tui.disk](tui.md#tui.disk)
     - new-spec [tui.new-spec](tui.md#tui.new-spec)
@@ -118,467 +122,476 @@
     - view [tui.view](tui.md#tui.view)
     - width [tui.width](tui.md#tui.width)
     - llm [features.llm](features.md#features.llm)
-    - type [Surface](../../src/tui/app.ts#L74)
+    - type [Surface](../../src/tui/app.ts#L79)
       <a id="tui.app.Surface"></a><br>Output target the TUI renders into: it takes ANSI strings and, in a terminal only, can open a file at a line in `$EDITOR` (returning status-line text) or suspend the process like Ctrl+Z. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Analyzer](../../src/tui/app.ts#L85) = (request: AnalysisRequest) => Promise<Analysis>
+    - type [Analyzer](../../src/tui/app.ts#L90) = (request: AnalysisRequest) => Promise<Analysis>
       <a id="tui.app.Analyzer"></a><br>Function-type alias: takes an `AnalysisRequest` and resolves to an `Analysis`, letting the TUI receive its analysis backend by injection rather than importing the extractor or tree-sitter directly. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [OperationRunner](../../src/tui/app.ts#L88)
+    - type [OperationRunner](../../src/tui/app.ts#L93)
       <a id="tui.app.OperationRunner"></a><br>Runs one explicit operation; the session's default is the shared `runOperation`. Tests inject a gated one.
-    - type [AppOptions](../../src/tui/app.ts#L90)
-      <a id="tui.app.AppOptions"></a><br>Configuration bundle for starting a TUI session: repository root, terminal size, an optional analyzer, quit callback, and microphone PCM source, plus injectable operation runner and worker so tests can gate or replace how feature and map-check jobs execute. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - module [App](../../src/tui/app.ts#L124)
-      <a id="tui.app.App"></a><br>The terminal editor session: holds editor state, routes keys and mouse via [`tui.app.App.handle`](tui.md#tui.app.App.handle), edits and saves spec buffers, reruns analysis, and runs operations with save and commit gates, wiring [`tui.merge-session.MergeSession`](tui.md#tui.merge-session.MergeSession) and [`tui.results-panel.ResultsPanel`](tui.md#tui.results-panel.ResultsPanel). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-      - fn [barrierInputs](../../src/tui/app.ts#L169) () <!-- internal -->
+    - type [AppOptions](../../src/tui/app.ts#L95)
+      <a id="tui.app.AppOptions"></a><br>Configuration for starting the terminal app: project root, terminal size, and optional injected analyzer, operation runner or worker, microphone source, quit callback, and home directory for saved settings. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+    - module [App](../../src/tui/app.ts#L131)
+      <a id="tui.app.App"></a><br>The terminal editor session: it holds the editor state, routes input through [`tui.app.App.handle`](tui.md#tui.app.App.handle) and draws frames via [`tui.app.App.draw`](tui.md#tui.app.App.draw). It also re-analyses buffers and runs operations, merges and commits via helpers like [`tui.merge-session.MergeSession`](tui.md#tui.merge-session.MergeSession). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [barrierInputs](../../src/tui/app.ts#L182) () <!-- internal -->
         <a id="tui.app.App.barrierInputs"></a><br>Which dirty buffers the open save step lists: the inputs its operation reads.
-      - fn [constructor](../../src/tui/app.ts#L186) (options: AppOptions)
-        <a id="tui.app.App.constructor"></a><br>Builds the editor's initial state and wires helpers ([`tui.merge-session.MergeSession`](tui.md#tui.merge-session.MergeSession), [`tui.assist.Assist`](tui.md#tui.assist.Assist), forms, [`tui.results-panel.ResultsPanel`](tui.md#tui.results-panel.ResultsPanel)) through closures, opens a first file from disk, then shows the start screen, config error, or [`tui.app.App.reanalyze`](tui.md#tui.app.App.reanalyze). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-        - calls [tui.input.InputDecoder](tui.md#tui.input.InputDecoder), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [tui.app.App.worker](tui.md#tui.app.App.worker), [tui.merge-session.MergeSession](tui.md#tui.merge-session.MergeSession), [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.reanalyzeSoon](tui.md#tui.app.App.reanalyzeSoon), [tui.assist.Assist](tui.md#tui.assist.Assist), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.app.App.track](tui.md#tui.app.App.track), [tui.app.App.wake](tui.md#tui.app.App.wake), [tui.app.App.draw](tui.md#tui.app.App.draw), [tui.app.App.specDir](tui.md#tui.app.App.specDir), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.app.App.agentName](tui.md#tui.app.App.agentName), [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs), [tui.app.App.generatedDoc](tui.md#tui.app.App.generatedDoc), [tui.app.App.proposalWaiting](tui.md#tui.app.App.proposalWaiting), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.flowAtCursor](tui.md#tui.app.App.flowAtCursor), [tui.app.App.triggerAtCursor](tui.md#tui.app.App.triggerAtCursor), [tui.app.App.plannedFns](tui.md#tui.app.App.plannedFns), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.app.App.startOperation](tui.md#tui.app.App.startOperation), [tui.forms.draft.DraftForms](tui.md#tui.forms.draft.DraftForms), [tui.forms.explain.ExplainForms](tui.md#tui.forms.explain.ExplainForms), [tui.forms.run.RunForms](tui.md#tui.forms.run.RunForms), [tui.forms.export.ExportForms](tui.md#tui.forms.export.ExportForms), [tui.zoom-screen.ZoomScreen](tui.md#tui.zoom-screen.ZoomScreen), [tui.app.App.goToNode](tui.md#tui.app.App.goToNode), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.jump](tui.md#tui.app.App.jump), [tui.app.App.explainLines](tui.md#tui.app.App.explainLines), [tui.app.App.openNodeSearch](tui.md#tui.app.App.openNodeSearch), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.results-panel.ResultsPanel](tui.md#tui.results-panel.ResultsPanel), [tui.app.App.quit](tui.md#tui.app.App.quit), [tui.app.App.cancelOperation](tui.md#tui.app.App.cancelOperation), [tui.merge-session.MergeSession.open](tui.md#tui.merge-session.MergeSession.open), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals), [tui.app.App.moveLayers](tui.md#tui.app.App.moveLayers), [tui.app.App.applyCandidate](tui.md#tui.app.App.applyCandidate), [tui.app.App.askFeatureQuestions](tui.md#tui.app.App.askFeatureQuestions), [tui.forms.export.ExportForms.openExportPrompt](tui.md#tui.forms.export.ExportForms.openExportPrompt), [tui.forms.draft.DraftForms.openSpecCode](tui.md#tui.forms.draft.DraftForms.openSpecCode), [tui.app.App.showCode](tui.md#tui.app.App.showCode), [tui.app.App.diskFiles](tui.md#tui.app.App.diskFiles), [tui.app.App.open](tui.md#tui.app.App.open), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.app.configState](tui.md#tui.app.configState), [tui.app.App.openConfig](tui.md#tui.app.App.openConfig), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [attach](../../src/tui/app.ts#L336) (surface: Surface, cols: number, rows: number) → void
-        <a id="tui.app.App.attach"></a><br>Binds the app to a new rendering surface, discards the previously rendered frame so the next draw starts fresh, and sizes the layout via [`tui.app.App.resize`](tui.md#tui.app.App.resize); invoked by [`tui.terminal.runTerminal`](tui.md#tui.terminal.runTerminal) at startup. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [constructor](../../src/tui/app.ts#L199) (options: AppOptions)
+        <a id="tui.app.App.constructor"></a><br>Builds the editor's initial state and wires helpers like [`tui.merge-session.MergeSession`](tui.md#tui.merge-session.MergeSession), [`tui.assist.Assist`](tui.md#tui.assist.Assist), [`tui.clip-chat.ClipChat`](tui.md#tui.clip-chat.ClipChat) and [`tui.results-panel.ResultsPanel`](tui.md#tui.results-panel.ResultsPanel), opens a first file from disk, then shows the start screen, config or [`tui.app.App.reanalyze`](tui.md#tui.app.App.reanalyze). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.input.InputDecoder](tui.md#tui.input.InputDecoder), [operations.operations.runOperation](operations.md#operations.operations.runOperation), [tui.app.App.worker](tui.md#tui.app.App.worker), [tui.clip.newClip](tui.md#tui.clip.newClip), [tui.merge-session.MergeSession](tui.md#tui.merge-session.MergeSession), [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.reanalyzeSoon](tui.md#tui.app.App.reanalyzeSoon), [tui.assist.Assist](tui.md#tui.assist.Assist), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.app.App.track](tui.md#tui.app.App.track), [tui.app.App.wake](tui.md#tui.app.App.wake), [tui.app.App.draw](tui.md#tui.app.App.draw), [tui.app.App.specDir](tui.md#tui.app.App.specDir), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.app.App.agentName](tui.md#tui.app.App.agentName), [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs), [tui.app.App.generatedDoc](tui.md#tui.app.App.generatedDoc), [tui.app.App.proposalWaiting](tui.md#tui.app.App.proposalWaiting), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.flowAtCursor](tui.md#tui.app.App.flowAtCursor), [tui.app.App.triggerAtCursor](tui.md#tui.app.App.triggerAtCursor), [tui.app.App.plannedFns](tui.md#tui.app.App.plannedFns), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.app.App.startOperation](tui.md#tui.app.App.startOperation), [tui.forms.draft.DraftForms](tui.md#tui.forms.draft.DraftForms), [tui.forms.explain.ExplainForms](tui.md#tui.forms.explain.ExplainForms), [tui.forms.run.RunForms](tui.md#tui.forms.run.RunForms), [tui.forms.export.ExportForms](tui.md#tui.forms.export.ExportForms), [tui.zoom-screen.ZoomScreen](tui.md#tui.zoom-screen.ZoomScreen), [tui.app.App.goToNode](tui.md#tui.app.App.goToNode), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.jump](tui.md#tui.app.App.jump), [tui.app.App.explainLines](tui.md#tui.app.App.explainLines), [tui.app.App.openNodeSearch](tui.md#tui.app.App.openNodeSearch), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.clip-chat.ClipChat](tui.md#tui.clip-chat.ClipChat), [tui.app.App.cancelOperation](tui.md#tui.app.App.cancelOperation), [tui.clip.Clip](tui.md#tui.clip.Clip), [tui.view.layout](tui.md#tui.view.layout), [tui.view.clipOnScreen](tui.md#tui.view.clipOnScreen), [tui.clip-chat.ClipChat.said](tui.md#tui.clip-chat.ClipChat.said), [tui.clip-chat.ClipChat.cancel](tui.md#tui.clip-chat.ClipChat.cancel), [tui.clip-chat.ClipChat.opened](tui.md#tui.clip-chat.ClipChat.opened), [tui.app.App.keepPlace](tui.md#tui.app.App.keepPlace), [tui.results-panel.ResultsPanel](tui.md#tui.results-panel.ResultsPanel), [tui.app.App.quit](tui.md#tui.app.App.quit), [tui.merge-session.MergeSession.open](tui.md#tui.merge-session.MergeSession.open), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals), [tui.app.App.moveLayers](tui.md#tui.app.App.moveLayers), [tui.app.App.applyCandidate](tui.md#tui.app.App.applyCandidate), [tui.app.App.askFeatureQuestions](tui.md#tui.app.App.askFeatureQuestions), [tui.forms.export.ExportForms.openExportPrompt](tui.md#tui.forms.export.ExportForms.openExportPrompt), [tui.forms.draft.DraftForms.openSpecCode](tui.md#tui.forms.draft.DraftForms.openSpecCode), [tui.app.App.showCode](tui.md#tui.app.App.showCode), [tui.app.App.diskFiles](tui.md#tui.app.App.diskFiles), [tui.app.App.open](tui.md#tui.app.App.open), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.app.App.restorePlace](tui.md#tui.app.App.restorePlace), [tui.clip-chat.ClipChat.restore](tui.md#tui.clip-chat.ClipChat.restore), [tui.app.configState](tui.md#tui.app.configState), [tui.app.App.openConfig](tui.md#tui.app.App.openConfig), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
+      - fn [restorePlace](../../src/tui/app.ts#L379) () → void <!-- internal -->
+        <a id="tui.app.App.restorePlace"></a><br>The clip's place from tui.json as the session starts; a file it cannot use is said once and left as it is until a drag.
+        - calls [tui.clip-memory.readPlace](tui.md#tui.clip-memory.readPlace), [tui.clip-memory.placeClip](tui.md#tui.clip-memory.placeClip)
+      - fn [keepPlace](../../src/tui/app.ts#L386) () → void <!-- internal -->
+        <a id="tui.app.App.keepPlace"></a><br>A drag, a keyboard move or a resize of the clip or its window ended, or they were put back: tui.json keeps the place.
+        - calls [tui.clip-memory.writePlace](tui.md#tui.clip-memory.writePlace), [tui.clip-memory.placeOf](tui.md#tui.clip-memory.placeOf), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText)
+      - fn [attach](../../src/tui/app.ts#L396) (surface: Surface, cols: number, rows: number) → void
+        <a id="tui.app.App.attach"></a><br>Binds the app to a new drawing surface, clears the previously rendered frame so the next draw starts fresh, and sizes the layout to the given columns and rows via [`tui.app.App.resize`](tui.md#tui.app.App.resize). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.resize](tui.md#tui.app.App.resize)
-      - fn [detach](../../src/tui/app.ts#L343) () → void
+      - fn [detach](../../src/tui/app.ts#L403) () → void
         <a id="tui.app.App.detach"></a><br>No surface: the screen belongs to someone else (a reconnect, `$EDITOR`, a stop); nothing is drawn.
-      - fn [resize](../../src/tui/app.ts#L347) (cols: number, rows: number) → void
-        <a id="tui.app.App.resize"></a><br>Clamps the terminal size into allowed bounds (at least 20 columns, 8 rows), clears hover state, then calls [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible) and redraws via [`tui.app.App.draw`](tui.md#tui.app.App.draw). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [resize](../../src/tui/app.ts#L407) (cols: number, rows: number) → void
+        <a id="tui.app.App.resize"></a><br>Clamps the new terminal size to at least 20 columns and 8 rows and to fixed maximums, then clears hover. It then calls [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible) to keep the view in range and [`tui.app.App.draw`](tui.md#tui.app.App.draw) to repaint. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.draw](tui.md#tui.app.App.draw)
-      - fn [input](../../src/tui/app.ts#L355) (chunk: string) → void
-        <a id="tui.app.App.input"></a><br>Decodes a raw terminal chunk via [`tui.input.InputDecoder.feed`](tui.md#tui.input.InputDecoder.feed), dispatching multi-key typed runs detected by [`tui.app.pastedRun`](tui.md#tui.app.pastedRun) as one paste and other keys singly through [`tui.app.App.safely`](tui.md#tui.app.App.safely), then redraws. Pending escapes or pastes flush on a timer; closed sessions ignore… _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-        - calls [tui.input.InputDecoder.feed](tui.md#tui.input.InputDecoder.feed), [tui.app.typedRun](tui.md#tui.app.typedRun), [tui.app.pastedRun](tui.md#tui.app.pastedRun), [tui.app.App.safely](tui.md#tui.app.App.safely), [tui.input.InputDecoder.flush](tui.md#tui.input.InputDecoder.flush), [tui.app.App.draw](tui.md#tui.app.App.draw)
-      - fn [safely](../../src/tui/app.ts#L387) (event: InputEvent) → void <!-- internal -->
+      - fn [input](../../src/tui/app.ts#L415) (chunk: string) → void
+        <a id="tui.app.App.input"></a><br>Decodes raw terminal input via [`tui.input.InputDecoder.feed`](tui.md#tui.input.InputDecoder.feed), sending multi-key runs judged pasted by [`tui.app.pastedRun`](tui.md#tui.app.pastedRun) as one paste event and other keys singly through [`tui.app.App.safely`](tui.md#tui.app.App.safely), then redraws. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.input.InputDecoder.feed](tui.md#tui.input.InputDecoder.feed), [tui.app.typedRun](tui.md#tui.app.typedRun), [tui.app.pastedRun](tui.md#tui.app.pastedRun), [tui.clip.chatTakesKeys](tui.md#tui.clip.chatTakesKeys), [tui.app.App.safely](tui.md#tui.app.App.safely), [tui.input.InputDecoder.flush](tui.md#tui.input.InputDecoder.flush), [tui.app.App.draw](tui.md#tui.app.App.draw)
+      - fn [safely](../../src/tui/app.ts#L447) (event: InputEvent) → void <!-- internal -->
         <a id="tui.app.App.safely"></a><br>One event; a failure (a file that cannot be written) is a message, never the end of the session and its unsaved buffers.
         - calls [tui.app.App.handle](tui.md#tui.app.App.handle), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.assist.Assist.cancelStaleGhost](tui.md#tui.assist.Assist.cancelStaleGhost)
-      - fn [frame](../../src/tui/app.ts#L398) () → Grid
+      - fn [frame](../../src/tui/app.ts#L458) () → Grid
         <a id="tui.app.App.frame"></a><br>The current frame, as the transport would show it.
-        - calls [tui.view.render](tui.md#tui.view.render)
-      - fn [unsaved](../../src/tui/app.ts#L403) () → string[]
+        - calls [tui.app.App.paint](tui.md#tui.app.App.paint)
+      - fn [unsaved](../../src/tui/app.ts#L463) () → string[]
         <a id="tui.app.App.unsaved"></a><br>Files with unsaved changes.
-      - fn [idle](../../src/tui/app.ts#L408) () → Promise<void>
+      - fn [idle](../../src/tui/app.ts#L468) () → Promise<void>
         <a id="tui.app.App.idle"></a><br>Resolves when no analysis is running or waiting to start.
         - calls [tui.app.App.quiet](tui.md#tui.app.App.quiet)
-      - fn [close](../../src/tui/app.ts#L413) () → void
-        <a id="tui.app.App.close"></a><br>Marks the app closed, clears pending escape and settle timers, shuts the assistant via [`tui.assist.Assist.close`](tui.md#tui.assist.Assist.close), and drops the render surface. It then cancels any running operation and its worker before calling [`tui.app.App.wake`](tui.md#tui.app.App.wake) so waiters unblock. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-        - calls [tui.assist.Assist.close](tui.md#tui.assist.Assist.close), [tui.app.App.wake](tui.md#tui.app.App.wake)
-      - fn [draw](../../src/tui/app.ts#L428) () → void <!-- internal -->
-        <a id="tui.app.App.draw"></a><br>Renders the current app state into a grid via [`tui.view.render`](tui.md#tui.view.render), writes only the changes since the last frame using [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff), and keeps the grid for the next diff; skips drawing when no surface exists. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-        - calls [tui.view.render](tui.md#tui.view.render), [tui.screen.renderDiff](tui.md#tui.screen.renderDiff)
-      - fn [overlay](../../src/tui/app.ts#L437) () → Map<string, string> <!-- internal -->
+      - fn [close](../../src/tui/app.ts#L473) () → void
+        <a id="tui.app.App.close"></a><br>Shuts the app down: clears pending timers, closes [`tui.assist.Assist.close`](tui.md#tui.assist.Assist.close) and [`tui.clip-chat.ClipChat.close`](tui.md#tui.clip-chat.ClipChat.close), drops the surface and pending quit, cancels any running operation and ends its worker, then calls [`tui.app.App.wake`](tui.md#tui.app.App.wake). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.assist.Assist.close](tui.md#tui.assist.Assist.close), [tui.clip-chat.ClipChat.close](tui.md#tui.clip-chat.ClipChat.close), [tui.app.App.wake](tui.md#tui.app.App.wake)
+      - fn [draw](../../src/tui/app.ts#L489) () → void <!-- internal -->
+        <a id="tui.app.App.draw"></a><br>Renders the current frame via [`tui.app.App.paint`](tui.md#tui.app.App.paint) and writes only the changes since the previous frame, computed by [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff), to the terminal surface. It does nothing when no surface is attached. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.app.App.paint](tui.md#tui.app.App.paint), [tui.screen.renderDiff](tui.md#tui.screen.renderDiff)
+      - fn [paint](../../src/tui/app.ts#L497) () → Grid <!-- internal -->
+        <a id="tui.app.App.paint"></a><br>The frame of the state now. The clip's counter follows what it counts — the analysis, the open file, the chat — so it is counted here (spec §4.6).
+        - calls [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions), [tui.view.render](tui.md#tui.view.render)
+      - fn [overlay](../../src/tui/app.ts#L504) () → Map<string, string> <!-- internal -->
         <a id="tui.app.App.overlay"></a><br>Builds a map from absolute file paths to the in-memory text of every editable buffer that [`tui.buffer.isDirty`](tui.md#tui.buffer.isDirty) reports as modified, skipping the `keylang.json` config file. [`tui.app.App.reanalyze`](tui.md#tui.app.App.reanalyze) passes this so analysis sees unsaved edits instead of the on-disk contents. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-      - fn [reanalyze](../../src/tui/app.ts#L445) (explicit = true) → void
+      - fn [reanalyze](../../src/tui/app.ts#L512) (explicit = true) → void
         <a id="tui.app.App.reanalyze"></a><br>`F5` or a save (`explicit`), or typing that settled: analyse now.
-        - calls [tui.app.App.readConfig](tui.md#tui.app.App.readConfig), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.app.App.overlay](tui.md#tui.app.App.overlay), [tui.results-panel.ResultsPanel.selectedFinding](tui.md#tui.results-panel.ResultsPanel.selectedFinding), [tui.app.App.adoptResult](tui.md#tui.app.App.adoptResult), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.wake](tui.md#tui.app.App.wake), [tui.app.App.draw](tui.md#tui.app.App.draw)
-      - fn [readConfig](../../src/tui/app.ts#L494) (explicit: boolean) → boolean <!-- internal -->
+        - calls [tui.app.App.readConfig](tui.md#tui.app.App.readConfig), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.app.App.overlay](tui.md#tui.app.App.overlay), [tui.results-panel.ResultsPanel.selectedFinding](tui.md#tui.results-panel.ResultsPanel.selectedFinding), [tui.clip-questions.newFailsAfter](tui.md#tui.clip-questions.newFailsAfter), [tui.app.App.adoptResult](tui.md#tui.app.App.adoptResult), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.wake](tui.md#tui.app.App.wake), [tui.app.App.draw](tui.md#tui.app.App.draw)
+      - fn [readConfig](../../src/tui/app.ts#L564) (explicit: boolean) → boolean <!-- internal -->
         <a id="tui.app.App.readConfig"></a><br>Reads `keylang.json` again before a run. False: it is invalid, and the analyzer is not run — it would only fail with the same error again.
         - calls [tui.app.configState](tui.md#tui.app.configState), [tui.app.App.openConfig](tui.md#tui.app.App.openConfig)
-      - fn [openConfig](../../src/tui/app.ts#L510) (reason: string, remember: boolean) → void <!-- internal -->
+      - fn [openConfig](../../src/tui/app.ts#L581) (reason: string, remember: boolean) → void <!-- internal -->
         <a id="tui.app.App.openConfig"></a><br>Opens `keylang.json` as text with the cursor on the field (or the JSON position) the reason names.
         - calls [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.readText](tui.md#tui.disk.readText), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.configErrorCursor](tui.md#tui.app.configErrorCursor)
-      - fn [browse](../../src/tui/app.ts#L516) () → void <!-- internal -->
+      - fn [browse](../../src/tui/app.ts#L587) () → void <!-- internal -->
         <a id="tui.app.App.browse"></a><br>The start screen's Browse: the current analysis with the guessed configuration; nothing is written.
         - calls [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [startKey](../../src/tui/app.ts#L522) (event: KeyEvent) → void <!-- internal -->
+      - fn [startKey](../../src/tui/app.ts#L593) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.startKey"></a><br>Keys of the start screen: choose an item; the palette, help, F6 and quitting work as elsewhere.
         - calls [tui.app.App.runAction](tui.md#tui.app.App.runAction), [tui.app.App.browse](tui.md#tui.app.App.browse), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.app.App.quit](tui.md#tui.app.App.quit)
-      - fn [adoptResult](../../src/tui/app.ts#L533) (analysis: Analysis, edits: number, selected: CheckResult | undefined) → void <!-- internal -->
-        <a id="tui.app.App.adoptResult"></a><br>Installs a finished analysis via [`tui.app.App.adopt`](tui.md#tui.app.App.adopt), clears the updating and error state, and marks results outdated if the text was edited during the run. It keeps the previously selected finding selected when still reported, then clamps the selection. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [adoptResult](../../src/tui/app.ts#L604) (analysis: Analysis, edits: number, selected: CheckResult | undefined) → void <!-- internal -->
+        <a id="tui.app.App.adoptResult"></a><br>Installs a finished analysis via [`tui.app.App.adopt`](tui.md#tui.app.App.adopt), clearing the updating and error state and marking results outdated if edits happened meanwhile. It then keeps the previously selected finding selected if still reported, and clamps the selection. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.adopt](tui.md#tui.app.App.adopt), [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.findings.sameResult](tui.md#tui.findings.sameResult), [tui.results-panel.ResultsPanel.clampFinding](tui.md#tui.results-panel.ResultsPanel.clampFinding)
-      - fn [reanalyzeSoon](../../src/tui/app.ts#L546) () → void <!-- internal -->
+      - fn [reanalyzeSoon](../../src/tui/app.ts#L617) () → void <!-- internal -->
         <a id="tui.app.App.reanalyzeSoon"></a><br>Typing: mark results outdated now, analyse once the typing settles.
         - calls [tui.app.App.inputsChanged](tui.md#tui.app.App.inputsChanged), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [track](../../src/tui/app.ts#L564) (work: Promise<void>) → void <!-- internal -->
+      - fn [track](../../src/tui/app.ts#L635) (work: Promise<void>) → void <!-- internal -->
         <a id="tui.app.App.track"></a><br>Async work of a helper (a model, a microphone, an operation's result): `idle()` waits for it, and the frame follows it. Work that fails is a message, as a key that fails is (`safely`): never an unhandled rejection, which would end a terminal session and every session of…
         - calls [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.draw](tui.md#tui.app.App.draw), [tui.app.App.wake](tui.md#tui.app.App.wake)
-      - fn [quiet](../../src/tui/app.ts#L577) () → boolean <!-- internal -->
+      - fn [quiet](../../src/tui/app.ts#L648) () → boolean <!-- internal -->
         <a id="tui.app.App.quiet"></a><br>Reports whether the TUI is fully idle: no in-flight work counted, no pending settle timer, and the assistant not waiting on anything. [`tui.app.App.idle`](tui.md#tui.app.App.idle) and [`tui.app.App.wake`](tui.md#tui.app.App.wake) use it to decide whether to resolve or re-arm. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [wake](../../src/tui/app.ts#L581) () → void <!-- internal -->
+      - fn [wake](../../src/tui/app.ts#L652) () → void <!-- internal -->
         <a id="tui.app.App.wake"></a><br>Checks via [`tui.app.App.quiet`](tui.md#tui.app.App.quiet) whether no work is pending and, if so, drains the queued waiter callbacks, resetting the list and invoking each one to release anyone awaiting idleness. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.app.App.quiet](tui.md#tui.app.App.quiet)
-      - fn [adopt](../../src/tui/app.ts#L589) (analysis: Analysis) → void <!-- internal -->
+      - fn [adopt](../../src/tui/app.ts#L660) (analysis: Analysis) → void <!-- internal -->
         <a id="tui.app.App.adopt"></a><br>Files and clean buffers follow the new analysis (a regenerated map, a change on disk).
         - calls [tui.app.App.diskFiles](tui.md#tui.app.App.diskFiles), [tui.app.sortFiles](tui.md#tui.app.sortFiles), [map.explanations.loadBriefs](map.md#map.explanations.loadBriefs), [features.lsp-features.workspace](features.md#features.lsp-features.workspace), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.disk.readText](tui.md#tui.disk.readText), [tui.app.App.inputsChanged](tui.md#tui.app.App.inputsChanged), [tui.app.App.open](tui.md#tui.app.App.open), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.refreshFeatureLine](tui.md#tui.app.App.refreshFeatureLine)
-      - fn [refreshFeatureLine](../../src/tui/app.ts#L639) () → void <!-- internal -->
+      - fn [refreshFeatureLine](../../src/tui/app.ts#L710) () → void <!-- internal -->
         <a id="tui.app.App.refreshFeatureLine"></a><br>The status line's `feature <stage> · questions <n>` of the current file when it is a feature file (c4-zoom/11): its report on the session's analysis against the plan at its base (the merge-base with the main branch, else HEAD), as `keylang feature` computes it. It follows a…
         - calls [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.app.App.track](tui.md#tui.app.App.track), [tui.app.App.worker](tui.md#tui.app.App.worker), [operations.feature.featureReportOf](operations.md#operations.feature.featureReportOf)
-      - fn [readOnlyReason](../../src/tui/app.ts#L667) (path: string) → string <!-- internal -->
+      - fn [readOnlyReason](../../src/tui/app.ts#L738) (path: string) → string <!-- internal -->
         <a id="tui.app.App.readOnlyReason"></a><br>Why a generated buffer takes no edits, naming its generator.
         - calls [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [tui.app.App.specDir](tui.md#tui.app.App.specDir)
-      - fn [specDir](../../src/tui/app.ts#L674) () → string <!-- internal -->
+      - fn [specDir](../../src/tui/app.ts#L745) () → string <!-- internal -->
         <a id="tui.app.App.specDir"></a><br>The spec directory of the saved configuration (`keylang` when it cannot be read).
         - calls [base.config.loadConfig](base.md#base.config.loadConfig)
-      - fn [diskFiles](../../src/tui/app.ts#L682) () → string[] <!-- internal -->
-        <a id="tui.app.App.diskFiles"></a><br>Lists the editable files for the editor: Markdown specs under [`tui.app.App.specDir`](tui.md#tui.app.App.specDir), excluding the saved `explain` store, plus `keylang.json` if present, as root-relative POSIX paths ordered by [`tui.app.sortFiles`](tui.md#tui.app.sortFiles). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [diskFiles](../../src/tui/app.ts#L753) () → string[] <!-- internal -->
+        <a id="tui.app.App.diskFiles"></a><br>Lists the editable files on disk: Markdown specs under the [`tui.app.App.specDir`](tui.md#tui.app.App.specDir) folder, skipping the saved `explain` store, plus `keylang.json` if it exists, as sorted root-relative POSIX paths via [`tui.app.sortFiles`](tui.md#tui.app.sortFiles). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.specDir](tui.md#tui.app.App.specDir), [lang.files.collectMdFiles](lang.md#lang.files.collectMdFiles), [map.analyze.within](map.md#map.analyze.within), [tui.app.sortFiles](tui.md#tui.app.sortFiles), [base.config.toPosix](base.md#base.config.toPosix)
-      - fn [buffer](../../src/tui/app.ts#L695) () → Buffer | null <!-- internal -->
+      - fn [buffer](../../src/tui/app.ts#L766) () → Buffer | null <!-- internal -->
         <a id="tui.app.App.buffer"></a><br>Looks up the buffer for the currently active file key in the app state's buffer map, returning null when no file is current or the key has no entry. Nearly every editing and cursor method in [`tui.app.App`](tui.md#tui.app.App) goes through it to reach the open document. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-      - fn [load](../../src/tui/app.ts#L699) (path: string) → Buffer <!-- internal -->
+      - fn [load](../../src/tui/app.ts#L770) (path: string) → Buffer <!-- internal -->
         <a id="tui.app.App.load"></a><br>Returns a cached editor buffer for a file, or builds one from the analysis workspace text (via [`features.lsp-features.workspace`](features.md#features.lsp-features.workspace)) falling back to disk, splitting line endings and caching the result. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.disk.readText](tui.md#tui.disk.readText), [features.lsp-features.workspace](features.md#features.lsp-features.workspace), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.buffer.newBuffer](tui.md#tui.buffer.newBuffer)
-      - fn [open](../../src/tui/app.ts#L711) (path: string, cursor: Cursor, remember = true) → void <!-- internal -->
-        <a id="tui.app.App.open"></a><br>Switches the editor to a file at a given cursor, optionally pushing the previous place onto the back stack, loading it via [`tui.app.App.load`](tui.md#tui.app.App.load), leaving start/code/merge/zoom screens for view, and re-scrolling. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [open](../../src/tui/app.ts#L782) (path: string, cursor: Cursor, remember = true) → void <!-- internal -->
+        <a id="tui.app.App.open"></a><br>Switches the editor to a file at a given cursor, optionally pushing the current place onto the back stack, loading it via [`tui.app.App.load`](tui.md#tui.app.App.load), closing overlay modes and clearing selection, completion and hover. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.refreshFeatureLine](tui.md#tui.app.App.refreshFeatureLine)
-      - fn [lines](../../src/tui/app.ts#L731) () → readonly string[] <!-- internal -->
+      - fn [lines](../../src/tui/app.ts#L802) () → readonly string[] <!-- internal -->
         <a id="tui.app.App.lines"></a><br>Returns the current buffer's text as lines by fetching it via [`tui.app.App.buffer`](tui.md#tui.app.App.buffer) and splitting with [`tui.buffer.bufferLines`](tui.md#tui.buffer.bufferLines), yielding an empty array when no buffer is open. Used by search, mouse, and key handlers to resolve cursor positions. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines)
-      - fn [clampCursor](../../src/tui/app.ts#L736) () → void <!-- internal -->
+      - fn [clampCursor](../../src/tui/app.ts#L807) () → void <!-- internal -->
         <a id="tui.app.App.clampCursor"></a><br>Keeps the editor cursor inside the current buffer: line is clamped to the existing lines from [`tui.buffer.bufferLines`](tui.md#tui.buffer.bufferLines), column to the line's cluster count from [`tui.buffer.lineLayout`](tui.md#tui.buffer.lineLayout). With no buffer, it resets to 0,0. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
-      - fn [keepVisible](../../src/tui/app.ts#L749) () → void <!-- internal -->
+      - fn [keepVisible](../../src/tui/app.ts#L820) () → void <!-- internal -->
         <a id="tui.app.App.keepVisible"></a><br>Scrolls so the cursor is on screen; the layout of its line answers in logarithmic time, however long the line.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.view.layout](tui.md#tui.view.layout), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.width.scrollToFit](tui.md#tui.width.scrollToFit)
-      - fn [edit](../../src/tui/app.ts#L768) (change: (lines: string[], cursor: Cursor) => void, coalesce = false) → void <!-- internal -->
-        <a id="tui.app.App.edit"></a><br>Applies a line-level change to the current buffer, refusing read-only files via [`tui.app.App.readOnlyReason`](tui.md#tui.app.App.readOnlyReason) and pushing capped, optionally coalesced undo snapshots, then writes text with [`tui.buffer.setText`](tui.md#tui.buffer.setText) and schedules reanalysis. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [edit](../../src/tui/app.ts#L839) (change: (lines: string[], cursor: Cursor) => void, coalesce = false) → void <!-- internal -->
+        <a id="tui.app.App.edit"></a><br>Applies a line-level mutation to the active buffer, blocking read-only files via [`tui.app.App.readOnlyReason`](tui.md#tui.app.App.readOnlyReason), recording capped (optionally coalesced) undo history, then saving through [`tui.buffer.setText`](tui.md#tui.buffer.setText) and scheduling [`tui.app.App.reanalyzeSoon`](tui.md#tui.app.App.reanalyzeSoon). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.readOnlyReason](tui.md#tui.app.App.readOnlyReason), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.reanalyzeSoon](tui.md#tui.app.App.reanalyzeSoon)
-      - fn [save](../../src/tui/app.ts#L789) () → void <!-- internal -->
-        <a id="tui.app.App.save"></a><br>Writes the active editable buffer via [`tui.app.App.persist`](tui.md#tui.app.App.persist) and triggers [`tui.app.App.reanalyze`](tui.md#tui.app.App.reanalyze), refusing new files that [`tui.app.App.newFileProblem`](tui.md#tui.app.App.newFileProblem) flags. If [`tui.app.App.changedOnDisk`](tui.md#tui.app.App.changedOnDisk) reports an outside change, the first press warns and the second overwrites. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [save](../../src/tui/app.ts#L860) () → void <!-- internal -->
+        <a id="tui.app.App.save"></a><br>Writes the active editable buffer via [`tui.app.App.persist`](tui.md#tui.app.App.persist), then runs [`tui.app.App.reanalyze`](tui.md#tui.app.App.reanalyze). It refuses a new file whose target now exists, and it warns once before overwriting a file changed on disk. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.app.App.newFileProblem](tui.md#tui.app.App.newFileProblem), [tui.app.App.changedOnDisk](tui.md#tui.app.App.changedOnDisk), [tui.app.App.persist](tui.md#tui.app.App.persist), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [changedOnDisk](../../src/tui/app.ts#L810) (buffer: Buffer) → boolean <!-- internal -->
+      - fn [changedOnDisk](../../src/tui/app.ts#L881) (buffer: Buffer) → boolean <!-- internal -->
         <a id="tui.app.App.changedOnDisk"></a><br>Reads the file at the buffer's path under the workspace root via [`tui.disk.readText`](tui.md#tui.disk.readText) and reports whether its current contents differ from the snapshot the buffer last saw on disk. Used by [`tui.app.App.save`](tui.md#tui.app.App.save) and [`tui.app.App.saveAndContinue`](tui.md#tui.app.App.saveAndContinue) to detect external edits before… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
         - calls [tui.disk.readText](tui.md#tui.disk.readText)
-      - fn [newFileProblem](../../src/tui/app.ts#L819) (buffer: Buffer) → string | null <!-- internal -->
+      - fn [newFileProblem](../../src/tui/app.ts#L890) (buffer: Buffer) → string | null <!-- internal -->
         <a id="tui.app.App.newFileProblem"></a><br>Why the first save of a new specification may not happen, or null: the path rules again (the configuration or a link may have changed since the form), and the target must still not exist.
         - calls [tui.new-spec.newSpecProblem](tui.md#tui.new-spec.newSpecProblem), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.app.App.generatedDoc](tui.md#tui.app.App.generatedDoc)
-      - fn [generatedDoc](../../src/tui/app.ts#L828) (path: string) → boolean <!-- internal -->
+      - fn [generatedDoc](../../src/tui/app.ts#L899) (path: string) → boolean <!-- internal -->
         <a id="tui.app.App.generatedDoc"></a><br>The analysis knows `path` as a generated document.
-      - fn [persist](../../src/tui/app.ts#L833) (buffer: Buffer) → void <!-- internal -->
+      - fn [persist](../../src/tui/app.ts#L904) (buffer: Buffer) → void <!-- internal -->
         <a id="tui.app.App.persist"></a><br>Writes the buffer's text with its line ending; the buffer is clean after. Throws when the write fails.
         - calls [tui.disk.withEol](tui.md#tui.disk.withEol), [tui.app.App.newFileProblem](tui.md#tui.app.App.newFileProblem), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.app.App.inputsChanged](tui.md#tui.app.App.inputsChanged)
-      - fn [dirtyInputs](../../src/tui/app.ts#L850) () → string[] <!-- internal -->
+      - fn [dirtyInputs](../../src/tui/app.ts#L921) () → string[] <!-- internal -->
         <a id="tui.app.App.dirtyInputs"></a><br>The unsaved spec and config buffers, in path order: what an operation on the disk would not see.
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-      - fn [withSavedInputs](../../src/tui/app.ts#L862) (action: string, run: () => void, options: { writes?: string[]; writesNote?: string; inputs?: (path: string) => boolean } = {}) → void <!-- internal -->
+      - fn [withSavedInputs](../../src/tui/app.ts#L933) (action: string, run: () => void, options: { writes?: string[]; writesNote?: string; inputs?: (path: string) => boolean } = {}) → void <!-- internal -->
         <a id="tui.app.App.withSavedInputs"></a><br>Runs `run` on saved inputs (design §2.5). Without dirty buffers it runs at once; with them the save step opens: Save and continue or Back.
         - calls [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs)
-      - fn [barrierKey](../../src/tui/app.ts#L872) (event: KeyEvent) → void <!-- internal -->
+      - fn [barrierKey](../../src/tui/app.ts#L943) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.barrierKey"></a><br>The keys of the save step: ←→/Tab choose, Enter does it, Esc is Back.
         - calls [tui.app.App.leaveBarrier](tui.md#tui.app.App.leaveBarrier), [tui.app.App.saveAndContinue](tui.md#tui.app.App.saveAndContinue)
-      - fn [leaveBarrier](../../src/tui/app.ts#L880) () → void <!-- internal -->
+      - fn [leaveBarrier](../../src/tui/app.ts#L951) () → void <!-- internal -->
         <a id="tui.app.App.leaveBarrier"></a><br>Back: nothing is written and the operation does not start.
-      - fn [saveAndContinue](../../src/tui/app.ts#L893) () → void <!-- internal -->
+      - fn [saveAndContinue](../../src/tui/app.ts#L964) () → void <!-- internal -->
         <a id="tui.app.App.saveAndContinue"></a><br>Saves the listed buffers one by one through the ordinary save path. The first failure (a file changed on disk, a write error) stops: the step stays open with the reason, the operation does not start, and the files already saved stay saved — there is no rollback.
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.app.App.newFileProblem](tui.md#tui.app.App.newFileProblem), [tui.app.App.changedOnDisk](tui.md#tui.app.App.changedOnDisk), [tui.app.App.persist](tui.md#tui.app.App.persist), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [live](../../src/tui/app.ts#L932) () → Workspace | null <!-- internal -->
+      - fn [live](../../src/tui/app.ts#L1003) () → Workspace | null <!-- internal -->
         <a id="tui.app.App.live"></a><br>The workspace of the latest analysis, with this session's buffers as the documents. The pointer asks for it on every cell it crosses: the same analysis and the same buffers at the same versions give the one built last.
         - calls [features.lsp-features.workspace](features.md#features.lsp-features.workspace)
-      - fn [lspPosition](../../src/tui/app.ts#L946) (cursor: Cursor) → LspPosition <!-- internal -->
+      - fn [lspPosition](../../src/tui/app.ts#L1017) (cursor: Cursor) → LspPosition <!-- internal -->
         <a id="tui.app.App.lspPosition"></a><br>Converts an editor cursor's grapheme-cluster column into an LSP line/character position using the offsets from [`tui.buffer.lineLayout`](tui.md#tui.buffer.lineLayout), clamping past line end. Without an open buffer, it returns character 0. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
-      - fn [cellAt](../../src/tui/app.ts#L954) (x: number, y: number) → Cursor | null <!-- internal -->
+      - fn [cellAt](../../src/tui/app.ts#L1025) (x: number, y: number) → Cursor | null <!-- internal -->
         <a id="tui.app.App.cellAt"></a><br>The editor line and column under a screen cell, or null.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.view.layout](tui.md#tui.view.layout), [tui.view.editorRows](tui.md#tui.view.editorRows), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.width.clusterAtCell](tui.md#tui.width.clusterAtCell), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
-      - fn [offsetOf](../../src/tui/app.ts#L967) (at: Cursor) → number <!-- internal -->
+      - fn [offsetOf](../../src/tui/app.ts#L1038) (at: Cursor) → number <!-- internal -->
         <a id="tui.app.App.offsetOf"></a><br>The UTF-16 offset of a cursor in the buffer.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
-      - fn [targetNear](../../src/tui/app.ts#L978) (cursor: Cursor) → Cursor | null <!-- internal -->
+      - fn [targetNear](../../src/tui/app.ts#L1049) (cursor: Cursor) → Cursor | null <!-- internal -->
         <a id="tui.app.App.targetNear"></a><br>The id or link at the cursor; on an item line without one under the cursor, its first.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [tui.app.App.offsetOf](tui.md#tui.app.App.offsetOf), [tui.app.forNodes](tui.md#tui.app.forNodes), [tui.width.clusterAt](tui.md#tui.width.clusterAt), [tui.app.App.lines](tui.md#tui.app.App.lines)
-      - fn [hoverAt](../../src/tui/app.ts#L997) (cursor: Cursor, x: number, y: number, source: Hover["source"]) → Hover | null <!-- internal -->
+      - fn [hoverAt](../../src/tui/app.ts#L1068) (cursor: Cursor, x: number, y: number, source: Hover["source"]) → Hover | null <!-- internal -->
         <a id="tui.app.App.hoverAt"></a><br>The hover at a cursor, anchored at a cell. The rows are made once per target (an ID or a link) and workspace — wherever on the target the pointer is, they are the same — and once per position off any target.
         - calls [tui.app.App.live](tui.md#tui.app.App.live), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [tui.app.App.offsetOf](tui.md#tui.app.App.offsetOf), [tui.app.App.hoverRows](tui.md#tui.app.App.hoverRows), [tui.app.App.lspPosition](tui.md#tui.app.App.lspPosition)
-      - fn [hoverRows](../../src/tui/app.ts#L1011) (ws: Workspace, path: string, position: LspPosition) → Hover["lines"] | null <!-- internal -->
+      - fn [hoverRows](../../src/tui/app.ts#L1082) (ws: Workspace, path: string, position: LspPosition) → Hover["lines"] | null <!-- internal -->
         <a id="tui.app.App.hoverRows"></a><br>The popup's rows of the hover at a position: the hover's parts as they are, the code at the declaration, the uses in specs.
         - calls [features.lsp-features.hoverContent](features.md#features.lsp-features.hoverContent), [features.lsp-features.runsText](features.md#features.lsp-features.runsText), [tui.disk.readText](tui.md#tui.disk.readText), [features.lsp-features.references](features.md#features.lsp-features.references)
-      - fn [cursorAnchor](../../src/tui/app.ts#L1030) (col: number) → { x: number; y: number } <!-- internal -->
+      - fn [cursorAnchor](../../src/tui/app.ts#L1101) (col: number) → { x: number; y: number } <!-- internal -->
         <a id="tui.app.App.cursorAnchor"></a><br>Where a popup at the cursor line is anchored: the raw line in the editor, the rendered row in reading mode.
         - calls [tui.view.layout](tui.md#tui.view.layout), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.view.readCursorRow](tui.md#tui.view.readCursorRow), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth)
-      - fn [goToCode](../../src/tui/app.ts#L1041) () → void <!-- internal -->
-        <a id="tui.app.App.goToCode"></a><br>Resolves the ID or code link nearest the cursor via [`features.lsp-features.definition`](features.md#features.lsp-features.definition) and opens its source file at the defined line through [`tui.app.App.jump`](tui.md#tui.app.App.jump). If no target, workspace, or definition is found, it sets a status message instead. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [goToCode](../../src/tui/app.ts#L1112) () → void <!-- internal -->
+        <a id="tui.app.App.goToCode"></a><br>Resolves the id or code link near the cursor via [`features.lsp-features.definition`](features.md#features.lsp-features.definition) and opens the source file at that line with [`tui.app.App.jump`](tui.md#tui.app.App.jump), otherwise showing a status message (analysis still running, or no code found). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.targetNear](tui.md#tui.app.App.targetNear), [tui.app.App.live](tui.md#tui.app.App.live), [features.lsp-features.definition](features.md#features.lsp-features.definition), [tui.app.App.lspPosition](tui.md#tui.app.App.lspPosition), [tui.app.App.jump](tui.md#tui.app.App.jump)
-      - fn [jump](../../src/tui/app.ts#L1059) (abs: string, line: number) → void <!-- internal -->
+      - fn [jump](../../src/tui/app.ts#L1130) (abs: string, line: number) → void <!-- internal -->
         <a id="tui.app.App.jump"></a><br>Opens a file at a line: a spec in the editor, code in `$EDITOR` or the built-in viewer.
         - calls [base.config.toPosix](base.md#base.config.toPosix), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.track](tui.md#tui.app.App.track), [tui.app.App.showCode](tui.md#tui.app.App.showCode)
-      - fn [showCode](../../src/tui/app.ts#L1080) (rel: string, abs: string, line: number) → boolean <!-- internal -->
+      - fn [showCode](../../src/tui/app.ts#L1151) (rel: string, abs: string, line: number) → boolean <!-- internal -->
         <a id="tui.app.App.showCode"></a><br>The built-in read-only viewer at `line` of a code file; false (with a message) when it cannot be read.
         - calls [tui.view.layout](tui.md#tui.view.layout)
-      - fn [nodeAtCursor](../../src/tui/app.ts#L1097) () → string | null <!-- internal -->
+      - fn [nodeAtCursor](../../src/tui/app.ts#L1168) () → string | null <!-- internal -->
         <a id="tui.app.App.nodeAtCursor"></a><br>The ID of the node whose item is at the cursor line or the nearest one above it (a description, `calls`).
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.forNodes](tui.md#tui.app.forNodes)
-      - fn [lineOfNode](../../src/tui/app.ts#L1109) (path: string, id: string) → number | null <!-- internal -->
+      - fn [lineOfNode](../../src/tui/app.ts#L1180) (path: string, id: string) → number | null <!-- internal -->
         <a id="tui.app.App.lineOfNode"></a><br>The 0-based line of the item that declares `id` in the file at `path`, or null.
         - calls [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.forNodes](tui.md#tui.app.forNodes)
-      - fn [mapDirs](../../src/tui/app.ts#L1117) (analysis: Analysis) → { map: string; explained: string } <!-- internal -->
+      - fn [mapDirs](../../src/tui/app.ts#L1188) (analysis: Analysis) → { map: string; explained: string } <!-- internal -->
         <a id="tui.app.App.mapDirs"></a><br>The map directory of each variant, relative to the root.
-      - fn [toggleMap](../../src/tui/app.ts#L1122) () → void <!-- internal -->
+      - fn [toggleMap](../../src/tui/app.ts#L1193) () → void <!-- internal -->
         <a id="tui.app.App.toggleMap"></a><br>`t`: the same layer file in the other map, the cursor on the same node.
         - calls [tui.actions.noSnapshotReason](tui.md#tui.actions.noSnapshotReason), [tui.app.App.mapDirs](tui.md#tui.app.App.mapDirs), [tui.app.App.nodeAtCursor](tui.md#tui.app.App.nodeAtCursor), [tui.app.App.lineOfNode](tui.md#tui.app.App.lineOfNode), [tui.app.App.open](tui.md#tui.app.App.open)
-      - fn [goToNode](../../src/tui/app.ts#L1149) (id: string) → void <!-- internal -->
+      - fn [goToNode](../../src/tui/app.ts#L1220) (id: string) → void <!-- internal -->
         <a id="tui.app.App.goToNode"></a><br>The node's line in the map the reader is in: the explained map from one of its files, the map otherwise.
         - calls [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.mapDirs](tui.md#tui.app.App.mapDirs), [tui.app.App.lineOfNode](tui.md#tui.app.App.lineOfNode), [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.open](tui.md#tui.app.App.open), [tui.width.graphemes](tui.md#tui.width.graphemes)
-      - fn [goToSpec](../../src/tui/app.ts#L1162) (id: string | null) → void <!-- internal -->
-        <a id="tui.app.App.goToSpec"></a><br>Jumps the editor to where an ID is declared in a spec, opening that file via [`tui.app.App.open`](tui.md#tui.app.App.open) with the cursor placed using [`tui.width.clusterAt`](tui.md#tui.width.clusterAt); shows a status message if no ID is given or it's undeclared. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [goToSpec](../../src/tui/app.ts#L1233) (id: string | null) → void <!-- internal -->
+        <a id="tui.app.App.goToSpec"></a><br>Jumps the editor to where a spec ID is declared, loading the file via [`tui.app.App.load`](tui.md#tui.app.App.load) and opening it with [`tui.app.App.open`](tui.md#tui.app.App.open) at the declaration's line and grapheme column; sets a status message if no ID or undeclared. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.open](tui.md#tui.app.App.open), [tui.width.clusterAt](tui.md#tui.width.clusterAt)
-      - fn [idAtCursor](../../src/tui/app.ts#L1177) () → string | null <!-- internal -->
+      - fn [idAtCursor](../../src/tui/app.ts#L1248) () → string | null <!-- internal -->
         <a id="tui.app.App.idAtCursor"></a><br>Resolves the identifier under or near the editor cursor in the current buffer's document via [`features.lsp-features.targetAt`](features.md#features.lsp-features.targetAt), returning its ID or null when no document, nearby target, or ID-kind target exists. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.targetNear](tui.md#tui.app.App.targetNear), [features.lsp-features.targetAt](features.md#features.lsp-features.targetAt), [tui.app.App.offsetOf](tui.md#tui.app.App.offsetOf)
-      - fn [goBack](../../src/tui/app.ts#L1185) () → void <!-- internal -->
+      - fn [goBack](../../src/tui/app.ts#L1256) () → void <!-- internal -->
         <a id="tui.app.App.goBack"></a><br>Pops the last place off the back history, reloads it via [`tui.app.App.load`](tui.md#tui.app.App.load), restores path, cursor and mode, then re-clamps the cursor. With empty history it just switches code mode to view. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.load](tui.md#tui.app.App.load), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [handle](../../src/tui/app.ts#L1203) (event: InputEvent) → void <!-- internal -->
-        <a id="tui.app.App.handle"></a><br>Central input dispatcher: routes mouse, paste and key events through modal layers (quit, help, save barrier, prompts, results panel) to function keys and per-mode handlers like [`tui.app.App.editKey`](tui.md#tui.app.App.editKey) or [`tui.merge-session.MergeSession.key`](tui.md#tui.merge-session.MergeSession.key). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-        - calls [tui.assist.Assist.dropGhost](tui.md#tui.assist.Assist.dropGhost), [tui.app.App.mouse](tui.md#tui.app.App.mouse), [tui.app.App.promptType](tui.md#tui.app.App.promptType), [tui.app.App.insert](tui.md#tui.app.App.insert), [tui.app.pasteRefusal](tui.md#tui.app.pasteRefusal), [tui.app.App.quit](tui.md#tui.app.App.quit), [tui.app.App.quitKey](tui.md#tui.app.App.quitKey), [tui.app.App.helpKey](tui.md#tui.app.App.helpKey), [tui.app.App.barrierKey](tui.md#tui.app.App.barrierKey), [tui.app.App.promptKey](tui.md#tui.app.App.promptKey), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.results-panel.ResultsPanel.returnToFindings](tui.md#tui.results-panel.ResultsPanel.returnToFindings), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.results-panel.ResultsPanel.resultsKey](tui.md#tui.results-panel.ResultsPanel.resultsKey), [tui.app.App.startKey](tui.md#tui.app.App.startKey), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze), [tui.results-panel.ResultsPanel.openResults](tui.md#tui.results-panel.ResultsPanel.openResults), [tui.app.App.toggleFiles](tui.md#tui.app.App.toggleFiles), [tui.app.App.toggleNav](tui.md#tui.app.App.toggleNav), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.key](tui.md#tui.merge-session.MergeSession.key), [tui.app.App.codeKey](tui.md#tui.app.App.codeKey), [tui.zoom-screen.ZoomScreen.zoomKey](tui.md#tui.zoom-screen.ZoomScreen.zoomKey), [tui.app.App.editKey](tui.md#tui.app.App.editKey), [tui.app.App.contextKey](tui.md#tui.app.App.contextKey), [tui.app.App.navKey](tui.md#tui.app.App.navKey), [tui.app.App.filesKey](tui.md#tui.app.App.filesKey), [tui.app.App.viewKey](tui.md#tui.app.App.viewKey)
-      - fn [helpKey](../../src/tui/app.ts#L1277) (event: KeyEvent) → void <!-- internal -->
+      - fn [handle](../../src/tui/app.ts#L1274) (event: InputEvent) → void <!-- internal -->
+        <a id="tui.app.App.handle"></a><br>Routes each terminal input event to the right handler by modal state (quit, help, barrier, prompt, results, start screen, clip chat), global F-keys and Ctrl+P, then the current mode's key handler, e.g. [`tui.app.App.editKey`](tui.md#tui.app.App.editKey). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.clip.chatTakesKeys](tui.md#tui.clip.chatTakesKeys), [tui.assist.Assist.dropGhost](tui.md#tui.assist.Assist.dropGhost), [tui.app.App.mouse](tui.md#tui.app.App.mouse), [tui.app.App.promptType](tui.md#tui.app.App.promptType), [tui.clip.Clip.paste](tui.md#tui.clip.Clip.paste), [tui.app.printable](tui.md#tui.app.printable), [tui.app.App.insert](tui.md#tui.app.App.insert), [tui.app.pasteRefusal](tui.md#tui.app.pasteRefusal), [tui.app.App.quit](tui.md#tui.app.App.quit), [tui.app.App.quitKey](tui.md#tui.app.App.quitKey), [tui.app.App.helpKey](tui.md#tui.app.App.helpKey), [tui.app.App.barrierKey](tui.md#tui.app.App.barrierKey), [tui.app.App.promptKey](tui.md#tui.app.App.promptKey), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.app.App.save](tui.md#tui.app.App.save), [tui.clip.Clip.key](tui.md#tui.clip.Clip.key), [tui.results-panel.ResultsPanel.returnToFindings](tui.md#tui.results-panel.ResultsPanel.returnToFindings), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.results-panel.ResultsPanel.resultsKey](tui.md#tui.results-panel.ResultsPanel.resultsKey), [tui.app.App.startKey](tui.md#tui.app.App.startKey), [tui.clip.Clip.toggle](tui.md#tui.clip.Clip.toggle), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze), [tui.results-panel.ResultsPanel.openResults](tui.md#tui.results-panel.ResultsPanel.openResults), [tui.app.App.toggleFiles](tui.md#tui.app.App.toggleFiles), [tui.app.App.toggleNav](tui.md#tui.app.App.toggleNav), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.key](tui.md#tui.merge-session.MergeSession.key), [tui.app.App.codeKey](tui.md#tui.app.App.codeKey), [tui.zoom-screen.ZoomScreen.zoomKey](tui.md#tui.zoom-screen.ZoomScreen.zoomKey), [tui.app.App.editKey](tui.md#tui.app.App.editKey), [tui.app.App.contextKey](tui.md#tui.app.App.contextKey), [tui.app.App.navKey](tui.md#tui.app.App.navKey), [tui.app.App.filesKey](tui.md#tui.app.App.filesKey), [tui.app.App.viewKey](tui.md#tui.app.App.viewKey)
+      - fn [helpKey](../../src/tui/app.ts#L1354) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.helpKey"></a><br>Scrolls the help overlay by one line on up/down or k/j, or by a panel-height page (from [`tui.view.layout`](tui.md#tui.view.layout)), clamped to [`tui.view.helpScrollMax`](tui.md#tui.view.helpScrollMax); any other key closes help and resets its scroll. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.view.layout](tui.md#tui.view.layout), [tui.view.helpScrollMax](tui.md#tui.view.helpScrollMax)
-      - fn [quit](../../src/tui/app.ts#L1293) () → void <!-- internal -->
+      - fn [quit](../../src/tui/app.ts#L1370) () → void <!-- internal -->
         <a id="tui.app.App.quit"></a><br>`q` / Ctrl+C. While an operation runs, the quit step asks first (Stay or Cancel and exit; `q` again in it is Cancel and exit); then unsaved buffers ask once more; then the session ends.
         - calls [tui.app.App.cancelAndQuit](tui.md#tui.app.App.cancelAndQuit), [tui.app.App.activeLabel](tui.md#tui.app.App.activeLabel), [tui.app.App.quitIfSaved](tui.md#tui.app.App.quitIfSaved)
-      - fn [quitIfSaved](../../src/tui/app.ts#L1311) (note?: string) → void <!-- internal -->
+      - fn [quitIfSaved](../../src/tui/app.ts#L1388) (note?: string) → void <!-- internal -->
         <a id="tui.app.App.quitIfSaved"></a><br>The ordinary end of a session: unsaved buffers ask once (the second q quits), then it closes.
         - calls [tui.app.App.unsaved](tui.md#tui.app.App.unsaved), [tui.app.App.close](tui.md#tui.app.App.close)
-      - fn [activeLabel](../../src/tui/app.ts#L1323) () → string <!-- internal -->
+      - fn [activeLabel](../../src/tui/app.ts#L1400) () → string <!-- internal -->
         <a id="tui.app.App.activeLabel"></a><br>How messages name the running operation.
         - calls [tui.reports.records.operationLabel](tui.md#tui.reports.records.operationLabel)
-      - fn [quitKey](../../src/tui/app.ts#L1329) (event: KeyEvent) → void <!-- internal -->
+      - fn [quitKey](../../src/tui/app.ts#L1406) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.quitKey"></a><br>The keys of the quit step: ←→/Tab choose, Enter does it, Esc stays; while it waits only Esc (stay) counts.
         - calls [tui.app.App.quit](tui.md#tui.app.App.quit), [tui.app.App.cancelAndQuit](tui.md#tui.app.App.cancelAndQuit)
-      - fn [cancelAndQuit](../../src/tui/app.ts#L1347) () → void <!-- internal -->
+      - fn [cancelAndQuit](../../src/tui/app.ts#L1424) () → void <!-- internal -->
         <a id="tui.app.App.cancelAndQuit"></a><br>Cancel and exit: the operation is cancelled — before a commit at once, during one after its current file step — and the session ends when it settles (`quitAfterSettle`), never in the middle of a file write.
-      - fn [quitAfterSettle](../../src/tui/app.ts#L1360) (record: OperationRecord) → void <!-- internal -->
+      - fn [quitAfterSettle](../../src/tui/app.ts#L1437) (record: OperationRecord) → void <!-- internal -->
         <a id="tui.app.App.quitAfterSettle"></a><br>An operation settled under the quit step. After Cancel and exit the unsaved buffers decide again, with what the operation wrote named; an operation that ended by itself while the step asked only closes the step.
         - calls [tui.reports.records.recordSummary](tui.md#tui.reports.records.recordSummary), [tui.app.App.quitIfSaved](tui.md#tui.app.App.quitIfSaved)
-      - fn [move](../../src/tui/app.ts#L1375) (lines: number) → void <!-- internal -->
+      - fn [move](../../src/tui/app.ts#L1452) (lines: number) → void <!-- internal -->
         <a id="tui.app.App.move"></a><br>Shifts the cursor line by the given offset, clamps it via [`tui.app.App.clampCursor`](tui.md#tui.app.App.clampCursor) and scrolls via [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible). Clears any hover state that was triggered by the keyboard. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [common](../../src/tui/app.ts#L1382) (event: KeyEvent) → boolean <!-- internal -->
+      - fn [common](../../src/tui/app.ts#L1459) (event: KeyEvent) → boolean <!-- internal -->
         <a id="tui.app.App.common"></a><br>Handles arrow, page, home and end keys, moving the cursor via [`tui.app.App.move`](tui.md#tui.app.App.move) and returning false for other keys. Shift+up/down in edit mode starts a line selection; other navigation clears it. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.view.layout](tui.md#tui.view.layout), [tui.app.App.move](tui.md#tui.app.App.move), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor)
-      - fn [cycleFocus](../../src/tui/app.ts#L1424) () → void <!-- internal -->
+      - fn [cycleFocus](../../src/tui/app.ts#L1501) () → void <!-- internal -->
         <a id="tui.app.App.cycleFocus"></a><br>`Tab`: the editor, then each open side panel that is drawn once it has the focus.
         - calls [tui.app.App.drawable](tui.md#tui.app.App.drawable), [tui.app.App.fixNavIndex](tui.md#tui.app.App.fixNavIndex)
-      - fn [drawable](../../src/tui/app.ts#L1437) (panel: SidePanel) → boolean <!-- internal -->
+      - fn [drawable](../../src/tui/app.ts#L1514) (panel: SidePanel) → boolean <!-- internal -->
         <a id="tui.app.App.drawable"></a><br>Whether `panel` is drawn when it has the focus (below 100 columns the focused panel is the one shown). Below 60 columns none is: keys must not go to a list nobody sees.
         - calls [tui.view.layout](tui.md#tui.view.layout)
-      - fn [hoverAtCursor](../../src/tui/app.ts#L1443) () → void <!-- internal -->
+      - fn [hoverAtCursor](../../src/tui/app.ts#L1520) () → void <!-- internal -->
         <a id="tui.app.App.hoverAtCursor"></a><br>`K`: the hover of the id nearest the cursor, as the mouse would show it.
         - calls [tui.app.App.targetNear](tui.md#tui.app.App.targetNear), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.cursorAnchor](tui.md#tui.app.App.cursorAnchor), [tui.app.App.hoverAt](tui.md#tui.app.App.hoverAt)
-      - fn [viewKey](../../src/tui/app.ts#L1458) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.viewKey"></a><br>Dispatches keystrokes in view/read mode: cursor motion, jumps via [`tui.app.App.goToCode`](tui.md#tui.app.App.goToCode)/[`tui.app.App.goToSpec`](tui.md#tui.app.App.goToSpec), toggling read/edit modes (blocking read-only buffers), and opening merge, zoom, search, palette or help. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [viewKey](../../src/tui/app.ts#L1535) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.viewKey"></a><br>Dispatches view-mode keystrokes after [`tui.app.App.common`](tui.md#tui.app.App.common): vim-style cursor movement, toggling read/edit modes, jumping between spec and code, and opening search, palette, zoom or map. It also triggers merges and undo, explanations, voice stop and quit. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.common](tui.md#tui.app.App.common), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.goBack](tui.md#tui.app.App.goBack), [tui.app.App.textToSpec](tui.md#tui.app.App.textToSpec), [tui.app.App.draftAtCursor](tui.md#tui.app.App.draftAtCursor), [tui.assist.Assist.voice](tui.md#tui.assist.Assist.voice), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode), [tui.app.App.cycleFocus](tui.md#tui.app.App.cycleFocus), [tui.app.App.move](tui.md#tui.app.App.move), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.lines](tui.md#tui.app.App.lines), [tui.app.App.hoverAtCursor](tui.md#tui.app.App.hoverAtCursor), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.readOnlyReason](tui.md#tui.app.App.readOnlyReason), [tui.app.App.mergeOrPick](tui.md#tui.app.App.mergeOrPick), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.undo](tui.md#tui.merge-session.MergeSession.undo), [tui.app.App.explainAtCursor](tui.md#tui.app.App.explainAtCursor), [tui.app.App.toggleMap](tui.md#tui.app.App.toggleMap), [tui.zoom-screen.ZoomScreen.openZoom](tui.md#tui.zoom-screen.ZoomScreen.openZoom), [tui.app.App.nodeAtCursor](tui.md#tui.app.App.nodeAtCursor), [tui.app.App.openNodeSearch](tui.md#tui.app.App.openNodeSearch), [tui.app.App.openPalette](tui.md#tui.app.App.openPalette), [tui.app.App.findNext](tui.md#tui.app.App.findNext), [tui.app.App.quit](tui.md#tui.app.App.quit)
-      - fn [editKey](../../src/tui/app.ts#L1538) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.editKey"></a><br>Handles edit-mode keys while a ghost suggestion is shown: Alt+] cycles variants, Tab accepts via [`tui.assist.Assist.acceptGhost`](tui.md#tui.assist.Assist.acceptGhost), other keys drop it and fall through to [`tui.app.App.editKeyWithoutGhost`](tui.md#tui.app.App.editKeyWithoutGhost), then re-arm suggestions. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [editKey](../../src/tui/app.ts#L1615) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.editKey"></a><br>Handles edit-mode keys while a ghost suggestion is shown: Alt+] cycles variants, Tab accepts via [`tui.assist.Assist.acceptGhost`](tui.md#tui.assist.Assist.acceptGhost), other keys drop it and fall through to [`tui.app.App.editKeyWithoutGhost`](tui.md#tui.app.App.editKeyWithoutGhost). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.assist.Assist.acceptGhost](tui.md#tui.assist.Assist.acceptGhost), [tui.assist.Assist.dropGhost](tui.md#tui.assist.Assist.dropGhost), [tui.app.App.editKeyWithoutGhost](tui.md#tui.app.App.editKeyWithoutGhost), [tui.assist.Assist.ghostSoon](tui.md#tui.assist.Assist.ghostSoon)
-      - fn [editKeyWithoutGhost](../../src/tui/app.ts#L1556) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.editKeyWithoutGhost"></a><br>Handles edit-mode keys when no ghost suggestion is shown: navigates, accepts or rejects the completion popup, maps Ctrl shortcuts to [`tui.app.App.save`](tui.md#tui.app.App.save) and others, and edits text with grapheme-aware enter, backspace, delete. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [editKeyWithoutGhost](../../src/tui/app.ts#L1633) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.editKeyWithoutGhost"></a><br>Handles edit-mode keys when no ghost suggestion shows: navigates, accepts or rejects the completion popup, maps Ctrl shortcuts to [`tui.app.App.save`](tui.md#tui.app.App.save), [`tui.assist.Assist.voice`](tui.md#tui.assist.Assist.voice) and undo, and applies grapheme-aware newline, backspace, delete and text insertion. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.acceptCompletion](tui.md#tui.app.App.acceptCompletion), [tui.assist.countSuggestion](tui.md#tui.assist.countSuggestion), [tui.app.App.save](tui.md#tui.app.App.save), [tui.assist.Assist.voice](tui.md#tui.assist.Assist.voice), [tui.app.App.undoEdit](tui.md#tui.app.App.undoEdit), [tui.app.App.textToSpec](tui.md#tui.app.App.textToSpec), [tui.app.App.complete](tui.md#tui.app.App.complete), [tui.app.App.goBack](tui.md#tui.app.App.goBack), [tui.app.App.common](tui.md#tui.app.App.common), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.app.App.insert](tui.md#tui.app.App.insert)
-      - fn [insert](../../src/tui/app.ts#L1630) (raw: string) → void <!-- internal -->
-        <a id="tui.app.App.insert"></a><br>Inserts filtered typed or pasted text at the cursor via [`tui.app.App.edit`](tui.md#tui.app.App.edit), splitting on newlines into multiple lines and placing the cursor by grapheme clusters, then refreshes completion via [`tui.app.App.complete`](tui.md#tui.app.App.complete). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [insert](../../src/tui/app.ts#L1707) (raw: string) → void <!-- internal -->
+        <a id="tui.app.App.insert"></a><br>Splices filtered input text into the active buffer at the cursor via [`tui.app.App.edit`](tui.md#tui.app.App.edit), splitting multi-line pastes into new lines and placing the cursor by grapheme clusters, then refreshes completion via [`tui.app.App.complete`](tui.md#tui.app.App.complete). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.printable](tui.md#tui.app.printable), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.app.App.complete](tui.md#tui.app.App.complete)
-      - fn [undoEdit](../../src/tui/app.ts#L1658) () → void <!-- internal -->
-        <a id="tui.app.App.undoEdit"></a><br>Clears any completion, pops the last undo snapshot from the active buffer and restores its text via [`tui.buffer.setText`](tui.md#tui.buffer.setText) and its cursor, then clamps, scrolls into view and schedules reanalysis; reports "nothing to undo" if empty. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [undoEdit](../../src/tui/app.ts#L1735) () → void <!-- internal -->
+        <a id="tui.app.App.undoEdit"></a><br>Clears any completion, pops the last snapshot from the active buffer's undo stack and restores its text via [`tui.buffer.setText`](tui.md#tui.buffer.setText) and cursor, or reports "nothing to undo". Then clamps and scrolls the cursor and schedules reanalysis. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.reanalyzeSoon](tui.md#tui.app.App.reanalyzeSoon)
-      - fn [complete](../../src/tui/app.ts#L1676) (explicit: boolean) → void <!-- internal -->
+      - fn [complete](../../src/tui/app.ts#L1753) (explicit: boolean) → void <!-- internal -->
         <a id="tui.app.App.complete"></a><br>Opens or refreshes the completion list; `explicit` (Ctrl+Space) also opens it mid-word.
         - calls [tui.app.App.live](tui.md#tui.app.App.live), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [features.lsp-features.completions](features.md#features.lsp-features.completions), [tui.app.App.lspPosition](tui.md#tui.app.App.lspPosition), [tui.assist.countSuggestion](tui.md#tui.assist.countSuggestion)
-      - fn [acceptCompletion](../../src/tui/app.ts#L1705) () → void <!-- internal -->
-        <a id="tui.app.App.acceptCompletion"></a><br>Closes the open completion list, records the acceptance via [`tui.assist.countSuggestion`](tui.md#tui.assist.countSuggestion), and, if the cursor hasn't moved before the word's start, replaces the typed prefix with the selected label through [`tui.app.App.edit`](tui.md#tui.app.App.edit). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [acceptCompletion](../../src/tui/app.ts#L1782) () → void <!-- internal -->
+        <a id="tui.app.App.acceptCompletion"></a><br>Applies the selected completion item, closing the list and recording acceptance via [`tui.assist.countSuggestion`](tui.md#tui.assist.countSuggestion), then, unless the cursor moved before the word start, replaces that word with the item label through [`tui.app.App.edit`](tui.md#tui.app.App.edit). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.assist.countSuggestion](tui.md#tui.assist.countSuggestion), [tui.app.App.edit](tui.md#tui.app.App.edit), [tui.width.graphemes](tui.md#tui.width.graphemes)
-      - fn [fixNavIndex](../../src/tui/app.ts#L1723) (direction: 1 | -1) → void <!-- internal -->
+      - fn [fixNavIndex](../../src/tui/app.ts#L1800) (direction: 1 | -1) → void <!-- internal -->
         <a id="tui.app.App.fixNavIndex"></a><br>Clamps the navigation cursor into range and steps past heading rows in the given direction, then scrolls the nav list so the cursor stays visible, using [`tui.view.layout`](tui.md#tui.view.layout) and [`tui.view.navListHeight`](tui.md#tui.view.navListHeight). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.view.layout](tui.md#tui.view.layout), [tui.view.navListHeight](tui.md#tui.view.navListHeight)
-      - fn [toggleFiles](../../src/tui/app.ts#L1737) (focusable: boolean) → void <!-- internal -->
+      - fn [toggleFiles](../../src/tui/app.ts#L1814) (focusable: boolean) → void <!-- internal -->
         <a id="tui.app.App.toggleFiles"></a><br>Flips the files panel's visibility, moving focus to it when shown, focusable and [`tui.app.App.drawable`](tui.md#tui.app.App.drawable) allows, or back to the editor when hidden, then refreshes via [`tui.app.App.narrowNote`](tui.md#tui.app.App.narrowNote) and [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.narrowNote](tui.md#tui.app.App.narrowNote), [tui.app.App.drawable](tui.md#tui.app.App.drawable), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [toggleNav](../../src/tui/app.ts#L1746) (focusable: boolean) → void <!-- internal -->
+      - fn [toggleNav](../../src/tui/app.ts#L1823) (focusable: boolean) → void <!-- internal -->
         <a id="tui.app.App.toggleNav"></a><br>Flips the navigation panel's visibility, recording it as the last panel when shown and moving focus to the editor if it was on the hidden panel, then refreshes via [`tui.app.App.narrowNote`](tui.md#tui.app.App.narrowNote) and [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.narrowNote](tui.md#tui.app.App.narrowNote), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [toggleContext](../../src/tui/app.ts#L1755) (focusable: boolean) → void <!-- internal -->
+      - fn [toggleContext](../../src/tui/app.ts#L1832) (focusable: boolean) → void <!-- internal -->
         <a id="tui.app.App.toggleContext"></a><br>F4 and the palette: the context panel; it takes the focus only where keys go to panels (`focusable`).
         - calls [tui.app.App.narrowNote](tui.md#tui.app.App.narrowNote), [tui.app.App.drawable](tui.md#tui.app.App.drawable), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [narrowNote](../../src/tui/app.ts#L1766) () → void <!-- internal -->
+      - fn [narrowNote](../../src/tui/app.ts#L1843) () → void <!-- internal -->
         <a id="tui.app.App.narrowNote"></a><br>A side panel needs 60 columns: below that a toggle says so instead of seeming to do nothing.
-      - fn [contextPack](../../src/tui/app.ts#L1771) () → ContextPack | null
+      - fn [contextPack](../../src/tui/app.ts#L1848) () → ContextPack | null
         <a id="tui.app.App.contextPack"></a><br>The pack for the current buffer and cursor line; null before the first analysis.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [features.agent-context.contextPack](features.md#features.agent-context.contextPack)
-      - fn [contextKey](../../src/tui/app.ts#L1779) (event: KeyEvent) → void <!-- internal -->
+      - fn [contextKey](../../src/tui/app.ts#L1856) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.contextKey"></a><br>Handles keys in the context panel: up/down or j/k move the selection, x drops the selected item from the pack from [`tui.app.App.contextPack`](tui.md#tui.app.App.contextPack), and @ opens a prompt to add context. Tab calls [`tui.app.App.cycleFocus`](tui.md#tui.app.App.cycleFocus) and escape calls [`tui.app.App.toggleContext`](tui.md#tui.app.App.toggleContext). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [tui.app.App.cycleFocus](tui.md#tui.app.App.cycleFocus), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext)
-      - fn [addToContext](../../src/tui/app.ts#L1813) (id: string) → void <!-- internal -->
+      - fn [addToContext](../../src/tui/app.ts#L1890) (id: string) → void <!-- internal -->
         <a id="tui.app.App.addToContext"></a><br>Validates a node ID via [`features.explain-node.summarizeNode`](features.md#features.explain-node.summarizeNode) and adds it to the TUI's context list, clearing any prior removal; reports a status message for pending analysis or unknown IDs with suggestions. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [features.explain-node.summarizeNode](features.md#features.explain-node.summarizeNode)
-      - fn [explainAtCursor](../../src/tui/app.ts#L1838) () → void <!-- internal -->
+      - fn [explainAtCursor](../../src/tui/app.ts#L1915) () → void <!-- internal -->
         <a id="tui.app.App.explainAtCursor"></a><br>`e`: offline, from the session's analysis as it is shown — the summary of the ID under the cursor with its saved answer and brief, each with its provenance, or the help of the line's diagnostic code. Never a model and never a file read behind the analysis' back, apart from the…
         - calls [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.cursorAnchor](tui.md#tui.app.App.cursorAnchor), [tui.view.layout](tui.md#tui.view.layout), [features.explain-offline.nodeExplanation](features.md#features.explain-offline.nodeExplanation), [features.explain-offline.unknownIdMessage](features.md#features.explain-offline.unknownIdMessage), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [features.explain-offline.codeExplanation](features.md#features.explain-offline.codeExplanation), [tui.app.App.explainLines](tui.md#tui.app.App.explainLines)
-      - fn [explainLines](../../src/tui/app.ts#L1868) (id: string, found: Exclude<ReturnType<typeof nodeExplanation>, { unknown: string }>) → Hover["lines"] <!-- internal -->
+      - fn [explainLines](../../src/tui/app.ts#L1945) (id: string, found: Exclude<ReturnType<typeof nodeExplanation>, { unknown: string }>) → Hover["lines"] <!-- internal -->
         <a id="tui.app.App.explainLines"></a><br>The explain hover of a known node: the summary, the session's analysis, and each saved explanation with its origin.
         - calls [features.explain-node.formatSummary](features.md#features.explain-node.formatSummary), [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs)
-      - fn [navKey](../../src/tui/app.ts#L1889) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.navKey"></a><br>Handles keyboard input in the navigation tree: arrows or j/k move the selection via [`tui.app.App.fixNavIndex`](tui.md#tui.app.App.fixNavIndex), and left/right collapse or expand entries. Enter jumps to code or spec, and tab, escape, z, q and ? switch focus, zoom, quit or show help. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [navKey](../../src/tui/app.ts#L1966) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.navKey"></a><br>Handles keys in the nav tree: j/k move via [`tui.app.App.fixNavIndex`](tui.md#tui.app.App.fixNavIndex), left/right collapse or expand, enter jumps to code or spec, plus tab focus cycling, z zoom via [`tui.zoom-screen.ZoomScreen.openZoom`](tui.md#tui.zoom-screen.ZoomScreen.openZoom), help and quit. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.app.App.fixNavIndex](tui.md#tui.app.App.fixNavIndex), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.jump](tui.md#tui.app.App.jump), [tui.app.App.cycleFocus](tui.md#tui.app.App.cycleFocus), [tui.zoom-screen.ZoomScreen.openZoom](tui.md#tui.zoom-screen.ZoomScreen.openZoom), [tui.app.App.quit](tui.md#tui.app.App.quit)
-      - fn [filesKey](../../src/tui/app.ts#L1938) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.filesKey"></a><br>Handles keys in the file list: up/k and down/j move the selection, enter opens the selected file via [`tui.app.App.open`](tui.md#tui.app.App.open) and focuses the editor, tab calls [`tui.app.App.cycleFocus`](tui.md#tui.app.App.cycleFocus), escape returns to the editor, q calls [`tui.app.App.quit`](tui.md#tui.app.App.quit). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [filesKey](../../src/tui/app.ts#L2015) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.filesKey"></a><br>Handles keys in the file list: up/k and down/j move the selection, enter opens the chosen file via [`tui.app.App.open`](tui.md#tui.app.App.open) and focuses the editor, escape returns to the editor, tab calls [`tui.app.App.cycleFocus`](tui.md#tui.app.App.cycleFocus), q calls [`tui.app.App.quit`](tui.md#tui.app.App.quit). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.cycleFocus](tui.md#tui.app.App.cycleFocus), [tui.app.App.quit](tui.md#tui.app.App.quit)
-      - fn [codeKey](../../src/tui/app.ts#L1968) (event: KeyEvent) → void <!-- internal -->
+      - fn [codeKey](../../src/tui/app.ts#L2045) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.app.App.codeKey"></a><br>Handles keys in the code viewer: scrolls by line (arrows, j/k) or by page sized from [`tui.view.layout`](tui.md#tui.view.layout), returns via [`tui.app.App.goBack`](tui.md#tui.app.App.goBack) on Escape, q or Ctrl+O, and opens help on "?". _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.view.layout](tui.md#tui.view.layout), [tui.app.App.goBack](tui.md#tui.app.App.goBack)
-      - fn [inputsChanged](../../src/tui/app.ts#L2008) (reason: string) → void <!-- internal -->
+      - fn [inputsChanged](../../src/tui/app.ts#L2085) (reason: string) → void <!-- internal -->
         <a id="tui.app.App.inputsChanged"></a><br>Records that an input changed: a feature or check result computed before it is outdated from now on, and so is a spec-to-code preview (one still running too: a model's answer to the old bytes is not the current code).
         - calls [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode)
-      - fn [requestOperation](../../src/tui/app.ts#L2023) (action: string, request: OperationRequest) → void <!-- internal -->
-        <a id="tui.app.App.requestOperation"></a><br>Starts an operation that reads the saved files: after the save step when buffers it reads are dirty or it names what it writes (design §2.5), then as the session's one explicit operation. A second one is refused while one runs.
+      - fn [requestOperation](../../src/tui/app.ts#L2100) (action: string, request: OperationRequest, then?: (record: OperationRecord) => void) → void <!-- internal -->
+        <a id="tui.app.App.requestOperation"></a><br>Starts an operation that reads the saved files: after the save step when buffers it reads are dirty or it names what it writes (design §2.5), then as the session's one explicit operation. A second one is refused while one runs. `then` hears the record when it ends (not when the…
         - calls [tui.app.App.saveStep](tui.md#tui.app.App.saveStep), [tui.app.App.startOperation](tui.md#tui.app.App.startOperation), [tui.app.App.withSavedInputs](tui.md#tui.app.App.withSavedInputs), [tui.reports.records.operationLabel](tui.md#tui.reports.records.operationLabel)
-      - fn [saveStep](../../src/tui/app.ts#L2040) (request: OperationRequest) → { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string } | null <!-- internal -->
+      - fn [saveStep](../../src/tui/app.ts#L2120) (request: OperationRequest) → { inputs?: (path: string) => boolean; writes?: string[]; writesNote?: string } | null <!-- internal -->
         <a id="tui.app.App.saveStep"></a><br>The save step of an operation: which dirty buffers it reads (saved first; the rest stay dirty and are never read behind them) and what it writes, named before it starts — always for the map and an apply, else when the step opens for dirty inputs anyway (the form already named…
         - calls [tui.app.App.specDir](tui.md#tui.app.App.specDir), [base.config.toPosix](base.md#base.config.toPosix), [tui.app.App.dirtyInputs](tui.md#tui.app.App.dirtyInputs), [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [tui.app.App.initTargets](tui.md#tui.app.App.initTargets), [features.explain-offline.isDiagnosticCode](features.md#features.explain-offline.isDiagnosticCode), [map.explanations.explainDir](map.md#map.explanations.explainDir), [map.explanations.explanationPath](map.md#map.explanations.explanationPath), [tui.forms.draft.flowDraftTarget](tui.md#tui.forms.draft.flowDraftTarget), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.forms.draft.rulesDraftTarget](tui.md#tui.forms.draft.rulesDraftTarget), [tui.forms.draft.codeDraftTarget](tui.md#tui.forms.draft.codeDraftTarget), [tui.forms.draft.codeDraftFormOf](tui.md#tui.forms.draft.codeDraftFormOf), [tui.forms.draft.specCodePlace](tui.md#tui.forms.draft.specCodePlace), [tui.app.App.mapTargets](tui.md#tui.app.App.mapTargets)
-      - fn [mapTargets](../../src/tui/app.ts#L2125) () → string[] <!-- internal -->
+      - fn [mapTargets](../../src/tui/app.ts#L2208) () → string[] <!-- internal -->
         <a id="tui.app.App.mapTargets"></a><br>What `keylang map` may write, as the step before it shows.
         - calls [tui.app.App.specDir](tui.md#tui.app.App.specDir)
-      - fn [initTargets](../../src/tui/app.ts#L2131) () → string[] <!-- internal -->
+      - fn [initTargets](../../src/tui/app.ts#L2214) () → string[] <!-- internal -->
         <a id="tui.app.App.initTargets"></a><br>The classes of files `keylang init` may write, as its form and its save step name them.
         - calls [tui.app.App.mapTargets](tui.md#tui.app.App.mapTargets), [features.baseline.baselinePath](features.md#features.baseline.baselinePath), [tui.app.App.specDir](tui.md#tui.app.App.specDir)
-      - fn [writingNow](../../src/tui/app.ts#L2137) () → boolean <!-- internal -->
+      - fn [writingNow](../../src/tui/app.ts#L2220) () → boolean <!-- internal -->
         <a id="tui.app.App.writingNow"></a><br>True (with the reason shown) while an operation writes files: saves and merge writes wait for it.
-      - fn [beginCommit](../../src/tui/app.ts#L2149) (record: OperationRecord) → void <!-- internal -->
+      - fn [beginCommit](../../src/tui/app.ts#L2232) (record: OperationRecord) → void <!-- internal -->
         <a id="tui.app.App.beginCommit"></a><br>A writing operation is about to touch files: an analysis in flight is dropped (it read the disk before the commit) and none starts until the commit ends. A record no longer running (cancelled) changes nothing: its aborted signal makes the operation stop with nothing written.
         - calls [tui.reports.records.operationLabel](tui.md#tui.reports.records.operationLabel)
-      - fn [endCommit](../../src/tui/app.ts#L2169) (result: OperationResult) → string | null <!-- internal -->
+      - fn [endCommit](../../src/tui/app.ts#L2252) (result: OperationResult) → string | null <!-- internal -->
         <a id="tui.app.App.endCommit"></a><br>After a writing operation — completed, cancelled part way or failed part way — the old analysis is superseded and a full one runs with the dirty buffers as overlays. Clean buffers follow the disk through it; a dirty buffer of a written file keeps its text and is named.
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.disk.readText](tui.md#tui.disk.readText), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.app.App.inputsChanged](tui.md#tui.app.App.inputsChanged), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze)
-      - fn [startOperation](../../src/tui/app.ts#L2220) (action: string, request: OperationRequest) → void <!-- internal -->
+      - fn [startOperation](../../src/tui/app.ts#L2305) (action: string, request: OperationRequest, then?: (record: OperationRecord) => void) → OperationRecord | null <!-- internal -->
         <a id="tui.app.App.startOperation"></a><br>Runs an operation as the session's one explicit operation and records it for F6. The UI never blocks: the record turns "running" and the result (or a failure) lands later; a second operation is refused while one runs.
         - calls [tui.reports.records.operationLabel](tui.md#tui.reports.records.operationLabel), [tui.app.App.layoutBasis](tui.md#tui.app.App.layoutBasis), [tui.assist.Assist.suspendGhost](tui.md#tui.assist.Assist.suspendGhost), [tui.app.App.endCommit](tui.md#tui.app.App.endCommit), [tui.reports.records.recordSummary](tui.md#tui.reports.records.recordSummary), [tui.app.App.afterProposed](tui.md#tui.app.App.afterProposed), [tui.app.App.afterApplyCode](tui.md#tui.app.App.afterApplyCode), [tui.app.App.afterLayoutDraft](tui.md#tui.app.App.afterLayoutDraft), [tui.app.App.quitAfterSettle](tui.md#tui.app.App.quitAfterSettle), [operations.shared.resultWithout](operations.md#operations.shared.resultWithout), [tui.app.App.beginCommit](tui.md#tui.app.App.beginCommit), [tui.app.App.commitGate](tui.md#tui.app.App.commitGate), [tui.app.App.track](tui.md#tui.app.App.track), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.draw](tui.md#tui.app.App.draw)
-      - fn [commitGate](../../src/tui/app.ts#L2310) (request: OperationRequest, plan?: CommitPlan) → CommitGate <!-- internal -->
+      - fn [commitGate](../../src/tui/app.ts#L2397) (request: OperationRequest, plan?: CommitPlan) → CommitGate <!-- internal -->
         <a id="tui.app.App.commitGate"></a><br>The session's answer before a commit: a target open with unsaved edits keeps its text and is not written under — an explanation or a feature file edited while the model answered, a diagram, a draft's target edited while the draft was prepared (the proposal would be judged…
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.app.App.applyConflicts](tui.md#tui.app.App.applyConflicts), [tui.forms.draft.rulesDraftTarget](tui.md#tui.forms.draft.rulesDraftTarget), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.forms.draft.flowDraftTarget](tui.md#tui.forms.draft.flowDraftTarget)
-      - fn [cancelOperation](../../src/tui/app.ts#L2344) () → void <!-- internal -->
+      - fn [cancelOperation](../../src/tui/app.ts#L2431) () → void <!-- internal -->
         <a id="tui.app.App.cancelOperation"></a><br>Cancel (palette, `x` in F6): the running operation ends as cancelled with exit code null. Esc never does this.
-      - fn [afterProposed](../../src/tui/app.ts#L2358) (record: OperationRecord, origin: DraftOrigin) → void <!-- internal -->
+      - fn [afterProposed](../../src/tui/app.ts#L2445) (record: OperationRecord, origin: DraftOrigin) → void <!-- internal -->
         <a id="tui.app.App.afterProposed"></a><br>A finished operation that proposed files: what MERGE opens by itself, or the message saying what waits. The answer's lines it left out and the model's notes are named either way; a preview or a run that proposed nothing only adds its notes to the message.
         - calls [tui.app.App.afterProposal](tui.md#tui.app.App.afterProposal)
-      - fn [afterProposal](../../src/tui/app.ts#L2442) (origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }) → void <!-- internal -->
+      - fn [afterProposal](../../src/tui/app.ts#L2529) (origin: DraftOrigin, proposal: { target: string | null; report: boolean; opened: string; waits: string }) → void <!-- internal -->
         <a id="tui.app.App.afterProposal"></a><br>A finished operation proposed `target`: MERGE opens it by itself only while the person is still where the operation started (`report`: F6 may still show the report it started from, and closes); otherwise — or when MERGE cannot open it, or `target` is null — the proposal waits…
         - calls [tui.app.App.stillWhereStarted](tui.md#tui.app.App.stillWhereStarted), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.merge-session.MergeSession.open](tui.md#tui.merge-session.MergeSession.open)
-      - fn [stillWhereStarted](../../src/tui/app.ts#L2460) (origin: DraftOrigin, report: boolean) → boolean <!-- internal -->
+      - fn [stillWhereStarted](../../src/tui/app.ts#L2547) (origin: DraftOrigin, report: boolean) → boolean <!-- internal -->
         <a id="tui.app.App.stillWhereStarted"></a><br>The file, mode and text an operation started from are current and nothing else is open; with `report`, F6 may show the report it started from, else it must be closed.
-      - fn [worker](../../src/tui/app.ts#L2468) () → OperationWorker <!-- internal -->
+      - fn [worker](../../src/tui/app.ts#L2555) () → OperationWorker <!-- internal -->
         <a id="tui.app.App.worker"></a><br>The session's operation worker, started on first use; after a failure the next request starts a new one.
         - calls [tui.background.OperationWorker](tui.md#tui.background.OperationWorker)
-      - fn [askFeatureQuestions](../../src/tui/app.ts#L2479) (slug: string) → void <!-- internal -->
+      - fn [askFeatureQuestions](../../src/tui/app.ts#L2566) (slug: string) → void <!-- internal -->
         <a id="tui.app.App.askFeatureQuestions"></a><br>«Ask the model for questions» (c4-zoom/11): one request with the saved feature file and the context around its ids; the answer's `- ? …` lines are a proposal that MERGE accepts. Without an agent it says how to set one and changes nothing.
         - calls [tui.app.App.agentName](tui.md#tui.app.App.agentName), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation)
-      - fn [flowAtCursor](../../src/tui/app.ts#L2490) () → string | null <!-- internal -->
+      - fn [flowAtCursor](../../src/tui/app.ts#L2577) () → string | null <!-- internal -->
         <a id="tui.app.App.flowAtCursor"></a><br>The `# flow <name>` section the cursor is in, or null.
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.offsetOf](tui.md#tui.app.App.offsetOf)
-      - fn [agentName](../../src/tui/app.ts#L2506) () → string | null <!-- internal -->
+      - fn [agentName](../../src/tui/app.ts#L2593) () → string | null <!-- internal -->
         <a id="tui.app.App.agentName"></a><br>The effective agent (`KEYLANG_AGENT`, agents.json, the saved keylang.json as the last analysis read it), or null. Credentials are checked by the operation.
         - calls [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent)
-      - fn [draftAtCursor](../../src/tui/app.ts#L2519) () → void <!-- internal -->
+      - fn [draftAtCursor](../../src/tui/app.ts#L2606) () → void <!-- internal -->
         <a id="tui.app.App.draftAtCursor"></a><br>`Ctrl+Space` in the view: the agent drafts the flow under the cursor into this file — hybrid, with the context pack as F4 shows it now — as the session's draft-flow operation. It needs a model (never a silent algo draft).
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.app.App.proposalWaiting](tui.md#tui.app.App.proposalWaiting), [tui.app.App.flowAtCursor](tui.md#tui.app.App.flowAtCursor), [tui.app.App.triggerAtCursor](tui.md#tui.app.App.triggerAtCursor), [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [features.agent-context.contextText](features.md#features.agent-context.contextText), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.app.App.track](tui.md#tui.app.App.track)
-      - fn [triggerAtCursor](../../src/tui/app.ts#L2563) () → string | null <!-- internal -->
+      - fn [triggerAtCursor](../../src/tui/app.ts#L2650) () → string | null <!-- internal -->
         <a id="tui.app.App.triggerAtCursor"></a><br>The `trigger` of the flow section under the cursor, or null.
         - calls [tui.app.App.flowAtCursor](tui.md#tui.app.App.flowAtCursor)
-      - fn [proposalWaiting](../../src/tui/app.ts#L2570) (path: string) → boolean <!-- internal -->
+      - fn [proposalWaiting](../../src/tui/app.ts#L2657) (path: string) → boolean <!-- internal -->
         <a id="tui.app.App.proposalWaiting"></a><br>Something is at `.keylang/proposals/<path>`: a proposal (or a link) the person has not resolved.
-      - fn [plannedFns](../../src/tui/app.ts#L2582) () → string[] <!-- internal -->
+      - fn [plannedFns](../../src/tui/app.ts#L2669) () → string[] <!-- internal -->
         <a id="tui.app.App.plannedFns"></a><br>The planned fns of the current analysis that no code implements yet: the IDs spec-to-code builds.
-      - fn [applyCandidate](../../src/tui/app.ts#L2597) (record: OperationRecord | undefined) → void <!-- internal -->
+      - fn [applyCandidate](../../src/tui/app.ts#L2684) (record: OperationRecord | undefined) → void <!-- internal -->
         <a id="tui.app.App.applyCandidate"></a><br>`a` in F6 on a finished spec-to-code record: applies the entire candidate (`spec-to-code --apply`) after a step that names every file. Refused before that step: a run that did not finish, an outdated candidate (an input saved or its files written since), a file with unsaved…
         - calls [tui.app.App.applyConflicts](tui.md#tui.app.App.applyConflicts), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation)
-      - fn [applyConflicts](../../src/tui/app.ts#L2621) (files: readonly string[], proposals: boolean) → string[] <!-- internal -->
+      - fn [applyConflicts](../../src/tui/app.ts#L2708) (files: readonly string[], proposals: boolean) → string[] <!-- internal -->
         <a id="tui.app.App.applyConflicts"></a><br>What in this session stops applying `files`: an open MERGE on one, unsaved edits, and (before the run) a waiting proposal.
         - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-      - fn [afterApplyCode](../../src/tui/app.ts#L2637) (record: OperationRecord) → void <!-- internal -->
+      - fn [afterApplyCode](../../src/tui/app.ts#L2724) (record: OperationRecord) → void <!-- internal -->
         <a id="tui.app.App.afterApplyCode"></a><br>After an apply: every spec-to-code candidate for a file it wrote is outdated (applying it again would overwrite newer code), and the message says what was written. `u` stays the undo of the last MERGE.
-      - fn [layoutBasis](../../src/tui/app.ts#L2652) () → LayoutBasis <!-- internal -->
+      - fn [layoutBasis](../../src/tui/app.ts#L2739) () → LayoutBasis <!-- internal -->
         <a id="tui.app.App.layoutBasis"></a><br>keylang.json as the session has it now: its buffer's version, the file, the code snapshot.
         - calls [tui.disk.readText](tui.md#tui.disk.readText)
-      - fn [layoutStale](../../src/tui/app.ts#L2657) (record: OperationRecord) → string | null <!-- internal -->
+      - fn [layoutStale](../../src/tui/app.ts#L2744) (record: OperationRecord) → string | null <!-- internal -->
         <a id="tui.app.App.layoutStale"></a><br>Why the layers of a layout draft no longer fit the session, or null: keylang.json was edited, saved or changed on disk, or the code moved on.
         - calls [tui.app.App.layoutBasis](tui.md#tui.app.App.layoutBasis), [tui.disk.splitEol](tui.md#tui.disk.splitEol)
-      - fn [afterLayoutDraft](../../src/tui/app.ts#L2671) (record: OperationRecord) → void <!-- internal -->
+      - fn [afterLayoutDraft](../../src/tui/app.ts#L2758) (record: OperationRecord) → void <!-- internal -->
         <a id="tui.app.App.afterLayoutDraft"></a><br>A finished layout draft: nothing moves by itself; an edit made meanwhile makes it outdated at once.
         - calls [tui.app.App.layoutStale](tui.md#tui.app.App.layoutStale)
-      - fn [moveLayers](../../src/tui/app.ts#L2691) (record: OperationRecord) → void <!-- internal -->
+      - fn [moveLayers](../../src/tui/app.ts#L2778) (record: OperationRecord) → void <!-- internal -->
         <a id="tui.app.App.moveLayers"></a><br>Enter on a finished layout draft in F6: its layers replace only `layers` of keylang.json's buffer — every other field stays, unknown ones too — as one undoable edit; nothing is written until Ctrl+S. Without keylang.json a new buffer opens with the inferred config and these…
         - calls [tui.app.App.layoutStale](tui.md#tui.app.App.layoutStale), [tui.app.App.load](tui.md#tui.app.App.load), [tui.buffer.newFileBuffer](tui.md#tui.buffer.newFileBuffer), [base.config.withLayers](base.md#base.config.withLayers), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.app.App.openConfig](tui.md#tui.app.App.openConfig), [tui.app.sortFiles](tui.md#tui.app.sortFiles), [tui.app.App.open](tui.md#tui.app.App.open), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [base.config.parseConfig](base.md#base.config.parseConfig), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText)
-      - fn [openNewSpec](../../src/tui/app.ts#L2751) () → void <!-- internal -->
+      - fn [openNewSpec](../../src/tui/app.ts#L2838) () → void <!-- internal -->
         <a id="tui.app.App.openNewSpec"></a><br>The form of a new specification (design §2.8): kind, then path, then (for a flow) its name. Nothing exists until Ctrl+S.
         - calls [tui.app.App.refreshNewSpec](tui.md#tui.app.App.refreshNewSpec)
-      - fn [refreshNewSpec](../../src/tui/app.ts#L2757) () → void <!-- internal -->
+      - fn [refreshNewSpec](../../src/tui/app.ts#L2844) () → void <!-- internal -->
         <a id="tui.app.App.refreshNewSpec"></a><br>The items and the note of the field being typed. The root is always named: the path is relative to it.
         - calls [tui.new-spec.defaultSpecPath](tui.md#tui.new-spec.defaultSpecPath), [tui.new-spec.newSpecProblem](tui.md#tui.new-spec.newSpecProblem), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.app.App.generatedDoc](tui.md#tui.app.App.generatedDoc), [tui.new-spec.flowNameProblem](tui.md#tui.new-spec.flowNameProblem)
-      - fn [submitNewSpec](../../src/tui/app.ts#L2787) () → void <!-- internal -->
+      - fn [submitNewSpec](../../src/tui/app.ts#L2874) () → void <!-- internal -->
         <a id="tui.app.App.submitNewSpec"></a><br>Enter in the form: the next field, or the buffer. An invalid field keeps the form with its text and says why.
         - calls [tui.new-spec.defaultSpecPath](tui.md#tui.new-spec.defaultSpecPath), [tui.merge-session.MergeSession.specDir](tui.md#tui.merge-session.MergeSession.specDir), [tui.app.App.refreshNewSpec](tui.md#tui.app.App.refreshNewSpec), [tui.new-spec.newSpecProblem](tui.md#tui.new-spec.newSpecProblem), [tui.app.App.generatedDoc](tui.md#tui.app.App.generatedDoc), [tui.app.App.open](tui.md#tui.app.App.open), [tui.new-spec.suggestedFlowName](tui.md#tui.new-spec.suggestedFlowName), [tui.app.App.createSpec](tui.md#tui.app.App.createSpec), [tui.new-spec.flowNameProblem](tui.md#tui.new-spec.flowNameProblem)
-      - fn [createSpec](../../src/tui/app.ts#L2830) (kind: NewSpecForm["kind"], path: string, name: string) → void <!-- internal -->
+      - fn [createSpec](../../src/tui/app.ts#L2917) (kind: NewSpecForm["kind"], path: string, name: string) → void <!-- internal -->
         <a id="tui.app.App.createSpec"></a><br>Opens the new, unsaved buffer in the editor at its end: listed in FILES and analysed as overlay, no file or directory until Ctrl+S.
         - calls [tui.buffer.newFileBuffer](tui.md#tui.buffer.newFileBuffer), [tui.new-spec.specTemplate](tui.md#tui.new-spec.specTemplate), [tui.app.sortFiles](tui.md#tui.app.sortFiles), [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.reanalyzeSoon](tui.md#tui.app.App.reanalyzeSoon)
-      - fn [mergeOrPick](../../src/tui/app.ts#L2849) () → void <!-- internal -->
+      - fn [mergeOrPick](../../src/tui/app.ts#L2936) () → void <!-- internal -->
         <a id="tui.app.App.mergeOrPick"></a><br>`m`: the proposal of the current file opens directly; otherwise the proposals list, so no target is chosen for the person. Without a mergeable proposal the message names the ignored ones and their reasons, as before.
         - calls [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.merge-session.MergeSession.open](tui.md#tui.merge-session.MergeSession.open), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals)
-      - fn [openProposals](../../src/tui/app.ts#L2857) (prefer: readonly string[] = []) → void <!-- internal -->
+      - fn [openProposals](../../src/tui/app.ts#L2944) (prefer: readonly string[] = []) → void <!-- internal -->
         <a id="tui.app.App.openProposals"></a><br>The proposals list (design §2.9): every file under `.keylang/proposals/`, scanned now; viewing writes nothing.
         - calls [tui.merge-session.MergeSession.entries](tui.md#tui.merge-session.MergeSession.entries), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.app.App.refreshProposalPrompt](tui.md#tui.app.App.refreshProposalPrompt)
-      - fn [refreshProposalPrompt](../../src/tui/app.ts#L2870) (selected?: string) → void <!-- internal -->
+      - fn [refreshProposalPrompt](../../src/tui/app.ts#L2957) (selected?: string) → void <!-- internal -->
         <a id="tui.app.App.refreshProposalPrompt"></a><br>The list entries whose path contains the typed text, in POSIX path order, each with its note.
         - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.padWidth](tui.md#tui.width.padWidth), [tui.app.proposalSummary](tui.md#tui.app.proposalSummary)
-      - fn [submitProposal](../../src/tui/app.ts#L2889) () → void <!-- internal -->
+      - fn [submitProposal](../../src/tui/app.ts#L2976) () → void <!-- internal -->
         <a id="tui.app.App.submitProposal"></a><br>Enter in the list: the entry is scanned again first, so a proposal removed, rewritten or broken since the list was built is judged as it is now. A mergeable one opens in MERGE against the file on disk; any other keeps the list open with its reason, and nothing is written.
         - calls [tui.merge-session.MergeSession.entries](tui.md#tui.merge-session.MergeSession.entries), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [tui.app.App.refreshProposalPrompt](tui.md#tui.app.App.refreshProposalPrompt), [tui.merge-session.MergeSession.open](tui.md#tui.merge-session.MergeSession.open)
-      - fn [mouse](../../src/tui/app.ts#L2908) (event: MouseEvent) → void <!-- internal -->
-        <a id="tui.app.App.mouse"></a><br>Routes mouse input by region: the wheel scrolls the active view and pointer moves update hover. Left clicks pick context, nav or file entries or place the editor cursor; Ctrl+click calls [`tui.app.App.goToCode`](tui.md#tui.app.App.goToCode). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
-        - calls [tui.results-panel.ResultsPanel.scrollReport](tui.md#tui.results-panel.ResultsPanel.scrollReport), [tui.view.layout](tui.md#tui.view.layout), [tui.zoom-screen.ZoomScreen.zoomMouse](tui.md#tui.zoom-screen.ZoomScreen.zoomMouse), [tui.merge.mergeRows](tui.md#tui.merge.mergeRows), [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.app.App.lines](tui.md#tui.app.App.lines), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.cellAt](tui.md#tui.app.App.cellAt), [tui.app.App.hoverAt](tui.md#tui.app.App.hoverAt), [tui.view.contextTop](tui.md#tui.view.contextTop), [tui.view.navListHeight](tui.md#tui.view.navListHeight), [tui.app.App.fixNavIndex](tui.md#tui.app.App.fixNavIndex), [tui.app.App.navKey](tui.md#tui.app.App.navKey), [tui.view.filesTop](tui.md#tui.view.filesTop), [tui.app.App.filesKey](tui.md#tui.app.App.filesKey), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode)
-      - fn [promptType](../../src/tui/app.ts#L2999) (text: string) → void <!-- internal -->
+      - fn [mouse](../../src/tui/app.ts#L2995) (event: MouseEvent) → void <!-- internal -->
+        <a id="tui.app.App.mouse"></a><br>Routes mouse input by screen region: the wheel scrolls the report, code, merge, context, nav or editor, and moves update hover. Clicks select nav, file or context items or place the editor cursor; Ctrl+click calls [`tui.app.App.goToCode`](tui.md#tui.app.App.goToCode). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+        - calls [tui.results-panel.ResultsPanel.scrollReport](tui.md#tui.results-panel.ResultsPanel.scrollReport), [tui.clip.Clip.mouse](tui.md#tui.clip.Clip.mouse), [tui.view.layout](tui.md#tui.view.layout), [tui.zoom-screen.ZoomScreen.zoomMouse](tui.md#tui.zoom-screen.ZoomScreen.zoomMouse), [tui.merge.mergeRows](tui.md#tui.merge.mergeRows), [tui.app.App.contextPack](tui.md#tui.app.App.contextPack), [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.app.App.lines](tui.md#tui.app.App.lines), [tui.app.App.clampCursor](tui.md#tui.app.App.clampCursor), [tui.app.App.cellAt](tui.md#tui.app.App.cellAt), [tui.app.App.hoverAt](tui.md#tui.app.App.hoverAt), [tui.view.contextTop](tui.md#tui.view.contextTop), [tui.view.navListHeight](tui.md#tui.view.navListHeight), [tui.app.App.fixNavIndex](tui.md#tui.app.App.fixNavIndex), [tui.app.App.navKey](tui.md#tui.app.App.navKey), [tui.view.filesTop](tui.md#tui.view.filesTop), [tui.app.App.filesKey](tui.md#tui.app.App.filesKey), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode)
+      - fn [promptType](../../src/tui/app.ts#L3087) (text: string) → void <!-- internal -->
         <a id="tui.app.App.promptType"></a><br>Text typed or pasted while a prompt is open: into the selected row's field.
         - calls [tui.prompt-keys.typeInto](tui.md#tui.prompt-keys.typeInto), [tui.app.App.keysFor](tui.md#tui.app.App.keysFor)
-      - fn [keysFor](../../src/tui/app.ts#L3008) (prompt: Prompt) → PromptKeys <!-- internal -->
+      - fn [keysFor](../../src/tui/app.ts#L3096) (prompt: Prompt) → PromptKeys <!-- internal -->
         <a id="tui.app.App.keysFor"></a><br>What the keys of each kind of prompt do: which text the selected row edits, what follows typing, a move and a change, and what Enter runs.
         - calls [tui.app.App.findNext](tui.md#tui.app.App.findNext), [tui.app.App.addToContext](tui.md#tui.app.App.addToContext), [tui.app.App.refreshPalette](tui.md#tui.app.App.refreshPalette), [tui.prompt-keys.noteOfSelection](tui.md#tui.prompt-keys.noteOfSelection), [tui.app.App.runAction](tui.md#tui.app.App.runAction), [tui.app.App.findNodes](tui.md#tui.app.App.findNodes), [tui.zoom-screen.ZoomScreen.openZoom](tui.md#tui.zoom-screen.ZoomScreen.openZoom), [tui.app.App.goToNode](tui.md#tui.app.App.goToNode), [tui.zoom-screen.ZoomScreen.findFlows](tui.md#tui.zoom-screen.ZoomScreen.findFlows), [tui.app.App.refreshProposalPrompt](tui.md#tui.app.App.refreshProposalPrompt), [tui.app.App.submitProposal](tui.md#tui.app.App.submitProposal), [tui.app.App.refreshNewSpec](tui.md#tui.app.App.refreshNewSpec), [tui.app.App.submitNewSpec](tui.md#tui.app.App.submitNewSpec), [tui.forms.explain.ExplainForms.keys](tui.md#tui.forms.explain.ExplainForms.keys), [tui.forms.run.RunForms.keys](tui.md#tui.forms.run.RunForms.keys), [tui.forms.draft.DraftForms.keys](tui.md#tui.forms.draft.DraftForms.keys), [tui.forms.export.ExportForms.keys](tui.md#tui.forms.export.ExportForms.keys)
-      - fn [openNodeSearch](../../src/tui/app.ts#L3093) () → void <!-- internal -->
+      - fn [openNodeSearch](../../src/tui/app.ts#L3181) () → void <!-- internal -->
         <a id="tui.app.App.openNodeSearch"></a><br>`s` (the view, the zoom) and «Find a node»: the node search, its matches following the text typed.
         - calls [tui.app.App.findNodes](tui.md#tui.app.App.findNodes)
-      - fn [findNodes](../../src/tui/app.ts#L3099) () → void <!-- internal -->
+      - fn [findNodes](../../src/tui/app.ts#L3187) () → void <!-- internal -->
         <a id="tui.app.App.findNodes"></a><br>The nodes matching the `s` prompt: names and IDs as a subsequence, then words of their explanations.
         - calls [features.node-search.searchNodes](features.md#features.node-search.searchNodes)
-      - fn [promptKey](../../src/tui/app.ts#L3109) (event: KeyEvent) → void <!-- internal -->
-        <a id="tui.app.App.promptKey"></a><br>Handles a key press while a prompt is open: Escape clears the active prompt, and any other key is forwarded to [`tui.prompt-keys.promptKey`](tui.md#tui.prompt-keys.promptKey) along with the prompt's key bindings from [`tui.app.App.keysFor`](tui.md#tui.app.App.keysFor). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - fn [promptKey](../../src/tui/app.ts#L3197) (event: KeyEvent) → void <!-- internal -->
+        <a id="tui.app.App.promptKey"></a><br>Routes a keypress while a prompt is open: Escape clears the prompt from state, and any other key goes to [`tui.prompt-keys.promptKey`](tui.md#tui.prompt-keys.promptKey) with the bindings returned by [`tui.app.App.keysFor`](tui.md#tui.app.App.keysFor). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.prompt-keys.promptKey](tui.md#tui.prompt-keys.promptKey), [tui.app.App.keysFor](tui.md#tui.app.App.keysFor)
-      - fn [openPalette](../../src/tui/app.ts#L3119) () → void <!-- internal -->
+      - fn [openPalette](../../src/tui/app.ts#L3207) () → void <!-- internal -->
         <a id="tui.app.App.openPalette"></a><br>`:` in view/read, Ctrl+P anywhere: the full catalogue with fuzzy search.
         - calls [tui.app.App.refreshPalette](tui.md#tui.app.App.refreshPalette)
-      - fn [refreshPalette](../../src/tui/app.ts#L3125) () → void <!-- internal -->
+      - fn [refreshPalette](../../src/tui/app.ts#L3213) () → void <!-- internal -->
         <a id="tui.app.App.refreshPalette"></a><br>The catalogue entries matching the prompt text, as parallel item arrays.
         - calls [tui.actions.matchActions](tui.md#tui.actions.matchActions), [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.actions.actionLabel](tui.md#tui.actions.actionLabel)
-      - fn [runAction](../../src/tui/app.ts#L3141) (id: string) → void <!-- internal -->
+      - fn [runAction](../../src/tui/app.ts#L3229) (id: string) → void <!-- internal -->
         <a id="tui.app.App.runAction"></a><br>Executes a palette action by its id. An unavailable action explains its reason; execution never synthesizes fake key events.
-        - calls [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.app.App.browse](tui.md#tui.app.App.browse), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze), [tui.app.App.toggleFiles](tui.md#tui.app.App.toggleFiles), [tui.app.App.toggleNav](tui.md#tui.app.App.toggleNav), [tui.zoom-screen.ZoomScreen.openZoom](tui.md#tui.zoom-screen.ZoomScreen.openZoom), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext), [tui.results-panel.ResultsPanel.openResults](tui.md#tui.results-panel.ResultsPanel.openResults), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.forms.run.RunForms.openFeaturePrompt](tui.md#tui.forms.run.RunForms.openFeaturePrompt), [tui.forms.export.ExportForms.openC4Prompt](tui.md#tui.forms.export.ExportForms.openC4Prompt), [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf), [tui.app.App.specDir](tui.md#tui.app.App.specDir), [tui.app.App.askFeatureQuestions](tui.md#tui.app.App.askFeatureQuestions), [tui.forms.run.RunForms.openCheckPrompt](tui.md#tui.forms.run.RunForms.openCheckPrompt), [tui.forms.run.RunForms.openEdgePrompt](tui.md#tui.forms.run.RunForms.openEdgePrompt), [tui.forms.export.ExportForms.openExportPrompt](tui.md#tui.forms.export.ExportForms.openExportPrompt), [tui.forms.run.RunForms.openBaselinePrompt](tui.md#tui.forms.run.RunForms.openBaselinePrompt), [tui.forms.run.RunForms.openAgentsPrompt](tui.md#tui.forms.run.RunForms.openAgentsPrompt), [tui.forms.run.RunForms.openInitPrompt](tui.md#tui.forms.run.RunForms.openInitPrompt), [tui.forms.run.RunForms.openFmtPrompt](tui.md#tui.forms.run.RunForms.openFmtPrompt), [tui.forms.run.RunForms.openParsePrompt](tui.md#tui.forms.run.RunForms.openParsePrompt), [tui.forms.run.RunForms.openTracePlanPrompt](tui.md#tui.forms.run.RunForms.openTracePlanPrompt), [tui.forms.explain.ExplainForms.open](tui.md#tui.forms.explain.ExplainForms.open), [tui.forms.explain.ExplainForms.openModel](tui.md#tui.forms.explain.ExplainForms.openModel), [tui.forms.explain.ExplainForms.openPlan](tui.md#tui.forms.explain.ExplainForms.openPlan), [tui.forms.draft.DraftForms.openFlow](tui.md#tui.forms.draft.DraftForms.openFlow), [tui.forms.draft.DraftForms.openRules](tui.md#tui.forms.draft.DraftForms.openRules), [tui.forms.draft.DraftForms.openLayout](tui.md#tui.forms.draft.DraftForms.openLayout), [tui.forms.draft.DraftForms.openCode](tui.md#tui.forms.draft.DraftForms.openCode), [tui.forms.draft.DraftForms.openSpecCode](tui.md#tui.forms.draft.DraftForms.openSpecCode), [tui.forms.run.RunForms.openWirePrompt](tui.md#tui.forms.run.RunForms.openWirePrompt), [tui.app.App.cancelOperation](tui.md#tui.app.App.cancelOperation), [tui.app.App.openNodeSearch](tui.md#tui.app.App.openNodeSearch), [tui.app.App.toggleMap](tui.md#tui.app.App.toggleMap), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.goBack](tui.md#tui.app.App.goBack), [tui.app.App.hoverAtCursor](tui.md#tui.app.App.hoverAtCursor), [tui.app.App.explainAtCursor](tui.md#tui.app.App.explainAtCursor), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.save](tui.md#tui.app.App.save), [tui.app.App.textToSpec](tui.md#tui.app.App.textToSpec), [tui.app.App.draftAtCursor](tui.md#tui.app.App.draftAtCursor), [tui.assist.Assist.voice](tui.md#tui.assist.Assist.voice), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.undo](tui.md#tui.merge-session.MergeSession.undo), [tui.actions.applyRecord](tui.md#tui.actions.applyRecord), [tui.app.App.applyCandidate](tui.md#tui.app.App.applyCandidate), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.mergeOrPick](tui.md#tui.app.App.mergeOrPick), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals), [tui.app.App.openNewSpec](tui.md#tui.app.App.openNewSpec), [tui.app.packageVersion](tui.md#tui.app.packageVersion), [tui.app.App.quit](tui.md#tui.app.App.quit)
-      - fn [findNext](../../src/tui/app.ts#L3288) () → void <!-- internal -->
+        - calls [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.clip.chatTakesKeys](tui.md#tui.clip.chatTakesKeys), [tui.app.App.browse](tui.md#tui.app.App.browse), [tui.app.App.reanalyze](tui.md#tui.app.App.reanalyze), [tui.app.App.toggleFiles](tui.md#tui.app.App.toggleFiles), [tui.app.App.toggleNav](tui.md#tui.app.App.toggleNav), [tui.zoom-screen.ZoomScreen.openZoom](tui.md#tui.zoom-screen.ZoomScreen.openZoom), [tui.app.App.toggleContext](tui.md#tui.app.App.toggleContext), [tui.results-panel.ResultsPanel.openResults](tui.md#tui.results-panel.ResultsPanel.openResults), [tui.app.App.requestOperation](tui.md#tui.app.App.requestOperation), [tui.forms.run.RunForms.openFeaturePrompt](tui.md#tui.forms.run.RunForms.openFeaturePrompt), [tui.forms.export.ExportForms.openC4Prompt](tui.md#tui.forms.export.ExportForms.openC4Prompt), [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf), [tui.app.App.specDir](tui.md#tui.app.App.specDir), [tui.app.App.askFeatureQuestions](tui.md#tui.app.App.askFeatureQuestions), [tui.forms.run.RunForms.openCheckPrompt](tui.md#tui.forms.run.RunForms.openCheckPrompt), [tui.forms.run.RunForms.openEdgePrompt](tui.md#tui.forms.run.RunForms.openEdgePrompt), [tui.forms.export.ExportForms.openExportPrompt](tui.md#tui.forms.export.ExportForms.openExportPrompt), [tui.forms.run.RunForms.openBaselinePrompt](tui.md#tui.forms.run.RunForms.openBaselinePrompt), [tui.forms.run.RunForms.openAgentsPrompt](tui.md#tui.forms.run.RunForms.openAgentsPrompt), [tui.forms.run.RunForms.openInitPrompt](tui.md#tui.forms.run.RunForms.openInitPrompt), [tui.forms.run.RunForms.openFmtPrompt](tui.md#tui.forms.run.RunForms.openFmtPrompt), [tui.forms.run.RunForms.openParsePrompt](tui.md#tui.forms.run.RunForms.openParsePrompt), [tui.forms.run.RunForms.openTracePlanPrompt](tui.md#tui.forms.run.RunForms.openTracePlanPrompt), [tui.forms.explain.ExplainForms.open](tui.md#tui.forms.explain.ExplainForms.open), [tui.forms.explain.ExplainForms.openModel](tui.md#tui.forms.explain.ExplainForms.openModel), [tui.forms.explain.ExplainForms.openPlan](tui.md#tui.forms.explain.ExplainForms.openPlan), [tui.forms.draft.DraftForms.openFlow](tui.md#tui.forms.draft.DraftForms.openFlow), [tui.forms.draft.DraftForms.openRules](tui.md#tui.forms.draft.DraftForms.openRules), [tui.forms.draft.DraftForms.openLayout](tui.md#tui.forms.draft.DraftForms.openLayout), [tui.forms.draft.DraftForms.openCode](tui.md#tui.forms.draft.DraftForms.openCode), [tui.forms.draft.DraftForms.openSpecCode](tui.md#tui.forms.draft.DraftForms.openSpecCode), [tui.forms.run.RunForms.openWirePrompt](tui.md#tui.forms.run.RunForms.openWirePrompt), [tui.app.App.cancelOperation](tui.md#tui.app.App.cancelOperation), [tui.app.App.openNodeSearch](tui.md#tui.app.App.openNodeSearch), [tui.app.App.toggleMap](tui.md#tui.app.App.toggleMap), [tui.app.App.goToCode](tui.md#tui.app.App.goToCode), [tui.app.App.goToSpec](tui.md#tui.app.App.goToSpec), [tui.app.App.idAtCursor](tui.md#tui.app.App.idAtCursor), [tui.app.App.goBack](tui.md#tui.app.App.goBack), [tui.app.App.hoverAtCursor](tui.md#tui.app.App.hoverAtCursor), [tui.app.App.explainAtCursor](tui.md#tui.app.App.explainAtCursor), [tui.app.App.open](tui.md#tui.app.App.open), [tui.app.App.save](tui.md#tui.app.App.save), [tui.app.App.textToSpec](tui.md#tui.app.App.textToSpec), [tui.app.App.draftAtCursor](tui.md#tui.app.App.draftAtCursor), [tui.assist.Assist.voice](tui.md#tui.assist.Assist.voice), [tui.app.App.writingNow](tui.md#tui.app.App.writingNow), [tui.merge-session.MergeSession.undo](tui.md#tui.merge-session.MergeSession.undo), [tui.actions.applyRecord](tui.md#tui.actions.applyRecord), [tui.app.App.applyCandidate](tui.md#tui.app.App.applyCandidate), [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.App.mergeOrPick](tui.md#tui.app.App.mergeOrPick), [tui.app.App.openProposals](tui.md#tui.app.App.openProposals), [tui.app.App.openNewSpec](tui.md#tui.app.App.openNewSpec), [tui.clip.Clip.reset](tui.md#tui.clip.Clip.reset), [tui.app.packageVersion](tui.md#tui.app.packageVersion), [tui.app.App.quit](tui.md#tui.app.App.quit)
+      - fn [findNext](../../src/tui/app.ts#L3378) () → void <!-- internal -->
         <a id="tui.app.App.findNext"></a><br>Moves the cursor to the next case-insensitive match of the current search query, wrapping around the [`tui.app.App.lines`](tui.md#tui.app.App.lines), then scrolls via [`tui.app.App.keepVisible`](tui.md#tui.app.App.keepVisible); if nothing matches, sets a "not found" message. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
         - calls [tui.app.App.lines](tui.md#tui.app.App.lines), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.app.App.keepVisible](tui.md#tui.app.App.keepVisible)
-      - fn [textToSpec](../../src/tui/app.ts#L3306) () → void <!-- internal -->
-        <a id="tui.app.App.textToSpec"></a><br>Converts the selected lines or the free-text paragraph at the cursor into spec items via [`tui.text-to-spec.textToSpec`](tui.md#tui.text-to-spec.textToSpec), using known and planned IDs. Items not already below the text open as a merge proposal via [`tui.merge-session.MergeSession.start`](tui.md#tui.merge-session.MergeSession.start). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [textToSpec](../../src/tui/app.ts#L3396) () → void <!-- internal -->
+        <a id="tui.app.App.textToSpec"></a><br>Converts the selected lines or the prose paragraph at the cursor into spec items via [`tui.text-to-spec.textToSpec`](tui.md#tui.text-to-spec.textToSpec), using known and planned IDs. Items not already listed after the text are proposed through [`tui.merge-session.MergeSession.start`](tui.md#tui.merge-session.MergeSession.start). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.app.App.buffer](tui.md#tui.app.App.buffer), [tui.app.plannedIds](tui.md#tui.app.plannedIds), [tui.text-to-spec.textToSpec](tui.md#tui.text-to-spec.textToSpec), [tui.merge-session.MergeSession.start](tui.md#tui.merge-session.MergeSession.start)
-    - fn [forNodes](../../src/tui/app.ts#L3353) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
+    - fn [forNodes](../../src/tui/app.ts#L3443) (doc: Document, visit: (node: Node) => void) → void <!-- internal -->
       <a id="tui.app.forNodes"></a><br>Iterates every section of a document, expands each with [`lang.ir.sectionNodes`](lang.md#lang.ir.sectionNodes), and recursively applies the callback to each node and its descendants via [`lang.ir.walk`](lang.md#lang.ir.walk). Used by [`tui.app.App.lineOfNode`](tui.md#tui.app.App.lineOfNode), [`tui.app.App.nodeAtCursor`](tui.md#tui.app.App.nodeAtCursor), [`tui.app.App.targetNear`](tui.md#tui.app.App.targetNear), and… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [lang.ir.sectionNodes](lang.md#lang.ir.sectionNodes), [lang.ir.walk](lang.md#lang.ir.walk)
-    - fn [plannedIds](../../src/tui/app.ts#L3357) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
+    - fn [plannedIds](../../src/tui/app.ts#L3447) (docs: readonly Document[]) → { id: string; kind: string }[] <!-- internal -->
       <a id="tui.app.plannedIds"></a><br>Walks every node of each document via [`tui.app.forNodes`](tui.md#tui.app.forNodes) and collects those with kind "planned" and a non-empty id. Returns their ids paired with the label text, defaulting to "fn" when no label is set. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.app.forNodes](tui.md#tui.app.forNodes)
-    - fn [sortFiles](../../src/tui/app.ts#L3368) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
+    - fn [sortFiles](../../src/tui/app.ts#L3458) (files: string[], analysis: Analysis | null) → string[] <!-- internal -->
       <a id="tui.app.sortFiles"></a><br>Hand-written specs first (flows, rules), then generated map files, then `keylang.json`.
       - calls [base.span.compareText](base.md#base.span.compareText)
-    - fn [typedRun](../../src/tui/app.ts#L3374) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
+    - fn [typedRun](../../src/tui/app.ts#L3464) (events: readonly InputEvent[], from: number) → KeyEvent[] <!-- internal -->
       <a id="tui.app.typedRun"></a><br>The keys from `from` on that only type text (letters, Enter, Tab without modifiers).
-    - fn [pasteRefusal](../../src/tui/app.ts#L3385) (state: State) → string <!-- internal -->
+    - fn [pasteRefusal](../../src/tui/app.ts#L3475) (state: State) → string <!-- internal -->
       <a id="tui.app.pasteRefusal"></a><br>Why pasted text went nowhere, and the way to where it would go: only the editor takes text.
-    - fn [pastedRun](../../src/tui/app.ts#L3402) (run: readonly KeyEvent[], editing: boolean) → boolean <!-- internal -->
+    - fn [pastedRun](../../src/tui/app.ts#L3492) (run: readonly KeyEvent[], editing: boolean) → boolean <!-- internal -->
       <a id="tui.app.pastedRun"></a><br>Whether a run of typed keys from one chunk is text pasted by a terminal without bracketed paste rather than keys. In the editor every run is: one edit, not one per key.
-    - fn [printable](../../src/tui/app.ts#L3412) (text: string) → string <!-- internal -->
+    - fn [printable](../../src/tui/app.ts#L3502) (text: string) → string <!-- internal -->
       <a id="tui.app.printable"></a><br>Text that may go into a spec: escape sequences (colored output pasted from a terminal) and other control characters are removed; tabs and line breaks stay.
-    - fn [configState](../../src/tui/app.ts#L3420) (root: string) → ConfigState <!-- internal -->
-      <a id="tui.app.configState"></a><br>`keylang.json` as it is on disk now: missing (with the guessed layout), invalid (with the reason) or valid.
+    - fn [configState](../../src/tui/app.ts#L3514) (root: string) → { config: ConfigState; clip: boolean | null } <!-- internal -->
+      <a id="tui.app.configState"></a><br>`keylang.json` as it is on disk now: missing (with the guessed layout), invalid (with the reason) or valid; and whether it shows the clip — null when an invalid file cannot say, so the clip stays as it was.
       - calls [base.config.loadConfig](base.md#base.config.loadConfig), [base.config.guessLayout](base.md#base.config.guessLayout), [base.config.parseConfig](base.md#base.config.parseConfig), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText)
-    - fn [configErrorCursor](../../src/tui/app.ts#L3441) (text: string, reason: string) → Cursor
+    - fn [configErrorCursor](../../src/tui/app.ts#L3535) (text: string, reason: string) → Cursor
       <a id="tui.app.configErrorCursor"></a><br>Where the config error is: the line and column of an invalid JSON message (`line 3 column 5`, else `position N`), or the key the first quoted field path names (`check.trace` → `"check"`, then `"trace"` after it); else the start.
       - calls [tui.width.graphemes](tui.md#tui.width.graphemes)
-    - fn [packageVersion](../../src/tui/app.ts#L3466) () → string <!-- internal -->
+    - fn [packageVersion](../../src/tui/app.ts#L3560) () → string <!-- internal -->
       <a id="tui.app.packageVersion"></a><br>The package version, for the "About keylang" palette action.
-    - fn [proposalSummary](../../src/tui/app.ts#L3471) (entry: ProposalEntry) → string <!-- internal -->
+    - fn [proposalSummary](../../src/tui/app.ts#L3565) (entry: ProposalEntry) → string <!-- internal -->
       <a id="tui.app.proposalSummary"></a><br>The list text of a proposal after its path: kind, a new file, and the hunk count or that it is ignored.
-    - type [SidePanel](../../src/tui/app.ts#L3484) = "files" | "nav" | "context" <!-- internal -->
+    - type [SidePanel](../../src/tui/app.ts#L3578) = "files" | "nav" | "context" <!-- internal -->
       <a id="tui.app.SidePanel"></a><br>A side panel that can take the focus: files (F2), navigation (F3) or the context in its place (F4).
-    - type [LayoutBasis](../../src/tui/app.ts#L3487) <!-- internal -->
+    - type [LayoutBasis](../../src/tui/app.ts#L3581) <!-- internal -->
       <a id="tui.app.LayoutBasis"></a><br>What a layout draft was made against: keylang.json's buffer (null: none open), the file, the code snapshot.
-    - type [DraftOrigin](../../src/tui/app.ts#L3494) <!-- internal -->
+    - type [DraftOrigin](../../src/tui/app.ts#L3588) <!-- internal -->
       <a id="tui.app.DraftOrigin"></a><br>Where the session was when a draft started: a proposal opens by itself only while this is still so.
   - module [assist](../../src/tui/assist.ts#L1)
     <a id="tui.assist"></a><br>What a model or a microphone adds to a session: ghost text and voice. Each finishes later than it was asked for, so each remembers where it was asked — the buffer, its text version and the mode — and lands only while that is still where the person is (review 2026-09-28): a…
@@ -741,6 +754,416 @@
     - fn [lineLayout](../../src/tui/buffer.ts#L63) (buffer: Buffer, index: number) → LineLayout
       <a id="tui.buffer.lineLayout"></a><br>The layout of line `index` (0-based); a line past the end is empty.
       - calls [tui.buffer.cached](tui.md#tui.buffer.cached), [tui.width.layoutLine](tui.md#tui.width.layoutLine)
+  - module [clip-chat](../../src/tui/clip-chat.ts#L1)
+    <a id="tui.clip-chat"></a><br>What the clip answers in its chat (ADR 0021, .scratch/tui-clip/03–04, 06). A message that starts with `/` is a command, answered from the session or a shared operation without the model.
+    - node [external.node](external.md#external.node)
+    - agent-context [features.agent-context](features.md#features.agent-context)
+    - agent-cli [features.agent-cli](features.md#features.agent-cli)
+    - diag [base.diag](base.md#base.diag)
+    - feature-status [features.feature-status](features.md#features.feature-status)
+    - files [lang.files](lang.md#lang.files)
+    - operations [operations.operations](operations.md#operations.operations)
+    - proposals [features.proposals](features.md#features.proposals)
+    - buffer [tui.buffer](tui.md#tui.buffer)
+    - clip-questions [tui.clip-questions](tui.md#tui.clip-questions)
+    - clip-memory [tui.clip-memory](tui.md#tui.clip-memory)
+    - evidence [tui.evidence](tui.md#tui.evidence)
+    - findings [tui.findings](tui.md#tui.findings)
+    - state [tui.state](tui.md#tui.state)
+    - llm [features.llm](features.md#features.llm)
+    - type [ChatHost](../../src/tui/clip-chat.ts#L34)
+      <a id="tui.clip-chat.ChatHost"></a><br>What the chat needs from the session: what the person sees, and the session's one explicit operation.
+    - type [ChatCommand](../../src/tui/clip-chat.ts#L61) <!-- internal -->
+      <a id="tui.clip-chat.ChatCommand"></a><br>A command of the chat: answered without the model.
+    - fn [noModelAnswer](../../src/tui/clip-chat.ts#L90) (reason: string | null) → string
+      <a id="tui.clip-chat.noModelAnswer"></a><br>The answer to free text without a model (spec §4.3); `reason` says what is missing when an agent is set.
+    - fn [commandRows](../../src/tui/clip-chat.ts#L96) () → string[] <!-- internal -->
+      <a id="tui.clip-chat.commandRows"></a><br>The commands as `/help` and an unknown command list them.
+    - fn [helpAnswer](../../src/tui/clip-chat.ts#L101) () → string
+      <a id="tui.clip-chat.helpAnswer"></a><br>`/help`: the commands and the chat's keys.
+      - calls [tui.clip-chat.commandRows](tui.md#tui.clip-chat.commandRows)
+    - fn [checkAnswer](../../src/tui/clip-chat.ts#L106) (state: Pick<State, "analysis" | "updating" | "outdated" | "error">) → string
+      <a id="tui.clip-chat.checkAnswer"></a><br>`/check`: the session's `✗ ◌ ✓` as the status line counts them, and its first fails with their positions.
+      - calls [tui.evidence.totals](tui.md#tui.evidence.totals), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.findings.findingRow](tui.md#tui.findings.findingRow)
+    - fn [featureAnswer](../../src/tui/clip-chat.ts#L117) (report: FeatureReport) → string <!-- internal -->
+      <a id="tui.clip-chat.featureAnswer"></a><br>`/feature`: what `keylang feature` prints — the gaps and hints, then its closing line.
+      - calls [operations.feature.featureSummary](operations.md#operations.feature.featureSummary)
+    - fn [cancelled](../../src/tui/clip-chat.ts#L122) (record: OperationRecord) → boolean <!-- internal -->
+      <a id="tui.clip-chat.cancelled"></a><br>The operation was cancelled, or ended without a result: nothing was asked, and the log keeps nothing of it.
+    - fn [outcomeAnswer](../../src/tui/clip-chat.ts#L127) (record: OperationRecord, text: (result: OperationResult) => string | null) → string <!-- internal -->
+      <a id="tui.clip-chat.outcomeAnswer"></a><br>What an operation the chat started ended with: its text, `скасовано`, or the reasons it failed.
+      - calls [tui.clip-chat.cancelled](tui.md#tui.clip-chat.cancelled), [tui.clip-chat.failure](tui.md#tui.clip-chat.failure)
+    - fn [proposalWritten](../../src/tui/clip-chat.ts#L134) (path: string) → string <!-- internal -->
+      <a id="tui.clip-chat.proposalWritten"></a><br>What the chat says of a proposal it wrote. The log keeps its path alone (`**пропозиція:**`): its MERGE may be over by the time the log is read.
+    - fn [failure](../../src/tui/clip-chat.ts#L139) (result: OperationResult) → string <!-- internal -->
+      <a id="tui.clip-chat.failure"></a><br>Why an operation failed, as its messages say.
+    - type [Asked](../../src/tui/clip-chat.ts#L145) <!-- internal -->
+      <a id="tui.clip-chat.Asked"></a><br>The model's request in flight: the agent it was sent with, and its record once it started.
+    - type [Ending](../../src/tui/clip-chat.ts#L157) <!-- internal -->
+      <a id="tui.clip-chat.Ending"></a><br>How an answer ends its exchange in the log: the person's message it answers (null: nothing goes into the log — a cancelled request, or no one asked), the model that answered, the proposal written from it.
+    - module [ClipChat](../../src/tui/clip-chat.ts#L168)
+      <a id="tui.clip-chat.ClipChat"></a><br>The chat's answers: a command, or the model's reply as the session's `assistant-reply` operation. The conversation is `state.clip.chat`; the eyes follow `state.clip.waiting`.
+      - fn [constructor](../../src/tui/clip-chat.ts#L177) (host: ChatHost)
+        <a id="tui.clip-chat.ClipChat.constructor"></a>
+        - calls [tui.clip-memory.ChatLog](tui.md#tui.clip-memory.ChatLog)
+      - fn [state](../../src/tui/clip-chat.ts#L182) () → State <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.state"></a>
+      - fn [restore](../../src/tui/clip-chat.ts#L187) () → void
+        <a id="tui.clip-chat.ClipChat.restore"></a><br>The session starts: the history goes on with today's last conversation in the log.
+        - calls [tui.clip-memory.ChatLog.restore](tui.md#tui.clip-memory.ChatLog.restore)
+      - fn [said](../../src/tui/clip-chat.ts#L192) (text: string) → void
+        <a id="tui.clip-chat.ClipChat.said"></a><br>The person sent `text` (already in the history): a command runs, anything else goes to the model.
+        - calls [tui.clip-chat.ClipChat.command](tui.md#tui.clip-chat.ClipChat.command), [tui.clip-chat.ClipChat.ask](tui.md#tui.clip-chat.ClipChat.ask)
+      - fn [opened](../../src/tui/clip-chat.ts#L208) () → void
+        <a id="tui.clip-chat.ClipChat.opened"></a><br>The person opened the chat or gave it the focus (a click on the clip, F7): with open questions the clip lists them, unless that list is its last message already, and asks the model nothing. The new fails are told then and count no more (spec §4.6).
+        - calls [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions), [tui.clip-questions.questionsAnswer](tui.md#tui.clip-questions.questionsAnswer)
+      - fn [cancel](../../src/tui/clip-chat.ts#L222) () → void
+        <a id="tui.clip-chat.ClipChat.cancel"></a><br>Esc while the model answers: the request is cancelled, nothing is written, and the history says `скасовано`.
+        - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer)
+      - fn [close](../../src/tui/clip-chat.ts#L235) () → void
+        <a id="tui.clip-chat.ClipChat.close"></a><br>The session ends: a request still being looked up is never started.
+        - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting)
+      - fn [command](../../src/tui/clip-chat.ts#L241) (line: string) → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.command"></a>
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.commandRows](tui.md#tui.clip-chat.commandRows)
+      - fn [explain](../../src/tui/clip-chat.ts#L250) (arg: string) → void
+        <a id="tui.clip-chat.ClipChat.explain"></a><br>`/explain <code|ID>`: the offline `explain` operation, its text as `keylang explain` prints it.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.ClipChat.operation](tui.md#tui.clip-chat.ClipChat.operation)
+      - fn [feature](../../src/tui/clip-chat.ts#L257) (arg: string) → void
+        <a id="tui.clip-chat.ClipChat.feature"></a><br>`/feature <slug>`: the `feature` operation, its gaps and stage as `keylang feature` prints them.
+        - calls [operations.feature.featureSlugOf](operations.md#operations.feature.featureSlugOf), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.ClipChat.operation](tui.md#tui.clip-chat.ClipChat.operation), [tui.clip-chat.featureAnswer](tui.md#tui.clip-chat.featureAnswer)
+      - fn [check](../../src/tui/clip-chat.ts#L265) () → void
+        <a id="tui.clip-chat.ClipChat.check"></a><br>`/check`: the session's analysis as it is; nothing runs.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.checkAnswer](tui.md#tui.clip-chat.checkAnswer)
+      - fn [questions](../../src/tui/clip-chat.ts#L270) () → void
+        <a id="tui.clip-chat.ClipChat.questions"></a><br>`/questions`: the open questions with their places, the list the clip says when its chat opens.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-questions.questionsAnswer](tui.md#tui.clip-questions.questionsAnswer), [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions)
+      - fn [restart](../../src/tui/clip-chat.ts#L275) () → void
+        <a id="tui.clip-chat.ClipChat.restart"></a><br>`/new`: a new conversation; the old one is gone from the window, and the log starts a section.
+        - calls [tui.clip-chat.ClipChat.note](tui.md#tui.clip-chat.ClipChat.note), [tui.clip-memory.ChatLog.restart](tui.md#tui.clip-memory.ChatLog.restart), [tui.clip-chat.ClipChat.browsing](tui.md#tui.clip-chat.ClipChat.browsing)
+      - fn [help](../../src/tui/clip-chat.ts#L283) () → void
+        <a id="tui.clip-chat.ClipChat.help"></a><br>`/help`: the commands and the keys.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.helpAnswer](tui.md#tui.clip-chat.helpAnswer)
+      - fn [operation](../../src/tui/clip-chat.ts#L288) (action: string, request: OperationRequest, text: (result: OperationResult) => string | null) → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.operation"></a><br>A command's shared operation, as the session runs any: one at a time, after the save step when it reads dirty buffers.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.outcomeAnswer](tui.md#tui.clip-chat.outcomeAnswer), [tui.clip-chat.cancelled](tui.md#tui.clip-chat.cancelled)
+      - fn [ask](../../src/tui/clip-chat.ts#L301) () → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.ask"></a><br>Free text: the model's reply as the session's `assistant-reply` operation. Without an analysis, a model or a free slot for the operation it answers at once and asks nothing.
+        - calls [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [tui.clip-chat.noModelAnswer](tui.md#tui.clip-chat.noModelAnswer), [tui.clip-chat.ClipChat.start](tui.md#tui.clip-chat.ClipChat.start), [tui.clip-chat.ClipChat.request](tui.md#tui.clip-chat.ClipChat.request)
+      - fn [request](../../src/tui/clip-chat.ts#L318) () → AssistantReplyRequest <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.request"></a><br>What the model reads, frozen when the message is sent: the conversation, the open buffer with the cursor's line and the ID under it, the F4 pack without the buffer it already shows, the open feature's stage and gaps as the status line has them, and the open questions the clip…
+        - calls [features.agent-context.contextText](features.md#features.agent-context.contextText), [tui.clip-questions.questionRows](tui.md#tui.clip-questions.questionRows), [tui.clip-questions.openQuestions](tui.md#tui.clip-questions.openQuestions)
+      - fn [start](../../src/tui/clip-chat.ts#L335) (asked: Asked, request: AssistantReplyRequest) → Promise<void> <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.start"></a><br>The model's client is looked up off the key path (as `Ctrl+Space` does); then the operation starts, unless Esc came first.
+        - calls [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.noModelAnswer](tui.md#tui.clip-chat.noModelAnswer), [tui.clip-chat.ClipChat.replied](tui.md#tui.clip-chat.ClipChat.replied)
+      - fn [replied](../../src/tui/clip-chat.ts#L358) (asked: Asked, record: OperationRecord) → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.replied"></a><br>The operation ended: its reply, `скасовано`, or the model's error with its reason. Nothing was written.
+        - calls [tui.clip-chat.ClipChat.stopWaiting](tui.md#tui.clip-chat.ClipChat.stopWaiting), [tui.clip-chat.cancelled](tui.md#tui.clip-chat.cancelled), [tui.clip-chat.ClipChat.answer](tui.md#tui.clip-chat.ClipChat.answer), [tui.clip-chat.failure](tui.md#tui.clip-chat.failure), [tui.clip-chat.ClipChat.propose](tui.md#tui.clip-chat.ClipChat.propose), [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten)
+      - fn [propose](../../src/tui/clip-chat.ts#L379) ({ path, text }: NonNullable<AssistantReplyPayload["proposal"]>) → string <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.propose"></a><br>The model's block as a proposal, by the gate of MCP `apply_diff` (`proposalProblem` with the analysis's generated documents) and the refusals before it: Browse writes nothing, code is the harness's, a target with unsaved edits would come back as hunks reverting them, and a…
+        - calls [features.proposals.proposalProblem](features.md#features.proposals.proposalProblem), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [features.proposals.writeProposal](features.md#features.proposals.writeProposal), [lang.files.existingText](lang.md#lang.files.existingText), [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten)
+      - fn [stopWaiting](../../src/tui/clip-chat.ts#L400) () → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.stopWaiting"></a>
+      - fn [answer](../../src/tui/clip-chat.ts#L410) (text: string, ending: Ending = { said: this.sent }) → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.answer"></a><br>The clip's message ends an exchange: it joins the history, and the history shows its end. The exchange goes into today's log; `ending` names the message it answers — by default the one `said` answers now.
+        - calls [tui.clip-chat.proposalWritten](tui.md#tui.clip-chat.proposalWritten), [tui.clip-chat.ClipChat.note](tui.md#tui.clip-chat.ClipChat.note), [tui.clip-memory.ChatLog.exchange](tui.md#tui.clip-memory.ChatLog.exchange), [tui.clip-chat.ClipChat.browsing](tui.md#tui.clip-chat.ClipChat.browsing)
+      - fn [note](../../src/tui/clip-chat.ts#L422) (why: string | null) → void <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.note"></a><br>Why the log is not written, said once a session: the clip's message after the answer, and no exchange itself.
+      - fn [browsing](../../src/tui/clip-chat.ts#L430) () → boolean <!-- internal -->
+        <a id="tui.clip-chat.ClipChat.browsing"></a><br>Browse writes nothing: not the log either.
+  - module [clip-memory](../../src/tui/clip-memory.ts#L1)
+    <a id="tui.clip-memory"></a><br>The clip's memory (ADR 0021 п. 6, .scratch/tui-clip/06). Where the person left the clip and its window is theirs, not the repository's: it lives in `~/.config/keylang/tui.json` beside `agents.json`, read when a session starts and written atomically when a drag, a keyboard move…
+    - node [external.node](external.md#external.node)
+    - diag [base.diag](base.md#base.diag)
+    - files [lang.files](lang.md#lang.files)
+    - safe-write [base.safe-write](base.md#base.safe-write)
+    - clip [tui.clip](tui.md#tui.clip)
+    - fn [tuiFile](../../src/tui/clip-memory.ts#L24) (home: string) → string <!-- internal -->
+      <a id="tui.clip-memory.tuiFile"></a><br>`~/.config/keylang/tui.json`: the TUI's settings of its user, beside `agents.json`.
+    - type [ClipPlace](../../src/tui/clip-memory.ts#L29)
+      <a id="tui.clip-memory.ClipPlace"></a><br>Where the person left the clip and its window, cells from 0; null: where it stands by default.
+    - fn [placeOf](../../src/tui/clip-memory.ts#L37) (clip: ClipState) → ClipPlace
+      <a id="tui.clip-memory.placeOf"></a><br>The place of the clip and its window as the session has them: as the person set them, whatever a smaller terminal shows.
+    - fn [placeClip](../../src/tui/clip-memory.ts#L43) (clip: ClipState, place: ClipPlace) → void
+      <a id="tui.clip-memory.placeClip"></a><br>A session starts with the clip and its window where they were left; the frame keeps them inside its terminal.
+    - fn [parsePlace](../../src/tui/clip-memory.ts#L56) (file: string, value: unknown) → ClipPlace
+      <a id="tui.clip-memory.parsePlace"></a><br>The place a parsed tui.json holds. No `assistant`, `clip` or `window`, or null: the default.
+      - calls [tui.clip-memory.isObject](tui.md#tui.clip-memory.isObject), [tui.clip-memory.shown](tui.md#tui.clip-memory.shown), [tui.clip-memory.fieldsOf](tui.md#tui.clip-memory.fieldsOf), [tui.clip-memory.whole](tui.md#tui.clip-memory.whole)
+    - fn [fieldsOf](../../src/tui/clip-memory.ts#L78) (file: string, field: string, value: unknown, keys: readonly string[]) → Record<string, unknown> | null <!-- internal -->
+      <a id="tui.clip-memory.fieldsOf"></a><br>An object field with only `keys`, or null when it is left out.
+      - calls [tui.clip-memory.isObject](tui.md#tui.clip-memory.isObject), [tui.clip-memory.shown](tui.md#tui.clip-memory.shown)
+    - fn [whole](../../src/tui/clip-memory.ts#L87) (file: string, field: string, value: unknown, least: number) → number <!-- internal -->
+      <a id="tui.clip-memory.whole"></a><br>An integer of at least `least`; a missing one is named as missing.
+      - calls [tui.clip-memory.shown](tui.md#tui.clip-memory.shown)
+    - fn [readPlace](../../src/tui/clip-memory.ts#L98) (home: string) → { place: ClipPlace; problem: string | null }
+      <a id="tui.clip-memory.readPlace"></a><br>The place tui.json holds as a session starts. No file: the default, and nothing to say.
+      - calls [tui.clip-memory.tuiFile](tui.md#tui.clip-memory.tuiFile), [lang.files.existingText](lang.md#lang.files.existingText), [base.diag.errorText](base.md#base.diag.errorText), [tui.clip-memory.parsePlace](tui.md#tui.clip-memory.parsePlace)
+    - fn [withPlace](../../src/tui/clip-memory.ts#L125) (text: string | null, place: ClipPlace) → string
+      <a id="tui.clip-memory.withPlace"></a><br>tui.json's text with the place: `assistant.clip` and `assistant.window` replaced (left out for the default), every other field as it was. Text that is no JSON object is replaced: the place is all it holds then.
+      - calls [tui.clip-memory.parsedObject](tui.md#tui.clip-memory.parsedObject), [tui.clip-memory.isObject](tui.md#tui.clip-memory.isObject)
+    - fn [parsedObject](../../src/tui/clip-memory.ts#L133) (text: string | null) → Record<string, unknown> <!-- internal -->
+      <a id="tui.clip-memory.parsedObject"></a>
+      - calls [tui.clip-memory.isObject](tui.md#tui.clip-memory.isObject)
+    - fn [writePlace](../../src/tui/clip-memory.ts#L144) (home: string, place: ClipPlace) → void
+      <a id="tui.clip-memory.writePlace"></a><br>Writes the place into tui.json atomically, at the target of a link to it; throws, naming the file, when it cannot.
+      - calls [tui.clip-memory.tuiFile](tui.md#tui.clip-memory.tuiFile), [base.safe-write.landing](base.md#base.safe-write.landing), [base.safe-write.writeAtomic](base.md#base.safe-write.writeAtomic), [tui.clip-memory.withPlace](tui.md#tui.clip-memory.withPlace), [lang.files.existingText](lang.md#lang.files.existingText), [base.diag.errorText](base.md#base.diag.errorText)
+    - fn [two](../../src/tui/clip-memory.ts#L160) (n: number) → string <!-- internal -->
+      <a id="tui.clip-memory.two"></a>
+    - fn [dayOf](../../src/tui/clip-memory.ts#L163) (date: Date) → string
+      <a id="tui.clip-memory.dayOf"></a><br>A local date as the log names its file: `2026-10-06`.
+      - calls [tui.clip-memory.two](tui.md#tui.clip-memory.two)
+    - fn [timeOf](../../src/tui/clip-memory.ts#L168) (date: Date) → string <!-- internal -->
+      <a id="tui.clip-memory.timeOf"></a><br>A local time as a section's heading names it: `14:05`.
+      - calls [tui.clip-memory.two](tui.md#tui.clip-memory.two)
+    - fn [chatLogPath](../../src/tui/clip-memory.ts#L173) (day: string) → string
+      <a id="tui.clip-memory.chatLogPath"></a><br>The log of a day, relative to the root, POSIX.
+    - type [ChatExchange](../../src/tui/clip-memory.ts#L178)
+      <a id="tui.clip-memory.ChatExchange"></a><br>One exchange as the log keeps it.
+    - fn [block](../../src/tui/clip-memory.ts#L199) (label: string, text: string) → string <!-- internal -->
+      <a id="tui.clip-memory.block"></a><br>A message as a block: the label and its first line, its other lines indented, its empty lines empty.
+    - fn [exchangeBlocks](../../src/tui/clip-memory.ts#L205) (exchange: ChatExchange) → string[] <!-- internal -->
+      <a id="tui.clip-memory.exchangeBlocks"></a><br>The blocks of an exchange: the person's message, the clip's answer when it says anything, the proposal written.
+      - calls [tui.clip-memory.block](tui.md#tui.clip-memory.block)
+    - fn [isHeading](../../src/tui/clip-memory.ts#L213) (line: string) → boolean <!-- internal -->
+      <a id="tui.clip-memory.isHeading"></a>
+    - fn [heading](../../src/tui/clip-memory.ts#L216) (time: string, agents: readonly string[]) → string <!-- internal -->
+      <a id="tui.clip-memory.heading"></a><br>A section's heading: when its conversation started, and the models that answered in it.
+    - fn [withAgent](../../src/tui/clip-memory.ts#L221) (text: string, agent: string) → string <!-- internal -->
+      <a id="tui.clip-memory.withAgent"></a><br>The log's last section heading names `agent` too: a section started by `/new` or a command learns its model from its first answer.
+      - calls [tui.clip-memory.heading](tui.md#tui.clip-memory.heading)
+    - fn [appended](../../src/tui/clip-memory.ts#L233) (text: string, blocks: readonly string[]) → string <!-- internal -->
+      <a id="tui.clip-memory.appended"></a><br>`text` and the blocks after it, a blank line between any two.
+    - fn [withExchange](../../src/tui/clip-memory.ts#L244) (text: string | null, day: string, time: string, exchange: ChatExchange, going: boolean) → string
+      <a id="tui.clip-memory.withExchange"></a><br>The log of `day` with an exchange after its last line. `going`: the conversation goes on in the last section, whose heading learns the model that answered; otherwise a section starts at `time` (and an empty log gets its title first).
+      - calls [tui.clip-memory.withAgent](tui.md#tui.clip-memory.withAgent), [tui.clip-memory.heading](tui.md#tui.clip-memory.heading), [tui.clip-memory.appended](tui.md#tui.clip-memory.appended), [tui.clip-memory.exchangeBlocks](tui.md#tui.clip-memory.exchangeBlocks)
+    - fn [withSection](../../src/tui/clip-memory.ts#L254) (text: string | null, day: string, time: string) → string
+      <a id="tui.clip-memory.withSection"></a><br>The log of `day` with a new section at `time`: `/new`.
+      - calls [tui.clip-memory.appended](tui.md#tui.clip-memory.appended), [tui.clip-memory.heading](tui.md#tui.clip-memory.heading)
+    - fn [lastConversation](../../src/tui/clip-memory.ts#L264) (text: string) → ChatMessage[] | null
+      <a id="tui.clip-memory.lastConversation"></a><br>The conversation of the log's last section, as the history shows it: the person's messages and the clip's, a proposal as the clip's line `пропозиція: <path>`. Null when the log has no section.
+    - fn [logBlocked](../../src/tui/clip-memory.ts#L307) (root: string, path: string) → string | null <!-- internal -->
+      <a id="tui.clip-memory.logBlocked"></a><br>Why the log may not be written at `path` (relative to `root`): null when git ignores it (`git check-ignore -q`, an argument array, no shell) or when `root` is in no repository — with no `.git` above it, whether git runs or not. In a repository git must say so: anything else…
+      - calls [tui.clip-memory.inRepository](tui.md#tui.clip-memory.inRepository)
+    - fn [inRepository](../../src/tui/clip-memory.ts#L318) (dir: string) → boolean <!-- internal -->
+      <a id="tui.clip-memory.inRepository"></a><br>A `.git` in `dir` or above it: a repository, or a worktree's link to one.
+    - module [ChatLog](../../src/tui/clip-memory.ts#L332)
+      <a id="tui.clip-memory.ChatLog"></a><br>Today's conversation of one session in `.keylang/chat/`. The exchanges of a conversation go into one section; `/new` and a new day start another.
+      - fn [constructor](../../src/tui/clip-memory.ts#L340) (root: string, now: () => Date = () => new Date())
+        <a id="tui.clip-memory.ChatLog.constructor"></a>
+      - fn [restore](../../src/tui/clip-memory.ts#L346) () → ChatMessage[]
+        <a id="tui.clip-memory.ChatLog.restore"></a><br>The conversation a session goes on with: the last section of today's log, or none. Reading writes nothing, in Browse too.
+        - calls [tui.clip-memory.dayOf](tui.md#tui.clip-memory.dayOf), [lang.files.readTextOrNull](lang.md#lang.files.readTextOrNull), [tui.clip-memory.chatLogPath](tui.md#tui.clip-memory.chatLogPath), [tui.clip-memory.lastConversation](tui.md#tui.clip-memory.lastConversation)
+      - fn [exchange](../../src/tui/clip-memory.ts#L355) (exchange: ChatExchange, browsing: boolean) → string | null
+        <a id="tui.clip-memory.ChatLog.exchange"></a><br>An exchange ended: it goes into the log. Returns what the chat says the first time the log cannot be written, else null.
+        - calls [tui.clip-memory.ChatLog.write](tui.md#tui.clip-memory.ChatLog.write), [tui.clip-memory.withExchange](tui.md#tui.clip-memory.withExchange)
+      - fn [restart](../../src/tui/clip-memory.ts#L360) (browsing: boolean) → string | null
+        <a id="tui.clip-memory.ChatLog.restart"></a><br>`/new`: a new section, so the conversation before it is not the one a new session goes on with.
+        - calls [tui.clip-memory.ChatLog.write](tui.md#tui.clip-memory.ChatLog.write)
+      - fn [write](../../src/tui/clip-memory.ts#L365) (browsing: boolean, next: (text: string | null, day: string, time: string) => string) → string | null <!-- internal -->
+        <a id="tui.clip-memory.ChatLog.write"></a>
+        - calls [tui.clip-memory.dayOf](tui.md#tui.clip-memory.dayOf), [tui.clip-memory.chatLogPath](tui.md#tui.clip-memory.chatLogPath), [tui.clip-memory.logBlocked](tui.md#tui.clip-memory.logBlocked), [tui.clip-memory.ChatLog.tell](tui.md#tui.clip-memory.ChatLog.tell), [base.safe-write.writeProblem](base.md#base.safe-write.writeProblem), [lang.files.existingText](lang.md#lang.files.existingText), [base.safe-write.safeWrite](base.md#base.safe-write.safeWrite), [tui.clip-memory.timeOf](tui.md#tui.clip-memory.timeOf), [base.diag.errorText](base.md#base.diag.errorText)
+      - fn [tell](../../src/tui/clip-memory.ts#L385) (why: string) → string | null <!-- internal -->
+        <a id="tui.clip-memory.ChatLog.tell"></a>
+    - fn [isObject](../../src/tui/clip-memory.ts#L392) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      <a id="tui.clip-memory.isObject"></a>
+    - fn [shown](../../src/tui/clip-memory.ts#L396) (value: unknown) → string <!-- internal -->
+      <a id="tui.clip-memory.shown"></a>
+  - module [clip-questions](../../src/tui/clip-questions.ts#L1)
+    <a id="tui.clip-questions"></a><br>The clip's open questions (ADR 0021 п. 2, .scratch/tui-clip/05): the `- ?` lines of the open file, the gaps of the open feature file, and the fails the session's analyses added since the chat was last opened. Lines and gaps are a state; a new fail is an event the opening of the…
+    - analyze [map.analyze](map.md#map.analyze)
+    - spec-ir [lang.spec-ir](lang.md#lang.spec-ir)
+    - verdict [check.verdict](check.md#check.verdict)
+    - state [tui.state](tui.md#tui.state)
+    - type [OpenQuestion](../../src/tui/clip-questions.ts#L15)
+      <a id="tui.clip-questions.OpenQuestion"></a><br>One open question: where it is, and what it says after the place.
+    - fn [failKey](../../src/tui/clip-questions.ts#L22) (fail: Pick<Verdict, "file" | "line" | "message">) → string <!-- internal -->
+      <a id="tui.clip-questions.failKey"></a><br>A fail is told from another by its place and its message.
+    - fn [failsOf](../../src/tui/clip-questions.ts#L26) (analysis: Analysis) → Verdict[] <!-- internal -->
+      <a id="tui.clip-questions.failsOf"></a>
+    - fn [newFailsAfter](../../src/tui/clip-questions.ts#L36) (counted: readonly Verdict[], previous: Analysis | null, next: Analysis) → Verdict[]
+      <a id="tui.clip-questions.newFailsAfter"></a><br>The new fails once `next` replaced `previous`: those counted so far that `next` still reports, then those it reports that `previous` did not. A fail gone before anyone looked is no question; with no previous analysis (the session's first) every fail was there before the session.
+      - calls [tui.clip-questions.failsOf](tui.md#tui.clip-questions.failsOf), [tui.clip-questions.failKey](tui.md#tui.clip-questions.failKey)
+    - fn [questionsIn](../../src/tui/clip-questions.ts#L52) (analysis: Analysis, path: string) → OpenQuestion[] <!-- internal -->
+      <a id="tui.clip-questions.questionsIn"></a><br>The `- ?` lines of `path` as the analysis read it, unsaved edits included, in the file's order.
+      - calls [lang.spec-ir.walkFlow](lang.md#lang.spec-ir.walkFlow)
+    - fn [placeOf](../../src/tui/clip-questions.ts#L63) (question: OpenQuestion) → string <!-- internal -->
+      <a id="tui.clip-questions.placeOf"></a>
+    - fn [openQuestions](../../src/tui/clip-questions.ts#L73) (state: Pick<State, "current" | "analysis" | "featureLine" | "clip">) → OpenQuestion[]
+      <a id="tui.clip-questions.openQuestions"></a><br>The open questions now, in the order the chat lists them: the open file's `- ?` lines, the open feature's gaps as the status line has them (the report of `keylang feature`, as of the last save), the new fails. A place an earlier source names is not counted again: a question of…
+      - calls [tui.clip-questions.questionsIn](tui.md#tui.clip-questions.questionsIn), [tui.clip-questions.placeOf](tui.md#tui.clip-questions.placeOf)
+    - fn [questionRow](../../src/tui/clip-questions.ts#L88) (question: OpenQuestion) → string
+      <a id="tui.clip-questions.questionRow"></a><br>One question as the chat and the model read it: `file:line` and its text.
+      - calls [tui.clip-questions.placeOf](tui.md#tui.clip-questions.placeOf)
+    - fn [questionRows](../../src/tui/clip-questions.ts#L96) (questions: readonly OpenQuestion[], limit = QUESTION_ROWS) → string[]
+      <a id="tui.clip-questions.questionRows"></a><br>The first `QUESTION_ROWS` questions as rows, and a last row saying how many more there are.
+    - fn [questionsAnswer](../../src/tui/clip-questions.ts#L102) (questions: readonly OpenQuestion[]) → string
+      <a id="tui.clip-questions.questionsAnswer"></a><br>What the clip says of the open questions: how many, and one row each up to `QUESTION_ROWS`; or that there are none.
+      - calls [tui.clip-questions.questionRows](tui.md#tui.clip-questions.questionRows)
+  - module [clip-view](../../src/tui/clip-view.ts#L1)
+    <a id="tui.clip-view"></a><br>Drawing the clip (ADR 0021): the figure in the editor's corner and the window of its chat. Where they stand and what the window holds come from `clip.ts`; `view.ts` calls these in its order of layers.
+    - clip [tui.clip](tui.md#tui.clip)
+    - screen [tui.screen](tui.md#tui.screen)
+    - state [tui.state](tui.md#tui.state)
+    - theme [tui.theme](tui.md#tui.theme)
+    - view [tui.view](tui.md#tui.view)
+    - width [tui.width](tui.md#tui.width)
+    - fn [drawClip](../../src/tui/clip-view.ts#L29) (grid: Grid, rect: Rect, clip: ClipState) → void
+      <a id="tui.clip-view.drawClip"></a><br>The clip, 5×3 cells over the editor, on the background of what is under it, and the counter of open questions right of its top row (left of it at the terminal's right edge).
+      - calls [tui.clip.clipEyes](tui.md#tui.clip.clipEyes), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.clip.counterText](tui.md#tui.clip.counterText), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.clip-view.bgAt](tui.md#tui.clip-view.bgAt)
+    - fn [bgAt](../../src/tui/clip-view.ts#L47) (grid: Grid, x: number, y: number) → Style <!-- internal -->
+      <a id="tui.clip-view.bgAt"></a><br>The background of a cell, so the clip stands on the line under it.
+      - calls [tui.screen.Grid.styleAt](tui.md#tui.screen.Grid.styleAt)
+    - fn [drawChat](../../src/tui/clip-view.ts#L58) (grid: Grid, state: State, rect: Rect) → void
+      <a id="tui.clip-view.drawChat"></a><br>The chat window: a rounded frame titled with the clip's eyes, `✕` at its right and the keys in its bottom edge; the end of the history (or where it is scrolled to) over the input line. While it takes the keys its frame is lit and the terminal's cursor stands at the end of the…
+      - calls [tui.clip.chatTakesKeys](tui.md#tui.clip.chatTakesKeys), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.clip.clipEyes](tui.md#tui.clip.clipEyes), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.clip.chatLayout](tui.md#tui.clip.chatLayout), [tui.clip.shownHistory](tui.md#tui.clip.shownHistory), [tui.clip.historyRows](tui.md#tui.clip.historyRows), [tui.clip.inputTail](tui.md#tui.clip.inputTail), [tui.width.stringWidth](tui.md#tui.width.stringWidth)
+  - module [clip](../../src/tui/clip.ts#L1)
+    <a id="tui.clip"></a><br>The clip (ADR 0021): the built-in agent's face in the corner of the editor and the window of its chat. This module keeps where they stand, what lies under a cell of the pointer, what a press, a drag and the keys do to them, and the conversation; `clip-view.ts` draws them and…
+    - verdict [check.verdict](check.md#check.verdict)
+    - actions [tui.actions](tui.md#tui.actions)
+    - input [tui.input](tui.md#tui.input)
+    - prompt-keys [tui.prompt-keys](tui.md#tui.prompt-keys)
+    - state [tui.state](tui.md#tui.state)
+    - view [tui.view](tui.md#tui.view)
+    - width [tui.width](tui.md#tui.width)
+    - type [Cell](../../src/tui/clip.ts#L17)
+      <a id="tui.clip.Cell"></a><br>A cell of the screen, 0-based.
+    - type [ChatMessage](../../src/tui/clip.ts#L23)
+      <a id="tui.clip.ChatMessage"></a><br>One message of the conversation: the person's or the clip's.
+    - type [ChatState](../../src/tui/clip.ts#L29)
+      <a id="tui.clip.ChatState"></a><br>The chat window of the clip: where it stands, whether it has the keys, and the conversation.
+    - type [ClipState](../../src/tui/clip.ts#L46)
+      <a id="tui.clip.ClipState"></a><br>The clip and its chat, as the session draws them.
+    - fn [newClip](../../src/tui/clip.ts#L90) () → ClipState
+      <a id="tui.clip.newClip"></a>
+    - fn [narrow](../../src/tui/clip.ts#L102) (size: Pick<State, "cols" | "rows">) → boolean <!-- internal -->
+      <a id="tui.clip.narrow"></a><br>Whether the terminal is too small for the clip in its corner.
+    - fn [assistantShown](../../src/tui/clip.ts#L107) (state: Pick<State, "start" | "results">) → boolean
+      <a id="tui.clip.assistantShown"></a><br>The clip and its window take part in the frame: the start screen and the F6 panel cover them.
+    - fn [chatTakesKeys](../../src/tui/clip.ts#L115) (state: State) → boolean
+      <a id="tui.clip.chatTakesKeys"></a><br>The window takes the keys: open, focused, and nothing modal over it — a form, the help, a save or quit step, MERGE (which takes no clicks either).
+      - calls [tui.clip.assistantShown](tui.md#tui.clip.assistantShown)
+    - fn [clipEyes](../../src/tui/clip.ts#L121) (clip: Pick<ClipState, "waiting">) → string
+      <a id="tui.clip.clipEyes"></a><br>`◕◕` waits; `◔◔` waits for the model's reply.
+    - fn [counterText](../../src/tui/clip.ts#L126) (questions: number) → string
+      <a id="tui.clip.counterText"></a><br>The counter of open questions next to the clip: nothing for none, `1`–`9`, then `9+`.
+    - fn [badgeText](../../src/tui/clip.ts#L131) (clip: Pick<ClipState, "waiting" | "questions">) → string
+      <a id="tui.clip.badgeText"></a><br>The badge that stands for the clip in the status line of a narrow terminal.
+      - calls [tui.clip.counterText](tui.md#tui.clip.counterText), [tui.clip.clipEyes](tui.md#tui.clip.clipEyes)
+    - fn [clipArea](../../src/tui/clip.ts#L137) (state: Pick<State, "cols" | "rows">) → Rect <!-- internal -->
+      <a id="tui.clip.clipArea"></a><br>The cells the clip may stand on: the terminal without the title row and the status line.
+    - fn [chatArea](../../src/tui/clip.ts#L142) (state: Pick<State, "cols" | "rows">) → Rect <!-- internal -->
+      <a id="tui.clip.chatArea"></a><br>The cells the window may take: below the title row, above the detail line, whose messages stay readable.
+    - fn [inside](../../src/tui/clip.ts#L147) (rect: Rect, area: Rect) → Rect <!-- internal -->
+      <a id="tui.clip.inside"></a><br>`rect` moved as little as it takes to lie inside `area` (where it is wider, from the area's start).
+    - fn [contains](../../src/tui/clip.ts#L155) (rect: Rect, cell: Cell) → boolean <!-- internal -->
+      <a id="tui.clip.contains"></a>
+    - fn [overlaps](../../src/tui/clip.ts#L159) (a: Rect, b: Rect) → boolean <!-- internal -->
+      <a id="tui.clip.overlaps"></a>
+    - fn [clamp](../../src/tui/clip.ts#L163) (value: number, low: number, high: number) → number <!-- internal -->
+      <a id="tui.clip.clamp"></a>
+    - fn [clipPlace](../../src/tui/clip.ts#L172) (state: Pick<State, "cols" | "rows" | "clip">, editor: Rect) → Rect <!-- internal -->
+      <a id="tui.clip.clipPlace"></a><br>Where the clip stands, whether it is drawn or not: where it was dragged, else the editor's bottom-right corner one cell in; always inside the terminal, so a smaller terminal moves it in.
+      - calls [tui.clip.inside](tui.md#tui.clip.inside), [tui.clip.clipArea](tui.md#tui.clip.clipArea)
+    - fn [clipRect](../../src/tui/clip.ts#L178) (state: Pick<State, "cols" | "rows" | "clip">, editor: Rect) → Rect | null
+      <a id="tui.clip.clipRect"></a><br>The clip in the editor's corner; null when it is off or the terminal is narrow (a badge stands for it).
+      - calls [tui.clip.narrow](tui.md#tui.clip.narrow), [tui.clip.clipPlace](tui.md#tui.clip.clipPlace)
+    - fn [badgeRect](../../src/tui/clip.ts#L183) (state: Pick<State, "cols" | "rows" | "clip">) → Rect | null
+      <a id="tui.clip.badgeRect"></a><br>The badge at the start of the status line of a narrow terminal; null when the clip is in its corner or off.
+      - calls [tui.clip.narrow](tui.md#tui.clip.narrow), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.clip.badgeText](tui.md#tui.clip.badgeText)
+    - fn [clipYields](../../src/tui/clip.ts#L192) (clip: Rect, cursor: Cell | null, popups: readonly Rect[]) → boolean
+      <a id="tui.clip.clipYields"></a><br>The clip does not cover what the person works on: a frame with the editor's cursor under it, or a popup over it (the hover), draws no clip.
+      - calls [tui.clip.contains](tui.md#tui.clip.contains), [tui.clip.overlaps](tui.md#tui.clip.overlaps)
+    - fn [chatRect](../../src/tui/clip.ts#L202) (state: Pick<State, "cols" | "rows" | "clip">, editor: Rect) → Rect
+      <a id="tui.clip.chatRect"></a><br>The chat window: where it was moved, else above the clip, its right edge at the clip's (below it when there is no room above); inside the terminal, above the detail line, and no bigger than that. On a narrow terminal it takes the whole width above the detail line.
+      - calls [tui.clip.narrow](tui.md#tui.clip.narrow), [tui.clip.chatArea](tui.md#tui.clip.chatArea), [tui.clip.inside](tui.md#tui.clip.inside), [tui.clip.clipPlace](tui.md#tui.clip.clipPlace)
+    - type [ChatPart](../../src/tui/clip.ts#L218) = "close" | "move" | "resize" | "window" <!-- internal -->
+      <a id="tui.clip.ChatPart"></a><br>What a cell of the window is to the pointer: `✕` folds it, the top edge moves it, the bottom-right corner resizes it, the rest focuses it.
+    - fn [chatPart](../../src/tui/clip.ts#L220) (rect: Rect, cell: Cell) → ChatPart | null <!-- internal -->
+      <a id="tui.clip.chatPart"></a>
+      - calls [tui.clip.contains](tui.md#tui.clip.contains)
+    - fn [chatLayout](../../src/tui/clip.ts#L228) (rect: Rect) → { history: Rect; input: Rect }
+      <a id="tui.clip.chatLayout"></a><br>The rows of a window: the history over the input line, one cell in from the frame.
+    - type [HistoryRow](../../src/tui/clip.ts#L237)
+      <a id="tui.clip.HistoryRow"></a><br>A row of the history: a message's, or the thinking row while the model's reply is awaited.
+    - fn [historyRows](../../src/tui/clip.ts#L247) (messages: readonly ChatMessage[], width: number, waiting = false) → HistoryRow[]
+      <a id="tui.clip.historyRows"></a><br>The conversation as rows of `width` cells: each message after its speaker, its lines wrapped by the shared wrap and indented under its text; while `waiting`, the thinking row last.
+      - calls [tui.clip.messageRows](tui.md#tui.clip.messageRows), [tui.clip.speakerRows](tui.md#tui.clip.speakerRows)
+    - fn [messageRows](../../src/tui/clip.ts#L257) (message: ChatMessage, width: number) → readonly HistoryRow[] <!-- internal -->
+      <a id="tui.clip.messageRows"></a><br>One message's rows; a message never changes once it is in the history.
+      - calls [tui.clip.speakerRows](tui.md#tui.clip.speakerRows)
+    - fn [speakerRows](../../src/tui/clip.ts#L265) (role: HistoryRow["role"], speaker: string, text: string, width: number) → HistoryRow[] <!-- internal -->
+      <a id="tui.clip.speakerRows"></a>
+      - calls [tui.width.wrapCells](tui.md#tui.width.wrapCells)
+    - fn [shownHistory](../../src/tui/clip.ts#L279) (rows: readonly T[], height: number, scroll: number) → T[]
+      <a id="tui.clip.shownHistory"></a><br>The rows `height` rows of the history show, `scroll` rows back from its end; a short history starts at the top.
+      - calls [tui.clip.clamp](tui.md#tui.clip.clamp)
+    - fn [inputTail](../../src/tui/clip.ts#L285) (input: string, room: number) → string
+      <a id="tui.clip.inputTail"></a><br>The end of the input line that fits `room` cells: a longer line scrolls, and `…` marks what it hides on the left.
+      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.sliceCells](tui.md#tui.width.sliceCells)
+    - fn [moved](../../src/tui/clip.ts#L291) (rect: Rect, dx: number, dy: number, area: Rect) → Cell <!-- internal -->
+      <a id="tui.clip.moved"></a><br>`rect` shifted by the offset, then kept inside `area`: a drag and Alt+arrows move the window the same way.
+      - calls [tui.clip.inside](tui.md#tui.clip.inside)
+    - fn [resized](../../src/tui/clip.ts#L297) (rect: Rect, dx: number, dy: number, area: Rect) → ChatState["size"] <!-- internal -->
+      <a id="tui.clip.resized"></a><br>`rect` grown by the offset from its top-left: at least 30×7, at most to the area's right and bottom edges.
+      - calls [tui.clip.clamp](tui.md#tui.clip.clamp)
+    - type [ClipHost](../../src/tui/clip.ts#L304)
+      <a id="tui.clip.ClipHost"></a><br>What the session gives the clip: its state and where the editor and the drawn clip are now.
+    - type [Target](../../src/tui/clip.ts#L321) = "clip" | "badge" | ChatPart <!-- internal -->
+      <a id="tui.clip.Target"></a><br>What a press was on.
+    - type [Press](../../src/tui/clip.ts#L324) <!-- internal -->
+      <a id="tui.clip.Press"></a><br>A press of the left button on the clip, its badge or its window, until the release.
+    - module [Clip](../../src/tui/clip.ts#L343)
+      <a id="tui.clip.Clip"></a><br>The clip's pointer and keys: a click on it opens the chat, a drag moves it; the window moves by its top edge, resizes by its bottom-right corner, folds on `✕`, and while it has the focus its input line and history take the keys. Every pointer action has a key: F7, Alt+arrows…
+      - fn [constructor](../../src/tui/clip.ts#L347) (host: ClipHost)
+        <a id="tui.clip.Clip.constructor"></a>
+      - fn [state](../../src/tui/clip.ts#L351) () → State <!-- internal -->
+        <a id="tui.clip.Clip.state"></a>
+      - fn [toggle](../../src/tui/clip.ts#L360) () → void
+        <a id="tui.clip.Clip.toggle"></a><br>F7: a folded window opens with the focus, an open one gets the focus, a focused one folds. MERGE takes no clicks and so no F7: it would leave the decisions.
+        - calls [tui.clip.Clip.fold](tui.md#tui.clip.Clip.fold), [tui.clip.Clip.open](tui.md#tui.clip.Clip.open)
+      - fn [open](../../src/tui/clip.ts#L371) () → void
+        <a id="tui.clip.Clip.open"></a><br>A click on the clip or its badge: the chat opens with the focus, and the clip lists the open questions.
+        - calls [tui.clip.Clip.focus](tui.md#tui.clip.Clip.focus)
+      - fn [focus](../../src/tui/clip.ts#L378) () → void <!-- internal -->
+        <a id="tui.clip.Clip.focus"></a><br>The window takes the keys: the editor's completion, which waits for them, goes.
+      - fn [fold](../../src/tui/clip.ts#L384) () → void
+        <a id="tui.clip.Clip.fold"></a><br>Esc, `✕`, or F7 on the focused window: it folds; the conversation stays, and so does a reply awaited.
+      - fn [send](../../src/tui/clip.ts#L396) () → void
+        <a id="tui.clip.Clip.send"></a><br>Enter: the input line goes into the history as the person's message, the history shows its end, and the chat answers it. An empty line sends nothing; while the model's reply is awaited nothing is sent and the line stays: one request at a time.
+      - fn [reset](../../src/tui/clip.ts#L411) () → void
+        <a id="tui.clip.Clip.reset"></a><br>The palette's «Скрепка: повернути на місце»: the clip in its corner, the window above it at its default size.
+      - fn [key](../../src/tui/clip.ts#L421) (event: KeyEvent) → void
+        <a id="tui.clip.Clip.key"></a><br>A key while the window has the focus (`chatTakesKeys`): its input line, its history and its place.
+        - calls [tui.clip.Clip.nudge](tui.md#tui.clip.Clip.nudge), [tui.clip.Clip.fold](tui.md#tui.clip.Clip.fold), [tui.clip.Clip.send](tui.md#tui.clip.Clip.send), [tui.clip.Clip.scrollBy](tui.md#tui.clip.Clip.scrollBy), [tui.clip.Clip.page](tui.md#tui.clip.Clip.page), [tui.prompt-keys.backspaced](tui.md#tui.prompt-keys.backspaced)
+      - fn [paste](../../src/tui/clip.ts#L443) (text: string) → void
+        <a id="tui.clip.Clip.paste"></a><br>Text pasted while the window has the focus: one line, its breaks and tabs as spaces.
+      - fn [mouse](../../src/tui/clip.ts#L455) (event: MouseEvent) → boolean
+        <a id="tui.clip.Clip.mouse"></a><br>A pointer event: true when it was the clip's, its badge's or its window's (they are over the editor and the panels); false leaves it to the session. A click is a press and a release in the same cell; a drag moves the clip or the window or resizes the window.
+        - calls [tui.clip.assistantShown](tui.md#tui.clip.assistantShown), [tui.clip.Clip.dragTo](tui.md#tui.clip.Clip.dragTo), [tui.clip.Clip.click](tui.md#tui.clip.Clip.click), [tui.clip.Clip.places](tui.md#tui.clip.Clip.places), [tui.clip.Clip.targetAt](tui.md#tui.clip.Clip.targetAt), [tui.clip.Clip.scrollBy](tui.md#tui.clip.Clip.scrollBy), [tui.clip.Clip.rectOf](tui.md#tui.clip.Clip.rectOf)
+      - fn [targetAt](../../src/tui/clip.ts#L497) (cell: Cell) → Target | null <!-- internal -->
+        <a id="tui.clip.Clip.targetAt"></a><br>What is under a cell: the window is over the clip, the clip over the editor.
+        - calls [tui.clip.chatPart](tui.md#tui.clip.chatPart), [tui.clip.chatRect](tui.md#tui.clip.chatRect), [tui.clip.contains](tui.md#tui.clip.contains), [tui.clip.badgeRect](tui.md#tui.clip.badgeRect)
+      - fn [rectOf](../../src/tui/clip.ts#L508) (target: Target) → Rect <!-- internal -->
+        <a id="tui.clip.Clip.rectOf"></a>
+        - calls [tui.clip.clipPlace](tui.md#tui.clip.clipPlace), [tui.clip.badgeRect](tui.md#tui.clip.badgeRect), [tui.clip.chatRect](tui.md#tui.clip.chatRect)
+      - fn [dragTo](../../src/tui/clip.ts#L515) (press: Press, cell: Cell) → void <!-- internal -->
+        <a id="tui.clip.Clip.dragTo"></a><br>The pointer at `cell` with the button down: the clip or the window follows it, inside the terminal.
+        - calls [tui.clip.moved](tui.md#tui.clip.moved), [tui.clip.clipArea](tui.md#tui.clip.clipArea), [tui.clip.narrow](tui.md#tui.clip.narrow), [tui.clip.chatArea](tui.md#tui.clip.chatArea), [tui.clip.resized](tui.md#tui.clip.resized)
+      - fn [places](../../src/tui/clip.ts#L531) (target: Target) → boolean <!-- internal -->
+        <a id="tui.clip.Clip.places"></a><br>A drag of this moves the clip or the window, or resizes the window; a narrow terminal's window neither moves nor resizes.
+        - calls [tui.clip.narrow](tui.md#tui.clip.narrow)
+      - fn [click](../../src/tui/clip.ts#L535) (target: Target) → void <!-- internal -->
+        <a id="tui.clip.Clip.click"></a>
+        - calls [tui.clip.Clip.open](tui.md#tui.clip.Clip.open), [tui.clip.Clip.fold](tui.md#tui.clip.Clip.fold), [tui.clip.Clip.focus](tui.md#tui.clip.Clip.focus)
+      - fn [nudge](../../src/tui/clip.ts#L542) (delta: Cell, resize: boolean) → void <!-- internal -->
+        <a id="tui.clip.Clip.nudge"></a><br>Alt+arrows move the window a cell, Alt+Shift+arrows resize it: what a drag does.
+        - calls [tui.clip.narrow](tui.md#tui.clip.narrow), [tui.clip.chatRect](tui.md#tui.clip.chatRect), [tui.clip.resized](tui.md#tui.clip.resized), [tui.clip.chatArea](tui.md#tui.clip.chatArea), [tui.clip.moved](tui.md#tui.clip.moved)
+      - fn [page](../../src/tui/clip.ts#L558) () → number <!-- internal -->
+        <a id="tui.clip.Clip.page"></a><br>Rows PgUp and PgDn scroll the history by: its height but one.
+        - calls [tui.clip.chatLayout](tui.md#tui.clip.chatLayout), [tui.clip.chatRect](tui.md#tui.clip.chatRect)
+      - fn [scrollBy](../../src/tui/clip.ts#L563) (rows: number) → void <!-- internal -->
+        <a id="tui.clip.Clip.scrollBy"></a><br>The history `rows` rows back (negative: forward), between its start and its end.
+        - calls [tui.clip.chatLayout](tui.md#tui.clip.chatLayout), [tui.clip.chatRect](tui.md#tui.clip.chatRect), [tui.clip.historyRows](tui.md#tui.clip.historyRows), [tui.clip.clamp](tui.md#tui.clip.clamp)
   - module [code-highlight](../../src/tui/code-highlight.ts#L1)
     <a id="tui.code-highlight"></a><br>Lexical highlight for the built-in code viewer: comments, strings, numbers, keywords. It is a reading aid only; facts come from the snapshot.
     - screen [tui.screen](tui.md#tui.screen)
@@ -1345,7 +1768,7 @@
     - type [ProposalEntry](../../src/tui/merge-session.ts#L39)
       <a id="tui.merge-session.ProposalEntry"></a><br>One pending target of the proposals list: its kind, how many hunks it has against the file on disk, and why it cannot be merged now (null: it can). Built from disk each time the list opens or Enter is pressed; building it writes nothing.
     - module [MergeSession](../../src/tui/merge-session.ts#L52)
-      <a id="tui.merge-session.MergeSession"></a><br>Drives the TUI's merge mode for agent proposals: lists and validates files under the proposals directory, opens one as a hunk diff against disk, and handles accept/reject/undo keys before writing via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      <a id="tui.merge-session.MergeSession"></a><br>Drives the TUI review of files under the proposals store: lists and validates proposals, opens each as a hunk-by-hunk diff against disk, takes accept/reject keys, then writes, undoes or cancels via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - fn [constructor](../../src/tui/merge-session.ts#L55) (host: MergeHost)
         <a id="tui.merge-session.MergeSession.constructor"></a><br>Stores the given host object on the instance as the sole setup step, with no validation or other work performed. The session relies on that stored host for all subsequent interaction. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - fn [state](../../src/tui/merge-session.ts#L59) () → State <!-- internal -->
@@ -1379,27 +1802,27 @@
       - fn [start](../../src/tui/merge-session.ts#L203) (path: string, origin: MergeState["origin"], base: string[], proposed: string[], disk: string | null, proposal: string | null) → void
         <a id="tui.merge-session.MergeSession.start"></a><br>A merge of `proposed` into `base`; `proposal` is the proposal file's text (null for `Ctrl+G`).
         - calls [tui.merge.diffLines](tui.md#tui.merge.diffLines), [tui.merge-session.MergeSession.dropProposal](tui.md#tui.merge-session.MergeSession.dropProposal), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-      - fn [dropProposal](../../src/tui/merge-session.ts#L220) (path: string, text: string) → void <!-- internal -->
+      - fn [dropProposal](../../src/tui/merge-session.ts#L222) (path: string, text: string) → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.dropProposal"></a><br>Removes the proposal of `path` while it is still `text`.
         - calls [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.disk.readText](tui.md#tui.disk.readText), [tui.disk.removeInside](tui.md#tui.disk.removeInside)
-      - fn [key](../../src/tui/merge-session.ts#L231) (event: KeyEvent) → void
-        <a id="tui.merge-session.MergeSession.key"></a><br>Handles keys during an interactive merge: accept/reject the current hunk and jump to the next pending one, undo, navigate hunks, write via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write), or cancel via [`tui.merge-session.MergeSession.leave`](tui.md#tui.merge-session.MergeSession.leave). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [key](../../src/tui/merge-session.ts#L233) (event: KeyEvent) → void
+        <a id="tui.merge-session.MergeSession.key"></a><br>Handles merge-review keystrokes: accepts/rejects the focused hunk and jumps to the next pending one, undoes decisions, moves between hunks, opens help, writes via [`tui.merge-session.MergeSession.write`](tui.md#tui.merge-session.MergeSession.write) or cancels via [`tui.merge-session.MergeSession.leave`](tui.md#tui.merge-session.MergeSession.leave). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.merge-session.MergeSession.write](tui.md#tui.merge-session.MergeSession.write), [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave)
-      - fn [leave](../../src/tui/merge-session.ts#L286) (merge: MergeState, message: string) → void <!-- internal -->
-        <a id="tui.merge-session.MergeSession.leave"></a><br>Exits merge mode: clears the merge state, rescans proposals via [`tui.merge-session.MergeSession.scan`](tui.md#tui.merge-session.MergeSession.scan) since agents may have changed them, restores the prior mode, sets a status message and clamps the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
+      - fn [leave](../../src/tui/merge-session.ts#L288) (merge: MergeState, message: string) → void <!-- internal -->
+        <a id="tui.merge-session.MergeSession.leave"></a><br>Ends a merge: clears merge state, refreshes the proposal list via [`tui.merge-session.MergeSession.scan`](tui.md#tui.merge-session.MergeSession.scan) (agents may have changed it), restores the prior mode, sets a status message, and clamps the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
         - calls [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-      - fn [write](../../src/tui/merge-session.ts#L305) () → void <!-- internal -->
+      - fn [write](../../src/tui/merge-session.ts#L307) () → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.write"></a><br>Applies the decided hunks. A proposal file is the external change being confirmed, so the result goes to disk.
         - calls [tui.merge-session.MergeSession.writeBuffer](tui.md#tui.merge-session.MergeSession.writeBuffer), [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.merge-session.MergeSession.proposalAbs](tui.md#tui.merge-session.MergeSession.proposalAbs), [tui.merge.applyHunks](tui.md#tui.merge.applyHunks), [tui.disk.splitEol](tui.md#tui.disk.splitEol), [tui.disk.withEol](tui.md#tui.disk.withEol), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.merge-session.MergeSession.boundary](tui.md#tui.merge-session.MergeSession.boundary), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.disk.removeInside](tui.md#tui.disk.removeInside), [tui.merge-session.errorText](tui.md#tui.merge-session.errorText), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan), [features.stats.updateStats](features.md#features.stats.updateStats), [features.stats.addDrafts](features.md#features.stats.addDrafts), [features.stats.statusesIn](features.md#features.stats.statusesIn)
-      - fn [writeBuffer](../../src/tui/merge-session.ts#L375) (merge: MergeState) → void <!-- internal -->
+      - fn [writeBuffer](../../src/tui/merge-session.ts#L377) (merge: MergeState) → void <!-- internal -->
         <a id="tui.merge-session.MergeSession.writeBuffer"></a><br>`Ctrl+G`: the accepted hunks go into the buffer, which `Ctrl+S` saves.
         - calls [tui.merge-session.MergeSession.leave](tui.md#tui.merge-session.MergeSession.leave), [tui.merge.applyHunks](tui.md#tui.merge.applyHunks), [tui.buffer.setText](tui.md#tui.buffer.setText)
-      - fn [undo](../../src/tui/merge-session.ts#L394) () → void
+      - fn [undo](../../src/tui/merge-session.ts#L396) () → void
         <a id="tui.merge-session.MergeSession.undo"></a><br>`u` in the view: undoes the last merge while the file still holds its result, on disk too, and brings back the proposal as it was — unless a newer proposal was written since, which is kept.
         - calls [tui.disk.readText](tui.md#tui.disk.readText), [tui.merge-session.MergeSession.boundary](tui.md#tui.merge-session.MergeSession.boundary), [tui.disk.removeInside](tui.md#tui.disk.removeInside), [tui.disk.writeInside](tui.md#tui.disk.writeInside), [tui.buffer.setText](tui.md#tui.buffer.setText), [tui.merge-session.MergeSession.scan](tui.md#tui.merge-session.MergeSession.scan)
-    - fn [proposalKind](../../src/tui/merge-session.ts#L434) (path: string) → ProposalEntry["kind"] <!-- internal -->
+    - fn [proposalKind](../../src/tui/merge-session.ts#L436) (path: string) → ProposalEntry["kind"] <!-- internal -->
       <a id="tui.merge-session.proposalKind"></a><br>A Markdown proposal replaces a spec; any other replaces a source file (or a test).
-    - fn [errorText](../../src/tui/merge-session.ts#L438) (error: unknown) → string
+    - fn [errorText](../../src/tui/merge-session.ts#L440) (error: unknown) → string
       <a id="tui.merge-session.errorText"></a><br>Converts any thrown value into a display string, taking `message` from `Error` instances and stringifying everything else. Callers across [`tui.app`](tui.md#tui.app) and [`tui.assist`](tui.md#tui.assist) use it to turn caught failures into user-facing notes. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
   - module [merge](../../src/tui/merge.ts#L1)
     <a id="tui.merge"></a><br>Line diff of a document and a proposed version, as hunks a person accepts or rejects one by one. The result keeps the base lines of every hunk that is not accepted, so nothing reaches the file without an explicit `a`.
@@ -1491,30 +1914,39 @@
     - fn [fieldIn](../../src/tui/prompt-keys.ts#L58) (prompt: Prompt, keys: PromptKeys) → TextField | null <!-- internal -->
       <a id="tui.prompt-keys.fieldIn"></a>
       - calls [tui.prompt-keys.promptText](tui.md#tui.prompt-keys.promptText)
-    - fn [typeInto](../../src/tui/prompt-keys.ts#L63) (prompt: Prompt, keys: PromptKeys, text: string) → void
+    - fn [backspaced](../../src/tui/prompt-keys.ts#L63) (text: string) → string
+      <a id="tui.prompt-keys.backspaced"></a><br>A typed line after Backspace: its last grapheme cluster gone. The prompts and the clip's input line edit this way.
+      - calls [tui.width.graphemes](tui.md#tui.width.graphemes)
+    - fn [typeInto](../../src/tui/prompt-keys.ts#L68) (prompt: Prompt, keys: PromptKeys, text: string) → void
       <a id="tui.prompt-keys.typeInto"></a><br>Text typed or pasted into the prompt: into the selected row's field, then the prompt follows it.
       - calls [tui.prompt-keys.fieldIn](tui.md#tui.prompt-keys.fieldIn)
-    - fn [promptKey](../../src/tui/prompt-keys.ts#L73) (prompt: Prompt, keys: PromptKeys, event: KeyEvent) → void
+    - fn [promptKey](../../src/tui/prompt-keys.ts#L78) (prompt: Prompt, keys: PromptKeys, event: KeyEvent) → void
       <a id="tui.prompt-keys.promptKey"></a><br>Every key of a prompt but Esc (the caller closes it): Backspace, ←→ when the kind has choices, ↑↓ over a list that has items, Enter, and text.
-      - calls [tui.prompt-keys.fieldIn](tui.md#tui.prompt-keys.fieldIn), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.prompt-keys.typeInto](tui.md#tui.prompt-keys.typeInto)
-    - fn [noteOfSelection](../../src/tui/prompt-keys.ts#L91) (prompt: Prompt) → void
+      - calls [tui.prompt-keys.fieldIn](tui.md#tui.prompt-keys.fieldIn), [tui.prompt-keys.backspaced](tui.md#tui.prompt-keys.backspaced), [tui.prompt-keys.typeInto](tui.md#tui.prompt-keys.typeInto)
+    - fn [noteOfSelection](../../src/tui/prompt-keys.ts#L96) (prompt: Prompt) → void
       <a id="tui.prompt-keys.noteOfSelection"></a><br>The note of the selected item, where each item has its own (`notes`).
-    - type [FormRow](../../src/tui/prompt-keys.ts#L96)
+    - type [FormRow](../../src/tui/prompt-keys.ts#L101)
       <a id="tui.prompt-keys.FormRow"></a><br>One row of a form: its id, which the selection keeps across a refresh, and its text.
-    - fn [showRows](../../src/tui/prompt-keys.ts#L102) (prompt: Prompt, rows: readonly FormRow[], selected: string) → void
+    - fn [showRows](../../src/tui/prompt-keys.ts#L107) (prompt: Prompt, rows: readonly FormRow[], selected: string) → void
       <a id="tui.prompt-keys.showRows"></a><br>The rows of a form, the row `selected` selected (the first when it is gone).
-    - fn [selectedRow](../../src/tui/prompt-keys.ts#L109) (prompt: Prompt, fallback: string) → string
+    - fn [selectedRow](../../src/tui/prompt-keys.ts#L114) (prompt: Prompt, fallback: string) → string
       <a id="tui.prompt-keys.selectedRow"></a><br>The id of the selected row, or `fallback` before the rows are built.
-    - fn [caretAt](../../src/tui/prompt-keys.ts#L114) (selected: string) → (row: string) => string
+    - fn [caretAt](../../src/tui/prompt-keys.ts#L119) (selected: string) → (row: string) => string
       <a id="tui.prompt-keys.caretAt"></a><br>The caret after the text of a field's row while it is the `selected` one: `caretAt(selected)("into")`.
-    - fn [cycle](../../src/tui/prompt-keys.ts#L119) (list: readonly T[], value: T, delta: number) → T
+    - fn [cycle](../../src/tui/prompt-keys.ts#L124) (list: readonly T[], value: T, delta: number) → T
       <a id="tui.prompt-keys.cycle"></a><br>The value `delta` steps from `value` in `list`, around the ends.
-    - fn [selectRow](../../src/tui/prompt-keys.ts#L124) (prompt: Prompt, row: string, refresh: () => void) → void
+    - fn [selectRow](../../src/tui/prompt-keys.ts#L129) (prompt: Prompt, row: string, refresh: () => void) → void
       <a id="tui.prompt-keys.selectRow"></a><br>Selects `row` among rows that depend on the values just changed: built once to find it, once to show it selected.
-    - fn [selectProblem](../../src/tui/prompt-keys.ts#L133) (prompt: Prompt, field: string, refresh: () => void) → void
+    - fn [selectProblem](../../src/tui/prompt-keys.ts#L138) (prompt: Prompt, field: string, refresh: () => void) → void
       <a id="tui.prompt-keys.selectProblem"></a><br>A form that may not run keeps its values: the row the problem is about is selected again.
   - module reports
     <a id="tui.reports"></a>
+    - module [chat](../../src/tui/reports/chat.ts#L1)
+      <a id="tui.reports.chat"></a><br>The report of the clip's reply (ADR 0021): what the model answered, the block it gave, and what it read — the system prompt and the prompt, as the operation built them from the request — so a reply can be checked against its question after the fact, as F4 shows the pack before…
+      - node [external.node](external.md#external.node)
+      - config [base.config](base.md#base.config)
+      - operations [operations.operations](operations.md#operations.operations)
+      - rows [tui.reports.rows](tui.md#tui.reports.rows)
     - module [check](../../src/tui/reports/check.ts#L1)
       <a id="tui.reports.check"></a><br>Reports of the operations that read the specs against the code: feature readiness, check, an explained edge, parse, a trace plan, the C4 diagram, and the export of a finished report.
       - node [external.node](external.md#external.node)
@@ -1602,45 +2034,46 @@
       - actions [tui.actions](tui.md#tui.actions)
       - state [tui.state](tui.md#tui.state)
       - theme [tui.theme](tui.md#tui.theme)
+      - chat [tui.reports.chat](tui.md#tui.reports.chat)
       - check [tui.reports.check](tui.md#tui.reports.check)
       - draft [tui.reports.draft](tui.md#tui.reports.draft)
       - explain [tui.reports.explain](tui.md#tui.reports.explain)
       - rows [tui.reports.rows](tui.md#tui.reports.rows)
       - setup [tui.reports.setup](tui.md#tui.reports.setup)
-      - fn [isDone](../../src/tui/reports/records.ts#L19) (result: OperationResult) → result is Done<Kind> <!-- internal -->
+      - fn [isDone](../../src/tui/reports/records.ts#L23) (result: OperationResult) → result is Done<Kind> <!-- internal -->
         <a id="tui.reports.records.isDone"></a><br>A result that has its payload: the report of its kind can show it.
-      - fn [operationLabel](../../src/tui/reports/records.ts#L24) (request: RequestOf<K>) → string
+      - fn [operationLabel](../../src/tui/reports/records.ts#L28) (request: RequestOf<K>) → string
         <a id="tui.reports.records.operationLabel"></a><br>How messages name an operation: `doctor`, `feature pay`, `map write`.
-      - fn [paramsOf](../../src/tui/reports/records.ts#L28) (request: RequestOf<K>) → string | null <!-- internal -->
+      - fn [paramsOf](../../src/tui/reports/records.ts#L32) (request: RequestOf<K>) → string | null <!-- internal -->
         <a id="tui.reports.records.paramsOf"></a>
-      - fn [recordLabel](../../src/tui/reports/records.ts#L33) (record: OperationRecord) → string
+      - fn [recordLabel](../../src/tui/reports/records.ts#L37) (record: OperationRecord) → string
         <a id="tui.reports.records.recordLabel"></a><br>The registry label of a record's action, with its parameters (`Feature readiness · pay`), or its id.
         - calls [tui.reports.records.paramsOf](tui.md#tui.reports.records.paramsOf)
-      - fn [recordStatus](../../src/tui/reports/records.ts#L40) (record: OperationRecord) → string
+      - fn [recordStatus](../../src/tui/reports/records.ts#L44) (record: OperationRecord) → string
         <a id="tui.reports.records.recordStatus"></a><br>The status of a record for the F6 list: `running…` or `completed · code 0`, and `outdated` once its inputs changed.
-      - fn [summaryOf](../../src/tui/reports/records.ts#L46) (record: OperationRecord, result: Done<K>) → string <!-- internal -->
+      - fn [summaryOf](../../src/tui/reports/records.ts#L50) (record: OperationRecord, result: Done<K>) → string <!-- internal -->
         <a id="tui.reports.records.summaryOf"></a>
         - calls [tui.reports.records.recordStatus](tui.md#tui.reports.records.recordStatus)
-      - fn [recordSummary](../../src/tui/reports/records.ts#L51) (record: OperationRecord) → string
+      - fn [recordSummary](../../src/tui/reports/records.ts#L55) (record: OperationRecord) → string
         <a id="tui.reports.records.recordSummary"></a><br>The status with the domain outcome when there is one: `done · code 0`, `2 gap(s) · code 1`.
         - calls [tui.reports.records.isDone](tui.md#tui.reports.records.isDone), [tui.reports.records.summaryOf](tui.md#tui.reports.records.summaryOf), [tui.reports.records.recordStatus](tui.md#tui.reports.records.recordStatus)
-      - fn [rowsOf](../../src/tui/reports/records.ts#L56) (state: State, record: OperationRecord, result: Done<K>) → ReportRow[] <!-- internal -->
+      - fn [rowsOf](../../src/tui/reports/records.ts#L60) (state: State, record: OperationRecord, result: Done<K>) → ReportRow[] <!-- internal -->
         <a id="tui.reports.records.rowsOf"></a>
         - calls [tui.reports.records.summaryOf](tui.md#tui.reports.records.summaryOf)
-      - fn [timeStr](../../src/tui/reports/records.ts#L61) (ms: number) → string <!-- internal -->
+      - fn [timeStr](../../src/tui/reports/records.ts#L65) (ms: number) → string <!-- internal -->
         <a id="tui.reports.records.timeStr"></a>
-      - fn [resultsReportRows](../../src/tui/reports/records.ts#L70) (state: State) → ReportRow[]
+      - fn [resultsReportRows](../../src/tui/reports/records.ts#L74) (state: State) → ReportRow[]
         <a id="tui.reports.records.resultsReportRows"></a><br>The report rows of the record selected in the F6 panel: its parameters, timings and what its kind shows of the result. Presentation only — the payload in `record.result` carries the domain data.
         - calls [tui.reports.records.timeStr](tui.md#tui.reports.records.timeStr), [tui.reports.records.recordStatus](tui.md#tui.reports.records.recordStatus), [tui.reports.records.isDone](tui.md#tui.reports.records.isDone), [tui.reports.records.rowsOf](tui.md#tui.reports.records.rowsOf)
-      - fn [itemsOf](../../src/tui/reports/records.ts#L83) (state: State, result: Done<K>) → ReportItem[] <!-- internal -->
+      - fn [itemsOf](../../src/tui/reports/records.ts#L87) (state: State, result: Done<K>) → ReportItem[] <!-- internal -->
         <a id="tui.reports.records.itemsOf"></a>
-      - fn [reportItems](../../src/tui/reports/records.ts#L94) (state: State) → ReportItem[]
+      - fn [reportItems](../../src/tui/reports/records.ts#L98) (state: State) → ReportItem[]
         <a id="tui.reports.records.reportItems"></a><br>The items of the selected record the arrows select after Tab: the gaps of a feature record, every result of a check record, the evidence of an explained edge, the places of an explanation, the nodes of an inventory or a batch, the diagnostics of a parse, the symbols of a trace…
         - calls [tui.reports.records.isDone](tui.md#tui.reports.records.isDone), [tui.reports.records.itemsOf](tui.md#tui.reports.records.itemsOf)
-      - fn [itemNoun](../../src/tui/reports/records.ts#L100) (kind: OperationRequest["kind"]) → string
+      - fn [itemNoun](../../src/tui/reports/records.ts#L104) (kind: OperationRequest["kind"]) → string
         <a id="tui.reports.records.itemNoun"></a><br>What the panel's keys call the items of a kind: `evidence`, `diagnostic`, `node`; `finding` by default.
     - module [rows](../../src/tui/reports/rows.ts#L1)
-      <a id="tui.reports.rows"></a><br>What every report in F6 is made of: rows of text with a style, the kind of operation they show, and the few row shapes most reports share. One module per group of kinds (setup, check, explain, draft) describes its kinds; `records.ts` puts them in one table.
+      <a id="tui.reports.rows"></a><br>What every report in F6 is made of: rows of text with a style, the kind of operation they show, and the few row shapes most reports share. One module per group of kinds (setup, check, explain, draft, chat) describes its kinds; `records.ts` puts them in one table.
       - operations [operations.operations](operations.md#operations.operations)
       - screen [tui.screen](tui.md#tui.screen)
       - state [tui.state](tui.md#tui.state)
@@ -1740,50 +2173,50 @@
       - fn [rerunRecord](../../src/tui/results-panel.ts#L92) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.rerunRecord"></a><br>Enter in the panel: reruns the selected record with its exact parameters.
         - calls [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults)
-      - fn [resultsKey](../../src/tui/results-panel.ts#L126) (event: KeyEvent) → void
+      - fn [resultsKey](../../src/tui/results-panel.ts#L131) (event: KeyEvent) → void
         <a id="tui.results-panel.ResultsPanel.resultsKey"></a><br>While the panel is open its keys stay with it; Tab switches between the entries and the content.
         - calls [tui.results-panel.ResultsPanel.findingsKey](tui.md#tui.results-panel.ResultsPanel.findingsKey), [tui.view.layout](tui.md#tui.view.layout), [tui.view.reportOverflow](tui.md#tui.view.reportOverflow), [tui.reports.records.resultsReportRows](tui.md#tui.reports.records.resultsReportRows), [tui.results-panel.ResultsPanel.scrollReport](tui.md#tui.results-panel.ResultsPanel.scrollReport), [tui.results-panel.ResultsPanel.clampFinding](tui.md#tui.results-panel.ResultsPanel.clampFinding), [tui.results-panel.ResultsPanel.showGapReason](tui.md#tui.results-panel.ResultsPanel.showGapReason), [tui.results-panel.ResultsPanel.selectedGap](tui.md#tui.results-panel.ResultsPanel.selectedGap), [tui.results-panel.ResultsPanel.openGap](tui.md#tui.results-panel.ResultsPanel.openGap), [tui.results-panel.ResultsPanel.wireTarget](tui.md#tui.results-panel.ResultsPanel.wireTarget), [tui.results-panel.ResultsPanel.openWireTarget](tui.md#tui.results-panel.ResultsPanel.openWireTarget), [tui.results-panel.ResultsPanel.rerunRecord](tui.md#tui.results-panel.ResultsPanel.rerunRecord), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.results-panel.ResultsPanel.specCodeForGap](tui.md#tui.results-panel.ResultsPanel.specCodeForGap)
-      - fn [findingsKey](../../src/tui/results-panel.ts#L209) (event: KeyEvent) → void <!-- internal -->
+      - fn [findingsKey](../../src/tui/results-panel.ts#L214) (event: KeyEvent) → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.findingsKey"></a><br>The keys of the pinned "Current analysis" entry: the findings list with verdict filters.
         - calls [tui.view.findingsListRows](tui.md#tui.view.findingsListRows), [tui.view.layout](tui.md#tui.view.layout), [tui.results-panel.ResultsPanel.moveFinding](tui.md#tui.results-panel.ResultsPanel.moveFinding), [tui.results-panel.ResultsPanel.openFinding](tui.md#tui.results-panel.ResultsPanel.openFinding), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults), [tui.results-panel.ResultsPanel.clampFinding](tui.md#tui.results-panel.ResultsPanel.clampFinding)
-      - fn [moveFinding](../../src/tui/results-panel.ts#L262) (delta: number) → void <!-- internal -->
+      - fn [moveFinding](../../src/tui/results-panel.ts#L267) (delta: number) → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.moveFinding"></a><br>Moves the finding selection and keeps it in the visible part of the list.
         - calls [tui.results-panel.ResultsPanel.clampFinding](tui.md#tui.results-panel.ResultsPanel.clampFinding)
-      - fn [clampFinding](../../src/tui/results-panel.ts#L268) () → void
+      - fn [clampFinding](../../src/tui/results-panel.ts#L273) () → void
         <a id="tui.results-panel.ResultsPanel.clampFinding"></a><br>The finding selection stays within the filtered list, and the list scrolls to keep it in view.
         - calls [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.view.findingsListRows](tui.md#tui.view.findingsListRows), [tui.view.layout](tui.md#tui.view.layout)
-      - fn [selectedFinding](../../src/tui/results-panel.ts#L278) () → CheckResult | undefined
+      - fn [selectedFinding](../../src/tui/results-panel.ts#L283) () → CheckResult | undefined
         <a id="tui.results-panel.ResultsPanel.selectedFinding"></a><br>The finding selected in the filtered list of the current analysis, if any.
         - calls [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf)
-      - fn [openFinding](../../src/tui/results-panel.ts#L288) () → void <!-- internal -->
+      - fn [openFinding](../../src/tui/results-panel.ts#L293) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.openFinding"></a><br>Enter on a finding: the panel hides while the target is shown — a spec position in the editor (the file need not be among the Markdown buffers) or the line in the read-only code viewer. Esc / Ctrl+O return to the list without losing the selection and put back the place it was…
         - calls [tui.results-panel.ResultsPanel.selectedFinding](tui.md#tui.results-panel.ResultsPanel.selectedFinding), [tui.results-panel.ResultsPanel.openTarget](tui.md#tui.results-panel.ResultsPanel.openTarget)
-      - fn [openTarget](../../src/tui/results-panel.ts#L294) (file: string, targetLine: number, targetCol: number) → void <!-- internal -->
+      - fn [openTarget](../../src/tui/results-panel.ts#L299) (file: string, targetLine: number, targetCol: number) → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.openTarget"></a><br>Shows a spec position (1-based line, code-point column) or a code line with the F6 panel hidden; the origin is kept for the way back.
         - calls [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines), [tui.width.clusterAt](tui.md#tui.width.clusterAt)
-      - fn [returnToFindings](../../src/tui/results-panel.ts#L319) () → void
+      - fn [returnToFindings](../../src/tui/results-panel.ts#L324) () → void
         <a id="tui.results-panel.ResultsPanel.returnToFindings"></a><br>Back from a finding's target: the list with its selection, over the place the finding was opened from.
-      - fn [scrollReport](../../src/tui/results-panel.ts#L340) (delta: number) → void
+      - fn [scrollReport](../../src/tui/results-panel.ts#L345) (delta: number) → void
         <a id="tui.results-panel.ResultsPanel.scrollReport"></a>
         - calls [tui.results-panel.ResultsPanel.moveFinding](tui.md#tui.results-panel.ResultsPanel.moveFinding), [tui.reports.records.resultsReportRows](tui.md#tui.reports.records.resultsReportRows), [tui.reports.records.reportItems](tui.md#tui.reports.records.reportItems), [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.view.layout](tui.md#tui.view.layout), [tui.results-panel.ResultsPanel.showGapReason](tui.md#tui.results-panel.ResultsPanel.showGapReason)
-      - fn [selectedGap](../../src/tui/results-panel.ts#L363) () → ReportItem | undefined <!-- internal -->
+      - fn [selectedGap](../../src/tui/results-panel.ts#L368) () → ReportItem | undefined <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.selectedGap"></a>
         - calls [tui.reports.records.reportItems](tui.md#tui.reports.records.reportItems)
-      - fn [showGapReason](../../src/tui/results-panel.ts#L368) () → void <!-- internal -->
+      - fn [showGapReason](../../src/tui/results-panel.ts#L373) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.showGapReason"></a><br>The report row cuts a long reason; the message line shows the selected item's whole reason.
         - calls [tui.results-panel.ResultsPanel.selectedGap](tui.md#tui.results-panel.ResultsPanel.selectedGap), [tui.results-panel.ResultsPanel.plannedGap](tui.md#tui.results-panel.ResultsPanel.plannedGap)
-      - fn [plannedGap](../../src/tui/results-panel.ts#L374) () → string | null <!-- internal -->
+      - fn [plannedGap](../../src/tui/results-panel.ts#L379) () → string | null <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.plannedGap"></a><br>The ID of the selected gap of a feature report when it is a planned fn no code implements yet, else null.
         - calls [tui.reports.check.featureItems](tui.md#tui.reports.check.featureItems)
-      - fn [specCodeForGap](../../src/tui/results-panel.ts#L382) () → void <!-- internal -->
+      - fn [specCodeForGap](../../src/tui/results-panel.ts#L387) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.specCodeForGap"></a><br>`g` on a planned gap: the spec-to-code form with its ID; the report stays in the history.
         - calls [tui.results-panel.ResultsPanel.plannedGap](tui.md#tui.results-panel.ResultsPanel.plannedGap), [tui.results-panel.ResultsPanel.closeResults](tui.md#tui.results-panel.ResultsPanel.closeResults)
-      - fn [openGap](../../src/tui/results-panel.ts#L393) () → void <!-- internal -->
+      - fn [openGap](../../src/tui/results-panel.ts#L398) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.openGap"></a><br>Enter on a gap or a check result: its file and position, like a finding (Esc / Ctrl+O come back to the report).
         - calls [tui.results-panel.ResultsPanel.selectedGap](tui.md#tui.results-panel.ResultsPanel.selectedGap), [tui.results-panel.ResultsPanel.openTarget](tui.md#tui.results-panel.ResultsPanel.openTarget)
-      - fn [wireTarget](../../src/tui/results-panel.ts#L399) () → { file: string; line: number; col: number } | null <!-- internal -->
+      - fn [wireTarget](../../src/tui/results-panel.ts#L404) () → { file: string; line: number; col: number } | null <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.wireTarget"></a><br>What Enter over the selected wire report opens: the first blocking error, else the generated file when it is on disk.
-      - fn [openWireTarget](../../src/tui/results-panel.ts#L408) () → void <!-- internal -->
+      - fn [openWireTarget](../../src/tui/results-panel.ts#L413) () → void <!-- internal -->
         <a id="tui.results-panel.ResultsPanel.openWireTarget"></a><br>The generated code opens in the read-only viewer, not as a writable buffer; Esc / Ctrl+O come back to the report.
         - calls [tui.results-panel.ResultsPanel.wireTarget](tui.md#tui.results-panel.ResultsPanel.wireTarget), [tui.results-panel.ResultsPanel.openTarget](tui.md#tui.results-panel.ResultsPanel.openTarget)
   - module [screen](../../src/tui/screen.ts#L1)
@@ -1813,16 +2246,19 @@
         <a id="tui.screen.Grid.styleAt"></a><br>The style of one cell (tests check colours and emphasis this way).
       - fn [row](../../src/tui/screen.ts#L92) (y: number) → readonly Cell[]
         <a id="tui.screen.Grid.row"></a><br>Returns the array of cells stored at line index `y` of the grid, or an empty array when that line doesn't exist, so [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff) can compare rows without bounds checks. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [sgr](../../src/tui/screen.ts#L99) (style: Style) → string <!-- internal -->
+    - fn [drawBox](../../src/tui/screen.ts#L101) (grid: Grid, rect: { x: number; y: number; width: number; height: number }, title: string, style: Style, titleStyle: Style, round = false) → void
+      <a id="tui.screen.drawBox"></a><br>A box over the grid: filled with `style`, framed, its title on the top edge. `round` corners (`╭╮╰╯`) are the clip's window; the popups are square.
+      - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
+    - fn [sgr](../../src/tui/screen.ts#L115) (style: Style) → string <!-- internal -->
       <a id="tui.screen.sgr"></a><br>Builds an ANSI SGR escape sequence from a style record, always starting with a reset code and appending bold, dim, italic, underline, inverse, and 256-color foreground/background codes when set. Used by [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff) to emit terminal styling for changed cells. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [safeLink](../../src/tui/screen.ts#L116) (link: string | undefined) → string | undefined
+    - fn [safeLink](../../src/tui/screen.ts#L132) (link: string | undefined) → string | undefined
       <a id="tui.screen.safeLink"></a><br>An OSC 8 target that is safe to send: a control character (ESC, BEL, C1) would end the sequence early and let the rest of a URL from a spec reach the terminal as its own escape sequence. Such a link is dropped.
-    - fn [sameStyle](../../src/tui/screen.ts#L121) (a: Style, b: Style) → boolean <!-- internal -->
+    - fn [sameStyle](../../src/tui/screen.ts#L137) (a: Style, b: Style) → boolean <!-- internal -->
       <a id="tui.screen.sameStyle"></a><br>Compares two cell styles field by field — colors, link, and the boolean attributes coerced so missing and false match — so [`tui.screen.rowEqual`](tui.md#tui.screen.rowEqual) and [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff) can skip unchanged cells. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [rowEqual](../../src/tui/screen.ts#L125) (a: readonly Cell[], b: readonly Cell[]) → boolean <!-- internal -->
+    - fn [rowEqual](../../src/tui/screen.ts#L141) (a: readonly Cell[], b: readonly Cell[]) → boolean <!-- internal -->
       <a id="tui.screen.rowEqual"></a><br>Compares two rows of cells, returning false if lengths differ or any position has a different character or a style that [`tui.screen.sameStyle`](tui.md#tui.screen.sameStyle) rejects. Used by [`tui.screen.renderDiff`](tui.md#tui.screen.renderDiff) to skip unchanged rows when emitting terminal output. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.screen.sameStyle](tui.md#tui.screen.sameStyle)
-    - fn [renderDiff](../../src/tui/screen.ts#L132) (prev: Grid | null, next: Grid) → string
+    - fn [renderDiff](../../src/tui/screen.ts#L148) (prev: Grid | null, next: Grid) → string
       <a id="tui.screen.renderDiff"></a><br>ANSI that turns `prev` into `next` on screen; a full repaint when there is no `prev` or the size changed.
       - calls [tui.screen.Grid.row](tui.md#tui.screen.Grid.row), [tui.screen.rowEqual](tui.md#tui.screen.rowEqual), [tui.screen.sameStyle](tui.md#tui.screen.sameStyle), [tui.screen.safeLink](tui.md#tui.screen.safeLink), [tui.screen.sgr](tui.md#tui.screen.sgr)
   - module [state](../../src/tui/state.ts#L1)
@@ -1835,60 +2271,61 @@
     - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - ir [lang.ir](lang.md#lang.ir)
     - operations [operations.operations](operations.md#operations.operations)
+    - clip [tui.clip](tui.md#tui.clip)
     - findings [tui.findings](tui.md#tui.findings)
     - merge [tui.merge](tui.md#tui.merge)
-    - type [Mode](../../src/tui/state.ts#L15) = "view" | "edit" | "read" | "code" | "merge" | "zoom"
+    - type [Mode](../../src/tui/state.ts#L16) = "view" | "edit" | "read" | "code" | "merge" | "zoom"
       <a id="tui.state.Mode"></a><br>Union of the six interaction modes the terminal UI can be in: viewing, editing, reading, code, merging and zooming. It restricts the mode value held in UI state to exactly these string literals. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [Focus](../../src/tui/state.ts#L16) = "editor" | "nav" | "files" | "context" | "results"
+    - type [Focus](../../src/tui/state.ts#L17) = "editor" | "nav" | "files" | "context" | "results"
       <a id="tui.state.Focus"></a><br>A string-literal union naming the five panes that can hold keyboard focus in the TUI: editor, nav, files, context, and results, so the state can track which one receives input. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Cursor](../../src/tui/state.ts#L18)
+    - type [Cursor](../../src/tui/state.ts#L19)
       <a id="tui.state.Cursor"></a><br>Holds a text position as a 0-based line index and a 0-based column counted in Unicode code points rather than UTF-16 units. Used by the TUI layer to track where editing or selection is happening. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Buffer](../../src/tui/state.ts#L25)
+    - type [Buffer](../../src/tui/state.ts#L26)
       <a id="tui.state.Buffer"></a><br>Holds one open file in the editor: its current text alongside the saved and on-disk copies to detect unsaved or externally changed state, plus line-ending, read-only and new-file flags. Also carries the parsed `Document`, an undo stack of text-and-cursor snapshots, and a… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Hover](../../src/tui/state.ts#L51)
+    - type [Hover](../../src/tui/state.ts#L52)
       <a id="tui.state.Hover"></a><br>Describes a hover popup in the TUI: the screen cell it is anchored at, its typed lines (title, text, code, evidence, or rule), and whether it was triggered by the mouse or by pressing `K` at the cursor. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [CodeView](../../src/tui/state.ts#L60)
+    - type [CodeView](../../src/tui/state.ts#L61)
       <a id="tui.state.CodeView"></a><br>Holds the data a code pane renders for a single node location: the file path, its 1-based target line, the loaded text lines, the current scroll offset, and a `vscode://file/…:line` URL emitted as an OSC 8 hyperlink. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [MergeState](../../src/tui/state.ts#L70)
+    - type [MergeState](../../src/tui/state.ts#L71)
       <a id="tui.state.MergeState"></a><br>Holds everything an in-progress hunk-by-hunk merge needs: target path and origin, the mode to return to, base lines, the on-disk and proposal snapshots used to detect concurrent edits at `w`, plus hunks, decisions, undo history, and cursor/scroll position. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [LastMerge](../../src/tui/state.ts#L95)
+    - type [LastMerge](../../src/tui/state.ts#L96)
       <a id="tui.state.LastMerge"></a><br>Snapshot of the buffer, on-disk, and proposal-file text from before and after a merge so an `u` undo can revert it only when each target still matches its post-merge contents; a `code` flag marks source files checked on disk alone. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Prompt](../../src/tui/state.ts#L112)
+    - type [Prompt](../../src/tui/state.ts#L113)
       <a id="tui.state.Prompt"></a><br>State of the TUI's active input prompt: which command form or picker is open, the typed text, matching items with ids and notes, the selected index, and optional per-command form fields for checks, drafts, exports and explanations. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [C4Form](../../src/tui/state.ts#L178)
+    - type [C4Form](../../src/tui/state.ts#L179)
       <a id="tui.state.C4Form"></a><br>The choices of `export c4 [--format] [--level] [--layer]` (c4-zoom/12).
-    - type [ExplainPlanForm](../../src/tui/state.ts#L192)
+    - type [ExplainPlanForm](../../src/tui/state.ts#L193)
       <a id="tui.state.ExplainPlanForm"></a><br>The inventory form: the stale and gone saved explanations, or the plan of a brief batch (`missing` also plans stale briefs) with its estimate. The limit and the jobs are kept as typed and checked as the CLI checks them.
-    - type [SpecCodeForm](../../src/tui/state.ts#L199)
+    - type [SpecCodeForm](../../src/tui/state.ts#L200)
       <a id="tui.state.SpecCodeForm"></a><br>The fields of `spec-to-code <id> [--into] [--mode]`, and whether it proposes or only previews.
-    - type [CodeDraftForm](../../src/tui/state.ts#L215)
+    - type [CodeDraftForm](../../src/tui/state.ts#L216)
       <a id="tui.state.CodeDraftForm"></a><br>The fields of `code-to-spec <path[:line]> | --since <ref> [--into] [--mode]` and whether it proposes or only previews. `source` picks the fields the request takes: the other source's fields stay as typed but are never sent.
-    - type [RulesDraftForm](../../src/tui/state.ts#L230)
+    - type [RulesDraftForm](../../src/tui/state.ts#L231)
       <a id="tui.state.RulesDraftForm"></a><br>The fields of `draft rules [--into] [--mode]` and whether it proposes or only previews.
-    - type [DraftForm](../../src/tui/state.ts#L238)
+    - type [DraftForm](../../src/tui/state.ts#L239)
       <a id="tui.state.DraftForm"></a><br>The fields of `draft flow <trigger> [--name] [--into] [--mode]` and whether it proposes or only previews.
-    - type [ExportForm](../../src/tui/state.ts#L252)
+    - type [ExportForm](../../src/tui/state.ts#L253)
       <a id="tui.state.ExportForm"></a><br>The export form of one finished report. `expect` is the target as the form last showed it (null: absent); Save sends it, so a file changed after that is a conflict, never overwritten. `problem` is why Save is refused now.
-    - type [SpecKind](../../src/tui/state.ts#L266) = "flow" | "rules" | "wiring" | "feature" | "blank"
+    - type [SpecKind](../../src/tui/state.ts#L267) = "flow" | "rules" | "wiring" | "feature" | "blank"
       <a id="tui.state.SpecKind"></a><br>The kinds of a new specification: its first text follows the kind (design §2.8).
-    - type [NewSpecForm](../../src/tui/state.ts#L268)
+    - type [NewSpecForm](../../src/tui/state.ts#L269)
       <a id="tui.state.NewSpecForm"></a><br>Holds the in-progress state of the dialog that creates a new spec: which of the three steps is active, the chosen `SpecKind`, and the relative path once the path step is done (empty until then). _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [OperationRecord](../../src/tui/state.ts#L277)
+    - type [OperationRecord](../../src/tui/state.ts#L278)
       <a id="tui.state.OperationRecord"></a><br>A run of one explicit operation in this session, kept in memory for F6 (design §2.6).
-    - type [QuitStep](../../src/tui/state.ts#L307)
+    - type [QuitStep](../../src/tui/state.ts#L308)
       <a id="tui.state.QuitStep"></a><br>`q` or Ctrl+C while an explicit operation runs (design §5): Stay, or Cancel and exit. `waiting`: Cancel and exit was chosen and the operation is finishing its current file step; once it settles, the usual question about unsaved buffers is asked again — the cancel is no leave to…
-    - type [SaveBarrier](../../src/tui/state.ts#L320)
+    - type [SaveBarrier](../../src/tui/state.ts#L321)
       <a id="tui.state.SaveBarrier"></a><br>The step before an operation that reads the disk (design §2.5): the dirty spec and config buffers it would not see, and what it would write. Save and continue writes them in order and starts the operation only when every write succeeded; Back writes nothing. `error` names the…
-    - type [ConfigState](../../src/tui/state.ts#L341)
+    - type [ConfigState](../../src/tui/state.ts#L342)
       <a id="tui.state.ConfigState"></a><br>How the session found `keylang.json` on disk. The analysis always reads the saved file; an unsaved config buffer never takes effect.
-    - type [Place](../../src/tui/state.ts#L348)
+    - type [Place](../../src/tui/state.ts#L349)
       <a id="tui.state.Place"></a><br>Snapshot of a navigable location: a file path plus the cursor position and editing mode active there, so the TUI can record and return to a spot in a file. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [ZoomState](../../src/tui/state.ts#L358)
+    - type [ZoomState](../../src/tui/state.ts#L359)
       <a id="tui.state.ZoomState"></a><br>The zoom screen (c4-zoom/07): the map one level at a time. Lives only in the session; leaving it drops nothing on disk.
-    - type [State](../../src/tui/state.ts#L375)
-      <a id="tui.state.State"></a><br>The whole terminal UI's mutable state: open buffers, cursor and scroll, panels and focus, the latest analysis with its staleness and error, and modal steps (merge, save barrier, quit), plus completion, ghost suggestions and operation records. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-    - type [FeatureLine](../../src/tui/state.ts#L482)
-      <a id="tui.state.FeatureLine"></a><br>Where a feature file stands, for the status line.
+    - type [State](../../src/tui/state.ts#L376)
+      <a id="tui.state.State"></a><br>The whole terminal UI's mutable session state: open buffers, cursor and viewport, panels and focus, the latest analysis with its staleness and error flags, modal steps, operation records, completions, ghost lines and the clip chat. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+    - type [FeatureLine](../../src/tui/state.ts#L485)
+      <a id="tui.state.FeatureLine"></a><br>Where a feature file stands, for the status line and what the clip's model reads.
   - module [terminal](../../src/tui/terminal.ts#L1)
     <a id="tui.terminal"></a><br>`keylang` in a terminal: raw stdin, the alternate screen, SGR mouse, and `$VISUAL` / `$EDITOR` for jumps into code. The screen is restored on every exit path, including a crash, and `runTerminal` then returns a contract exit code to `main` (0 for a quit or a signal, 2 for a…
     - node [external.node](external.md#external.node)
@@ -1947,7 +2384,10 @@
     - config [base.config](base.md#base.config)
     - explain [features.explain](features.md#features.explain)
     - explanations [map.explanations](map.md#map.explanations)
+    - lsp-features [features.lsp-features](features.md#features.lsp-features)
     - actions [tui.actions](tui.md#tui.actions)
+    - clip [tui.clip](tui.md#tui.clip)
+    - clip-view [tui.clip-view](tui.md#tui.clip-view)
     - code-highlight [tui.code-highlight](tui.md#tui.code-highlight)
     - evidence [tui.evidence](tui.md#tui.evidence)
     - findings [tui.findings](tui.md#tui.findings)
@@ -1961,196 +2401,207 @@
     - theme [tui.theme](tui.md#tui.theme)
     - buffer [tui.buffer](tui.md#tui.buffer)
     - width [tui.width](tui.md#tui.width)
-    - type [Rect](../../src/tui/view.ts#L25)
+    - type [Rect](../../src/tui/view.ts#L28)
       <a id="tui.view.Rect"></a><br>Describes a rectangular screen region by its top-left origin and size, all as plain numbers, giving terminal UI code a shared shape for layout boundaries. It carries no behavior, only the four fields. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [Layout](../../src/tui/view.ts#L32)
+    - type [Layout](../../src/tui/view.ts#L35)
       <a id="tui.view.Layout"></a><br>Holds the screen rectangles computed for each TUI region: files and nav may be absent, while editor, detail and status are always present. The `panel` rect is where help, forms and modal steps draw, covering the editor area on wide terminals or the whole body on narrow ones. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [layout](../../src/tui/view.ts#L55) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
+    - fn [layout](../../src/tui/view.ts#L58) (state: Pick<State, "cols" | "rows" | "showFiles" | "showNav"> & { context?: State["context"]; focus?: State["focus"]; lastPanel?: State["lastPanel"] }) → Layout
       <a id="tui.view.layout"></a><br>Computes screen rectangles for the files pane, editor, side nav/context panel, detail line and status bar from the terminal size and panel flags. On narrow terminals it keeps only one side panel (the focused or last-opened) and lets an open context panel replace the nav at a… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - type [EditorRow](../../src/tui/view.ts#L85)
+    - type [EditorRow](../../src/tui/view.ts#L88)
       <a id="tui.view.EditorRow"></a><br>One editor row: a text line, or the expanded evidence row under the cursor line.
-    - fn [lineCount](../../src/tui/view.ts#L87) (buffer: Buffer) → number
+    - fn [lineCount](../../src/tui/view.ts#L90) (buffer: Buffer) → number
       <a id="tui.view.lineCount"></a><br>Returns how many lines a buffer contains by taking the length of the array produced by [`tui.buffer.bufferLines`](tui.md#tui.buffer.bufferLines). It feeds [`tui.view.editorRows`](tui.md#tui.view.editorRows) and [`tui.view.gutterWidth`](tui.md#tui.view.gutterWidth), which size the editor's visible rows and line-number column. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.buffer.bufferLines](tui.md#tui.buffer.bufferLines)
-    - fn [gutterWidth](../../src/tui/view.ts#L91) (buffer: Buffer) → number
+    - fn [gutterWidth](../../src/tui/view.ts#L94) (buffer: Buffer) → number
       <a id="tui.view.gutterWidth"></a><br>Computes the column width reserved for the editor's line-number gutter: a 2-column lead, the digit count of [`tui.view.lineCount`](tui.md#tui.view.lineCount) padded to at least 3, plus a trailing separator. Used by [`tui.view.drawEditor`](tui.md#tui.view.drawEditor), [`tui.view.drawCompletion`](tui.md#tui.view.drawCompletion), and the [`tui.app.App`](tui.md#tui.app.App) cursor/hit-test… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.view.lineCount](tui.md#tui.view.lineCount)
-    - fn [editorRows](../../src/tui/view.ts#L96) (state: State, buffer: Buffer, height: number) → EditorRow[]
+    - fn [editorRows](../../src/tui/view.ts#L99) (state: State, buffer: Buffer, height: number) → EditorRow[]
       <a id="tui.view.editorRows"></a><br>Rows shown from `top`: the cursor line gets an evidence row below it when it has evidence.
       - calls [tui.view.lineCount](tui.md#tui.view.lineCount), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf)
-    - fn [drawRuns](../../src/tui/view.ts#L112) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
+    - fn [drawRuns](../../src/tui/view.ts#L115) (grid: Grid, x: number, y: number, width: number, clusters: Iterable<{ cluster: string; point: number }>, runs: readonly Run[], base: Style) → void <!-- internal -->
       <a id="tui.view.drawRuns"></a><br>Draws clusters with their code-point positions until `width` cells are used; a cluster (a letter with its marks, a ZWJ emoji) takes the style of its first code point. Only what fits is visited, however long the line.
       - calls [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [fromLayout](../../src/tui/view.ts#L123) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromLayout](../../src/tui/view.ts#L126) (line: LineLayout, from: number) → Generator<{ cluster: string; point: number }> <!-- internal -->
       <a id="tui.view.fromLayout"></a><br>The clusters of a laid-out line from cluster `from` on.
-    - fn [fromText](../../src/tui/view.ts#L128) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
+    - fn [fromText](../../src/tui/view.ts#L131) (text: string) → Generator<{ cluster: string; point: number }> <!-- internal -->
       <a id="tui.view.fromText"></a><br>The clusters of `text` from the start, segmented only as far as they are read.
       - calls [tui.width.clusters](tui.md#tui.width.clusters)
-    - fn [cellsBetween](../../src/tui/view.ts#L137) (line: LineLayout, from: number, to: number) → number <!-- internal -->
+    - fn [cellsBetween](../../src/tui/view.ts#L140) (line: LineLayout, from: number, to: number) → number <!-- internal -->
       <a id="tui.view.cellsBetween"></a><br>Cells between clusters `from` and `to` of a laid-out line (0 when `to` is before `from`).
-    - fn [markCell](../../src/tui/view.ts#L142) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
+    - fn [markCell](../../src/tui/view.ts#L145) (item: LineEvidence | undefined, stale: boolean) → { glyph: string; style: Style } <!-- internal -->
       <a id="tui.view.markCell"></a><br>Maps a line's evidence mark to its gutter glyph and style via `MARK_GLYPH` and `MARK_STYLE`, returning a blank cell when there is no evidence. When stale, it dims the style and drops bold. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [detailText](../../src/tui/view.ts#L151) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
+    - fn [detailText](../../src/tui/view.ts#L154) (item: LineEvidence, snapshotId: string | null) → { text: string; style: Style }[]
       <a id="tui.view.detailText"></a><br>`ID ✓ static ✓ tests — trace ◌ …`: the channels of a line, never merged into one mark.
-    - fn [lineMessage](../../src/tui/view.ts#L173) (item: LineEvidence | undefined) → { text: string; style: Style } | null
+    - fn [lineMessage](../../src/tui/view.ts#L176) (item: LineEvidence | undefined) → { text: string; style: Style } | null
       <a id="tui.view.lineMessage"></a><br>The message for the cursor line: the first failing or unverified finding, with a fix hint.
       - calls [features.explain.explainCode](features.md#features.explain.explainCode)
-    - fn [drawBox](../../src/tui/view.ts#L186) (grid: Grid, rect: Rect, title: string, style: Style, titleStyle: Style) → void <!-- internal -->
-      <a id="tui.view.drawBox"></a><br>Fills a rectangle on the terminal grid via [`tui.screen.Grid.fill`](tui.md#tui.screen.Grid.fill) and draws a single-line Unicode border with [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write), optionally overlaying a padded, width-clipped title on the top edge. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [runsOf](../../src/tui/view.ts#L200) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
+    - fn [runsOf](../../src/tui/view.ts#L192) (buffer: Buffer, layers: readonly string[]) → Map<number, Run[]> <!-- internal -->
       <a id="tui.view.runsOf"></a><br>Returns per-line highlight runs for a buffer, caching them in a module-level map keyed by the buffer's document (or the buffer itself) and the joined layer names. On a cache miss, or whenever the buffer has no document, it recomputes via [`tui.theme.highlight`](tui.md#tui.theme.highlight) and stores the… _(llm · claude:claude-fable-5-1 · 2026-10-04)_
       - calls [tui.theme.highlight](tui.md#tui.theme.highlight)
-    - fn [drawEditor](../../src/tui/view.ts#L210) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawEditor](../../src/tui/view.ts#L202) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       <a id="tui.view.drawEditor"></a><br>Paints the editor pane: per-line evidence marks, line numbers, syntax runs from [`tui.view.runsOf`](tui.md#tui.view.runsOf), selection and cursor-line highlighting, and expanded detail rows. In edit mode it also overlays ghost-completion text and positions the cursor. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.runsOf](tui.md#tui.view.runsOf), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.editorRows](tui.md#tui.view.editorRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.detailText](tui.md#tui.view.detailText), [tui.view.markCell](tui.md#tui.view.markCell), [tui.view.drawRuns](tui.md#tui.view.drawRuns), [tui.view.fromLayout](tui.md#tui.view.fromLayout), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.width.graphemes](tui.md#tui.width.graphemes), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [readLayout](../../src/tui/view.ts#L256) (buffer: Buffer, width: number) → { rows: ReadRow[]; firstRow: Map<number, number> } <!-- internal -->
+    - fn [readLayout](../../src/tui/view.ts#L248) (buffer: Buffer, width: number) → { rows: ReadRow[]; firstRow: Map<number, number> } <!-- internal -->
       <a id="tui.view.readLayout"></a>
       - calls [tui.markdown.renderMarkdown](tui.md#tui.markdown.renderMarkdown)
-    - fn [readRows](../../src/tui/view.ts#L270) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; firstRow: Map<number, number>; cursorRow: number; top: number } <!-- internal -->
+    - fn [readRows](../../src/tui/view.ts#L262) (state: State, buffer: Buffer, rect: Rect) → { rows: ReadRow[]; firstRow: Map<number, number>; cursorRow: number; top: number } <!-- internal -->
       <a id="tui.view.readRows"></a><br>Reading mode: the rendered rows, the first row of each source line, the row of the cursor line, and the first row shown.
       - calls [tui.view.readLayout](tui.md#tui.view.readLayout)
-    - fn [readCursorRow](../../src/tui/view.ts#L279) (state: State, buffer: Buffer, rect: Rect) → number
+    - fn [readCursorRow](../../src/tui/view.ts#L271) (state: State, buffer: Buffer, rect: Rect) → number
       <a id="tui.view.readCursorRow"></a><br>The screen row (from the editor's top) where reading mode shows the cursor line: popups anchor there.
       - calls [tui.view.readRows](tui.md#tui.view.readRows)
-    - fn [drawRead](../../src/tui/view.ts#L284) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
+    - fn [drawRead](../../src/tui/view.ts#L276) (grid: Grid, state: State, rect: Rect, buffer: Buffer) → void <!-- internal -->
       <a id="tui.view.drawRead"></a><br>Renders the visible rows of a source buffer into the grid via [`tui.view.readRows`](tui.md#tui.view.readRows), highlighting the cursor line and placing an evidence gutter mark from [`tui.view.markCell`](tui.md#tui.view.markCell) on each line's first row. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.readRows](tui.md#tui.view.readRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.view.markCell](tui.md#tui.view.markCell), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawCode](../../src/tui/view.ts#L304) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawCode](../../src/tui/view.ts#L296) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawCode"></a><br>Renders the read-only source panel: a title bar with a file:line link and an Esc hint, then line-numbered rows from the scroll offset, marking the target line and painting [`tui.code-highlight.highlightCode`](tui.md#tui.code-highlight.highlightCode) runs via [`tui.view.drawRuns`](tui.md#tui.view.drawRuns). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.code-highlight.highlightCode](tui.md#tui.code-highlight.highlightCode), [tui.view.drawRuns](tui.md#tui.view.drawRuns), [tui.view.fromText](tui.md#tui.view.fromText)
-    - fn [zoomListHeight](../../src/tui/view.ts#L329) (state: Pick<State, "rows">, rect: Rect) → number
+    - fn [zoomListHeight](../../src/tui/view.ts#L321) (state: Pick<State, "rows">, rect: Rect) → number
       <a id="tui.view.zoomListHeight"></a><br>Rows the list of the zoom screen has in `rect`.
-    - fn [originText](../../src/tui/view.ts#L339) (e: NodeExplanation) → string <!-- internal -->
+    - fn [originText](../../src/tui/view.ts#L331) (e: NodeExplanation) → string <!-- internal -->
       <a id="tui.view.originText"></a><br>Where an explanation's words come from, as the nav panel says it.
       - calls [map.explanations.modelName](map.md#map.explanations.modelName)
-    - fn [fitCrumbs](../../src/tui/view.ts#L345) (labels: readonly string[], width: number) → string
+    - fn [fitCrumbs](../../src/tui/view.ts#L337) (labels: readonly string[], width: number) → string
       <a id="tui.view.fitCrumbs"></a><br>Crumbs that fit `width`: the nearest levels kept, the farthest cut first behind `…`.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [zoomRowText](../../src/tui/view.ts#L354) (state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null) → { text: string; right: string }
+    - fn [zoomRowText](../../src/tui/view.ts#L346) (state: State, row: ZoomRow, width: number, overlay: FlowOverlay | null = null) → { text: string; right: string }
       <a id="tui.view.zoomRowText"></a><br>The text of a zoom row: zoom mark, kind, name, distance, and the brief when there is room.
       - calls [tui.view.stepsMark](tui.md#tui.view.stepsMark), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.fitWidth](tui.md#tui.width.fitWidth)
-    - fn [endLabel](../../src/tui/view.ts#L371) (focus: string, id: string) → string <!-- internal -->
+    - fn [endLabel](../../src/tui/view.ts#L363) (focus: string, id: string) → string <!-- internal -->
       <a id="tui.view.endLabel"></a><br>An end of an edge row as the level names it: a child by its name under the focus, anything else by its ID.
-    - fn [zoomEdgeText](../../src/tui/view.ts#L376) (focus: string, edge: ZoomEdge, walked = false) → { text: string; right: string }
+    - fn [zoomEdgeText](../../src/tui/view.ts#L368) (focus: string, edge: ZoomEdge, walked = false) → { text: string; right: string }
       <a id="tui.view.zoomEdgeText"></a><br>The text of an edges-view row: group, `from → to`, the kinds with counts, and the count.
       - calls [tui.view.endLabel](tui.md#tui.view.endLabel)
-    - fn [stepsMark](../../src/tui/view.ts#L386) (overlay: FlowOverlay, steps: readonly number[]) → Mark | null <!-- internal -->
+    - fn [stepsMark](../../src/tui/view.ts#L378) (overlay: FlowOverlay, steps: readonly number[]) → Mark | null <!-- internal -->
       <a id="tui.view.stepsMark"></a><br>The worst gutter mark of the steps a row stands for: the same marks the flow's lines have.
       - calls [tui.evidence.worse](tui.md#tui.evidence.worse)
-    - fn [flowSequence](../../src/tui/view.ts#L393) (overlay: FlowOverlay) → string
+    - fn [flowSequence](../../src/tui/view.ts#L385) (overlay: FlowOverlay) → string
       <a id="tui.view.flowSequence"></a><br>The layers a flow walks, in the order its steps are written: `cli ① → map ②–④`.
       - calls [tui.zoom.circled](tui.md#tui.zoom.circled)
-    - type [ZoomButton](../../src/tui/view.ts#L398)
+    - type [ZoomButton](../../src/tui/view.ts#L390)
       <a id="tui.view.ZoomButton"></a><br>A clickable part of the zoom screen's header row (c4-zoom/10): what it does and where it is.
-    - fn [zoomButtons](../../src/tui/view.ts#L411) (zoom: { depth: number; view: "nodes" | "edges"; flow: string | null }, width: number) → { text: string; buttons: ZoomButton[] }
+    - fn [zoomButtons](../../src/tui/view.ts#L403) (zoom: { depth: number; view: "nodes" | "edges"; flow: string | null }, width: number) → { text: string; buttons: ZoomButton[] }
       <a id="tui.view.zoomButtons"></a><br>The header's buttons, right-aligned, and their text: `[−] [+] [depth N ▾▴] [c edges] [f flow ▾]`. Each does what its key does; the crumbs get what is left of the row, so on a narrow terminal the crumbs are cut, never a button. `▾` and `▴` are buttons of their own inside the…
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [drawZoom](../../src/tui/view.ts#L443) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawZoom](../../src/tui/view.ts#L435) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawZoom"></a><br>The zoom screen (c4-zoom/07): crumbs and depth, what the focus is with where the words come from, then the level's rows — children, then the neighbors with their distance — the selected one highlighted.
       - calls [tui.zoom.zoomLevel](tui.md#tui.zoom.zoomLevel), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.zoom.flowOverlay](tui.md#tui.zoom.flowOverlay), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.zoomButtons](tui.md#tui.view.zoomButtons), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.fitCrumbs](tui.md#tui.view.fitCrumbs), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [tui.view.wordRows](tui.md#tui.view.wordRows), [tui.view.originText](tui.md#tui.view.originText), [tui.view.flowSequence](tui.md#tui.view.flowSequence), [tui.view.zoomListHeight](tui.md#tui.view.zoomListHeight), [tui.zoom.zoomEdges](tui.md#tui.zoom.zoomEdges), [tui.zoom.zoomSelectKey](tui.md#tui.zoom.zoomSelectKey), [tui.view.zoomEdgeText](tui.md#tui.view.zoomEdgeText), [tui.view.zoomRowText](tui.md#tui.view.zoomRowText), [tui.view.stepsMark](tui.md#tui.view.stepsMark)
-    - fn [drawMerge](../../src/tui/view.ts#L503) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawMerge](../../src/tui/view.ts#L495) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawMerge"></a><br>Renders the merge-review panel: a title with file, origin, current hunk and accept/reject/pending counts, then scrolled [`tui.merge.mergeRows`](tui.md#tui.merge.mergeRows) lines with hunk marker, decision glyph, diff sign, and dimmed discarded changes. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.merge.mergeRows](tui.md#tui.merge.mergeRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawPanelList](../../src/tui/view.ts#L528) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
+    - fn [drawPanelList](../../src/tui/view.ts#L520) (grid: Grid, rect: Rect, title: string, entries: { text: string; mark: { glyph: string; style: Style } | null; style?: Style }[], selected: number, focused: boolean, top: number) → void <!-- internal -->
       <a id="tui.view.drawPanelList"></a><br>Renders a titled, scrollable panel list starting at a top offset, highlighting the selected row differently when focused and drawing optional right-aligned marker glyphs via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [navEntries](../../src/tui/view.ts#L542) (state: State) → NavItem[]
+    - fn [navEntries](../../src/tui/view.ts#L534) (state: State) → NavItem[]
       <a id="tui.view.navEntries"></a><br>Builds the visible navigation list from the state's analysis and expanded-node set by delegating to [`tui.nav.navItems`](tui.md#tui.nav.navItems), giving rendering and input handlers like [`tui.view.drawNav`](tui.md#tui.view.drawNav) and [`tui.app.App.navKey`](tui.md#tui.app.App.navKey) one shared source. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.nav.navItems](tui.md#tui.nav.navItems)
-    - fn [navNote](../../src/tui/view.ts#L554) (state: State, width: number) → string[]
+    - fn [navNote](../../src/tui/view.ts#L546) (state: State, width: number) → string[]
       <a id="tui.view.navNote"></a><br>The explanation of the node selected in the nav panel, wrapped to `width` cells with its origin (`code`, or `llm · model · date`, `stale`); none for a node without one or an item that is no node.
       - calls [tui.view.navEntries](tui.md#tui.view.navEntries), [map.explanations.explanationOf](map.md#map.explanations.explanationOf), [tui.view.wordRows](tui.md#tui.view.wordRows)
-    - fn [wordRows](../../src/tui/view.ts#L566) (text: string, width: number) → string[] <!-- internal -->
+    - fn [wordRows](../../src/tui/view.ts#L558) (text: string, width: number) → string[] <!-- internal -->
       <a id="tui.view.wordRows"></a><br>An explanation as rows of `width` cells: its whitespace, line breaks included, one space between words; no words, no rows.
       - calls [tui.width.wrapCells](tui.md#tui.width.wrapCells)
-    - fn [navListHeight](../../src/tui/view.ts#L572) (state: State, rect: Rect) → number
+    - fn [navListHeight](../../src/tui/view.ts#L564) (state: State, rect: Rect) → number
       <a id="tui.view.navListHeight"></a><br>Rows of the nav panel's list: what the explanation of the selected node leaves.
       - calls [tui.view.navNote](tui.md#tui.view.navNote)
-    - fn [drawNav](../../src/tui/view.ts#L577) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawNav](../../src/tui/view.ts#L569) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawNav"></a><br>Renders the navigation panel via [`tui.view.drawPanelList`](tui.md#tui.view.drawPanelList) as an indented tree with expand arrows and status marks (dimmed while updating or outdated), reserving a bottom area for any [`tui.view.navNote`](tui.md#tui.view.navNote) text. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.view.navNote](tui.md#tui.view.navNote), [tui.view.navListHeight](tui.md#tui.view.navListHeight), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.navEntries](tui.md#tui.view.navEntries), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList)
-    - fn [drawContext](../../src/tui/view.ts#L600) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawContext](../../src/tui/view.ts#L592) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawContext"></a><br>What goes to the model: kind, label and tokens per item; `◇` planned, `?` incomplete data.
       - calls [features.agent-context.contextPack](features.md#features.agent-context.contextPack), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList), [tui.view.contextTop](tui.md#tui.view.contextTop)
-    - fn [contextTop](../../src/tui/view.ts#L611) (index: number, rect: Rect) → number
+    - fn [contextTop](../../src/tui/view.ts#L603) (index: number, rect: Rect) → number
       <a id="tui.view.contextTop"></a><br>First item shown in the context panel: the list scrolls to keep the selected item in view. A click maps rows the same way.
-    - fn [drawFiles](../../src/tui/view.ts#L615) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawFiles](../../src/tui/view.ts#L607) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawFiles"></a><br>Renders the FILES panel listing open files, appending " +" for dirty buffers ([`tui.buffer.isDirty`](tui.md#tui.buffer.isDirty)) and " ≈" for pending proposals, highlighting the current file via [`tui.view.drawPanelList`](tui.md#tui.view.drawPanelList) scrolled by [`tui.view.filesTop`](tui.md#tui.view.filesTop). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.view.drawPanelList](tui.md#tui.view.drawPanelList), [tui.view.filesTop](tui.md#tui.view.filesTop)
-    - fn [filesTop](../../src/tui/view.ts#L626) (state: Pick<State, "filesIndex">, rect: Rect) → number
+    - fn [filesTop](../../src/tui/view.ts#L618) (state: Pick<State, "filesIndex">, rect: Rect) → number
       <a id="tui.view.filesTop"></a><br>First file shown in the panel: the list scrolls to keep the selected file in view. A click maps rows the same way.
-    - fn [resultsSplit](../../src/tui/view.ts#L633) (state: State, height: number) → { list: number; report: number }
+    - fn [resultsSplit](../../src/tui/view.ts#L625) (state: State, height: number) → { list: number; report: number }
       <a id="tui.view.resultsSplit"></a><br>How the F6 panel splits: the entries list on top, the content of the selected entry below.
-    - fn [findingStateRow](../../src/tui/view.ts#L643) (state: State) → string | null
+    - fn [findingStateRow](../../src/tui/view.ts#L635) (state: State) → string | null
       <a id="tui.view.findingStateRow"></a><br>Why the shown analysis is not a plain current check: a failed run, an update in flight, changes since the analysis, or unsaved buffers taken as overlay.
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.view.configNote](tui.md#tui.view.configNote)
-    - fn [findingDetailRows](../../src/tui/view.ts#L666) (state: State, width: number) → string[]
+    - fn [findingDetailRows](../../src/tui/view.ts#L658) (state: State, width: number) → string[]
       <a id="tui.view.findingDetailRows"></a><br>The details of the selected finding, wrapped to `width`: its full message (the list row cuts it) and then criterion, provenance, snapshot and reason; without a selection, why the list is empty. Always the same number of rows, so the list does not jump while the selection moves.
       - calls [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.actions.noSnapshotReason](tui.md#tui.actions.noSnapshotReason), [tui.view.padRows](tui.md#tui.view.padRows), [tui.view.clipRows](tui.md#tui.view.clipRows), [tui.width.wrapCells](tui.md#tui.width.wrapCells), [tui.findings.findingDetailText](tui.md#tui.findings.findingDetailText)
-    - fn [clipRows](../../src/tui/view.ts#L677) (rows: string[], count: number, width: number) → string[] <!-- internal -->
+    - fn [clipRows](../../src/tui/view.ts#L669) (rows: string[], count: number, width: number) → string[] <!-- internal -->
       <a id="tui.view.clipRows"></a><br>The first `count` rows; a cut ends with `…`.
       - calls [tui.width.fitWidth](tui.md#tui.width.fitWidth)
-    - fn [padRows](../../src/tui/view.ts#L681) (rows: string[]) → string[] <!-- internal -->
+    - fn [padRows](../../src/tui/view.ts#L673) (rows: string[]) → string[] <!-- internal -->
       <a id="tui.view.padRows"></a><br>Appends empty strings to the given rows until the array is at least `DETAIL_MESSAGE_ROWS + DETAIL_META_ROWS` long, never truncating. Used by [`tui.view.findingDetailRows`](tui.md#tui.view.findingDetailRows) so the finding detail panel keeps a fixed height. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
-    - fn [findingsListRows](../../src/tui/view.ts#L686) (state: State, rect: Rect) → number
+    - fn [findingsListRows](../../src/tui/view.ts#L678) (state: State, rect: Rect) → number
       <a id="tui.view.findingsListRows"></a><br>Rows the findings list takes inside the panel `rect`: the counts, the state and the details of the selected finding come first.
       - calls [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.view.findingDetailRows](tui.md#tui.view.findingDetailRows), [tui.view.findingStateRow](tui.md#tui.view.findingStateRow)
-    - fn [drawResults](../../src/tui/view.ts#L693) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+    - fn [drawResults](../../src/tui/view.ts#L685) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawResults"></a><br>The F6 panel over the editor area: the entries on top, the content of the selected entry below.
       - calls [tui.reports.records.reportItems](tui.md#tui.reports.records.reportItems), [tui.reports.records.itemNoun](tui.md#tui.reports.records.itemNoun), [features.agent-cli.selectedAgent](features.md#features.agent-cli.selectedAgent), [tui.actions.exportRecord](tui.md#tui.actions.exportRecord), [tui.view.reportOverflow](tui.md#tui.view.reportOverflow), [tui.reports.records.resultsReportRows](tui.md#tui.reports.records.resultsReportRows), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.resultsSplit](tui.md#tui.view.resultsSplit), [tui.findings.findingCounts](tui.md#tui.findings.findingCounts), [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.reports.records.recordLabel](tui.md#tui.reports.records.recordLabel), [tui.reports.records.recordStatus](tui.md#tui.reports.records.recordStatus), [tui.view.drawFindings](tui.md#tui.view.drawFindings), [tui.width.sliceCells](tui.md#tui.width.sliceCells)
-    - fn [reportOverflow](../../src/tui/view.ts#L785) (rows: readonly { text: string }[], width: number) → number
+    - fn [reportOverflow](../../src/tui/view.ts#L777) (rows: readonly { text: string }[], width: number) → number
       <a id="tui.view.reportOverflow"></a><br>How far ←→ can scroll the report: until the widest row ends in view. A scrolled row starts with `…` in a cell of its own (`sliceCells`), so that is one cell more than the row exceeds `width` by; 0 when every row fits.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [drawFindings](../../src/tui/view.ts#L792) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
+    - fn [drawFindings](../../src/tui/view.ts#L784) (grid: Grid, state: State, rect: Rect, dividerY: number) → void <!-- internal -->
       <a id="tui.view.drawFindings"></a><br>The full findings report of the current analysis: counts, filters, the selected finding's details, and the list.
       - calls [tui.findings.findingsOf](tui.md#tui.findings.findingsOf), [tui.findings.visibleFindings](tui.md#tui.findings.visibleFindings), [tui.findings.findingCounts](tui.md#tui.findings.findingCounts), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.findingStateRow](tui.md#tui.view.findingStateRow), [tui.view.findingDetailRows](tui.md#tui.view.findingDetailRows), [tui.findings.findingRow](tui.md#tui.findings.findingRow)
-    - fn [drawHover](../../src/tui/view.ts#L836) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
-      <a id="tui.view.drawHover"></a><br>Draws the hover popup in the editor as a box sized to its lines (capped at 72 columns) via [`tui.view.drawBox`](tui.md#tui.view.drawBox), placed below the cursor or above if it won't fit, and writes each line styled by its kind with [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawCompletion](../../src/tui/view.ts#L850) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
-      <a id="tui.view.drawCompletion"></a><br>Renders the autocomplete popup as a boxed window of up to eight items near the cursor, below it when space allows, otherwise above, via [`tui.view.drawBox`](tui.md#tui.view.drawBox). The selected entry is highlighted and "planned" items are tagged. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [keyRows](../../src/tui/view.ts#L954) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
+    - fn [hoverRect](../../src/tui/view.ts#L829) (hover: NonNullable<State["hover"]>, editor: Rect) → Rect <!-- internal -->
+      <a id="tui.view.hoverRect"></a><br>The hover's box: below its anchor where it fits, else above; inside the editor.
+      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
+    - fn [drawHover](../../src/tui/view.ts#L838) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+      <a id="tui.view.drawHover"></a><br>Renders the hover popup as a bordered box positioned by [`tui.view.hoverRect`](tui.md#tui.view.hoverRect), writing its lines clipped to the box height. Each line is styled by kind (title, code, evidence), and rule lines draw as a horizontal divider. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [tui.view.hoverRect](tui.md#tui.view.hoverRect), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
+    - fn [completionBox](../../src/tui/view.ts#L850) (state: State, editor: Rect, buffer: Buffer) → { rect: Rect; visible: CompletionItem[]; offset: number } <!-- internal -->
+      <a id="tui.view.completionBox"></a><br>The completion's box and the items it shows: under the cursor line where it fits, else above.
+      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
+    - fn [drawCompletion](../../src/tui/view.ts#L862) (grid: Grid, state: State, editor: Rect, buffer: Buffer) → void <!-- internal -->
+      <a id="tui.view.drawCompletion"></a><br>Renders the completion popup during [`tui.view.render`](tui.md#tui.view.render): draws a box titled with the item count via [`tui.screen.drawBox`](tui.md#tui.screen.drawBox), then writes each visible item's label and detail, highlighting the selected one and prefixing "planned" items. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [tui.view.completionBox](tui.md#tui.view.completionBox), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.padWidth](tui.md#tui.width.padWidth)
+    - fn [keyRows](../../src/tui/view.ts#L968) (pairs: readonly [string, string][], width: number) → string[] <!-- internal -->
       <a id="tui.view.keyRows"></a><br>The key rows of a mode: two pairs a row where both fit in `width`, else one; a long pair takes its own row.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [helpRows](../../src/tui/view.ts#L978) (state: State, width: number) → string[]
+    - fn [helpRows](../../src/tui/view.ts#L992) (state: State, width: number) → string[]
       <a id="tui.view.helpRows"></a><br>The rows of the help popup, wrapped to `width`: the keys of the mode, the offline help of the line's diagnostic, then the whole catalogue by group — the same registry the palette searches, with each key as the mode has it and the reason of each unavailable action.
       - calls [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [features.explain.explainCode](features.md#features.explain.explainCode), [tui.view.keyRows](tui.md#tui.view.keyRows), [tui.actions.catalog](tui.md#tui.actions.catalog), [tui.actions.actionKey](tui.md#tui.actions.actionKey), [tui.width.wrapCells](tui.md#tui.width.wrapCells)
-    - fn [helpBox](../../src/tui/view.ts#L1011) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
+    - fn [helpBox](../../src/tui/view.ts#L1025) (state: State) → { rect: Rect; rows: string[]; visible: number } <!-- internal -->
       <a id="tui.view.helpBox"></a><br>Where the help popup draws, its rows and how many of them show at once.
       - calls [tui.view.layout](tui.md#tui.view.layout), [tui.view.helpRows](tui.md#tui.view.helpRows)
-    - fn [helpScrollMax](../../src/tui/view.ts#L1022) (state: State) → number
+    - fn [helpScrollMax](../../src/tui/view.ts#L1036) (state: State) → number
       <a id="tui.view.helpScrollMax"></a><br>The last first row the help can scroll to.
       - calls [tui.view.helpBox](tui.md#tui.view.helpBox)
-    - fn [drawHelp](../../src/tui/view.ts#L1027) (grid: Grid, state: State) → void <!-- internal -->
-      <a id="tui.view.drawHelp"></a><br>Renders the key-help popup onto the grid: a box from [`tui.view.helpBox`](tui.md#tui.view.helpBox) titled with the current mode, filled with the clamped scroll window of help rows. Adds a position and scroll hint when rows overflow. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.view.helpBox](tui.md#tui.view.helpBox), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - type [PromptLook](../../src/tui/view.ts#L1042) <!-- internal -->
+    - fn [drawHelp](../../src/tui/view.ts#L1041) (grid: Grid, state: State) → void <!-- internal -->
+      <a id="tui.view.drawHelp"></a><br>Draws the key-help popup for the current mode, using [`tui.view.helpBox`](tui.md#tui.view.helpBox) for size and rows and showing a scrolled window of lines via [`tui.screen.Grid.write`](tui.md#tui.screen.Grid.write). If rows overflow, it adds a position and scroll-hint footer. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [tui.view.helpBox](tui.md#tui.view.helpBox), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
+    - type [PromptLook](../../src/tui/view.ts#L1056) <!-- internal -->
       <a id="tui.view.PromptLook"></a><br>How the prompt line and the box over the editor show each kind of prompt: the label before the typed text; what stands as typed when a form types into its rows (the prompt's text otherwise); the box's title; and whether the selected item's note follows on the line (a search, a…
-    - fn [drawPrompt](../../src/tui/view.ts#L1092) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
-      <a id="tui.view.drawPrompt"></a><br>Draws the active prompt's status line with label, typed text, cursor and a note or message, then, except for search/context prompts, a scrolling boxed choice list above the editor via [`tui.view.drawBox`](tui.md#tui.view.drawBox). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.wrapCells](tui.md#tui.width.wrapCells), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.width.padWidth](tui.md#tui.width.padWidth)
-    - fn [newSpecLabel](../../src/tui/view.ts#L1127) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
+    - fn [drawPrompt](../../src/tui/view.ts#L1106) (grid: Grid, state: State, rect: Rect, editor: Rect) → void <!-- internal -->
+      <a id="tui.view.drawPrompt"></a><br>Paints the active prompt's status line with label, typed text, cursor and a message or note, then for list prompts draws a scrolling boxed popup of details and choices above the editor via [`tui.screen.drawBox`](tui.md#tui.screen.drawBox). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.width.wrapCells](tui.md#tui.width.wrapCells), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.width.padWidth](tui.md#tui.width.padWidth)
+    - fn [newSpecLabel](../../src/tui/view.ts#L1141) (field: "kind" | "path" | "name" | undefined) → string <!-- internal -->
       <a id="tui.view.newSpecLabel"></a><br>The label of the field the new-spec form is on.
-    - fn [footerHint](../../src/tui/view.ts#L1146) (mode: State["mode"], width: number) → string
+    - fn [footerHint](../../src/tui/view.ts#L1160) (mode: State["mode"], width: number) → string
       <a id="tui.view.footerHint"></a><br>The footer hint of the mode that fits in `width` cells: the leading keys that fit, and the tail.
       - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth)
-    - fn [configNote](../../src/tui/view.ts#L1161) (state: State) → string | null
+    - fn [configNote](../../src/tui/view.ts#L1175) (state: State) → string | null
       <a id="tui.view.configNote"></a><br>Where the analysis takes its settings from, when that is not a plain saved `keylang.json`: a guess (no config), or the saved file while the buffer of `keylang.json` has unsaved edits that do not take effect.
       - calls [tui.buffer.isDirty](tui.md#tui.buffer.isDirty)
-    - fn [drawBarrier](../../src/tui/view.ts#L1170) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+    - fn [drawBarrier](../../src/tui/view.ts#L1184) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawBarrier"></a><br>The save step before an operation that reads the disk (design §2.5), over the editor area.
-      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawQuit](../../src/tui/view.ts#L1198) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
+      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
+    - fn [drawQuit](../../src/tui/view.ts#L1212) (grid: Grid, state: State, editor: Rect) → void <!-- internal -->
       <a id="tui.view.drawQuit"></a><br>The quit step while an operation runs (design §5), over the editor area.
-      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.view.drawBox](tui.md#tui.view.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [drawStart](../../src/tui/view.ts#L1223) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
+      - calls [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.screen.drawBox](tui.md#tui.screen.drawBox), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
+    - fn [drawStart](../../src/tui/view.ts#L1237) (grid: Grid, state: State, rect: Rect) → void <!-- internal -->
       <a id="tui.view.drawStart"></a><br>The start screen of a repository without `keylang.json` (design §2.1): what was found and what can be done.
       - calls [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write)
-    - fn [render](../../src/tui/view.ts#L1243) (state: State) → Grid
-      <a id="tui.view.render"></a><br>Builds the full terminal frame as a [`tui.screen.Grid`](tui.md#tui.screen.Grid): title, side panels, a mode-specific body ([`tui.view.drawEditor`](tui.md#tui.view.drawEditor), [`tui.view.drawMerge`](tui.md#tui.view.drawMerge), etc.), detail line, status bar with evidence totals, then any open popups. _(llm · claude:claude-opus-5-5 · 2026-10-05)_
-      - calls [tui.screen.Grid](tui.md#tui.screen.Grid), [tui.view.layout](tui.md#tui.view.layout), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.drawFiles](tui.md#tui.view.drawFiles), [tui.view.drawContext](tui.md#tui.view.drawContext), [tui.view.drawNav](tui.md#tui.view.drawNav), [tui.view.drawStart](tui.md#tui.view.drawStart), [tui.view.drawCode](tui.md#tui.view.drawCode), [tui.view.drawZoom](tui.md#tui.view.drawZoom), [tui.view.drawMerge](tui.md#tui.view.drawMerge), [tui.view.drawRead](tui.md#tui.view.drawRead), [tui.view.drawEditor](tui.md#tui.view.drawEditor), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.lineMessage](tui.md#tui.view.lineMessage), [tui.view.footerHint](tui.md#tui.view.footerHint), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.evidence.totals](tui.md#tui.evidence.totals), [tui.view.configNote](tui.md#tui.view.configNote), [tui.view.drawResults](tui.md#tui.view.drawResults), [tui.view.drawHover](tui.md#tui.view.drawHover), [tui.view.drawCompletion](tui.md#tui.view.drawCompletion), [tui.view.drawHelp](tui.md#tui.view.drawHelp), [tui.view.drawPrompt](tui.md#tui.view.drawPrompt), [tui.view.drawBarrier](tui.md#tui.view.drawBarrier), [tui.view.drawQuit](tui.md#tui.view.drawQuit)
+    - fn [hoverShown](../../src/tui/view.ts#L1258) (state: State) → boolean <!-- internal -->
+      <a id="tui.view.hoverShown"></a><br>The hover is drawn: over the raw or the read text, or the zoom screen.
+    - fn [editorCursorCell](../../src/tui/view.ts#L1263) (state: State, editor: Rect, buffer: Buffer | null) → Cell | null <!-- internal -->
+      <a id="tui.view.editorCursorCell"></a><br>The cell of the editor's cursor while the raw text is shown (view, edit), whether the terminal shows it or not.
+      - calls [tui.view.gutterWidth](tui.md#tui.view.gutterWidth), [tui.view.cellsBetween](tui.md#tui.view.cellsBetween), [tui.buffer.lineLayout](tui.md#tui.buffer.lineLayout)
+    - fn [clipOnScreen](../../src/tui/view.ts#L1275) (state: State, area: Layout = layout(state)) → Rect | null
+      <a id="tui.view.clipOnScreen"></a><br>The clip as this frame draws it, or null: off, a badge on a narrow terminal, covered by the start screen or F6, or yielding to the editor's cursor or a popup under it. A click goes to the clip only where it is drawn.
+      - calls [tui.view.layout](tui.md#tui.view.layout), [tui.clip.assistantShown](tui.md#tui.clip.assistantShown), [tui.clip.clipRect](tui.md#tui.clip.clipRect), [tui.view.hoverShown](tui.md#tui.view.hoverShown), [tui.view.hoverRect](tui.md#tui.view.hoverRect), [tui.view.completionBox](tui.md#tui.view.completionBox), [tui.clip.clipYields](tui.md#tui.clip.clipYields), [tui.view.editorCursorCell](tui.md#tui.view.editorCursorCell)
+    - fn [render](../../src/tui/view.ts#L1285) (state: State) → Grid
+      <a id="tui.view.render"></a><br>Builds the full terminal frame from app state: title and mode label, side panels, the mode-specific body ([`tui.view.drawEditor`](tui.md#tui.view.drawEditor), [`tui.view.drawMerge`](tui.md#tui.view.drawMerge)…), analysis status bar with totals, then popups and modal overlays. _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      - calls [tui.screen.Grid](tui.md#tui.screen.Grid), [tui.view.layout](tui.md#tui.view.layout), [tui.screen.Grid.fill](tui.md#tui.screen.Grid.fill), [tui.buffer.isDirty](tui.md#tui.buffer.isDirty), [tui.screen.Grid.write](tui.md#tui.screen.Grid.write), [tui.view.drawFiles](tui.md#tui.view.drawFiles), [tui.view.drawContext](tui.md#tui.view.drawContext), [tui.view.drawNav](tui.md#tui.view.drawNav), [tui.view.drawStart](tui.md#tui.view.drawStart), [tui.view.drawCode](tui.md#tui.view.drawCode), [tui.view.drawZoom](tui.md#tui.view.drawZoom), [tui.view.drawMerge](tui.md#tui.view.drawMerge), [tui.view.drawRead](tui.md#tui.view.drawRead), [tui.view.drawEditor](tui.md#tui.view.drawEditor), [tui.evidence.evidenceOf](tui.md#tui.evidence.evidenceOf), [tui.view.lineMessage](tui.md#tui.view.lineMessage), [tui.view.footerHint](tui.md#tui.view.footerHint), [tui.width.stringWidth](tui.md#tui.width.stringWidth), [tui.clip.assistantShown](tui.md#tui.clip.assistantShown), [tui.clip.badgeRect](tui.md#tui.clip.badgeRect), [tui.clip.badgeText](tui.md#tui.clip.badgeText), [tui.evidence.totals](tui.md#tui.evidence.totals), [tui.view.configNote](tui.md#tui.view.configNote), [tui.view.drawResults](tui.md#tui.view.drawResults), [tui.view.clipOnScreen](tui.md#tui.view.clipOnScreen), [tui.clip-view.drawClip](tui.md#tui.clip-view.drawClip), [tui.view.hoverShown](tui.md#tui.view.hoverShown), [tui.view.drawHover](tui.md#tui.view.drawHover), [tui.view.drawCompletion](tui.md#tui.view.drawCompletion), [tui.clip-view.drawChat](tui.md#tui.clip-view.drawChat), [tui.clip.chatRect](tui.md#tui.clip.chatRect), [tui.view.drawHelp](tui.md#tui.view.drawHelp), [tui.view.drawPrompt](tui.md#tui.view.drawPrompt), [tui.view.drawBarrier](tui.md#tui.view.drawBarrier), [tui.view.drawQuit](tui.md#tui.view.drawQuit)
   - module [web](../../src/tui/web.ts#L1)
     <a id="tui.web"></a><br>`keylang web`: the same TUI in a browser tab. `node:http` serves a page and the bundled xterm.js; a WebSocket (`ws`) carries ANSI frames to xterm.js and its keyboard, mouse, paste and resize events back to an `App` in this process. No PTY and no CDN.
     - node [external.node](external.md#external.node)
@@ -2192,7 +2643,7 @@
     - type [WebOptions](../../src/tui/web.ts#L166)
       <a id="tui.web.WebOptions"></a><br>Configuration for starting the browser-served TUI: the repository root, listening port and optional host, plus an optional analyzer, a shared operation runner for all sessions, and how long a detached session is kept alive awaiting reconnect. _(llm · claude:claude-fable-5-1 · 2026-10-04)_
     - fn [serveWeb](../../src/tui/web.ts#L177) (options: WebOptions) → Promise<WebServer>
-      <a id="tui.web.serveWeb"></a><br>Starts a token-guarded HTTP/WebSocket server that serves the page and assets and runs one [`tui.app.App`](tui.md#tui.app.App) per browser session, streaming terminal output, input, resizes and microphone PCM via [`tui.web.AudioQueue`](tui.md#tui.web.AudioQueue). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
+      <a id="tui.web.serveWeb"></a><br>Starts a token-guarded HTTP and WebSocket server that serves the static page and assets, and runs one [`tui.app.App`](tui.md#tui.app.App) session per tab, relaying keystrokes, resizes and microphone PCM through an [`tui.web.AudioQueue`](tui.md#tui.web.AudioQueue). _(llm · claude:claude-opus-5-5 · 2026-10-06)_
       - calls [tui.background.SnapshotWorker](tui.md#tui.background.SnapshotWorker), [map.analyze.analyze](map.md#map.analyze.analyze), [tui.web.sameSecret](tui.md#tui.web.sameSecret), [tui.web.offeredToken](tui.md#tui.web.offeredToken), [tui.web.pathOf](tui.md#tui.web.pathOf), [tui.web.reply](tui.md#tui.web.reply), [tui.web.assetPath](tui.md#tui.web.assetPath), [tui.web.page](tui.md#tui.web.page), [tui.web.clampSize](tui.md#tui.web.clampSize), [tui.web.pcmOf](tui.md#tui.web.pcmOf), [tui.app.App](tui.md#tui.app.App), [tui.web.AudioQueue](tui.md#tui.web.AudioQueue), [tui.web.control](tui.md#tui.web.control), [tui.web.AudioQueue.chunks](tui.md#tui.web.AudioQueue.chunks), [tui.web.AudioQueue.end](tui.md#tui.web.AudioQueue.end), [tui.background.SnapshotWorker.close](tui.md#tui.background.SnapshotWorker.close)
     - fn [pathOf](../../src/tui/web.ts#L399) (target: string | undefined) → string | null <!-- internal -->
       <a id="tui.web.pathOf"></a><br>The path of a request target, or null when it is not a URL at all.

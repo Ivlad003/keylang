@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=67aeb45d17bdc3dbb190823f920fd90854a002da5dfbb3a0456944edff80aee8 lang=en detail=brief -->
-Handles keys during an interactive merge: accept/reject the current hunk and jump to the next pending one, undo, navigate hunks, write via `tui.merge-session.MergeSession.write`, or cancel via `tui.merge-session.MergeSession.leave`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=a752f6819ff1e60cc9e38f3e6d07314afae554cdc332a25837c5ba560ddafd33 lang=en detail=brief -->
+Handles merge-review keystrokes: accepts/rejects the focused hunk and jumps to the next pending one, undoes decisions, moves between hunks, opens help, writes via `tui.merge-session.MergeSession.write` or cancels via `tui.merge-session.MergeSession.leave`.

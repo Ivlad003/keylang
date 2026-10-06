@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0041fe09e35c08f940752e82f456846dd5dfe2d278a9363e134addcf70eaf762 lang=en detail=brief -->
-The interactive editor shared by terminal and browser: a session with spec buffers, an evidence gutter, navigation, merge, zoom and off-thread analysis, drawn as ANSI frames. It must not use `extract` or web-tree-sitter directly.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=58b2bd1acd8de04e9e784272ddd0012ad6225bdbda8e67d1f1ebcab057f07639 lang=en detail=brief -->
+The interactive spec editor for terminal and browser: sessions in `tui.app` render ANSI frames for a terminal or `tui.web`, with evidence gutter, navigation, merge and clip chat. It may not depend on `extract` or `external.web-tree-sitter`.

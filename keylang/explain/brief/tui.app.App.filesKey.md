@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=c5d6006ebb28ec830f1a33464d5fb43082778ede4e3474d6055872472daaf8ab lang=en detail=brief -->
-Handles keys in the file list: up/k and down/j move the selection, enter opens the selected file via `tui.app.App.open` and focuses the editor, tab calls `tui.app.App.cycleFocus`, escape returns to the editor, q calls `tui.app.App.quit`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=5c88eefd6d3a0f51073a69083ffe18313583906dc44cd387ac30cacefc403712 lang=en detail=brief -->
+Handles keys in the file list: up/k and down/j move the selection, enter opens the chosen file via `tui.app.App.open` and focuses the editor, escape returns to the editor, tab calls `tui.app.App.cycleFocus`, q calls `tui.app.App.quit`.

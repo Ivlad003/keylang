@@ -1,6 +1,6 @@
 # Скрепка: вбудований агент у плаваючому вікні TUI
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Джерело:** рішення автора 2026-10-06: [ADR 0021](../../docs/adr/0021-tui-clip-chat.md) (вигляд, ініціатива, можливості, пам'ять); інваріанти [ADR 0019](../../docs/adr/0019-tui-assistant-without-harness.md); дослідження [research-c4-zoom-literature.md §7](../../docs/archive/research-c4-zoom-literature.md#7-асистент-clippy-mixed-initiative-проактивність). Терміни — `CONTEXT.md`.
 
@@ -176,12 +176,12 @@ TUI та сама: xterm.js передає події миші, тож пере�
 
 | № | Тікет | Статус | Blocked by |
 |---|---|---|---|
-| [01](issues/01-clip-mascot.md) | Скрепка в куті: вигляд, стани, клік і `F7`, перетягування, `assistant.clip`, вузький термінал | ready-for-agent | — |
-| [02](issues/02-chat-window.md) | Вікно чату: рамка, фокус, перетягування й розмір, ввід, історія, клавіатурна заміна | ready-for-agent | 01 |
-| [03](issues/03-chat-model-and-commands.md) | Розмова з моделлю й команди без моделі | ready-for-agent | 02 |
-| [04](issues/04-chat-proposals.md) | Пропозиції з чату через MERGE | ready-for-agent | 03 |
-| [05](issues/05-open-questions-counter.md) | Лічильник відкритих питань | ready-for-agent | 01 |
-| [06](issues/06-memory.md) | Пам'ять: `tui.json` і `.keylang/chat/` | ready-for-agent | 02, 03 |
+| [01](issues/01-clip-mascot.md) | Скрепка в куті: вигляд, стани, клік і `F7`, перетягування, `assistant.clip`, вузький термінал | resolved | — |
+| [02](issues/02-chat-window.md) | Вікно чату: рамка, фокус, перетягування й розмір, ввід, історія, клавіатурна заміна | resolved | 01 |
+| [03](issues/03-chat-model-and-commands.md) | Розмова з моделлю й команди без моделі | resolved | 02 |
+| [04](issues/04-chat-proposals.md) | Пропозиції з чату через MERGE | resolved | 03 |
+| [05](issues/05-open-questions-counter.md) | Лічильник відкритих питань | resolved | 01 |
+| [06](issues/06-memory.md) | Пам'ять: `tui.json` і `.keylang/chat/` | resolved | 02, 03 |
 
 Урок курсу про скрепку входить у [`.scratch/tui-assist/issues/04`](../tui-assist/issues/04-course-lesson-tui-without-harness.md); примітка є там.
 

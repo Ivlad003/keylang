@@ -23,6 +23,7 @@
 
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { analyze, within, type Analysis, type AnalysisRequest } from "../analyze.ts";
@@ -45,9 +46,13 @@ import { PROPOSALS_DIR } from "../proposals.ts";
 import { featureReportOf, featureSlugOf, resultWithout, runOperation, WIRE_OUT, WRITING_KINDS, type CommitGate, type CommitPlan, type DraftFlowRequest, type OperationContext, type OperationRequest, type OperationResult } from "../operations.ts";
 import { defaultMicrophone } from "../voice-local.ts";
 import { compareText } from "../span.ts";
-import { actionLabel, applyRecord, catalog, matchActions, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
+import { actionLabel, applyRecord, catalog, matchActions, MERGE_CLICK, MERGE_REASON, NO_AGENT_REASON, noSnapshotReason, START_ACTIONS } from "./actions.ts";
 import { Assist, countSuggestion, type Microphone } from "./assist.ts";
 import { OperationWorker } from "./background.ts";
+import { chatTakesKeys, Clip, newClip } from "./clip.ts";
+import { ClipChat } from "./clip-chat.ts";
+import { newFailsAfter, openQuestions } from "./clip-questions.ts";
+import { placeClip, placeOf, readPlace, writePlace } from "./clip-memory.ts";
 import { bufferLines, isDirty, lineLayout, newBuffer, newFileBuffer, setText } from "./buffer.ts";
 import { readText, splitEol, withEol, writeInside } from "./disk.ts";
 import { defaultSpecPath, flowNameProblem, newSpecProblem, SPEC_KINDS, specTemplate, suggestedFlowName } from "./new-spec.ts";
@@ -68,7 +73,7 @@ import type { Buffer, ConfigState, Cursor, Hover, Mode, NewSpecForm, OperationRe
 import { evidenceOf } from "./evidence.ts";
 import { textToSpec } from "./text-to-spec.ts";
 import { operationLabel, recordSummary } from "./reports/records.ts";
-import { contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
+import { clipOnScreen, contextTop, editorRows, filesTop, gutterWidth, helpScrollMax, layout, navEntries, navListHeight, PANEL_MIN_COLS, readCursorRow, render } from "./view.ts";
 import { clusterAt, clusterAtCell, graphemes, padWidth, scrollToFit, stringWidth } from "./width.ts";
 
 export interface Surface {
@@ -103,6 +108,8 @@ export interface AppOptions {
    * passes the browser's microphone; tests pass recorded PCM.
    */
   microphone?: Microphone;
+  /** The user's home: `~/.config/keylang/tui.json` there keeps the clip's place. Default: the home directory of the process's user; tests pass a temporary one. */
+  home?: string;
 }
 
 /** Changes typed together are analysed once. */
@@ -118,8 +125,8 @@ export const MAX_ROWS = 400;
 const HELD_KEYS = 32;
 /** Outside the editor, at most this many keys of one chunk are keys typed while the session was busy; more are pasted text. */
 const TYPED_KEYS = 8;
-/** Keys handled before the mode: they show panels and reanalyse, and never edit. */
-const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6"]);
+/** Keys handled before the mode: they show panels and the clip's chat and reanalyse, and never edit. */
+const PANEL_KEYS = new Set(["f2", "f3", "f4", "f5", "f6", "f7"]);
 
 export class App {
   readonly state: State;
@@ -147,6 +154,12 @@ export class App {
   private readonly zoomScreen: ZoomScreen;
   /** The F6 panel's keys. */
   private readonly results: ResultsPanel;
+  /** The clip in the editor's corner and its chat window: their pointer and keys. */
+  private readonly clip: Clip;
+  /** What the clip answers in its chat: commands, and the model's reply as the session's operation. */
+  private readonly chat: ClipChat;
+  /** The user's home, where `~/.config/keylang/tui.json` keeps the clip's place. */
+  private readonly home: string;
   private escTimer: NodeJS.Timeout | null = null;
   private settleTimer: NodeJS.Timeout | null = null;
   private generation = 0;
@@ -190,6 +203,7 @@ export class App {
     // map-check analyse the whole repository in the worker, which has no fallback to this thread.
     this.operations = options.operations ?? ((request, context) => (request.kind === "doctor" ? runOperation(request, context) : this.worker().run(request, context)));
     this.onQuit = options.onQuit ?? (() => {});
+    this.home = options.home ?? homedir();
     this.state = {
       root: options.root,
       config: { kind: "configured" },
@@ -239,6 +253,7 @@ export class App {
       briefs: new Map(),
       zoom: null,
       featureLine: null,
+      clip: newClip(),
     };
     // The helpers reach the session through closures: its private methods stay private.
     this.merges = new MergeSession({
@@ -299,6 +314,31 @@ export class App {
       openPalette: () => this.openPalette(),
       requestOperation: (action, request) => this.requestOperation(action, request),
     });
+    this.chat = new ClipChat({
+      state: this.state,
+      buffer: () => this.buffer(),
+      idAtCursor: () => this.idAtCursor(),
+      contextPack: () => this.contextPack(),
+      startOperation: (action, request, then) => this.startOperation(action, request, then),
+      requestOperation: (action, request, then) => this.requestOperation(action, request, then),
+      cancelOperation: () => this.cancelOperation(),
+      track: (work) => this.track(work),
+      proposalDir: () => this.merges.specDir(),
+      generatedDoc: (path) => this.generatedDoc(path),
+      proposalWaiting: (path) => this.proposalWaiting(path),
+      rescanProposals: () => {
+        this.state.proposals = this.merges.scan();
+      },
+    });
+    this.clip = new Clip({
+      state: this.state,
+      editor: () => layout(this.state).editor,
+      clipOnScreen: () => clipOnScreen(this.state),
+      said: (text) => this.chat.said(text),
+      cancelReply: () => this.chat.cancel(),
+      opened: () => this.chat.opened(),
+      placed: () => this.keepPlace(),
+    });
     this.results = new ResultsPanel({
       state: this.state,
       reanalyze: () => this.reanalyze(),
@@ -323,12 +363,32 @@ export class App {
     const first = this.state.files.find((file) => file.includes("/flows/")) ?? this.state.files[0];
     if (first) this.open(first, { line: 0, col: 0 }, false);
     this.state.proposals = this.merges.scan();
-    const config = configState(this.state.root);
+    // The clip's memory (ADR 0021): where the person left it and its window, and today's conversation.
+    this.restorePlace();
+    this.chat.restore();
+    const { config, clip } = configState(this.state.root);
     this.state.config = config;
+    if (clip !== null) this.state.clip.enabled = clip;
     // No config: the start screen, and no analysis until Browse (design §2.1). Invalid: its text, at the field.
     if (config.kind === "missing-config") this.state.start = 0;
     else if (config.kind === "invalid-config") this.openConfig(config.reason, false);
     else this.reanalyze();
+  }
+
+  /** The clip's place from tui.json as the session starts; a file it cannot use is said once and left as it is until a drag. */
+  private restorePlace(): void {
+    const { place, problem } = readPlace(this.home);
+    placeClip(this.state.clip, place);
+    if (problem !== null) this.state.message = `${problem}; ignored: the clip and its window start where they do by default, and the first drag rewrites the file`;
+  }
+
+  /** A drag, a keyboard move or a resize of the clip or its window ended, or they were put back: tui.json keeps the place. */
+  private keepPlace(): void {
+    try {
+      writePlace(this.home, placeOf(this.state.clip));
+    } catch (error) {
+      this.state.message = `the clip's place is not kept: ${errorText(error)}`;
+    }
   }
 
   // ---------- transport ----------
@@ -360,7 +420,7 @@ export class App {
     const events = this.decoder.feed(chunk);
     for (let i = 0; i < events.length; ) {
       const run = typedRun(events, i);
-      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit")) {
+      if (run.length > 1 && !this.state.prompt && !this.state.completion && !this.state.results.open && pastedRun(run, this.state.mode === "edit" || chatTakesKeys(this.state))) {
         this.safely({ type: "paste", text: run.map((key) => (key.name === "enter" ? "\n" : key.name === "tab" ? "  " : key.text!)).join("") });
         i += run.length;
         continue;
@@ -396,7 +456,7 @@ export class App {
 
   /** The current frame, as the transport would show it. */
   frame(): Grid {
-    return render(this.state);
+    return this.paint();
   }
 
   /** Files with unsaved changes. */
@@ -416,6 +476,7 @@ export class App {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.assist.close();
+    this.chat.close();
     this.surface = null;
     // A running operation is cancelled and the worker ends: before a commit at once, during one after its
     // current file step (a signal's end of the session waits for that write, not for a rollback).
@@ -427,9 +488,15 @@ export class App {
 
   private draw(): void {
     if (!this.surface) return;
-    const grid = render(this.state);
+    const grid = this.paint();
     this.surface.write(renderDiff(this.previous, grid));
     this.previous = grid;
+  }
+
+  /** The frame of the state now. The clip's counter follows what it counts — the analysis, the open file, the chat — so it is counted here (spec §4.6). */
+  private paint(): Grid {
+    this.state.clip.questions = openQuestions(this.state).length;
+    return render(this.state);
   }
 
   // ---------- analysis ----------
@@ -461,7 +528,10 @@ export class App {
         (analysis) => {
           if (generation !== this.generation || this.closed) return;
           const selected = this.results.selectedFinding();
+          const previous = this.state.analysis;
           this.state.analysis = analysis;
+          // The clip counts the fails this analysis added (spec §4.6).
+          this.state.clip.newFails = newFailsAfter(this.state.clip.newFails, previous, analysis);
           try {
             this.adoptResult(analysis, edits, selected);
           } catch (error) {
@@ -493,8 +563,9 @@ export class App {
    */
   private readConfig(explicit: boolean): boolean {
     const before = this.state.config;
-    const config = configState(this.state.root);
+    const { config, clip } = configState(this.state.root);
     this.state.config = config;
+    if (clip !== null) this.state.clip.enabled = clip;
     if (config.kind !== "invalid-config") return true;
     this.generation++;
     this.state.updating = false;
@@ -658,7 +729,7 @@ export class App {
         .then((base) => {
           if (request !== this.featureLineRequest || this.closed || base === null) return;
           const report = featureReportOf(analysis, slug, base);
-          this.state.featureLine = report === null ? null : { path, stage: report.stage, questions: report.gaps.filter((gap) => gap.kind === "question").length };
+          this.state.featureLine = report === null ? null : { path, stage: report.stage, questions: report.gaps.filter((gap) => gap.kind === "question").length, gaps: report.gaps };
         }),
     );
   }
@@ -1202,8 +1273,8 @@ export class App {
 
   private handle(event: InputEvent): void {
     // A ghost line answers the next key in the editor (Tab takes it, Alt+] cycles); a click, a paste,
-    // a panel key or anything outside the editor drops it, so it is never taken into other text.
-    if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
+    // a panel key or anything outside the editor (the clip's chat too) drops it, so it is never taken into other text.
+    if (this.state.ghost && !(event.type === "mouse" && event.action !== "down") && !(event.type === "key" && this.state.mode === "edit" && !this.state.prompt && !this.state.help && !chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name) && !(event.ctrl && event.name === "c"))) this.assist.dropGhost();
     // The save step is modal: the pointer and pasted text do not reach what is under it.
     if (event.type === "mouse") {
       if (!this.state.barrier && !this.state.quit) this.mouse(event);
@@ -1212,6 +1283,7 @@ export class App {
     if (event.type === "paste") {
       if (this.state.results.open || this.state.barrier || this.state.quit) return;
       if (this.state.prompt) this.promptType(event.text.replace(/\n/g, " "));
+      else if (chatTakesKeys(this.state)) this.clip.paste(printable(event.text));
       else if (this.state.mode === "edit") this.insert(event.text);
       else this.state.message = pasteRefusal(this.state);
       return;
@@ -1232,6 +1304,10 @@ export class App {
     // Ctrl+P opens the palette from any ordinary mode (view/read/edit/code) and from the panels; in MERGE it
     // allows viewing the catalogue and independent read-only actions, the rest explain why they are blocked.
     if (event.ctrl && event.name === "p") return this.openPalette();
+    // Ctrl+S still saves the buffer being edited: a person who typed in the chat expects the file to save.
+    if (chatTakesKeys(this.state) && event.ctrl && event.name === "s" && this.state.mode === "edit") return this.save();
+    // The clip's focused window takes every other key, `?` and letters as text; F2–F7 stay global.
+    if (chatTakesKeys(this.state) && !PANEL_KEYS.has(event.name)) return this.clip.key(event);
     // In raw mode the terminal sends Ctrl+Z as a key, not SIGTSTP: outside the editor (where it undoes) and
     // MERGE (where `u` does), it stops keylang as in any shell. A surface that cannot stop (web) ignores it.
     if (event.ctrl && event.name === "z" && this.state.mode !== "edit" && this.state.mode !== "merge") return this.surface?.suspend?.();
@@ -1247,11 +1323,12 @@ export class App {
       }
     }
     if (this.state.start !== null && event.name !== "f6") return this.startKey(event);
+    if (event.name === "f7") return this.clip.toggle();
     if (event.name === "f5") return this.reanalyze();
     if (event.name === "f6") return this.results.openResults();
-    // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE and
-    // the code viewer they are shown, and the keys still go where they went.
-    const focusable = this.state.mode === "view" || this.state.mode === "read";
+    // Panels take the focus only where keys go to the focused panel (the view); in the editor, MERGE,
+    // the code viewer and the clip's focused window they are shown, and the keys still go where they went.
+    const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
     if (event.name === "f2") return this.toggleFiles(focusable);
     if (event.name === "f3") return this.toggleNav(focusable);
     if (event.name === "f4") return this.toggleContext(focusable);
@@ -2018,16 +2095,19 @@ export class App {
    * Starts an operation that reads the saved files: after the save step when
    * buffers it reads are dirty or it names what it writes (design §2.5), then
    * as the session's one explicit operation. A second one is refused while
-   * one runs.
+   * one runs. `then` hears the record when it ends (not when the step is left).
    */
-  private requestOperation(action: string, request: OperationRequest): void {
+  private requestOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): void {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
       return;
     }
     const step = this.saveStep(request);
-    if (step === null) return this.startOperation(action, request);
-    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request), step);
+    if (step === null) {
+      this.startOperation(action, request, then);
+      return;
+    }
+    this.withSavedInputs(operationLabel(request), () => this.startOperation(action, request, then), step);
   }
 
   /**
@@ -2053,6 +2133,9 @@ export class App {
       // buffer later, so a dirty keylang.json stays dirty (only an edit after the draft refuses the move).
       case "doctor":
       case "draft-layout":
+        return null;
+      // The clip's reply reads no file: the request carries the buffer and the pack as the session shows them.
+      case "assistant-reply":
         return null;
       // A feature, the map check and an export read the saved files: every dirty buffer is saved first.
       case "feature":
@@ -2215,12 +2298,14 @@ export class App {
    * for F6. The UI never blocks: the record turns "running" and the result
    * (or a failure) lands later; a second operation is refused while one runs.
    * A failure — or a code 1 or 2 of the operation — is a visible record and a
-   * message, never the end of the session.
+   * message, never the end of the session. `then` hears the record once it
+   * ends, unless the session closed first. Returns the record, or null when
+   * another operation runs.
    */
-  private startOperation(action: string, request: OperationRequest): void {
+  private startOperation(action: string, request: OperationRequest, then?: (record: OperationRecord) => void): OperationRecord | null {
     if (this.state.activeOperation !== null) {
       this.state.message = "an operation is already running";
-      return;
+      return null;
     }
     const record: OperationRecord = {
       id: this.nextRecord++,
@@ -2265,6 +2350,7 @@ export class App {
       this.afterProposed(record, origin);
       if (request.kind === "apply-code") this.afterApplyCode(record);
       if (request.kind === "draft-layout") this.afterLayoutDraft(record);
+      then?.(record);
       this.quitAfterSettle(record);
       this.draw();
     };
@@ -2298,6 +2384,7 @@ export class App {
     }
     this.track(work.then(settle, (error: unknown) => settle(resultWithout(request.kind, "failed", 2, errorText(error)))));
     this.draw();
+    return record;
   }
 
   /**
@@ -2914,6 +3001,8 @@ export class App {
     }
     // The start screen covers the editor: a click never moves the hidden cursor.
     if (this.state.start !== null) return;
+    // The clip and its window are over the editor and the panels.
+    if (this.clip.mouse(event)) return;
     const area = layout(this.state);
     const inside = (rect: { x: number; y: number; width: number; height: number } | null): boolean => rect !== null && event.x >= rect.x && event.x < rect.x + rect.width && event.y >= rect.y && event.y < rect.y + rect.height;
     // With the context panel open, the panel on the right is the context, not the navigation it covers.
@@ -2949,9 +3038,8 @@ export class App {
     }
     if (event.action !== "down" || event.button !== 0) return;
     this.state.message = null;
-    // A click elsewhere would open another file and drop the decisions made so far.
     if (this.state.mode === "merge") {
-      this.state.message = "finish the merge first: w writes the decided hunks, Esc cancels";
+      this.state.message = MERGE_CLICK;
       return;
     }
     if (context && area.nav) {
@@ -3145,7 +3233,7 @@ export class App {
       this.state.message = `${entry.action.label}: ${entry.reason}`;
       return;
     }
-    const focusable = this.state.mode === "view" || this.state.mode === "read";
+    const focusable = (this.state.mode === "view" || this.state.mode === "read") && !chatTakesKeys(this.state);
     switch (id) {
       case "check":
         if (this.state.start !== null) return this.browse();
@@ -3275,6 +3363,8 @@ export class App {
       case "help":
         this.state.help = true;
         return;
+      case "clip-reset":
+        return this.clip.reset();
       case "version":
         this.state.message = `keylang ${packageVersion()}`;
         return;
@@ -3416,20 +3506,24 @@ function printable(text: string): string {
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
-/** `keylang.json` as it is on disk now: missing (with the guessed layout), invalid (with the reason) or valid. */
-function configState(root: string): ConfigState {
+/**
+ * `keylang.json` as it is on disk now: missing (with the guessed layout),
+ * invalid (with the reason) or valid; and whether it shows the clip — null
+ * when an invalid file cannot say, so the clip stays as it was.
+ */
+function configState(root: string): { config: ConfigState; clip: boolean | null } {
   const file = join(root, CONFIG_FILE);
   if (!existsSync(file)) {
     const guessed = loadConfig(root);
-    return { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes };
+    return { config: { kind: "missing-config", languages: [...guessed.languages], layers: [...guessed.layers.keys()], notes: guessLayout(root, guessed.exclude).notes }, clip: true };
   }
   try {
-    parseConfig(file, readFileSync(file, "utf8"));
-    return { kind: "configured" };
+    const raw = parseConfig(file, readFileSync(file, "utf8"));
+    return { config: { kind: "configured" }, clip: raw.assistant?.clip ?? true };
   } catch (error) {
     // The file is the one open in the editor: the reason keeps only the field.
     const text = errorText(error);
-    return { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text };
+    return { config: { kind: "invalid-config", reason: text.startsWith(`${file}: `) ? text.slice(file.length + 2) : text }, clip: null };
   }
 }
 

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=535ce977b59dc102fed8718c1e9845301111c87dff8ee3a9b187ce4d7027f81f lang=en detail=brief -->
-Parses CLI arguments, handles help/version, opens the terminal UI when no command is given, and dispatches each subcommand to its handler such as `cli.cli.cmdCheck` or `cli.cli.cmdExplain`, returning an exit code.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e8240ff7fbd2e6057309f10c61954945debb544beb6278dd511d17a7551cb912 lang=en detail=brief -->
+Parses CLI arguments, prints help or version, and launches the terminal UI when no command is given on a TTY. Otherwise it dispatches each subcommand to its handler, such as `cli.cli.cmdCheck` or `cli.cli.cmdExplain`, and returns its exit code.

@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=e9a0408df825f5c50af25bdbc0c447f3a911c2abc76d6c5150bb5ca5e96b8c5d lang=en detail=brief -->
-Applies a line-level change to the current buffer, refusing read-only files via `tui.app.App.readOnlyReason` and pushing capped, optionally coalesced undo snapshots, then writes text with `tui.buffer.setText` and schedules reanalysis.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=0c29e3bf95c65b374bfc5f8a46e79f5b64f640f956d61a7e47a2948ea609a631 lang=en detail=brief -->
+Applies a line-level mutation to the active buffer, blocking read-only files via `tui.app.App.readOnlyReason`, recording capped (optionally coalesced) undo history, then saving through `tui.buffer.setText` and scheduling `tui.app.App.reanalyzeSoon`.

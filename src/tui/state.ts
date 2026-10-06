@@ -5,10 +5,11 @@ import type { Analysis } from "../analyze.ts";
 import type { C4Format, C4Level } from "../c4-export.ts";
 import type { StaticMode } from "../config.ts";
 import type { ExplanationDetail, StoredExplanation } from "../explanations.ts";
-import type { Stage } from "../feature-status.ts";
+import type { Gap, Stage } from "../feature-status.ts";
 import type { CompletionItem } from "../lsp-features.ts";
 import type { Document } from "../ir.ts";
 import type { ExportFormat, OperationRequest, OperationResult, OperationStatus } from "../operations.ts";
+import type { ClipState } from "./clip.ts";
 import type { VerdictFilter } from "./findings.ts";
 import type { Decision, Hunk } from "./merge.ts";
 
@@ -476,12 +477,16 @@ export interface State {
    * while it has unsaved edits; shown while `path` is the current file.
    */
   featureLine: FeatureLine | null;
+  /** The clip in the editor's corner and its chat window (ADR 0021). */
+  clip: ClipState;
 }
 
-/** Where a feature file stands, for the status line. */
+/** Where a feature file stands, for the status line and what the clip's model reads. */
 export interface FeatureLine {
   path: string;
   stage: Stage;
   /** Open questions (`- ? …`) in the file. */
   questions: number;
+  /** The gaps of the same report, in its order. */
+  gaps: Gap[];
 }

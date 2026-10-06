@@ -10,7 +10,7 @@
 // operations take are `shared.ts` — and every name a caller uses is
 // exported from here.
 
-import type { AgentsRequest, ApplyCodeRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
+import type { AgentsRequest, ApplyCodeRequest, AssistantReplyRequest, BaselineRequest, CheckRequest, CodeToSpecRequest, DoctorRequest, DraftFlowRequest, DraftLayoutRequest, DraftRulesRequest, ExplainBatchRequest, ExplainEdgeRequest, ExplainLlmRequest, ExplainPlanRequest, ExplainRequest, ExportC4Request, ExportRequest, FeatureQuestionsRequest, FeatureRequest, FmtRequest, InitRequest, MapCheckRequest, MapRequest, OperationContext, OperationEnvelope, OperationRequest, OperationResult, ParseRequest, SpecToCodeRequest, TracePlanRequest, WireRequest } from "./operations/types.ts";
 import { runAgents, runBaseline, runInit, runMap, runMapCheck, runWire } from "./operations/generate.ts";
 import { runCheck, runExplainEdge, runFmt, runParse, runTracePlan } from "./operations/spec.ts";
 import { runFeature, runFeatureQuestions } from "./operations/feature.ts";
@@ -19,6 +19,7 @@ import { runCodeToSpec, runDraftFlow, runDraftLayout, runDraftRules } from "./op
 import { runApplyCode, runSpecToCode } from "./operations/code.ts";
 import { runExport, runExportC4 } from "./operations/export.ts";
 import { runDoctor } from "./operations/doctor.ts";
+import { runAssistantReply } from "./operations/assistant.ts";
 
 export * from "./operations/types.ts";
 export { resultWithout } from "./operations/shared.ts";
@@ -27,6 +28,7 @@ export { checkSkipNote, checkSummary, fmtGeneratedNote, fmtMessages } from "./op
 export { FEATURE_SLUG, featureReportOf, featureSlugOf, featureSummary, gapLine, hintLine, questionLines, withQuestions } from "./operations/feature.ts";
 export { codeToSpecCandidate, flowCandidate, rulesCandidate } from "./operations/draft.ts";
 export { c4OutProblem, exportFormatOf, exportTargetProblem, exportText } from "./operations/export.ts";
+export { assistantPrompt, parseReply } from "./operations/assistant.ts";
 
 /** Runs one operation and returns its typed result: the payload type follows the request's kind. */
 export function runOperation(request: DoctorRequest, context?: OperationContext): Promise<OperationEnvelope<"doctor">>;
@@ -55,6 +57,7 @@ export function runOperation(request: SpecToCodeRequest, context?: OperationCont
 export function runOperation(request: ApplyCodeRequest, context?: OperationContext): Promise<OperationEnvelope<"apply-code">>;
 export function runOperation(request: FeatureQuestionsRequest, context?: OperationContext): Promise<OperationEnvelope<"feature-questions">>;
 export function runOperation(request: ExportC4Request, context?: OperationContext): Promise<OperationEnvelope<"export-c4">>;
+export function runOperation(request: AssistantReplyRequest, context?: OperationContext): Promise<OperationEnvelope<"assistant-reply">>;
 export function runOperation(request: OperationRequest, context?: OperationContext): Promise<OperationResult>;
 export async function runOperation(request: OperationRequest, context: OperationContext = {}): Promise<OperationResult> {
   switch (request.kind) {
@@ -110,5 +113,7 @@ export async function runOperation(request: OperationRequest, context: Operation
       return runSpecToCode(request, context);
     case "apply-code":
       return runApplyCode(request, context);
+    case "assistant-reply":
+      return runAssistantReply(request, context);
   }
 }

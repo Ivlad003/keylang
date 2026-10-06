@@ -59,6 +59,11 @@ function fieldIn(prompt: Prompt, keys: PromptKeys): TextField | null {
   return keys.field ? keys.field(prompt) : promptText(prompt);
 }
 
+/** A typed line after Backspace: its last grapheme cluster gone. The prompts and the clip's input line edit this way. */
+export function backspaced(text: string): string {
+  return graphemes(text).slice(0, -1).join("");
+}
+
 /** Text typed or pasted into the prompt: into the selected row's field, then the prompt follows it. */
 export function typeInto(prompt: Prompt, keys: PromptKeys, text: string): void {
   const field = fieldIn(prompt, keys);
@@ -73,7 +78,7 @@ export function typeInto(prompt: Prompt, keys: PromptKeys, text: string): void {
 export function promptKey(prompt: Prompt, keys: PromptKeys, event: KeyEvent): void {
   if (event.name === "backspace") {
     const field = fieldIn(prompt, keys);
-    if (field) field.set(graphemes(field.value).slice(0, -1).join(""));
+    if (field) field.set(backspaced(field.value));
     keys.typed?.();
     return;
   }

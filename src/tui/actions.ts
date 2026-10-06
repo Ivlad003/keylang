@@ -63,6 +63,9 @@ export interface ActionEntry {
 /** The shared reason for actions that would drop an open MERGE. */
 export const MERGE_REASON = "finish the merge first (Esc cancels it)";
 
+/** What a click says during MERGE: a click elsewhere would open another file and drop the decisions made so far. */
+export const MERGE_CLICK = "finish the merge first: w writes the decided hunks, Esc cancels";
+
 /** The shared reason for editor actions while the start screen covers the editor. */
 export const START_REASON = "choose Browse on the start screen first (Enter)";
 
@@ -104,6 +107,8 @@ export const ACTIONS: readonly Action[] = [
   },
   { id: "context", label: "Agent context panel", group: "View", aliases: ["context", "agent context"], key: "F4" },
   { id: "results", label: "Operation results", group: "View", aliases: ["results", "history", "reports"], key: "F6" },
+  // The keyboard's way back from a drag (ADR 0021): the clip in its corner, its window above it at 40×10.
+  { id: "clip-reset", label: "Скрепка: повернути на місце", group: "View", aliases: ["скрепка", "clip", "reset clip", "clip place", "chat window", "window place"] },
   {
     id: "doctor",
     label: "Environment diagnostics",

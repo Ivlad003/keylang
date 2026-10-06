@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4071ead996e05e0a9687c6cf43da8b2e15120086d614d964731ba384f94380aa lang=en detail=brief -->
-Routes mouse input by region: the wheel scrolls the active view and pointer moves update hover. Left clicks pick context, nav or file entries or place the editor cursor; Ctrl+click calls `tui.app.App.goToCode`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=b940205c2b11a9ab77d1e4c78a6bdab41cdca6b61b9899ffb146e1aa5020b413 lang=en detail=brief -->
+Routes mouse input by screen region: the wheel scrolls the report, code, merge, context, nav or editor, and moves update hover. Clicks select nav, file or context items or place the editor cursor; Ctrl+click calls `tui.app.App.goToCode`.

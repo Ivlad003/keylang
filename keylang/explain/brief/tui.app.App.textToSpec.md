@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-05 closure=7fcced83018f4138a8a23bfa9fff2a9d2579ac1ac8deae0f12c7e7eab5364df9 lang=en detail=brief -->
-Converts the selected lines or the free-text paragraph at the cursor into spec items via `tui.text-to-spec.textToSpec`, using known and planned IDs. Items not already below the text open as a merge proposal via `tui.merge-session.MergeSession.start`.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=8ae28ea44fbabc167950c73079ebfb90df202053a0752e3c64a795da3a4b1987 lang=en detail=brief -->
+Converts the selected lines or the prose paragraph at the cursor into spec items via `tui.text-to-spec.textToSpec`, using known and planned IDs. Items not already listed after the text are proposed through `tui.merge-session.MergeSession.start`.

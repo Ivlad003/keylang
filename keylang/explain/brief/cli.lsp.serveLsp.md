@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=4aa2371c34bbe12b57719972c37fa1262874770d15bbecad34bb2d58d1956eba lang=en detail=brief -->
-Runs the language server over a byte stream, framing `Content-Length` messages and passing them to `cli.lsp.Server.receive`, rejecting malformed JSON via `cli.lsp.Server.reject`, and returning an exit code.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=2c2242e9a942b3a43ca4e841c07195146fe13d1dbffcfa84a89146046d06e140 lang=en detail=brief -->
+Runs a language server over stdio, framing Content-Length messages and passing parsed JSON objects to `cli.lsp.Server.receive`, rejecting malformed ones via `cli.lsp.Server.reject`. Resolves to the server's exit code, or 2 on a missing header.

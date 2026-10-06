@@ -1,2 +1,2 @@
-<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=aaafa4570b9cc067cdbc170de2d83c1b95b97c7e6310af0632a0b9bdfeb3fe00 lang=en detail=brief -->
-Builds the map, picks the flow's functions via `map.trace-plan.flowSymbols`, wraps their bodies with `cli.trace-hooks.wrap`, keeps files that still parse, and posts the instrumentation plan (or error) to the port.
+<!-- keylang:explain agent=cli:claude:claude-opus-5-5 date=2026-10-06 closure=36795bc8c6ed6424642ff2b57de6a008bbf4a9e621ee62be15bacc3aef0e8e21 lang=en detail=brief -->
+Builds the map, picks the flow's functions via `map.trace-plan.flowSymbols`, and wraps each with `cli.trace-hooks.wrap`, skipping files that no longer parse cleanly. It stores instrumented sources by file URL and posts the plan or error to the port.

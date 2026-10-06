@@ -17,14 +17,15 @@ import { runOperation, type OperationResult } from "../src/operations.ts";
 import { App, type AppOptions } from "../src/tui/app.ts";
 import { OperationWorker } from "../src/tui/background.ts";
 import type { TerminalHost, TerminalSignal } from "../src/tui/terminal.ts";
-import { checkoutRepo, CHECKOUT_FLOW, KEY } from "./tui-fixture.ts";
+import { checkoutRepo, CHECKOUT_FLOW, KEY, tempHome } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
 
-export function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"] } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
+/** `home`: the user's home of the session, for two sessions that share the clip's place; default: one of its own (`tempHome`). */
+export function session(root: string, options: { cols?: number; rows?: number; analyzer?: (request: AnalysisRequest) => Promise<Analysis>; operations?: AppOptions["operations"]; microphone?: AppOptions["microphone"]; onQuit?: AppOptions["onQuit"]; home?: string } = {}): { app: App; vt: VirtualTerminal; send: (keys: string) => void; lines: () => string[]; text: () => string } {
   const cols = options.cols ?? 110;
   const rows = options.rows ?? 30;
   const vt = new VirtualTerminal(cols, rows);
-  const app = new App({ root, cols, rows, ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
+  const app = new App({ root, cols, rows, home: options.home ?? tempHome(), ...(options.analyzer ? { analyzer: options.analyzer } : {}), ...(options.operations ? { operations: options.operations } : {}), ...(options.microphone ? { microphone: options.microphone } : {}), ...(options.onQuit ? { onQuit: options.onQuit } : {}) });
   app.attach({ write: (ansi) => vt.feed(ansi) }, cols, rows);
   return { app, vt, send: (keys) => app.input(keys), lines: () => vt.lines(), text: () => vt.text() };
 }
@@ -43,11 +44,12 @@ export const FLOW_PATH = "keylang/flows/checkout.md";
 export const PAID = CHECKOUT_FLOW.replace("Checkout from the terminal.", "Checkout from the terminal, paid by card.");
 
 /**
- * A Messages API stand-in in this process: the TUI runs here too. `delay`
- * holds each answer back; `aborted` counts the requests whose connection the
- * client dropped before the answer.
+ * A Messages API stand-in in this process: the TUI runs here too. `reply`
+ * is the answer, or makes it from the prompt; `delay` holds each answer
+ * back; `aborted` counts the requests whose connection the client dropped
+ * before the answer.
  */
-export async function mockModel(t: { after: (f: () => void) => void }, reply: string, delay = 0): Promise<{ prompts: string[]; aborted: number }> {
+export async function mockModel(t: { after: (f: () => void) => void }, reply: string | ((prompt: string) => string), delay = 0): Promise<{ prompts: string[]; aborted: number }> {
   const model = { prompts: [] as string[], aborted: 0 };
   const server = createServer((req, res) => {
     let data = "";
@@ -59,10 +61,12 @@ export async function mockModel(t: { after: (f: () => void) => void }, reply: st
     });
     req.on("data", (chunk: Buffer) => (data += chunk.toString()));
     req.on("end", () => {
-      model.prompts.push((JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content);
+      const prompt = (JSON.parse(data) as { messages: { content: string }[] }).messages[0]!.content;
+      model.prompts.push(prompt);
+      const text = typeof reply === "string" ? reply : reply(prompt);
       timer = setTimeout(() => {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: reply }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
+        res.end(JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_details: null, usage: { input_tokens: 1, output_tokens: 1 } }));
       }, delay);
     });
   });
@@ -144,6 +148,11 @@ export function treeBytes(root: string): Map<string, string> {
   };
   walk(root);
   return out;
+}
+
+/** The tree but the clip's log of the conversation (`.keylang/chat/`): what a chat that writes no proposal leaves as it was. */
+export function withoutChatLog(tree: Map<string, string>): Map<string, string> {
+  return new Map([...tree].filter(([path]) => !path.startsWith(".keylang/chat/")));
 }
 
 /** Read through a function, so the assertions on a changing state do not narrow its type. */
