@@ -5,11 +5,15 @@
     KEYLANG_TRACE_TEST="<test id>" python3 keylang_trace.py <script> [args...]
 
 Environment:
-    KEYLANG_TRACE        JSONL file to append to (required)
-    KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` (required)
-    KEYLANG_TRACE_TEST   test id (required)
+    KEYLANG_TRACE        JSONL file to append to; without it the script runs untraced
+    KEYLANG_TRACE_PLAN   plan from `keylang trace-plan <flow>` (required with KEYLANG_TRACE)
+    KEYLANG_TRACE_TEST   test id (required with KEYLANG_TRACE)
     KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
     KEYLANG_TRACE_ROOT   repository root the plan's paths are relative to (default: cwd)
+
+Without `KEYLANG_TRACE` there is nothing to record: the script runs as
+`python3 <script>` would, and the process exits with its code, so the wrapper
+can stay in a test command.
 
 Only the plan's functions are recorded, and only in files whose content still
 has the hash the snapshot saw. A code object is the plan's function when its
@@ -195,14 +199,27 @@ def install(tracer):
     threading.setprofile(profile)
 
 
+def run_script(script):
+    """Runs `script` as `python3 <script>` does: as `__main__`, with its own arguments and its directory first on `sys.path`."""
+    sys.argv = sys.argv[1:]
+    sys.path.insert(0, os.path.dirname(os.path.abspath(script)))
+    runpy.run_path(script, run_name="__main__")
+
+
 def main():
-    path = os.environ.get("KEYLANG_TRACE")
-    plan_path = os.environ.get("KEYLANG_TRACE_PLAN")
-    test = os.environ.get("KEYLANG_TRACE_TEST")
-    if not path or not plan_path or not test:
-        fail("KEYLANG_TRACE, KEYLANG_TRACE_PLAN and KEYLANG_TRACE_TEST are required")
     if len(sys.argv) < 2:
         fail("usage: keylang_trace.py <script> [args...]")
+    script = sys.argv[1]
+    path = os.environ.get("KEYLANG_TRACE")
+    if not path:
+        # Nothing to record: no tracer, no hooks, no run id; the script's exit is the process's.
+        run_script(script)
+        return
+    plan_path = os.environ.get("KEYLANG_TRACE_PLAN")
+    test = os.environ.get("KEYLANG_TRACE_TEST")
+    missing = [name for name, value in (("KEYLANG_TRACE_PLAN", plan_path), ("KEYLANG_TRACE_TEST", test)) if not value]
+    if missing:
+        fail(f"KEYLANG_TRACE is set, so {' and '.join(missing)} {'is' if len(missing) == 1 else 'are'} required too")
     try:
         with open(plan_path, encoding="utf-8") as source:
             plan = json.load(source)
@@ -216,12 +233,9 @@ def main():
     os.environ["KEYLANG_TRACE_RUN"] = run
     tracer = Tracer(plan, root, test, run)
     atexit.register(tracer.finish, path)
-    script = sys.argv[1]
-    sys.argv = sys.argv[1:]
-    sys.path.insert(0, os.path.dirname(os.path.abspath(script)))
     install(tracer)
     try:
-        runpy.run_path(script, run_name="__main__")
+        run_script(script)
     except SystemExit as exit:
         # `sys.exit(3)` stopped the flow short of its end, as a crash does; `sys.exit()` and `sys.exit(0)` did not.
         if exit.code not in (None, 0):
