@@ -7,9 +7,10 @@ the same `analyze()` as `keylang check`; the TUI injects
 `SnapshotWorker.generate`, so the snapshot is built off the UI thread. The
 static path to it is the injected value of the hook `generate`
 (`keylang check --static=shape` does not follow it). The `@flow tui` test in
-`tests/cli.test.ts` records the trace of one `F5`; like the `check` flow,
-its `trace` lines (trigger and five steps) and the `tests` lines of its three
-invariants stay `unverified` until `npm test` has run on the current code.
+`tests/cli-repository.test.ts` records the trace of one `F5`; like the
+`check` flow, its `trace` lines (trigger and five steps) and the `tests`
+lines of its three invariants stay `unverified` until `npm test` has run on
+the current code.
 
 - trigger tui.app.App.input
   - step tui.input.InputDecoder.feed

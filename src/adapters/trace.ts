@@ -2,7 +2,7 @@
 // (in this repository: `--import ./src/adapters/trace.ts`). Environment:
 //   KEYLANG_TRACE        JSONL file to append to; without it the adapter does nothing
 //   KEYLANG_TRACE_FLOW   flow name whose trigger and steps are instrumented (required with KEYLANG_TRACE)
-//   KEYLANG_TRACE_TEST   test id, e.g. `tests/cli.test.ts > @flow check …` (required with KEYLANG_TRACE)
+//   KEYLANG_TRACE_TEST   test id, e.g. `tests/cli-repository.test.ts > @flow check …` (required with KEYLANG_TRACE)
 //   KEYLANG_TRACE_RUN    run id shared by the tests of one run (default: time and pid)
 //   KEYLANG_TRACE_ROOT   repository root (default: the working directory)
 // Spans nest through AsyncLocalStorage; a span that starts after its parent

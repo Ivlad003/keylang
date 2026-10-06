@@ -4,8 +4,9 @@
 which builds a fresh analysis in memory
 (snapshot, specs with the map rendered from it, test reports, traces), then
 resolves ids, evaluates rules and flows, and prints the findings. Nothing is
-written. The `@flow check` test in `tests/cli.test.ts` records the trace; the
-`node:test` reporter records the test results for the current snapshot.
+written. The `@flow check` test in `tests/cli-repository.test.ts` records the
+trace; the `node:test` reporter records the test results for the current
+snapshot.
 
 Both land in the git-ignored `.keylang/`, so run `npm test` before
 `keylang check --strict`. On a fresh clone, or after any source change
@@ -28,6 +29,6 @@ and static evidence does not depend on a run.
             - step check.flows.evaluateFlows
       - step features.check-format.checkReportText
       - invariant a denied import is reported as K102 without writing the map
-        - test tests/cli.test.ts "check sees a new denied import without writing the map"
+        - test tests/cli-check.test.ts "check sees a new denied import without writing the map"
       - invariant a flow id resolves against current code, not the committed map
-        - test tests/cli.test.ts "a flow id resolves against current code, not the committed map"
+        - test tests/cli-check.test.ts "a flow id resolves against current code, not the committed map"
