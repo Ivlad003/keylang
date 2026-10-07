@@ -8,8 +8,12 @@
 // root, or in a `package.json` / `node_modules` between the importing file and
 // the root, as Node looks for it (`web/package.json` of a monorepo); any other
 // is unresolved — an alias keylang does not know is a hole, not a package.
-// A workspace package (a `node_modules` link into the repository, or a
-// `workspaces` entry) is internal: its `exports`/`module`/`main` name the file.
+// A workspace package (a `node_modules` link into the repository — at the
+// root or, as pnpm installs it, next to the importing package — a `workspaces`
+// entry of the root `package.json`, or a `packages` entry of
+// `pnpm-workspace.yaml`) is internal: its `exports`/`module`/`main` name the
+// file. A `workspace:`, `file:`, `link:` or `portal:` range declares this
+// repository's code, never an external package (ADR 0010).
 // Files of the analysis (including unsaved or proposed ones, not yet on disk)
 // exist for the resolver whatever the disk says, so one snapshot resolves the
 // same way before and after a candidate is written.
@@ -81,7 +85,9 @@ export class ImportResolver {
   private readonly root: string;
   private readonly baseUrl: string | null;
   private readonly paths: PathRule[];
-  private readonly packages: Set<string>;
+  /** The packages the root `package.json` declares, with their ranges (null: not a string). */
+  private readonly declared: Map<string, string | null>;
+  /** Workspace globs: root `workspaces`, then `packages` of `pnpm-workspace.yaml`. */
   private readonly workspaces: string[];
   /** A config file's text (null: absent), and its JSONC value (null: absent or no JSON). */
   private readonly text: (file: string) => string | null;
@@ -90,8 +96,8 @@ export class ImportResolver {
   private readonly sources: ReadonlySet<string>;
   private readonly cache = new Map<string, Resolution>();
   private readonly located = new Map<string, Located>();
-  /** Per directory under the root: the packages its own `package.json` declares. */
-  private readonly nested = new Map<string, Set<string>>();
+  /** Per directory under the root: the packages its own `package.json` declares, with their ranges. */
+  private readonly nested = new Map<string, Map<string, string | null>>();
   /** Per directory under the root: the `imports` of its `package.json`, null without one. */
   private readonly scopes = new Map<string, PathRule[] | null>();
   /** Per directory under the root: the tsconfig that governs its files, null without one up to the root. */
@@ -121,10 +127,12 @@ export class ImportResolver {
     const ts = loadTsconfig(read, configFile);
     this.baseUrl = ts.baseUrl;
     this.paths = ts.paths;
-    const pkg = read("package.json") as { dependencies?: object; devDependencies?: object; peerDependencies?: object; optionalDependencies?: object; workspaces?: unknown } | null;
-    this.packages = new Set([pkg?.dependencies, pkg?.devDependencies, pkg?.peerDependencies, pkg?.optionalDependencies].flatMap((deps) => (isObject(deps) ? Object.keys(deps) : [])));
+    const pkg = read("package.json") as { workspaces?: unknown } | null;
+    this.declared = dependencies(pkg);
     const workspaces = Array.isArray(pkg?.workspaces) ? pkg.workspaces : isObject(pkg?.workspaces) && Array.isArray(pkg.workspaces.packages) ? pkg.workspaces.packages : [];
-    this.workspaces = workspaces.filter((w): w is string => typeof w === "string");
+    // pnpm keeps the list in its own file and hoists no workspace link to the root `node_modules`.
+    const pnpm = text("pnpm-workspace.yaml");
+    this.workspaces = [...workspaces.filter((w): w is string => typeof w === "string"), ...(pnpm === null ? [] : pnpmWorkspacePackages(pnpm))];
   }
 
   /**
@@ -218,17 +226,12 @@ export class ImportResolver {
     }
   }
 
-  /** A package the project declares, or one installed in a `node_modules` at or above the root. */
-  private known(pkg: string): boolean {
-    if (this.packages.has(pkg) || this.packages.has(`@types/${pkg.replace(/^@/, "").replace("/", "__")}`)) return true;
-    return this.locate(pkg) !== null;
-  }
-
   /**
    * Where `node_modules` at or above the root has the package: a link into the
    * repository is a workspace package. Without an install, a `workspaces`
-   * entry of the root `package.json` with that `name` is one too. Every answer
-   * is an input of the snapshot id: `npm install` changes edges.
+   * entry of the root `package.json` or a `packages` entry of
+   * `pnpm-workspace.yaml` with that `name` is one too. Every answer is an
+   * input of the snapshot id: `npm install` changes edges.
    */
   private locate(pkg: string): Located {
     const known = this.located.get(pkg);
@@ -258,7 +261,7 @@ export class ImportResolver {
     return found;
   }
 
-  /** Directories the root `workspaces` globs name (`packages/*`, `apps/web`). */
+  /** Directories the workspace globs name (`packages/*`, `apps/web`): root `workspaces` and pnpm `packages`. */
   private workspaceDirs(): string[] {
     const dirs: string[] = [];
     for (const pattern of this.workspaces) {
@@ -385,33 +388,76 @@ export class ImportResolver {
     return rules;
   }
 
+  /**
+   * A bare specifier's package: a workspace package at the root (`locate`)
+   * names its file; one installed at or above the root is external; otherwise
+   * the `node_modules` and `package.json` on the way from the file up
+   * (`near`), then the root's declaration, decide — and a package nothing
+   * declares or installs is unresolved.
+   */
   private resolvePackage(fromFile: string, spec: string): Resolution {
     const pkg = packageName(spec);
+    const subpath = spec.slice(pkg.length);
     const located = this.locate(pkg);
-    if (located?.kind === "workspace") {
-      const f = this.packageEntry(located.dir, spec.slice(pkg.length));
-      return f ? { kind: "internal", file: f, workspace: pkg } : { kind: "unresolved" };
-    }
-    return this.known(pkg) || this.knownNear(fromFile, pkg) ? { kind: "external", pkg } : { kind: "unresolved" };
+    if (located?.kind === "workspace") return this.workspaceFile(located.dir, pkg, subpath);
+    if (located !== null) return { kind: "external", pkg };
+    return this.near(fromFile, pkg, subpath) ?? this.declaredDependency("", this.declared, pkg, subpath) ?? { kind: "unresolved" };
   }
 
-  /** Declared in, or installed next to, a `package.json` between `fromFile` and the root. */
-  private knownNear(fromFile: string, pkg: string): boolean {
+  /** The file a workspace package in `dir` names for `subpath`; unresolved without one (a `dist/` entry keylang does not index). */
+  private workspaceFile(dir: string, pkg: string, subpath: string): Resolution {
+    const f = this.packageEntry(dir, subpath);
+    return f ? { kind: "internal", file: f, workspace: pkg } : { kind: "unresolved" };
+  }
+
+  /**
+   * The package as Node finds it from `fromFile` up to (not including) the
+   * root: in the `node_modules` of a directory on the way — a link into the
+   * repository is a workspace package, as pnpm installs them next to the
+   * importing package rather than at the root — or declared by that
+   * directory's `package.json` (`declaredDependency`). Null when no directory
+   * on the way knows it. Each `node_modules` entry found is an input of the
+   * snapshot id.
+   */
+  private near(fromFile: string, pkg: string, subpath: string): Resolution | null {
     for (let dir = posix.dirname(fromFile); dir !== "." && dir !== "" && !dir.startsWith(".."); dir = posix.dirname(dir)) {
+      const installed = join(this.root, dir, "node_modules", pkg);
+      if (existsSync(installed)) {
+        const rel = inside(this.root, installed);
+        this.inputs.set(`${dir}/node_modules/${pkg}`, rel === null ? "installed" : `workspace ${rel}`);
+        return rel === null ? { kind: "external", pkg } : this.workspaceFile(rel, pkg, subpath);
+      }
       let declared = this.nested.get(dir);
       if (declared === undefined) {
-        const manifest = this.read(`${dir}/package.json`) as Record<string, unknown> | null;
-        declared = new Set(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].flatMap((k) => (isObject(manifest?.[k]) ? Object.keys(manifest[k]) : [])));
+        declared = dependencies(this.read(`${dir}/package.json`));
         this.nested.set(dir, declared);
       }
-      if (declared.has(pkg) || declared.has(`@types/${pkg.replace(/^@/, "").replace("/", "__")}`)) return true;
-      const installed = existsSync(join(this.root, dir, "node_modules", pkg));
-      if (installed) {
-        this.inputs.set(`${dir}/node_modules/${pkg}`, "installed");
-        return true;
-      }
+      const r = this.declaredDependency(dir, declared, pkg, subpath);
+      if (r !== null) return r;
     }
-    return false;
+    return null;
+  }
+
+  /**
+   * What a `package.json` in `dir` (`""`: the root) says about `pkg` through
+   * its dependency fields: null when it does not declare it (nor its
+   * `@types`); external for a version range; for a `workspace:`, `file:`,
+   * `link:` or `portal:` range this repository's code (ADR 0010) — the
+   * directory a `file:`/`link:`/`portal:` path names under the root, else
+   * nothing the workspace lists found either, so unresolved, never external.
+   * A `file:` tarball (`file:vendor/x.tgz`) is installed code: external.
+   */
+  private declaredDependency(dir: string, declared: ReadonlyMap<string, string | null>, pkg: string, subpath: string): Resolution | null {
+    const types = `@types/${pkg.replace(/^@/, "").replace("/", "__")}`;
+    const range = declared.has(pkg) ? declared.get(pkg)! : declared.has(types) ? declared.get(types)! : undefined;
+    if (range === undefined) return null;
+    if (range === null || !LOCAL_RANGE.test(range)) return { kind: "external", pkg };
+    if (range.startsWith("workspace:")) return { kind: "unresolved" };
+    const target = toPosix(range.replace(LOCAL_RANGE, ""));
+    if (/\.(tgz|tar\.gz|tar)$/.test(target)) return { kind: "external", pkg };
+    const at = posix.normalize(posix.join(dir === "" ? "." : dir, target));
+    if (at === ".." || at.startsWith("../") || at.startsWith("/")) return { kind: "unresolved" };
+    return this.workspaceFile(at, pkg, subpath);
   }
 
   /** Candidate file (POSIX, relative to root) → existing source file, or null. */
@@ -490,6 +536,48 @@ function inside(root: string, abs: string): string | null {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Ranges that name code in this repository rather than a version to install (as `src/declared-packages.ts` reads them). */
+const LOCAL_RANGE = /^(workspace|file|link|portal):/;
+
+/** The packages a manifest's dependency fields declare: name → range as written (null when it is no string); the first field that has a name wins. */
+function dependencies(manifest: unknown): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    const deps = isObject(manifest) ? manifest[field] : undefined;
+    if (!isObject(deps)) continue;
+    for (const [name, range] of Object.entries(deps)) if (!out.has(name)) out.set(name, typeof range === "string" ? range : null);
+  }
+  return out;
+}
+
+/**
+ * The `packages` globs of a `pnpm-workspace.yaml`: the block list under the
+ * key (items quoted or bare, a trailing `# comment` dropped) or an inline
+ * `[a, b]` list. An exclusion (`!**\/test/**`) names no directory. Any other
+ * key of the file is ignored.
+ */
+export function pnpmWorkspacePackages(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^packages:/.test(line));
+  if (start === -1) return [];
+  const unquote = (item: string): string => item.trim().replace(/\s+#.*$/, "").trim().replace(/^(['"])(.*)\1$/, "$2");
+  const inline = lines[start]!.slice("packages:".length).trim();
+  const items: string[] = [];
+  if (inline.startsWith("[")) {
+    const end = inline.indexOf("]");
+    items.push(...(end === -1 ? inline.slice(1) : inline.slice(1, end)).split(",").map(unquote));
+  } else {
+    for (let i = start + 1; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (/^\s*(#|$)/.test(line)) continue;
+      const item = /^\s*-\s*(.*)$/.exec(line);
+      if (item === null) break;
+      items.push(unquote(item[1]!));
+    }
+  }
+  return items.filter((item) => item !== "" && !item.startsWith("!"));
 }
 
 /**

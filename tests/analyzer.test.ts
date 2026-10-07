@@ -183,6 +183,45 @@ test("imports: a workspace package is internal through its node_modules link or 
   assert.ok(holes.some((h) => /main\.ts:2 unresolved import `@acme\/lib\/util`/.test(h)), holes.join("\n"));
 });
 
+test("imports: a pnpm workspace package is internal through `pnpm-workspace.yaml`, a nested `node_modules` link into the repository, or a `workspace:` range; never external", (t) => {
+  const files = {
+    "package.json": '{"name":"root","private":true}',
+    "pnpm-workspace.yaml": "packages:\n  - 'apps/*'\n  - \"packages/*\"\n  - '!**/test/**'\n",
+    "apps/web/package.json": '{"name":"web","dependencies":{"@acme/db":"workspace:*"}}',
+    "apps/web/src/page.ts": 'import { query } from "@acme/db";\nexport function page(): void { query(); }\n',
+    "packages/db/package.json": '{"name":"@acme/db","main":"./src/index.ts"}',
+    "packages/db/src/index.ts": "export function query(): void {}\n",
+    "keylang/rules.md": "# rules\n\n- deny web db\n",
+  };
+  const layers = { layers: { web: ["apps/web/src/**"], db: ["packages/db/src/**"] } };
+  const denied = (dir: string): void => {
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, o.stdout + o.stderr);
+    assert.match(o.stdout, /apps\/web\/src\/page\.ts:1:1: K102 .*`web\.page` depends on `db\.index`/);
+    assert.doesNotMatch(o.stdout, /external/);
+  };
+  // Not installed: `packages` of pnpm-workspace.yaml names the directory.
+  const dir = repo(t, files, layers);
+  denied(dir);
+  const edges = snapshot(dir).edges.filter((e) => e.kind === "import" && e.source === "web.page").map((e) => `${e.target} ${e.resolution}`);
+  assert.deepEqual(edges, ["db.index resolved"]);
+  // pnpm-style install: the link lives in the app's own node_modules, not the root's.
+  mkdirSync(join(dir, "apps/web/node_modules/@acme"), { recursive: true });
+  symlinkSync("../../../../packages/db", join(dir, "apps/web/node_modules/@acme/db"), "dir");
+  denied(dir);
+  // Without pnpm-workspace.yaml the link alone says the package is this repository's.
+  rmSync(join(dir, "pnpm-workspace.yaml"));
+  denied(dir);
+  // Neither a workspace list nor a link: a `workspace:` range is not an external package but an unresolved import.
+  const bare = repo(t, { ...files, "pnpm-workspace.yaml": "packages: []\n" }, layers);
+  const o = keylang(bare, ["check"]);
+  assert.equal(o.status, 0, o.stdout + o.stderr);
+  assert.match(o.stdout, /unverified/);
+  assert.doesNotMatch(o.stdout, /\b1 ok/);
+  const holes = snapshot(bare).coverage.filter((c) => c.kind === "unresolved-import").map((c) => c.reason);
+  assert.ok(holes.some((h) => /unresolved import `@acme\/db`/.test(h)), holes.join("\n"));
+});
+
 test("imports: `import y = require()` and `import.meta.resolve()` are edges; a computed module URL is a hole", (t) => {
   const dir = repo(t, {
     "src/lib/y.ts": "export function f(): void {}\n",
