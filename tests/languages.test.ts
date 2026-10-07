@@ -127,6 +127,42 @@ test("rust: a workspace member's crate name resolves to its root; `crate::` in b
   assert.ok(index.coverage.some((c) => c.kind === "unresolved-import" && c.file === "crates/shop-app/build.rs"));
 });
 
+// Cargo finds the workspace root by walking up from the crate: a `[workspace]`
+// in `backend/` governs `backend/crates/*` as a root one does. A `path`
+// dependency on a crate of the repository, renamed through `package` or
+// without any workspace, is that crate's library too, not an external package.
+test("rust: a workspace under a subdirectory and `path` dependencies resolve to the crate's library, so `deny app core` is K102", (t) => {
+  const core = { "Cargo.toml": '[package]\nname = "shop-core"\nversion = "0.1.0"\n', "src/lib.rs": "pub fn place() {}\n" };
+  const app = (dep: string, call: string): Record<string, string> => ({
+    "Cargo.toml": `[package]\nname = "shop-app"\nversion = "0.1.0"\n\n[dependencies]\n${dep}\n`,
+    "src/main.rs": `fn main() {\n    ${call}::place();\n}\n`,
+  });
+  const under = (dir: string, files: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(files).map(([f, text]) => [`${dir}/${f}`, text]));
+  const polyglot = {
+    "package.json": '{ "name": "shop", "private": true }\n',
+    "web/index.ts": "export const page = 1;\n",
+    "keylang.json": JSON.stringify({ languages: ["typescript", "rust"], layers: { web: ["web/**"], core: ["backend/crates/core/**"], app: ["backend/crates/app/**"] } }),
+    "keylang/rules.md": "# rules\n\n- deny app core\n",
+  };
+  const cases: Record<string, Record<string, string>> = {
+    "workspace under backend/ with a glob": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
+    "workspace under backend/ with explicit members": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/core", "crates/app"]\n', ...under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")) },
+    "path dependency renamed through `package`": { "backend/Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n', ...under("backend/crates/app", app('domain = { package = "shop-core", path = "../core" }', "domain")) },
+    "path dependency without a workspace": under("backend/crates/app", app('shop-core = { path = "../core" }', "shop_core")),
+  };
+  for (const [name, files] of Object.entries(cases)) {
+    const dir = repo(t, { ...polyglot, ...under("backend/crates/core", core), ...files });
+    const o = keylang(dir, ["check"]);
+    assert.equal(o.status, 1, `${name}: ${o.stdout}${o.stderr}`);
+    assert.match(o.stdout, /backend\/crates\/app\/src\/main\.rs:2:5: K102 divergence: `app\.src\.main` depends on `core\.src\.lib`, which is denied by `deny app core`/, name);
+    assert.match(o.stderr, /1 fail, 0 unverified, 0 ok/, name);
+    assert.equal(keylang(dir, ["map"]).status, 0, name);
+    const index = snapshot(dir);
+    assert.ok(index.edges.some((e) => e.kind === "call" && e.source === "app.src.main.main" && e.target === "core.src.lib.place"), `${name}: ${JSON.stringify(index.edges)}`);
+    assert.ok(!index.edges.some((e) => e.target === "external.shop-core" || e.target === "external.domain"), `${name}: no external edge`);
+  }
+});
+
 const pyLayers = { languages: ["python"], layers: { domain: ["shop/domain/**"], infra: ["shop/infra/**"], app: ["shop/*"] } };
 
 test("python: init detects the language; map follows relative and absolute imports, `self` and module bindings", (t) => {

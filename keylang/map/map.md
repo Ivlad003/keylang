@@ -485,24 +485,30 @@
     - glob base.glob
     - type [Crate](../../src/rust-imports.ts#L23) <!-- internal -->
     - module [RustResolver](../../src/rust-imports.ts#L36)
-      - fn [constructor](../../src/rust-imports.ts#L46) (root: string, sources: ReadonlySet<string> = new Set())
-        - calls map.rust-imports.RustResolver.crateAt, map.rust-imports.RustResolver.workspaceMembers
-      - fn [resolve](../../src/rust-imports.ts#L57) (fromFile: string, spec: string) → Resolution
-        - calls map.rust-imports.RustResolver.crateOf, map.rust-imports.RustResolver.rootOf, map.rust-imports.modulePath, map.rust-imports.RustResolver.moduleFile, map.rust-imports.RustResolver.declares
-      - fn [moduleFile](../../src/rust-imports.ts#L115) (rootFile: string, path: string[]) → string | null <!-- internal -->
-      - fn [rootOf](../../src/rust-imports.ts#L126) (crate: Crate, file: string) → string | null <!-- internal -->
+      - fn [constructor](../../src/rust-imports.ts#L48) (root: string, sources: ReadonlySet<string> = new Set())
+      - fn [resolve](../../src/rust-imports.ts#L53) (fromFile: string, spec: string) → Resolution
+        - calls map.rust-imports.RustResolver.crateOf, map.rust-imports.RustResolver.rootOf, map.rust-imports.modulePath, map.rust-imports.RustResolver.pathDependency, map.rust-imports.RustResolver.membersOf, map.rust-imports.RustResolver.moduleFile, map.rust-imports.RustResolver.declares
+      - fn [moduleFile](../../src/rust-imports.ts#L112) (rootFile: string, path: string[]) → string | null <!-- internal -->
+      - fn [rootOf](../../src/rust-imports.ts#L123) (crate: Crate, file: string) → string | null <!-- internal -->
         - calls map.rust-imports.modulePath, map.rust-imports.RustResolver.declares
-      - fn [declares](../../src/rust-imports.ts#L152) (file: string, name: string, inline = false) → boolean <!-- internal -->
-      - fn [crateOf](../../src/rust-imports.ts#L164) (file: string) → Crate | null <!-- internal -->
+      - fn [declares](../../src/rust-imports.ts#L149) (file: string, name: string, inline = false) → boolean <!-- internal -->
+      - fn [crateOf](../../src/rust-imports.ts#L161) (file: string) → Crate | null <!-- internal -->
         - calls map.rust-imports.RustResolver.crateAt
-      - fn [crateAt](../../src/rust-imports.ts#L173) (dir: string) → Crate | null <!-- internal -->
-        - calls map.rust-imports.RustResolver.readToml, map.rust-imports.isObject
-      - fn [workspaceMembers](../../src/rust-imports.ts#L212) () → string[] <!-- internal -->
-        - calls map.rust-imports.RustResolver.readToml, map.rust-imports.isObject, base.glob.globToRegExp, map.rust-imports.readdirNames
-      - fn [readToml](../../src/rust-imports.ts#L231) (file: string) → Record<string, unknown> | null <!-- internal -->
-    - fn [modulePath](../../src/rust-imports.ts#L248) (rootFile: string, file: string) → string[] <!-- internal -->
-    - fn [readdirNames](../../src/rust-imports.ts#L256) (abs: string) → string[] <!-- internal -->
-    - fn [isObject](../../src/rust-imports.ts#L260) (value: unknown) → value is Record<string, unknown> <!-- internal -->
+      - fn [crateAt](../../src/rust-imports.ts#L170) (dir: string) → Crate | null <!-- internal -->
+        - calls map.rust-imports.RustResolver.manifestAt, map.rust-imports.isObject, map.rust-imports.insideRoot
+      - fn [pathDependency](../../src/rust-imports.ts#L210) (crate: Crate, name: string) → Crate | null <!-- internal -->
+        - calls map.rust-imports.RustResolver.crateAt
+      - fn [membersOf](../../src/rust-imports.ts#L220) (crate: Crate) → Map<string, Crate> <!-- internal -->
+        - calls map.rust-imports.RustResolver.manifestAt, map.rust-imports.isObject, map.rust-imports.RustResolver.workspaceMembers, map.rust-imports.RustResolver.crateAt
+      - fn [workspaceMembers](../../src/rust-imports.ts#L243) (dir: string) → string[] <!-- internal -->
+        - calls map.rust-imports.RustResolver.manifestAt, map.rust-imports.isObject, map.rust-imports.insideRoot, base.glob.globToRegExp, map.rust-imports.readdirNames
+      - fn [manifestAt](../../src/rust-imports.ts#L267) (dir: string) → Record<string, unknown> | null <!-- internal -->
+        - calls map.rust-imports.RustResolver.readToml
+      - fn [readToml](../../src/rust-imports.ts#L275) (file: string) → Record<string, unknown> | null <!-- internal -->
+    - fn [modulePath](../../src/rust-imports.ts#L292) (rootFile: string, file: string) → string[] <!-- internal -->
+    - fn [insideRoot](../../src/rust-imports.ts#L301) (dir: string) → string | null <!-- internal -->
+    - fn [readdirNames](../../src/rust-imports.ts#L306) (abs: string) → string[] <!-- internal -->
+    - fn [isObject](../../src/rust-imports.ts#L310) (value: unknown) → value is Record<string, unknown> <!-- internal -->
   - module [snapshot](../../src/snapshot.ts#L1)
     - node external.node
     - config base.config
