@@ -8,7 +8,7 @@
 import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { safeWrite, writeAtomic } from "./safe-write.ts";
 import { harnessChoice, type HarnessChoice } from "./harness.ts";
 import { CLONE_EXPLAIN_MODES, cloneCacheRoot, enableExplainedMap, isCloneExplain, parseRepoSource, syncClone, type CloneExplain } from "./clone.ts";
@@ -1067,14 +1067,21 @@ async function stopDecision(input: string, cwd: string): Promise<string> {
  * refuses with 2 and names the line to add; --check counts it as not installed.
  */
 async function cmdHookInstall(checkOnly: boolean): Promise<number> {
-  const { gitHooksDir, preCommitCommand, preCommitState, preCommitText } = await import("./git-hook.ts");
+  const { gitHooksDir, gitTopLevel, preCommitCommand, preCommitState, preCommitText } = await import("./git-hook.ts");
   const version = packageVersion();
-  const file = join(gitHooksDir(process.cwd()), "pre-commit");
-  const shown = toPosix(relative(process.cwd(), file));
+  const cwd = process.cwd();
+  const top = gitTopLevel(cwd);
+  const file = join(gitHooksDir(cwd), "pre-commit");
+  const shown = toPosix(relative(cwd, file));
+  // The hook is bound to the keylang root around `cwd`: git runs it from the top level, which may hold no `keylang.json`.
+  const root = findRoot(cwd);
+  const subdir = existsSync(join(root, CONFIG_FILE)) ? toPosix(relative(top, root)) : "";
+  if (subdir.startsWith("..") || isAbsolute(subdir)) throw new Error(`hook install: the keylang root ${root} is outside the git work tree ${top}`);
+  const where = subdir === "" ? "" : ` in ${subdir}`;
   const entry = existsSync(file) ? statSync(file) : null;
   if (entry !== null && !entry.isFile()) throw new Error(`hook install: ${shown}: not a file`);
   const current = entry === null ? null : readFileSync(file, "utf8");
-  const state = preCommitState(current, entry !== null && (entry.mode & 0o111) !== 0, version);
+  const state = preCommitState(current, entry !== null && (entry.mode & 0o111) !== 0, version, subdir);
   const foreign = `${shown}: a pre-commit hook keylang did not write; add \`${preCommitCommand(version)}\` to it`;
   if (checkOnly) {
     if (state === "current") {
@@ -1087,10 +1094,10 @@ async function cmdHookInstall(checkOnly: boolean): Promise<number> {
   }
   if (state === "foreign") throw new Error(`hook install: ${foreign}`);
   if (state !== "current") {
-    writeAtomic(file, preCommitText(version), { exact: true });
+    writeAtomic(file, preCommitText(version, subdir), { exact: true });
     chmodSync(file, 0o755);
   }
-  process.stdout.write(`${shown}: ${state === "current" ? "up to date" : "written"}; runs \`${preCommitCommand(version)}\`\n`);
+  process.stdout.write(`${shown}: ${state === "current" ? "up to date" : "written"}; runs \`${preCommitCommand(version)}\`${where}\n`);
   return 0;
 }
 

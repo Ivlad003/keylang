@@ -491,15 +491,17 @@
       - calls map.graph.placeFile
   - module [git-hook](../../src/git-hook.ts#L1)
     - node external.node
-    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
-    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
+    - fn [preCommitCommand](../../src/git-hook.ts#L13) (version: string) → string
+    - fn [preCommitText](../../src/git-hook.ts#L22) (version: string, subdir = "") → string
       - calls features.git-hook.preCommitCommand
-    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
-    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
+    - type [PreCommitState](../../src/git-hook.ts#L34) = "missing" | "foreign" | "stale" | "current"
+    - fn [preCommitState](../../src/git-hook.ts#L36) (current: string | null, executable: boolean, version: string, subdir = "") → PreCommitState
       - calls features.git-hook.preCommitText
-    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+    - fn [gitHooksDir](../../src/git-hook.ts#L48) (cwd: string) → string
+      - calls features.git-hook.gitTopLevel, features.git-hook.git
+    - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
       - calls features.git-hook.git
-    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+    - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
   - module [harness](../../src/harness.ts#L1)
     - node external.node
     - smol-toml external.smol-toml

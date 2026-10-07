@@ -769,20 +769,23 @@
   - module [git-hook](../../src/git-hook.ts#L1)
     <a id="features.git-hook"></a><br>`keylang hook install`: the git pre-commit hook that runs `check --changed`. The hook file is keylang's as a whole, found by its marker; a hook without the marker belongs to someone else and is never rewritten.
     - node [external.node](external.md#external.node)
-    - fn [preCommitCommand](../../src/git-hook.ts#L11) (version: string) → string
+    - fn [preCommitCommand](../../src/git-hook.ts#L13) (version: string) → string
       <a id="features.git-hook.preCommitCommand"></a><br>What the hook runs: the published CLI of this version, as the harness hooks do.
-    - fn [preCommitText](../../src/git-hook.ts#L16) (version: string) → string
-      <a id="features.git-hook.preCommitText"></a><br>The whole hook file.
+    - fn [preCommitText](../../src/git-hook.ts#L22) (version: string, subdir = "") → string
+      <a id="features.git-hook.preCommitText"></a><br>The whole hook file. `subdir` is the keylang root relative to the top of the work tree, POSIX, "" when they are the same: the hook enters it before `check --changed`, since git starts every hook at the top level.
       - calls [features.git-hook.preCommitCommand](features.md#features.git-hook.preCommitCommand)
-    - type [PreCommitState](../../src/git-hook.ts#L27) = "missing" | "foreign" | "stale" | "current"
+    - type [PreCommitState](../../src/git-hook.ts#L34) = "missing" | "foreign" | "stale" | "current"
       <a id="features.git-hook.PreCommitState"></a><br>`missing`: no file; `foreign`: a hook without keylang's marker; `stale`: keylang's, but other text or not executable.
-    - fn [preCommitState](../../src/git-hook.ts#L29) (current: string | null, executable: boolean, version: string) → PreCommitState
-      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04)_
+    - fn [preCommitState](../../src/git-hook.ts#L36) (current: string | null, executable: boolean, version: string, subdir = "") → PreCommitState
+      <a id="features.git-hook.preCommitState"></a><br>Classifies an existing pre-commit hook as "missing" when absent, "foreign" when it lacks the keylang marker, "current" when it matches the output of [`features.git-hook.preCommitText`](features.md#features.git-hook.preCommitText) for the given version and is executable, otherwise "stale". _(llm · claude:claude-fable-5-1 · 2026-10-04 · stale)_
       - calls [features.git-hook.preCommitText](features.md#features.git-hook.preCommitText)
-    - fn [gitHooksDir](../../src/git-hook.ts#L41) (cwd: string) → string
+    - fn [gitHooksDir](../../src/git-hook.ts#L48) (cwd: string) → string
       <a id="features.git-hook.gitHooksDir"></a><br>The hooks directory git uses for the repository around `cwd`, absolute: `git rev-parse --git-path hooks` honours `core.hooksPath` and linked worktrees. It is asked from the top level, where a relative `core.hooksPath` is resolved.
+      - calls [features.git-hook.gitTopLevel](features.md#features.git-hook.gitTopLevel), [features.git-hook.git](features.md#features.git-hook.git)
+    - fn [gitTopLevel](../../src/git-hook.ts#L54) (cwd: string) → string
+      <a id="features.git-hook.gitTopLevel"></a><br>The top of the work tree around `cwd`, absolute. Throws outside a git work tree.
       - calls [features.git-hook.git](features.md#features.git-hook.git)
-    - fn [git](../../src/git-hook.ts#L46) (cwd: string, args: string[]) → string <!-- internal -->
+    - fn [git](../../src/git-hook.ts#L58) (cwd: string, args: string[]) → string <!-- internal -->
       <a id="features.git-hook.git"></a><br>Runs a git command synchronously in the given directory and returns its trimmed stdout, throwing a hook-install error if git can't launch or exits non-zero; used by [`features.git-hook.gitHooksDir`](features.md#features.git-hook.gitHooksDir). _(llm · claude:claude-opus-5-5 · 2026-10-05)_
   - module [harness](../../src/harness.ts#L1)
     <a id="features.harness"></a><br>Harness adapters: one pure merge from the files on disk and the selected harnesses to the next text. Markdown keeps a marked block; JSON replaces only the `keylang` key; TOML splices only the `[mcp_servers.keylang]` table, so comments and layout around it stay. `--agents=none`…

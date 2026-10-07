@@ -368,3 +368,47 @@ test("hook install follows core.hooksPath and needs a git repository", (t) => {
   assert.match(none.stderr, /git/);
   assert.equal(keylang(bare, ["hook", "nope"]).status, 2);
 });
+
+test("hook install from a keylang root below the git top level: the hook runs `check --changed` there, so a commit passes; --check calls a hook without the path stale", (t) => {
+  const mono = tempDir(t, "keylang-hook-mono-");
+  writeTree(mono, { "README.md": "# mono\n", "packages/x/keylang.json": `${JSON.stringify(LAYERS)}\n`, "packages/x/keylang/rules.md": "# rules\n\n- deny domain app\n", "packages/x/src/app/pay.ts": PAY });
+  git(mono, ["init", "-q"]);
+  const pkg = join(mono, "packages/x");
+  // A stand-in `npx` first on PATH: drops `-y keylang@<v>`, logs its cwd and runs this checkout's CLI.
+  const bindir = tempDir(t, "keylang-hook-bin-");
+  const log = join(bindir, "cwd.log");
+  writeFileSync(join(bindir, "npx"), `#!/bin/sh\nshift 2\npwd >> "${log}"\nexec "${process.execPath}" "${bin}" "$@"\n`);
+  chmodSync(join(bindir, "npx"), 0o755);
+  const commit = (cwd: string, message: string): { status: number | null; stdout: string; stderr: string } =>
+    spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-qm", message], { cwd, encoding: "utf8", env: { ...process.env, PATH: `${bindir}:${process.env.PATH ?? ""}` } });
+
+  const install = keylang(pkg, ["hook", "install"]);
+  assert.equal(install.status, 0, install.stderr);
+  assert.match(install.stdout, /\.\.\/\.\.\/\.git\/hooks\/pre-commit: written; runs `npx -y keylang@[^`]+ check --changed` in packages\/x/);
+  const hook = join(mono, ".git/hooks/pre-commit");
+  const text = readFileSync(hook, "utf8");
+  assert.match(text, /^cd "\$\(git rev-parse --show-toplevel\)\/packages\/x" \|\| exit 2$/m);
+  assert.equal(keylang(pkg, ["hook", "install", "--check"]).status, 0);
+
+  git(mono, ["add", "-A"]);
+  const one = commit(pkg, "one");
+  assert.equal(one.status, 0, one.stderr + one.stdout);
+  assert.equal(readFileSync(log, "utf8").trim(), pkg, "the hook ran keylang from the keylang root");
+  writeFileSync(join(mono, "README.md"), "# mono\n\nmore\n");
+  git(mono, ["add", "-A"]);
+  const two = commit(mono, "two");
+  assert.equal(two.status, 0, two.stderr + two.stdout);
+
+  // A finding that touches a changed file still blocks the commit.
+  writeTree(pkg, { "src/domain/order.ts": 'import { charge } from "../app/pay.ts";\nexport function price(): number {\n  return charge();\n}\n' });
+  git(mono, ["add", "-A"]);
+  const blocked = commit(pkg, "three");
+  assert.notEqual(blocked.status, 0, "the pre-commit hook blocks the commit");
+  assert.match(blocked.stdout + blocked.stderr, /K102/);
+
+  // The hook of a version without the `cd` line is stale: install rewrites it.
+  writeFileSync(hook, text.replace(/^cd .*\n/m, ""));
+  assert.equal(keylang(pkg, ["hook", "install", "--check"]).status, 1);
+  assert.equal(keylang(pkg, ["hook", "install"]).status, 0);
+  assert.equal(readFileSync(hook, "utf8"), text);
+});
