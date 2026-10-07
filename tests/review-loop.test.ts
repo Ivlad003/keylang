@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { runOperation } from "../src/operations.ts";
-import { codeProposalProblem, proposalProblem } from "../src/proposals.ts";
+import { codeProposalProblem, landsIn, proposalProblem } from "../src/proposals.ts";
 import { App } from "../src/tui/app.ts";
 import { KEY } from "./tui-fixture.ts";
 import { VirtualTerminal } from "./vt.ts";
@@ -208,6 +208,59 @@ test("apply_diff refuses saved explanations, the explained map and a spec direct
   assert.equal(linked.isError, true, linked.text);
   assert.match(linked.text, /the spec directory leads out of the repository through a link/);
   assert.equal(existsSync(join(dir, ".keylang/proposals/keylang/flows/checkout.md")), false);
+});
+
+// Review 2026-10-06 §2.1 item 14: the reserved directories are checked where the write lands, not by the path's text.
+test("a reserved directory reached through a link or another case is still refused: explain/ and node_modules", async (t) => {
+  const dir = repoCopy(t);
+  const brief = "<!-- keylang:explain agent=x date=2026-10-05 closure=abc lang=en detail=brief -->\nReal brief.\n";
+  const forged = "<!-- keylang:explain agent=x date=2026-10-05 closure=FORGED lang=en detail=brief -->\nForged brief.\n";
+  writeTree(dir, { "keylang/explain/brief/app.checkout.checkout.md": brief, "node_modules/lib/index.ts": "export const x = 1;\n" });
+  symlinkSync("explain", join(dir, "keylang/notes"));
+  symlinkSync("../node_modules/lib", join(dir, "src/vendor"));
+  const explain = /saved explanations: only `keylang explain` writes them/;
+  const unread = /in a directory sources are not read from/;
+
+  // The gate itself, where the text of the path says nothing: a link, and the letter case the text check reads literally.
+  assert.match(proposalProblem(dir, "keylang", "keylang/notes/brief/app.checkout.checkout.md") ?? "", explain);
+  assert.match(proposalProblem(dir, "keylang", "keylang/notes/new.md") ?? "", explain);
+  assert.match(proposalProblem(dir, "keylang", "keylang/Explain/brief/app.checkout.checkout.md") ?? "", explain);
+  assert.match(proposalProblem(dir, "keylang", "keylang/EXPLAIN/x.md") ?? "", explain);
+  assert.match(proposalProblem(dir, "keylang", "keylang/Map/app.md") ?? "", /a generated map file/);
+  assert.match(codeProposalProblem(dir, "src/vendor/index.ts") ?? "", unread);
+  assert.match(codeProposalProblem(dir, "Node_Modules/lib/index.ts") ?? "", unread);
+  assert.equal(proposalProblem(dir, "keylang", "keylang/flows/notes.md"), null, "a plain spec named like the link is fine");
+  assert.equal(codeProposalProblem(dir, "src/vendor-free/index.ts"), null, "a sibling that only shares a prefix is fine");
+  // The pure comparison of landing places, on the link: the test case-insensitive file systems cannot be made on Linux.
+  assert.equal(landsIn(join(dir, "keylang/notes/brief/x.md"), join(dir, "keylang/explain")), true);
+  assert.equal(landsIn(join(dir, "keylang/notes"), join(dir, "keylang/explain")), true);
+  assert.equal(landsIn(join(dir, "keylang/flows/x.md"), join(dir, "keylang/explain")), false);
+  assert.equal(landsIn(join(dir, "keylang/explain-notes/x.md"), join(dir, "keylang/explain")), false);
+
+  // Every entry point gives that reason and writes nothing.
+  const call = await mcpClient(t, dir);
+  const linked = await call("apply_diff", { path: "keylang/notes/brief/app.checkout.checkout.md", text: forged });
+  assert.equal(linked.isError, true, linked.text);
+  assert.match(linked.text, explain);
+  const into = keylang(dir, ["draft", "flow", "app.checkout.checkout", "--mode", "algo", "--into", "keylang/notes/x.md"]);
+  assert.equal(into.status, 2, into.stdout);
+  assert.match(into.stderr, explain);
+  assert.equal(existsSync(join(dir, ".keylang/proposals/keylang/notes")), false);
+
+  propose(dir, "keylang/notes/brief/app.checkout.checkout.md", forged);
+  propose(dir, "src/vendor/index.ts", "export const x = 2;\n");
+  const listed = keylang(dir, ["proposals"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.match(listed.stdout, /^keylang\/notes\/brief\/app\.checkout\.checkout\.md: cannot be accepted: saved explanations: only `keylang explain` writes them$/m);
+  assert.match(listed.stdout, /^src\/vendor\/index\.ts: cannot be accepted: in a directory sources are not read from$/m);
+  const accepted = keylang(dir, ["proposals", "accept", "keylang/notes/brief/app.checkout.checkout.md"]);
+  assert.equal(accepted.status, 1, accepted.stdout);
+  assert.match(accepted.stderr, explain);
+  const code = keylang(dir, ["proposals", "accept", "src/vendor/index.ts"]);
+  assert.equal(code.status, 1, code.stdout);
+  assert.match(code.stderr, unread);
+  assert.equal(readFileSync(join(dir, "keylang/explain/brief/app.checkout.checkout.md"), "utf8"), brief, "the saved brief is untouched");
+  assert.equal(readFileSync(join(dir, "node_modules/lib/index.ts"), "utf8"), "export const x = 1;\n", "node_modules is untouched");
 });
 
 test("the code gate is the write protocol's: a Windows path or a backslash is not a plain relative path", () => {

@@ -357,6 +357,29 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
     else pushOk(order.file, order.span, order.text, order.layers.join(","), `convergence: every dependency between ${names} points down${allowed}, and no dependency hole in the area`, order.text);
   }
 
+  // A module the source imports a name from may re-export the denied target: while it is transparent the edge
+  // runs through it to the target, so when it is opaque (excluded, unparsed) it is in the deny's area too.
+  // A re-export chain is followed; a plain import of an import is the imported module's own dependency.
+  const importsOf = new Map<string, string[]>();
+  const reexportsOf = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.resolution !== "resolved" || (edge.kind !== "import" && edge.kind !== "reexport")) continue;
+    listAt(importsOf, edge.from).push(edge.to);
+    if (edge.kind === "reexport") listAt(reexportsOf, edge.from).push(edge.to);
+  }
+  const importedBy = (scope: readonly string[]): string[] => {
+    const inScope = new Set(scope);
+    const seen = new Set<string>();
+    const stack = scope.flatMap((id) => importsOf.get(id) ?? []);
+    while (stack.length > 0) {
+      const id = stack.pop();
+      if (id === undefined || seen.has(id) || inScope.has(id)) continue;
+      seen.add(id);
+      for (const next of reexportsOf.get(id) ?? []) stack.push(next);
+    }
+    return [...seen];
+  };
+
   for (const deny of rules.denies) {
     if (failedDenies.has(deny)) continue;
     const scope = [...modules].filter((id) => within(id, deny.a));
@@ -369,7 +392,8 @@ function evaluateOnSnapshot(rules: EvaluatedRules, index: Index, snapshot: Snaps
       pushUnverified(...at, deny.text, area, `\`${intended}\` is planned: no code in the area yet`);
       continue;
     }
-    const hole = holeAmong(scope) ?? scopeHole(deny.a);
+    // An imported file outside every layer has known edges; any other hole in it may hide a re-export of a target.
+    const hole = holeAmong(scope) ?? holeAmong(importedBy(scope), UNASSIGNED_FILE) ?? scopeHole(deny.a);
     const winners = overridden.get(deny);
     if (hole) pushUnverified(...at, deny.text, area, holeText(hole), deny.text, hole);
     else if (scope.length === 0) pushOk(deny.file, deny.span, deny.text, area, `convergence: no module under \`${deny.a}\` yet, so no edge to ${targets}`);
