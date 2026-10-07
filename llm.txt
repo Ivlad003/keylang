@@ -43,7 +43,7 @@ The first `npx` needs a network. Later `check` and `map` do not.
 npx -y keylang agents --agents=claude
 ```
 
-Use one or a comma-separated list of `claude`, `codex`, `cursor`, `opencode`. Unknown names exit 2 and print the allowed list. `--agents=none` writes no harness files and still writes the baseline.
+Use one or a comma-separated list of `claude`, `codex`, `cursor`, `opencode`. Unknown names exit 2 and print the allowed list. `--agents=none` writes no harness files and still writes the baseline; it strips keylang's own entries (the `AGENTS.md` block, the `keylang` MCP server, the skill copies, Claude's deny rules and Stop hook) and leaves a file without one byte for byte.
 
 That command is idempotent. It copies the skill to `.agents/skills/keylang-feature/SKILL.md` and `.claude/skills/keylang-feature/SKILL.md`, and it registers an MCP server named `keylang` whose command is `npx -y keylang@<version> mcp`, pinned to the version that wrote the config. Claude and Codex also get a Stop hook: `keylang hook stop`. Cursor uses Claude's hooks. opencode does not get a Stop hook. `.codex/` applies only in a trusted project; each hook there is approved on its own.
 

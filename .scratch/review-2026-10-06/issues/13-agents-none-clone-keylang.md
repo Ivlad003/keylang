@@ -1,6 +1,6 @@
 # 13: `--agents=none` (і кожен `clone`) переписує й видаляє файли харнеса, де немає нічого від keylang; коментарі `.codex/config.toml` губляться
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Type:** code
 
@@ -46,11 +46,15 @@ t5: `.codex/config.toml` = три рядки `# …`. `node bin/keylang.js init 
 
 ## Критерії готовності
 
-- [ ] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
-- [ ] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
-- [ ] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
-- [ ] у `docs/review-2026-10-06.md` позначити пункт ✔
+- [x] спершу регресійний тест, що відтворює сценарій вище і падає на поточному коді (мінімальна фікстура на тимчасовій копії, через справжній CLI, якщо можливо)
+- [x] виправлення в `src/harness.ts` (і пов'язаних місцях з розділу «Що зробити»); тест зелений
+- [x] якщо змінюється задокументований контракт — оновити `docs/` (semantics.md, cli.md, tui.md, snapshot.md чи відповідний ADR) і `llm.txt`
+- [x] у `docs/review-2026-10-06.md` позначити пункт ✔
 
 **Межі:** лише цей дефект; суміжні знахідки — окремими тікетами з цієї ж теки.
 
 ## Comments
+
+- 2026-10-07: Регресійний тест `tests/cli-harness.test.ts` «agents: --agents=none leaves a harness file without a keylang entry byte for byte…»: `.codex/config.toml` із самих коментарів, `.claude/settings.json` = `{}`, `.cursor/mcp.json` = `{"mcpServers":{}}`, `.mcp.json` і `.codex/hooks.json` із чужими даними й 4-пробільним відступом, `opencode.json` без завершального переводу рядка, порожній `AGENTS.md` — `init --agents=none` і `agents --agents=none` мають лишити кожен байт у байт і не називати файл кроком; другий блок — `init --agents=claude,codex,cursor` на `config.toml` з коментарями і чужою `[mcp_servers.other]`, далі `agents --agents=none` повертає файл до початкових байтів, а `.mcp.json`, `.cursor/mcp.json`, `.claude/settings.json`, `.codex/hooks.json`, `AGENTS.md`, skill (де було лише keylang'ове) зникають. На поточному коді падав одразу: `.codex/config.toml` з коментарів було видалено (ENOENT).
+- 2026-10-07: Виправлення в `src/harness.ts`. Знімання (`version === null`) тепер ні-оп для файла без запису keylang: `mergeJsonKey` — немає `<key>.keylang`; `mergeSettings` — `holdsKeylangSettings` (deny-правило для `dir` чи типового `keylang/`, або наш хук Stop); `mergeHooksFile` — `holdsOurHook`; `mergeMarked(existing, null)` без маркерів повертає `existing` (порожній `AGENTS.md` більше не видаляється). `mergeCodexToml` переписано на текстовий сплайс: файл розбирається smol-toml (невалідний TOML — помилка, як і було; власні ключі запису беруться з розбору), але замінюються/прибираються/дописуються лише рядки `[mcp_servers.keylang]` до наступного заголовка (підтаблиці `[mcp_servers.keylang.*]` входять), результат перевіряється зворотним розбором (`codexEntryIs`); запис, записаний інакше (inline/dotted), або сплайс, що не розбирається, — fallback на повну серіалізацію, як раніше. Видалення файла — лише коли після зняття лишився порожній текст.
+- 2026-10-07: Припущення: файл із самих коментарів після зняття таблиці keylang лишається (коментарі — «щось», файл не видаляється); `.codex/config.toml` із записом keylang у формі inline-таблиці й далі втрачає коментарі (задокументовано як виняток). Контракт: `docs/cli.md` (§ агенти: що саме прибирає `--agents=none`, коли файл видаляється, текстовий сплайс TOML), `llm.txt:46`. `docs/review-2026-10-06.md` п. 12 позначено ✔ (тікет 13 відповідає п. 12 рев'ю). Перевірки: `node --test tests/cli-harness.test.ts tests/review-harness.test.ts tests/clone.test.ts tests/operations.test.ts` — 28/28, `npm run typecheck` — ок, `node bin/keylang.js check` — 0 fail.

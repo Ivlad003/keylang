@@ -127,6 +127,58 @@ test("agents: a removal through a harness directory linked out of the repository
   assert.deepEqual(treeBytes(cloned.outside), before, "a clone never removes files behind the repository's links");
 });
 
+test("agents: --agents=none leaves a harness file without a keylang entry byte for byte, and removes a file only when nothing but keylang's entries was in it", (t) => {
+  // Comments only, `{}`, an empty server table, a person's settings with four-space indentation: nothing of keylang's in any of them.
+  const dir = tempDir(t, "keylang-none-foreign-");
+  const files = {
+    ".codex/config.toml": "# my codex settings\n# model = \"gpt-5\"\n",
+    ".claude/settings.json": "{}\n",
+    ".cursor/mcp.json": '{"mcpServers":{}}\n',
+    ".mcp.json": '{\n    "mcpServers": {\n        "other": { "command": "echo" }\n    }\n}\n',
+    "opencode.json": '{"mcp": {"other": {"type": "local", "command": ["echo"]}}}',
+    ".codex/hooks.json": '{\n  "hooks": {}\n}\n',
+    "AGENTS.md": "\n",
+  };
+  writeTree(dir, { "src/app/pay.ts": PAY, "src/domain/order.ts": ORDER, ...files });
+  const init = keylang(dir, ["init", "--agents=none"]);
+  assert.equal(init.status, 0, init.stdout + init.stderr);
+  for (const [path, text] of Object.entries(files)) {
+    assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
+    assert.ok(!init.stdout.includes(`${path}:`), `${path} is not a step: ${init.stdout}`);
+  }
+  const again = keylang(dir, ["agents", "--agents=none"]);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.equal(again.stdout, "");
+  for (const [path, text] of Object.entries(files)) assert.equal(readFileSync(join(dir, path), "utf8"), text, path);
+  assert.equal(keylang(dir, ["agents", "--check", "--agents=none"]).status, 0);
+
+  // A file keylang filled alone goes with its entries; a file that also holds the person's data keeps that data.
+  const mixed = tempDir(t, "keylang-none-strip-");
+  writeTree(mixed, {
+    "src/app/pay.ts": PAY,
+    "src/domain/order.ts": ORDER,
+    ".codex/config.toml": '# keep me\nmodel = "gpt-5" # note\n\n[mcp_servers.other]\ncommand = "echo"\n',
+  });
+  mkdirSync(join(mixed, ".claude"));
+  mkdirSync(join(mixed, ".cursor"));
+  const install = keylang(mixed, ["init", "--agents=claude,codex,cursor"]);
+  assert.equal(install.status, 0, install.stderr);
+  const toml = readFileSync(join(mixed, ".codex/config.toml"), "utf8");
+  assert.ok(toml.startsWith('# keep me\nmodel = "gpt-5" # note\n'), `comments stay on install: ${toml}`);
+  assert.match(toml, /\[mcp_servers\.keylang\]/);
+  assert.ok(existsSync(join(mixed, ".mcp.json")), "created for Claude");
+  const stripped = keylang(mixed, ["agents", "--agents=none"]);
+  assert.equal(stripped.status, 0, stripped.stdout + stripped.stderr);
+  assert.equal(readFileSync(join(mixed, ".codex/config.toml"), "utf8"), '# keep me\nmodel = "gpt-5" # note\n\n[mcp_servers.other]\ncommand = "echo"\n', "the table went, the rest is as before");
+  assert.ok(!existsSync(join(mixed, ".mcp.json")), "only keylang's server was in it");
+  assert.ok(!existsSync(join(mixed, ".cursor/mcp.json")));
+  assert.ok(!existsSync(join(mixed, ".claude/settings.json")), "only keylang's deny rules and hook were in it");
+  assert.ok(!existsSync(join(mixed, ".codex/hooks.json")));
+  assert.ok(!existsSync(join(mixed, "AGENTS.md")));
+  assert.ok(!existsSync(join(mixed, "CLAUDE.md")));
+  assert.ok(!existsSync(join(mixed, ".claude/skills/keylang-feature/SKILL.md")));
+});
+
 test("agents: MCP servers, skill copies, Claude deny and a stale --check that writes nothing", (t) => {
   const dir = tempDir(t, "keylang-mcp-cfg-");
   writeTree(dir, {

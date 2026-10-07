@@ -1,8 +1,12 @@
 // Harness adapters: one pure merge from the files on disk and the selected
-// harnesses to the next text. Markdown keeps a marked block; JSON and TOML
-// replace only the `keylang` key. Below it, the two phases the shared
-// `agents` operation runs: a plan read from the disk (nothing written), then
-// a commit that checks the plan's inputs again and writes step by step.
+// harnesses to the next text. Markdown keeps a marked block; JSON replaces
+// only the `keylang` key; TOML splices only the `[mcp_servers.keylang]`
+// table, so comments and layout around it stay. `--agents=none` strips
+// keylang's entries: a file without one is left byte for byte, and a file
+// goes only when nothing but those entries was in it. Below, the two phases
+// the shared `agents` operation runs: a plan read from the disk (nothing
+// written), then a commit that checks the plan's inputs again and writes
+// step by step.
 
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -308,7 +312,8 @@ export function mergeMarked(existing: string | null, body: string | null): { tex
       return { text: `${head}${marked(body, nl)}${tail}` };
     }
   }
-  if (body === null) return { text: existing && existing.trim() !== "" ? existing : null };
+  // No block to remove: the file, blank or not, is the person's and stays as it is.
+  if (body === null) return { text: existing };
   const block = marked(body, nl);
   if (existing === null || existing === "") return { text: `${block}${nl}` };
   const sep = existing.endsWith("\n") ? "" : nl;
@@ -357,24 +362,94 @@ function mergeOpencode(existing: string | null, version: string | null): { text:
  */
 const CODEX_TOOLS_APPROVAL = "approve";
 
+/** The `[mcp_servers.keylang]` header line (a trailing comment allowed), a header of one of its sub-tables, and any table header. */
+const CODEX_TABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*keylang[ \t]*\][ \t]*(?:#.*)?$/;
+const CODEX_SUBTABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*keylang[ \t]*\./;
+const TOML_HEADER = /^[ \t]*\[/;
+
+/**
+ * The whole file is parsed (invalid TOML is an error, and the entry's own
+ * keys come from the parse), but only the lines of the `[mcp_servers.keylang]`
+ * table — header to the next header, its sub-tables included — are replaced,
+ * removed or appended, so the person's comments and layout stay. An entry
+ * spelled another way (an inline table, dotted keys), or a splice that does
+ * not parse back (an inline `mcp_servers` cannot take a table header), falls
+ * back to re-serializing the file, as every edit did before.
+ */
 function mergeCodexToml(existing: string | null, version: string | null): { text: string | null } | { error: string } {
+  const text = existing === null ? "" : existing.replace(/\r\n/g, "\n");
   let data: Record<string, unknown> = {};
-  if (existing !== null && existing.trim() !== "") {
+  if (text.trim() !== "") {
     try {
-      data = { ...(parseToml(existing) as Record<string, unknown>) };
+      data = { ...(parseToml(text) as Record<string, unknown>) };
     } catch (error) {
       return { error: `invalid TOML (${error instanceof Error ? error.message : String(error)})` };
     }
   }
   const current = data.mcp_servers;
   if (current !== undefined && !isRecord(current)) return { error: "mcp_servers is not a table" };
-  const servers = { ...(current ?? {}) };
-  if (version === null) delete servers.keylang;
-  else {
-    const own = servers.keylang;
-    // A person's own keys of the entry (a timeout, a per-tool mode) stay; the command and the mode are keylang's.
-    servers.keylang = { ...(isRecord(own) ? own : {}), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
+  const own = isRecord(current) ? current.keylang : undefined;
+  const lines = text.split("\n");
+  const region = codexTableRegion(lines);
+  if (version === null) {
+    if (own === undefined) return { text: existing };
+    if (region === null) return rewriteCodexToml(data, null);
+    let kept = withoutLines(lines, region).join("\n");
+    if (kept.trim() === "") return { text: null };
+    if (text.endsWith("\n") && !kept.endsWith("\n")) kept = `${kept}\n`;
+    return codexEntryIs(kept, undefined) ? { text: kept } : rewriteCodexToml(data, null);
   }
+  // A person's own keys of the entry (a timeout, a per-tool mode) stay; the command and the mode are keylang's.
+  const entry = { ...(isRecord(own) ? own : {}), ...mcpCommand(version), default_tools_approval_mode: CODEX_TOOLS_APPROVAL };
+  const table = stringifyToml({ mcp_servers: { keylang: entry } }).replace(/\n$/, "");
+  let next: string;
+  if (region !== null) next = [...lines.slice(0, region.start), ...table.split("\n"), ...lines.slice(region.end)].join("\n");
+  else if (own !== undefined) return rewriteCodexToml(data, entry);
+  else {
+    const body = text.replace(/\n*$/, "");
+    next = body === "" ? table : `${body}\n\n${table}`;
+  }
+  if (!next.endsWith("\n")) next = `${next}\n`;
+  return codexEntryIs(next, entry) ? { text: next } : rewriteCodexToml(data, entry);
+}
+
+/** Lines `[start, end)` of the `[mcp_servers.keylang]` table and its sub-tables, or null without the header. */
+function codexTableRegion(lines: readonly string[]): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => CODEX_TABLE.test(line));
+  if (start === -1) return null;
+  let end = start + 1;
+  while (end < lines.length && (!TOML_HEADER.test(lines[end]!) || CODEX_SUBTABLE.test(lines[end]!))) end += 1;
+  return { start, end };
+}
+
+/** The lines without `[start, end)`; a blank line the removal left doubled (or last) goes with them. */
+function withoutLines(lines: readonly string[], region: { start: number; end: number }): string[] {
+  const out = [...lines.slice(0, region.start), ...lines.slice(region.end)];
+  let at = region.start;
+  while (at > 0 && out[at - 1]!.trim() === "" && (at >= out.length || out[at]!.trim() === "")) {
+    out.splice(at - 1, 1);
+    at -= 1;
+  }
+  return out;
+}
+
+/** Whether `text` parses and its `mcp_servers.keylang` is exactly `entry` (undefined: absent). */
+function codexEntryIs(text: string, entry: Record<string, unknown> | undefined): boolean {
+  try {
+    const parsed = parseToml(text) as Record<string, unknown>;
+    const servers = parsed.mcp_servers;
+    const found = isRecord(servers) ? servers.keylang : undefined;
+    return JSON.stringify(found ?? null) === JSON.stringify(entry ?? null);
+  } catch {
+    return false;
+  }
+}
+
+/** The whole file re-serialized with `entry` as the keylang server (null: without one); empty data is no file. */
+function rewriteCodexToml(data: Record<string, unknown>, entry: Record<string, unknown> | null): { text: string | null } {
+  const servers = { ...((data.mcp_servers as Record<string, unknown> | undefined) ?? {}) };
+  if (entry === null) delete servers.keylang;
+  else servers.keylang = entry;
   if (Object.keys(servers).length === 0) delete data.mcp_servers;
   else data.mcp_servers = servers;
   if (Object.keys(data).length === 0) return { text: null };
@@ -386,6 +461,7 @@ function mergeSettings(existing: string | null, version: string | null, dir: str
   const parsed = parseObject(existing);
   if ("error" in parsed) return parsed;
   const data = parsed.value;
+  if (version === null && !holdsKeylangSettings(data, dir)) return { text: existing };
   const denied = mergeDeny(data.permissions, version !== null, dir);
   if ("error" in denied) return denied;
   if (denied.value === undefined) delete data.permissions;
@@ -400,6 +476,7 @@ function mergeSettings(existing: string | null, version: string | null, dir: str
 function mergeHooksFile(existing: string | null, version: string | null): { text: string | null } | { error: string } {
   const parsed = parseObject(existing);
   if ("error" in parsed) return parsed;
+  if (version === null && !holdsOurHook(parsed.value.hooks)) return { text: existing };
   const hooks = mergeHooksValue(parsed.value.hooks, version);
   if ("error" in hooks) return hooks;
   if (hooks.value === undefined) delete parsed.value.hooks;
@@ -472,11 +549,26 @@ function isOurHook(command: string): boolean {
   return /keylang(?:@\S+)? hook stop/.test(command);
 }
 
+/** Whether Claude's settings hold anything of keylang's: a deny rule of the spec directory `dir` (or of the default one), or the Stop hook. */
+function holdsKeylangSettings(data: Record<string, unknown>, dir: string): boolean {
+  const deny = isRecord(data.permissions) ? data.permissions.deny : undefined;
+  const rules = new Set([...denyRules(dir), ...denyRules(DEFAULT_SPEC_DIR)]);
+  if (Array.isArray(deny) && deny.some((item) => typeof item === "string" && rules.has(item))) return true;
+  return holdsOurHook(data.hooks);
+}
+
+function holdsOurHook(hooks: unknown): boolean {
+  const stop = isRecord(hooks) ? hooks.Stop : undefined;
+  return Array.isArray(stop) && stop.some((group) => isRecord(group) && Array.isArray(group.hooks) && group.hooks.some((hook) => isRecord(hook) && typeof hook.command === "string" && isOurHook(hook.command)));
+}
+
 function mergeJsonKey(existing: string | null, path: readonly string[], server: unknown): { text: string | null } | { error: string } {
   const parsed = parseObject(existing);
   if ("error" in parsed) return parsed;
   const key = path[0]!;
   const current = parsed.value[key];
+  // Nothing of keylang's to strip: the file is the person's and stays byte for byte.
+  if (server === null && !(isRecord(current) && "keylang" in current)) return { text: existing };
   if (current !== undefined && !isRecord(current)) return { error: `${key} is not an object` };
   const table: Record<string, unknown> = { ...(current ?? {}) };
   if (server === null) delete table.keylang;
